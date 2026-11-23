@@ -86,16 +86,22 @@ read_kv() {
 LANE_ENV=()
 read_kv "$SAVE/lane.env" LANE_ENV
 for kv in "${LANE_ENV[@]}"; do export "${kv?}"; done
-LEARNER_ENV=()
-read_kv "$SAVE/lane.learner_env" LEARNER_ENV
-LANE_ARGS=()
-if [[ -f $SAVE/lane.args ]]; then
-  while IFS= read -r line || [[ -n $line ]]; do
-    line=${line%$'\r'}
-    [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
-    LANE_ARGS+=("$line")
-  done <"$SAVE/lane.args"
-fi
+# lane.args and lane.learner_env into LANE_ARGS and LEARNER_ENV. Read again
+# before every learner start, so a fix to either reaches the next restart, a
+# crash restart included; lane.env (python, pin, limits) is read once.
+read_learner_config() {
+  LEARNER_ENV=()
+  read_kv "$SAVE/lane.learner_env" LEARNER_ENV
+  LANE_ARGS=()
+  if [[ -f $SAVE/lane.args ]]; then
+    while IFS= read -r line || [[ -n $line ]]; do
+      line=${line%$'\r'}
+      [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+      LANE_ARGS+=("$line")
+    done <"$SAVE/lane.args"
+  fi
+}
+read_learner_config
 
 # Resolve the venv directory but not the interpreter symlink itself: a venv's
 # bin/python links to the base interpreter, and following it drops the venv.
@@ -131,6 +137,7 @@ LENV=(
 )
 [[ -n $PIN ]] && LENV+=("STS2_WHEEL_PIN=$PIN")
 while IFS= read -r kv; do [[ -n $kv ]] && LENV+=("$kv"); done <<<"$LANE_DEFAULTS"
+LENV_BASE=("${LENV[@]}")
 LENV+=("${LEARNER_ENV[@]}")
 
 # Nobody edits a running worktree (plan section 8 Deploy).
@@ -245,7 +252,16 @@ rotate_learner_log() {
 }
 
 start_learner() { # RESUME OFFSET
-  local resume=$1 offset=$2 cmd=()
+  local resume=$1 offset=$2 cmd=() before="${LANE_ARGS[*]}|${LEARNER_ENV[*]}"
+  # A malformed file (read_kv dies) keeps the config the last start used.
+  if (read_learner_config) 2>>"$WDLOG"; then
+    read_learner_config
+    LENV=("${LENV_BASE[@]}" "${LEARNER_ENV[@]}")
+    [[ "${LANE_ARGS[*]}|${LEARNER_ENV[*]}" == "$before" ]] ||
+      log "lane.args or lane.learner_env changed: this start uses the new ones"
+  else
+    log "lane.args or lane.learner_env unreadable: this start keeps the last ones"
+  fi
   if ((${#CUSTOM[@]})); then
     cmd=("${CUSTOM[@]}")
   else

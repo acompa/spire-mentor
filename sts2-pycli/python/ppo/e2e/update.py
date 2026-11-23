@@ -44,6 +44,7 @@ through `ppo.e2e.ckpt` (`save`). `Rank` also runs in-process (`world == 1`).
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import os
 import queue
@@ -68,6 +69,8 @@ from .net import (
     E2ENet,
     NetConfig,
     check_prior,
+    file_sha256,
+    load_checkpoint,
     net_from_state,
     net_state,
     save_checkpoint,
@@ -164,7 +167,7 @@ STAT_SCALARS = (
     "fl_loss",
     "fl_below",
 )
-STAT_VECTORS = ("n_pi_t", "ent_t", "kl_t", "n_v_t", "vloss_t")
+STAT_VECTORS = ("n_pi_t", "ent_t", "kl_t", "n_v_t", "vloss_t", "n_ks_t", "ks_kl_t")
 #: The update bins its per-type statistics by (character, type), `char * n_types +
 #: type` with the character from each row's X_CHAR (`rowstore.row_chars`), and folds
 #: the bins back to per-type sums: pooled per type, and split by character (GH #1197).
@@ -202,6 +205,153 @@ def char_type_means(
             d = type_dict(np.where(n2[c] > 0, s2[c] / n2[c], np.nan), dtypes)
             if d:
                 out[C.CHARACTERS[c]] = d
+    return out
+
+
+def distill_char_ids(names: Any) -> np.ndarray:
+    """`ScheduleCfg.distill_chars` as indices into `contracts.CHARACTERS` (what
+    `rowstore.row_chars` returns); ValueError on a name that is not a character."""
+    bad = [c for c in names if c not in C.CHARACTERS]
+    if bad or not len(names):
+        raise ValueError(f"distill_chars {list(names)!r}: each must be one of {C.CHARACTERS}")
+    return np.array([C.CHARACTERS.index(c) for c in names], np.int64)
+
+
+def checkpoint_filled(path: str) -> tuple[str, ...]:
+    """The fill events a checkpoint's net was trained on (its `stamps["filled"]`)."""
+    ck = torch.load(str(path), map_location="cpu", weights_only=True)
+    return tuple(sorted((ck.get("cfg") or {}).get("stamps", {}).get("filled") or ()))
+
+
+def check_distill_teacher_inputs(
+    teacher_filled: Any, lane_filled: Any, source: str, where: str = "distill_ckpt"
+) -> None:
+    """Refuse a teacher fed inputs it was not trained on (GH #1197, the 791 -> 728 case).
+
+    The "chars" fill event does not only add inputs: on an Ironclad row it rewrites
+    existing ones (live damage previews, tactical columns), so a teacher trained without
+    it must never read a "chars" lane's rows. `source` "update" feeds it the lane's own
+    rows, so its "chars" must match the lane's; "acting" feeds it the workers' chars-off
+    shadow rows, so it must be a teacher without "chars"."""
+    t_chars = C.FILL_CHARS in set(teacher_filled or ())
+    l_chars = C.FILL_CHARS in set(lane_filled or ())
+    if source == "acting":
+        if t_chars:
+            raise ValueError(
+                f'{where}: it was trained with "{C.FILL_CHARS}"; distill_source "acting" '
+                'scores chars-off shadow rows: use distill_source "update"'
+            )
+        return
+    if t_chars != l_chars:
+        if l_chars:
+            raise ValueError(
+                f'{where}: it was trained without "{C.FILL_CHARS}" (filled '
+                f"{sorted(teacher_filled or ())}) but this lane's rows carry it: use "
+                'distill_source "acting" (it scores chars-off shadow rows)'
+            )
+        raise ValueError(
+            f'{where}: it reads "{C.FILL_CHARS}", which this lane\'s rows do not carry'
+        )
+
+
+def check_distill_cfg(cfg: S.ScheduleCfg, lane_filled: Any = None) -> None:
+    """Fail fast on a bad distillation config (the learner calls it before any worker
+    starts): the characters exist, the checkpoint's file sha256 is the declared one and,
+    with `lane_filled` (the lane's `--filled`), its inputs fit the distill source
+    (`check_distill_teacher_inputs`)."""
+    if cfg.distill_ckpt is None:
+        return
+    distill_char_ids(cfg.distill_chars)
+    got = file_sha256(cfg.distill_ckpt)
+    if got != cfg.distill_sha256:
+        raise ValueError(
+            f"distill_ckpt {cfg.distill_ckpt}: sha256 {got} != distill_sha256 {cfg.distill_sha256}"
+        )
+    if lane_filled is not None:
+        check_distill_teacher_inputs(
+            checkpoint_filled(cfg.distill_ckpt),
+            lane_filled,
+            cfg.distill_source,
+            f"distill_ckpt {cfg.distill_ckpt}",
+        )
+
+
+def load_distill_rare(cfg: S.ScheduleCfg) -> Any:
+    """The RareMap JSON the shadow applies (`ScheduleCfg.distill_rare`: a #1081 combat
+    checkpoint's `ck["rare"]`), None without one. Refuses a map whose
+    `teachers.rare_sha256` is not `distill_rare_sha256`."""
+    if cfg.distill_rare is None:
+        return None
+    from .teachers import rare_sha256
+
+    ck = torch.load(str(cfg.distill_rare), map_location="cpu", weights_only=True)
+    if not isinstance(ck, dict) or "rare" not in ck:
+        raise ValueError(f"distill_rare {cfg.distill_rare}: no RareMap (ck['rare'])")
+    got = rare_sha256(ck["rare"])
+    if got != cfg.distill_rare_sha256:
+        raise ValueError(
+            f"distill_rare {cfg.distill_rare}: rare_sha256 {got} != distill_rare_sha256"
+            f" {cfg.distill_rare_sha256}"
+        )
+    return ck["rare"]
+
+
+def load_distill_teacher(
+    cfg: S.ScheduleCfg,
+    device: torch.device | str,
+    *,
+    schema_sha256: str,
+    vocab_sha256: str,
+    student: E2ENet | None = None,
+    lane_filled: Any = None,
+) -> E2ENet:
+    """The frozen distillation teacher of `cfg` (`ScheduleCfg.distill_ckpt`) on `device`,
+    in eval mode with no parameter requiring a gradient. Refuses a file whose sha256 is
+    not `distill_sha256`, a different schema or vocab, (with `student`) a different
+    `NetConfig` or content prior, and (with `lane_filled`) inputs that do not fit the
+    distill source (`check_distill_teacher_inputs`)."""
+    check_distill_cfg(cfg, lane_filled)
+    net, _ = load_checkpoint(
+        str(cfg.distill_ckpt), schema_sha256=schema_sha256, vocab_sha256=vocab_sha256
+    )
+    if student is not None:
+        if net.cfg.to_dict() != student.cfg.to_dict():
+            raise ValueError(
+                f"distill_ckpt {cfg.distill_ckpt}: net {net.cfg.to_dict()} != the student's "
+                f"{student.cfg.to_dict()}"
+            )
+        if net.prior_sha256 != student.prior_sha256:
+            raise ValueError(
+                f"distill_ckpt {cfg.distill_ckpt}: content prior {net.prior_sha256} != the "
+                f"student's {student.prior_sha256}"
+            )
+    net = net.to(device)
+    net.eval()
+    net.requires_grad_(False)
+    return net
+
+
+def distill_teacher_probs(
+    t_logits: torch.Tensor, n_classes: torch.Tensor, sel: torch.Tensor, width: int
+) -> torch.Tensor:
+    """[B, width] fp32 teacher probabilities for `ppo_losses`' teacher term: row
+    `sel[j]` gets the softmax of `t_logits[j]` (the teacher's logits of the selected
+    rows, in order) over its `n_classes` merged classes, masked exactly like the
+    student's log-softmax (`algo.class_mask`, `algo.NEG`); every other row is NaN
+    (no teacher). `n_classes` is that of all B rows; `t_logits` may be narrower or
+    wider than `width` (it pads its own sub-batch), as long as it covers the classes."""
+    b = int(sel.shape[0])
+    out = torch.full((b, width), math.nan, dtype=torch.float32, device=t_logits.device)
+    if not int(t_logits.shape[0]):
+        return out
+    nc = n_classes[sel].long()
+    lg = torch.full(
+        (int(t_logits.shape[0]), width), A.NEG, dtype=torch.float32, device=t_logits.device
+    )
+    w = min(width, int(t_logits.shape[1]))
+    lg[:, :w] = t_logits[:, :w].float()
+    cm = A.class_mask(nc, width)
+    out[sel] = torch.softmax(lg.masked_fill(~cm, A.NEG), dim=-1)
     return out
 
 
@@ -262,6 +412,27 @@ class Rank:
         self.loss_cfg = loss_cfg(cfg)
         self._packed: Any = None  # `_fwd_packed`'s forward
         self.params = [p for p in self.net.parameters() if p.requires_grad]
+        # The distillation teacher (`ScheduleCfg.distill_ckpt`): a plain attribute, never
+        # a submodule of `net`, so the optimizer, the EMA, the sync check and every save
+        # leave it out. Loaded whenever a checkpoint is named with distill_source
+        # "update" (its sha is checked even at lambda 0); it only runs at lambda > 0.
+        # With "acting" the learner scored the rows when it served them (`tprob`): the
+        # rank loads no teacher.
+        self.distill: E2ENet | None = None
+        self.distill_ids = np.zeros(0, np.int64)
+        dc = self.algo.cfg
+        if dc.distill_ckpt is not None:
+            self.distill_ids = distill_char_ids(dc.distill_chars)
+            if dc.distill_source == "update":
+                self.distill = load_distill_teacher(
+                    dc,
+                    self.dev,
+                    schema_sha256=self.schema_sha256,
+                    vocab_sha256=self.vocab_sha256,
+                    student=self.net,
+                    lane_filled=getattr(cfg, "filled", None),
+                )
+                self.distill.bf16 = self.net.bf16
 
     # ── collectives ─────────────────────────────────────────────────────
 
@@ -308,6 +479,14 @@ class Rank:
 
     def _fwd(self, rows: Chunk, idx: np.ndarray) -> Any:
         return self.net(self._batch(rows, idx))
+
+    def _distill_logits(self, rows: Chunk, idx: np.ndarray) -> torch.Tensor:
+        """The distillation teacher's policy logits of rows `idx` (no gradient, the
+        student's autocast). The serving path: the teacher's value module never runs."""
+        assert self.distill is not None
+        with torch.no_grad():
+            b = to_batch(take(rows, idx), self.dev, pin=True, **NO_BUCKETS)
+            return self.distill.policy(b)
 
     def _fwd_packed(self, rows: Chunk, idx: np.ndarray) -> Any:
         """The pre-pass's forward of `idx` on the packed (pad-free) path, compiled
@@ -497,13 +676,60 @@ class Rank:
         lp_behav = np.asarray(table["logp_behav"], np.float32)
         target = ret.target
         use_teacher = bool(np.any(sched.ks_types > 0))
+        # Learner-side distillation (ScheduleCfg.distill_*): the frozen teacher's probs
+        # on the trained rows of the distill characters, through the same teacher term.
+        dcfg = a.cfg
+        # "acting": the probs are the rows' own `tprob` (scored at serving time on the
+        # chars-off shadow rows); a distill row without them (its shadow was lost) gets
+        # no term and is counted.
+        acting = bool(dcfg.distill_acting)
+        distill_live = bool(
+            dcfg.distill_on and sched.policy_on and (acting or self.distill is not None)
+        )
+        if dcfg.distill_on and use_teacher:
+            raise RuntimeError(
+                "distillation (distill_lambda > 0) and the stored-row KS teacher (lambda_KS > 0)"
+                " are both on: they share the teacher term; turn one off"
+            )
+        d_sel_all = np.zeros(n, bool)
+        distill_missing = 0
+        if distill_live:
+            d_sel_all = ret.trained & np.isin(rowstore.row_chars(rows.rb), self.distill_ids)
+            if acting:
+                distill_missing = int((d_sel_all & ~has_t).sum())
+                d_sel_all &= has_t
+        d_lam = float(dcfg.distill_lambda)
+        distill_s = 0.0
+        distill_rows = 0
 
         def loss_rows(idx: np.ndarray, width: int) -> A.LossRows:
+            nonlocal distill_s, distill_rows
             teacher = None
+            ks_i = ks[idx]
             if use_teacher and has_t[idx].any():
                 flat_t = axis_rows(rows, "tprob", idx)
                 teacher = A.pad_ragged(flat_t, nc_all[idx], width=width)
-            return A.LossRows.from_numpy(
+            sel = d_sel_all[idx]
+            d_teacher = None
+            if distill_live and acting and sel.any():
+                flat_t = axis_rows(rows, "tprob", idx)
+                teacher = A.pad_ragged(flat_t, nc_all[idx], width=width)
+                distill_rows += int(sel.sum())
+                ks_i = np.where(sel, d_lam, 0.0)
+            elif distill_live and sel.any():
+                if dev.type == "cuda":
+                    torch.cuda.synchronize(dev)
+                t1 = time.time()
+                t_logits = self._distill_logits(rows, idx[sel])
+                d_teacher = distill_teacher_probs(
+                    t_logits, upload(nc_all[idx], dev), upload(sel, dev), width
+                )
+                if dev.type == "cuda":
+                    torch.cuda.synchronize(dev)
+                distill_s += time.time() - t1
+                distill_rows += int(sel.sum())
+                ks_i = np.where(sel, d_lam, 0.0)
+            lr_ = A.LossRows.from_numpy(
                 dev,
                 n_classes=nc_all[idx],
                 action=act_all[idx],
@@ -514,12 +740,15 @@ class Rank:
                 pi=ret.pi[idx],
                 v=ret.trained[idx],
                 beta=beta[idx],
-                ks=ks[idx],
+                ks=ks_i,
                 dtype=ct_all[idx],  # the statistics' bins; the loss itself reads no type
                 teacher=teacher,
                 floor_p=None if floor_p is None else floor_p[idx],
                 floor_w=None if floor_w is None else floor_w[idx],
             )
+            if d_teacher is not None:  # already on the device (from_numpy copies numpy)
+                lr_ = dataclasses.replace(lr_, teacher=d_teacher)
+            return lr_
 
         acc: dict[str, torch.Tensor] = {k: torch.zeros((), device=dev) for k in STAT_SCALARS}
         acc.update({k: torch.zeros(n_ct, device=dev) for k in STAT_VECTORS})
@@ -641,7 +870,7 @@ class Rank:
         stats.update(ret.stats(table))
         for k, v in means.items():
             if isinstance(v, np.ndarray):
-                if k not in ("n_pi_t", "n_v_t"):
+                if k not in ("n_pi_t", "n_v_t", "n_ks_t"):
                     stats[k] = type_dict(v, self.dtypes)
             else:
                 stats[k] = v
@@ -658,6 +887,30 @@ class Rank:
         stats["vloss_c"] = {
             C.CHARACTERS[c]: float(vl_c[c] / nv_c[c]) for c in range(N_CHARS) if nv_c[c] > 0
         }
+        if dcfg.distill_on:
+            # Learner-side distillation (its loss is the teacher term: also ks_kl/ks_loss).
+            n_v_all = float(sums["n_v"])
+            stats.update(
+                {
+                    "distill_lambda": d_lam,
+                    "distill_source": dcfg.distill_source,
+                    # Teacher rows over epochs: forwards ("update"), stored probs ("acting").
+                    "distill_rows": distill_rows,
+                    # "acting": distill rows the table trained without probs (shadow lost).
+                    "distill_rows_missing": distill_missing,
+                    "distill_fwd_s": distill_s,
+                    "distill_kl": means.get("ks_kl", math.nan),
+                    "distill_loss": means.get("ks_loss", math.nan),
+                    # Its share of the minibatch-mean loss (sum over the trained rows).
+                    "distill_loss_per_row": (
+                        float(sums["ks_loss"]) / n_v_all if n_v_all > 0 else math.nan
+                    ),
+                    "distill_kl_t": type_dict(means.get("ks_kl_t", np.zeros(0)), dts),
+                    "distill_kl_ct": char_type_means(
+                        sums_ct["ks_kl_t"], sums_ct["n_ks_t"], dts, n_types
+                    ),
+                }
+            )
         stats["is_tails"] = is_tails(lp_prox_np, lp_behav, ret.pi, float(cfg.is_cap))
         stats["loss_total"] = float(
             np.nansum([stats.get(k, math.nan) for k in ("vloss", "ploss", "ks_loss")])

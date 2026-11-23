@@ -559,7 +559,8 @@ class TestRunLogs:
         control, _, _ = plane
         assert json.loads(_fetch(control, "/logs")[2]) == {"logs": []}
         (tmp_path / "a_run.jsonl").write_text('{"a": 1}\n', encoding="utf-8")
-        (tmp_path / "b_run.jsonl").write_text('{"b": 1}\n{"to', encoding="utf-8")
+        # Bytes: text mode would write "\r\n" on Windows.
+        (tmp_path / "b_run.jsonl").write_bytes(b'{"b": 1}\n{"to')
         (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
         (tmp_path / ".hidden.jsonl").write_text("x\n", encoding="utf-8")
         (tmp_path / "sub").mkdir()

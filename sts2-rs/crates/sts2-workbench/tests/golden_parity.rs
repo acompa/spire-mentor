@@ -496,6 +496,9 @@ fn build_bundle_present(dir: &Path) -> bool {
         .as_ref()
         .and_then(|r| r["body"]["game_version"].as_str())
         .unwrap_or_default();
+    // Without a bundle (the public export) both cfg! arms are `false` and
+    // clippy reads the match as a `matches!`.
+    #[allow(clippy::match_like_matches_macro)]
     let present = match version {
         "v0.111.0" => cfg!(workbench_game_data_v0_111_0),
         "v0.113.0" => cfg!(workbench_game_data_v0_113_0),

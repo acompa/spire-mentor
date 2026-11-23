@@ -1704,7 +1704,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, workbench_game_data_v0_113_0))] // asserts on real v0.113.0 text (see build.rs)
 mod dingy_dagger_tests {
     use super::*;
     use crate::localization::Loc;
@@ -1769,7 +1769,7 @@ mod dingy_dagger_tests {
 /// Chinese display mode end to end: a v0.111.0 run played into its first
 /// fight shows the game's Chinese names (enemies, powers, intents, the
 /// character) beside the English keys the page looks art up by.
-#[cfg(test)]
+#[cfg(all(test, workbench_game_data_v0_111_0))] // plays a v0.111.0 run on its bundle (see build.rs)
 mod zh_names_tests {
     use super::*;
     use crate::localization::{set_display_language, Loc};

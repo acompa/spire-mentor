@@ -71,8 +71,8 @@ def test_ids_become_words(raw: str, shown: str) -> None:
         "run-policy net · V=+0.25",
         "Shrug It Off",
         "Strike → Jaw Worm #2",
-        r"no Instinct net at C:\data\e2e\allchar_e2e_d2500_ema0999.e2ew",
-        "data/e2e/allchar_e2e_d2500_ema0999.e2ew",
+        r"no Instinct net at C:\data\e2e\allchar_e2e_d4500_ema0999.e2ew",
+        "data/e2e/allchar_e2e_d4500_ema0999.e2ew",
     ],
 )
 def test_display_text_is_left_alone(prose: str) -> None:

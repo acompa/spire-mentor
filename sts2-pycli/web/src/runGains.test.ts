@@ -4,6 +4,7 @@ import { runGains as runGainsWithCards } from "./runGains";
 
 /** The gains without the card objects the banner draws. */
 const runGains = (a: Step | null, b: Step | null) =>
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
   runGainsWithCards(a, b).map(({ card: _card, ...g }) => g);
 
 function card(id: string, name: string, upgraded = false): Card {

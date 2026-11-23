@@ -1,7 +1,7 @@
 //! G-net: the Rust policy forward reproduces torch's logits on every decision
 //! of every `ppo.e2e.export_wb fixtures` file (`E2E_FIXTURES`, default
-//! `~/runs/e2e-wb/fixtures-allchar-d2500`) with the weights in `E2E_WEIGHTS` (default
-//! the shipped `sts2-pycli/data/e2e/allchar_e2e_d2500_ema0999.e2ew`): max |Δlogit| <
+//! `~/runs/e2e-wb/fixtures-allchar-d4500`) with the weights in `E2E_WEIGHTS` (default
+//! the shipped `sts2-pycli/data/e2e/allchar_e2e_d4500_ema0999.e2ew`): max |Δlogit| <
 //! 2e-4 and argmax == the fixture's `chosen` (or a float tie: Python's margin
 //! over the Rust pick is within 2x the tolerance). Skips with a message when either
 //! input is missing.
@@ -28,7 +28,7 @@ use sts2_e2e::net::{argmax, E2eNet};
 /// Max |Δlogit| allowed against torch fp32 (CPU). Absolute, so it tightens
 /// as logits grow: d2250's worst row (165000005 #985, logits up to 23.2) was
 /// off by 1.03e-4, a 4.4e-6 relative fp32 error with no argmax flip in 20,426
-/// decisions; d2500's worst is 8.0e-5 in 22,808, d500's was 7.0e-5.
+/// decisions; d4500's worst is 1.3e-4 in 23,132, d2500's 9.5e-5, d500's 7.0e-5.
 const TOL: f32 = 2e-4;
 /// Max |Δp| of the probe's probabilities.
 const TOL_P: f32 = 1e-3;

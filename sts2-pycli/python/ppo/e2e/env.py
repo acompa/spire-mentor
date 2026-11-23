@@ -1087,6 +1087,14 @@ class EnvConfig:
     # The characters the run check accepts (a mix lane's set: its practice starts come
     # from any of its runs); None: `character`'s, or the process's.
     characters: tuple[str, ...] | None = None
+    # GH #1197 distillation (`ScheduleCfg.distill_source` "acting"): a segment of one of
+    # these characters runs a chars-off shadow env beside it (`rsenv.RsE2EEnv`), whose
+    # rows the learner's teacher scores. Rust env only.
+    distill_shadow: tuple[str, ...] = ()
+    # The `sts2_rs.E2eRareMap` the shadow's combat rows apply to their S_ctx content
+    # slots: the RareMap the distill teacher's own training rows carried
+    # (`ScheduleCfg.distill_rare`); None leaves them universe rows.
+    distill_rare: Any = None
     # GH #1541: the card id a new run (`rm=None`) adds to its starting deck
     # (`ppo.e2e.forced`); None: an ordinary run. A worker sets it per run.
     forced_card: str | None = None
@@ -1663,6 +1671,10 @@ def new_env(
         from .rsenv import RsE2EEnv
 
         return RsE2EEnv(seed, rm=rm, cfg=cfg, segment=segment, rare=cfg.rust_rare)
+    if cfg is not None and cfg.distill_shadow:
+        # The Python tokenizer reads the process's "chars" flag at encode time, so one
+        # process cannot tokenize a run both ways.
+        raise ValueError("EnvConfig.distill_shadow needs the Rust env (EnvConfig.rust)")
     return E2EEnv(seed, rm=rm, cfg=cfg, segment=segment)
 
 

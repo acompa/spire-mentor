@@ -522,3 +522,43 @@ pytestmark = pytest.mark.skipif(
     'sys.platform == "win32"',
     reason="evaluate runs its shards under a stripped POSIX environment (no HOME/USERPROFILE). Linux only, like the lane.",
 )
+
+
+@needs_tree_wheel
+def test_batched_workers_write_the_rows_of_single_run_workers(tmp_path):
+    """`--games`: a worker keeps several runs open and asks the policy for all their
+    next decisions at once. The rows are those of one run at a time, a run that
+    errors is booked alone, and it re-runs once."""
+    (tmp_path / "mods").mkdir()
+    (tmp_path / "mods" / "flaky_env.py").write_text(HELPER, encoding="utf-8")
+    bad = SMOKE0 + 2
+    files = {}
+    for name, games in (("one", 1), ("many", 3)):
+        (tmp_path / name).mkdir()
+        r = evaluate(
+            "run", "FL", "SMOKE", 7, SMOKE0, "--policy", "first", "--env", "flaky_env:flaky",
+            "--procs", 2, "--games", games, "--evals", tmp_path / f"ev-{name}", *LOOSE,
+            "--set-env", f"PYTHONPATH={tmp_path / 'mods'}{os.pathsep}{PY_DIR}",
+            "--set-env", f"FLAKY_DIR={tmp_path / name}",
+            "--set-env", f"FLAKY_SEED={bad}",
+        )  # fmt: skip
+        assert r.returncode == 0, r.stderr
+        assert "re-running 1 errored seed(s) once" in r.stdout
+        assert "errors_after_retry=0" in r.stdout
+        assert ("2 procs x 3 games" in r.stdout) == (games == 3)
+        files[name] = arm_files(tmp_path / f"ev-{name}", "SMOKE", "FL")
+    assert list(files["many"]) == [f"shards/s{SMOKE0}_{SMOKE0 + 7}.jsonl", f"retry/s{bad}.jsonl"]
+    rows = {}
+    for name, fs in files.items():
+        rows[name] = [json.loads(x) for f in fs.values() for x in f.splitlines()]
+        (err,) = [r for r in rows[name] if r["outcome"] == "error"]
+        assert err["seed"] == bad and "flaky on purpose" in err.pop("error")  # its traceback
+    assert rows["many"] == rows["one"]
+
+
+def test_evaluate_refuses_zero_games(capsys, tmp_path):
+    r = evaluate(
+        "run", "X", "SMOKE", 1, SMOKE0, "--policy", "first", "--env", "raw",
+        "--procs", 1, "--games", 0, "--evals", tmp_path, *LOOSE,
+    )  # fmt: skip
+    assert r.returncode == 2 and "--games must be positive" in r.stderr

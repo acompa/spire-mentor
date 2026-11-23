@@ -19,7 +19,7 @@ use sts2_e2e::tokens::{encode_for, TokCache};
 
 fn weights() -> Option<E2eNet> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../sts2-pycli/data/e2e/allchar_e2e_d2500_ema0999.e2ew");
+        .join("../../../sts2-pycli/data/e2e/allchar_e2e_d4500_ema0999.e2ew");
     let bytes = std::fs::read(p).ok()?;
     Some(E2eNet::from_bytes(&bytes).expect("shipped weights load"))
 }

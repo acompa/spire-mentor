@@ -32,10 +32,10 @@ pub const INSTINCT_GAME_VERSION: &str = "v0.111.0";
 /// The builds Instinct plays, each on its own rules.
 pub const INSTINCT_GAME_VERSIONS: [&str; 2] = ["v0.111.0", "v0.113.0"];
 /// The weights, relative to the data root.
-pub const WEIGHTS_RELPATH: &str = "data/e2e/allchar_e2e_d2500_ema0999.e2ew";
+pub const WEIGHTS_RELPATH: &str = "data/e2e/allchar_e2e_d4500_ema0999.e2ew";
 /// The Fool's own student (GH #1535), relative to the data root: a
 /// v0.113.0 net, so it answers only a v0.113.0 game.
-pub const FOOL_WEIGHTS_RELPATH: &str = "data/e2e/fool_e2e_d600_ema0996.e2ew";
+pub const FOOL_WEIGHTS_RELPATH: &str = "data/e2e/fool_e2e_d850_ema0996.e2ew";
 /// The Fool's net's build: the Fool exists only from v0.113.0 on.
 pub const FOOL_GAME_VERSION: &str = "v0.113.0";
 

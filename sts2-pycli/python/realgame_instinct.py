@@ -62,11 +62,11 @@ logger = logging.getLogger(__name__)
 
 #: The student's weights, relative to the data root (dev: ``sts2-pycli/``;
 #: frozen: the bundle root, where the spec replicates the layout).
-WEIGHTS_RELPATH = Path("data/e2e/allchar_e2e_d2500_ema0999.e2ew")
+WEIGHTS_RELPATH = Path("data/e2e/allchar_e2e_d4500_ema0999.e2ew")
 
 #: The Fool's own student (GH #1535), relative to the data root: a v0.113.0
 #: net, so it answers only a v0.113.0 game.
-FOOL_WEIGHTS_RELPATH = Path("data/e2e/fool_e2e_d600_ema0996.e2ew")
+FOOL_WEIGHTS_RELPATH = Path("data/e2e/fool_e2e_d850_ema0996.e2ew")
 #: The build the Fool's student plays (the Fool exists from v0.113.0 on).
 FOOL_GAME_VERSION = "v0.113.0"
 

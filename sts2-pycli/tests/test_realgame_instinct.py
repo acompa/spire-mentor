@@ -30,9 +30,15 @@ from floors import game_floor  # noqa: E402
 
 SEED = "INSTINCTSEED7"
 WEIGHTS = ri.default_weights_path()
-# Silent and Necrobinder die in act 1 of SEED; this one reaches act 2 (re-picked when
-# each act's first MAP row began flagging its moves, GH #1616: the greedy runs moved).
-_ACT2_SEED = {"Silent": "INSTINCTSEED1", "Necrobinder": "INSTINCTSEED1", "Regent": "INSTINCTSEED1"}
+# Silent and Necrobinder die in act 1 of SEED (Defect too since the d4500 net); this one
+# reaches act 2 (re-picked when each act's first MAP row began flagging its moves,
+# GH #1616: the greedy runs moved).
+_ACT2_SEED = {
+    "Silent": "INSTINCTSEED1",
+    "Necrobinder": "INSTINCTSEED1",
+    "Regent": "INSTINCTSEED1",
+    "Defect": "INSTINCTSEED1",
+}
 # The run token (row 0) cell holding the fight's encounter id.
 
 

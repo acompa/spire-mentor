@@ -1662,7 +1662,7 @@ mod tests {
     use super::*;
 
     /// The first run of two or more ASCII letters in `s`, if any.
-    #[cfg(workbench_game_data)]
+    #[cfg(workbench_game_data_v0_111_0)]
     fn english_word(s: &str) -> Option<String> {
         let mut run = String::new();
         for c in s.chars().chain(std::iter::once(' ')) {
@@ -1681,7 +1681,7 @@ mod tests {
     /// branch-tree label, detail line, combat-log row and option label is
     /// Chinese, while the run log keeps English labels (and the Chinese one
     /// beside them).
-    #[cfg(workbench_game_data)]
+    #[cfg(workbench_game_data_v0_111_0)] // plays a v0.111.0 run on its bundle (see build.rs)
     #[test]
     fn chinese_session_writes_no_english_labels() {
         if !crate::data::zh_tables().is_present() {

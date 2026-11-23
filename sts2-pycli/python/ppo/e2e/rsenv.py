@@ -94,6 +94,26 @@ def tok_of(t: dict[str, Any]) -> Tok:
     )
 
 
+#: The decision fields a distill shadow's row must share with the main env's.
+_SHADOW_KEYS = ("row", "is_combat", "dtype", "n_classes", "unit", "bootstrap", "reward")
+
+
+def _ooc_rows_agree(main: dict[str, Any], shadow: dict[str, Any]) -> bool:
+    """An out-of-combat row with and without the "chars" event: byte-equal but for
+    X_CHAR, which only the "chars" row sets."""
+    for k in ("sec", "cont", "tok_flags", "mem_tok", "cls_tok", "pool_tok", "pool_vid", "pool_w"):
+        if main[k] != shadow[k]:
+            return False
+    if main["cat"] == shadow["cat"]:
+        return True
+    a = np.frombuffer(main["cat"], np.int16).reshape(-1, N_CAT).copy()
+    b = np.frombuffer(shadow["cat"], np.int16).reshape(-1, N_CAT)
+    if a.shape != b.shape:
+        return False
+    a[:, C.XC["X_CHAR"]] = b[:, C.XC["X_CHAR"]]
+    return bool(np.array_equal(a, b)) and not b[:, C.XC["X_CHAR"]].any()
+
+
 class RsDecision:
     """A stored row of an `RsE2EEnv`: the fields the worker reads off an
     `E2EDecision`, and its tokenized row (`tok`)."""
@@ -112,6 +132,7 @@ class RsDecision:
         "n_classes",
         "reward",
         "row",
+        "tok_t",
         "unit",
     )
 
@@ -133,6 +154,9 @@ class RsDecision:
         t = r.get("tok")
         self._tok = tok_of(t) if t is not None else None
         self._tok_error = r.get("tok_error")
+        # The chars-off shadow's row of the same decision (`RsE2EEnv`'s distill shadow),
+        # the teacher's input; None without a shadow or when it was lost.
+        self.tok_t: Tok | None = None
 
     @property
     def tok(self) -> Tok:
@@ -193,6 +217,12 @@ class RsE2EEnv:
         self.character = str(rm.character)  # the run's own (a mix lane's runs differ)
         f9_seed = (self.seed << 32) ^ (int(segment.reseed or 0) & 0xFFFFFFFF)
         self._on_capture = cfg.on_capture if segment.kind == "run" else None
+        caps = {
+            "run_steps": int(cfg.max_run_steps),
+            "fight_turns": int(cfg.max_fight_turns),
+            "fight_decisions": int(cfg.max_fight_decisions),
+            "run_decisions": int(cfg.max_run_decisions),
+        }
         self._env = sts2_rs.E2eTrainEnv(
             rm,
             self.seed,
@@ -203,16 +233,40 @@ class RsE2EEnv:
             priv_=True,
             rare=rare,
             chars=factory.fill_chars(),
-            caps={
-                "run_steps": int(cfg.max_run_steps),
-                "fight_turns": int(cfg.max_fight_turns),
-                "fight_decisions": int(cfg.max_fight_decisions),
-                "run_decisions": int(cfg.max_run_decisions),
-            },
+            caps=caps,
             game_version=factory.GAME_VERSION,
             detail=bool(detail),
             **({} if f9_queue_max is None else {"f9_queue_max": int(f9_queue_max)}),
         )
+        # GH #1197 distillation (`EnvConfig.distill_shadow`): the same segment on a
+        # second env whose rows never carry the "chars" event, stepped with the same
+        # choices (the Rust env is deterministic in the run's seed and the choices; the
+        # F9 draw and the captures do not touch the run). Its rows are a chars-off
+        # teacher's inputs (`RsDecision.tok_t`), the S_ctx content slots through the
+        # teacher's training RareMap (`EnvConfig.distill_rare`; None: universe rows). It never fails the segment: a shadow
+        # that errs or desyncs is dropped and counted (`distill/*`).
+        self._shadow: Any = None
+        self._f9_counts_pre: collections.Counter = collections.Counter()
+        if self.character in (cfg.distill_shadow or ()):
+            try:
+                self._shadow = sts2_rs.E2eTrainEnv(
+                    rm,
+                    self.seed,
+                    first_ooc=segment.end == "first_ooc",
+                    capture=False,
+                    f9_seed=0,
+                    f9_rate=0.0,
+                    priv_=False,
+                    rare=cfg.distill_rare,
+                    chars=False,
+                    caps=caps,
+                    game_version=factory.GAME_VERSION,
+                    detail=False,
+                )
+            except BaseException as ex:
+                if isinstance(ex, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                    raise
+                self._f9_counts_pre["distill/shadow_error"] += 1
         # The F9 check bodies run here, on the states the Rust env samples; the
         # checker's own sampler is unused (the Rust env draws the same stream).
         self.f9 = InvariantChecker(
@@ -220,7 +274,7 @@ class RsE2EEnv:
         )
         self._f9_key = ("e2e", next(_SEGMENT_SERIAL))
         self.f9_violations: list[str] = []
-        self._f9_counts: collections.Counter = collections.Counter()
+        self._f9_counts: collections.Counter = collections.Counter(self._f9_counts_pre)
         self.terminal: E2ETerminal | None = None
         self._done = False
 
@@ -252,25 +306,79 @@ class RsE2EEnv:
     def reset(self) -> RsDecision | E2ETerminal:
         """As `E2EEnv.reset`: raises when the advance to the first output fails
         (the worker's `MAX_START_FAILS` counts that) or on a build mismatch."""
-        return self._call(self._env.reset)
+        return self._call("reset")
 
     def step(self, choice: int) -> RsDecision | E2ETerminal:
-        return self._call(self._env.step, int(choice))
+        return self._call("step", int(choice))
 
     def step_action(self, ai: int) -> RsDecision | E2ETerminal:
-        return self._call(self._env.step_action, int(ai))
+        return self._call("step_action", int(ai))
+
+    @property
+    def has_shadow(self) -> bool:
+        """Whether the chars-off distill shadow still runs beside this segment."""
+        return self._shadow is not None
 
     # ── internals ───────────────────────────────────────────────────────────
 
-    def _call(self, f: Any, *args: Any) -> RsDecision | E2ETerminal:
+    def _call(self, name: str, *args: Any) -> RsDecision | E2ETerminal:
         import sts2_rs
 
         try:
-            r = f(*args)
+            r = getattr(self._env, name)(*args)
         except sts2_rs.E2eEnvRaise as ex:
+            self._shadow = None
             self._drain()  # the Python env checked these before it raised
             raise _python_error(*ex.args) from None
-        return self._out(r)
+        tok_t = self._shadow_call(name, args, r) if self._shadow is not None else None
+        out = self._out(r)
+        if isinstance(out, RsDecision):
+            out.tok_t = tok_t
+        return out
+
+    def _drop_shadow(self, why: str) -> None:
+        self._shadow = None
+        self._f9_counts[f"distill/{why}"] += 1
+
+    def _shadow_call(self, name: str, args: tuple, r: dict[str, Any]) -> Tok | None:
+        """Step the shadow as the main env was stepped; its row of the same decision, or
+        None (no teacher for this row). Drops the shadow, counted, on an error or on any
+        sign of a desync; never raises but for an interrupt."""
+        try:
+            s = getattr(self._shadow, name)(*args)
+        except BaseException as ex:
+            if isinstance(ex, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+                raise
+            self._drop_shadow("shadow_error")
+            return None
+        if r["kind"] != s["kind"]:
+            self._drop_shadow("desync")
+            return None
+        if r["kind"] != "decision":
+            self._shadow = None  # the segment ended on both
+            return None
+        if any(r[k] != s[k] for k in _SHADOW_KEYS):
+            self._drop_shadow("desync")
+            return None
+        if r["bootstrap"]:  # a value-only row: no teacher
+            self._shadow = None
+            return None
+        tm, ts = r.get("tok"), s.get("tok")
+        if tm is None or ts is None:
+            if ts is None:
+                self._f9_counts["distill/shadow_tok_error"] += 1
+            return None
+        # The merged classes must be the same (the teacher's probs align by class).
+        if tm["mem_class"] != ts["mem_class"] or tm["cls_kind"] != ts["cls_kind"]:
+            self._drop_shadow("desync")
+            return None
+        if not r["is_combat"] and not _ooc_rows_agree(tm, ts):
+            # Out of combat the "chars" event writes RUNCTX's X_CHAR only (tokens.rs
+            # `head`): anything else differing is a desync.
+            self._drop_shadow("desync")
+            return None
+        self._f9_counts["distill/shadow_rows"] += 1
+        return tok_of(ts)
 
     def _out(self, r: dict[str, Any]) -> RsDecision | E2ETerminal:
         self._drain()

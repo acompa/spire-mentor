@@ -1009,6 +1009,9 @@ def ppo_losses(
                 "ks_kl": (kl_rows * tkf).sum(),
                 "ks_ce": (ce_rows * tkf).sum(),
                 "ks_loss": ks_rows.sum(),
+                # The teacher term per type bin (the trained rows' bins, like vloss_t).
+                "n_ks_t": torch.zeros(n_types, device=vt.device).index_add_(0, dv, tkf),
+                "ks_kl_t": torch.zeros(n_types, device=vt.device).index_add_(0, dv, kl_rows * tkf),
                 "n_fl": flf.sum(),
                 "fl_loss": fl_rows.sum(),
                 "fl_below": fl_below.sum(),
@@ -1024,7 +1027,8 @@ def stats_means(sums: Mapping[str, Any]) -> dict[str, Any]:
     """Means of `ppo_losses` stats summed over chunks, minibatches and ranks.
 
     Scalar sums are divided by their row counts (n_v, n_pi or n_ks); the
-    per-type vectors (``*_t``) by n_pi_t (``vloss_t`` by n_v_t), NaN where a type
+    per-type vectors (``*_t``) by n_pi_t (``vloss_t`` by n_v_t, ``ks_kl_t`` by
+    n_ks_t), NaN where a type
     had no rows.
     """
 
@@ -1059,6 +1063,11 @@ def stats_means(sums: Mapping[str, Any]) -> dict[str, Any]:
                 if k in sums:
                     out[k] = np.where(cnt > 0, f(sums[k]) / cnt, np.nan)
         out["n_pi_t"] = cnt
+    if "n_ks_t" in sums and "ks_kl_t" in sums:  # per type over the teacher-term rows
+        cnt = f(sums["n_ks_t"])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out["ks_kl_t"] = np.where(cnt > 0, f(sums["ks_kl_t"]) / cnt, np.nan)
+        out["n_ks_t"] = cnt
     if "n_v_t" in sums and "vloss_t" in sums:  # per type over the value rows (n_v_t)
         cnt = f(sums["n_v_t"])
         with np.errstate(invalid="ignore", divide="ignore"):

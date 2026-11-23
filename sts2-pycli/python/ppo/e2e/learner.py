@@ -128,7 +128,7 @@ from multiprocessing import get_context, shared_memory
 from multiprocessing.connection import wait
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 import torch
@@ -167,7 +167,7 @@ from .rowstore import (
 )
 from .rowstore import dense as dense_batch
 from .rowstore import sweep as rowstore_sweep
-from .update import Rank, rank_main
+from .update import Rank, check_distill_cfg, load_distill_rare, rank_main
 
 #: The row layout's stamp (`contracts.schema_sha256()`).
 SCHEMA_SHA256 = C.schema_sha256()
@@ -1255,6 +1255,24 @@ class Learner:
                 lam_c=cfg.lam_c,
                 lam_r=cfg.lam_r,
             )
+        try:  # the distillation teacher's file, characters and inputs, before any worker
+            check_distill_cfg(algo.cfg, lane_filled=cfg.filled)
+            if algo.cfg.distill_acting and not cfg.rust_env:
+                raise ValueError(
+                    'distill_source "acting" needs --rust-env true (the chars-off shadow '
+                    "env is the Rust env's)"
+                )
+            if algo.cfg.distill_acting and any(self._teacher_flags()):
+                # The serving-time scorer and a combat or run teacher would share the
+                # rows' `tprob`/`t_src`/`has_t`: the update could not tell a stale
+                # teacher row from a distill target.
+                raise ValueError(
+                    'distill_source "acting" takes no --teacher-pair, --combat-teacher or'
+                    " --run-teacher (they write the same rows' teacher probs)"
+                )
+            self.distill_rare = load_distill_rare(algo.cfg) if algo.cfg.distill_acting else None
+        except (ValueError, OSError) as e:
+            raise UsageError(f"distill: {e}") from None
         self._resolve_mix(saved_mix)
         self._resolve_forced(saved_forced)
         self._resolve_human(saved_human)
@@ -1297,6 +1315,28 @@ class Learner:
         ).to(self.dev_i)
         self.net_inf.eval()
         self.net_inf.bf16 = cfg.bf16 and self.dev_i.type == "cuda"
+        # GH #1197 distill_source "acting": the teacher scores the workers' chars-off
+        # shadow rows here, at serving time (`distill.DistillScorer`).
+        self.distill_scorer = None
+        if algo.cfg.distill_acting:
+            from .distill import DistillScorer
+            from .update import load_distill_teacher
+
+            try:
+                teacher = load_distill_teacher(
+                    algo.cfg,
+                    self.dev_i,
+                    schema_sha256=SCHEMA_SHA256,
+                    vocab_sha256=self.stamps["vocab_sha256"],
+                    student=self.net_inf,
+                    lane_filled=cfg.filled,
+                )
+            except (ValueError, OSError) as e:
+                raise UsageError(f"distill: {e}") from None
+            teacher.bf16 = self.net_inf.bf16
+            self.distill_scorer = DistillScorer(
+                teacher, self.dev_i, int(algo.cfg.distill_flush_rows)
+            )
         # The serving forward; compiled once, it keeps reading `net_inf`'s parameters,
         # which each update's `load_state_dict` overwrites in place.
         self._fwd_packed = self.net_inf.forward_packed
@@ -1551,6 +1591,12 @@ class Learner:
             "shm_rounds": bool(cfg.shm_rounds),
             "compact_rows": bool(cfg.compact_rows),
             "mix": dict(cfg.mix) if cfg.mix else None,
+            # GH #1197: the characters whose segments run a chars-off distill shadow.
+            "distill_shadow": (
+                list(self.algo.cfg.distill_chars) if self.distill_scorer is not None else None
+            ),
+            # Its S_ctx content slots' RareMap (the teacher's training rows'), or None.
+            "distill_rare": self.distill_rare if self.distill_scorer is not None else None,
             "forced": dict(cfg.forced) if cfg.forced else None,
             "human": dict(cfg.human) if cfg.human else None,
         }
@@ -1699,8 +1745,17 @@ class Learner:
             beh = lp_s.clone()
             idx = torch.from_numpy(np.asarray(acted, np.int64)).to(self.dev_i, non_blocking=True)
             beh[idx] = torch.from_numpy(tw).to(self.dev_i, non_blocking=True)
-        act = torch.multinomial(beh.exp(), 1, generator=self.gen).squeeze(1)
+        # A row with a NaN/+inf log-prob or nothing legal (all -inf) would trip
+        # multinomial's device assert, which names nothing. Such rows sample from a
+        # harmless stand-in, and after the sync below `_serve_bad` dumps the round
+        # and raises (the watchdog resumes).
+        bad = self._bad_rows(beh)
+        probs = beh.exp().masked_fill(bad[:, None], 1.0)
+        act = torch.multinomial(probs, 1, generator=self.gen).squeeze(1)
         logp = beh.gather(1, act[:, None]).squeeze(1).cpu().numpy()
+        bad_np = bad.cpu().numpy()
+        if bad_np.any():
+            self._serve_bad(ch, metas, bad_np, lp_s, beh, actors_, acted)
         act_np = act.cpu().numpy()
         values = v_dev.cpu().numpy()
         st["fwd_s"] += time.time() - tf
@@ -1726,14 +1781,75 @@ class Learner:
         st["teacher_rows"] += int((actors_[live] != A.ACTOR_STUDENT).sum())
         return act_np
 
+    def _serve_bad(
+        self,
+        ch: Round,
+        metas: np.ndarray,
+        bad: np.ndarray,
+        lp_s: torch.Tensor,
+        beh: torch.Tensor,
+        actors_: np.ndarray,
+        acted: list[int],
+    ) -> None:
+        """Dump the serving round with non-finite or all-masked rows `bad`, then raise."""
+        import pickle
+
+        it = int(self.algo.clocks.it)
+        idx = np.flatnonzero(bad)
+        acted_set = set(acted)
+        rinfo = []
+        for i in idx.tolist():
+            m = metas[i]
+            seg = self.segs.get(int(m[MC["uid"]]))
+            rinfo.append(
+                {
+                    "i": i,
+                    "it": int(ch.it),
+                    "seg_kind": getattr(seg, "kind", None),
+                    "actor": int(actors_[i]),
+                    "teacher_acted": i in acted_set,
+                    "meta": {k: int(m[v]) for k, v in MC.items()},
+                }
+            )
+        dump = {
+            "it": it,
+            "bad_rows": rinfo,
+            "metas": metas,
+            "lp_s": lp_s[torch.from_numpy(idx).to(lp_s.device)].float().cpu().numpy(),
+            "beh": beh[torch.from_numpy(idx).to(beh.device)].float().cpu().numpy(),
+            "chunk_rb": ch.rb,
+        }
+        path = self.sd.p(f"serve_bad_it{it}_{os.getpid()}.pkl")
+        try:
+            with open(path, "wb") as f:
+                pickle.dump(dump, f)
+        except Exception as e:  # the dump must not hide the failure
+            print(f"[e2e] serve guard: dump to {path} failed: {e!r}", flush=True)
+        print(f"[e2e] serve guard: {len(idx)} bad rows at it {it}: {rinfo}", flush=True)
+        raise RuntimeError(
+            f"serve: {len(idx)} rows with non-finite or all-masked log-probs (dump {path})"
+        )
+
+    @staticmethod
+    def _bad_rows(lp: torch.Tensor) -> torch.Tensor:
+        """The rows with a NaN/+inf log-prob or nothing legal (all -inf): multinomial's
+        device assert on them names nothing, so they sample from a stand-in and the
+        serve guard (`_serve_bad`) reports them after the sync."""
+        return torch.isnan(lp).any(1) | torch.isposinf(lp).any(1) | (lp.amax(1) == -torch.inf)
+
     @torch.no_grad()
-    def _serve_queue(self, ch: Round) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _serve_queue(
+        self, ch: Round
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """`_serve`'s device work for a round no teacher scores, queued and not waited
-        for: the sampled classes, their log-probs and the values (on the device).
-        The same forward and the same draw as `_serve`'s."""
+        for: the sampled classes, their log-probs, the values, the serve guard's bad
+        rows and the log-probs (on the device). The same forward and the same draw as
+        `_serve`'s."""
         lp_s, v_dev = self._student(ch)
-        act = torch.multinomial(lp_s.exp(), 1, generator=self.gen).squeeze(1)
-        return act, lp_s.gather(1, act[:, None]).squeeze(1), v_dev
+        bad = self._bad_rows(lp_s)
+        probs = lp_s.exp().masked_fill(bad[:, None], 1.0)
+        act = torch.multinomial(probs, 1, generator=self.gen).squeeze(1)
+        return act, lp_s.gather(1, act[:, None]).squeeze(1), v_dev, bad, lp_s
 
     def _serve_fill(
         self, ch: Round, metas: np.ndarray, act: np.ndarray, logp: np.ndarray, values: np.ndarray
@@ -1833,6 +1949,8 @@ class Learner:
             "rows": 0,
             "boot_rows": 0,
             "rows_type": Counter(),
+            # GH #1604/#1606: the new option kinds, offered and chosen (`_kind_stats`).
+            "opt_kind": Counter(),
             "teacher_rows": 0,
             "agree": Counter(),
             "agree_n": Counter(),
@@ -1861,6 +1979,10 @@ class Learner:
         r0 = self.source.recv_s
         while self.n_new < cfg.iter_decisions:
             if self._stop_wanted():
+                if self.distill_scorer is not None:
+                    # The stop drops this collection's rows (no cut, no update), so
+                    # their shadow rows and counters go with them, unscored.
+                    self.distill_scorer.discard()
                 return None
             if self.packing is not None:  # the last cut's block is copied: submit it
                 self._pack_done(block=False)
@@ -1874,6 +1996,7 @@ class Learner:
             feats: list[Any] = []
             per_src: list[tuple[int, int]] = []
             ends_all: list[dict[str, Any]] = []
+            shadow: list[tuple[int, int, Any]] = []  # (first row, rows, payload)
             metas = _round_meta([m[2] for _i, m in msgs])
             rb = concat([m[4] for _i, m in msgs])
             if len(msgs) == 1 and getattr(self.source, "borrowed", False):
@@ -1903,6 +2026,9 @@ class Learner:
                 n = len(meta)
                 fx = ex.get("feats")
                 feats.extend(fx if fx is not None else [None] * n)
+                dx = ex.get("distill")
+                if dx is not None and self.distill_scorer is not None:
+                    shadow.append((j0, n, dx))
                 per_src.append((i, n))
                 j0 += n
                 ends_all.extend(ends)
@@ -1917,6 +2043,12 @@ class Learner:
             if rows:
                 if queued is None:
                     acts = self._serve(ch, metas, feats, st)
+                ds = self.distill_scorer
+                if ds is not None:
+                    for base, n_msg, dx in shadow:
+                        ds.add(ch, base, n_msg, dx)
+                    if ds.pending >= ds.flush_rows:
+                        ds.flush()
                 st["batches"] += 1
                 st["batch_rows"] += rows
                 live = metas[:, MC["boot"]] == 0
@@ -1939,7 +2071,15 @@ class Learner:
             info = {"decisions": self.decisions, "feats": want_feats}
             if queued is not None:  # wait for the device now; the workers go first
                 acts = queued[0].cpu().numpy()
+                bad_np = queued[3].cpu().numpy()
+                if bad_np.any():
+                    lp_q = queued[4]
+                    self._serve_bad(
+                        ch, metas, bad_np, lp_q, lp_q, np.zeros(len(metas), np.int64), []
+                    )
                 st["fwd_s"] += time.time() - tf
+            if rows and len(acts):
+                _kind_stats(ch.rb, metas, acts, st["opt_kind"])
             o = 0
             for i, k in per_src:
                 self.source.send(i, ("act", acts[o : o + k].tolist(), info))
@@ -1949,6 +2089,11 @@ class Learner:
             for e in ends_all:
                 self._ingest_end(e, st)
             self._ops_tick()
+        if self.distill_scorer is not None:
+            # Before the cut: it copies the rows (`dispatch`, `pack_rows`) and moves the
+            # held ones to its block, so a later write would be lost.
+            self.distill_scorer.flush()
+            st["distill"] = self.distill_scorer.take_stats()
         st["collect_s"] = time.time() - t0
         st["recv_s"] = self.source.recv_s - r0
         st["collection"] = c
@@ -2560,6 +2705,7 @@ class Learner:
             "rows": cst["rows"],
             "boot_rows": cst["boot_rows"],
             "rows_type": dict(cst["rows_type"]),
+            "opt_kind": dict(cst["opt_kind"]),
             "teacher_rows": cst["teacher_rows"],
             "runs": cst["runs"],
             "practice_segments": cst["practice"],
@@ -2599,6 +2745,21 @@ class Learner:
             from .mix import MixCfg, mix_share
 
             row["mix_share"] = mix_share(row["decisions"], MixCfg.from_dict(self.cfg.mix))
+        if cst.get("distill") is not None:
+            # GH #1197 "acting": the serving-time teacher and the workers' shadows (the
+            # segments' `distill/*` counters arrive with their end records).
+            sc = cst["segment_counts"]
+            d = dict(cst["distill"])
+            d.update(
+                {
+                    "shadow_rows": int(sc.get("distill/shadow_rows", 0)),
+                    "desync": int(sc.get("distill/desync", 0)),
+                    "shadow_error": int(sc.get("distill/shadow_error", 0)),
+                    "shadow_tok_error": int(sc.get("distill/shadow_tok_error", 0)),
+                }
+            )
+            row["distill"] = d
+            row["distill_desyncs"] = d["desync"] + d["shadow_error"]
         if self.lc_applied is not None:
             row["lc_verdict_pass"] = self.lc_applied
         if inf.get("fill") is not None:
@@ -2828,6 +2989,11 @@ class Learner:
                 "stamps": self.stamps,
                 "resumed_from": self.resumed_from,
                 "teachers": self.teacher_provenance(),
+                # The distillation teacher (never a stamp: `stamps.teacher` is the combat
+                # teacher's, which the restart rule checks).
+                "distill": {
+                    k: v for k, v in self.algo.cfg.to_dict().items() if k.startswith("distill_")
+                },
             }
         )
         OC.atomic_write_text(self.sd.p("cfg.json"), json.dumps(rec, indent=1) + "\n")
@@ -2906,6 +3072,27 @@ class Learner:
 _ROW_UPDATE_KEYS = ("kl_t", "ent_norm_t", "ent_norm_ct", "kl_ct", "vloss_c")
 #: The acts a run's per-character boss and death counts cover.
 ACTS = (1, 2, 3)
+
+
+#: The option kinds `_kind_stats` counts: POTION_TARGET (GH #1604), the potion popup's
+#: USE_POTION_OOC and DISCARD_POTION (GH #1606).
+KIND_STATS: Final = {"potion_target": 5, "use_potion_ooc": 54, "discard_potion": 55}
+
+
+def _kind_stats(rb: Any, metas: np.ndarray, acts: np.ndarray, out: Counter) -> None:
+    """Count, over a round's live rows, those offering each `KIND_STATS` kind
+    (`<name>_offered`) and those choosing it (`<name>_chosen`)."""
+    live = metas[:, MC["boot"]] == 0
+    nc = np.asarray(rb["n_classes"], np.int64)
+    kinds = np.asarray(rb["cls_kind"], np.int64)
+    off = np.concatenate(([0], np.cumsum(nc)))
+    chosen = kinds[off[:-1] + np.minimum(acts, np.maximum(nc - 1, 0))]
+    row_of = np.repeat(np.arange(len(nc)), nc)
+    for name, k in KIND_STATS.items():
+        offered = np.zeros(len(nc), bool)
+        offered[row_of[kinds == k]] = True
+        out[f"{name}_offered"] += int((offered & live).sum())
+        out[f"{name}_chosen"] += int(((chosen == k) & live & (nc > 0)).sum())
 
 
 def _ratio(k: float, n: float) -> float:

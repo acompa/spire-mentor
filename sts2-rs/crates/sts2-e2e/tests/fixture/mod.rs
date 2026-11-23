@@ -31,16 +31,16 @@ pub fn weights_path() -> PathBuf {
     std::env::var_os("E2E_WEIGHTS").map_or_else(
         || {
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../sts2-pycli/data/e2e/allchar_e2e_d2500_ema0999.e2ew")
+                .join("../../../sts2-pycli/data/e2e/allchar_e2e_d4500_ema0999.e2ew")
         },
         PathBuf::from,
     )
 }
 
-/// `E2E_FIXTURES`, default `~/runs/e2e-wb/fixtures-allchar-d2500`.
+/// `E2E_FIXTURES`, default `~/runs/e2e-wb/fixtures-allchar-d4500`.
 pub fn fixtures_dir() -> PathBuf {
     std::env::var_os("E2E_FIXTURES").map_or_else(
-        || home().join("runs/e2e-wb/fixtures-allchar-d2500"),
+        || home().join("runs/e2e-wb/fixtures-allchar-d4500"),
         PathBuf::from,
     )
 }

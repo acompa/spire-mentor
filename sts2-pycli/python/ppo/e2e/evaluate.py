@@ -478,6 +478,20 @@ def error_row(seed: int, policy: str, error: str) -> dict[str, Any]:
     }
 
 
+@dataclass
+class _Game:
+    """One open run of a `Player`."""
+
+    seed: int
+    env: Any
+    tracker: Any
+    out: Any
+    decisions: int = 0
+
+    def live(self) -> bool:
+        return is_decision(self.out) and not getattr(self.out, "bootstrap", False)
+
+
 class Player:
     """Plays seeds with one env factory and one policy (one per worker process).
 
@@ -499,6 +513,8 @@ class Player:
         self.policy_spec = policy_spec
         self.make_env = make_env_factory(env_spec)
         self.policy = make_policy(policy_spec, ckpt, device)
+        self._games: list[_Game] = []  # the open runs of the batched interface
+        self._done: list[tuple[int, dict[str, Any]]] = []
         self.sink = None
         if log_dir:
             from .actionlog import LogSink
@@ -526,24 +542,94 @@ class Player:
             return error_row(seed, self.policy_spec, _tail(traceback.format_exc()))
 
     def _play(self, seed: int) -> dict[str, Any]:
-        from ppo.env import metrics_snapshot
-        from ppo.workers import _reached_second_boss
+        g = self._open(seed)
+        while g.live():
+            g.tracker.observe(g.env.rm)
+            (choice,) = self.policy.act_decisions([g.out])
+            self._step(g, choice)
+        return self._finish(g)
 
+    def _open(self, seed: int) -> _Game:
         begin = getattr(self.policy, "begin_run", None)
         if begin is not None:
             begin(seed)
         env = self.make_env(seed)
-        tracker = BossTracker()
-        out = env.reset()
-        decisions = 0
-        while is_decision(out) and not getattr(out, "bootstrap", False):
-            tracker.observe(env.rm)
-            (choice,) = self.policy.act_decisions([out])
-            n = len(out.members)
-            if isinstance(choice, bool) or not 0 <= int(choice) < n:
-                raise ValueError(f"policy chose class {choice!r} of {n}")
-            out = env.step(int(choice))
-            decisions += 1
+        return _Game(seed, env, BossTracker(), env.reset())
+
+    @staticmethod
+    def _step(g: _Game, choice: Any) -> None:
+        n = len(g.out.members)
+        if isinstance(choice, bool) or not 0 <= int(choice) < n:
+            raise ValueError(f"policy chose class {choice!r} of {n}")
+        g.out = g.env.step(int(choice))
+        g.decisions += 1
+
+    # The batched interface (`--games` above 1): a worker keeps several runs open
+    # and asks the policy for all their next decisions in one call.
+
+    def start(self, seed: int) -> None:
+        """Open the run of `seed`; a run that fails to open is booked as its error."""
+        try:
+            self._games.append(self._open(seed))
+        except BaseException as e:  # a Rust panic is a BaseException
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
+            self._done.append((seed, self._error(seed)))
+
+    def advance(self) -> list[tuple[int, dict[str, Any]]]:
+        """One decision of every open run, from one `act_decisions` call; returns
+        the (seed, row) of the runs that ended. A run that raises is booked as its
+        error; a policy call that raises books every run it was asked about."""
+        done, self._done = self._done, []
+        live: list[_Game] = []
+        for g in self._games:
+            if g.live():
+                try:
+                    g.tracker.observe(g.env.rm)
+                    live.append(g)
+                    continue
+                except BaseException as e:
+                    if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                        raise
+                    done.append((g.seed, self._error(g.seed)))
+                    continue
+            try:
+                done.append((g.seed, self._finish(g)))
+            except BaseException as e:
+                if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                    raise
+                done.append((g.seed, self._error(g.seed)))
+        self._games = []
+        if not live:
+            return done
+        try:
+            choices = self.policy.act_decisions([g.out for g in live])
+            if len(choices) != len(live):
+                raise ValueError(f"policy answered {len(choices)} of {len(live)} decisions")
+        except BaseException as e:
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
+            why = self._error(-1)["error"]
+            return done + [(g.seed, error_row(g.seed, self.policy_spec, why)) for g in live]
+        for g, choice in zip(live, choices, strict=True):
+            try:
+                self._step(g, choice)
+                self._games.append(g)
+            except BaseException as e:
+                if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                    raise
+                done.append((g.seed, self._error(g.seed)))
+        return done
+
+    def _error(self, seed: int) -> dict[str, Any]:
+        """The error row of the exception being handled."""
+        return error_row(seed, self.policy_spec, _tail(traceback.format_exc()))
+
+    def _finish(self, g: _Game) -> dict[str, Any]:
+        from ppo.env import metrics_snapshot
+        from ppo.workers import _reached_second_boss
+
+        seed, env, tracker, out, decisions = g.seed, g.env, g.tracker, g.out, g.decisions
         if is_decision(out):
             raise RuntimeError("the env ended a full run on a bootstrap row")
         self._log_run(out)
@@ -601,6 +687,10 @@ def _worker_main(task_conn: Any, result_conn: Any, cfg: dict[str, Any]) -> None:
     if torch is not None:
         torch.set_num_threads(1)
     result_conn.send(("ready", None))
+    games = int(cfg.get("games") or 1)
+    if games > 1 and hasattr(handler, "advance"):
+        _serve_batched(task_conn, result_conn, handler, games)
+        return
     while True:
         try:
             task = task_conn.recv()
@@ -611,23 +701,48 @@ def _worker_main(task_conn: Any, result_conn: Any, cfg: dict[str, Any]) -> None:
         result_conn.send(("row", (task, handler.play(task))))
 
 
+def _serve_batched(task_conn: Any, result_conn: Any, handler: Any, games: int) -> None:
+    """A worker's loop with up to `games` tasks open: take the tasks that are waiting
+    (block only when none is open), then `handler.advance()` once and send the rows
+    of the tasks that ended."""
+    n_open, closed = 0, False
+    while True:
+        while not closed and n_open < games and (n_open == 0 or task_conn.poll(0)):
+            try:
+                task = task_conn.recv()
+            except EOFError:
+                return
+            if task is None:
+                closed = True
+                break
+            handler.start(task)
+            n_open += 1
+        if n_open == 0:
+            if closed:
+                return
+            continue
+        for task, row in handler.advance():
+            result_conn.send(("row", (task, row)))
+            n_open -= 1
+
+
 @dataclass
 class _Worker:
     proc: Any
     tasks: Any
     results: Any
     ready: bool = False
-    task: Any = None
-    started: float = 0.0
+    open: list[tuple[Any, float]] = field(default_factory=list)  # (task, started)
 
 
 @dataclass
 class Pool:
-    """``procs`` spawn workers, each fed one task at a time; hung or dead ones replaced.
+    """``procs`` spawn workers, each fed up to ``games`` tasks at a time (one by
+    default); hung or dead ones replaced.
 
     `on_row(task, result)` gets every finished task. A worker that runs one task
-    longer than `hang_timeout_s`, or dies, books ``make_error(task, why)`` for it.
-    Tasks must not be None.
+    longer than `hang_timeout_s`, or dies, books ``make_error(task, why)`` for each
+    task it had open. Tasks must not be None.
     """
 
     cfg: dict[str, Any]
@@ -638,6 +753,7 @@ class Pool:
     workers: list[_Worker] = field(default_factory=list)
     max_startup_failures: int = 3
     _startup_failures: int = 0
+    games: int = 1
 
     def _spawn(self) -> _Worker:
         ctx = mp.get_context("spawn")
@@ -659,7 +775,7 @@ class Pool:
                 c.close()
 
     def _replace(self, w: _Worker, why: str) -> None:
-        task = w.task
+        tasks = [t for t, _ in w.open]
         if not w.ready:
             self._startup_failures += 1
             if self._startup_failures >= self.max_startup_failures:
@@ -667,7 +783,7 @@ class Pool:
                 raise EvalError(f"workers keep dying before they are ready ({why})")
         self._kill(w)
         self.workers[self.workers.index(w)] = self._spawn()
-        if task is not None:
+        for task in tasks:
             self.on_row(task, self.make_error(task, why))
 
     def run(self, tasks: Iterable[Any]) -> None:
@@ -676,14 +792,19 @@ class Pool:
             return
         self.workers = [self._spawn() for _ in range(min(self.procs, len(todo)))]
         try:
-            while todo or any(w.task is not None for w in self.workers):
-                for w in list(self.workers):
-                    if w.ready and w.task is None and todo:
-                        w.task, w.started = todo.popleft(), time.monotonic()
-                        try:
-                            w.tasks.send(w.task)
-                        except OSError:
-                            self._replace(w, "worker died before taking its task")
+            while todo or any(w.open for w in self.workers):
+                fed = True
+                while fed and todo:  # one task per worker a pass: an even spread
+                    fed = False
+                    for w in list(self.workers):
+                        if w.ready and len(w.open) < self.games and todo:
+                            task = todo.popleft()
+                            w.open.append((task, time.monotonic()))
+                            fed = True
+                            try:
+                                w.tasks.send(task)
+                            except OSError:
+                                self._replace(w, "worker died before taking its task")
                 by_conn = {id(w.results): w for w in self.workers}
                 for conn in conn_wait([w.results for w in self.workers], timeout=1.0):
                     w = by_conn[id(conn)]
@@ -698,11 +819,12 @@ class Pool:
                         w.ready = True
                     elif kind == "row":
                         task, row = payload
-                        w.task = None
+                        at = next(i for i, (t, _) in enumerate(w.open) if t == task)
+                        del w.open[at]
                         self.on_row(task, row)
                 now = time.monotonic()
                 for w in list(self.workers):
-                    if w.task is not None and now - w.started > self.hang_timeout_s:
+                    if w.open and now - min(t0 for _, t0 in w.open) > self.hang_timeout_s:
                         self._replace(w, f"killed: no result after {self.hang_timeout_s:.0f} s")
                     elif not w.proc.is_alive():
                         self._replace(w, f"worker died (exit code {w.proc.exitcode})")
@@ -890,6 +1012,8 @@ def run_cmd(args: argparse.Namespace, argv: Sequence[str]) -> int:
         raise EvalError(f"{panel.name} takes no --{loose[0].replace('_', '-')}")
     if args.procs < 1:
         raise EvalError("--procs must be positive")
+    if args.games < 1:
+        raise EvalError("--games must be positive")
     for kv in args.set_env:
         if "=" not in kv or not kv.split("=", 1)[0]:
             raise EvalError(f"--set-env needs K=V, got {kv!r}")
@@ -992,10 +1116,12 @@ def run_cmd(args: argparse.Namespace, argv: Sequence[str]) -> int:
         },
         "quiet_stdout": bool(args.sealed),
         "stderr_log": str(arm_dir / "logs" / "workers.log") if args.sealed else None,
+        "games": args.games,
     }
     print(
         f"evaluate: {args.arm} {panel.name} seeds {args.seed_start}..{args.seed_start + args.n - 1}"
-        f" at {sha[:12]}; {len(todo)} of {len(ranges)} shard(s) to run, {args.procs} procs",
+        f" at {sha[:12]}; {len(todo)} of {len(ranges)} shard(s) to run, {args.procs} procs"
+        + (f" x {args.games} games" if args.games > 1 else ""),
         flush=True,
     )
     pending: dict[tuple[int, int], dict[int, dict[str, Any]]] = {r: {} for r in todo}
@@ -1027,7 +1153,7 @@ def run_cmd(args: argparse.Namespace, argv: Sequence[str]) -> int:
             )
 
     try:
-        pool = Pool(worker_cfg, args.procs, args.hang_timeout, on_row, make_error)
+        pool = Pool(worker_cfg, args.procs, args.hang_timeout, on_row, make_error, games=args.games)
         pool.run(s for lo, hi in todo for s in range(lo, hi))
     finally:
         for f in part_files.values():
@@ -1048,7 +1174,9 @@ def run_cmd(args: argparse.Namespace, argv: Sequence[str]) -> int:
         def on_retry(seed: int, row: dict[str, Any]) -> None:
             write_atomic(arm_dir / "retry" / f"s{seed}.jsonl", _dump(row), arm_dir / "work")
 
-        Pool(worker_cfg, args.procs, args.hang_timeout, on_retry, make_error).run(errored)
+        Pool(worker_cfg, args.procs, args.hang_timeout, on_retry, make_error, games=args.games).run(
+            errored
+        )
 
     digest = write_manifest(arm_dir, panel_dir / f"{args.arm}.sha256")
     rows, retry_rows = [], {}
@@ -1180,6 +1308,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     run.add_argument("--device", default="cpu")
     run.add_argument("--procs", type=int, required=True)
+    run.add_argument(
+        "--games",
+        type=int,
+        default=1,
+        help="runs each worker keeps open, their decisions batched into one policy call "
+        "(with --device cuda:N: one forward for all of them)",
+    )
     run.add_argument("--hang-timeout", type=float, default=DEFAULT_HANG_TIMEOUT_S)
     run.add_argument("--sealed", action="store_true")
     run.add_argument("--pin", default=os.environ.get("E2E_PIN") or None)

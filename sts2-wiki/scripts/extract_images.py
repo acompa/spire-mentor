@@ -356,7 +356,7 @@ def extract_standalone_dirs(pck_index, read_pck_file, output_dir: str) -> int:
             img = decode_ctex(ctex_data) if ctex_data else None
             if not img:
                 continue
-            rel = pck_file_path[len(prefix):].removesuffix(".import")
+            rel = pck_file_path[len(prefix) :].removesuffix(".import")
             out = Path(output_dir) / subdir / rel
             out.parent.mkdir(parents=True, exist_ok=True)
             img.save(out, "PNG")

@@ -1501,8 +1501,8 @@ mod tests {
     #[test]
     fn zh_overlay_shows_chinese_names_and_rendered_text() {
         let zh = data::zh_tables();
-        if !zh.is_present() || !cfg!(workbench_game_data) {
-            return; // a checkout without the game's tables (see build.rs)
+        if !zh.is_present() || !cfg!(workbench_game_data_v0_111_0) {
+            return; // a checkout without the v0.111.0 tables (see build.rs)
         }
         let d = data::data_for(GameVersion::V0_111_0);
         let eng = build_loc(d);

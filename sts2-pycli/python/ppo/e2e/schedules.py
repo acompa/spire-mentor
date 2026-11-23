@@ -82,6 +82,8 @@ __all__ = [
 CET = timezone(timedelta(hours=1), "CET")
 #: Sun Nov 8 2026, 06:00 CET: the lr anneal starts and the KL factor freezes.
 ANNEAL_START = datetime(2026, 11, 8, 6, 0, tzinfo=CET).timestamp()
+#: `ScheduleCfg.distill_source`'s values.
+DISTILL_SOURCES = ("update", "acting")
 
 
 @dataclass(frozen=True)
@@ -159,6 +161,69 @@ class ScheduleCfg:
     floor_ramp: int = 20_000_000
     # The run stops here. #1081's 1e9 annealed lr to 0 and stopped at 1B.
     budget_decisions: int = 10_000_000_000
+    # Learner-side distillation (GH #1197: the all-character lane forgets Ironclad).
+    # A frozen teacher net (`distill_ckpt`, a student export `--init` accepts, its file
+    # sha256 `distill_sha256`) runs on the update's own minibatch inputs; on the trained
+    # rows of `distill_chars` the loss adds distill_lambda * KL(pi_T || pi_S) through the
+    # kickstarting term (`algo.ppo_losses`). Off while distill_ckpt is None or the
+    # lambda is 0. It leaves lam_ks, the entropy gate and the KL control alone, and the
+    # update refuses it while the stored-row KS teacher is on. Only the path and the
+    # sha are saved (in state.pt's algo.cfg), never the teacher's weights. A state
+    # from before these fields existed loads with the defaults (off).
+    distill_ckpt: str | None = None
+    distill_sha256: str | None = None
+    distill_lambda: float = 0.0
+    distill_chars: tuple[str, ...] = ("Ironclad",)
+    # Where the teacher's probabilities come from. "update": the update rank runs the
+    # teacher on the stored rows (the rows the student reads). "acting": the workers
+    # run a chars-off shadow env beside each distill-character segment, the learner
+    # scores its rows with the teacher when it serves them and stores the probs in
+    # the rows' `tprob`; the update reads those and runs no teacher. "acting" is how a
+    # teacher trained without the "chars" fill event sees its own inputs on a lane
+    # whose rows carry it (`update.check_distill_teacher_inputs`).
+    distill_source: str = "update"
+    # "acting": the learner scores buffered shadow rows once this many are waiting
+    # (and always before a collection ends).
+    distill_flush_rows: int = 2048
+    # "acting": the RareMap the teacher's own training rows carried on their combat
+    # S_ctx content slots (a lane with a #1081 combat teacher, `--teacher-pair R3`,
+    # stores its rows through that teacher's map): a #1081 combat checkpoint holding
+    # it (`ck["rare"]`) and the map's `teachers.rare_sha256`. The shadow tokenizes
+    # through it, so the teacher reads exactly its training rows. None: universe rows.
+    distill_rare: str | None = None
+    distill_rare_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.distill_source not in DISTILL_SOURCES:
+            raise ValueError(
+                f"distill_source {self.distill_source!r}: one of {list(DISTILL_SOURCES)}"
+            )
+        if int(self.distill_flush_rows) < 1:
+            raise ValueError(f"distill_flush_rows {self.distill_flush_rows!r} must be >= 1")
+        if self.distill_ckpt is not None:
+            if not self.distill_sha256:
+                raise ValueError("distill_ckpt needs distill_sha256 (the file's sha256)")
+            if not self.distill_chars:
+                raise ValueError("distill_ckpt needs at least one of distill_chars")
+        if (self.distill_rare is None) != (self.distill_rare_sha256 is None):
+            raise ValueError("distill_rare and distill_rare_sha256 go together")
+        if self.distill_rare is not None and self.distill_source != "acting":
+            raise ValueError(
+                'distill_rare needs distill_source "acting" (only the shadow rows take it)'
+            )
+        lam = float(self.distill_lambda)
+        if not (math.isfinite(lam) and lam >= 0.0):
+            raise ValueError(f"distill_lambda {self.distill_lambda!r} must be finite and >= 0")
+
+    @property
+    def distill_on(self) -> bool:
+        """Whether the update runs the distillation teacher (a checkpoint and lambda > 0)."""
+        return self.distill_ckpt is not None and float(self.distill_lambda) > 0.0
+
+    @property
+    def distill_acting(self) -> bool:
+        """Whether the teacher scores the workers' chars-off shadow rows at serving time."""
+        return self.distill_on and self.distill_source == "acting"
 
     def to_dict(self) -> dict[str, Any]:
         return {k: list(v) if isinstance(v, tuple) else v for k, v in asdict(self).items()}

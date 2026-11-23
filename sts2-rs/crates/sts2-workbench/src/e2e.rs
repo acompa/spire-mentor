@@ -27,10 +27,10 @@ use sts2_e2e::tokens::{self, TokCache};
 
 /// The weights file the host serves under `/e2e/` (the static build copies
 /// `sts2-pycli/data/e2e/<this>`).
-pub const E2E_FILE: &str = "allchar_e2e_d2500_ema0999.e2ew";
+pub const E2E_FILE: &str = "allchar_e2e_d4500_ema0999.e2ew";
 /// The Fool's own student (GH #1535): a v0.113.0 net, served beside
 /// [`E2E_FILE`] and fetched only when a Fool run needs it.
-pub const E2E_FOOL_FILE: &str = "fool_e2e_d600_ema0996.e2ew";
+pub const E2E_FOOL_FILE: &str = "fool_e2e_d850_ema0996.e2ew";
 /// The build the Fool's student plays (the Fool is v0.113.0-only).
 pub const FOOL_GAME_VERSION: &str = "v0.113.0";
 pub use sts2_e2e::env::CharacterId;
@@ -661,13 +661,15 @@ mod tests {
     /// 46 (the act-3 bosses) of `1SNVTCEXKR0Q`. The d2250 net (2026-11-21)
     /// and the d2500 net (2026-11-22) win both. Since a live Hex shows its
     /// Hexed cards Ethereal (2026-11-22) the d2500 net dies on floor 46 (the
-    /// act-3 bosses) of `1SNVTCEXKR0Q`. Pinned natively
+    /// act-3 bosses) of `1SNVTCEXKR0Q`. The d4500 net (2026-11-23) wins
+    /// `1SNVTCEXKR0G` and dies on floor 16 (the act-1 boss) of
+    /// `1SNVTCEXKR0Q` (its Ironclad DEV-1000 is 79.9%, d2500's 81.2%). Pinned natively
     /// (no Python cross-check for this net yet): a change means the net or
     /// engine moved.
     #[test]
     fn greedy_attempt_matches_reference() {
         let Some(net) = shipped_net() else { return };
-        for (seed, won, floor) in [("1SNVTCEXKR0Q", false, 46), ("1SNVTCEXKR0G", true, 46)] {
+        for (seed, won, floor) in [("1SNVTCEXKR0Q", false, 16), ("1SNVTCEXKR0G", true, 46)] {
             let a = attempt(
                 &net,
                 CharacterId::Ironclad,

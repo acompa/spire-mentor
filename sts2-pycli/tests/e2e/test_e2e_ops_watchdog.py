@@ -346,6 +346,32 @@ def test_stall_restarts_the_learner(make_lane, mode):
     assert lane.done()["reason"] == "budget"
 
 
+def test_a_restart_reads_lane_args_and_learner_env_again(make_lane):
+    """A fix to lane.args or lane.learner_env reaches the next learner start,
+    also a restart the watchdog makes on its own, without restarting the unit."""
+    plan = {
+        "default": {"budget": 1000},
+        "launches": {"1": {"stall_at": 900, "stall_mode": "silent"}},
+    }
+    env = {
+        "E2E_WD_STALL_FRAC": "0.5",
+        "E2E_WD_STALL_GRACE_S": "1.5",
+        "E2E_WD_STALL_WINDOW_S": "0.3",
+    }
+    lane = make_lane(plan=plan, env=env, args=["--note", "old"], learner_env={"LANE_KNOB": "old"})
+    p = lane.start()
+    lane.wait_for(lambda: len(lane.starts()) == 1, what="the first start")
+    (lane.save / C.LANE_ARGS).write_text("--note\nnew\n", encoding="utf-8")
+    (lane.save / C.LANE_LEARNER_ENV).write_text("LANE_KNOB=new\nLANE_KNOB2=1\n", encoding="utf-8")
+    assert lane.wait(p) == 0, lane.dump()
+    first, second = lane.starts()
+    assert first["extra"] == ["--note", "old"] and second["extra"] == ["--note", "new"]
+    assert "LANE_KNOB2" not in first["env_keys"] and "LANE_KNOB2" in second["env_keys"]
+    assert "this start uses the new ones" in (lane.save / "ops" / "watchdog.log").read_text(
+        encoding="utf-8"
+    )
+
+
 # ── NaN ──────────────────────────────────────────────────────────────────────
 
 # With full states every 50 (keep 3) and milestone pins every 200, a NaN at

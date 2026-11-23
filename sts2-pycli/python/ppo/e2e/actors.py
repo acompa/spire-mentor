@@ -357,8 +357,17 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
         import sts2_rs
 
         rust_rare = sts2_rs.E2eRareMap(cfg["teacher_rare"])
+    distill_rare = None
+    if rust and cfg.get("distill_shadow") and cfg.get("distill_rare"):
+        import sts2_rs
+
+        distill_rare = sts2_rs.E2eRareMap(cfg["distill_rare"])
     env_cfg = EnvConfig(
-        f9_tolerate=tuple(cfg.get("f9_tolerate") or ()), rust=rust, rust_rare=rust_rare
+        f9_tolerate=tuple(cfg.get("f9_tolerate") or ()),
+        rust=rust,
+        rust_rare=rust_rare,
+        distill_shadow=tuple(cfg.get("distill_shadow") or ()),
+        distill_rare=distill_rare,
     )
     # An all-character lane (GH #1197): each full run draws its character at the
     # learner's decision clock (`mix.draw_character`); None plays the process's.
@@ -479,6 +488,8 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
         metas: list[tuple[int, ...]] = []
         r_prev: list[float] = []
         feats: list[Any] = []
+        t_idx: list[int] = []  # rows (positions in `toks`) with a distill shadow row
+        t_toks: list[Any] = []
         for s in slots:
             while True:
                 if s.d is None:
@@ -546,6 +557,10 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
                 cells.append(int(d.cell))
                 boots.append(bool(d.bootstrap))
                 feats.append(f)
+                tt = getattr(d, "tok_t", None)
+                if tt is not None:
+                    t_idx.append(len(toks) - 1)
+                    t_toks.append(tt)
                 s.t += 1
                 if d.bootstrap:  # a practice segment's value-only end row
                     ends.append(
@@ -585,6 +600,15 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
                 },
             }
         extra = {"feats": feats if want["feats"] else None, "stats": stats, "stamps": stamps}
+        if t_toks:
+            # GH #1197: the chars-off shadow rows the learner's distill teacher scores,
+            # each the row at `idx` of this round's batch (same run uid and t).
+            extra["distill"] = {
+                "idx": np.asarray(t_idx, np.int64),
+                "rb": TK.row_batch(
+                    t_toks, run_uid=[uids[i] for i in t_idx], t=[ts[i] for i in t_idx]
+                ),
+            }
         rb = TK.row_batch(toks, run_uid=uids, t=ts, cell=cells, bootstrap=boots)
         if cfg.get("compact_rows"):  # the learner stores, serves and trains on these
             rb = C.compact_rows(rb)
