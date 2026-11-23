@@ -90,6 +90,8 @@ fmodstudioapi*linux.tar.gz
 # `just import-game` run log (runtime noise; the steps are idempotent)
 logs/import-game.log
 
+# `scripts/fetch_weights.py --train` downloads the .pt checkpoints here.
+/weights/
 
 # ---------------------------------------------------------------------------
 # Generated from YOUR game copy by `just import-game` (docs/bring-your-own-game.md):
@@ -107,3 +109,7 @@ sts2-pycli/web/public/preview-rig/
 sts2-pycli/deploy/asset_manifest.json
 sts2-pycli/deploy/creature_scales.json
 logs/import-game.log
+
+# Downloaded by `just fetch-weights` (weights/README.md): release assets, not git files.
+weights/*.pt
+sts2-pycli/data/e2e/*.e2ew

@@ -274,12 +274,41 @@ pub fn set_master_deck(rm: &mut RunManager, cards: &Value) -> GraftResult<Vec<St
     for c in list(cards, "cards")? {
         let spec = card_spec(c)?;
         match build_card(&spec, version) {
-            Ok(card) => deck.push(card),
+            Ok(mut card) => {
+                stamp_mad_science(&mut card, c);
+                deck.push(card);
+            }
             Err(_) => missing.push(spec.id),
         }
     }
     rm.debug_set_master_deck(deck);
     Ok(missing)
+}
+
+/// Mad Science's type is per card (C# `MadScience.cs` `Type =>
+/// TinkerTimeType`), set by Tinker Time with its rider. A spec naming them
+/// (`"type"`, `"tinker_time_rider"`) types the built card; without them it
+/// stays the default-constructed Attack. A deck screen filters by that type:
+/// Momentum offers Attacks, Swift a Power, Royally Approved Attacks or Skills.
+fn stamp_mad_science(card: &mut Card, spec: &Value) {
+    use sts2_content::cards::colorless::{set_mad_science_variant, TinkerTimeRider};
+    if card.card_id != CardId::MadScience {
+        return;
+    }
+    let Some(mode) = spec
+        .get("type")
+        .and_then(Value::as_str)
+        .and_then(resolve_card_type)
+        .filter(|t| matches!(t, CardType::Attack | CardType::Skill | CardType::Power))
+    else {
+        return;
+    };
+    let rider = spec
+        .get("tinker_time_rider")
+        .and_then(Value::as_str)
+        .and_then(TinkerTimeRider::from_wire_name)
+        .unwrap_or(TinkerTimeRider::None);
+    set_mad_science_variant(card, mode, rider);
 }
 
 /// `debug_set_room_type`.
@@ -444,12 +473,37 @@ pub fn queue_deck_enchant(
     count: u32,
     card_type: Option<&str>,
 ) -> GraftResult<()> {
+    queue_deck_enchant_of_types(rm, enchantment, amount, optional, count, card_type, None)
+}
+
+/// [`queue_deck_enchant`] restricted to one card type or either of two:
+/// Royally Approved (Royal Stamp) enchants an Attack or a Skill
+/// (`RoyallyApproved.CanEnchantCardType`).
+///
+/// # Errors
+/// An unknown enchantment or card type.
+pub fn queue_deck_enchant_of_types(
+    rm: &mut RunManager,
+    enchantment: &str,
+    amount: i32,
+    optional: bool,
+    count: u32,
+    card_type: Option<&str>,
+    second_type: Option<&str>,
+) -> GraftResult<()> {
     let e = resolve_enchantment(enchantment)
         .ok_or_else(|| format!("unknown enchantment {enchantment:?}"))?;
-    let ty = card_type
-        .map(|t| resolve_card_type(t).ok_or_else(|| format!("unknown card type {t:?}")))
-        .transpose()?;
+    let resolve = |t: Option<&str>| {
+        t.map(|t| resolve_card_type(t).ok_or_else(|| format!("unknown card type {t:?}")))
+            .transpose()
+    };
+    let ty = resolve(card_type)?;
+    let second = resolve(second_type)?;
+    let from = rm.run_state.pending_deck_enchants.len();
     rm.debug_queue_deck_enchants(count, e, amount, optional, ty);
+    for p in &mut rm.run_state.pending_deck_enchants[from..] {
+        p.secondary_type = second;
+    }
     Ok(())
 }
 
@@ -894,6 +948,28 @@ mod tests {
         assert_eq!(
             invert_merchant_price(&both, SHOP_ENTRY_SOLD_OUT_PRICE),
             Some(SHOP_ENTRY_SOLD_OUT_PRICE)
+        );
+    }
+
+    #[test]
+    fn a_deck_mad_science_takes_the_specs_type() {
+        sts2_content::cards::dispatch::ensure_installed();
+        let build = |v: Value| {
+            let mut card = build_card(&card_spec(&v).unwrap(), GameVersion::V0_111_0).unwrap();
+            stamp_mad_science(&mut card, &v);
+            card.card_type
+        };
+        let mad = |t: &str| serde_json::json!({"id": "MAD_SCIENCE", "type": t, "tinker_time_rider": "Curious"});
+        assert_eq!(build(mad("Power")), CardType::Power);
+        assert_eq!(build(mad("Skill")), CardType::Skill);
+        assert_eq!(
+            build(serde_json::json!({"id": "MAD_SCIENCE"})),
+            CardType::Attack
+        );
+        // Only Mad Science's type is per card.
+        assert_eq!(
+            build(serde_json::json!({"id": "BASH", "type": "Power"})),
+            CardType::Attack
         );
     }
 

@@ -1166,6 +1166,26 @@ def test_a_removed_summon_goes_back_to_its_slot():
     assert [e["max_hp"] for e in roster] == [20, 19, 21, 155]
 
 
+def test_an_axebot_respawn_stands_ahead_of_the_corpses_it_replaced():
+    """Corpus seed 180000714: Stock respawns each Axebot at the dying one's
+    place, so the engine's board is the newest Axebot, then the corpses
+    newest first; slot order alone put the corpses ahead."""
+    state = base_state(
+        player=player_summary(),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike", cost=1)],
+        enemies=[
+            {**enemy(index=0, name="Axebot", hp=59, max_hp=105), "combat_id": 3, "slot": 0},
+        ],
+    )
+    corpse = {"name": "Axebot", "hp": 0, "block": 0, "is_dead": True}
+    state["removed_enemies"] = [
+        {**corpse, "combat_id": 1, "max_hp": 81, "slot": 0},
+        {**corpse, "combat_id": 2, "max_hp": 95, "slot": 0},
+    ]
+    roster = adapter.translate(state)["removed_roster"]
+    assert [e["max_hp"] for e in roster] == [105, 95, 81]
+
+
 def test_a_reviving_corpse_keeps_its_heal_telegraph():
     """The turn before a Decimillipede segment reattaches, its move machine
     has already advanced DEAD_MOVE -> REATTACH_MOVE (a ``HealIntent``). That
@@ -1481,3 +1501,32 @@ def test_a_hidden_left_to_go_counter_reads_as_its_end():
     ticket, crucible = adapter.translate(state)["player"]["relics"]
     assert ticket["counter"] == -1
     assert crucible["counter"] == 3
+
+
+def test_a_pile_cards_single_turn_retain_rides_pile_flags():
+    """C# keeps `HasSingleTurnRetain` until `EndOfTurnCleanup` walks every
+    pile, so the host reports `will_retain` on a discard card Expertise drew
+    and the turn played. Off the hand it goes under `pile_flags`, the key the
+    engine's emitter uses (GH #1197); `flags` stays ethereal-only there."""
+    raw = {
+        "id": "CARD.SUCKER_PUNCH",
+        "index": 3,
+        "type": "Attack",
+        "cost": 1,
+        "upgraded": True,
+        "will_retain": True,
+        "sly_this_turn": False,
+    }
+    spec = adapter._translate_card(raw, "$.discard_pile[3]")
+    assert spec["pile_flags"] == ["retain_turn"]
+    assert "flags" not in spec
+    hand = adapter._translate_card(raw, "$.hand[0]", hand=True)
+    assert hand["flags"] == ["retain_turn"]
+    assert "pile_flags" not in hand
+
+
+def test_the_combats_draw_count_is_copied():
+    """Murder's multiplier: the host's `cards_drawn_this_combat`."""
+    out: dict = {}
+    adapter._copy_seat_history({"cards_drawn_this_combat": 21}, out)
+    assert out["cards_drawn_this_combat"] == 21

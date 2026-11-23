@@ -490,6 +490,11 @@ pub fn transplant_hidden(
     fresh.player.shivs_played_this_turn = carried.player.shivs_played_this_turn;
     fresh.player.generated_cards_this_combat = carried.player.generated_cards_this_combat;
     fresh.player.stars_gained_this_turn = carried.player.stars_gained_this_turn;
+    // Murder's multiplier (C# `CardDrawnEntry` count). Never falls within a
+    // combat: the wire's `cards_drawn_this_combat` when the host sends it,
+    // else the mirror's running count (which at least grows with the fight
+    // instead of re-zeroing on every rebuild).
+    fresh.cards_drawn = fresh.cards_drawn.max(carried.cards_drawn);
 
     // The Sly / Retain uid lists are NOT carried. They are seeded from the
     // wire in `state_from_dict` (the `retain_turn` / `sly_turn` / `sly`
@@ -587,7 +592,14 @@ pub fn transplant_hidden(
             dst.cards_exhausted_this_turn = src.cards_exhausted_this_turn;
         }
         dst.hp_lost_this_turn = src.hp_lost_this_turn;
-        dst.unblocked_damage_received_this_combat = src.unblocked_damage_received_this_combat;
+        // Never falls within a combat, so the larger of wire and mirror is
+        // right either way: a producer that discloses it (GH #989) is not
+        // overwritten by a mirror that missed a hit (the host's 2 read as 1
+        // on corpus seed 180001311, Tear Asunder one hit short), and an
+        // older one that sends nothing keeps the mirror's running count.
+        dst.unblocked_damage_received_this_combat = dst
+            .unblocked_damage_received_this_combat
+            .max(src.unblocked_damage_received_this_combat);
         // PaelsEye / Ambergris extra turns: `turn_number()` = round + this,
         // and the turn-number gates (BagOfPreparation, Lantern, the
         // turn-1 Innate floor) read it. Older mods do not send it, so a
@@ -666,6 +678,13 @@ pub fn transplant_hidden(
             (&fresh.player.play[..], &carried.player.play[..]),
         ];
         let mut copies: Vec<(CardUid, Vec<(VarKey, i32)>)> = Vec::new();
+        // A Hexed card shows `ethereal` on the board whatever else it has
+        // (C# `HexPower.TryModifyKeywordsInCombat`), so the parse's Ghost
+        // Seed stamp on a Hexed basic Strike/Defend is a guess. It is wrong
+        // for one Dampen downgraded: `DowngradeInternal` resets `_keywords`
+        // (CardModel.cs:2157), and Ghost Seed's Ethereal goes with it. The
+        // carried card knows; there the carry wins over the wire.
+        let mut unstamp: Vec<CardUid> = Vec::new();
         for (fresh_pile, carried_pile) in pile_pairs {
             let fresh_ids: Vec<_> = fresh_pile
                 .iter()
@@ -686,13 +705,19 @@ pub fn transplant_hidden(
                 let Some(src) = carried.cards.iter().find(|c| c.uid == carried_uid) else {
                     continue;
                 };
-                if src.combat_vars.is_empty() {
-                    continue;
-                }
                 let Some(dst) = fresh.cards.iter().find(|c| c.uid == fresh_uid) else {
                     continue;
                 };
                 if dst.card_id != src.card_id {
+                    continue;
+                }
+                if sts2_core::combat_loop::card_is_hexed(dst)
+                    && dst.combat_var(VarKey::EtherealThisCombat) != 0
+                    && src.combat_var(VarKey::EtherealThisCombat) == 0
+                {
+                    unstamp.push(fresh_uid);
+                }
+                if src.combat_vars.is_empty() {
                     continue;
                 }
                 let vars: Vec<(VarKey, i32)> = src
@@ -723,6 +748,11 @@ pub fn transplant_hidden(
                 for (k, v) in vars {
                     card.set_combat_var(k, v);
                 }
+            }
+        }
+        for uid in unstamp {
+            if let Some(card) = fresh.cards.iter_mut().find(|c| c.uid == uid) {
+                card.set_combat_var(VarKey::EtherealThisCombat, 0);
             }
         }
     }
@@ -912,22 +942,31 @@ pub fn transplant_hidden(
 /// wire shows only how much is left to the next trigger, from which the
 /// rebuild derives the total mod 4. A carried total that agrees mod 4 is the
 /// true one, so it stands (GH #1741).
+///
+/// Orbit is instanced (C# `PowerInstanceType.Instanced`): a second Orbit
+/// played is a second power with its own `energySpent`. Each fresh instance
+/// takes the carried total of the instance in the same place, in order;
+/// carrying only the first left every later one on its residue (Spire Bench
+/// seed 180001317: two Orbits, the second read 0/1/3 where the game's was
+/// 4/5/7).
 fn carry_orbit_energy(fresh: &mut CombatState, carried: &CombatState) {
     use sts2_core::powers::PowerKind;
-    let orbit = |st: &CombatState| -> Option<(sts2_core::PowerUid, i32)> {
-        st.player_power_uids().into_iter().find_map(|pu| {
-            st.powers
-                .get_by_id(pu.0)
-                .filter(|p| p.kind == PowerKind::Orbit)
-                .map(|p| (pu, p.counter))
-        })
+    let orbits = |st: &CombatState| -> Vec<(sts2_core::PowerUid, i32)> {
+        st.player_power_uids()
+            .into_iter()
+            .filter_map(|pu| {
+                st.powers
+                    .get_by_id(pu.0)
+                    .filter(|p| p.kind == PowerKind::Orbit)
+                    .map(|p| (pu, p.counter))
+            })
+            .collect()
     };
-    let (Some((_, total)), Some((pu, derived))) = (orbit(carried), orbit(fresh)) else {
-        return;
-    };
-    if total > derived && total.rem_euclid(4) == derived.rem_euclid(4) {
-        if let Some(p) = fresh.powers.get_mut_by_id(pu.0) {
-            p.counter = total;
+    for ((_, total), (pu, derived)) in orbits(carried).into_iter().zip(orbits(fresh)) {
+        if total > derived && total.rem_euclid(4) == derived.rem_euclid(4) {
+            if let Some(p) = fresh.powers.get_mut_by_id(pu.0) {
+                p.counter = total;
+            }
         }
     }
 }
@@ -1489,6 +1528,100 @@ mod tests {
         assert_eq!(eth(bullies[1]), Some(0));
     }
 
+    /// Corpus seeds 180001232 / 180000028 / 180001939 / 180001014 (Ghost
+    /// Seed, the Knights): Dampen downgraded the upgraded Strike, which
+    /// strips Ghost Seed's Ethereal (`CardModel.DowngradeInternal`), while
+    /// Hex keeps every card showing `ethereal`. The parse stamps Ghost
+    /// Seed's var on both Hexed Strikes; the carried mirror knows which one
+    /// lost it. Without Hex the wire's flag is evidence and still wins.
+    #[test]
+    fn a_hexed_card_keeps_the_carried_lack_of_ghost_seed_ethereal() {
+        use sts2_core::card_afflictions::{CardAffliction, CardAfflictionKind};
+        use sts2_core::cards::{CardId, VarKey};
+        let mut carried = sts2_wire::scenario::build_scenario_state_for_version(
+            sts2_core::GameVersion::V0_111_0,
+            7,
+            "Ironclad",
+            &["STRIKE_IRONCLAD", "STRIKE_IRONCLAD", "BASH", "BASH", "BASH"].map(str::to_owned),
+            80,
+            80,
+            &[],
+            &[],
+            "AXEBOTS_NORMAL",
+            10,
+            None,
+            None,
+        )
+        .expect("scenario");
+        let mut all: Vec<CardUid> = carried.player.hand.drain(..).collect();
+        all.extend(carried.player.draw.drain(..));
+        let strikes: Vec<CardUid> = all
+            .iter()
+            .copied()
+            .filter(|u| {
+                carried
+                    .cards
+                    .iter()
+                    .any(|c| c.uid == *u && c.card_id == CardId::StrikeIronclad)
+            })
+            .collect();
+        carried.player.draw = all
+            .iter()
+            .copied()
+            .filter(|u| !strikes.contains(u))
+            .collect();
+        carried.player.hand = strikes.iter().copied().collect();
+        let run = |hexed: bool| {
+            let mut carried = carried.clone();
+            for c in carried
+                .cards
+                .iter_mut()
+                .filter(|c| strikes.contains(&c.uid))
+            {
+                if hexed {
+                    let hex = CardAffliction {
+                        kind: CardAfflictionKind::Hexed,
+                        stacks: 2,
+                        applied_exhaust: false,
+                    };
+                    assert!(c.set_affliction(hex));
+                }
+                // The board's Ghost Seed stamp, on both.
+                c.set_combat_var(VarKey::EtherealThisCombat, 1);
+            }
+            let mut fresh = carried.clone();
+            // The mirror's own fight: Dampen downgraded the second Strike.
+            if let Some(c) = carried.cards.iter_mut().find(|c| c.uid == strikes[1]) {
+                c.set_combat_var(VarKey::EtherealThisCombat, 0);
+                c.set_combat_var(VarKey::DampenDowngradedMarker, 1);
+            }
+            transplant_hidden(
+                &mut fresh,
+                &carried,
+                Carry {
+                    enemy_slots: None,
+                    rng: false,
+                    relic_counters: Vec::new(),
+                    power_counters: Vec::new(),
+                    turn_history: false,
+                },
+            )
+            .expect("transplant");
+            strikes
+                .iter()
+                .map(|u| {
+                    fresh
+                        .cards
+                        .iter()
+                        .find(|c| c.uid == *u)
+                        .map(|c| c.combat_var(VarKey::EtherealThisCombat))
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(run(true), vec![Some(1), Some(0)], "Hexed: the carry wins");
+        assert_eq!(run(false), vec![Some(1), Some(1)], "no Hex: the board wins");
+    }
+
     #[test]
     fn paels_flesh_leaves_the_stored_max_energy_from_turn_three() {
         let mut s = CombatState::default();
@@ -1580,6 +1713,54 @@ mod tests {
         };
         transplant_hidden(&mut fresh, &carried, carry).expect("transplants");
         assert_eq!(counter(&fresh), 4);
+    }
+
+    /// Two Orbits are two instances, each with its own energy total: both
+    /// survive the rebuild, not just the first.
+    #[test]
+    fn every_orbits_carried_energy_total_survives_a_rebuild() {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../sts2-wire/tests/fixtures/combat_action_ironclad.json"),
+        )
+        .expect("fixture");
+        let mut wire: serde_json::Value = serde_json::from_str(&text).expect("fixture parses");
+        wire["player"]["powers"] = json!([
+            {"name": "ORBIT", "amount": 1, "display_amount": 4},
+            {"name": "ORBIT", "amount": 1, "display_amount": 4},
+        ]);
+        let counters = |st: &CombatState| -> Vec<i32> {
+            st.player_power_uids()
+                .into_iter()
+                .filter_map(|pu| {
+                    st.powers
+                        .get_by_id(pu.0)
+                        .filter(|p| p.kind == sts2_core::powers::PowerKind::Orbit)
+                        .map(|p| p.counter)
+                })
+                .collect()
+        };
+        let mut fresh = sts2_wire::state_from_json(&wire).expect("parses");
+        assert_eq!(counters(&fresh).len(), 2, "two Orbit instances");
+        assert!(
+            counters(&fresh).iter().all(|c| *c < 4),
+            "the badges say the total mod 4"
+        );
+        let mut carried = fresh.clone();
+        for pu in carried.player_power_uids() {
+            if let Some(p) = carried.powers.get_mut_by_id(pu.0) {
+                p.counter = 4;
+            }
+        }
+        let carry = Carry {
+            enemy_slots: None,
+            rng: false,
+            relic_counters: Vec::new(),
+            power_counters: Vec::new(),
+            turn_history: false,
+        };
+        transplant_hidden(&mut fresh, &carried, carry).expect("transplants");
+        assert_eq!(counters(&fresh), vec![4, 4]);
     }
 
     /// The board lists a lone bot before the Fabricator, and the rebuild

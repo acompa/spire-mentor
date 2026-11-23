@@ -4784,14 +4784,26 @@ impl RunManager {
                 // `PotionReward.Populate` rolls with the set, before the
                 // hook additions (Prayer Wheel's card reads the `Rewards`
                 // stream after it): rolled here, not when the screen drains.
+                // It is claimed with the room's own potion, before the card
+                // pick, as the room's set is taken in `RewardsSetIndex` order
+                // (potion 2, card 5; GH #1845). On a full belt it waits for
+                // the card pick instead and its swap is asked after it, as
+                // the bench takes it (`referee_game.host_answer`, GH #1832).
                 Reward::Potion(p) if !p.direct && p.potion_kind.is_none() => {
-                    let mut p = *p;
-                    p.potion_kind = self
+                    if let Some(kind) = self
                         .callbacks
                         .roll_potion_reward_kind
-                        .and_then(|f| f(&mut self.run_state));
-                    if p.potion_kind.is_some() {
-                        self.run_state.pending_rewards.push(Reward::Potion(p));
+                        .and_then(|f| f(&mut self.run_state))
+                    {
+                        let rs = &mut self.run_state;
+                        let full = rs.potions.len() >= rs.potion_belt_cap();
+                        if full && rs.reward_capture.is_none() {
+                            let mut p = *p;
+                            p.potion_kind = Some(kind);
+                            rs.pending_rewards.push(Reward::Potion(p));
+                        } else {
+                            let _ = rs.claim_potion_reward(kind);
+                        }
                     }
                 }
                 other => self.run_state.pending_rewards.push(other.clone()),
@@ -10145,6 +10157,83 @@ mod tests {
         }
         let rolls = ROLLS.with(|r| r.borrow().clone());
         assert_eq!(rolls, ["room card", "extra potion", "prayer wheel card"]);
+    }
+
+    /// An event fight's extra potion (Punch Off's prize) is on the belt at
+    /// the card pick, like the room's own potion: the set is taken in
+    /// `RewardsSetIndex` order, potions before cards (GH #1845). Queued on
+    /// `pending_rewards`, it reached the belt only after the card pick.
+    #[test]
+    fn an_event_fights_extra_potion_is_on_the_belt_at_the_card_pick() {
+        use crate::cards::CardId;
+        use crate::runstate::{PotionReward, Reward, RoomType};
+        fn base_cards(_rs: &mut RunState) -> Vec<CardId> {
+            vec![CardId::Bash]
+        }
+        #[allow(clippy::unnecessary_wraps)] // the callback's signature
+        fn potion(_rs: &mut RunState) -> Option<crate::potions::PotionKind> {
+            Some(crate::potions::PotionKind::PowerPotion)
+        }
+        let cb = ContentCallbacks {
+            generate_card_reward_options: Some(base_cards),
+            roll_potion_reward_kind: Some(potion),
+            ..ContentCallbacks::default()
+        };
+        let mut rm = RunManager::new(7, CharacterId::Ironclad).with_content_callbacks(cb);
+        rm.run_state.potions.clear();
+        rm.run_state.current_room = Some(crate::runstate::Room::new(RoomType::Monster));
+        let _ = rm.offer_combat_room_rewards(
+            RoomType::Monster,
+            &[Reward::Potion(PotionReward::empty())],
+            0,
+        );
+        assert_eq!(rm.phase(), Phase::CardReward);
+        assert_eq!(
+            rm.run_state.potions,
+            [crate::potions::PotionKind::PowerPotion]
+        );
+    }
+
+    /// On a full belt an event fight's extra potion asks its swap after the
+    /// card pick, as the bench takes it (GH #1832): claimed at once (GH
+    /// #1845) the swap came first, where the game showed the card reward
+    /// (Spire Bench seeds 180000054, 180001805, ... at Punch Off).
+    #[test]
+    fn an_event_fights_extra_potion_on_a_full_belt_waits_for_the_card_pick() {
+        use crate::cards::CardId;
+        use crate::potions::PotionKind;
+        use crate::runstate::{PotionReward, Reward, RoomType};
+        fn base_cards(_rs: &mut RunState) -> Vec<CardId> {
+            vec![CardId::Bash]
+        }
+        #[allow(clippy::unnecessary_wraps)] // the callback's signature
+        fn potion(_rs: &mut RunState) -> Option<PotionKind> {
+            Some(PotionKind::PowerPotion)
+        }
+        let cb = ContentCallbacks {
+            generate_card_reward_options: Some(base_cards),
+            roll_potion_reward_kind: Some(potion),
+            ..ContentCallbacks::default()
+        };
+        let mut rm = RunManager::new(7, CharacterId::Ironclad).with_content_callbacks(cb);
+        rm.run_state.interactive_potion_swap = true;
+        rm.run_state.max_potion_slots = 2;
+        rm.run_state.potions.clear();
+        assert!(rm.run_state.add_potion_to_belt(PotionKind::BlockPotion));
+        assert!(rm.run_state.add_potion_to_belt(PotionKind::FirePotion));
+        rm.run_state.current_room = Some(crate::runstate::Room::new(RoomType::Monster));
+        let _ = rm.offer_combat_room_rewards(
+            RoomType::Monster,
+            &[Reward::Potion(PotionReward::empty())],
+            0,
+        );
+        assert_eq!(rm.phase(), Phase::CardReward);
+        assert!(
+            rm.run_state.pending_potion_swaps.is_empty(),
+            "the card pick comes before the extra potion's swap"
+        );
+        let _ = rm.take_action(RunAction::PickCardReward { idx: None });
+        assert_eq!(rm.run_state.pending_potion_swaps, [PotionKind::PowerPotion]);
     }
 
     /// C# sorts a room's reward set by `RewardsSetIndex` with the unstable

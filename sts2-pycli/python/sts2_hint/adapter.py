@@ -1023,6 +1023,17 @@ def _translate_card(raw: dict[str, Any], path: str, *, hand: bool = False) -> di
     flags = _flags_for_card(raw) if hand else [f for f in _flags_for_card(raw) if f == "ethereal"]
     if flags:
         spec["flags"] = flags
+    # Off the hand the single-turn Retain / Sly halves and the keyword Sly go
+    # under ``pile_flags``, the key the engine's own emitter uses for them
+    # (GH #1197), so ``flags`` -- which the mirror diffs -- stays as it was.
+    # C# keeps ``HasSingleTurnRetain`` on the card until
+    # ``PlayerCombatState.EndOfTurnCleanup`` walks every pile, and the host
+    # reports it (``will_retain``) on discard cards: an Expertise-drawn card
+    # played this turn is still flagged there, as it is in the engine.
+    if not hand:
+        pile_flags = [f for f in _flags_for_card(raw) if f in ("sly", "retain_turn", "sly_turn")]
+        if pile_flags:
+            spec["pile_flags"] = pile_flags
 
     enchantment = raw.get("enchantment")
     if isinstance(enchantment, str) and enchantment:
@@ -1259,8 +1270,16 @@ def _removed_roster(
             corpse["hp"] = 0
             corpse["removed_after_death"] = True
             corpses.append(corpse)
-        order = sorted(range(len(ids)), key=lambda k: (slots[k], ids[k]))
         everyone = [*encounter, *corpses]
+
+        # An Axebot's Stock respawn is not a summon into a free slot: the
+        # engine adds it at its dying owner's place, ahead of that corpse
+        # (``axebot_stock_after_death``), so one slot's Axebots go newest
+        # first (corpus seed 180000714).
+        def rank(k: int) -> int:
+            return -ids[k] if everyone[k].get("kind") == "Axebot" else ids[k]
+
+        order = sorted(range(len(ids)), key=lambda k: (slots[k], rank(k)))
         return [dict(everyone[k]) for k in order]
     roster: list[tuple[int, dict[str, Any]]] = list(zip(board_ids, encounter, strict=True))
     for i, raw in enumerate(removed_raw):
@@ -1757,6 +1776,7 @@ def _copy_seat_history(src: dict[str, Any], out: dict[str, Any]) -> None:
         "cards_exhausted_this_turn",
         "card_block_gains_this_turn",
         "extra_turns_taken_this_combat",
+        "cards_drawn_this_combat",
     ):
         n = src.get(key)
         if isinstance(n, int) and not isinstance(n, bool) and (n > 0 or key in TURN_HISTORY_KEYS):

@@ -19,6 +19,7 @@ from headless_eval import (
     _bridge_answer_to_command,
     _envelope,
     _run_state,
+    to_bridge_card_bundle,
     to_bridge_event,
     to_bridge_rest_site,
     to_bridge_shop,
@@ -347,6 +348,32 @@ def test_run_state_deck_keeps_a_cards_enchantment() -> None:
     deck = _envelope(state, "map_select", "Ironclad")["run_state"]["master_deck"]
     assert deck[0]["enchantment"] == "Perfect Fit" and deck[0]["enchantment_amount"] == 2
     assert "enchantment" not in deck[1]
+
+
+def test_run_state_deck_keeps_mad_sciences_type() -> None:
+    """Mad Science's type is the one Tinker Time gave it; an enchant screen
+    offers it by that type (seed 180001862: Swift offered a Power Mad Science
+    the rebuild had as an Attack)."""
+    mad = {
+        "id": "CARD.MAD_SCIENCE",
+        "upgraded": False,
+        "type": "Power",
+        "tinker_time_rider": "Curious",
+    }
+    state = {
+        "context": {"act": 3, "floor": 5, "total_floor": 39},
+        "player": {
+            "hp": 60,
+            "max_hp": 75,
+            "gold": 100,
+            "relics": [],
+            "potions": [],
+            "deck": [mad, {"id": "CARD.BASH", "upgraded": False, "type": "Attack"}],
+        },
+    }
+    deck = _envelope(state, "map_select", "Ironclad")["run_state"]["master_deck"]
+    assert deck[0]["type"] == "Power" and deck[0]["tinker_time_rider"] == "Curious"
+    assert "type" not in deck[1]
 
 
 def test_shop_options_carry_item_identity() -> None:
@@ -712,6 +739,35 @@ def test_bundle_select_maps_to_select_bundle() -> None:
     # Out-of-range index clamps to the first bundle instead of erroring.
     cmd = _bridge_answer_to_command("bundle_select", {"action": "choose", "index": 7}, state, None)
     assert cmd == {"action": "select_bundle", "args": {"bundle_index": 0}}
+
+
+def test_a_bundle_select_is_the_mods_card_bundle_screen() -> None:
+    """GH #1847: Scroll Boxes' packs reach the advisor as the mod's
+    ``card_bundle`` screen, so Instinct picks the pack. As a bare envelope the
+    screen had no packs and the pick fell back to a random one."""
+    state = {
+        "type": "decision",
+        "decision": "bundle_select",
+        "context": {"act": 1, "floor": 1, "total_floor": 1},
+        "player": {"hp": 64, "max_hp": 80, "gold": 99, "deck": [], "relics": [], "potions": []},
+        "bundles": [
+            {"index": 0, "cards": [{"id": "CARD.UPPERCUT", "name": "Uppercut"}]},
+            {
+                "index": 1,
+                "cards": [{"id": "CARD.IRON_WAVE", "name": "Iron Wave", "upgraded": True}],
+            },
+        ],
+    }
+    screen = to_bridge_card_bundle(state, "Ironclad")
+    assert screen["type"] == "card_bundle"
+    assert [[c["id"] for c in b["cards"]] for b in screen["bundles"]] == [
+        ["UPPERCUT"],
+        ["IRON_WAVE"],
+    ]
+    assert [b["index"] for b in screen["bundles"]] == [0, 1]
+    assert screen["bundles"][1]["cards"][0]["upgrade_level"] == 1
+    cmd = _bridge_answer_to_command("card_bundle", {"action": "choose", "index": 1}, state, None)
+    assert cmd == {"action": "select_bundle", "args": {"bundle_index": 1}}
 
 
 def test_combat_pick_skips_dll_rejected_commands(monkeypatch) -> None:
@@ -1162,3 +1218,18 @@ def test_a_tent_visits_leave_leaves_the_rest_site():
     assert cmd == {"action": "leave_room", "args": {}}
     cmd = _bridge_answer_to_command("rest_site", {"action": "choose", "index": 0}, state, None)
     assert cmd == {"action": "choose_option", "args": {"option_index": 0}}
+
+
+def test_the_fake_merchants_shop_keeps_its_event_name() -> None:
+    state = {
+        "decision": "shop",
+        "event_name": "FAKE_MERCHANT",
+        "player": {"gold": 100},
+        "cards": [],
+        "relics": [],
+        "potions": [],
+    }
+    msg, _ = to_bridge_shop(state, "Ironclad")
+    assert msg["event_name"] == "FAKE_MERCHANT"
+    plain, _ = to_bridge_shop({**state, "event_name": None}, "Ironclad")
+    assert "event_name" not in plain

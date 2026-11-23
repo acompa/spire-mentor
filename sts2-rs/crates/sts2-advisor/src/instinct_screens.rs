@@ -675,9 +675,11 @@ fn screen_enchantment(state: &Value) -> Option<String> {
     (py::truthy(model) && kind.to_lowercase() == "enchantment").then(|| py::str_of(model))
 }
 
-/// The one card type every offered card has, when it restricts a pick
-/// (Self-Help Book enchants only one type).
-fn shared_card_type(cards: &[&Value]) -> Option<String> {
+/// The card types the offered cards have, when they restrict a pick: one
+/// (Self-Help Book, Momentum, Swift) or two (Royal Stamp's Royally Approved
+/// takes an Attack or a Skill, `RoyallyApproved.CanEnchantCardType`). All
+/// three playable types, or any other, restrict nothing.
+fn offered_card_types(cards: &[&Value]) -> (Option<String>, Option<String>) {
     let mut types: Vec<String> = Vec::new();
     for c in cards {
         let t = py::get(c, "type");
@@ -690,9 +692,11 @@ fn shared_card_type(cards: &[&Value]) -> Option<String> {
             types.push(t);
         }
     }
+    let playable = |t: &String| matches!(t.as_str(), "attack" | "skill" | "power");
     match types.as_slice() {
-        [t] if matches!(t.as_str(), "attack" | "skill" | "power") => Some(t.clone()),
-        _ => None,
+        [t] if playable(t) => (Some(t.clone()), None),
+        [t, u] if playable(t) && playable(u) => (Some(t.clone()), Some(u.clone())),
+        _ => (None, None),
     }
 }
 
@@ -994,13 +998,15 @@ pub fn deck_select(
                     .and_then(Value::as_i64)
                     .and_then(|a| i32::try_from(a).ok())
                     .unwrap_or(1);
-                sts2_wire::graft::queue_deck_enchant(
+                let (ty, second) = offered_card_types(&all_cards);
+                sts2_wire::graft::queue_deck_enchant_of_types(
                     &mut rm,
                     e,
                     amount,
                     lo == 0,
                     count,
-                    shared_card_type(&all_cards).as_deref(),
+                    ty.as_deref(),
+                    second.as_deref(),
                 )
                 .map_err(|_| unavailable(trf("the engine has no enchantment {e}", &[("e", &e)])))?;
                 "CARD_ENCHANT"
@@ -1935,20 +1941,51 @@ fn neow(ev: &mut dyn Evaluator, state: &Value, version: &str, options: &[&Value]
     let rs = py::get(state, "run_state");
     let asc = py::get(rs, "ascension");
     let asc = if py::truthy(asc) { py::int_of(asc) } else { 0 };
-    let seed = py::str_of(py::get(state, "seed"));
+    // A seedless request (Spire Bench) cannot roll the act-1 variant and its
+    // boss from the seed: the screen names them (`act1`, the map's or the
+    // context's boss). Rolled off a placeholder seed, the student saw another
+    // boss than the game's (GH #1846).
+    let seedless = crate::graft::seedless(state);
+    let seed = if seedless {
+        crate::graft::SEEDLESS_SEED.to_owned()
+    } else {
+        py::str_of(py::get(state, "seed"))
+    };
+    let act1 = if seedless {
+        state.get("act1").and_then(Value::as_str).unwrap_or("roll")
+    } else {
+        "roll"
+    };
+    // The run's own character: its starter deck, relic and Neow pool (an
+    // Ironclad rebuild showed every other character's Neow an Ironclad run).
+    let character =
+        crate::headless::character_display_name(py::get(rs, "character")).unwrap_or("Ironclad");
     let (mut rm, _) = sts2_wire::run_builder::build_run(&sts2_wire::run_builder::RunOptions {
         game_version: Some(version),
         string_seed: Some(&seed),
-        character: "Ironclad",
+        character,
         ascension_level: u8::try_from(asc)
             .map_err(|_| GraftError::Value(format!("ascension {asc} out of range")))?,
         neow_start: true,
         mode: Some("agent"),
         interactive_potion_swap: true,
-        act1: "roll",
+        act1,
         ..sts2_wire::run_builder::RunOptions::default()
     })
     .map_err(GraftError::Value)?;
+    if seedless {
+        let map = py::get(state, "map");
+        let boss = if py::truthy(py::get(py::get(map, "boss"), "id")) {
+            py::get(py::get(map, "boss"), "id")
+        } else {
+            py::get(py::get(py::get(state, "context"), "boss"), "id")
+        };
+        if let Some(b) = crate::graft::boss_encounter(boss)? {
+            if let Some(rooms) = rm.run_state.generated_rooms.first_mut() {
+                rooms.boss_id = b;
+            }
+        }
+    }
     if crate::graft::is_coop(state) {
         rm.debug_use_coop_maps()
             .map_err(|e| GraftError::Value(format!("debug_use_coop_maps: {e}")))?;
@@ -1991,14 +2028,20 @@ fn neow(ev: &mut dyn Evaluator, state: &Value, version: &str, options: &[&Value]
         })
         .collect();
     let matched = |s: &[Option<&Value>]| s.iter().filter(|o| o.is_some()).count();
-    if matched(&slot_option) != relic_keys.len()
+    // The screen's order is the game's: the two shuffled positives, then the
+    // curse (`Neow.GenerateInitialOptions`, decomp `Neow.cs:281-283`). The
+    // student reads each option's slot (X_POS), so the same three relics in
+    // another order are a different screen: a seedless rebuild's placeholder
+    // seed rolled Spire Bench seed 180001084's three in another order.
+    let screen_order: Vec<String> = relic_ids.iter().map(|r| norm_str(r)).collect();
+    if (matched(&slot_option) != relic_keys.len() || offers(&rm) != screen_order)
         && options.len() == 3
         && relic_ids.iter().all(|r| !r.is_empty())
     {
         // The engine rolls single player's Neow. Co-op seeds each player's
         // with their slot and keeps Massive Scroll in the pool, so the roll
-        // differs there: stand on the screen's own three offers (the game
-        // lists the two positive ones, then the curse).
+        // differs there, and a seedless request rolls a placeholder seed's:
+        // stand on the screen's own three offers, in its order.
         sts2_wire::graft::set_neow_offers(&mut rm, &relic_ids[0], &relic_ids[1], &relic_ids[2])
             .map_err(|e| {
                 unavailable(trf(
@@ -2370,6 +2413,112 @@ mod tests {
         }
         let advice = rest_site(&mut Leave, &msg, "v0.111.0").expect("answered");
         assert_eq!(advice["best"]["action"], json!("leave"));
+    }
+
+    /// GH #1846: a seedless Neow (Spire Bench) shows the student the act-1
+    /// boss the screen names, not the one the placeholder seed rolls.
+    #[test]
+    fn a_seedless_neow_shows_the_screens_boss() {
+        struct Boss(Option<&'static str>);
+        impl Evaluator for Boss {
+            fn evaluate(
+                &mut self,
+                rm: &mut RunManager,
+                _: &[&str],
+            ) -> std::result::Result<Pick, String> {
+                self.0 = rm.run_state.generated_rooms.first().map(|r| r.boss_id);
+                Err("probe".into())
+            }
+        }
+        let options = [
+            json!({"index": 0, "event_id": "NEOW", "relic_id": "SCROLL_BOXES"}),
+            json!({"index": 1, "event_id": "NEOW", "relic_id": "WINGED_BOOTS"}),
+            json!({"index": 2, "event_id": "NEOW", "relic_id": "PRECARIOUS_SHEARS"}),
+        ];
+        let opts: Vec<&Value> = options.iter().collect();
+        for (act1, boss) in [
+            ("underdocks", "SOUL_FYSH_BOSS"),
+            ("overgrowth", "VANTOM_BOSS"),
+        ] {
+            let state = json!({
+                "seedless": true,
+                "act1": act1,
+                "run_state": {"ascension": 10},
+                "context": {"boss": {"id": boss}},
+            });
+            let mut probe = Boss(None);
+            let _ = neow(&mut probe, &state, "v0.111.0", &opts);
+            assert_eq!(probe.0, Some(boss), "{act1}");
+        }
+    }
+
+    /// A seedless Neow whose placeholder seed rolls the screen's three relics
+    /// in another order (SEEDLESS rolls Phial Holster, Neow's Talisman, Leafy
+    /// Poultice) offers them in the screen's order: the student reads each
+    /// option's slot (Spire Bench seed 180001084).
+    #[test]
+    fn a_seedless_neow_keeps_the_screens_option_order() {
+        struct Offers(Option<(String, String, String)>);
+        impl Evaluator for Offers {
+            fn evaluate(
+                &mut self,
+                rm: &mut RunManager,
+                _: &[&str],
+            ) -> std::result::Result<Pick, String> {
+                self.0 = sts2_wire::emit::run_manager::neow_offers(rm);
+                Err("probe".into())
+            }
+        }
+        let options = [
+            json!({"index": 0, "event_id": "NEOW", "relic_id": "NEOWS_TALISMAN"}),
+            json!({"index": 1, "event_id": "NEOW", "relic_id": "PHIAL_HOLSTER"}),
+            json!({"index": 2, "event_id": "NEOW", "relic_id": "LEAFY_POULTICE"}),
+        ];
+        let opts: Vec<&Value> = options.iter().collect();
+        let state = json!({
+            "seedless": true,
+            "act1": "overgrowth",
+            "run_state": {"ascension": 10},
+            "context": {"boss": {"id": "VANTOM_BOSS"}},
+        });
+        let mut probe = Offers(None);
+        let _ = neow(&mut probe, &state, "v0.111.0", &opts);
+        let (a, b, c) = probe.0.expect("the student was asked");
+        assert_eq!(
+            [norm_str(&a), norm_str(&b), norm_str(&c)],
+            ["NEOWSTALISMAN", "PHIALHOLSTER", "LEAFYPOULTICE"]
+        );
+    }
+
+    /// A Silent run's Neow is rebuilt as a Silent run, not an Ironclad one.
+    #[test]
+    fn a_neow_rebuild_plays_the_runs_character() {
+        struct Who(Option<String>);
+        impl Evaluator for Who {
+            fn evaluate(
+                &mut self,
+                rm: &mut RunManager,
+                _: &[&str],
+            ) -> std::result::Result<Pick, String> {
+                self.0 = Some(format!("{:?}", rm.run_state.character_id));
+                Err("probe".into())
+            }
+        }
+        let options = [
+            json!({"index": 0, "event_id": "NEOW", "relic_id": "NEOWS_TALISMAN"}),
+            json!({"index": 1, "event_id": "NEOW", "relic_id": "PHIAL_HOLSTER"}),
+            json!({"index": 2, "event_id": "NEOW", "relic_id": "LEAFY_POULTICE"}),
+        ];
+        let opts: Vec<&Value> = options.iter().collect();
+        let state = json!({
+            "seedless": true,
+            "act1": "overgrowth",
+            "run_state": {"ascension": 10, "character": "Silent"},
+            "context": {"boss": {"id": "VANTOM_BOSS"}},
+        });
+        let mut probe = Who(None);
+        let _ = neow(&mut probe, &state, "v0.111.0", &opts);
+        assert_eq!(probe.0.as_deref(), Some("Silent"));
     }
 
     /// Stops at the page the screen showed and records its engine options.
@@ -3042,6 +3191,75 @@ mod tests {
         );
     }
 
+    /// The enchant offer the rebuilt run makes for `cards`, on `deck`.
+    fn rebuilt_enchant_offer(deck: Value, enchantment: &str, cards: Value) -> Option<usize> {
+        use crate::graft::tests::{reference_run, screen_map, seedless_message};
+        let mut state = seedless_message(&screen_map(&reference_run(1)), 1);
+        state["run_state"]["master_deck"] = deck;
+        state["type"] = json!("card_select");
+        state["prompt_key"] = json!("TO_ENCHANT");
+        state["pending_enchantment"] = json!(enchantment);
+        state["enchantment_amount"] = json!(1);
+        state["cards"] = cards;
+        state["min_count"] = json!(1);
+        state["max_count"] = json!(1);
+        struct Offer(Option<usize>);
+        impl Evaluator for Offer {
+            fn evaluate(
+                &mut self,
+                rm: &mut RunManager,
+                _: &[&str],
+            ) -> std::result::Result<Pick, String> {
+                self.0 = Some(rm.enchant_eligible_deck_indices().len());
+                Err("probe".into())
+            }
+        }
+        let mut probe = Offer(None);
+        let _ = deck_select(&mut probe, &state, "v0.111.0", None, None);
+        probe.0
+    }
+
+    /// Royal Stamp's Royally Approved enchants an Attack or a Skill: the
+    /// rebuild offered the deck's Powers too (seeds 180001793, 180000174).
+    #[test]
+    fn a_royally_approved_screen_offers_no_power() {
+        let deck = json!([
+            {"id": "BASH", "upgraded": 0},
+            {"id": "TAUNT", "upgraded": 0},
+            {"id": "INFLAME", "upgraded": 0}
+        ]);
+        let cards = json!([
+            {"index": 0, "id": "BASH", "type": "Attack"},
+            {"index": 1, "id": "TAUNT", "type": "Skill"}
+        ]);
+        assert_eq!(
+            rebuilt_enchant_offer(deck, "ROYALLY_APPROVED", cards),
+            Some(2)
+        );
+    }
+
+    /// Mad Science keeps the type Tinker Time gave it: a Power one is on
+    /// Swift's offer (seeds 180001862, 180001815, 180001497) and off
+    /// Momentum's (seeds 180000660, 180000856).
+    #[test]
+    fn a_power_mad_science_is_offered_as_a_power() {
+        let deck = json!([
+            {"id": "BASH", "upgraded": 0},
+            {"id": "INFLAME", "upgraded": 0},
+            {"id": "MAD_SCIENCE", "upgraded": 0, "type": "Power", "tinker_time_rider": "Curious"}
+        ]);
+        let powers = json!([
+            {"index": 0, "id": "INFLAME", "type": "Power"},
+            {"index": 1, "id": "MAD_SCIENCE", "type": "Power"}
+        ]);
+        assert_eq!(
+            rebuilt_enchant_offer(deck.clone(), "SWIFT", powers),
+            Some(2)
+        );
+        let attacks = json!([{"index": 0, "id": "BASH", "type": "Attack"}]);
+        assert_eq!(rebuilt_enchant_offer(deck, "MOMENTUM", attacks), Some(1));
+    }
+
     /// GH #1673: a pick-N grant asked one pick at a time holds the earlier
     /// picks in the engine, so its minimum falls as the screen fills.
     #[test]
@@ -3353,11 +3571,14 @@ mod tests {
             None
         );
         let (skill, attack) = (json!({"type": "Skill"}), json!({"type": "Attack"}));
+        let power = json!({"type": "Power"});
+        let some = |t: &str| Some(t.to_owned());
+        assert_eq!(offered_card_types(&[&skill, &skill]), (some("skill"), None));
         assert_eq!(
-            shared_card_type(&[&skill, &skill]).as_deref(),
-            Some("skill")
+            offered_card_types(&[&skill, &attack]),
+            (some("skill"), some("attack"))
         );
-        assert_eq!(shared_card_type(&[&skill, &attack]), None);
+        assert_eq!(offered_card_types(&[&skill, &attack, &power]), (None, None));
     }
 
     #[test]

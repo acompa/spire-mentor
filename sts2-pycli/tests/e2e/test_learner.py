@@ -2954,6 +2954,13 @@ def test_eval_runner_plays_a_requests_character(
     from ppo.e2e.evaluate import CLEAN_MARKER
 
     monkeypatch.setenv(CLEAN_MARKER, "1")
+    for k in (
+        "STS2_E2E_CHARS",
+        "STS2_E2E_OOC_POTION",
+        "STS2_E2E_REWARD_SCREEN",
+        "STS2_E2E_DECK_SELECT",
+    ):
+        monkeypatch.delenv(k, raising=False)
     calls: list[list[str]] = []
     seen: list[str] = []
 
@@ -2976,6 +2983,46 @@ def test_eval_runner_plays_a_requests_character(
     pairs = [argv[i + 1] for i, a in enumerate(argv) if a == "--set-env"]
     assert pairs == ["STS2_E2E_CHARACTER=Regent", "STS2_E2E_CHARS=1"]
     assert seen == ["Regent"]
+
+
+def test_eval_runner_forwards_the_lanes_fill_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The learner exports its declared fill events to its workers as env flags;
+    `evaluate`'s clean env drops them, so the runner forwards the ones set (an eval
+    must play the screens the net trained on: deck select, the potion popup)."""
+    from ppo.e2e import eval_runner as R
+    from ppo.e2e import factory, score_test
+    from ppo.e2e.evaluate import CLEAN_MARKER
+
+    monkeypatch.setenv(CLEAN_MARKER, "1")
+    monkeypatch.setenv(factory.DECK_SELECT_ENV, "1")
+    monkeypatch.setenv(factory.OOC_POTION_ENV, "1")
+    monkeypatch.delenv(factory.REWARD_SCREEN_ENV, raising=False)
+    monkeypatch.delenv(factory.CHARS_ENV, raising=False)
+    calls: list[list[str]] = []
+
+    def run(argv: list[str], env: dict[str, str]) -> SimpleNamespace:
+        calls.append(argv)
+        return SimpleNamespace(returncode=0)
+
+    def load_arm(*a: Any, **k: Any) -> Any:
+        raise score_test.ReadStopped("stop here")
+
+    monkeypatch.setattr(score_test, "load_arm", load_arm)
+    req = _request(
+        tmp_path, panel="DEV-500", n=500, character="Regent", id="lane_d1_Regent_DEV-500"
+    )
+    with pytest.raises(R.RunnerError, match="stop here"):
+        R.run_request(req, tmp_path / "out", evals=tmp_path / "evals", pin=None, run=run)
+    argv = calls[0]
+    pairs = [argv[i + 1] for i, a in enumerate(argv) if a == "--set-env"]
+    assert pairs == [
+        "STS2_E2E_OOC_POTION=1",
+        "STS2_E2E_DECK_SELECT=1",
+        "STS2_E2E_CHARACTER=Regent",
+        "STS2_E2E_CHARS=1",
+    ]
 
 
 def test_eval_runner_plays_the_held_out_human_starts(

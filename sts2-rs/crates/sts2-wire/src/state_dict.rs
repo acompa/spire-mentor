@@ -512,6 +512,9 @@ fn attacks_this_turn(buckets: Option<[u32; 6]>) -> i32 {
 ///   (BagOfPreparation, Lantern, the turn-1 Innate floor, …) read the turn
 ///   number, so a board rebuilt right after an extra turn must not fall back
 ///   to turn = round (GH #812).
+/// * `cards_drawn_this_combat`: the cards the player drew this combat (C#
+///   `CardDrawnEntry` count, Murder's multiplier; the engine's
+///   `CombatState::cards_drawn`). Main seat only.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SeatHistory {
     pub unblocked_hits_this_combat: u32,
@@ -520,6 +523,7 @@ pub struct SeatHistory {
     pub cards_exhausted_this_turn: u32,
     pub card_block_gains_this_turn: u32,
     pub extra_turns_taken_this_combat: u16,
+    pub cards_drawn_this_combat: u32,
 }
 
 /// The play tag a board's earlier card block gains carry in
@@ -555,6 +559,10 @@ fn parse_seat_history<V: WireValue>(d: &V, path: &str) -> WireResult<SeatHistory
         }
         None => 0,
     };
+    let cards_drawn_this_combat = match extract_optional(d, "cards_drawn_this_combat") {
+        Some(_) => extract_u32(d, path, "cards_drawn_this_combat")?,
+        None => 0,
+    };
     let mut powered_hits_this_turn = Vec::new();
     if let Some(v) = extract_optional(d, "powered_hits_this_turn") {
         let list_path = format!("{path}.powered_hits_this_turn");
@@ -573,6 +581,7 @@ fn parse_seat_history<V: WireValue>(d: &V, path: &str) -> WireResult<SeatHistory
         cards_exhausted_this_turn,
         card_block_gains_this_turn,
         extra_turns_taken_this_combat,
+        cards_drawn_this_combat,
     })
 }
 
@@ -769,6 +778,15 @@ pub struct ParsedCard {
     /// here is the this-turn rider.
     pub persistent_star_cost: Option<i32>,
     pub flags: Vec<String>,
+    /// The single-turn Sly / Retain halves and the keyword Sly of a card in
+    /// a pile OTHER than the hand (`emit::combat` writes them there, GH
+    /// #1197, so the hand-only `flags` contract stays intact). C#
+    /// `HasSingleTurnRetain` / `HasSingleTurnSly` live on the card until
+    /// `PlayerCombatState.EndOfTurnCleanup` walks `AllCards`
+    /// (`PlayerCombatState.cs:274-280`), so an Expertise-drawn card played
+    /// to the discard still holds its grant for the rest of the turn.
+    /// Same vocabulary as [`Self::flags`].
+    pub pile_flags: Vec<String>,
     pub enchantment: Option<String>,
     /// Stack size of [`Self::enchantment`] (C# `EnchantmentModel.Amount`).
     /// The C# producers omit it when it is 0 — which for the flag-shaped
@@ -1359,6 +1377,7 @@ fn apply_seat_histories(state: &mut CoreCombatState, parsed: &ParsedState) {
     state.combat_log.unblocked_damage_received_this_combat = h.unblocked_hits_this_combat;
     state.combat_log.cards_exhausted_this_combat = h.cards_exhausted_this_combat;
     state.combat_log.extra_turns_taken_this_combat = h.extra_turns_taken_this_combat;
+    state.cards_drawn = u16::try_from(h.cards_drawn_this_combat).unwrap_or(u16::MAX);
     seed_turn_history(&mut state.combat_log, h);
     state.player.powered_hits_by_target_this_turn = tally(h);
     for (i, a) in parsed.allies.iter().enumerate() {
@@ -2045,24 +2064,28 @@ fn parse_card<V: WireValue>(d: &V, path: &str) -> WireResult<ParsedCard> {
     let base_damage = opt_i32("base_damage", "`base_damage` must be int or null")?;
     let base_block = opt_i32("base_block", "`base_block` must be int or null")?;
 
-    let flags = match extract_optional(d, "flags") {
-        Some(v) => {
-            let l = as_list(&v, &format!("{path}.flags"))?;
-            let mut fs = Vec::with_capacity(l.len());
-            for (i, f) in l.iter().enumerate() {
-                let fp = format!("{path}.flags[{i}]");
-                let s = f
-                    .as_str()
-                    .ok_or_else(|| schema_err(&fp, "must be a string"))?;
-                if !VALID_CARD_FLAGS.contains(&s.as_str()) {
-                    return Err(unsupported(fp, &s));
+    let parse_flags = |key: &str| -> WireResult<Vec<String>> {
+        match extract_optional(d, key) {
+            Some(v) => {
+                let l = as_list(&v, &format!("{path}.{key}"))?;
+                let mut fs = Vec::with_capacity(l.len());
+                for (i, f) in l.iter().enumerate() {
+                    let fp = format!("{path}.{key}[{i}]");
+                    let s = f
+                        .as_str()
+                        .ok_or_else(|| schema_err(&fp, "must be a string"))?;
+                    if !VALID_CARD_FLAGS.contains(&s.as_str()) {
+                        return Err(unsupported(fp, &s));
+                    }
+                    fs.push(s);
                 }
-                fs.push(s);
+                Ok(fs)
             }
-            fs
+            None => Ok(Vec::new()),
         }
-        None => Vec::new(),
     };
+    let flags = parse_flags("flags")?;
+    let pile_flags = parse_flags("pile_flags")?;
 
     let enchantment = match extract_optional(d, "enchantment") {
         Some(v) => Some(
@@ -2190,6 +2213,7 @@ fn parse_card<V: WireValue>(d: &V, path: &str) -> WireResult<ParsedCard> {
         star_cost,
         persistent_star_cost,
         flags,
+        pile_flags,
         enchantment,
         enchantment_amount,
         combat_vars,
@@ -4478,9 +4502,15 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
     // the draw pile (length + index) and the enemy roster, so a carried uid
     // would point at a different card or none.
     //
-    // The single-turn grants are HAND-SCOPED: they exist only in hand (C#
-    // clears them in `EndOfTurnCleanup`), and every retain / single-turn Sly
-    // read site skips a card not in hand. Keyword Sly granted by
+    // The single-turn grants are TURN-scoped, not hand-scoped: C# keeps the
+    // private bool on the card in whatever pile it moves to until
+    // `PlayerCombatState.EndOfTurnCleanup` clears `AllCards`
+    // (`PlayerCombatState.cs:274-280`, `CardModel.cs:1611-1615`), and the
+    // engine keeps the uid in its list the same way. A card Expertise drew
+    // and the turn then played still carries the grant in the discard; read
+    // it from `pile_flags` there, or the rebuild forgets it (corpus compare
+    // 2026-11-23: five Ironclad A10 seeds whose first input difference was a
+    // discard card's RETAIN_TURN). Keyword Sly granted by
     // MasterPlanner (`AddKeyword`) lasts the combat and stays on the card in
     // every pile (`MasterPlannerPower.cs`), so a `sly` flag is read from every
     // pile: a rebuilt granted-Sly card in the draw pile is still Sly once it
@@ -4492,7 +4522,7 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
     // (`card_sly_in`: v0.111.0 Haze lost the keyword), so only an instance the
     // registry does NOT call Sly can have got the keyword from `AddKeyword`.
     let granted_sly = |state: &CoreCombatState, uid: CardUid, pc: &ParsedCard| {
-        pc.flags.iter().any(|f| f == "sly")
+        pc.flags.iter().chain(&pc.pile_flags).any(|f| f == "sly")
             && !state.cards.get(uid.0.get() as usize - 1).is_some_and(|c| {
                 sts2_core::card_effects::card_sly_in(c.card_id, state.game_version)
             })
@@ -4511,18 +4541,23 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
             }
         }
     }
-    for (&uid, pc) in hand_uids.iter().zip(parsed.deck.hand.iter()) {
-        for f in &pc.flags {
-            match f.as_str() {
-                // C# `ShouldRetainThisTurn` minus the keyword — the
-                // Well-Laid-Plans single-turn grant. The keyword `retain`
-                // flag is folded into the card's keyword override by
-                // `build_card`; folding this transient grant there would
-                // retain the card all fight.
-                "retain_turn" => state.player.retain_this_turn.push(uid),
-                // C# `IsSlyThisTurn` minus the keyword — Hand Trick.
-                "sly_turn" => state.player.sly_this_turn.push(uid),
-                _ => {}
+    for (pile, (uids, cards)) in piles.into_iter().enumerate() {
+        // A hand card (`piles[0]`) names the halves in `flags`; a card in
+        // any other pile in `pile_flags` (the emitter's split, GH #1197).
+        for (&uid, pc) in uids.iter().zip(cards.iter()) {
+            let fl = if pile == 0 { &pc.flags } else { &pc.pile_flags };
+            for f in fl {
+                match f.as_str() {
+                    // C# `ShouldRetainThisTurn` minus the keyword — the
+                    // Well-Laid-Plans / Expertise single-turn grant. The
+                    // keyword `retain` flag is folded into the card's
+                    // keyword override by `build_card`; folding this
+                    // transient grant there would retain the card all fight.
+                    "retain_turn" => state.player.retain_this_turn.push(uid),
+                    // C# `IsSlyThisTurn` minus the keyword — Hand Trick.
+                    "sly_turn" => state.player.sly_this_turn.push(uid),
+                    _ => {}
+                }
             }
         }
     }
@@ -5051,6 +5086,24 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
                 counter: wire_ai.counter,
                 forced_next,
             });
+            // TwoTailedRat `TurnsUntilSummonable` (a private C# field: 2 at
+            // spawn, `--` at the head of SCRATCH / DISEASE_BITE / SCREECH but
+            // not CALL_FOR_BACKUP, `TwoTailedRat.cs`). The engine keeps it on
+            // the AI counter, which no game producer sends, so a rebuilt rat
+            // stayed at 2 and `CanSummon()` read false for the rest of the
+            // fight: a rat with two moves behind it forecast no
+            // CALL_FOR_BACKUP where a native board, and the game, had one
+            // (corpus seeds 180000349/492/850/1216). The performed-move log
+            // the wire does carry counts exactly those decrements.
+            if m.kind == MonsterKind::TwoTailedRat && wire_ai.counter.is_none() {
+                let ticks = ai
+                    .move_history()
+                    .iter()
+                    .filter(|id| matches!(**id, "SCRATCH" | "DISEASE_BITE" | "SCREECH"))
+                    .count();
+                let ticks = i32::try_from(ticks).unwrap_or(i32::MAX);
+                ai.set_counter(2_i32.saturating_sub(ticks).max(0));
+            }
         }
         // Aeonglass telegraphs INCREASING_INTENSITY's Strength as base + the
         // counter (`IncreasingIntensityTotalStrength`, `Aeonglass.cs:78`; the
@@ -5446,8 +5499,56 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
     }
     // Buff amounts the engine writes into a move at runtime (GH #1702).
     sts2_content::monsters::retelegraph_state_dependent_buffs(&mut state);
+    restore_negative_local_costs(&mut state, parsed);
 
     Ok(state)
+}
+
+/// A local cost shaved BELOW zero, which the wire can only show as 0.
+///
+/// C# `CardEnergyCost.GetWithModifiers` folds the local modifiers unclamped
+/// and clamps once at the end (`CardEnergyCost.cs:94-121`), and
+/// `Hook.ModifyEnergyCostInCombat` hands a negative local cost back
+/// untouched, so a Stomp shaved to -1 by four Attacks stays free under
+/// Borrowed Time's +1 (`BorrowedTimePower.TryModifyEnergyCostInCombat`).
+/// The producers send the CLAMPED local cost (`base_cost` 0) and the
+/// resolved one (`cost_override` 0); rebuilt at a local 0, the engine adds
+/// the +1 and the card costs 1 (corpus seed 180001598: Stomp in the discard
+/// at COST 1 against the game's 0). When the engine's global surcharge would
+/// lift a clamped 0 above the resolved 0, the local cost was negative: take
+/// one more off for the turn (Stomp / Pinpoint shave per turn; a card whose
+/// shave also ends when played says so with a non-zero `played_cost`).
+fn restore_negative_local_costs(state: &mut CoreCombatState, parsed: &ParsedState) {
+    let piles: [(Vec<CardUid>, &[ParsedCard]); 5] = [
+        (state.player.hand.to_vec(), &parsed.deck.hand),
+        (state.player.draw.to_vec(), &parsed.deck.draw_pile),
+        (state.player.discard.to_vec(), &parsed.deck.discard_pile),
+        (state.player.exhaust.to_vec(), &parsed.deck.exhaust_pile),
+        (state.player.play.to_vec(), &parsed.deck.play_pile),
+    ];
+    for (uids, cards) in piles {
+        for (uid, pc) in uids.into_iter().zip(cards.iter()) {
+            if pc.cost_override != Some(0) || pc.base_cost != Some(0) {
+                continue;
+            }
+            let idx = uid.0.get() as usize - 1;
+            let Some(card) = state.cards.get(idx) else {
+                continue;
+            };
+            if card.cost.base() <= 0 || card.cost.local() != 0 {
+                continue;
+            }
+            if sts2_core::hooks::effective_card_cost(state, uid) <= 0 {
+                continue;
+            }
+            let expiry = if pc.played_cost.is_some_and(|q| q != 0) {
+                sts2_core::CostExpiry::TurnOrPlayed
+            } else {
+                sts2_core::CostExpiry::Turn
+            };
+            state.cards[idx].cost.add(-1, expiry);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

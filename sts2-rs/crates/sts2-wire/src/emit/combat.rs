@@ -1121,6 +1121,10 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
         &state.combat_log,
         &state.player.powered_hits_by_target_this_turn,
     );
+    // Murder's multiplier (`state_dict::SeatHistory::cards_drawn_this_combat`).
+    if state.cards_drawn > 0 {
+        set(&mut player, "cards_drawn_this_combat", state.cards_drawn);
+    }
 
     // Necrobinder's Osty pet. It lives in `state.creatures` (referenced by
     // `player.pet_uid`), deliberately *not* in `enemy_uids`, so the encounter

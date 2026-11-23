@@ -2128,18 +2128,11 @@ fn debuff_setup_priority_delta(
     if enemy.current_hp <= 0 {
         return 0;
     }
-    let player_strength: i32 = state
-        .player
-        .creature_uid
-        .and_then(|uid| sts2_core::creature_by_id(&state.creatures, uid.0))
-        .map_or(0, |c| {
-            c.powers
-                .iter()
-                .filter_map(|puid| state.powers.get_by_id(puid.0))
-                .filter(|p| p.kind == PowerKind::Strength)
-                .map(|p| p.amount)
-                .sum::<i32>()
-        });
+    // The player's powers are split across the creature mirror and the
+    // legacy list (a monster's `apply_signed_power_to_player` — TheLost's
+    // DEBILITATING_SMOG — writes the legacy list alone, a rebuilt board
+    // writes both): read the union, as the rollout net's features do.
+    let player_strength = state.player_power_amount(PowerKind::Strength);
     let dmg = card.base_damage.saturating_add(player_strength).max(0);
     // Gate 1: target must survive this hit.
     if dmg >= enemy.current_hp {
@@ -2519,26 +2512,10 @@ fn obvious_kill_action(state: &CombatState, actions: &[Action]) -> Option<usize>
     use sts2_core::cards::CardType;
     use sts2_core::PowerKind;
 
-    let (player_strength, player_weak): (i32, bool) = state
-        .player
-        .creature_uid
-        .and_then(|uid| sts2_core::creature_by_id(&state.creatures, uid.0))
-        .map_or((0, false), |c| {
-            let mut strength = 0i32;
-            let mut weak = false;
-            for p in c
-                .powers
-                .iter()
-                .filter_map(|puid| state.powers.get_by_id(puid.0))
-            {
-                match p.kind {
-                    PowerKind::Strength => strength = strength.saturating_add(p.amount),
-                    PowerKind::Weak if p.amount > 0 => weak = true,
-                    _ => {}
-                }
-            }
-            (strength, weak)
-        });
+    // The creature mirror and the legacy list, as in
+    // `debuff_setup_priority_delta`.
+    let player_strength = state.player_power_amount(PowerKind::Strength);
+    let player_weak = state.player_power_amount(PowerKind::Weak) > 0;
 
     let energy = state.player.energy.max(0);
 
@@ -4182,6 +4159,60 @@ mod tests {
         // None) — gate fails open since we can't pick a survival /
         // already-debuffed branch.
         assert_eq!(debuff_setup_priority_delta(&state, &bash_card, None), 0);
+    }
+
+    /// Corpus seeds 180001448 / 180000104 / 180001976 (TheLost, IC A10
+    /// v0.111.0): DEBILITATING_SMOG's Strength -2 sits on the player's legacy
+    /// power list only, where the creature-only read missed it, so Bash at
+    /// an 8-HP Lost under Strength -2 (6 damage) lost its setup bonus in the
+    /// engine's own fight and kept it on the rebuilt board, which carries
+    /// the power on both lists (rl2 action feature 21).
+    #[test]
+    fn debuff_setup_bonus_reads_legacy_strength() {
+        use smallvec::smallvec;
+        use std::num::NonZeroU32;
+        use sts2_core::{CardUid, CombatState, CreatureUid, Power, PowerKind, PowerUid};
+
+        let mut state = CombatState::default();
+        state.player.energy = 3;
+        state.cards = vec![
+            make_attack_card(1, CardId::Bash, 8, 2),
+            make_attack_card(2, CardId::Mangle, 20, 3),
+        ]
+        .into();
+        state.player.hand = smallvec![CardUid::new(1).unwrap(), CardUid::new(2).unwrap()];
+        let player_uid = CreatureUid(NonZeroU32::new(1).unwrap());
+        state.creatures.push(make_enemy(1, 50));
+        state.player.creature_uid = Some(player_uid);
+        state.creatures.push(make_enemy(100, 8));
+        state.enemy_uids = smallvec![CreatureUid(NonZeroU32::new(100).unwrap())];
+        let bash_card = state.cards[0];
+        assert_eq!(
+            debuff_setup_priority_delta(&state, &bash_card, Some(0)),
+            0,
+            "8 kills 8"
+        );
+
+        let pid = PowerUid(NonZeroU32::new(300).unwrap());
+        state.powers.push(Power {
+            id: pid.0,
+            kind: PowerKind::Strength,
+            amount: -2,
+            counter: 0,
+            applier: None,
+            skip_next_tick: false,
+        });
+        let mut legacy = state.clone();
+        legacy.player.powers.push(pid);
+        let mut both = legacy.clone();
+        both.creatures[0].powers.push(pid);
+        for (name, s) in [("legacy list", &legacy), ("both lists", &both)] {
+            assert_eq!(
+                debuff_setup_priority_delta(s, &bash_card, Some(0)),
+                DEBUFF_SETUP_PRIORITY_BONUS,
+                "Strength -2 on the {name}: 6 leaves the 8-HP target alive"
+            );
+        }
     }
 
     /// Bead `sts2-rs-g8sy4` (re-close pass 10): pin that

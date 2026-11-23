@@ -255,11 +255,19 @@ fn translate_relic(relic: &Value) -> Value {
     };
     let mut out = json!({"id": get(relic, "id"), "name": get(relic, "name"), "vars": vars});
     let counter = get(relic, "counter");
-    if is_int(counter) {
+    let rid = get(relic, "id").as_str().unwrap_or("");
+    let rid = rid.strip_prefix("RELIC.").unwrap_or(rid);
+    if is_int(counter)
+        && truthy(get(relic, "is_melted"))
+        && sts2_e2e::snapshot::melted_count_engine_clears(rid)
+    {
+        // The count it melted with, which the engine cleared at the end of
+        // that combat.
+        out["counter"] = json!(0);
+    } else if is_int(counter) {
         // The game's own number, in the engine's terms (GH #1684).
         let shown = py::int_of(counter);
-        let id = get(relic, "id").as_str().unwrap_or("");
-        let id = id.strip_prefix("RELIC.").unwrap_or(id);
+        let id = rid;
         out["counter"] = sts2_e2e::snapshot::engine_counter(id, shown)
             .map_or_else(|| counter.clone(), |c| json!(c));
     } else {
@@ -476,6 +484,7 @@ fn translate_ally(a: &Value, next: &mut usize) -> Value {
             "cards_exhausted_this_turn",
             "card_block_gains_this_turn",
             "extra_turns_taken_this_combat",
+            "cards_drawn_this_combat",
         ] {
             if truthy(get(a, key)) {
                 ally[key] = get(a, key).clone();
@@ -579,6 +588,7 @@ pub fn to_headless_combat_play(state: &Value) -> Result<Value, HeadlessError> {
         "cards_exhausted_this_turn",
         "card_block_gains_this_turn",
         "extra_turns_taken_this_combat",
+        "cards_drawn_this_combat",
     ] {
         player_out[key] = get(player, key).clone();
     }
@@ -718,6 +728,18 @@ mod tests {
         );
         let other = translate_relic(&json!({"id": "PEN_NIB", "name": "Pen Nib", "counter": 7}));
         assert_eq!(other["counter"], json!(7));
+    }
+
+    /// A melted Kusarigama keeps the count it melted with in C#; the engine
+    /// cleared it when that combat ended.
+    #[test]
+    fn a_melted_kusarigama_shows_the_engines_cleared_count() {
+        let melted = translate_relic(&json!(
+            {"id": "KUSARIGAMA", "name": "k", "counter": 1, "is_wax": true, "is_melted": true}
+        ));
+        assert_eq!(melted["counter"], json!(0));
+        let live = translate_relic(&json!({"id": "KUSARIGAMA", "name": "k", "counter": 1}));
+        assert_eq!(live["counter"], json!(1));
     }
 
     /// GH #1829: C# hides Wongo's ticket counter past its payout; read as 0,

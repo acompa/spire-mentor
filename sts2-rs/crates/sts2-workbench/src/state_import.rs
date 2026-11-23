@@ -450,9 +450,14 @@ fn relic_counters_from_wire(entries: &[Value]) -> Vec<(String, i64)> {
         .filter_map(|raw| {
             let counter = raw.get("counter").filter(|v| !v.is_boolean())?.as_i64()?;
             let id = raw.get("id").and_then(Value::as_str)?.trim();
-            let relic = sts2_content::names::relic_id_from_str_any_build(
-                id.strip_prefix("RELIC.").unwrap_or(id),
-            )?;
+            let id = id.strip_prefix("RELIC.").unwrap_or(id);
+            let relic = sts2_content::names::relic_id_from_str_any_build(id)?;
+            // A melted per-turn count is the engine's cleared 0 (the list is
+            // `sts2_e2e::snapshot::melted_count_engine_clears`; sts2-e2e is
+            // optional here).
+            let melted = raw.get("is_melted").and_then(Value::as_bool) == Some(true);
+            let clears = matches!(id, "KUSARIGAMA" | "LETTER_OPENER" | "ORNAMENTAL_FAN");
+            let counter = if melted && clears { 0 } else { counter };
             Some((relic.to_python_name().to_string(), counter))
         })
         .collect()
@@ -695,6 +700,25 @@ pub fn parse_pasted_state(text: &str) -> Result<ImportedState, StateImportError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A melted Kusarigama's count is the engine's cleared 0; a live one's
+    /// and any other relic's stand.
+    #[test]
+    fn a_melted_per_turn_count_reads_as_the_engines_zero() {
+        let got = relic_counters_from_wire(&[
+            json!({"id": "KUSARIGAMA", "counter": 2, "is_wax": true, "is_melted": true}),
+            json!({"id": "ORNAMENTAL_FAN", "counter": 1}),
+            json!({"id": "JOSS_PAPER", "counter": 4, "is_wax": true, "is_melted": true}),
+        ]);
+        assert_eq!(
+            got,
+            vec![
+                ("KUSARIGAMA".to_string(), 0),
+                ("ORNAMENTAL_FAN".to_string(), 1),
+                ("JOSS_PAPER".to_string(), 4),
+            ]
+        );
+    }
 
     fn wire() -> Value {
         json!({

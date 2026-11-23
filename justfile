@@ -44,6 +44,12 @@ check: rs-check rs-test rs-doc-test py-test web-test
 import-game *args:
     uv run --no-project --python 3.13 scripts/import_game.py {{args}}
 
+# weights/README.md describes the nets. `--train` adds the .pt checkpoints,
+# `--net ID` picks one net, `--list` prints the manifest.
+# Download the trained Instinct nets from this repository's releases
+fetch-weights *args:
+    uv run --no-project --python 3.13 scripts/fetch_weights.py {{args}}
+
 # Run `just import-game` first for real art and sound. Please don't host the
 # build publicly: the art and audio are the game's, extracted from your copy
 # for your own use.

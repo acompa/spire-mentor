@@ -145,6 +145,62 @@ fn a_granted_relics_pickup_pick_is_not_the_options() {
     assert_eq!((bones.cards_gained, bones.cards_lost), (0, 0));
 }
 
+/// Neow's Bones previews what its text says, not the two relics it rolls on
+/// pickup (`NeowsBones.cs:40-44`, `PlayerRng.Rewards`): the preview resolved
+/// them, so a Leafy Poultice among them read as two cards lost and a gold
+/// relic as gold. Spire Bench seeds 180001810, 180001893, 180001205,
+/// 180000607 and 180001857 showed the student two cards lost natively and
+/// none in the advisor's seedless rebuild of the same screen.
+#[test]
+fn neows_bones_previews_the_same_whatever_relics_it_rolls() {
+    let mut previews = std::collections::BTreeSet::new();
+    let mut pickups = std::collections::BTreeSet::new();
+    let mut last = None;
+    for seed in 1..=40 {
+        let mut rm = run_state(seed, 0);
+        let rs = &mut rm.run_state;
+        rs.neow_offers = Some(sts2_core::NeowOffers {
+            positive_1: sts2_core::NeowRelic::WingedBoots,
+            positive_2: sts2_core::NeowRelic::LeadPaperweight,
+            cursed: sts2_core::NeowRelic::NeowsBones,
+        });
+        rs.enter_event_room(EventId::Neow);
+        let bones = option_index(rs, "cursed");
+        assert!(previews_visible_part_only(rs, bones));
+        let d = preview_option_effect(rs, bones).expect("previewable");
+        previews.insert(format!("{d:?}"));
+        last = Some(d);
+        // Non-vacuity: what the pickup really does moves with the seed.
+        let mut live = rs.clone();
+        resolve_by_index(&mut live, bones).expect("resolves");
+        let mut deck: Vec<i32> = live.master_deck.iter().map(|c| c.card_id as i32).collect();
+        deck.sort_unstable();
+        pickups.insert(format!(
+            "{} {} {deck:?} {:?} {:?}",
+            live.gold,
+            live.max_hp,
+            live.relics,
+            live.pending_effect_counts()
+        ));
+    }
+    assert!(
+        pickups.len() > 1,
+        "every seed's Bones pickup was alike: test is vacuous"
+    );
+    assert_eq!(previews.len(), 1, "{previews:?}");
+    let d = last.expect("40 seeds");
+    assert_eq!(
+        (
+            d.relics_gained,
+            d.cards_gained,
+            d.cards_lost,
+            d.gold_delta,
+            d.max_hp_delta
+        ),
+        (3, 0, 0, 0, 0)
+    );
+}
+
 fn option_index(rs: &RunState, option: &str) -> usize {
     present(rs)
         .expect("options")

@@ -207,15 +207,28 @@ def _fight_start_hp(
 ) -> dict[str, Any]:
     """The run's HP as the fight started, read at its first decision (GH #1705)."""
     hp, max_hp = run_state.get("hp"), run_state.get("max_hp")
-    ids = [str((r or {}).get("id") or "").rsplit(".", 1)[-1] for r in run_state.get("relics") or []]
-    earring = healed and "WHISPERING_EARRING" in ids and not from_event
+    # A melted wax relic (Toy Box) does nothing any more: a melted Blood
+    # Vial heals no one (Spire Bench seeds 180000158/258/739/1873).
+    ids = [
+        str((r or {}).get("id") or "").rsplit(".", 1)[-1]
+        for r in run_state.get("relics") or []
+        if not (r or {}).get("melted")
+    ]
+    # An Imbued card plays itself at the first turn's start
+    # (`Imbued.AfterAutoPrePlayPhaseEntered`), before the first decision, and
+    # what it plays is unknowable from here (an Imbued Havoc plays the draw
+    # pile's top card): Offering's 6 HP (seeds 180000474, 180000979).
+    imbued = any(
+        (c or {}).get("enchantment") == "Imbued" for c in run_state.get("master_deck") or []
+    )
+    earring = healed and ("WHISPERING_EARRING" in ids or imbued) and not from_event
     # What heals between the screen before the fight and its first turn: a
     # boss room's Pantograph, a `?` room's Planisphere.
     entry = (_PANTOGRAPH_HEAL if boss and "PANTOGRAPH" in ids else 0) + (
         _PLANISPHERE_HEAL if unknown and "PLANISPHERE" in ids else 0
     )
     if earring and room_hp is not None and isinstance(max_hp, int):
-        # Whispering Earring played the first turn before this decision
+        # Whispering Earring (or an Imbued card) played before this decision
         # (`AfterAutoPrePlayPhaseEnteredLate`), so the HP here is already the
         # fight's. The fight started on the HP of the screen before it, plus
         # a boss room's Pantograph; not so a fight an event button started,
@@ -525,6 +538,7 @@ class InstinctPolicy:
                 unknown=node.lower() == "unknown",
                 from_event=bool(self.event_button),
             )
+        self.event_button = None
         return {
             "type": "combat_action",
             "run_state": {**bridge_run_state, **self.fight_hp, "ascension": self.ascension},
@@ -542,7 +556,8 @@ class InstinctPolicy:
         if not (isinstance(named, str) and named) and self.event_button:
             named = event_encounter(self.event_button, self.game_version)
             self.event_fight = named is not None
-        self.event_button = None
+        # `event_button` is cleared by `_fight_msg`, which still reads it for
+        # the fight's starting HP (it runs after this, GH #1751).
         self.encounter = (
             named
             if isinstance(named, str) and named

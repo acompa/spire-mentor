@@ -617,6 +617,14 @@ pub fn undisclosed_power_counters(wire: &Value) -> Vec<String> {
 /// `_relocate_parked`: re-point a stale parked choice's options at the
 /// reseeded piles, matching `(id, upgraded)` one-to-one in option order.
 /// An option found nowhere is dropped; `None` when none survives.
+///
+/// Each option is looked for in the pile it was parked from FIRST (at its
+/// old index, then anywhere in that pile), and only then in the others.
+/// The choice is still open, so its cards have not moved: a Headbutt
+/// (`put_back`) offers DISCARD cards, and a search in fixed hand -> draw
+/// order re-pointed every option that also had a copy in hand or draw at
+/// that copy, so the student read the wrong `choice_pile` / `hand_slot` and
+/// the pick moved the wrong card (GH corpus-compare ACT_CHOOSE class).
 #[must_use]
 pub fn relocate_parked(parked: &Value, seeded: &Value) -> Option<Value> {
     let deck = get(seeded, "deck");
@@ -624,15 +632,38 @@ pub fn relocate_parked(parked: &Value, seeded: &Value) -> Option<Value> {
     let mut cards = Vec::new();
     for opt in list(parked, "cards") {
         let (id, up) = (get(opt, "id"), truthy(get(opt, "upgraded")));
-        let found = WIRE_PILE_TO_LOCATOR.iter().find_map(|(key, loc)| {
-            list(deck, key).iter().enumerate().find_map(|(idx, wc)| {
-                (!used.contains(&(*loc, idx))
-                    && wc.is_object()
-                    && py::eq(get(wc, "id"), id)
-                    && truthy(get(wc, "upgraded")) == up)
-                    .then_some((*loc, idx))
-            })
-        });
+        let home = get(opt, "pile").as_str();
+        let old_index = get(opt, "index")
+            .as_u64()
+            .and_then(|i| usize::try_from(i).ok());
+        let matches = |loc: &str, idx: usize, wc: &Value| {
+            !used.contains(&(loc, idx))
+                && wc.is_object()
+                && py::eq(get(wc, "id"), id)
+                && truthy(get(wc, "upgraded")) == up
+        };
+        let in_pile = |key: &str, loc: &'static str| {
+            let pile = list(deck, key);
+            old_index
+                .filter(|_| home == Some(loc))
+                .and_then(|i| pile.get(i).map(|wc| (i, wc)))
+                .filter(|(i, wc)| matches(loc, *i, wc))
+                .map(|(i, _)| (loc, i))
+                .or_else(|| {
+                    pile.iter()
+                        .enumerate()
+                        .find_map(|(idx, wc)| matches(loc, idx, wc).then_some((loc, idx)))
+                })
+        };
+        let found = WIRE_PILE_TO_LOCATOR
+            .iter()
+            .filter(|(_, loc)| home == Some(*loc))
+            .chain(
+                WIRE_PILE_TO_LOCATOR
+                    .iter()
+                    .filter(|(_, loc)| home != Some(*loc)),
+            )
+            .find_map(|(key, loc)| in_pile(key, loc));
         let Some(found) = found else { continue };
         used.insert(found);
         let mut card: Map<String, Value> = as_obj(opt).clone();
@@ -977,5 +1008,39 @@ mod tests {
             .collect();
         assert_eq!(locs, [("hand".to_owned(), 0), ("discard".to_owned(), 0)]);
         assert!(relocate_parked(&json!({"cards": [{"id": "DECAY"}]}), &seeded).is_none());
+    }
+
+    #[test]
+    fn a_parked_option_stays_in_the_pile_it_was_offered_from() {
+        // Headbutt's put_back offers the DISCARD pile; the same ids also sit
+        // in hand and draw. The reseed must not re-point them there.
+        let seeded = json!({"deck": {
+            "hand": [{"id": "UNRELENTING"}],
+            "draw_pile": [{"id": "STRIKE_IRONCLAD"}, {"id": "DEFEND_IRONCLAD"}],
+            "discard_pile": [
+                {"id": "DEFEND_IRONCLAD"},
+                {"id": "STRIKE_IRONCLAD"},
+                {"id": "UNRELENTING"},
+                {"id": "DEFEND_IRONCLAD"},
+            ],
+        }});
+        let parked = json!({"kind": "put_back", "cards": [
+            {"id": "DEFEND_IRONCLAD", "pile": "discard", "index": 0},
+            {"id": "STRIKE_IRONCLAD", "pile": "discard", "index": 1},
+            {"id": "UNRELENTING", "pile": "discard", "index": 2},
+            {"id": "DEFEND_IRONCLAD", "pile": "discard", "index": 3},
+        ]});
+        let out = relocate_parked(&parked, &seeded).unwrap();
+        let locs: Vec<(String, u64)> = as_list(&out["cards"])
+            .iter()
+            .map(|c| {
+                (
+                    c["pile"].as_str().unwrap().to_owned(),
+                    c["index"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        let d = |i| ("discard".to_owned(), i);
+        assert_eq!(locs, [d(0), d(1), d(2), d(3)]);
     }
 }

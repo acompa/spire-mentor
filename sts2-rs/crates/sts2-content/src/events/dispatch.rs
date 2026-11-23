@@ -480,6 +480,7 @@ fn preview_visible_part(state: &mut RunState, idx: usize) -> Option<bool> {
         // disabled below 40 gold) cannot be taken, so it previews nothing;
         // resolving it would eat the hidden next dish.
         EventId::EndlessConveyor => !present(state)?.get(idx)?.enabled,
+        EventId::Neow => super::act3_glory::neow_apply_visible(state, option_id),
         _ => false,
     })
 }

@@ -137,7 +137,7 @@ pub fn import_act_map(fm: &Value) -> std::result::Result<ActMap, String> {
 }
 
 /// The engine's own `&'static` id of a boss encounter the screen names.
-fn boss_encounter(id: &Value) -> Result<Option<&'static str>> {
+pub(crate) fn boss_encounter(id: &Value) -> Result<Option<&'static str>> {
     let Some(id) = id.as_str().filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
@@ -269,6 +269,12 @@ pub fn card_spec(card: &Value) -> Value {
         };
         spec["enchantment"] = ench.clone();
         spec["enchantment_amount"] = json!(amount);
+    }
+    // Mad Science's per-card type and rider (Tinker Time's picks).
+    let rider = py::get(card, "tinker_time_rider");
+    if py::truthy(rider) {
+        spec["tinker_time_rider"] = rider.clone();
+        spec["type"] = py::get(card, "type").clone();
     }
     spec
 }
@@ -730,6 +736,20 @@ pub fn graft_run(state: &Value, version: &str) -> Result<(RunManager, Vec<String
         notes.push(format!("deck cards not built: {}", missing.join(", ")));
     }
     sts2_wire::graft::set_potion_state(&mut rm, &snap.potions, &[]).map_err(GraftError::Value)?;
+    // The belt the screen shows (`potion_slot_count`, else one entry per
+    // slot, empty ones included). A pickup hook above may have grown it:
+    // Large Capsule obtains two relics off the rebuilt run's own pulls, a
+    // Potion Belt among them on some seeds (GH #1848).
+    let slots = if snap.potion_slots > 0 {
+        snap.potion_slots
+    } else {
+        py::list(py::get(state, "run_state"), "potions").len() as i64
+    };
+    if let Ok(slots) = i32::try_from(slots) {
+        if slots > 0 {
+            rm.run_state.max_potion_slots = slots;
+        }
+    }
     let clamp = |v: i64| i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX });
     rm.debug_set_player(
         Some(clamp(snap.hp)),
@@ -860,6 +880,25 @@ pub(crate) mod tests {
             .collect();
         v.sort();
         json!(v)
+    }
+
+    /// GH #1848: the rebuilt belt is the screen's, whatever the relics'
+    /// pickup hooks did. Large Capsule obtains two relics off the rebuilt
+    /// run's pulls, on some placeholder seeds a Potion Belt (+2 slots).
+    #[test]
+    fn a_rebuild_keeps_the_screens_belt_size() {
+        // The relics' pickup effects are content callbacks.
+        sts2_e2e::env::ensure_engine_installed();
+        let reference = screen_map(&reference_run(1));
+        let mut msg = seedless_message(&reference, 1);
+        msg["run_state"]["relics"] = json!([{"id": "BURNING_BLOOD"}, {"id": "LARGE_CAPSULE"}]);
+        msg["run_state"]["potions"] =
+            json!([{"slot": 0, "empty": true, "id": null}, {"slot": 1, "empty": true, "id": null}]);
+        for n in 1..=300 {
+            msg["seedless_seed"] = json!(format!("{SEEDLESS_SEED}-v{n}"));
+            let (rm, _) = graft_run(&msg, "v0.111.0").expect("graft");
+            assert_eq!(rm.run_state.max_potion_slots, 2, "placeholder v{n}");
+        }
     }
 
     #[test]

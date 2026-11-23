@@ -229,6 +229,65 @@ def test_whispering_earrings_first_turn_does_not_move_the_fights_run_hp():
     assert msg["run_state"]["hp"] == 79
 
 
+def test_a_melted_blood_vial_heals_nothing_before_the_first_turn():
+    # Toy Box's wax Blood Vial melts; the game shows it, it heals nothing
+    # (Spire Bench seed 180000158: the map read 86, so did the first turn).
+    pol = _policy([])
+    pol.saw(
+        {
+            "decision": "map_select",
+            "player": {"hp": 86, "max_hp": 107},
+            "context": {"room_type": "Map"},
+        }
+    )
+    melted = [{"id": "RELIC.TOY_BOX"}, {"id": "RELIC.BLOOD_VIAL", "melted": True}]
+    fight = {"decision": "combat_play", "context": {"act": 3, "room_type": "Monster"}}
+    msg = pol._fight_msg(fight, {"hp": 86, "max_hp": 107, "relics": melted}, None)
+    assert msg["run_state"]["hp"] == 86
+
+
+def test_an_imbued_cards_first_turn_play_does_not_move_the_fights_run_hp():
+    # Imbued plays its card at the first turn's start, before the first
+    # decision; an Imbued Offering cost 6 HP there (seed 180000474: map 71,
+    # first turn 65). The fight started on the map's HP.
+    pol = _policy([])
+    pol.saw(
+        {
+            "decision": "map_select",
+            "player": {"hp": 71, "max_hp": 80},
+            "context": {"room_type": "Map"},
+        }
+    )
+    deck = [{"id": "OFFERING", "enchantment": "Imbued", "enchantment_amount": 1}]
+    fight = {"decision": "combat_play", "context": {"act": 2, "room_type": "Monster"}}
+    run = {"hp": 65, "max_hp": 80, "relics": [], "master_deck": deck}
+    assert pol._fight_msg(fight, run, None)["run_state"]["hp"] == 71
+
+
+def test_an_event_fights_first_decision_still_knows_its_button():
+    # The fight's first decision names the encounter before it reads the
+    # starting HP; naming it used to forget the event button, so an event
+    # fight took the map's path: Whispering Earring added Planisphere's heal,
+    # already on the event's own screen, a second time (seed 180001585: 81
+    # read as 86).
+    pol = _policy([])
+    relics = [{"id": "RELIC.WHISPERING_EARRING"}, {"id": "RELIC.PLANISPHERE"}]
+    pol.saw(
+        {
+            "decision": "event_choice",
+            "player": {"hp": 81, "max_hp": 97},
+            "context": {"room_type": "Event"},
+        }
+    )
+    pol.event_button = "BATTLEWORN_DUMMY.pages.INITIAL.options.SETTING_2"
+    fight = {"decision": "combat_play", "context": {"act": 3, "room_type": "Monster"}}
+    pol._name_encounter(fight, ["BattleFriendV2"], "unknown")
+    run = {"hp": 81, "max_hp": 97, "relics": relics}
+    msg = pol._fight_msg(fight, run, None, node="unknown")
+    assert msg["run_state"]["hp"] == 81
+    assert pol.event_button is None
+
+
 def test_a_fight_does_not_start_again_when_its_mirror_was_dropped():
     # The driver calls `fight_started` whenever it meets a fight screen with
     # no live mirror. A mirror dropped in the middle of a fight (a desync)

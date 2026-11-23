@@ -86,6 +86,20 @@ fn thievery_steal(state: &mut CombatState, owner: sts2_core::CreatureUid) {
     if state.is_over || state.player.current_hp <= 0 || state.gold <= 0 {
         return;
     }
+    // A merc that died during its own attack (Thorns, Flame Barrier) has no
+    // Thievery left: `CreatureCmd.Kill` strips a dead creature's powers
+    // (`RemoveAllPowersAfterDeath`, `CreatureCmd.cs:566`; Thievery keeps the
+    // default `ShouldPowerBeRemovedAfterOwnerDeath() => true`), so the
+    // move's `foreach (… GetPowerInstances<ThieveryPower>()) Steal()` loops
+    // over nothing. Surprise's death spawn has already read the total.
+    if state
+        .creatures
+        .iter()
+        .find(|c| c.id == owner.0)
+        .is_none_or(|c| c.current_hp <= 0)
+    {
+        return;
+    }
     let uids: smallvec::SmallVec<[sts2_core::PowerUid; 8]> = state
         .creatures
         .iter()
@@ -2818,6 +2832,37 @@ mod tests {
             );
             (mv.effect)(&mut state, owner);
             assert_eq!(state.gold, 79, "{id} runs ThieveryPower.Steal");
+        }
+    }
+
+    /// A merc killed by Thorns during its own attack steals nothing: its
+    /// powers went with it (`CreatureCmd.cs:566`). Spire Bench seeds
+    /// 180000877 / 180001754 (Bronze Scales): the game kept the gold, the
+    /// engine took 20 more and never gave it back.
+    #[test]
+    fn a_gremlin_merc_that_died_mid_move_steals_nothing() {
+        let ai = create_gremlin_merc_ai();
+        for id in ["GIMME", "DOUBLE_SMASH", "HEHE"] {
+            let sts2_core::monster_ai::MonsterState::Move(mv) = ai.states.get(id).expect("state")
+            else {
+                panic!("{id} is not a Move state");
+            };
+            let (mut state, owner) = combat_with_one_enemy();
+            state.gold = 99;
+            sts2_core::card_effects::apply_power_to_creature(
+                &mut state,
+                owner,
+                PowerKind::Thievery,
+                20,
+            );
+            state
+                .creatures
+                .iter_mut()
+                .find(|c| c.id == owner.0)
+                .expect("owner")
+                .current_hp = 0;
+            (mv.effect)(&mut state, owner);
+            assert_eq!(state.gold, 99, "{id}: a dead merc steals nothing");
         }
     }
 

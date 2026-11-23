@@ -375,6 +375,14 @@ def _run_state(state: dict[str, Any], character: str) -> dict[str, Any]:
                 if c.get("enchantment")
                 else {}
             ),
+            # Mad Science's type is per card (Tinker Time picks it), and an
+            # enchant screen offers it by that type: Momentum takes an Attack,
+            # Swift a Power. The rebuild types it off these two.
+            **(
+                {"type": c.get("type"), "tinker_time_rider": c.get("tinker_time_rider")}
+                if c.get("tinker_time_rider") is not None
+                else {}
+            ),
         }
         for c in (player.get("deck") or [])
     ]
@@ -417,6 +425,8 @@ def _run_state(state: dict[str, Any], character: str) -> dict[str, Any]:
             {
                 "id": r.get("id"),
                 **({"counter": r["counter"]} if _is_counter(r.get("counter")) else {}),
+                # A melted wax relic (Toy Box) is shown but does nothing.
+                **({"melted": True} if r.get("is_melted") else {}),
             }
             for r in (player.get("relics") or [])
         ],
@@ -508,27 +518,46 @@ def to_bridge_map_select(
     return out
 
 
+def _bridge_offer_card(c: dict[str, Any]) -> dict[str, Any]:
+    """A card a reward or a pack offers, in the bridge's card shape."""
+    return {
+        "id": _plain_card_id(c.get("id")),
+        "name": _english(c.get("name")),
+        "rarity": c.get("rarity"),
+        "upgrade_level": 1 if c.get("upgraded") else 0,
+        # Silken Tress glams every reward card; the rebuild stamps it on.
+        **(
+            {
+                "enchantment": _english(c["enchantment"]),
+                "enchantment_amount": c.get("enchantment_amount") or 1,
+            }
+            if c.get("enchantment")
+            else {}
+        ),
+    }
+
+
 def to_bridge_card_reward(state: dict[str, Any], character: str) -> dict[str, Any]:
     out = _envelope(state, "card_reward", character)
-    out["cards"] = [
-        {
-            "id": _plain_card_id(c.get("id")),
-            "name": _english(c.get("name")),
-            "rarity": c.get("rarity"),
-            "upgrade_level": 1 if c.get("upgraded") else 0,
-            # Silken Tress glams every reward card; the rebuild stamps it on.
-            **(
-                {
-                    "enchantment": _english(c["enchantment"]),
-                    "enchantment_amount": c.get("enchantment_amount") or 1,
-                }
-                if c.get("enchantment")
-                else {}
-            ),
-        }
-        for c in (state.get("cards") or [])
-    ]
+    out["cards"] = [_bridge_offer_card(c) for c in (state.get("cards") or [])]
     out["can_skip"] = bool(state.get("can_skip"))
+    return out
+
+
+def to_bridge_card_bundle(state: dict[str, Any], character: str) -> dict[str, Any]:
+    """Scroll Boxes' pack pick as the mod's ``card_bundle`` screen (GH #1847).
+
+    Sent as a bare envelope, the pick had no screen the advisor reads, and
+    every pack choice fell back to a random one.
+    """
+    out = _envelope(state, "card_bundle", character)
+    out["bundles"] = [
+        {
+            "index": int(b.get("index", i)),
+            "cards": [_bridge_offer_card(c) for c in (b.get("cards") or [])],
+        }
+        for i, b in enumerate(state.get("bundles") or [])
+    ]
     return out
 
 
@@ -691,6 +720,10 @@ def to_bridge_shop(state: dict[str, Any], character: str) -> tuple[dict[str, Any
     """Shop -> the bridge options list + a same-order table mapping each
     option index to its headless ``(action, args)`` command."""
     out = _envelope(state, "shop", character)
+    # The Fake Merchant event's shop (`FAKE_MERCHANT`): the advisor opens it
+    # as the event, not as a merchant whose prices discount relics adjust.
+    if state.get("event_name"):
+        out["event_name"] = state["event_name"]
     gold = (state.get("player") or {}).get("gold", 0)
     options: list[dict[str, Any]] = [
         {
@@ -1363,7 +1396,7 @@ def _bridge_answer_to_command(
         # boss_relic: `_boss_relic_reroute`d Ancient relic offers answer with
         # the ORIGINAL event option index, so choose_option maps back 1:1.
         return {"action": "choose_option", "args": {"option_index": int(answer.get("index", 0))}}
-    if msg_type == "bundle_select":
+    if msg_type in ("bundle_select", "card_bundle"):
         # Scroll Boxes: pick 1 of N card packs. No trained surface — the
         # answer comes from realgame_random's best-effort ``choose``/0, and
         # any in-range pack index is a legal answer. Mapping it to
@@ -1802,8 +1835,10 @@ def play_one_headless_session(
                     bridge_state = to_bridge_card_select(state, character)
                 elif decision == "shop":
                     bridge_state, shop_commands = to_bridge_shop(state, character)
+                elif decision == "bundle_select":
+                    bridge_state = to_bridge_card_bundle(state, character)
                 else:
-                    # bundle_select / unknown: proceed-style random legality.
+                    # unknown: proceed-style random legality.
                     bridge_state = _envelope(state, str(decision), character)
 
                 # The training obs carry the act map on EVERY decision, but

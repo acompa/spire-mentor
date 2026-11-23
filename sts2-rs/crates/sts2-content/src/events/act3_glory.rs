@@ -398,6 +398,38 @@ fn neow_cursed(state: &mut RunState) -> EventOutcome {
     EventOutcome::finished("Gained a cursed relic from Neow.")
 }
 
+/// Relics Neow's Bones grants on pickup (`NeowsBones.cs` `Relics` var).
+const NEOWS_BONES_RELICS: usize = 2;
+
+/// The part of a Neow option the player can see before taking it, for an
+/// option whose relic rolls its payoff on pickup: Neow's Bones shows "Gain 2
+/// random Neow Relics. Add 1 random Curse", and which two relics it grants is
+/// rolled from `PlayerRng.Rewards` in `AfterObtained` (`NeowsBones.cs:40-44`).
+/// Resolving it in the preview ran those relics' own pickups (a Leafy
+/// Poultice's transforms and max-HP loss, a gold relic's gold), so the
+/// student saw the hidden roll: Spire Bench seeds 180001810 & co. read two
+/// cards lost natively and none in the advisor's seedless rebuild. Bones and
+/// its two relics read as three relics on offer (the stand-ins are Bones
+/// itself: the preview counts them only); nothing runs its `AfterObtained`.
+/// Returns `false` for every other Neow relic, whose pickup is its visible
+/// text and resolves as before.
+pub(super) fn neow_apply_visible(state: &mut RunState, option_id: &str) -> bool {
+    let Some(offers) = state.neow_offers else {
+        return false;
+    };
+    let relic = match option_id {
+        "positive_1" if !state.game_mode.is_blitz() => offers.positive_1,
+        "positive_2" => offers.positive_2,
+        "cursed" => offers.cursed,
+        _ => return false,
+    };
+    if relic != sts2_core::NeowRelic::NeowsBones {
+        return false;
+    }
+    state.offer_relic_rewards(RelicId::NeowsBones, 1 + NEOWS_BONES_RELICS);
+    true
+}
+
 /// Dynamic option-list builder for Neow: labels reflect the cached
 /// rolled relic names from [`sts2_core::RunState::neow_offers`]. If
 /// the cache is unset (e.g. the run-loop hasn't called

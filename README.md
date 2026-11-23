@@ -67,20 +67,20 @@ method and commands:
 
 **Instinct** (no search, greedy play, Ascension 10, in the simulator):
 
-| Character | Shipped net (4.5B decisions) | Previous net (2.5B) |
-|---|---|---|
-| Ironclad | **79.9%** (799 / 1,000) | 81.2% |
-| Defect | **71.8%** (359 / 500) | 63.8% |
-| Regent | **65.8%** (329 / 500) | 54.2% |
-| Silent | **60.8%** (304 / 500) | 53.4% |
-| Necrobinder | **52.8%** (264 / 500) | 43.8% |
-| The Fool (v0.113.0, own net, 850M decisions) | **59.4%** (297 / 500) | 50.0% |
+| Character | Win rate |
+|---|---|
+| Ironclad | **79.9%** (799 / 1,000) |
+| Defect | **71.8%** (359 / 500) |
+| Regent | **65.8%** (329 / 500) |
+| Silent | **60.8%** (304 / 500) |
+| Necrobinder | **52.8%** (264 / 500) |
+| The Fool (v0.113.0, own net, 850M decisions) | **59.4%** (297 / 500) |
 
 One net plays the first five characters on game build v0.111.0; The Fool,
 new in v0.113.0, has its own. Each lane measured its net on its held-out DEV
 seed panel in the engine it trained on; a cell's 95% interval is about
-±4.4 pp (±2.5 pp for Ironclad); both columns use the same seeds. The
-five-character net was swapped on 23 November 2026 and its lane is still
+±4.4 pp (±2.5 pp for Ironclad). The five-character net is its lane's
+4.5-billion-decision milestone (23 November 2026); the lane is still
 training. Records:
 [`sts2-pycli/data/e2e/`](sts2-pycli/data/e2e/).
 
@@ -95,7 +95,7 @@ test seeds, read once under a pre-registered protocol):
 Write-up:
 [`docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md`](docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md).
 
-**On the game's own code.** The previous net (2.5B) played 300 Ironclad A10 seeds
+**On the game's own code.** An earlier milestone of the five-character net (2.5B) played 300 Ironclad A10 seeds
 twice, in the Rust engine and through the game's real assembly run headless
 with the game's own RNG: 79.7% against 78.7%, within noise (p = 0.72). The
 simulator's numbers carry over
@@ -107,6 +107,12 @@ Defect 76.1% and the then Ironclad champion 83.6% averaged over A0–A10, at
 [version 1 docs](https://tfriedel.github.io/spire-mentor/v1/index.html#ai), with
 [how Instinct plays](https://tfriedel.github.io/spire-mentor/ai.html#instinct)
 and [how it was trained](https://tfriedel.github.io/spire-mentor/training.html#instinct).
+
+**The weights are published** under the MIT licence, for running, fine-tuning
+and distillation: the five-character net, The Fool's net and the 9.0B
+Ironclad-only net, each as a runnable `.e2ew` and a `.pt` checkpoint with the
+value head. They are release assets, not git files: `just fetch-weights`
+downloads them, and [weights/README.md](weights/README.md) describes them.
 
 ## The browser workbench
 

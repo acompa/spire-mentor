@@ -233,28 +233,26 @@
   <div class="table-wrap fit">
   <table>
     <caption>Instinct: simulator win rate at Ascension 10, greedy play, no search</caption>
-    <thead><tr><th>Character</th><th class="num">Shipped net<br><small>4.5 B decisions</small></th><th class="num">Previous net<br><small>2.5 B</small></th></tr></thead>
+    <thead><tr><th>Character</th><th class="num">Win rate</th></tr></thead>
     <tbody>
-      <tr><td>Ironclad</td><td class="num">79.9%<br><small>799 / 1,000</small></td><td class="num">81.2%</td></tr>
-      <tr><td>Defect</td><td class="num">71.8%<br><small>359 / 500</small></td><td class="num">63.8%</td></tr>
-      <tr><td>Regent</td><td class="num">65.8%<br><small>329 / 500</small></td><td class="num">54.2%</td></tr>
-      <tr><td>Silent</td><td class="num">60.8%<br><small>304 / 500</small></td><td class="num">53.4%</td></tr>
-      <tr><td>Necrobinder</td><td class="num">52.8%<br><small>264 / 500</small></td><td class="num">43.8%</td></tr>
-      <tr><td>The Fool <small>(v0.113.0, own net, 850 M)</small></td><td class="num">59.4%<br><small>297 / 500</small></td><td class="num">50.0%</td></tr>
+      <tr><td>Ironclad</td><td class="num">79.9%<br><small>799 / 1,000</small></td></tr>
+      <tr><td>Defect</td><td class="num">71.8%<br><small>359 / 500</small></td></tr>
+      <tr><td>Regent</td><td class="num">65.8%<br><small>329 / 500</small></td></tr>
+      <tr><td>Silent</td><td class="num">60.8%<br><small>304 / 500</small></td></tr>
+      <tr><td>Necrobinder</td><td class="num">52.8%<br><small>264 / 500</small></td></tr>
+      <tr><td>The Fool <small>(v0.113.0, own net, 850 M)</small></td><td class="num">59.4%<br><small>297 / 500</small></td></tr>
     </tbody>
   </table>
   </div>
   <p class="note">The shipped five-character net is its training lane's
-  4.5-billion-decision milestone (shipped 23 November 2026), the previous
-  one the same lane at 2.5 billion; the lane is still training. The Fool's
-  net is its own lane's 850-million milestone, trained mostly on Fool runs
-  (previous: 600 million). Greedy
+  4.5-billion-decision milestone (shipped 23 November 2026); the lane is
+  still training. The Fool's net is its own lane's 850-million milestone,
+  trained mostly on Fool runs. Greedy
   play means the net always takes its top choice. Each lane measured its net
   with its own evaluation on its DEV seed panel (seeds from 160,000,000,
   Act 1 rolled between Overgrowth and Underdocks) in the engine it trained
-  on, the same seeds for both columns; a cell's 95% interval is about
-  ±4.4 pp (±2.5 pp for Ironclad), so Ironclad has not moved between the two
-  nets and the other five characters have. The nets are trained with an
+  on; a cell's 95% interval is about ±4.4 pp (±2.5 pp for Ironclad). The
+  nets are trained with an
   out-of-combat potion menu that the shipped hosts leave off. Records:
   <code>sts2-pycli/data/e2e/*.provenance.md</code>.</p>
 
@@ -277,8 +275,8 @@
   five-character lane above.
   Write-up:
   <code>docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md</code>.</p>
-  <p class="note"><strong>On the game's own code.</strong> The previous
-  net (2.5 B) also played 300 Ironclad A10 seeds twice: in the Rust engine and through
+  <p class="note"><strong>On the game's own code.</strong> An earlier
+  milestone of the five-character net (2.5 B) also played 300 Ironclad A10 seeds twice: in the Rust engine and through
   the game's real assembly run headless, with the game's own RNG. It won
   79.7% in the engine and 78.7% on the real game code (31 seeds differed, 17
   against 14, p = 0.72), so the simulator's numbers carry over. Write-up:

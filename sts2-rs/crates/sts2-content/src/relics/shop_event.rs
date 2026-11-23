@@ -2416,7 +2416,14 @@ fn listener_music_box_card_played(state: &mut CombatState, ctx: &CardEventCtx) -
     let new_uid = spawn_card_into_hand_with_origin(state, cloned, true);
     // `CreateClone` keeps the played card's Retain / Sly flags.
     state.inherit_clone_flags(state.cards[idx].uid, new_uid);
-    set_card_var(state, new_uid, VarKey::EtherealThisCombat, 1);
+    // C# `CardCmd.ApplyKeyword(card, Ethereal)` adds to a keyword set: on a
+    // card that is Ethereal already (Fear) it changes nothing, and the clone
+    // is the same card as the one in hand (corpus seed 180000641).
+    let ethereal = sts2_core::card_by_uid(&state.cards, new_uid)
+        .is_some_and(sts2_core::card_effects::card_ethereal_inst);
+    if !ethereal {
+        set_card_var(state, new_uid, VarKey::EtherealThisCombat, 1);
+    }
     EffectResult::Resolved
 }
 
@@ -15230,6 +15237,29 @@ mod tests {
             hand_now,
             "latched MusicBox must not clone a second Attack"
         );
+    }
+
+    /// Corpus seed 180000641: a Music Box clone of an Ethereal card (Fear)
+    /// gains nothing from `ApplyKeyword(Ethereal)`, so it carries no
+    /// per-fight Ethereal of its own and stays one card with the original.
+    #[test]
+    fn music_box_clone_of_an_ethereal_card_adds_no_ethereal_var() {
+        use sts2_core::cards::{CardType, VarKey};
+        use sts2_core::relic_effects::dispatch_after_card_played;
+        crate::relics::dispatch::ensure_installed();
+        let mut state = CombatState::default();
+        equip_relic(&mut state, RelicKind::MusicBox);
+        let ctx = music_box_play_card(&mut state, CardType::Attack);
+        let played = ctx.card_uid.expect("uid");
+        if let Some(c) = state.cards.iter_mut().find(|c| c.uid == played) {
+            sts2_core::card_effects::apply_ethereal_keyword(c);
+        }
+        let _ = dispatch_after_card_played(&mut state, &ctx);
+        let clone_uid = *state.player.hand.last().unwrap();
+        let clone = &state.cards[clone_uid.0.get() as usize - 1];
+        assert_ne!(clone_uid, played, "a clone was made");
+        assert!(sts2_core::card_effects::card_ethereal_inst(clone));
+        assert_eq!(clone.combat_var(VarKey::EtherealThisCombat), 0);
     }
 
     /// C# `MusicBox.AfterCardPlayed` (MusicBox.cs:73-84) adds a

@@ -67,6 +67,17 @@ class RunnerError(RuntimeError):
     pass
 
 
+def fill_set_env(environ: Mapping[str, str]) -> list[str]:
+    """``--set-env`` args for the fill-event flags set in ``environ``."""
+    from .factory import CHARS_ENV, DECK_SELECT_ENV, OOC_POTION_ENV, REWARD_SCREEN_ENV
+
+    out: list[str] = []
+    for k in (CHARS_ENV, OOC_POTION_ENV, REWARD_SCREEN_ENV, DECK_SELECT_ENV):
+        if environ.get(k, "") == "1":
+            out += ["--set-env", f"{k}=1"]
+    return out
+
+
 def runner_panel(name: str) -> P.Panel:
     """The runner panel of an ops panel (DEV-1000 -> DEV) or of a runner panel name."""
     try:
@@ -196,6 +207,10 @@ def run_request(
             f"{CHARS_ENV}=1",
             *extra,
         ]
+    # The lane's fill events reach its workers (and this runner) as env flags, but
+    # `evaluate` re-executes in a clean env that drops them: forward the ones set, or
+    # the eval plays screens (deck select, potion popup, ...) the net never trained on.
+    extra = [*fill_set_env(os.environ), *extra]
     if str(req.get("env") or "") == "human":
         # The held-out human starts (`ppo.e2e.human`): DEV seed i plays held-out start i.
         from .human import BANK_ENV, EVAL_ENV

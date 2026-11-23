@@ -33,6 +33,10 @@ internal static class SeatHistory
             e.Receiver == creature && e.Result.UnblockedDamage > 0);
         summary["cards_exhausted_this_combat"] = exhausts.Count(e => e.Actor == creature);
         summary["cards_exhausted_this_turn"] = exhausts.Count(e => e.HappenedThisTurn(state) && e.Actor == creature);
+        // Murder's multiplier (`Murder.cs`: every `CardDrawnEntry` whose Actor
+        // is the owner, this combat). The card's `calculateddamage` stat is
+        // the unscaled base, so without this count a rebuilt Murder hits for 1.
+        summary["cards_drawn_this_combat"] = history.Entries.OfType<CardDrawnEntry>().Count(e => e.Actor == creature);
 
         var finished = history.CardPlaysFinished
             .Where(f => f.CardPlay != null).Select(f => f.CardPlay).ToHashSet();

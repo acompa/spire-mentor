@@ -515,7 +515,7 @@ internal static class RefereeView
         // Combat history a player watched happen (GH #1712, the mod's #989 keys).
         Add("player", "bound_card_played_this_turn hp_lost_this_turn unblocked_hits_this_combat"
             + " cards_exhausted_this_combat cards_exhausted_this_turn card_block_gains_this_turn"
-            + " extra_turns_taken_this_combat");
+            + " extra_turns_taken_this_combat cards_drawn_this_combat");
         Add("player.powered_hits_this_turn[]", "enemy hits");
         Add("player.potions[]", "entry name description index slot target_type vars vars.*");
         Add("player.relics[]", "id name description counter is_wax is_melted vars vars.*");
