@@ -104,7 +104,7 @@ simulator's numbers carry over
 The search agent's per-ascension win rates from October 2026 (for example
 Defect 76.1% and the then Ironclad champion 83.6% averaged over A0–A10, at
 8,000 sims per decision on game build v0.107.1) are in the
-[docs](https://tfriedel.github.io/spire-mentor/#search-agent), with
+[version 1 docs](https://tfriedel.github.io/spire-mentor/v1/index.html#ai), with
 [how Instinct plays](https://tfriedel.github.io/spire-mentor/ai.html#instinct)
 and [how it was trained](https://tfriedel.github.io/spire-mentor/training.html#instinct).
 

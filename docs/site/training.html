@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How the AI is trained</title>
-<meta name="description" content="How spire-mentor trains its AI: Instinct, one network trained end to end with PPO over billions of simulated decisions, and the earlier per-character run policies with their pre-registered promotion gate.">
+<meta name="description" content="How spire-mentor trains Instinct: one network learning every decision of a Slay the Spire 2 run with PPO, from billions of its own decisions in a Rust simulator, evaluated on sealed seed panels.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 9v14l12 7 12-7V9z' fill='%23d9a441'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kreon:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 <script>try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
@@ -30,17 +30,19 @@
 <nav id="toc" class="toc" aria-label="Contents">
   <p class="toc-title">On this page</p>
   <ol>
-    <li><a href="#instinct">Instinct: end to end</a></li>
+    <li><a href="#idea">The idea</a></li>
     <li><a href="#primer">PPO in plain words</a></li>
     <li><a href="#env">The environment</a></li>
     <li><a href="#reward">Reward</a></li>
-    <li><a href="#ppo">PPO settings</a></li>
-    <li><a href="#compute">Collection &amp; compute</a></li>
-    <li><a href="#start">Starting points</a></li>
-    <li><a href="#lineage">Champion lineages</a></li>
-    <li><a href="#gate">The promotion gate</a></li>
+    <li><a href="#critic">A critic that sees more</a></li>
+    <li><a href="#ppo">Algorithm</a></li>
+    <li><a href="#start">Warm start</a></li>
+    <li><a href="#compute">Compute</a></li>
+    <li><a href="#trajectory">The first campaign</a></li>
+    <li><a href="#eval">Evaluation</a></li>
+    <li><a href="#chars">All characters</a></li>
     <li><a href="#lessons">What we learned</a></li>
-    <li><a href="#results">Results</a></li>
+    <li><a href="v1/training.html">V1: the run policies</a></li>
   </ol>
 </nav>
 
@@ -48,120 +50,56 @@
 
 <section class="hero">
   <h1>How the AI is trained</h1>
-  <p class="lede">The current AI, Instinct, is one transformer trained end
-  to end with PPO: it plays whole runs in the simulator, fights included,
-  and learns from billions of its own decisions. The first section covers
-  it. The rest of the page is the earlier recipe: a run policy per character
-  trained with PPO while the combat search played every fight, promoted only
-  after beating the deployed net on 2,200 paired runs it had never seen.</p>
+  <p class="lede">Instinct is one transformer trained end to end with PPO.
+  It plays whole runs in the simulator, fights included, and learns from the
+  outcome. The first campaign took an Ironclad net from 12% to 81% wins at
+  Ascension 10 in 13 days on one machine, over 9 billion of its own
+  decisions, with no search and no human data.</p>
   <p class="note">What the network looks like and how it is used at play
   time is on <a href="ai.html">How the AI plays</a>. The training code is in
-  <code>sts2-pycli/python/ppo/</code>; every shipped net has a provenance
-  file next to it in <code>sts2-pycli/data/ppo/</code>.</p>
-  <figure class="fig">
-    <div class="canvas"><svg viewBox="0 0 760 316" role="img" aria-label="The training loop: CPU workers play full runs, a batch of 256 or 960 runs is collected, PPO updates the net on a GPU, and the new weights go back to the workers"><defs><marker id="ah-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker><marker id="aa-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-acc"/></marker></defs><rect x="30" y="40" width="300" height="104" rx="10" class="box2"/><text x="46" y="66" class="h" text-anchor="start">Play full runs</text><text x="46" y="90" class="s" text-anchor="start">CPU workers in parallel, each a whole run:</text><text x="46" y="108" class="s" text-anchor="start">Rust engine · MCTS for fights (250 / 1,000 sims)</text><text x="46" y="126" class="s" text-anchor="start">policy in PyTorch, one thread per worker</text><rect x="440" y="40" width="290" height="104" rx="10" class="box2"/><text x="456" y="66" class="h" text-anchor="start">Collect a batch</text><text x="456" y="90" class="s" text-anchor="start">256 or 960 runs per iteration</text><text x="456" y="108" class="s" text-anchor="start">every multi-option decision is a step</text><text x="456" y="126" class="s" text-anchor="start">reward: progress + shaping</text><rect x="440" y="196" width="290" height="104" rx="10" class="box2"/><text x="456" y="222" class="h" text-anchor="start">Update</text><text x="456" y="246" class="s" text-anchor="start">GAE: λ 0.97, γ 1</text><text x="456" y="264" class="s" text-anchor="start">PPO clip 0.2 · 2 epochs · minibatch 192</text><text x="456" y="282" class="s" text-anchor="start">about 34 s on one GPU (960 games)</text><rect x="30" y="196" width="300" height="104" rx="10" class="box2"/><text x="46" y="222" class="h" text-anchor="start">Ship weights back</text><text x="46" y="246" class="s" text-anchor="start">every worker plays the next</text><text x="46" y="264" class="s" text-anchor="start">iteration with the new net</text><text x="46" y="282" class="s" text-anchor="start">typically 150 iterations per leg</text><path d="M334,92 L434,92" class="path" marker-end="url(#aa-loop)"/><path d="M585,148 L585,190" class="path" marker-end="url(#aa-loop)"/><path d="M436,248 L336,248" class="path" marker-end="url(#aa-loop)"/><path d="M180,192 L180,150" class="path" marker-end="url(#aa-loop)"/><text x="384" y="80" class="s" text-anchor="middle">trajectories</text><text x="384" y="238" class="s" text-anchor="middle">new weights</text><text x="384" y="172" class="m" text-anchor="middle">collection: most of the wall-clock</text></svg></div>
-    <figcaption>One PPO iteration. On the engine of August–September 2026 the 150-iteration legs in the table below took 36 to 63 hours each, with 46 worker processes on a 24-core CPU. On the October 2026 engine a typical Ironclad iteration of the current recipe (960 games at 250/1,000 simulations) takes 208 s instead of 609 s on the previous (12 October) engine, so 150 iterations take about 9 hours instead of 25 (<a href="benchmarks.html#training">benchmarks</a>).</figcaption>
-  </figure>
-
+  <code>sts2-pycli/python/ppo/e2e/</code>; every shipped net has a
+  provenance file next to it in <code>sts2-pycli/data/e2e/</code>. The
+  earlier recipe, a run policy per character trained while a tree search
+  played the fights, is in the <a href="v1/training.html">V1 archive</a>.</p>
 </section>
 
-<section id="instinct">
-  <h2>Instinct: end-to-end training</h2>
-  <p>The earlier recipe taught a network the choices between fights and
-  left the fights to a search. Instinct's training removes the search: one
-  network makes every decision, and a run's outcome is credited to all of
-  them. The first campaign trained an Ironclad net at Ascension 10 on game
-  build v0.111.0 from 4 to 17 November 2026.</p>
-  <ul class="facts">
-    <li><strong>Scale.</strong> 9.0 billion decisions, 11.6 million runs,
-    299 million fights, 313 hours on one machine: an AMD EPYC 7443P (24
-    cores), 40 rollout workers with 32 simulated games each, and four RTX
-    3090s (one for inference, three for updates). Throughput rose from 6,700
-    to 10,300 decisions a second as the rollout loop moved into Rust.</li>
-    <li><strong>Reward.</strong> +1 for winning the run, +0.05 per boss
-    beaten, +0.002 per new floor, 0 for dying. No discounting and no HP
-    shaping.</li>
-    <li><strong>Algorithm.</strong> Asynchronous PPO with a clip of 0.2,
-    generalised advantage estimation (λ 0.95 inside fights, 0.97 across the
-    run, a fight's advantage chaining into the rest of its run), advantages
-    normalised per decision type, a decaying entropy bonus, AdamW, and
-    running averages of the weights (the shipped nets are such averages).</li>
-    <li><strong>A critic that sees more.</strong> The value network, used
-    only in training, also gets the hidden state: the true draw order, the
-    monsters' next moves, the rooms ahead. The policy never does.</li>
-    <li><strong>Warm start, then alone.</strong> For the first 80 million
-    decisions the earlier no-search nets acted and the new net imitated
-    them; a pull towards that teacher decayed to zero by 500 million. From
-    there to 9 billion it is pure self-play. A run from random weights, with
-    no teacher, had to learn before each restart.</li>
-    <li><strong>Practice fights.</strong> Snapshots of the agent's own runs
-    just before elites and bosses are reseeded and replayed, weighted
-    towards the double boss that ends an A10 run, where most runs are
-    lost.</li>
-  </ul>
-  <div class="table-wrap fit">
-  <table>
-    <caption>The Ironclad campaign: win rate at A10 on 2,000 held-out development seeds, greedy, no search</caption>
-    <thead><tr><th class="num">Decisions</th><th class="num">Win rate</th><th>Note</th></tr></thead>
-    <tbody>
-      <tr><td class="num">1.0 B</td><td class="num">49.5%</td><td></td></tr>
-      <tr><td class="num">2.0 B</td><td class="num">57.0%</td><td></td></tr>
-      <tr><td class="num">3.0 B</td><td class="num">61.6%</td><td></td></tr>
-      <tr><td class="num">4.0 B</td><td class="num">66.3%</td><td>learning rate halved at 4.08 B</td></tr>
-      <tr><td class="num">5.0 B</td><td class="num">70.7%</td><td>samples per update doubled at 5.29 B</td></tr>
-      <tr><td class="num">6.0 B</td><td class="num">74.5%</td><td>doubled again at 6.09 B</td></tr>
-      <tr><td class="num">7.0 B</td><td class="num">78.1%</td><td>a third doubling at 7.27 B gained nothing</td></tr>
-      <tr><td class="num">8.0 B</td><td class="num">79.3%</td><td>learning rate annealing to zero from 7.77 B</td></tr>
-      <tr><td class="num">9.0 B</td><td class="num">81.4%</td><td>end of the anneal</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p class="note">Averaged weights (decay 0.999 per update). The search
-  agent won 24.6% on the first 1,000 of these seeds. On the sealed test
-  panel, read once, the final net won 81.38% of 4,000 runs against the search
-  agent's 21.15% on the same seeds. The plan's forecast before the campaign
-  was about 27%. The campaign was pre-registered, with 19 dated amendments;
-  write-up:
-  <code>docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md</code>.</p>
-  <p>Three things moved the plateaus late in the run: twice doubling the
-  number of decisions per update (about +4 pp each; the policy gradient is
-  noisy at this scale), and annealing the learning rate linearly to zero
-  over the last 14% of training (about +3 pp). Averaging the weights was
-  worth +6.7 pp before the anneal and +1.9 pp after it.</p>
-  <h3>All characters</h3>
-  <p>The shipped five-character net continues from an Ironclad checkpoint
-  and trains on an equal share of Ironclad, Silent, Defect, Regent and
-  Necrobinder runs, with no distillation. Its 4.5-billion-decision milestone
-  is the net in the mod and the workbench; against the 2.5-billion one it
-  replaced, the four newer characters gained 7 to 12 points while Ironclad
-  held (<a href="index.html#instinct">table</a>). The lane is still
-  training. The Fool has a lane of its own on v0.113.0, 80% Fool runs,
-  shipped at 850 million decisions.</p>
+<section id="idea">
+  <h2>The idea</h2>
+  <p>Version 1 taught a network the choices between fights and left the
+  fights to a tree search. That caps what can be learned: the network never
+  finds out what its deck is like to play, and the search plays every fight
+  without knowing what the run needs afterwards. Two attempts to replace the
+  search with a separately trained combat network, with no search at all,
+  reached 9% and 12% at Ascension 10.</p>
+  <p>Instinct's training removes the split. One network makes every
+  decision, and the outcome of the run is credited to all of them: the card
+  pick on floor 3, the potion kept on floor 20 and the last card played
+  against the final boss are updated by the same signal. What makes this
+  affordable is the simulator. A run of about 650 decisions costs about a second
+  of CPU, so billions of decisions fit in days.</p>
 </section>
 
 <section id="primer">
   <h2>PPO in plain words</h2>
-  <p class="note">From here on the page describes the earlier recipe, the
-  per-character run policies of the search agent. The primer applies to
-  Instinct as well.</p>
   <p>PPO (Proximal Policy Optimization) is a reinforcement-learning method:
   the network learns by playing, not by copying labelled examples. Nobody
-  tells it which card was the right pick. It finds out only at the end of a
+  tells it which card was the right play or the right pick. It finds out only at the end of a
   run how far it got, and has to work out for itself which of its choices
   were responsible. This section explains the idea without the maths; the
   rest of the page assumes it.</p>
 
   <h3>The policy</h3>
   <p>The network being trained is a <em>policy</em>: shown a situation (the
-  deck, relics, HP, map, and the options on offer) it gives each option a
-  probability. At a card reward it might say 55% Inflame, 30% Pommel
-  Strike, 15% skip. Learning means shifting those probabilities towards
+  hand, the enemies, the deck, relics, HP, the map, and the options on
+  offer) it gives each option a probability. At a card reward it might say
+  55% Inflame, 30% Pommel Strike, 15% skip; in a fight, 70% Bash, 20%
+  Defend, 10% end the turn. Learning means shifting those probabilities towards
   choices that lead to better runs.</p>
 
   <h3>Play, then learn</h3>
-  <p>Training alternates two phases, the loop in the figure above:</p>
+  <p>Training alternates two phases:</p>
   <ol>
-    <li><strong>Play.</strong> The current net plays a batch of full runs.
+    <li><strong>Play.</strong> The current net plays full runs, many at once.
     During training it <em>samples</em> from its probabilities instead of
     always taking the favourite, so it keeps trying options it is unsure
     about. Every decision is recorded: what it saw, what it chose, and how
@@ -171,12 +109,12 @@
     turned out badly become less likely. Then the updated net plays the next
     batch.</li>
   </ol>
-  <p>One batch teaches very little on its own. A training leg is typically
-  150 iterations of this loop, tens of thousands of runs, and a champion is
-  the product of several legs.</p>
+  <p>One batch teaches very little on its own. Instinct's first campaign
+  repeated this loop tens of thousands of times, over 11.6 million
+  runs.</p>
 
   <h3>Which choice deserves the credit?</h3>
-  <p>A run has dozens of decisions and one outcome. A win does not mean every
+  <p>A run has hundreds of decisions and one outcome. A win does not mean every
   pick in it was good, and a death does not mean every pick was bad: the
   run may have been lost to one unlucky elite. PPO handles this with a
   second output, the <em>critic</em> (the value head): from any situation it
@@ -192,8 +130,8 @@
   The critic is trained at the same time, to predict returns ever more
   accurately.</p>
   <p class="note">"GAE" in the settings below is how the advantage blends
-  the critic's next estimate with what actually happened over the rest of
-  the run; λ = 0.97 leans mostly on what actually happened.</p>
+  the critic's next estimate with what actually happened afterwards; a λ
+  near 1 leans mostly on what actually happened.</p>
 
   <h3>Small steps: the "proximal" part</h3>
   <p>The obvious rule, raise every probability in proportion to its
@@ -203,8 +141,8 @@
   For every recorded decision it compares the new probability of the choice
   with the old one, and once that ratio leaves the band 0.8–1.2 the choice
   earns no further credit. The net can still change a lot over many
-  iterations, but only a little per batch, which also makes it safe to
-  learn from each batch more than once (here, two passes).</p>
+  iterations, but only a little per batch, which keeps learning stable even though the runs in a batch were played
+  by slightly older versions of the net.</p>
   <figure class="fig">
     <div class="canvas"><svg viewBox="0 0 760 290" role="img" aria-label="PPO's clipped objective. For a choice with positive advantage, the gain grows as its probability rises, until the new-to-old ratio reaches 1.2, then stays flat. For a choice with negative advantage, the gain from lowering its probability stops at a ratio of 0.8."><defs><marker id="aa-clip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-acc"/></marker></defs><text x="60" y="22" class="h" text-anchor="start">Choice turned out well</text><text x="60" y="40" class="s" text-anchor="start">advantage &gt; 0: make it more likely</text><rect x="172" y="50" width="56" height="168" class="faint"/><line x1="60" y1="218" x2="340" y2="218" class="line-m"/><line x1="200" y1="214" x2="200" y2="222" class="line-m"/><text x="172" y="236" class="s num" text-anchor="middle">0.8</text><text x="200" y="236" class="s num" text-anchor="middle">1</text><text x="228" y="236" class="s num" text-anchor="middle">1.2</text><path d="M228,98 L284,58" class="line-m dash"/><path d="M60,218 L228,98 L340,98" class="path"/><text x="238" y="120" class="m" text-anchor="start">no more credit past 1.2×</text><text x="200" y="262" class="m" text-anchor="middle">new probability ÷ old probability</text><text x="440" y="22" class="h" text-anchor="start">Choice turned out badly</text><text x="440" y="40" class="s" text-anchor="start">advantage &lt; 0: make it less likely</text><rect x="552" y="50" width="56" height="168" class="faint"/><line x1="440" y1="218" x2="720" y2="218" class="line-m"/><line x1="580" y1="214" x2="580" y2="222" class="line-m"/><text x="552" y="236" class="s num" text-anchor="middle">0.8</text><text x="580" y="236" class="s num" text-anchor="middle">1</text><text x="608" y="236" class="s num" text-anchor="middle">1.2</text><path d="M440,62 L552,118" class="line-m dash"/><path d="M440,118 L552,118 L720,202" class="path"/><text x="446" y="146" class="m" text-anchor="start">no more credit below 0.8×</text><text x="580" y="262" class="m" text-anchor="middle">new probability ÷ old probability</text></svg></div>
     <figcaption>What one recorded decision contributes to PPO's objective as the update moves the probability of the choice (higher is better for the net). The shaded band is ±20% around the probability it had when the batch was played; the dashed line is the unclipped rule, whose incentive never stops.</figcaption>
@@ -214,254 +152,297 @@
   <p>Left alone, a policy tends to become certain too early, always taking
   the same option and never learning what the others are worth. A small
   <em>entropy bonus</em> rewards keeping some probability spread across the
-  options. It is held flat early in a leg and decays towards the end, as the
-  net settles.</p>
+  options. It shrinks as training goes on and the net settles.</p>
 
   <h3>Training versus playing</h3>
   <p>Sampling and the entropy bonus exist only to learn. When the trained
-  net plays for real, in the gates, the published win rates and the advisor,
-  it takes its highest-probability option every time, and the critic is not
-  used to choose anything; its estimate is only shown, as <code>V</code>.</p>
+  net plays for real, in the published win rates, the mod and the
+  workbench, it takes its highest-probability option every time. The critic
+  chooses nothing and is not shipped.</p>
 </section>
+
 
 <section id="env">
   <h2>The environment</h2>
   <ul class="facts">
-    <li><strong>One episode is one whole run</strong>, from the opening
-    choice to a win, a death or a 3,000-step cap.</li>
-    <li><strong>One step is one non-combat decision</strong> with two or more
-    options: path, card reward, boss relic, event, shop, rest site, treasure,
-    full-belt potion swap, and the deck changes the game asks for (remove,
-    upgrade, transform, enchant).</li>
-    <li><strong>Fights are not steps.</strong> The combat search resolves
-    them inside the environment, so from the policy's point of view a fight
-    is a stochastic transition that costs HP, potions and sometimes the run.</li>
-    <li><strong>Single-option prompts</strong> are taken automatically and
-    logged. Nothing else is resolved on the policy's behalf: there is no
-    silent fallback.</li>
-    <li><strong>Ascension is sampled uniformly from A0 to A10</strong> for
-    every game, so each net covers the whole range.</li>
+    <li><strong>The simulator.</strong> The Rust engine, at game build
+    v0.111.0 and Ascension 10, with Act 1 rolled between Overgrowth and
+    Underdocks. Each training run gets a fresh seed. Partway through the
+    first campaign the whole rollout loop (stepping the game, building the
+    tokens, recording the rows) moved into Rust as well.</li>
+    <li><strong>Every decision is a step.</strong> A card play, a potion, a
+    map move, a card reward, a shop purchase: one row each, with the tokens
+    the network saw, the option it sampled and that option's probability.
+    Steps with a single legal option are skipped.</li>
+    <li><strong>Identical options are merged</strong> before the network
+    sees them, so the probability of "play a Strike at the left enemy" is
+    not split over the copies in hand.</li>
+    <li><strong>Limits.</strong> A fight is cut off at 100 turns or 1,000
+    decisions and a run at 6,000 decisions, counted as a loss. On the 4,000
+    test runs this happened once.</li>
+    <li><strong>Practice fights.</strong> Besides full runs, the trainer
+    takes snapshots of the agent's own runs just before elites and bosses,
+    reseeds them and plays them again. The schedule gives about a quarter
+    of the training slots to this practice, three quarters of it to bosses
+    and most of that to the double boss that ends an Ascension 10 run. Practice
+    positions always come from the current agent's own decks, so they stay
+    representative of the decks it really reaches bosses with.</li>
+    <li><strong>Invariant checks.</strong> On 1% of steps the trainer checks
+    game invariants (HP within its maximum, energy not negative, cards
+    conserved across piles). A violation stops the training.</li>
   </ul>
-  <p>Getting the environment to actually present every decision took work.
-  Until a fix in late July, event rooms reached the policy before their
-  options existed, so events were resolved without it: the event embedding
-  of five champions had moved by exactly 0.000000 during training. After the
-  fix the policy saw 6.7 event decisions per run instead of 1.2, and two
-  earlier "no effect" results had to be withdrawn.</p>
 </section>
 
 <section id="reward">
   <h2>Reward</h2>
-  <p>The return is graded progress plus potential-based shaping:</p>
-  <pre><code>return  = 0.5 · floors_reached / total_floors  +  0.5 · won
-shaping = Φ(s′) − Φ(s),   Φ = 0.1 · hp_fraction + 0.035 · upgraded_cards − 0.307</code></pre>
-  <p><code>total_floors</code> is 45 (46 at A10, which adds a second boss).
-  That is the engine's floor counter, which skips the Ancient that opens each
-  act; the game itself counts 48 floors in a single-player run (49 at A10).
-  The discount is γ = 1. Reaching Act 3 and dying is worth more than dying
-  in Act 1, but only a win reaches 1.</p>
-  <figure class="fig">
-    <div class="canvas"><svg viewBox="0 0 760 270" role="img" aria-label="The return grows linearly with the floor reached up to 0.5, and a win adds another 0.5"><defs><marker id="ah-ret" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker><marker id="aa-ret" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-acc"/></marker></defs><line x1="70" y1="220" x2="560" y2="220" class="grid"/><text x="60" y="224" class="s num" text-anchor="end">0.00</text><line x1="70" y1="172.5" x2="560" y2="172.5" class="grid"/><text x="60" y="176.5" class="s num" text-anchor="end">0.25</text><line x1="70" y1="125.0" x2="560" y2="125.0" class="grid"/><text x="60" y="129.0" class="s num" text-anchor="end">0.50</text><line x1="70" y1="77.5" x2="560" y2="77.5" class="grid"/><text x="60" y="81.5" class="s num" text-anchor="end">0.75</text><line x1="70" y1="30.0" x2="560" y2="30.0" class="grid"/><text x="60" y="34.0" class="s num" text-anchor="end">1.00</text><text x="70.0" y="240" class="s num" text-anchor="middle">0</text><text x="233.33333333333331" y="240" class="s num" text-anchor="middle">15</text><text x="396.66666666666663" y="240" class="s num" text-anchor="middle">30</text><text x="560.0" y="240" class="s num" text-anchor="middle">45</text><text x="315.0" y="262" class="m" text-anchor="middle">floor reached (engine count)</text><line x1="70.0" y1="220" x2="560.0" y2="125.0" class="line-m"/><line x1="560.0" y1="125.0" x2="560.0" y2="30.0" class="path dash"/><circle cx="560.0" cy="30.0" r="6" class="acc"/><text x="572.0" y="34.0" class="acc-t" text-anchor="start" style="font-weight:650">win: 1.0</text><circle cx="396.66666666666663" cy="156.66666666666669" r="5" class="mutedfill"/><text x="406.66666666666663" y="174.66666666666669" class="m" text-anchor="start">died on floor 30: 0.33</text><text x="572.0" y="129.0" class="m" text-anchor="start">died at the last boss: 0.5</text><text x="70" y="16" class="s" text-anchor="start">return = 0.5 · floors / 45 + 0.5 · won   (46 floors at A10)</text></svg></div>
-    <figcaption>The base return, before potential-based shaping. Shaping adds the step-to-step change in Φ on top.</figcaption>
-  </figure>
+  <div class="table-wrap fit">
+  <table>
+    <thead><tr><th>Event</th><th class="num">Reward</th></tr></thead>
+    <tbody>
+      <tr><td>Winning the run</td><td class="num">+1.0</td></tr>
+      <tr><td>Each boss beaten before the last</td><td class="num">+0.05</td></tr>
+      <tr><td>Each new floor reached</td><td class="num">+0.002</td></tr>
+      <tr><td>Dying, or hitting a limit</td><td class="num">0</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>There is no discounting, and no reward for HP, damage dealt or anything
+  else inside a fight. The small boss and floor terms give an untrained net
+  something to climb before it has ever won; a win outweighs all of them
+  together several times over. Leaving HP out is deliberate: the agent is
+  free to learn that finishing a fight on 10 HP is fine when the next room
+  is a rest site.</p>
+</section>
 
-  <p>A useful negative result: with γ = 1, any critic of the form
-  <var>V</var> = <var>m</var> − Φ makes every temporal-difference residual
-  independent of the shaping coefficients, which was confirmed numerically
-  to 3e-16. Shaping can only matter through critic error, so the
-  coefficients are standardised rather than tuned.</p>
+<section id="critic">
+  <h2>A critic that sees more</h2>
+  <p>The policy sees only what a player sees. The critic, which exists only
+  to compute advantages during training, is also given the hidden state: the
+  true order of the draw pile, the monsters' next moves, the rooms of the
+  current act and the maps and bosses still to come. A better-informed
+  critic separates luck from judgement more cleanly. When a good line fails
+  because of a bad draw, the critic already expected the bad draw, and the
+  policy is not blamed for it.</p>
+  <p>The critic has two outputs: the value of the current fight and the
+  value of the run. Over the campaign the fight value explained about 92% of
+  the variance of fight outcomes, and the run value about 40% of the
+  variance of run outcomes, which says how much of a run is still undecided
+  at any one moment. The critic's gradients also train the shared trunk.</p>
 </section>
 
 <section id="ppo">
-  <h2>PPO settings</h2>
-  <p>The exact recipe, for readers who know PPO. Each line maps onto a step
-  of the <a href="#primer">plain-words version</a> above.</p>
-  <div class="table-wrap">
-  <table class="kv">
-    <tbody>
-      <tr><td>Objective</td><td>clipped surrogate, ε = 0.2; value loss weight 0.5; entropy bonus on multi-option decisions only; auxiliary loss 0.1 (predict the room type behind each path option)</td></tr>
-      <tr><td>Advantages</td><td>GAE, λ = 0.97, γ = 1; normalised with a running average rather than per batch, so results do not depend on batch size</td></tr>
-      <tr><td>Optimiser</td><td>AdamW: policy 3e-5, value 1e-4, weight decay 1e-4, gradient clip 5</td></tr>
-      <tr><td>Update</td><td>2 epochs, minibatch 192</td></tr>
-      <tr><td>Schedules</td><td>learning rate annealed linearly to 30%; entropy coefficient flat, then geometric decay (0.02 → 0.0125 for Ironclad)</td></tr>
-      <tr><td>Batch</td><td>256 or 960 full runs per iteration; a leg is typically 150 iterations</td></tr>
-    </tbody>
-  </table>
-  </div>
-</section>
-
-<section id="compute">
-  <h2>Collection &amp; compute</h2>
-  <p>Collection dominates. A pool of CPU worker processes each plays whole
-  runs through the Rust engine, with the policy evaluated in PyTorch on one
-  thread per worker, and most of that time is combat search. In the leg
-  behind the current Silent champion (250/1,000 simulations, 960 games per
-  iteration) collection took 97% of the wall-clock, and a PPO update about
-  half a minute on one GPU. On one worker on one core, the October 2026
-  engine and search play the same six Ironclad runs 2.46× faster with
-  identical decisions, and 3.16× faster with the profile-guided build
-  training now uses. On the whole machine (46 workers, the update on one RTX
-  3090) a typical 960-game iteration takes 208 s instead of 609 s (2.93×),
-  of which the update is 34 s. Part of the gain is not the engine: the new
-  code skips the search when a decision has only one legal move. The hours
-  below were measured before these changes. Details:
-  <a href="benchmarks.html#training">Benchmarks</a>.</p>
-  <p>Fights during training use a cheaper search than at evaluation: 250
-  simulations per decision and 1,000 at bosses, against 1,000 and 4,000 in
-  the gate. Moving to cheap searches with more games per iteration, at equal
-  compute, gained 2.5 points (p = 0.028), short of its pre-registered
-  3-point bar but adopted for the recent legs.</p>
+  <h2>Algorithm</h2>
   <div class="table-wrap">
   <table>
-    <thead><tr><th>Leg</th><th class="num">Games</th><th class="num">Hours</th></tr></thead>
+    <thead><tr><th>Item</th><th>Setting</th></tr></thead>
     <tbody>
-      <tr><td>Necrobinder <code>deckmut_it150</code></td><td class="num">38,400</td><td class="num">38</td></tr>
-      <tr><td>Regent <code>deckmut_it150</code></td><td class="num">38,400</td><td class="num">36</td></tr>
-      <tr><td>Defect <code>deckmut_it150</code></td><td class="num">38,400</td><td class="num">62.5</td></tr>
-      <tr><td>Silent <code>cont_it300</code></td><td class="num">144,000</td><td class="num">41</td></tr>
+      <tr><td>Objective</td><td>asynchronous PPO with a decoupled clip: the probability ratio is clipped at ±0.2 against the policy as it stood at the start of the update, with a capped importance weight for rows played by older weights</td></tr>
+      <tr><td>Advantages</td><td>GAE without discounting. Inside a fight λ = 0.95, and a fight's last step chains into the next stored decision of the same run, so a fight is credited with its effect on the run. Across the run-level decisions λ = 0.97. Normalised separately for each type of decision</td></tr>
+      <tr><td>Batch</td><td>131,000 decisions per update at the start; doubled to 262,000, 524,000 and 1,049,000 during the campaign. One pass over each batch, in minibatches of 8,192</td></tr>
+      <tr><td>Entropy bonus</td><td>per decision type, decaying geometrically over the first 4 billion decisions: 0.01 → 0.002 in fights, 0.0125 → 0.006 elsewhere</td></tr>
+      <tr><td>Optimiser</td><td>AdamW, learning rate 1e-4 for the trunk and policy and 3e-4 for the critic, scaled by a factor that follows the measured policy change, gradient norm clipped at 1</td></tr>
+      <tr><td>Precision</td><td>bfloat16 autocast with 32-bit weights</td></tr>
+      <tr><td>Weight averaging</td><td>running averages of the weights with decay 0.996 and 0.999 per update; the shipped nets are such averages</td></tr>
+      <tr><td>End of training</td><td>the learning rate annealed linearly to zero over the last 14% of the decisions</td></tr>
     </tbody>
   </table>
   </div>
-  <p class="note">One leg is a single training run continuing from the
-  previous champion. Necrobinder, Regent and Defect used the earlier recipe
-  (1,000/4,000 simulations, 256 games per iteration, the PPO update on the
-  CPU), and
-  Defect ran its last ~90 iterations on half the machine; Silent's 41 hours
-  include three iterations re-collected after a restart. A champion is the
-  product of several legs; most took between 31 and 82 hours on the engine
-  of the time.</p>
 </section>
 
 <section id="start">
-  <h2>Starting points</h2>
-  <p>No lineage starts from random weights. Each began with behaviour
-  cloning on runs played by an earlier agent from the project. The cloned
-  Ironclad net matched the teacher's choice 81% of the time and won 33.2% of runs against
-  the teacher's 38.7%; PPO took it from there.</p>
-  <p>Every later leg warm-starts from the champion before it. When a leg adds
-  an input, such as the act boss's identity or a new feature column, the new
-  weights start at zero, so the warm-started net plays bit-identically to its
-  parent until training moves them.</p>
-</section>
-
-<section id="lineage">
-  <h2>Champion lineages</h2>
-  <p>Each step was promoted on its own gate against the one before. Gains
-  are paired, pooled over A0–A10.</p>
-  <div class="lineage">
-    <div class="row"><span class="who">Ironclad</span><ol><li><span class="step">behaviour clone</span></li><li><span class="step">A0</span></li><li><span class="step">all ascensions</span></li><li><span class="step">event fix, honest search <b>+15.5</b></span></li><li><span class="step">learning-rate anneal <b>+6.0</b></span></li><li><span class="step">deck changes exposed <b>+8.9</b></span></li><li><span class="step">cheap-search recipe <b>+10.6</b></span></li><li><span class="step">varied Act 1 <b>+3.6</b></span></li><li><span class="step">longer horizon* <b>+1.9</b></span></li><li><span class="step">level-replay continuation <b>+5.2</b></span></li><li><span class="step now">A10 continuation† <b>+1.6</b></span></li></ol></div>
-    <div class="row"><span class="who">Silent</span><ol><li><span class="step">behaviour clone</span></li><li><span class="step">event fix, A0 <b>+14.6</b></span></li><li><span class="step">all ascensions <b>+2.9</b></span></li><li><span class="step">deck changes exposed <b>+15.0</b></span></li><li><span class="step now">150-iteration continuation <b>+5.6</b></span></li></ol></div>
-    <div class="row"><span class="who">Defect</span><ol><li><span class="step">behaviour clone</span></li><li><span class="step">A0</span></li><li><span class="step">all ascensions <b>+12.3</b></span></li><li><span class="step now">deck changes exposed <b>+5.5</b></span></li></ol></div>
-    <div class="row"><span class="who">Regent</span><ol><li><span class="step">behaviour clone</span></li><li><span class="step">A0</span></li><li><span class="step">event fix, all ascensions <b>+7.5</b></span></li><li><span class="step now">deck changes exposed <b>+4.6</b></span></li></ol></div>
-    <div class="row"><span class="who">Necrobinder</span><ol><li><span class="step">behaviour clone</span></li><li><span class="step">A0</span></li><li><span class="step">all ascensions <b>+10.9</b></span></li><li><span class="step now">deck changes exposed, boss-conditioned <b>+6.8</b></span></li></ol></div>
+  <h2>Warm start</h2>
+  <p>A net with random weights dies within the first few floors of an
+  Ascension 10 run, which makes for a slow beginning. The first campaign therefore
+  started from the two earlier no-search networks (one for fights, one for
+  the run), in three phases:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Decisions</th><th>Who plays</th><th>What the new net learns from</th></tr></thead>
+    <tbody>
+      <tr><td>0 to 80 million</td><td>the old networks, handing over gradually</td><td>imitating their choices; the critic learns the outcomes</td></tr>
+      <tr><td>80 to 500 million</td><td>the new net</td><td>PPO, plus a pull towards the old networks' choices that fades to zero</td></tr>
+      <tr><td>500 million to 9 billion</td><td>the new net</td><td>PPO alone</td></tr>
+    </tbody>
+  </table>
   </div>
-  <p class="note">Gains are in percentage points, each from its own gate.
-  * Promoted by decision after its gate missed significance (p = 0.07).
-  † Promoted by decision on its A10 result (+6.9 points at A10 on 1,000
-  paired seeds, p = 9e-7) after its pooled gate missed significance
-  (p = 0.11).
-  "Deck changes exposed" means removal, upgrade, transform
-  and enchant prompts reach the net instead of being auto-resolved. These
-  prompts come up less than once per run, and the gains of those legs are
-  not attributed to them: the baselines never trained in the new
-  environment.</p>
+  <p>The teachers were weak (12% at Ascension 10 together) and were left
+  behind early: the new net had passed them well before the first billion
+  decisions. Before each restart of the trainer, a net with random weights
+  and no teacher had to show it could learn, as a check that the algorithm
+  was not leaning on the warm start.</p>
 </section>
 
-<section id="gate">
-  <h2>The promotion gate</h2>
-  <p>Training win rate is not evidence. A candidate is promoted only through
-  a gate whose rule is committed before any of its runs exist:</p>
+<section id="compute">
+  <h2>Compute</h2>
+  <div class="table-wrap fit">
+  <table>
+    <thead><tr><th>Resource</th><th>First campaign (Ironclad)</th></tr></thead>
+    <tbody>
+      <tr><td>Machine</td><td>one server: AMD EPYC 7443P (24 cores, 48 threads), 247 GB RAM, four RTX 3090</td></tr>
+      <tr><td>Rollouts</td><td>40 worker processes with 32 simulated games each</td></tr>
+      <tr><td>GPUs</td><td>one serves the network to the workers, three run the update in parallel</td></tr>
+      <tr><td>Wall clock</td><td>313 hours (4 to 17 November 2026)</td></tr>
+      <tr><td>Volume</td><td>9.0 billion decisions, 11.6 million runs, 299 million fights</td></tr>
+      <tr><td>Throughput</td><td>8,000 decisions a second on average, from 6,700 in the first billion to 10,300 at the end</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The simulator is the reason this fits on one machine: the same volume
+  on the shipped game's own code would take about 1,500 times the CPU
+  (<a href="benchmarks.html#game">benchmarks</a>). A watchdog restarts the
+  trainer after a crash or a stall and pins a checkpoint every 250 million
+  decisions; the campaign ran through 27 trainer processes. Every pinned
+  checkpoint is kept.</p>
+</section>
+
+<section id="trajectory">
+  <h2>The first campaign</h2>
+  <div class="table-wrap fit">
+  <table>
+    <caption>Ironclad, Ascension 10, greedy, no search: win rate on 2,000 development seeds</caption>
+    <thead><tr><th class="num">Decisions</th><th class="num">Win rate</th><th>What changed on the way</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1.0 B</td><td class="num">49.5%</td><td></td></tr>
+      <tr><td class="num">2.0 B</td><td class="num">57.0%</td><td></td></tr>
+      <tr><td class="num">3.0 B</td><td class="num">61.6%</td><td></td></tr>
+      <tr><td class="num">4.0 B</td><td class="num">66.3%</td><td>learning rate halved at 4.08 B</td></tr>
+      <tr><td class="num">5.0 B</td><td class="num">70.7%</td><td>decisions per update doubled at 5.29 B</td></tr>
+      <tr><td class="num">6.0 B</td><td class="num">74.5%</td><td>doubled again at 6.09 B</td></tr>
+      <tr><td class="num">7.0 B</td><td class="num">78.1%</td><td>a third doubling at 7.27 B gained nothing</td></tr>
+      <tr><td class="num">8.0 B</td><td class="num">79.3%</td><td>learning rate annealing to zero from 7.77 B</td></tr>
+      <tr><td class="num">9.0 B</td><td class="num">81.4%</td><td>end of the anneal</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Averaged weights (decay 0.999). The teachers the net
+  started from won 12.3% on these seeds, and the version-1 search agent
+  24.6% on the first 1,000 of them. The steps up to 3 billion cross
+  simulator updates, so they mix progress of the agent with changes of the
+  engine.
+  The plan written before the campaign forecast about 27% on the test
+  panel.</p>
+  <p>Each late change was written down with a rule for reverting it before
+  its data existed, and read on the same development seeds:</p>
   <ul class="facts">
-    <li><strong>Paired.</strong> Candidate and deployed champion play the
-    same 200 seeds at each of A0–A10: 2,200 paired runs, with one engine
-    binary for both arms.</li>
-    <li><strong>Fresh seeds.</strong> Each gate uses a new seed panel that no
-    training or earlier gate has touched. Rates are never compared across
-    panels: one identical net scored 43.1% on one panel and 47.2% on
-    another.</li>
-    <li><strong>Deployed settings.</strong> Greedy policy, 1,000/4,000-sim
-    honest search: exactly what ships.</li>
-    <li><strong>Decision rule.</strong> Promote if the pooled gain is positive
-    with McNemar exact p &lt; 0.01, and no single ascension level drops by
-    more than 5 points. The most recent gates also report a seed-clustered
-    p-value, because the 11 runs on one seed are not independent (design
-    effect about 2.2×).</li>
-    <li><strong>Export checks.</strong> The exported ONNX model is played
-    against the PyTorch checkpoint (Regent: 190 of 200 runs identical), and
-    peak token and action-slot use is checked against the fixed budget.</li>
-    <li><strong>Attribution is separate.</strong> A gate answers "is it
-    better?", not "why?". Each promotion record states what the gain cannot
-    be credited to.</li>
+    <li><strong>More decisions per update.</strong> The first two doublings
+    each bought about 4 points within 400 million decisions after a
+    plateau; the third bought nothing. A measurement of the gradient noise
+    had put the useful batch size near 1.7 million decisions, far above the
+    131,000 the campaign started with.</li>
+    <li><strong>Annealing the learning rate to zero</strong> over the last
+    1.2 billion decisions gave about 3 points with averaged weights and 8
+    with the raw ones. The gain arrived late, when the rate had already
+    fallen by half.</li>
+    <li><strong>Weight averaging</strong> was worth 6.7 points before the
+    anneal and 1.9 after it: the anneal does most of what the averaging
+    did.</li>
   </ul>
-  <figure class="fig">
-    <div class="canvas"><svg viewBox="0 0 760 384" role="img" aria-label="Ironclad promotion gate: for each ascension level, 200 paired seeds split into both won, only the candidate won, only the champion won, and both lost"><defs><marker id="ah-gate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker><marker id="aa-gate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-acc"/></marker></defs><rect x="70" y="12" width="14" height="14" rx="3" class="mutedfill"/><text x="90" y="24" class="s" text-anchor="start">both won</text><rect x="148.8" y="12" width="14" height="14" rx="3" class="acc"/><text x="168.8" y="24" class="s" text-anchor="start">only the candidate won</text><rect x="320.0" y="12" width="14" height="14" rx="3" class="game"/><text x="340.0" y="24" class="s" text-anchor="start">only the champion won</text><rect x="484.6" y="12" width="14" height="14" rx="3" class="box"/><text x="504.6" y="24" class="s" text-anchor="start">both lost</text><text x="58" y="60" class="m num" text-anchor="end">A0</text><rect x="70.0" y="46" width="395.2" height="18" class="mutedfill"/><rect x="465.2" y="46" width="75.4" height="18" class="acc"/><rect x="540.6" y="46" width="31.2" height="18" class="game"/><rect x="571.8" y="46" width="18.2" height="18" class="box"/><text x="602.0" y="60" class="s num" text-anchor="start">+29 / −12</text><text x="58" y="86" class="m num" text-anchor="end">A1</text><rect x="70.0" y="72" width="403.0" height="18" class="mutedfill"/><rect x="473.0" y="72" width="72.8" height="18" class="acc"/><rect x="545.8" y="72" width="31.2" height="18" class="game"/><rect x="577.0" y="72" width="13.0" height="18" class="box"/><text x="602.0" y="86" class="s num" text-anchor="start">+28 / −12</text><text x="58" y="112" class="m num" text-anchor="end">A2</text><rect x="70.0" y="98" width="397.8" height="18" class="mutedfill"/><rect x="467.8" y="98" width="65.0" height="18" class="acc"/><rect x="532.8" y="98" width="36.4" height="18" class="game"/><rect x="569.2" y="98" width="20.8" height="18" class="box"/><text x="602.0" y="112" class="s num" text-anchor="start">+25 / −14</text><text x="58" y="138" class="m num" text-anchor="end">A3</text><rect x="70.0" y="124" width="358.8" height="18" class="mutedfill"/><rect x="428.8" y="124" width="83.2" height="18" class="acc"/><rect x="512.0" y="124" width="41.6" height="18" class="game"/><rect x="553.6" y="124" width="36.4" height="18" class="box"/><text x="602.0" y="138" class="s num" text-anchor="start">+32 / −16</text><text x="58" y="164" class="m num" text-anchor="end">A4</text><rect x="70.0" y="150" width="356.2" height="18" class="mutedfill"/><rect x="426.2" y="150" width="83.2" height="18" class="acc"/><rect x="509.4" y="150" width="39.0" height="18" class="game"/><rect x="548.4" y="150" width="41.6" height="18" class="box"/><text x="602.0" y="164" class="s num" text-anchor="start">+32 / −15</text><text x="58" y="190" class="m num" text-anchor="end">A5</text><rect x="70.0" y="176" width="335.4" height="18" class="mutedfill"/><rect x="405.4" y="176" width="85.8" height="18" class="acc"/><rect x="491.2" y="176" width="52.0" height="18" class="game"/><rect x="543.2" y="176" width="46.8" height="18" class="box"/><text x="602.0" y="190" class="s num" text-anchor="start">+33 / −20</text><text x="58" y="216" class="m num" text-anchor="end">A6</text><rect x="70.0" y="202" width="322.4" height="18" class="mutedfill"/><rect x="392.4" y="202" width="75.4" height="18" class="acc"/><rect x="467.8" y="202" width="72.8" height="18" class="game"/><rect x="540.6" y="202" width="49.4" height="18" class="box"/><text x="602.0" y="216" class="s num" text-anchor="start">+29 / −28</text><text x="58" y="242" class="m num" text-anchor="end">A7</text><rect x="70.0" y="228" width="293.8" height="18" class="mutedfill"/><rect x="363.8" y="228" width="101.4" height="18" class="acc"/><rect x="465.2" y="228" width="72.8" height="18" class="game"/><rect x="538.0" y="228" width="52.0" height="18" class="box"/><text x="602.0" y="242" class="s num" text-anchor="start">+39 / −28</text><text x="58" y="268" class="m num" text-anchor="end">A8</text><rect x="70.0" y="254" width="234.0" height="18" class="mutedfill"/><rect x="304.0" y="254" width="109.2" height="18" class="acc"/><rect x="413.2" y="254" width="72.8" height="18" class="game"/><rect x="486.0" y="254" width="104.0" height="18" class="box"/><text x="602.0" y="268" class="s num" text-anchor="start">+42 / −28</text><text x="58" y="294" class="m num" text-anchor="end">A9</text><rect x="70.0" y="280" width="93.6" height="18" class="mutedfill"/><rect x="163.6" y="280" width="83.2" height="18" class="acc"/><rect x="246.8" y="280" width="78.0" height="18" class="game"/><rect x="324.8" y="280" width="265.2" height="18" class="box"/><text x="602.0" y="294" class="s num" text-anchor="start">+32 / −30</text><text x="58" y="320" class="m num" text-anchor="end">A10</text><rect x="70.0" y="306" width="13.0" height="18" class="mutedfill"/><rect x="83.0" y="306" width="26.0" height="18" class="acc"/><rect x="109.0" y="306" width="33.8" height="18" class="game"/><rect x="142.8" y="306" width="447.2" height="18" class="box"/><text x="602.0" y="320" class="s num" text-anchor="start">+10 / −13</text><text x="70" y="350" class="t" text-anchor="start">All 2,200 pairs: the candidate alone won 331, the champion alone 216.</text><text x="70" y="370" class="m" text-anchor="start">McNemar's test uses only those 547 discordant pairs: +5.23 pp, p = 1.0e-6.</text></svg></div>
-    <figcaption>The gate that promoted <code>plr_it550</code>, the Ironclad champion before <code>a10_it700</code> (itself replaced by <code>cardmods_it850</code> on 27 October 2026). Seeds where both nets won or both lost carry no information about which is better; the test is decided by the coloured pairs.</figcaption>
-  </figure>
-  <p><code>just promote-champion</code> rewrites the manifest and the code
-  generated from it; <code>just check-champions</code>, part of
-  <code>just ci</code>, fails if anything drifts from the manifest's pinned
-  hashes.</p>
+</section>
+
+<section id="eval">
+  <h2>Evaluation</h2>
+  <p>Three seed panels, kept apart. Training runs draw fresh seeds. The
+  development panel (seeds from 160,000,000) was read every 250 million
+  decisions and steered the campaign. The test panel, 4,000 seeds from
+  161,000,000, was sealed until the end and read once.</p>
+  <div class="table-wrap">
+  <table>
+    <caption>The test read: Ironclad, Ascension 10, 4,000 seeds, one engine build for all agents</caption>
+    <thead><tr><th>Agent</th><th class="num">Wins</th><th class="num">Win rate</th></tr></thead>
+    <tbody>
+      <tr><td>Instinct, 9.0 B decisions, no search</td><td class="num">3,255</td><td class="num">81.38%</td></tr>
+      <tr><td>Version 1: run policy + MCTS (1,000 simulations, 4,000 at bosses)</td><td class="num">846</td><td class="num">21.15%</td></tr>
+      <tr><td>The two warm-start networks, no search</td><td class="num">475</td><td class="num">11.88%</td></tr>
+      <tr><td>Version 1's run policy with a separately trained combat net, no search</td><td class="num">356</td><td class="num">8.90%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The bars had been fixed beforehand: beat the best earlier no-search
+  agent by at least 5 points (it did by 69.5), and not fall more than 3
+  points short of the search agent (it beat it by 60.2, 95% interval 58.5
+  to 61.8). Comparisons are paired on the seeds, with an exact McNemar
+  test.</p>
+  <p class="note">What a reader should know: the campaign had no fixed
+  budget. It was extended while the development numbers were still rising,
+  and the anneal was started by decision after looking at them, so the late
+  development numbers carry some selection. The test panel does not: no
+  test run existed before the final net was chosen. The search agent played
+  at the budget of the old promotion gates, not the larger one the advisor
+  used. Full record, with all 19 amendments to the pre-registration:
+  <code>docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md</code>.</p>
+  <p>The simulator's numbers were then checked against the game's own code.
+  A five-character net played 300 Ironclad Ascension 10 seeds in the Rust
+  engine and again through the game's real assembly, run headless with its
+  own random numbers: 79.7% against 78.7%, 31 seeds differing, 17 one way
+  and 14 the other.</p>
+</section>
+
+<section id="chars">
+  <h2>All characters</h2>
+  <p>The shipped net plays five characters. It continues from a checkpoint
+  of the Ironclad campaign and trains on equal shares of Ironclad, Silent,
+  Defect, Regent and Necrobinder runs, with the same algorithm and no
+  teacher. The net in the mod and the workbench is that lane's
+  4.5-billion-decision milestone.</p>
+  <div class="table-wrap fit">
+  <table>
+    <caption>The five-character lane: win rate at Ascension 10, greedy, on its development seeds</caption>
+    <thead><tr><th>Character</th><th class="num">2.5 B</th><th class="num">4.5 B (shipped)</th></tr></thead>
+    <tbody>
+      <tr><td>Ironclad</td><td class="num">81.2%</td><td class="num">79.9%</td></tr>
+      <tr><td>Defect</td><td class="num">63.8%</td><td class="num">71.8%</td></tr>
+      <tr><td>Regent</td><td class="num">54.2%</td><td class="num">65.8%</td></tr>
+      <tr><td>Silent</td><td class="num">53.4%</td><td class="num">60.8%</td></tr>
+      <tr><td>Necrobinder</td><td class="num">43.8%</td><td class="num">52.8%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Ironclad, which the net inherited, has held at 79 to 81% since 2.5
+  billion; the four new characters are still climbing, and the lane is
+  still training. The Fool exists only from game build v0.113.0, which has
+  a different content vocabulary, so it has a lane of its own: 80% Fool
+  runs and 4% each of the other five. Its net won 59.4% at 850 million
+  decisions (12% at 200 million, 50% at 600 million) and plays only the
+  Fool, because the other characters regressed on that mix.</p>
 </section>
 
 <section id="lessons">
   <h2>What we learned</h2>
   <ul class="facts">
-    <li><strong>"High ascension is a combat ceiling" was wrong.</strong> It
-    rested on three null results. Once the environment presented every
-    decision, Defect's largest gains came at A7 and A8 (+18.5 and +21.0 in
-    one leg).</li>
-    <li><strong>Defaults bite.</strong> Learning-rate annealing was silently
-    off by default and cost about 6 points before anyone noticed.</li>
-    <li><strong>Prioritised level replay did nothing measurable</strong> on
-    Silent: −1.1 ± 1.3 points against a control arm with the same compute.
-    The Ironclad leg that used it gained, but PLR, the longer horizon and a
-    re-opened learning-rate anneal are confounded there, so it is not
-    credited.</li>
-    <li><strong>Up-weighting hard ascensions</strong> during training cost
-    2 points.</li>
-    <li><strong>Small effects are hard to see.</strong> The quick paired
-    screen used for triage has 1.7 points of noise between identical arms
-    and cannot resolve effects below about 8 points; only full gates are
-    trusted.</li>
-    <li><strong>A cheap combat surrogate is not good enough to train
-    on.</strong> No agent was trained against it; it failed the check
-    before that. Replaying held-out runs with the surrogate fighting in
-    place of the search ended them 34–50% of max HP healthier than the
-    search did, with 0.64–0.68 of them surviving against 0.29. A policy
-    trained on it would have learned a game easier than the real one.</li>
+    <li><strong>The forecast was wrong by 54 points.</strong> The plan
+    expected about 27% and treated matching the search agent as the
+    stretch goal. Nothing in the earlier results suggested that removing
+    the search would help.</li>
+    <li><strong>Training the fights with the run mattered more than
+    anything inside the fights.</strong> A combat network trained on its own
+    fights, with the best settings we found, stayed far below the search.
+    The same kind of network trained on run outcomes passed it within the
+    first billion decisions.</li>
+    <li><strong>Volume, then noise.</strong> Over the first 5 billion
+    decisions the curve rose 4 to 8 points per billion.
+    After that, progress came from reducing the noise of each update:
+    larger batches, a lower learning rate, averaged weights.</li>
+    <li><strong>The last fight is the hard one.</strong> The final net wins
+    97% of its first Act 3 boss fights and about 91% of the second, and
+    more than 40% of all its losses are in that one fight.</li>
+    <li><strong>Sharing one net across characters has cost the first one
+    little or nothing</strong> so far: Ironclad has stayed within a point
+    or two of the Ironclad-only net while four other characters were
+    added.</li>
+    <li><strong>The simulator has to be right.</strong> An agent trained on
+    billions of decisions will exploit whatever the simulator gets wrong.
+    The check against the game's own code is what says the final number is
+    about the game and not about the simulator.</li>
   </ul>
-</section>
-
-<section id="results">
-  <h2>Results</h2>
-  <p>Instinct's results are in <a href="#instinct">its section</a> above
-  and in the <a href="index.html#instinct">main docs</a>. For the search
-  agent, win rates for every character and ascension level are in the
-  <a href="index.html#search-agent">main docs</a>: Defect 76.1%, Silent 59.9%, Regent
-  53.8% and Necrobinder 51.7% averaged over A0–A10, in the simulator at 8,000
-  simulations per combat decision, measured in the 11–13 October sweep,
-  before their combat search got its learned playout nets (21 October); they
-  have not been re-run. The current Ironclad champion
-  (<code>cardmods_it850</code>, 27 October) has so far been measured only at
-  A10, at the advisor's current 4,000 simulations per decision (16,000 in
-  boss fights): 30.0% over 400 runs, against 26.75% for the previous
-  champion on the same seeds. That previous champion
-  (<code>a10_it700</code>) averaged 83.6% over A0–A10 at 8,000. The
-  promotion gates run at the cheaper 1,000/4,000 budget, so their numbers
-  are lower and only meaningful as paired comparisons.</p>
-  <p>In the real game, at Ascension 8, the champions deployed in August
-  2026 (Ironclad <code>deckmut_it150</code>, Silent <code>asc_it300</code>)
-  won 13 of 40 and 11 of 40 runs, driven through the Spire Mentor advisor at
-  8,000 simulations per combat decision (split over 8 root-parallel trees)
-  and graded by the game's own run
-  history. The current champions have not yet been measured in the real
-  game.</p>
+  <p class="note">The lessons of the earlier recipe (promotion gates,
+  prioritised level replay, the combat surrogate) are in the
+  <a href="v1/training.html#lessons">V1 archive</a>.</p>
 </section>
 
 </main>
 </div>
 
-<footer class="foot"><span>spire-mentor · MIT licence</span><span>Not affiliated with Mega Crit</span><a href="https://github.com/tfriedel/spire-mentor">Source on GitHub</a></footer>
+<footer class="foot"><span>spire-mentor · MIT licence</span><span>Not affiliated with Mega Crit</span><a href="v1/index.html">Version 1 archive</a><a href="https://github.com/tfriedel/spire-mentor">Source on GitHub</a></footer>
 <script src="site.js?v=4"></script>
 </body>
 </html>

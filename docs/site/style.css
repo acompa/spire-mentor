@@ -166,6 +166,8 @@ p, li { text-wrap: pretty; }
 p { max-width: 70ch; margin: 0 0 1rem; }
 .lede { font-size: clamp(1.1rem, 1.6vw, 1.25rem); line-height: 1.6; color: var(--muted); max-width: 60ch; }
 .note { font-size: 0.92rem; color: var(--muted); }
+.archive-banner { margin: 0 0 1.5rem; padding: 0.8rem 1rem; border: 1px solid var(--accent, #d9a441); border-left-width: 4px; border-radius: 8px; font-size: 0.95rem; }
+.archive-banner a { white-space: nowrap; }
 main ol { max-width: 70ch; padding-left: 1.3rem; }
 main ol li { margin: 0.4rem 0; }
 main ol li::marker { color: var(--accent); font-weight: 650; }

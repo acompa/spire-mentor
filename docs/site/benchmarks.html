@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Benchmarks</title>
-<meta name="description" content="How fast the spire-mentor engine is on one core and on a whole 24-core machine, against the shipped game run headless, in search and PPO training, and next to two other Slay the Spire 2 simulators.">
+<meta name="description" content="Benchmarks of the spire-mentor Rust engine: one core and a whole machine, against the shipped game and two other simulators, plus the training and inference speed of Instinct and the speed of the combat search.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 9v14l12 7 12-7V9z' fill='%23d9a441'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kreon:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 <style>
 .fig svg.bars { max-width: 32rem; margin-inline: auto; }
 .fig .v { fill: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -45,10 +45,12 @@ p.verdict { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 1rem;
     <li><a href="#machine">The machine</a></li>
     <li><a href="#engine">Engine throughput</a></li>
     <li><a href="#game">Against the shipped game</a></li>
+    <li><a href="#training">Instinct: training</a></li>
+    <li><a href="#instinct">Instinct: inference</a></li>
     <li><a href="#search">Search speed</a></li>
-    <li><a href="#training">Training speed</a></li>
     <li><a href="#others">Other simulators</a></li>
     <li><a href="#method">Method</a></li>
+    <li><a href="v1/benchmarks.html">V1 archive</a></li>
   </ol>
 </nav>
 
@@ -57,17 +59,19 @@ p.verdict { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 1rem;
 <section class="hero" id="summary">
   <h1>Benchmarks</h1>
   <p class="lede">How fast the Rust engine is on one core and on a whole
-  24-core machine, how it compares with the shipped game run headless, how
-  long its searches and a PPO training iteration take, and how it compares
-  with two other Slay the Spire 2 simulators. All measured on one server on
-  14 October 2026.</p>
+  24-core machine, how it compares with the shipped game run headless and
+  with two other Slay the Spire 2 simulators, how fast Instinct trains and
+  plays, and how long the combat search takes. The engine and search
+  numbers were measured on one server on 14 October 2026; the Instinct
+  numbers are from its training campaign on the same server in November
+  2026.</p>
 
   <dl class="stats">
     <div><dt>engine actions per second on one core (59,400 random-play fights per second)</dt><dd>1.30 M</dd></div>
     <div><dt>actions per second on the whole machine, 48 processes</dt><dd>31.0 M</dd></div>
     <div><dt>the shipped game's best measured throughput on one core</dt><dd>1,500×</dd></div>
     <div><dt>the previous engine (12 Oct 2026), same fights</dt><dd>2.25×</dd></div>
-    <div><dt>a typical PPO training iteration, down from 609 s</dt><dd>208 s</dd></div>
+    <div><dt>decisions per second in Instinct's training at the end of the campaign</dt><dd>10,300</dd></div>
   </dl>
 
   <div class="table-wrap">
@@ -81,8 +85,9 @@ p.verdict { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 1rem;
       <tr><td>Shipped game, one core</td><td>1,500× (1,630× with both hardware threads busy on each side)</td><td>The game's best measured on one core: 16 game processes sharing it (the most tried; still rising from 8 to 16, CPUs 89% busy), 871 actions/s</td></tr>
       <tr><td>Shipped game, whole machine</td><td>2,430×</td><td>The game's best on all 24 cores: 192 processes, 12,700 actions/s</td></tr>
       <tr><td>Shipped game, CPU time</td><td>2,970× (2,250× against its game thread alone)</td><td>One warm game process: 2.28 ms of CPU per action (1.73 ms on the game thread) against 766 ns</td></tr>
-      <tr><td>Browser hint, 1,000 simulations</td><td>18.4 ms as WASM in Chromium · 13.7 ms native</td><td>1.93× faster than the previous engine in Chromium</td></tr>
-      <tr><td>PPO training</td><td>208 s per typical iteration instead of 609 s (2.93×); 150 iterations in about 9 h instead of 25 h</td><td>The deployed Ironclad recipe (960 games, 46 workers, one RTX 3090) on the engine training ran before</td></tr>
+      <tr><td>Instinct, training</td><td>8,000 decisions/s averaged over 9.0 billion decisions and 313 hours; 10,300 at the end</td><td>One machine: 40 rollout processes on the 24 cores, one RTX 3090 serving the network and three updating it</td></tr>
+      <tr><td>Instinct, playing</td><td>8.6 ms per decision as WASM with SIMD, a whole 634-decision run</td><td>3.6× faster than the same build without SIMD (30.7 ms)</td></tr>
+      <tr><td>Combat search (browser hint), 1,000 simulations</td><td>18.4 ms as WASM in Chromium · 13.7 ms native</td><td>1.93× faster than the previous engine in Chromium</td></tr>
       <tr><td>sansb/<wbr>sts2-sim</td><td>Ours is 3.13× faster per core on random play with no relic on either side, each engine stepping its own way (3.39× with our relic live; 1.63× on sansb's own fixture with a state copy per step, as sansb steps); 3.52× on the whole machine with our Burning Blood live (about 3.25× without it, scaled by the one-core ratio)</td><td>Combat only, game build v0.111.0, certified against real-game checksums; its review solver searches the true state by design (hindsight reviews)</td></tr>
       <tr><td>lain-wood/<wbr>sts2core</td><td>sts2core is 1.56× faster per core (1.64–2.99× on sansb's fixture), 1.44× on the whole machine</td><td>Combat only, effectively Ironclad only, partial content, its own RNG by design, validated on recordings of real play; its live solver is given the true draw-pile order (partly clairvoyant)</td></tr>
     </tbody>
@@ -105,7 +110,7 @@ p.verdict { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 1rem;
       <tr><td>Clock</td><td>boost up to 4.04 GHz (top non-boost state 2.85 GHz), <code>schedutil</code> governor. Measured: 3.91 GHz with one busy process, 3.65 GHz with 48</td></tr>
       <tr><td>Caches</td><td>32 KiB L1d, 32 KiB L1i and 512 KiB L2 per core; 128 MiB L3 in four 32 MiB domains of six cores (CPUs 0–5, 6–11, 12–17, 18–23, each with its SMT siblings 24 higher)</td></tr>
       <tr><td>Memory</td><td>256 GiB DDR4-3200 registered ECC, 4 × 64 GB; 4 of the CPU's 8 memory channels populated (102.4 GB/s peak)</td></tr>
-      <tr><td>GPUs</td><td>4 × NVIDIA GeForce RTX 3090, 24 GiB each; training uses one</td></tr>
+      <tr><td>GPUs</td><td>4 × NVIDIA GeForce RTX 3090, 24 GiB each; Instinct's training uses all four</td></tr>
       <tr><td>OS</td><td>Ubuntu 24.04.4, Linux 6.8, no isolated CPUs, transparent huge pages on request (<code>madvise</code>)</td></tr>
       <tr><td>Rust</td><td>1.96.0; release profile with fat LTO, one codegen unit, <code>opt-level</code> 3, no <code>target-cpu</code>, no profile-guided optimisation (except the training build marked PGO)</td></tr>
       <tr><td>.NET</td><td>9.0.15 runtime, default settings (tiered JIT, dynamic PGO)</td></tr>
@@ -309,8 +314,97 @@ p.verdict { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 1rem;
   measurement.</p>
 </section>
 
+<section id="training">
+  <h2>Instinct: training speed</h2>
+  <p>Instinct learns from whole runs it plays in the simulator
+  (<a href="training.html">how it is trained</a>). The unit is a
+  <em>decision</em>: one step at which the network chose among two or more
+  options, in a fight or between fights. These are the rates of the first
+  campaign as it ran, not of a separate benchmark: one Ironclad net at
+  Ascension 10, 4 to 17 November 2026, on the machine described above with
+  four RTX 3090 cards. Forty worker processes each step 32 games; one GPU
+  answers their requests for the network's output and three run the PPO
+  update.</p>
+  <div class="table-wrap fit">
+  <table>
+    <caption>Training throughput by billion decisions (medians)</caption>
+    <thead><tr><th class="num">Decisions</th><th class="num">Decisions/s</th><th class="num">Decisions per update</th></tr></thead>
+    <tbody>
+      <tr><td class="num">0–1 B</td><td class="num">6,730</td><td class="num">131,000</td></tr>
+      <tr><td class="num">1–2 B</td><td class="num">8,500</td><td class="num">131,000</td></tr>
+      <tr><td class="num">2–3 B</td><td class="num">7,450</td><td class="num">131,000</td></tr>
+      <tr><td class="num">3–4 B</td><td class="num">7,380</td><td class="num">131,000</td></tr>
+      <tr><td class="num">4–5 B</td><td class="num">9,300</td><td class="num">131,000</td></tr>
+      <tr><td class="num">5–6 B</td><td class="num">9,840</td><td class="num">262,000</td></tr>
+      <tr><td class="num">6–7 B</td><td class="num">10,300</td><td class="num">524,000</td></tr>
+      <tr><td class="num">7–8 B</td><td class="num">10,300</td><td class="num">1,049,000</td></tr>
+      <tr><td class="num">8–9 B</td><td class="num">10,300</td><td class="num">1,049,000</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Over the whole campaign: 9.0 billion decisions, 11.6 million runs and
+  299 million fights in 313 hours of wall clock, restarts and evaluations
+  included, a mean of 7,980 decisions a second. A run has about 650
+  decisions, so the end rate is the equivalent of about 57,000 full runs an
+  hour.</p>
+  <p>The rise after 4 billion is engineering, with the algorithm unchanged:
+  a faster update, a leaner path for the rows from the workers to the
+  learner, and the rollout loop itself moved from Python into Rust. That
+  last step was measured on its own, with bit-identical rows on both
+  sides:</p>
+  <div class="table-wrap fit">
+  <table>
+    <caption>Rollout loop, CPU per stored decision, one worker</caption>
+    <thead><tr><th>Workload</th><th class="num">Python loop</th><th class="num">Rust loop</th><th class="num">Speed-up</th></tr></thead>
+    <tbody>
+      <tr><td>Random play, short runs (12,800 rows)</td><td class="num">0.782 ms</td><td class="num">0.319 ms</td><td class="num">2.45×</td></tr>
+      <tr><td>Long fights (19,200 rows)</td><td class="num">3.16 ms</td><td class="num">0.729 ms</td><td class="num">4.33×</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Sources:
+  <code>docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md</code>
+  and <code>docs/experiments/2026-11-11-e2e-rust-env.md</code>. The training speed of the
+  version 1 run policies (whole runs with a tree search in every fight) is
+  in the <a href="v1/benchmarks.html#training">V1 archive</a>.</p>
+</section>
+
+<section id="instinct">
+  <h2>Instinct: inference speed</h2>
+  <p>At play time Instinct is one forward pass of a 6-million-parameter
+  transformer per decision, on the CPU, through the project's own Rust
+  inference code. Steps with a single legal option cost nothing.</p>
+  <div class="table-wrap fit">
+  <table>
+    <caption>A whole run, per decision</caption>
+    <thead><tr><th>Build</th><th class="num">ms per decision</th><th class="num">of which the network</th></tr></thead>
+    <tbody>
+      <tr><td>WebAssembly, no SIMD</td><td class="num">30.7</td><td class="num">30.3</td></tr>
+      <tr><td>WebAssembly with SIMD (the shipped build)</td><td class="num">8.6</td><td class="num">8.2</td></tr>
+      <tr><td>Native Rust, one thread, on the server while a training run kept it busy</td><td class="num">16.0</td><td class="num">15.2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">The WebAssembly rows are one Ironclad Ascension 10 run of
+  634 decisions (seed 170000000) under Node 26, from when SIMD was switched
+  on for the browser build (6 November 2026, an earlier net of the same
+  shape); both builds made identical choices. The native row is 20 Ironclad
+  Ascension 10 runs (seeds from 170,000,000; 14,086 decisions, 19 won) with
+  the shipped five-character net on 23 November 2026, a plain release
+  build on the EPYC 7443P with about 30 of its 48 hardware threads occupied
+  by training, so it is an upper bound and is not comparable with the
+  WebAssembly rows, which came from a different machine. Stepping the game
+  and building the network's input take 0.49 and 0.39 ms of the native
+  16.0 ms; the rest is the forward pass. In the workbench one evaluation
+  serves the hint, the policy panel and the coach of a position.</p>
+</section>
+
 <section id="search">
   <h2>Search speed</h2>
+  <p class="note">The combat search is no longer how the AI plays; it is the
+  analysis tool behind the search tree, the win estimates and the reviews,
+  and Instinct's fallback. These timings are unchanged from October
+  2026.</p>
   <p>The browser hint's MCTS search on a fixed position (seed BENCH1, the
   first fight: Fuzzy Wurm Crawler at 57 HP against the starter hand), the
   same call as the workbench's bench button. Native is one thread on one
@@ -359,93 +453,6 @@ p.verdict { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 1rem;
   24, against 72.8 on one core; at 200 simulations, 24 processes do best,
   8,180 searches/s. Longer searches scale a little worse: on 24 cores the
   efficiency is 0.951 at 200 simulations and 0.847 at 1,000.</p>
-</section>
-
-<section id="training">
-  <h2>Training speed</h2>
-  <p>Training plays whole runs: the PPO run policy for every decision
-  outside fights, MCTS for every fight (250 simulations per decision, 1,000
-  at bosses). Three builds: the <strong>previous</strong> engine as training
-  ran it before (plain build), the <strong>new</strong> engine plain, and the
-  new engine with the <strong>profile-guided</strong> build (PGO) that
-  training uses now. Only this project's engine appears here: the shipped
-  game cannot copy a state for search, and the other two simulators have no
-  run-level training loop.</p>
-
-  <div class="table-wrap">
-  <table>
-    <caption>One worker on one core: six fixed Ironclad runs</caption>
-    <thead><tr><th>Build</th><th class="num">CPU s per run</th><th class="num">Runs per hour</th><th class="num">vs previous</th></tr></thead>
-    <tbody>
-      <tr><td>Previous, plain</td><td class="num">12.3</td><td class="num">292</td><td class="num">1.00</td></tr>
-      <tr><td>New, plain</td><td class="num">5.02</td><td class="num">718</td><td class="num">2.46×</td></tr>
-      <tr><td>New, PGO</td><td class="num">3.91</td><td class="num">921</td><td class="num">3.16×</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p class="note">Seeds 700–705 at Ascensions 0/3/6/10, the Ironclad
-  champion, CPU 20; 3 runs per build, all nine with byte-identical game
-  records. Part of the speed-up is not the engine: the new code skips the
-  search when a decision has exactly one legal move.</p>
-
-  <p>A full iteration is the deployed Ironclad recipe: 960 games across
-  Ascensions 0–10, 46 worker processes on this 48-thread machine, then a
-  PPO update on one RTX 3090, starting from the Ironclad champion. The new
-  builds play identical games. Measured as the trainer ran it, iteration 0
-  is distorted by one game: game 703 (Ascension 4) has an Act-1 boss fight
-  that takes far longer than any other game, so for more than half of
-  iteration 0 it runs alone while the other 45 workers wait. On the previous
-  engine it ran past the trainer's 600 s stall watchdog, which dropped it,
-  so that iteration finished only 959 of 960 games and its time is a lower
-  bound.</p>
-
-  <div class="table-wrap">
-  <table>
-    <caption>Iteration 0, as the trainer ran it (2 runs each)</caption>
-    <thead><tr><th></th><th class="num">Previous, plain</th><th class="num">New, plain</th><th class="num">New, PGO</th></tr></thead>
-    <tbody>
-      <tr><td>Collection</td><td class="num">≥ 1,180 s</td><td class="num">537 s</td><td class="num">381 s</td></tr>
-      <tr><td>PPO update on the GPU</td><td class="num">34.1 s</td><td class="num">34.1 s</td><td class="num">34.2 s</td></tr>
-      <tr><td>Iteration</td><td class="num">≥ 1,210 s</td><td class="num">571 s</td><td class="num">416 s</td></tr>
-      <tr><td>Games per hour</td><td class="num">≤ 2,930</td><td class="num">6,440</td><td class="num">9,070</td></tr>
-      <tr><td>CPU seconds per game</td><td class="num">27.4</td><td class="num">11.7</td><td class="num">8.43</td></tr>
-      <tr><td>Machine busy during collection</td><td class="num">50%</td><td class="num">47%</td><td class="num">47%</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <div class="table-wrap">
-  <table>
-    <caption>A typical iteration: the same pool without its one outlier game</caption>
-    <thead><tr><th></th><th class="num">Previous, plain</th><th class="num">New, plain</th><th class="num">New, PGO</th></tr></thead>
-    <tbody>
-      <tr><td>Collection (the other 959 games)</td><td class="num">575 s</td><td class="num">242 s</td><td class="num">174 s</td></tr>
-      <tr><td>Iteration (with the update)</td><td class="num">609 s</td><td class="num">276 s</td><td class="num">208 s</td></tr>
-      <tr><td>Games per hour</td><td class="num">6,010</td><td class="num">14,300</td><td class="num">19,900</td></tr>
-      <tr><td>150 iterations</td><td class="num">25.4 h</td><td class="num">11.5 h</td><td class="num">8.66 h</td></tr>
-      <tr><td>Speed-up per iteration</td><td class="num">1.00</td><td class="num">2.21×</td><td class="num">2.93×</td></tr>
-      <tr><td>Total CPU for all 960 games</td><td class="num">26,700 s</td><td class="num">11,000 s</td><td class="num">7,900 s</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>The throughput measures agree: total CPU falls 2.42× (plain) and
-  3.37× (PGO), one core 2.46× and 3.16×, a typical iteration 2.21× and
-  2.93×. The GPU's share is small: the update takes 34 s of the 208 s, with
-  the GPU 87% busy during it and idle during collection. With the 46
-  workers busy, the whole machine plays 21.6× the games per hour of one
-  worker on one core (PGO build; different games, so indicative).</p>
-  <p class="note">How "typical" was measured: the same 960-game pool
-  replayed outside the trainer without the watchdog, once per build. The
-  replays reproduce the trainer's new-engine collection times within 0.5%
-  and predict the previous engine's watchdog cut at 1,175 s (trainer:
-  1,177–1,180 s). They ran right after the quiet-host window, one at a
-  time with the machine about 2% busy before each, but not under its gate,
-  so treat them as a validated estimate. A real campaign's utilisation is about 0.95, not the 0.5 of
-  this iteration 0, but it also has rare outlier iterations: 21 of 762 in
-  the four past Ironclad campaigns on this host hit the same watchdog. As a
-  cross-check, the current Ironclad champion's last 150-iteration leg took
-  23.9 h on an older engine, close to the 25.4 h projected for the previous
-  one.</p>
 </section>
 
 <section id="others">
@@ -689,7 +696,7 @@ p.verdict { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 1rem;
 </main>
 </div>
 
-<footer class="foot"><span>spire-mentor · MIT licence</span><span>Not affiliated with Mega Crit</span><a href="https://github.com/tfriedel/spire-mentor">Source on GitHub</a></footer>
+<footer class="foot"><span>spire-mentor · MIT licence</span><span>Not affiliated with Mega Crit</span><a href="v1/index.html">Version 1 archive</a><a href="https://github.com/tfriedel/spire-mentor">Source on GitHub</a></footer>
 <script src="site.js?v=4"></script>
 </body>
 </html>
