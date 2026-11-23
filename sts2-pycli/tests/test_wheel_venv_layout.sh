@@ -79,9 +79,13 @@ expect_line "both-layouts python prefers bin/" "$out" "python=$both/bin/python"
 many="$TMP/many"
 mkdir -p "$many/bin" "$many/lib/python3.13/site-packages/sts2_rs"
 printf '#!/bin/sh\n' > "$many/bin/python"; chmod +x "$many/bin/python"
+# One `touch` for all 300: a process per file cost ~10 s under Git Bash, and
+# far more with the gate's workers competing, past the pytest timeout.
+mods=()
 for n in $(seq -w 1 300); do
-  touch "$many/lib/python3.13/site-packages/sts2_rs/sts2_rs.m$n.so"
+  mods+=("$many/lib/python3.13/site-packages/sts2_rs/sts2_rs.m$n.so")
 done
+touch "${mods[@]}"
 out="$("$WV" venv-layout "$many" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "FAIL: venv-layout with 300 extension modules exited $rc"; fail=1

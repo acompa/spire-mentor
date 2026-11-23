@@ -13,6 +13,7 @@ import AdviceList from "./AdviceList";
 import { estimateText } from "./estimate";
 import { humanize, type Mark } from "./marks";
 import { policyRows, scoreRows, type AdviceRow } from "./rows";
+import { t } from "../i18n";
 
 /** A recorded run's policy ranking (live-game logs): label and share only. */
 function recordedRows(advice: StepAdvice): AdviceRow[] {
@@ -28,7 +29,7 @@ export function EstimateNote({ estimate }: { estimate?: InstinctEstimate | null 
   if (!text) return null;
   return (
     <div className="wb-advice-note" data-testid="instinct-estimate"
-      title="A small net reading Instinct's view of the position (GH #1222). Each number assumes Instinct plays every move from here; it is not the search's win chance.">
+      title={t("A small net reading Instinct's view of the position (GH #1222). Each number assumes Instinct plays every move from here; it is not the search's win chance.")}>
       {text}
     </div>
   );
@@ -54,15 +55,15 @@ export function CombatAdvice({ scores, pv, estimate, enemies, hand, advice, mark
     })
     : advice ? recordedRows(advice) : [];
   if (rows.length === 0) {
-    return <div className="wb-advice-note">No advice for this position yet — press H to ask.</div>;
+    return <div className="wb-advice-note">{t("No advice for this position yet — press H to ask.")}</div>;
   }
   const forced = scores.length === 1 && scores[0].visits === 0 && scores[0].prob == null;
   return (
     <>
       <AdviceList rows={rows} showNumbers={false} />
-      {forced && <div className="wb-advice-note">The only legal move.</div>}
+      {forced && <div className="wb-advice-note">{t("The only legal move.")}</div>}
       {isE2eScores(scores) && (
-        <div className="wb-advice-note">Instinct · no search · its percentages are a policy's, not win chances</div>
+        <div className="wb-advice-note">{t("Instinct · no search · its percentages are a policy's, not win chances")}</div>
       )}
       {isE2eScores(scores) && <EstimateNote estimate={estimate} />}
       {advice?.note && <div className="wb-advice-note">{advice.note}</div>}
@@ -77,11 +78,11 @@ export function PolicyAdvice({ payload, marks, showNumbers, implToggle }: {
   /** The server build's PPO backend switch (rust / python); absent in the browser build. */
   implToggle?: { impl: string; toggle: () => void };
 }) {
-  const who = payload.policy === "e2e" ? "Instinct" : "The run net";
+  const who = payload.policy === "e2e" ? t("Instinct") : t("The run net");
   if (!payload.ppo_available) {
     return (
       <div className="wb-advice-note">
-        {who} {payload.policy === "e2e" ? "has no pick here" : "is unavailable"}{payload.error ? `: ${payload.error}` : ""}
+        {payload.policy === "e2e" ? t("{who} has no pick here", { who }) : t("{who} is unavailable", { who })}{payload.error ? `: ${payload.error}` : ""}
       </div>
     );
   }
@@ -90,13 +91,13 @@ export function PolicyAdvice({ payload, marks, showNumbers, implToggle }: {
       <AdviceList rows={policyRows(payload.options, marks)} showNumbers={showNumbers} />
       {payload.policy === "e2e" && <EstimateNote estimate={payload.estimate} />}
       <div className="wb-advice-note">
-        {payload.policy === "e2e" ? "Instinct" : "PPO run policy"}
-        {payload.forced ? " · the only option" : ""}
+        {payload.policy === "e2e" ? t("Instinct") : t("PPO run policy")}
+        {payload.forced ? ` · ${t("the only option")}` : ""}
         {showNumbers && payload.value != null ? ` · V(s) = ${payload.value.toFixed(3)}` : ""}
         {showNumbers && implToggle && (
           <>
             {" · "}
-            <button type="button" className="wb-advice-more" onClick={implToggle.toggle} title="PPO inference backend">
+            <button type="button" className="wb-advice-more" onClick={implToggle.toggle} title={t("PPO inference backend")}>
               {implToggle.impl}
             </button>
           </>

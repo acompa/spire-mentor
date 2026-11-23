@@ -169,12 +169,46 @@ fn war_historian_unlock_chest(state: &mut RunState) {
                 .unwrap_or(WAR_HISTORIAN_FALLBACK_RELIC)
         })
         .collect();
+    if state.reward_screen {
+        // The set waits on its reward screen (GH #1641).
+        for kind in potions {
+            state.pending_rewards.push(sts2_core::Reward::Potion(
+                sts2_core::PotionReward::with_kind(kind),
+            ));
+        }
+        for relic in relics {
+            state.offer_relic_rewards(relic, 1);
+        }
+        return;
+    }
     for kind in potions {
         let _ = state.claim_potion_reward(kind);
     }
     for relic in relics {
         state.grant_event_relic(relic);
     }
+}
+
+/// The part of a chest option the player can see before taking it: the
+/// Lantern Key spent, two potions and two relics on offer. Which potions and
+/// relics is rolled on pick, and it matters: a Potion Belt among the relics
+/// makes room for the potions on a full belt, so resolving the option in the
+/// preview handed the policy the hidden relic roll. The two relics read as
+/// the fallback relic (the preview counts them only). Returns `false` for the
+/// cage options, which roll nothing.
+pub(super) fn war_historian_apply_visible(state: &mut RunState, option_id: &str) -> bool {
+    match option_id {
+        "unlock_chest" => war_historian_remove_first_lantern_key(state),
+        "second_unlock_chest" => war_historian_remove_all_lantern_keys(state),
+        _ => return false,
+    }
+    for _ in 0..WAR_HISTORIAN_CHEST_POTIONS {
+        state
+            .pending_rewards
+            .push(sts2_core::Reward::Potion(sts2_core::PotionReward::empty()));
+    }
+    state.offer_relic_rewards(WAR_HISTORIAN_FALLBACK_RELIC, WAR_HISTORIAN_CHEST_RELICS);
+    true
 }
 
 /// End of a first-page choice: open the second page if another LanternKey is
@@ -334,6 +368,13 @@ fn grant_neow_relic(state: &mut RunState, relic: RelicId) {
 }
 
 fn neow_positive_1(state: &mut RunState) -> EventOutcome {
+    if state.game_mode.is_blitz() {
+        // The lone BLITZ option (`Neow.cs:218-223` -> `OnBlitzOptionSelected`,
+        // `:295-307`): `BlitzRunModel.GiveNeowRewards`, then the event is
+        // done (`GenerateNeowModifiers()` is empty with no modifiers).
+        crate::blitz::give_neow_rewards(state);
+        return EventOutcome::finished("Chose 3 cards to add to the deck.");
+    }
     let relic = state.neow_offers.map_or(NEOW_FALLBACK_POSITIVE_1, |o| {
         resolve_neow_relic(o.positive_1)
     });
@@ -367,6 +408,19 @@ fn neow_cursed(state: &mut RunState) -> EventOutcome {
 ///
 /// Bead `sts2-rs-14cid`.
 fn neow_generate_options(state: &RunState, spec: &EventSpec) -> Vec<sts2_core::EventOptionInfo> {
+    if state.game_mode.is_blitz() {
+        // C# `Neow.GenerateInitialOptions` returns one option, before any
+        // `Rng` draw, when the run has a `BlitzRunModel` (`Neow.cs:218-223`).
+        return vec![sts2_core::EventOptionInfo {
+            option_id: spec.options[0].option_id,
+            loc_key: "",
+            vars: Vec::new(),
+            title_vars: Vec::new(),
+            label: "Blitz".to_string(),
+            description: "Choose 3 cards to add to your Deck.".to_string(),
+            enabled: true,
+        }];
+    }
     let Some(offers) = state.neow_offers else {
         return super::default_option_info_from_spec(state, spec);
     };

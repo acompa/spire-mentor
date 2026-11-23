@@ -595,6 +595,36 @@ def test_injection_accepts_the_engines_own_derivation(tmp_path):
     assert mirror.reconcile(sts2_rs.state_to_dict(world)) == []
 
 
+def test_a_replayed_cards_second_choice_is_not_an_unclean_first(tmp_path):
+    """Throwing Axe plays Burning Pact twice, so answering its exhaust screen
+    opens the second play's screen. The mirror read "a choice is still open"
+    as an answer the engine did not accept and dropped the fight; the second
+    screen was then answered without the mirror (Spire Bench seed 170000245).
+    """
+    world = sts2_rs.build_scenario_state(
+        3,
+        "Ironclad",
+        ["BURNING_PACT"] * 12,
+        80,
+        80,
+        ["THROWING_AXE"],
+        "SHRINKER_BEETLE_WEAK",
+    )
+    mirror = _mirror(tmp_path)
+    mirror.seed(sts2_rs.state_to_dict(world))
+    _play_into_a_choice(world)
+    assert mirror.advance({"action": "play", "card_index": 0}) == "pending_choice"
+
+    assert world.apply_step({"action": "choose", "selection": [0]}) == "pending_choice"
+    assert mirror.advance_through_choice([0]) == "pending_choice"
+    second = mirror.parked_choice()
+    assert second is not None and second == world.pending_choice()
+
+    world.apply_step({"action": "choose", "selection": [0]})
+    assert mirror.advance_through_choice([0]) == "advanced"
+    assert mirror.reconcile(sts2_rs.state_to_dict(world)) == []
+
+
 def _potion_fixture(potion: str = "ATTACK_POTION", seed: int = 3):
     """A belt holding one potion whose use opens a choose-a-card screen."""
     return sts2_rs.build_scenario_state(
@@ -1709,3 +1739,36 @@ def test_a_disclosed_turn_history_is_reality_not_carried():
     assert _turn_history_disclosed(
         {"player": {"cards_exhausted_this_turn": 0, "card_block_gains_this_turn": 0}}
     )
+
+
+def test_toasty_mittens_turn_start_screen_keeps_its_strength(tmp_path):
+    """GH #1696: v0.111.0 Toasty Mittens awaits a hand exhaust every turn,
+    then applies its Strength. The world's screen, injected bare, must keep
+    that tail and run the rest of turn setup, or the mirror reads a
+    Strength short."""
+    world = sts2_rs.build_scenario_state(
+        11,
+        "Ironclad",
+        ["STRIKE_IRONCLAD"] * 5 + ["DEFEND_IRONCLAD"] * 5,
+        70,
+        80,
+        ["TOASTY_MITTENS"],
+        "SHRINKER_BEETLE_WEAK",
+        game_version="v0.111.0",
+    )
+    wire = sts2_rs.state_to_dict(world)
+    assert world.legal_actions()[0]["action"] == "choose", "parked on the relic's pick"
+
+    mirror = _mirror(tmp_path, policy=MirrorPolicy.OBSERVE)
+    mirror.seed(wire)
+    options = [
+        {"id": c["id"], "upgraded": bool(c["upgraded"]), "pile": "hand", "index": i}
+        for i, c in enumerate(wire["deck"]["hand"])
+    ]
+    mirror.inject_choice("exhaust_from_hand", options, 1, 1, can_skip=False)
+    assert mirror.arm_turn_start_resume("TOASTY_MITTENS")
+    mirror.advance_through_choice([0])
+    world.apply_step({"action": "choose", "selection": [0]})
+
+    diffs = diff_observables(sts2_rs.state_to_dict(mirror.state), sts2_rs.state_to_dict(world))
+    assert diffs == []

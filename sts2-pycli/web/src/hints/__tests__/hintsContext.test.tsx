@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HintsProvider } from "../HintsContext";
+import { HintsFixture, HintsProvider, HintsQuiet } from "../HintsContext";
 import { useHints } from "../useHints";
 
 function Probe() {
@@ -103,5 +103,24 @@ describe("Off", () => {
     }
     render(<HintsProvider><OffProbe /></HintsProvider>);
     expect(screen.getByTestId("off")).toHaveTextContent("off/false/true");
+  });
+});
+
+// GH #1347: a Blitz run has no AI, so every advice surface under the run
+// reads the switch as quiet whatever style is stored.
+describe("HintsQuiet", () => {
+  function Readout() {
+    const h = useHints();
+    return <span data-testid="quiet">{h.style}/{String(h.on)}/{String(h.off)}</span>;
+  }
+
+  it("silences Hints below it and keeps the style itself", () => {
+    render(<HintsFixture style="hints"><HintsQuiet quiet><Readout /></HintsQuiet></HintsFixture>);
+    expect(screen.getByTestId("quiet")).toHaveTextContent("hints/false/true");
+  });
+
+  it("passes the switch through untouched when it is not quiet", () => {
+    render(<HintsFixture style="hints"><HintsQuiet quiet={false}><Readout /></HintsQuiet></HintsFixture>);
+    expect(screen.getByTestId("quiet")).toHaveTextContent("hints/true/false");
   });
 });

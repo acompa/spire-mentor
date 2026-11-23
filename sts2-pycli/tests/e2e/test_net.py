@@ -158,6 +158,41 @@ def test_pinned_uploads_build_the_same_batch():
             assert x == y, f.name
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_small_bag_matches_embedding_bag_on_cuda():
+    """`small_bag` (a count matrix times the table on CUDA, GH #1550) sums and
+    trains like `embedding_bag(padding_idx=0)`: repeated indices count twice,
+    index 0 adds nothing and its row gets no gradient."""
+    g = torch.Generator().manual_seed(0)
+    idx = torch.randint(0, 40, (300, 9), generator=g)
+    idx[::3, 2] = 0  # absent columns
+    idx[::5, 4] = idx[::5, 5]  # repeats within a row
+    w0 = torch.randn(40, 16, generator=g)
+    up = torch.randn(300, 16, generator=g)
+    outs, grads = [], []
+    for fn in (
+        N.small_bag,
+        lambda i, w: torch.nn.functional.embedding_bag(i, w, mode="sum", padding_idx=0),
+    ):
+        w = w0.cuda().requires_grad_(True)
+        y = fn(idx.cuda(), w)
+        (y * up.cuda()).sum().backward()
+        outs.append(y.detach().cpu())
+        grads.append(w.grad.cpu())
+    torch.testing.assert_close(outs[0], outs[1], rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(grads[0], grads[1], rtol=1e-5, atol=1e-5)
+    assert torch.all(grads[0][0] == 0)
+
+
+def test_small_bag_on_cpu_is_embedding_bag():
+    """The CPU (the fp32 evaluation and export path) keeps `embedding_bag` exactly."""
+    g = torch.Generator().manual_seed(1)
+    idx = torch.randint(0, 30, (50, 7), generator=g)
+    w = torch.randn(30, 8, generator=g)
+    ref = torch.nn.functional.embedding_bag(idx, w, mode="sum", padding_idx=0)
+    assert torch.equal(N.small_bag(idx, w), ref)
+
+
 # ── shapes, masks, values ─────────────────────────────────────────────────
 
 
@@ -802,14 +837,26 @@ def test_varlen_attention_matches_per_row_attention(device):
         torch.testing.assert_close(att(qq, k, v), ref, rtol=0, atol=1e-5)
         if device == "cuda":
             b16 = [x.bfloat16() for x in (qq, k, v)]
-            att.mode = "varlen"
+            # auto picks varlen for bf16 on an Ampere+ GPU, the padded path before it
+            want = "varlen" if N.flash_attn_ok(q.device) else "pad"
+            att.mode = want
             torch.testing.assert_close(att(*b16).float(), ref, rtol=0, atol=3e-2)
-            att.mode = "auto"  # auto picks varlen for bf16 on CUDA
+            att.mode = "auto"
             assert torch.equal(
-                att(*b16), N.Varlen(cu_q, cu_k, att.max_q, att.max_k, len(qq), n, "varlen")(*b16)
+                att(*b16), N.Varlen(cu_q, cu_k, att.max_q, att.max_k, len(qq), n, want)(*b16)
             )
     with pytest.raises(ValueError, match="attention mode"):
         N.Varlen(cu, cu, 1, 1, 1, 1, "flash")
+
+
+def test_flash_attention_needs_ampere(monkeypatch):
+    """`flash_attn_ok`: never on the CPU; on CUDA from compute capability 8.0
+    (a Pascal TITAN Xp, 6.1, and a Turing RTX 2070, 7.5, take the padded path)."""
+    assert not N.flash_attn_ok(torch.device("cpu"))
+    gpu = torch.device("cuda", 0)
+    for cap, ok in (((6, 1), False), ((7, 5), False), ((8, 0), True), ((12, 0), True)):
+        monkeypatch.setattr(N, "_cuda_capability", lambda _i, cap=cap: cap)
+        assert N.flash_attn_ok(gpu) is ok, cap
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
@@ -827,6 +874,37 @@ def test_packed_bf16_on_cuda_is_within_xb_of_fp32():
     kl = torch.where(m, lp32.exp() * (lp32 - lp16), torch.zeros_like(lp32)).sum(-1)
     assert float(torch.quantile(d, 0.99)) < 0.05 and float(kl.mean()) < 1e-3
     _assert_packed_matches(net, rb, bf16=False, atol=1e-4, device="cuda")
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+@pytest.mark.skipif(
+    torch.cuda.is_available() and torch.cuda.get_device_capability() < (7, 0),
+    reason="torch.compile's Triton backend needs CUDA capability 7.0+ (a Pascal GPU is 6.1)",
+)
+def test_compiled_packed_serving_is_within_xb_of_eager_fp32():
+    """The learner's `compile_serve`: `forward_packed` compiled with dynamic shapes
+    serves batches of any size (here three) within X-B's rule of eager fp32, and
+    follows in-place weight updates (`load_state_dict`), as the learner's are."""
+    os.environ.setdefault("TORCHINDUCTOR_COMPILE_THREADS", "2")
+    net = _net(N.NetConfig(n_layers=2)).cuda().eval()
+    fwd = torch.compile(net.forward_packed, dynamic=True)
+
+    def check(rb):
+        pb = N.to_packed(rb, "cuda")
+        with torch.no_grad():
+            lp32 = net.forward_packed(pb, bf16=False).logp.double()
+            lpc = fwd(pb, bf16=True).logp.double()
+        m = torch.isfinite(lp32)
+        assert torch.equal(m, torch.isfinite(lpc))
+        d = (lp32 - lpc).abs()[m]
+        kl = torch.where(m, lp32.exp() * (lp32 - lpc), torch.zeros_like(lp32)).sum(-1)
+        assert float(torch.quantile(d, 0.99)) < 0.05 and float(kl.mean()) < 1e-3
+
+    for n, seed in ((64, 12), (37, 13), (100, 14)):
+        check(_rows(n, seed=seed, ppool=True))
+    other = _loud_heads(N.E2ENet(N.NetConfig(n_layers=2), seed=1)).cuda().eval()
+    net.load_state_dict(other.state_dict())
+    check(_rows(48, seed=15, ppool=True))
 
 
 # ── training-side plumbing ────────────────────────────────────────────────
@@ -865,6 +943,59 @@ def test_param_groups_split_by_the_value_prefix():
     by_name = {id(p) for n, p in net.named_parameters() if n.startswith("value.")}
     assert {id(p) for p in g["value"]} == by_name  # `ppo.e2e.algo.param_groups`'s rule
     assert id(net.ids.weight) in {id(p) for p in g["trunk"]}
+
+
+def test_param_groups_split_the_input_layers_off_the_trunk():
+    """GH #1197 adapt phase: "input" is everything that turns tokens into the trunk's
+    input (ID table and its gains, small columns, sections, numeric stem); "trunk" is
+    the transformer blocks, final norm and the policy side (kind embedding, both heads);
+    "value" is the value module. Every top-level name is classified, so a new module
+    must be placed here on purpose."""
+    net = N.E2ENet(_small_cfg(), seed=0, filled=(C.FILL_CHARS,))
+    roots = {n.split(".")[0] for n, _ in net.named_parameters()}
+    assert set(N.INPUT_ROOTS) == {
+        "ids",
+        "id_gain",
+        "priv_id_gain",
+        "pool_gain",
+        "small",
+        "sec",
+        "num",
+    }
+    assert set(N.TRUNK_ROOTS) == {"blocks", "norm", "kind", "head_combat", "head_ooc"}
+    assert roots == set(N.INPUT_ROOTS) | set(N.TRUNK_ROOTS) | {"value"}
+    assert not set(N.INPUT_ROOTS) & set(N.TRUNK_ROOTS)
+    g = net.param_groups(split_input=True)
+    assert list(g) == ["input", "trunk", "value"]
+    name = {id(p): n for n, p in net.named_parameters()}
+    got = {k: sorted(name[id(p)] for p in v) for k, v in g.items()}
+    assert got["input"] == sorted(
+        [
+            *("ids.weight", "id_gain", "priv_id_gain", "pool_gain", "small.weight", "sec.weight"),
+            *("num.inp.weight", "num.inp.bias", "num.out.weight", "num.out.bias"),
+        ]
+    )
+    assert all(n.split(".")[0] in N.TRUNK_ROOTS for n in got["trunk"])
+    for head in ("kind.weight", "head_combat.", "head_ooc.", "blocks.0.", "norm."):
+        assert any(n.startswith(head) for n in got["trunk"]), head
+    assert all(n.startswith("value.") for n in got["value"])
+    # The algo-side split (what the optimizer uses) is the same.
+    from ppo.e2e import algo
+
+    ag = algo.param_groups(net, ("value.",), lr_input=1e-4, input_roots=N.INPUT_ROOTS)
+    assert {x["name"]: [id(p) for p in x["params"]] for x in ag} == {
+        k: [id(p) for p in v] for k, v in g.items()
+    }
+    # The all-character inputs reach the trunk only through "input" parameters:
+    # X_CHAR is a small column, ALLY/ORB are rows of the section table, and the new
+    # continuous columns are inputs of the numeric stem's first layer.
+    L = net.layout
+    assert C.XC["X_CHAR"] in L.small_cols
+    for sec in C.CHARS_SECTIONS:
+        assert C.SEC[sec] < net.sec.weight.shape[0]
+    for col in C.FILL_SLOTS[C.FILL_CHARS]["cont"]:
+        assert col < L.n_cont and net.num.inp.weight.shape[1] == L.stem_in
+    assert C.FILL_SLOTS[C.FILL_CHARS]["cat"] == (C.XC["X_CHAR"],)
 
 
 def test_checkpoint_roundtrip_and_schema_refusal(tmp_path):

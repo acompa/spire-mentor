@@ -631,57 +631,40 @@ def test_combat_at_the_round_cap_carries_on(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 # --------------------------------------------------------------------------- #
-# Fake Merchant: C# shop page vs Rust option-model event (GH #1294, #1342)
+# Fake Merchant: both engines show its shop (GH #1294, #1607)
 # --------------------------------------------------------------------------- #
-def _fm_cs(relics: list[dict] | None = None) -> dict:
+def _fm_view(side: str, stock: list[tuple[str, int, bool]]) -> dict:
+    key = "is_stocked" if side == "cs" else "is_available"
     return {
         "decision": "shop",
         "event_name": "FAKE_MERCHANT",
-        "relics": relics
-        if relics is not None
-        else [
-            {"index": 0, "id": "FAKE_MANGO", "cost": 48, "is_stocked": True},
-            {"index": 1, "id": "FAKE_ANCHOR", "cost": 52, "is_stocked": True},
+        "relics": [
+            {"index": i, "id": rid if side == "cs" else f"RELIC.{rid}", "cost": cost, key: ok}
+            for i, (rid, cost, ok) in enumerate(stock)
         ],
     }
 
 
-def _fm_rs(*option_ids: str) -> dict:
-    return {
-        "decision": "event_choice",
-        "options": [
-            {"index": i, "option_id": oid, "is_locked": False} for i, oid in enumerate(option_ids)
-        ],
-    }
+def test_fake_merchant_offers_compare_stock_prices_and_buys() -> None:
+    from run_parity import diff_fake_merchant_offers
 
-
-def test_fake_merchant_pair_matches_shop_and_option_model() -> None:
-    assert a23._fake_merchant_pair(_fm_cs(), _fm_rs("buy", "throw_foul", "leave"))
-    # A disabled option is not listed by the Rust view.
-    assert a23._fake_merchant_pair(_fm_cs(), _fm_rs("buy", "leave"))
-
-
-def test_fake_merchant_pair_rejects_other_rooms() -> None:
-    real_shop = {**_fm_cs(), "event_name": None}
-    assert not a23._fake_merchant_pair(real_shop, _fm_rs("buy", "leave"))
-    assert not a23._fake_merchant_pair(_fm_cs(), _fm_rs("leave", "fight"))
-    assert not a23._fake_merchant_pair(_fm_cs(), {"decision": "shop", "options": []})
-
-
-def test_fake_merchant_choices_mirror_first_stocked_buy_and_leave() -> None:
-    cs = _fm_cs(
-        [
-            {"index": 0, "id": "FAKE_MANGO", "cost": 48, "is_stocked": False},
-            {"index": 1, "id": "FAKE_ANCHOR", "cost": 52, "is_stocked": True},
-        ]
+    stock = [("FAKE_MANGO", 48, True), ("FAKE_ANCHOR", 52, False)]
+    cs = _fm_view("cs", stock)
+    assert diff_fake_merchant_offers(cs, _fm_view("rs", stock)) == []
+    # A bought slot is compared as gone, whatever it still names.
+    sold_rs = _fm_view("rs", [("FAKE_MANGO", 48, True), ("FAKE_SNECKO_EYE", 999, False)])
+    assert diff_fake_merchant_offers(cs, sold_rs) == []
+    (price,) = diff_fake_merchant_offers(
+        cs, _fm_view("rs", [("FAKE_MANGO", 49, True), ("FAKE_ANCHOR", 52, False)])
     )
-    got = a23._fake_merchant_choices(cs, _fm_rs("buy", "throw_foul", "leave"))
-    assert got == [
-        ("buy_relic", {"relic_index": 1}, ("choose_option", {"option_index": 0})),
-        ("leave_room", {}, ("choose_option", {"option_index": 2})),
-    ]
-
-
-def test_fake_merchant_choices_only_leave_when_rust_cannot_buy() -> None:
-    got = a23._fake_merchant_choices(_fm_cs(), _fm_rs("leave"))
-    assert got == [("leave_room", {}, ("choose_option", {"option_index": 0}))]
+    assert price.startswith("fake_merchant.stock")
+    (bought,) = diff_fake_merchant_offers(
+        cs, _fm_view("rs", [("FAKE_MANGO", 48, False), ("FAKE_ANCHOR", 52, False)])
+    )
+    assert bought.startswith("fake_merchant.stock")
+    (kind,) = diff_fake_merchant_offers(cs, {**_fm_view("rs", stock), "event_name": None})
+    assert kind == "fake_merchant: cs=True rs=False"
+    # A real merchant is not compared here; neither is a phase split.
+    real = {**cs, "event_name": None}
+    assert diff_fake_merchant_offers(real, {**real, "relics": []}) == []
+    assert diff_fake_merchant_offers(cs, {"decision": "event_choice"}) == []

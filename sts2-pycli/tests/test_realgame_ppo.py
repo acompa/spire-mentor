@@ -33,6 +33,7 @@ import realgame_ppo as rp
 from realgame_mcts import pick_combat_action_mcts
 from realgame_random import pick_combat_action
 from sts2_realgame import potion_swap_group, reward_screen_choice
+from wire_parity import build_both, build_card_select_both
 
 try:
     import torch  # noqa: F401
@@ -754,7 +755,7 @@ class TestRewardScreenPotionSwap:
         assert {o["reward"]["id"] for o in group} == {"STABLE_SERUM"}
 
     def test_builder_matches_the_engine_surface(self) -> None:
-        decision = rp._build_potion_swap(self._STATE)
+        decision = build_both(rp._build_potion_swap, self._STATE, "potion_swap")
         assert decision is not None
         assert decision.actions == [
             {"action": "potion_swap", "discard_slot": None},
@@ -1422,6 +1423,21 @@ class TestEventNoSuicideGuard:
         }, "no filtering ⇒ no veto"
 
 
+def _build_event_both(state: dict[str, Any]) -> Any:
+    """`_build_event`, checked against the Rust builder the advisor uses
+    (`sts2_rs.ppo_wire_obs`): the same candidates, labels and override note."""
+    import sts2_rs
+
+    decision = rp._build_event(state)
+    rust = sts2_rs.ppo_wire_obs(state, "event")
+    assert (decision is None) == (rust is None)
+    if decision is not None:
+        assert rust["responses"] == decision.responses
+        assert rust["labels"] == decision.labels
+        assert rust["source_note"] == decision.source_note
+    return decision
+
+
 class TestOffModelPageVeto:
     """GH #487: the engine flattens most multi-page events to their first
     page, so on a live page 2+ the net scores an event id whose learned value
@@ -1456,7 +1472,7 @@ class TestOffModelPageVeto:
     def test_tablet_later_page_forces_walk_away(self) -> None:
         rp.reset_event_vetoes()
         state = {**_envelope("event"), "options": self._tablet_page("DECIPHER_2")}
-        decision = rp._build_event(state)
+        decision = _build_event_both(state)
         assert decision is not None
         assert decision.responses == [{"action": "choose", "index": 1}], (
             "must answer with Give Up's own wire index, not a filtered position"
@@ -1470,7 +1486,7 @@ class TestOffModelPageVeto:
         opts = self._tablet_page("INITIAL")
         opts[0]["text_key"] = "TABLET_OF_TRUTH.pages.INITIAL.options.DECIPHER_1"
         opts[1]["text_key"] = "TABLET_OF_TRUTH.pages.INITIAL.options.SMASH"
-        decision = rp._build_event({**_envelope("event"), "options": opts})
+        decision = _build_event_both({**_envelope("event"), "options": opts})
         assert decision is not None
         assert len(decision.responses) == 2
         assert decision.source_note == ""
@@ -1487,7 +1503,7 @@ class TestOffModelPageVeto:
         opts[0]["text_key"] = "ENDLESS_CONVEYOR.pages.INITIAL.options.OBSERVE_CHEF"
         opts[1]["event_id"] = "ENDLESS_CONVEYOR"
         opts[1]["text_key"] = "ENDLESS_CONVEYOR.pages.ALL.options.DISH_1"
-        decision = rp._build_event({**_envelope("event"), "options": opts})
+        decision = _build_event_both({**_envelope("event"), "options": opts})
         assert decision is not None
         assert len(decision.responses) == 2
         assert rp.EVENT_VETOES["off_model_exit"] == 0
@@ -1501,7 +1517,7 @@ class TestOffModelPageVeto:
             o["event_id"] = "COLOSSAL_FLOWER"
         opts[0]["text_key"] = "COLOSSAL_FLOWER.pages.REACH_DEEPER_2.options.REACH_DEEPER_3"
         opts[1]["text_key"] = "COLOSSAL_FLOWER.pages.REACH_DEEPER_2.options.EXTRACT_INSTEAD"
-        decision = rp._build_event({**_envelope("event"), "options": opts})
+        decision = _build_event_both({**_envelope("event"), "options": opts})
         assert decision is not None
         assert len(decision.responses) == 2
         assert rp.EVENT_VETOES["off_model_exit"] == 0
@@ -1515,7 +1531,7 @@ class TestOffModelPageVeto:
         for o, tail in zip(opts, ("GUILTY", "INNOCENT")):
             o["event_id"] = "TRIAL"
             o["text_key"] = f"TRIAL.pages.NOBLE.options.{tail}"
-        decision = rp._build_event({**_envelope("event"), "options": opts})
+        decision = _build_event_both({**_envelope("event"), "options": opts})
         assert decision is not None
         assert len(decision.responses) == 2
         assert rp.EVENT_VETOES == {
@@ -1548,7 +1564,7 @@ class TestOffModelPageVeto:
                 "will_kill_player": True,
             }
         )
-        decision = rp._build_event({**_envelope("event"), "options": opts})
+        decision = _build_event_both({**_envelope("event"), "options": opts})
         assert decision is not None
         assert decision.responses == [{"action": "choose", "index": 0}]
         assert rp.EVENT_VETOES["vetoed"] == 1
@@ -1561,7 +1577,7 @@ class TestOffModelPageVeto:
         opts = self._tablet_page("DECIPHER_2")
         for o in opts:
             del o["text_key"]
-        decision = rp._build_event({**_envelope("event"), "options": opts})
+        decision = _build_event_both({**_envelope("event"), "options": opts})
         assert decision is not None
         assert len(decision.responses) == 2
         assert rp.EVENT_VETOES["off_model_exit"] == 0
@@ -1648,74 +1664,37 @@ def _fake_merchant_state() -> dict[str, Any]:
 
 
 class TestFakeMerchant:
-    """GH #873: the live Fake Merchant arrives as the engine's three-option
-    event (buy, throw_foul, leave) -- the shape the run policy trained on.
-    The net reads an event option by position, so an option that is not
-    available keeps its slot instead of letting leave slide onto the throw's.
+    """GH #1607: the live Fake Merchant arrives as a shop of its six fake
+    relics (leave, then one buy per affordable relic), the shape the engine
+    and the headless host present, and the run policy reads it on its shop
+    surface.
     """
 
-    def test_a_disabled_throw_keeps_its_slot(self) -> None:
-        decision = rp._build_event(_fake_merchant_state())
+    def test_built_on_the_shop_surface(self) -> None:
+        decision = rp._build_shop(_fake_merchant_state())
         assert decision is not None
-        assert decision.obs["event_name"] == "FAKE_MERCHANT"
-        assert [o["enabled"] for o in decision.obs["event_options"]] == [True, False, True]
-        assert decision.actions == [
-            {"action": "event_choice", "idx": 0},
-            {"action": "event_choice", "idx": 2},
+        assert decision.actions == [{"action": "leave_shop"}] + [
+            {"action": "shop_buy_relic", "idx": i} for i in range(6)
         ]
-        assert decision.responses == [
-            {"action": "choose", "index": 0},
-            {"action": "choose", "index": 2},
-        ]
-        assert decision.labels == ["Buy a Relic (50g)", "Leave"]
-
-    def test_a_held_foul_potion_offers_the_throw(self) -> None:
-        state = _fake_merchant_state()
-        state["options"][1]["enabled"] = True
-        decision = rp._build_event(state)
-        assert decision is not None
-        assert [a["idx"] for a in decision.actions] == [0, 1, 2]
-        assert [r["index"] for r in decision.responses] == [0, 1, 2]
-
-    def test_every_structured_delta_reaches_the_obs(self) -> None:
-        """The relic a purchase brings and the potion a throw costs are what
-        tell buy, throw and leave apart; gold alone does not."""
-        opts = rp._build_event(_fake_merchant_state()).obs["event_options"]
-        assert (opts[0]["gold_delta"], opts[0]["relics_gained"]) == (-50, 1)
-        assert opts[1]["potions_lost"] == 1
-        assert opts[2]["relics_gained"] == 0
+        assert decision.responses == [{"action": "choose", "index": i} for i in range(7)]
+        relics = decision.obs["shop"]["relics"]
+        assert [r["id"] for r in relics][:2] == ["FAKE_SNECKO_EYE", "FAKE_ANCHOR"]
+        assert [r["price"] for r in relics] == [48, 52, 55, 44, 57, 50]
+        assert decision.obs["shop"]["cards"] == [] and decision.obs["shop"]["potions"] == []
 
     @pytest.mark.skipif(_RS_SKIP_REASON is not None, reason=_RS_SKIP_REASON or "no sts2_rs")
-    def test_matches_the_engines_option_model(self) -> None:
-        """Position for position, each option the live message offers
-        featurizes like the engine's own option at that position."""
+    def test_the_engine_offers_the_same_actions(self) -> None:
+        """The engine's Fake Merchant is a shop whose legal moves are the
+        same kinds: one buy per affordable relic, then leave."""
         rm = sts2_rs.RunManager(
             string_seed="FAKEMERCH", character="Ironclad", ascension_level=0, neow_start=True
         )
-        assert rm.force_event("FakeMerchant") is not None
-        native = rm.event_option_infos()
-        assert [o["option_id"] for o in native] == ["buy", "throw_foul", "leave"]
-
-        decision = rp._build_event(_fake_merchant_state())
-        wire = decision.obs["event_options"]
-        assert len(wire) == len(native)
-        # The buy price is rolled per visit (``MerchantRelicEntry.CalcCost``:
-        # 50 x Shops.NextFloat(0.85, 1.15)), so the fixture's fixed 50g only
-        # matches the engine's roll to within that band.
-        keys = [k for k in rp._STRUCTURED_DELTA_KEYS if k != "gold_delta"]
-        for action in decision.actions:
-            idx = action["idx"]
-            assert {k: wire[idx].get(k, 0) for k in keys} == {
-                k: native[idx].get(k, 0) for k in keys
-            }, f"option {idx} ({native[idx]['option_id']})"
-            wire_gold, native_gold = (
-                wire[idx].get("gold_delta", 0),
-                native[idx].get("gold_delta", 0),
-            )
-            if wire_gold == 0:
-                assert native_gold == 0, f"option {idx}"
-            else:
-                assert -57 <= native_gold <= -43, f"option {idx}: {native_gold}"
+        rm.debug_enter_event("FakeMerchant")
+        assert rm.phase() == "shop"
+        assert rm.shop_inventory()["fake_merchant"] is True
+        kinds = [a["action"] for a in rm.available_actions()]
+        assert kinds[-1] == "leave_shop"
+        assert set(kinds[:-1]) <= {"shop_buy_relic"}
 
     @pytest.mark.skipif(
         _TORCH_SKIP_REASON is not None, reason=_TORCH_SKIP_REASON or "torch unavailable"
@@ -1728,7 +1707,7 @@ class TestFakeMerchant:
         )
         assert extra is None
         assert action["action"] == "choose"
-        assert action["index"] in (0, 2), "never the disabled throw"
+        assert action["index"] in range(7)
         assert action["annotations"]["note"]
 
 
@@ -1892,7 +1871,7 @@ class TestCardSelectBuilder:
         ],
     )
     def test_surface_dispatch(self, prev, kind, obs_key) -> None:
-        decision = rp._build_card_select(CARD_SELECT_STATE, prev)
+        decision = build_card_select_both(CARD_SELECT_STATE, prev)
         assert decision is not None
         assert [a["action"] for a in decision.actions] == [kind] * 3
         assert [a["idx"] for a in decision.actions] == [0, 1, 2]
@@ -1901,14 +1880,14 @@ class TestCardSelectBuilder:
         assert decision.responses[1] == {"action": "choose", "indices": [1]}
 
     def test_smith_options_are_plain_ids(self) -> None:
-        decision = rp._build_card_select(CARD_SELECT_STATE, "rest_site")
+        decision = build_card_select_both(CARD_SELECT_STATE, "rest_site")
         assert decision is not None
         assert decision.obs["smith_options"] == ["STRIKE_IRONCLAD", "BASH", "THUNDERCLAP"]
 
     def test_removal_options_are_id_upgraded_pairs(self) -> None:
         state = dict(CARD_SELECT_STATE)
         state["cards"] = [_cs_card("STRIKE_IRONCLAD", 0), _cs_card("BASH", 1, upgrade_level=1)]
-        decision = rp._build_card_select(state, "shop")
+        decision = build_card_select_both(state, "shop")
         assert decision is not None
         assert decision.obs["card_removal_options"] == [
             ("STRIKE_IRONCLAD", False),
@@ -1918,10 +1897,10 @@ class TestCardSelectBuilder:
     def test_combat_context_returns_none(self) -> None:
         # Mid-combat selections (Armaments/discard/...) are NOT deck
         # mutations; they stay on the random fallback until routed to MCTS.
-        assert rp._build_card_select(CARD_SELECT_STATE, "combat_action") is None
+        assert build_card_select_both(CARD_SELECT_STATE, "combat_action") is None
 
     def test_unknown_context_returns_none(self) -> None:
-        assert rp._build_card_select(CARD_SELECT_STATE, None) is None
+        assert build_card_select_both(CARD_SELECT_STATE, None) is None
 
     def test_multi_pick_is_ranked_and_carries_its_arity(self) -> None:
         """It used to return None, which meant uniform random.
@@ -1934,14 +1913,14 @@ class TestCardSelectBuilder:
         state = dict(CARD_SELECT_STATE)
         state["max_select"] = state["max_count"] = 2
         state["min_select"] = state["min_count"] = 2
-        decision = rp._build_card_select(state, "rest_site")
+        decision = build_card_select_both(state, "rest_site")
         assert decision is not None
         assert decision.pick_count == 2
         assert len(decision.actions) == len(CARD_SELECT_STATE["cards"])
 
     def test_a_single_pick_screen_still_names_one_card(self) -> None:
         """The arity only moves for a screen that actually asks for more."""
-        decision = rp._build_card_select(dict(CARD_SELECT_STATE), "rest_site")
+        decision = build_card_select_both(dict(CARD_SELECT_STATE), "rest_site")
         assert decision is not None
         assert decision.pick_count == 1
 
@@ -1949,7 +1928,7 @@ class TestCardSelectBuilder:
         state = {k: v for k, v in CARD_SELECT_STATE.items()}
         for k in ("min_select", "max_select", "min_count", "max_count"):
             state.pop(k)
-        decision = rp._build_card_select(state, "rest_site")
+        decision = build_card_select_both(state, "rest_site")
         assert decision is not None
         assert decision.responses[2] == {"action": "choose", "index": 2}
 

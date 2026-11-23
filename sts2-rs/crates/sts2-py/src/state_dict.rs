@@ -1906,6 +1906,27 @@ mod tests {
     }
 
     #[test]
+    fn the_any_kinds_add_the_later_builds_content() {
+        // A v0.113.0 e2e lane (GH #1535) appends these to its vocabulary:
+        // each `_any` kind is its frozen kind plus the v0.113.0-only ids.
+        for (frozen, any, later) in [
+            ("relic_id", "relic_any", "OBSIDIAN_VICE"),
+            ("potion", "potion_any", "BOTTLED_SONG"),
+            ("event", "event_any", "WuppyInTrouble"),
+            ("monster", "monster_any", "Wuppy"),
+        ] {
+            let base = list_registry_names_impl(frozen).unwrap();
+            let all = list_registry_names_impl(any).unwrap();
+            assert!(!base.iter().any(|s| s == later), "{frozen} has {later}");
+            assert!(all.iter().any(|s| s == later), "{any} lacks {later}");
+            assert!(
+                base.iter().all(|s| all.contains(s)),
+                "{any} drops a {frozen} name"
+            );
+        }
+    }
+
+    #[test]
     fn card_any_adds_the_later_builds_cards_to_the_frozen_vocab() {
         // `card` is the PPO vocab (v0.111.0, embedding rows): it must not
         // grow. `card_any` is every build's, for checking a carried id.

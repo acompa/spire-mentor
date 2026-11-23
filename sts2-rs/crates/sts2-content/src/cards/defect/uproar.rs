@@ -15,7 +15,7 @@ use super::prelude::*;
 pub(crate) fn play_uproar(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
     let t = target.expect("Uproar: single Enemy target");
     let base = current_card_damage(state);
-    for _ in 0..2 {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
         let _ = deal_damage_player_to_enemy(state, t, base);
     }
 

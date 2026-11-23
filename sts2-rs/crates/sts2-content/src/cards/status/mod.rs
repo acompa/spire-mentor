@@ -6,6 +6,7 @@
 use sts2_core::card_effects::{self, PlayCardFn};
 use sts2_core::cards::CardId;
 
+pub mod amnesia;
 pub mod beckon;
 pub mod burn;
 pub mod byrdonis_egg;
@@ -122,6 +123,7 @@ const POOL: &[(CardId, PlayCardFn)] = &[
         sloth_status::play_sloth_status as PlayCardFn,
     ),
     (CardId::WasteAway, waste_away::play_waste_away as PlayCardFn),
+    (CardId::Amnesia, amnesia::play_amnesia as PlayCardFn),
     (
         CardId::ByrdonisEgg,
         byrdonis_egg::play_byrdonis_egg as PlayCardFn,

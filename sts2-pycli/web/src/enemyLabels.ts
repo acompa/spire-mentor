@@ -1,4 +1,5 @@
 import type { Enemy } from "./api";
+import { t } from "./i18n";
 
 /**
  * Map an enemy slot index to something a human recognises.
@@ -10,7 +11,8 @@ import type { Enemy } from "./api";
  * the enemies sharing it — "Louse #2" — rather than by the slot index, which
  * is the thing that was unreadable in the first place.
  *
- * The grouping name is the enemy's `name`, else its `id`, else "enemy <i>"
+ * The grouping name is the enemy's `display_name` (Chinese display mode),
+ * else its `name`, else its `id`, else "enemy <i>"
  * (its list position) — the same rule as `python/enemy_labels.py` and the
  * Rust `sts2-workbench` `enemy_labels.rs`. The view lists live enemies only,
  * so every entry is counted.
@@ -19,11 +21,11 @@ import type { Enemy } from "./api";
  * tree opened from a step recorded without one.
  */
 export function enemyLabeller(
-  enemies: (Pick<Enemy, "index" | "name"> & { id?: string | null })[] | undefined,
+  enemies: (Pick<Enemy, "index" | "name"> & { id?: string | null; display_name?: string })[] | undefined,
 ): (index: number) => string {
   const byIndex = new Map<number, string>();
   if (enemies && enemies.length > 0) {
-    const names = enemies.map((e, i) => e.name || e.id || `enemy ${i}`);
+    const names = enemies.map((e, i) => e.display_name || e.name || e.id || t("enemy {n}", { n: i }));
     const total = new Map<string, number>();
     for (const n of names) total.set(n, (total.get(n) ?? 0) + 1);
     const seen = new Map<string, number>();
@@ -34,5 +36,5 @@ export function enemyLabeller(
       byIndex.set(e.index, (total.get(name) ?? 0) > 1 ? `${name} #${nth}` : name);
     });
   }
-  return (index: number) => byIndex.get(index) ?? `enemy ${index}`;
+  return (index: number) => byIndex.get(index) ?? t("enemy {n}", { n: index });
 }

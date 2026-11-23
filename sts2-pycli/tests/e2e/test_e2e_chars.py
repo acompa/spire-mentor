@@ -9,7 +9,10 @@ event keeps its inputs at zero weight.
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import random
+from functools import cache
 from typing import Any
 
 import numpy as np
@@ -17,6 +20,8 @@ import pytest
 import sts2_client
 import sts2_rs
 import torch
+import undeclared_rows as UR  # tests/e2e: the undeclared-row hash (GH #1197)
+from ppo.combat_ctx import snapshot as CS
 from ppo.e2e import contracts as C
 from ppo.e2e import env as E
 from ppo.e2e import factory
@@ -133,19 +138,6 @@ def test_a_declared_ironclad_launch_shows_orbs_and_doom(monkeypatch: pytest.Monk
     C.validate_row_batch(K.row_batch([on], run_uid=[1]))
 
 
-def test_the_rust_env_agrees_on_a_declared_ironclad_launch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(factory.CHARS_ENV, "1")
-    ls = Lockstep(f9_p=0.0)
-    run_seeds(ls, SEED, 3, pinned=False, practice=0)
-    run_seeds(ls, SEED + 50, 1, pinned=True, practice=0)
-    assert ls.stats["rows"] > 300
-    assert ls.mismatches == 0, {"stats": dict(ls.stats), "examples": ls.examples[:5]}
-    rows = _play("Ironclad", range(SEED, SEED + 1), cap=60)
-    assert all(t.cat[0, C.XC["X_CHAR"]] == C.CHAR_ID["Ironclad"] for _d, t in rows)
-
-
 # ── rows of the other characters ─────────────────────────────────────────────
 
 
@@ -168,7 +160,8 @@ def test_every_character_tokenizes_and_validates(character: str) -> None:
         slots = max(int(p.get("orb_slots") or 0), len(p.get("orbs") or []))
         assert int((t.sec == C.SEC["ALLY"]).sum()) == int("osty" in p)
         assert int((t.sec == C.SEC["ORB"]).sum()) == slots
-        loss = TC.hp_loss(d.snap, end_block=TC.end_turn_block(p), ally_hp=TC.ally_hp_of(p))
+        # A "chars" row prices the turn end live (GH #1197, SCHEMA.md 13.5).
+        loss = TC.hp_loss_live(TC.live_snapshot(d.snap, d.bv, d.d_bv), p)
         got = float(t.cont[t.sctx_lo, C.XF["S_HP_LOSS_END"]])
         assert got == pytest.approx(loss / 50.0, rel=2e-3, abs=1e-3)
 
@@ -430,13 +423,345 @@ def test_the_factory_reads_the_character_from_the_environment(
 # ── the Rust tokenizer ───────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("character", OTHERS)
-def test_the_rust_env_agrees_row_for_row(character: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`rsenv_lockstep` on another character's runs: the Rust training env's rows equal
-    the Python env's, the "chars" tokens and columns included."""
+@pytest.mark.parametrize("character", ("Ironclad", *OTHERS))
+def test_lockstep_all_characters(character: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`rsenv_lockstep` on every character's runs (Ironclad with "chars" declared): the
+    Rust training env's rows equal the Python env's, the "chars" tokens and columns
+    (the live bound, the end-of-turn columns, the S_ctx overrides) included."""
     monkeypatch.setattr(factory, "CHARACTER", character)
+    monkeypatch.setenv(factory.CHARS_ENV, "1")
     ls = Lockstep(f9_p=0.0)
     run_seeds(ls, SEED, 3, pinned=False, practice=0)
     run_seeds(ls, SEED + 50, 1, pinned=True, practice=0)
     assert ls.stats["rows"] > 300
     assert ls.mismatches == 0, {"stats": dict(ls.stats), "examples": ls.examples[:5]}
+    rows = _play(character, range(SEED, SEED + 1), cap=60)
+    assert all(t.cat[0, C.XC["X_CHAR"]] == C.CHAR_ID[character] for _d, t in rows)
+
+
+# ── undeclared rows: main's bytes (GH #1197) ─────────────────────────────────
+
+
+@cache
+def _undeclared() -> tuple[dict[str, Any], dict[str, tuple[list[str], list[str]]]]:
+    """The committed hashes and this checkout's, of the same random-play runs."""
+    import os
+
+    want = json.loads(UR.DATA.read_text(encoding="utf-8"))
+    # The hashes predate GH #1791's default corpse-power strip: pin the
+    # engine's form (every power kept), which those rows were made with.
+    assert not CS.STRIP_CORPSE_POWERS, "pin STRIP_CORPSE_POWERS off first"
+    assert factory.CHARACTER == "Ironclad" and not os.environ.get(factory.CHARS_ENV)
+    return want, {str(s): UR.run_hashes(s, want["cap"]) for s in want["seeds"]}
+
+
+def _first_diffs(want: dict[str, list[str]], got: dict[str, list[str]]) -> list[Any]:
+    out: list[Any] = []
+    for s, w in want.items():
+        g = got[s]
+        if len(g) != len(w):
+            out.append((s, "rows", len(w), len(g)))
+        out += [(s, i) for i, (a, b) in enumerate(zip(w, g, strict=False)) if a != b][:3]
+    return out
+
+
+def test_undeclared_ironclad_rows_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The #1374 check, committed: an Ironclad row without "chars" is main's, byte for
+    byte, every policy and PRIV array (`undeclared_rows.py`; the hashes come from
+    f6716cae7, main before GH #1197). Never regenerate the data file from a branch:
+    only from origin/main without the GH #1197 tokenizer change, in a separate
+    worktree (the exact command is in `undeclared_rows.py`'s docstring)."""
+    monkeypatch.setattr(CS, "STRIP_CORPSE_POWERS", False)
+    monkeypatch.delenv(factory.CHARS_ENV, raising=False)
+    want, got = _undeclared()
+    assert want["rows"] > 2000
+    diffs = _first_diffs(want["runs"], {s: r for s, (r, _c) in got.items()})
+    assert not diffs, diffs[:10]
+
+
+def test_combat_ctx_rows_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`ppo.combat_ctx`'s own S_ctx tokens of the same fights are main's: the chars
+    overrides sit in the e2e tokenizer, not in the combat PPO's tokenizer."""
+    monkeypatch.setattr(CS, "STRIP_CORPSE_POWERS", False)
+    monkeypatch.delenv(factory.CHARS_ENV, raising=False)
+    want, got = _undeclared()
+    assert sum(map(len, want["combat_ctx"].values())) > 1500
+    diffs = _first_diffs(want["combat_ctx"], {s: c for s, (_r, c) in got.items()})
+    assert not diffs, diffs[:10]
+
+
+# ── the new aliases and the per-character values (GH #1197) ──────────────────
+
+NEW_ALIASES = {
+    "C_STAR_COST": "X_C_RES3",
+    "E_DIES_FIRST": "X_C_RES4",
+    "S_DISCARDS_TURN": "X_C_RES5",
+    "S_ATTACKS_TURN": "X_C_RES6",
+    "S_PLAYER_DOOMED": "X_C_RES7",
+    "R_ARMED": "R_RES0",
+}
+
+
+def test_chars_slots_new_aliases() -> None:
+    for alias, spare in NEW_ALIASES.items():
+        assert C.CHARS_CONT[alias] == spare and C.XF[alias] == C.XF[spare]
+        col = C.X_CONT[C.XF[alias] - C.SCTX_N_CONT]
+        assert (col.name, col.status) == (spare, "reserved:spare")
+        assert alias in C.CHARS_DOC
+    cont = set(C.FILL_SLOTS[C.FILL_CHARS]["cont"])
+    assert {C.XF[f"X_C_RES{i}"] for i in range(8)} <= cont
+    assert C.XF["R_RES0"] in cont
+    live = C.SECTION_LIVE
+    for sec, cols in (
+        ("HAND", ("C_STAR_COST",)),
+        ("ACT_PLAY", ("C_STAR_COST",)),
+        ("ENEMY", ("E_DIES_FIRST",)),
+        ("STATE", ("S_DISCARDS_TURN", "S_ATTACKS_TURN", "S_PLAYER_DOOMED")),
+        ("RELIC", ("R_ARMED",)),
+    ):
+        assert {C.XF[c] for c in cols} <= set(live[C.SEC[sec]][1]), sec
+    assert C.SCTX_C["SLY"] in live[C.SEC["ACT_CHOOSE"]][1]
+    for sec in ("DRAW_UNK", "DRAW_TOP", "DRAW_BOT", "DISCARD", "EXHAUST", "PLAY"):
+        assert {C.SCTX_C[c] for c in ("SLY", "SLY_TURN", "RETAIN_TURN")} <= set(live[C.SEC[sec]][1])
+    # The hashed table stays frozen.
+    spec = C.schema_spec()
+    assert C.XF["C_STAR_COST"] not in spec["section_live"]["HAND"][1]
+    assert C.SCTX_C["SLY"] not in spec["section_live"]["ACT_CHOOSE"][1]
+    old, new = N.layout(), N.layout([C.FILL_CHARS])
+    assert {C.XF[a] for a in NEW_ALIASES} <= set(old.zero_cont)
+    assert not {C.XF[a] for a in NEW_ALIASES} & set(new.zero_cont)
+
+
+def _scripted(character: str, cs: Any, *, chars: bool = True) -> tuple[Any, K.Tok]:
+    """The first combat decision of a `character` run with its fight replaced by `cs`,
+    rebuilt as the env builds a decision (`f7check.world_decision`), and its row."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(factory, "CHARACTER", character)
+        if chars:
+            mp.setenv(factory.CHARS_ENV, "1")
+        else:
+            mp.delenv(factory.CHARS_ENV, raising=False)
+        env = E.E2EEnv(SEED)
+        d = env.reset()
+        rng = random.Random(SEED)
+        while not d.is_combat:
+            d = env.step(rng.randrange(d.n_classes))
+        bv, d_bv, snap = E.combat_view(cs, d.room)
+        snap["ehist"] = d.snap["ehist"]
+        cc = E.merged_classes(cs, room=d.room)
+        d = dataclasses.replace(
+            d,
+            cs=cs,
+            bv=bv,
+            d_bv=d_bv,
+            snap=snap,
+            dtype=cc.dtype,
+            kinds=cc.kinds,
+            obs_actions=cc.obs_actions,
+            actions=cs.legal_actions(),
+            classes=cc.classes,
+            members=cc.members,
+        )
+        return d, K.encode(d, priv=False)
+
+
+def _fight(character: str, card: str, relic: str, edit: Any = None) -> Any:
+    cs = factory.scenario_state(
+        seed=5,
+        character=character,
+        deck=[card] * 10,
+        hp=70,
+        max_hp=80,
+        relics=[relic],
+        encounter="SLIMES_WEAK",
+        ascension=10,
+    )
+    if edit is None:
+        return cs
+    sd = sts2_rs.state_to_dict(cs)
+    edit(sd)
+    return sts2_rs.state_from_dict(sd)
+
+
+def _sec_rows(t: K.Tok, sec: str) -> np.ndarray:
+    return np.flatnonzero(t.sec == C.SEC[sec])
+
+
+def _f16(x: float) -> float:
+    return float(np.float16(np.float32(x)))
+
+
+def test_chars_row_values() -> None:
+    """Per character, a scripted fight's row holds the live value (SCHEMA.md 13.5)."""
+
+    # Regent: Falling Star costs 2 stars; one made free this turn costs none. The paid
+    # copies' plays merge into one class, and every member carries the representative's
+    # value (`_class_reps`). The free copy is a class of its own (GH #1407,
+    # `test_a_free_star_copy_is_its_own_play_class`).
+    def stars(sd: dict[str, Any]) -> None:
+        sd["player"]["stars"] = 5
+
+    def free(sd: dict[str, Any]) -> None:
+        stars(sd)
+        sd["deck"]["hand"][0]["star_cost"] = 0  # the wire stamps StarCostFreeThisTurn
+
+    d, t = _scripted("Regent", _fight("Regent", "FALLING_STAR", "DIVINE_RIGHT", stars))
+    hand = _sec_rows(t, "HAND")
+    assert len(hand) >= 3
+    assert t.cont[hand, C.XF["C_STAR_COST"]].tolist() == [_f16(2 / 5)] * len(hand)
+    play = _sec_rows(t, "ACT_PLAY")
+    assert len(play) >= 3
+    assert t.cont[play, C.XF["C_STAR_COST"]].tolist() == [_f16(2 / 5)] * len(play)
+    d, t = _scripted("Regent", _fight("Regent", "FALLING_STAR", "DIVINE_RIGHT", free))
+    hand = _sec_rows(t, "HAND")
+    assert t.cont[hand, C.XF["C_STAR_COST"]].tolist() == [0.0] + [_f16(2 / 5)] * (len(hand) - 1)
+    assert any(len(m) > 1 for m in d.members)  # the paid copies still merge
+    # Regent: Mini Regent is armed while its relic counter is 0 (wire `armed`).
+    d, t = _scripted("Regent", _fight("Regent", "FALLING_STAR", "MINI_REGENT"))
+    relic = _sec_rows(t, "RELIC")
+    armed = [bool(r.get("armed")) for r in d.d_bv["player"]["relics"]]
+    assert True in armed and t.cont[relic, C.XF["R_ARMED"]].tolist() == [float(a) for a in armed]
+
+    # Silent: an enemy whose Poison kills it before it acts.
+    def poison(sd: dict[str, Any]) -> None:
+        m = sd["encounter"][0]
+        m["powers"] = [{"name": "POISON", "amount": int(m["hp"])}]
+
+    _d, t = _scripted("Silent", _fight("Silent", "STRIKE_SILENT", "RING_OF_THE_SNAKE", poison))
+    enemy = _sec_rows(t, "ENEMY")
+    assert t.cont[enemy[0], C.XF["E_DIES_FIRST"]] > 0.5
+    assert not t.cont[enemy[1:], C.XF["E_DIES_FIRST"]].any()
+
+    # Necrobinder: Osty deals Poke, so the player's Strength does not price it.
+    def strength(sd: dict[str, Any]) -> None:
+        sd["player"]["powers"] = [{"name": "STRENGTH", "amount": 5}]
+
+    rows = [
+        _scripted("Necrobinder", _fight("Necrobinder", "POKE", "BOUND_PHYLACTERY", e))[1]
+        for e in (None, strength)
+    ]
+    dmg = [r.cont[_sec_rows(r, "HAND"), C.SCTX_C["DMG_PREV"]] for r in rows]
+    assert (dmg[0] > 0).all() and np.array_equal(dmg[0], dmg[1])
+    for col in ("DMG_PREV", "T_DMG"):
+        tgt = [r.cont[_sec_rows(r, "ACT_PLAY"), C.SCTX_C[col]] for r in rows]
+        assert len(tgt[0]) and (tgt[0] > 0).all() and np.array_equal(tgt[0], tgt[1]), col
+
+    # Defect: Barrage hits once per orb.
+    def orbs(sd: dict[str, Any]) -> None:
+        sd["player"]["orbs"] = [{"type": "Lightning", "passive": 3, "evoke": 8}] * 3
+
+    d, t = _scripted("Defect", _fight("Defect", "BARRAGE", "CRACKED_CORE", orbs))
+    live = TC.live_snapshot(d.snap, d.bv, d.d_bv)
+    md = TC.max_damage_live(live, TC.playable_from(d.obs_actions))
+    old = TC.max_damage(d.snap, TC.playable_from(d.obs_actions))
+    enemy = _sec_rows(t, "ENEMY")
+    got = t.cont[enemy, C.XF["E_MAXDMG"]].astype(np.float64) * 50.0
+    assert got == pytest.approx(md, rel=2e-3)
+    assert md[0] > old[0] > 0
+
+    # Ironclad, declared: Body Slam deals the player's block.
+    def block(sd: dict[str, Any]) -> None:
+        sd["player"]["block"] = 20
+
+    cs = _fight("Ironclad", "BODY_SLAM", "BURNING_BLOOD", block)
+    _d, t = _scripted("Ironclad", cs)
+    enemy = _sec_rows(t, "ENEMY")
+    assert (t.cont[enemy, C.XF["E_MAXDMG"]] > 0).all()
+    _d, off = _scripted("Ironclad", cs, chars=False)
+    assert not off.cont[_sec_rows(off, "ENEMY"), C.XF["E_MAXDMG"]].any()
+
+
+def _free_star(sd: dict[str, Any]) -> None:
+    sd["player"]["stars"] = 5
+    sd["deck"]["hand"][0]["star_cost"] = 0  # the wire stamps StarCostFreeThisTurn
+
+
+def _play_classes(d: Any) -> dict[tuple[int, Any], int]:
+    """`(hand index, target) -> class` of the decision's plays."""
+    return {
+        (int(a["card_index"]), a.get("target_index")): d.classes[i]
+        for i, a in enumerate(d.obs_actions)
+        if a.get("action") == "play"
+    }
+
+
+def test_a_free_star_copy_is_its_own_play_class() -> None:
+    """GH #1407: two copies of a star-cost card, one free this turn, are two play classes
+    on another character's row, so the policy can choose the free one. The paid copies
+    still merge, and a play's `ACT_PLAY` token shows its own class's star cost."""
+    d, t = _scripted("Regent", _fight("Regent", "FALLING_STAR", "DIVINE_RIGHT", _free_star))
+    hand = d.d_bv["deck"]["hand"]
+    free = [i for i, c in enumerate(hand) if c.get("star_cost_live") == 0]
+    assert len(free) == 1 and sum(c.get("star_cost_live") == 2 for c in hand) >= 2
+    plays = _play_classes(d)
+    for target in {tg for _, tg in plays}:
+        paid = {c for (i, tg), c in plays.items() if tg == target and i != free[0]}
+        assert len(paid) == 1, "the paid copies merge"
+        assert plays[free[0], target] not in paid, "the free copy is its own class"
+    star = t.cont[_sec_rows(t, "ACT_PLAY"), C.XF["C_STAR_COST"]].tolist()
+    # One `ACT_PLAY` token per member, in action order: each shows its own class's cost.
+    cost = [0.0 if i == free[0] else _f16(2 / 5) for (i, _tg) in plays]
+    assert star == cost
+    # With no discount there is nothing to refine: the keys are the schema's own.
+    d, _t = _scripted("Regent", _fight("Regent", "FALLING_STAR", "DIVINE_RIGHT", _stars5))
+    assert E.combat_keys(d.bv, d.d_bv, d.obs_actions) == C.combat_class_keys(
+        d.obs_actions, d.d_bv["deck"]["hand"], d.d_bv["player"]["potions"]
+    )
+
+
+def _stars5(sd: dict[str, Any]) -> None:
+    sd["player"]["stars"] = 5
+
+
+@pytest.mark.parametrize("chars", [False, True])
+def test_an_ironclad_rows_star_copies_keep_the_schemas_classes(chars: bool) -> None:
+    """The refinement is another character's: an Ironclad row's keys stay the frozen
+    schema's, declared or not, so no Ironclad class, log or fixture moves (GH #1407)."""
+    cs = _fight("Ironclad", "FALLING_STAR", "BURNING_BLOOD", _free_star)
+    d, _t = _scripted("Ironclad", cs, chars=chars)
+    hand = d.d_bv["deck"]["hand"]
+    assert {c.get("star_cost_live") for c in hand} == {0, 2}
+    assert E.combat_keys(d.bv, d.d_bv, d.obs_actions) == C.combat_class_keys(
+        d.obs_actions, hand, d.d_bv["player"]["potions"]
+    )
+    plays = _play_classes(d)
+    assert len({c for (_i, tg), c in plays.items() if tg == next(iter(plays))[1]}) == 1
+
+
+def test_live_piles_split_on_pile_flags() -> None:
+    """A pile card's `pile_flags` reach its `flags` on a "chars" row's live snapshot, and
+    a multiset entry splits where they differ (twin: `snapshot::tests::live_piles_split`)."""
+    strike = {"id": "STRIKE_SILENT", "kind": "card", "upgraded": False, "base_cost": 1}
+    d_bv = {
+        "deck": {
+            "draw_pile": [],
+            "discard_pile": [strike, {**strike, "pile_flags": ["sly_turn"]}, strike],
+            "exhaust_pile": [],
+            "play_pile": [],
+        }
+    }
+    snap: dict[str, Any] = {"discard": "honest"}
+    TC._live_piles(snap, d_bv)
+    assert sorted(snap["discard"], key=lambda e: e[1]) == [
+        [{**strike, "cost": 1, "flags": ["sly_turn"]}, 1],
+        [{**strike, "cost": 1}, 2],
+    ]
+    plain = {"discard": "honest"}
+    TC._live_piles(plain, {"deck": {"discard_pile": [strike, strike]}})
+    assert plain == {"discard": "honest"}  # no pile_flags: the honest piles stay
+
+
+def test_fill_check_declared(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declared rows pass the fill check; a new column set on an undeclared row fails it."""
+    wp = list(FC.wheel_filled())
+    regent = _sample("Regent")
+    assert not FC.check(regent, [*wp, C.FILL_CHARS]).definite()
+    monkeypatch.delenv(factory.CHARS_ENV, raising=False)
+    ironclad = _sample("Ironclad", 6)
+    assert not FC.check(ironclad, wp).definite()
+    for sec, alias in (("STATE", "S_PLAYER_DOOMED"), ("RELIC", "R_ARMED"), ("HAND", "C_STAR_COST")):
+        rb = {k: v.copy() for k, v in ironclad.items()}
+        tok = np.flatnonzero(rb["sec"] == C.SEC[sec])[0]
+        rb["cont"][tok, C.XF[alias]] = 1.0
+        rep = FC.check(rb, wp)
+        assert C.FILL_CHARS in rep.stray, alias

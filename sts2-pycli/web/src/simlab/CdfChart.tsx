@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import Plotly from "plotly.js-dist-min";
 import { cdfPoints } from "./chartData";
+import { t } from "../i18n";
 
 export interface CdfSeries {
   label: string;
@@ -29,7 +30,7 @@ export function CdfChart({ series, title }: { series: CdfSeries[]; title: string
     });
     Plotly.react(node, data, {
       title: { text: title },
-      xaxis: { title: { text: "damage taken" } },
+      xaxis: { title: { text: t("damage taken") } },
       yaxis: { title: { text: "P(dmg ≤ x)" }, range: [0, 1.02] },
       // Legend above the plot area (matches DistChart; avoids the x-axis title).
       margin: { t: 80, r: 16 },

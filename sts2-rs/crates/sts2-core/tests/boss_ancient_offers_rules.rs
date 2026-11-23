@@ -28,9 +28,9 @@
 
 use hegel::generators as gs;
 use hegel::TestCase;
-use sts2_core::boss_ancient_offers::{event_rng, roll_offers, AncientConditions};
+use sts2_core::boss_ancient_offers::{event_rng, roll_offers, roll_offers_for, AncientConditions};
 use sts2_core::run_room_gen::AncientId;
-use sts2_core::RelicId;
+use sts2_core::{GameVersion, RelicId};
 
 const ALL_ANCIENTS: [AncientId; 7] = [
     AncientId::Orobas,
@@ -56,6 +56,7 @@ fn cond() -> AncientConditions {
         orobas_pool3: vec![RelicId::TouchOfOrobas, RelicId::ArchaicTooth],
         pandoras_allowed: true,
         tezcatara_basic_strike: false,
+        blitz: false,
     }
 }
 
@@ -623,6 +624,7 @@ fn arb_conditions(tc: &TestCase) -> AncientConditions {
         orobas_pool3: pool3,
         pandoras_allowed: tc.draw(count(1)) == 1,
         tezcatara_basic_strike: tc.draw(count(1)) == 1,
+        blitz: false,
     }
 }
 
@@ -680,5 +682,83 @@ fn event_streams_are_salted_per_ancient(tc: TestCase) {
             seeds.insert(rng.seed()),
             "{a:?} collides with another ancient's stream at master {seed}"
         );
+    }
+}
+
+// ── Blitz (GH #1347) ────────────────────────────────────────────────────
+
+/// v0.113.0 `AncientEventModel.AllowedOptions` (`AncientEventModel.cs:
+/// 277-280`) in a Blitz run: no Ancient offers a relic on
+/// `RelicLists.notAllowedInBlitz`, and each still offers three.
+#[test]
+fn blitz_ancients_never_offer_a_banned_relic() {
+    use sts2_core::blitz::relic_not_allowed;
+    let blitz = AncientConditions {
+        blitz: true,
+        removable_count: 10,
+        ..cond()
+    };
+    for ancient in [
+        AncientId::Tezcatara,
+        AncientId::Orobas,
+        AncientId::Pael,
+        AncientId::Vakuu,
+        AncientId::Tanx,
+        AncientId::Nonupeipe,
+        AncientId::Darv,
+    ] {
+        for seed in 0..300 {
+            let mut rng = event_rng(seed, ancient);
+            let offers = roll_offers_for(GameVersion::V0_113_0, ancient, &mut rng, &blitz);
+            assert_eq!(offers.len(), 3, "{ancient:?} seed {seed}: {offers:?}");
+            assert!(
+                offers.iter().all(|&r| !relic_not_allowed(r)),
+                "{ancient:?} seed {seed}: {offers:?}"
+            );
+        }
+    }
+}
+
+/// `GetOptionsFromThreePools` (`AncientEventModel.cs:302-360`) when a pool
+/// has no allowed option. All four of Tezcatara's `OptionPool3` relics
+/// (GoldenCompass, PumpkinCandle, ToyBox, SealOfGold) are banned in Blitz:
+/// the pool draws nothing, and the third option is one more `NextItem` over
+/// what the other two pools still hold. Three draws, as in a standard run,
+/// but the third indexes a different list.
+#[test]
+fn blitz_tezcatara_refills_its_banned_third_pool() {
+    let blitz = AncientConditions {
+        blitz: true,
+        ..cond()
+    };
+    let pool1 = [RelicId::VeryHotCocoa, RelicId::YummyCookie];
+    let pool2 = [
+        RelicId::BiiigHug,
+        RelicId::Storybook,
+        RelicId::ToastyMittens,
+    ];
+    for seed in 0..200 {
+        let mut rng = event_rng(seed, AncientId::Tezcatara);
+        let before = rng.counter();
+        let offers = roll_offers_for(
+            GameVersion::V0_113_0,
+            AncientId::Tezcatara,
+            &mut rng,
+            &blitz,
+        );
+        assert_eq!(rng.counter() - before, 3, "seed {seed}");
+        assert!(pool1.contains(&offers[0]) && pool2.contains(&offers[1]));
+        assert_ne!(offers[2], offers[0]);
+        assert_ne!(offers[2], offers[1]);
+        assert!(pool1.contains(&offers[2]) || pool2.contains(&offers[2]));
+        // The same seed outside Blitz makes the same first two picks.
+        let mut rng = event_rng(seed, AncientId::Tezcatara);
+        let standard = roll_offers_for(
+            GameVersion::V0_113_0,
+            AncientId::Tezcatara,
+            &mut rng,
+            &cond(),
+        );
+        assert_eq!(standard[..2], offers[..2]);
     }
 }

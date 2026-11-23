@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
-use sts2_core::{CombatState, GameVersion};
+use sts2_core::{CombatState, GameMode, GameVersion};
 
 use crate::combatlog::{format_combat_log, LogNames};
 use crate::game::{Game, GameError, ModeSeed};
@@ -48,6 +48,10 @@ pub const ALLOWED_ACTIONS: &[&str] = &[
     "discard_potion",
     "leave_room",
     "proceed",
+    // GH #1347, Blitz: a merchant ware, and the chest's take / skip.
+    "blitz_choice",
+    "take_reward",
+    "skip_reward",
 ];
 
 /// The default advisor of a hand-played run: the combat MCTS + the run
@@ -99,6 +103,10 @@ pub struct Node {
     pub action: Option<String>,
     pub args: Value,
     pub label: String,
+    /// The English twin of `label` for the run log, set only when the label
+    /// was written in Chinese ([`Session::set_label_en`]); a log keeps its
+    /// English, the page shows `label`.
+    pub label_en: Option<String>,
     pub details: Vec<String>,
     /// This action's slice of the combat log, rendered for display.
     pub combat_log: Vec<Value>,
@@ -113,6 +121,24 @@ pub struct Node {
     /// lossy wire-dict round-trip the Python session had to make because it
     /// no longer held the parent's native state.
     pub combat: Option<CombatState>,
+}
+
+/// A run's act-1 choice (`roll`, `overgrowth`, ...) for its start label: as
+/// given in English, the game's act name (or "random") in Chinese.
+fn act1_name(act1: &str) -> String {
+    if act1 == "roll" {
+        return crate::i18n::tr("roll").to_string();
+    }
+    crate::i18n::game_name(
+        "acts",
+        &format!("{}.title", act1.to_ascii_uppercase()),
+        act1,
+    )
+}
+
+/// The brain a run-mode run starts with, as its start label names it.
+pub(crate) fn brain_name(brain: &str) -> String {
+    crate::i18n::tr_dyn(brain)
 }
 
 impl Node {
@@ -173,6 +199,11 @@ pub struct Session {
     /// rebuild (`spawn_game`) hands it to the [`Game`]; saves, the persist
     /// payload and the run log carry it when it is not the default.
     pub game_version: GameVersion,
+    /// The run's game mode (GH #1346), fixed like the build: set before the
+    /// run starts, handed to every [`Game`] this session spawns, and named
+    /// in saves, the persist payload and the run log when it is not
+    /// standard. Only the interactive constructor builds a Dread run.
+    pub game_mode: GameMode,
     pub(crate) nodes: BTreeMap<u64, Node>,
     next_id: u64,
     root_id: Option<u64>,
@@ -251,6 +282,7 @@ impl Session {
             ascension: 0,
             act1: "overgrowth".to_string(),
             game_version: GameVersion::default(),
+            game_mode: GameMode::default(),
             nodes: BTreeMap::new(),
             next_id: 0,
             root_id: None,
@@ -386,10 +418,19 @@ impl Session {
         self.game.as_ref()
     }
 
+    /// The live game, mutably. A test surface: an engine changed through it
+    /// (a fight stamped won) is not on the session's recorded line, so the
+    /// run can no longer be rebuilt by seek, save or replay.
+    #[doc(hidden)]
+    pub fn game_mut(&mut self) -> Option<&mut Game> {
+        self.game.as_mut()
+    }
+
     /// `_spawn_game`: a fresh driver opted into both display logs.
     pub(crate) fn spawn_game(&mut self) -> &mut Game {
         let mut game = Game::new();
         game.game_version = self.game_version;
+        game.game_mode = self.game_mode;
         game.set_record_card_plays(true);
         game.set_record_combat_log(true);
         self.game = Some(game);
@@ -501,6 +542,7 @@ impl Session {
                 action,
                 args,
                 label,
+                label_en: None,
                 details,
                 combat_log,
                 error: false,
@@ -513,6 +555,27 @@ impl Session {
             self.nodes.get_mut(&p).expect("parent").child_ids.push(id);
         }
         id
+    }
+
+    /// Record node `id`'s English label (the run log's) when the display
+    /// language is Chinese: `verb` / `args` described against the state of
+    /// node `parent_id` named from the English tables. A no-op in English, where `label` is
+    /// already English.
+    pub(crate) fn set_label_en(&mut self, id: u64, parent_id: u64, verb: &str, args: &Value) {
+        if !crate::localization::display_zh() {
+            return;
+        }
+        let Some(parent) = self.nodes.get(&parent_id) else {
+            return;
+        };
+        let named = resolve_state_names(Some(&parent.state), Loc::english_for(self.game_version));
+        let en = crate::render::describe_action_en(
+            Some(&named),
+            Some(&json!({"cmd": "action", "action": verb, "args": args})),
+        );
+        if let Some(node) = self.nodes.get_mut(&id) {
+            node.label_en = Some(en);
+        }
     }
 
     /// `_value_for_new_node`: the value to stamp on a node being created —
@@ -635,6 +698,9 @@ impl Session {
         act1: &str,
     ) -> Result<Value, SessionError> {
         let seed = sts2_core::canonicalize_seed(seed);
+        // A Dread run is an ascension-10 run (GH #1346); recorded as such,
+        // so its label, save and log say what was played.
+        let ascension = self.game_mode.forced_ascension().unwrap_or(ascension);
         self.character = character.to_string();
         self.seed.clone_from(&seed);
         self.ascension = ascension;
@@ -644,7 +710,15 @@ impl Session {
             .start(character, &seed, ascension, act1)
             .map_err(|e| SessionError::new(400, e.0))?;
         let state = self.map_state(raw);
-        let label = format!("Started {character} (seed {seed}, A{ascension}, act1 {act1})");
+        let label = crate::i18n::trf(
+            "Started {character} (seed {seed}, A{ascension}, act1 {act1})",
+            &[
+                ("character", &crate::render::character_title(character)),
+                ("seed", &seed),
+                ("ascension", &ascension),
+                ("act1", &act1_name(act1)),
+            ],
+        );
         let root = self.add_node(None, state.clone(), None, json!({}), label, vec![], vec![]);
         self.root_id = Some(root);
         self.active_id = Some(root);
@@ -659,6 +733,7 @@ impl Session {
         &mut self,
         snapshot: crate::state_import::RunSnapshot,
     ) -> Result<Value, SessionError> {
+        self.require_standard_mode("an imported run")?;
         self.character.clone_from(&snapshot.character);
         self.seed.clone_from(&snapshot.seed);
         self.ascension = snapshot.ascension;
@@ -674,15 +749,40 @@ impl Session {
             .map_or("overgrowth", |g| g.act1.as_str())
             .to_string();
         let state = self.map_state(raw);
-        let label = format!(
-            "Imported {} (seed {}, A{}, act {}, floor {})",
-            snapshot.character, snapshot.seed, snapshot.ascension, snapshot.act, snapshot.floor
+        let label = crate::i18n::trf(
+            "Imported {character} (seed {seed}, A{ascension}, act {act}, floor {floor})",
+            &[
+                (
+                    "character",
+                    &crate::render::character_title(&snapshot.character),
+                ),
+                ("seed", &snapshot.seed),
+                ("ascension", &snapshot.ascension),
+                ("act", &snapshot.act),
+                ("floor", &snapshot.floor),
+            ],
         );
         let root = self.add_node(None, state.clone(), None, json!({}), label, vec![], vec![]);
         self.root_id = Some(root);
         self.active_id = Some(root);
         self.imported = Some(snapshot);
         Ok(state)
+    }
+
+    /// 400 for a Dread or Blitz session on a constructor that builds
+    /// standard runs only (GH #1346, #1347): the run would silently not be
+    /// the one asked for.
+    pub(crate) fn require_standard_mode(&self, what: &str) -> Result<(), SessionError> {
+        if self.game_mode.is_default() {
+            return Ok(());
+        }
+        Err(SessionError::new(
+            400,
+            format!(
+                "{} mode is not available for {what}: start it from the run launcher",
+                self.game_mode.name()
+            ),
+        ))
     }
 
     /// What the import graft could not reproduce (empty for a non-imported
@@ -752,6 +852,7 @@ impl Session {
             details.clone(),
             combat_rows,
         );
+        self.set_label_en(node, parent_id, action, args);
         self.active_id = Some(node);
         #[cfg(feature = "e2e")]
         self.e2e_post_external(e2e_pre, node);
@@ -861,6 +962,7 @@ impl Session {
     fn spawn_game_detached(&self) -> Game {
         let mut game = Game::new();
         game.game_version = self.game_version;
+        game.game_mode = self.game_mode;
         game.set_record_card_plays(true);
         game.set_record_combat_log(true);
         game
@@ -872,6 +974,7 @@ impl Session {
     pub(crate) fn construct_game(&self) -> Result<Game, SessionError> {
         let mut game = Game::new();
         game.game_version = self.game_version;
+        game.game_mode = self.game_mode;
         let (character, seed, act1) =
             (self.character.clone(), self.seed.clone(), self.act1.clone());
         self.start_identity(&mut game, &character, &seed, self.ascension, &act1)?;
@@ -899,7 +1002,7 @@ impl Session {
                 )
             })?;
             if self.e2e_setup {
-                start_e2e_game(game, &mode_seed, ascension)?;
+                start_e2e_game(game, character, &mode_seed, ascension)?;
             } else {
                 let ModeSeed::Int(seed_int) = mode_seed else {
                     return Err(SessionError::new(
@@ -907,7 +1010,7 @@ impl Session {
                         "a game seed string needs the e2e setup",
                     ));
                 };
-                game.start_faithful(character, seed_int, ascension)
+                game.start_faithful(character, seed_int, ascension, act1)
                     .map_err(|e| SessionError::new(409, e.0))?;
             }
         } else {
@@ -1165,7 +1268,7 @@ impl Session {
             .nodes
             .values()
             .map(|n| {
-                json!({
+                let mut row = json!({
                     "id": n.id,
                     "parent_id": n.parent_id,
                     "action": n.action,
@@ -1179,7 +1282,12 @@ impl Session {
                     "act": n.state.get("act").cloned().unwrap_or(Value::Null),
                     "round": n.state.get("round").cloned().unwrap_or(Value::Null),
                     "value": n.value,
-                })
+                });
+                // Only a run played in Chinese has one (English keeps its bytes).
+                if let Some(en) = &n.label_en {
+                    row["label_en"] = json!(en);
+                }
+                row
             })
             .collect();
         let mut out = json!({
@@ -1205,6 +1313,11 @@ impl Session {
         // GH #801: always named, so a persist says which build it is; a
         // reader treats absence (an older v0.107.1 persist) as v0.107.1.
         out["game_version"] = json!(self.game_version.as_str());
+        // GH #1346: named only off standard; a reader treats absence as a
+        // standard run.
+        if !self.game_mode.is_default() {
+            out["game_mode"] = json!(self.game_mode.as_str());
+        }
         // Named only for an e2e start (every other persist keeps its bytes).
         if self.e2e_setup {
             out["e2e_setup"] = json!(true);
@@ -1234,6 +1347,7 @@ impl Session {
         // payload's `game_version` (and owns its 409) and builds this session
         // in it, so it is not parsed a second time here (#855).
         debug_assert_eq!(game_version_of(payload).ok(), Some(self.game_version));
+        debug_assert_eq!(game_mode_of(payload).ok(), Some(self.game_mode));
         let act1 = {
             let a = str_of("act1");
             if a.is_empty() {
@@ -1368,6 +1482,10 @@ impl Session {
             );
             if let Some(node) = self.nodes.get_mut(&id) {
                 node.error = n.get("error").and_then(Value::as_bool).unwrap_or(false);
+                node.label_en = n
+                    .get("label_en")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
             }
         }
         self.restore_values = None;
@@ -1432,6 +1550,26 @@ pub fn game_version_of(payload: &Value) -> Result<GameVersion, String> {
     parse_game_version(payload.get("game_version"))
 }
 
+/// The `game_mode` a stored payload (save, persist, run-log meta) or a
+/// request carries (GH #1346): absent or `null` is a standard run. An
+/// unknown value is an error naming the modes.
+pub fn game_mode_of(payload: &Value) -> Result<GameMode, String> {
+    parse_game_mode(payload.get("game_mode"))
+}
+
+/// A `game_mode` value as the wire carries it (see [`game_mode_of`]).
+pub fn parse_game_mode(value: Option<&Value>) -> Result<GameMode, String> {
+    match value {
+        None | Some(Value::Null) => Ok(GameMode::default()),
+        Some(Value::String(s)) => GameMode::parse(s).ok_or_else(|| {
+            format!("unknown game_mode {s:?} (expected \"standard\", \"dread\" or \"blitz\")")
+        }),
+        Some(other) => Err(format!(
+            "game_mode must be a string (\"standard\", \"dread\" or \"blitz\"), got {other}"
+        )),
+    }
+}
+
 /// The build a start request that names none runs on:
 /// [`GameVersion::NEW_RUN_DEFAULT`] when this binary embeds its display
 /// bundle, else the build every binary embeds.
@@ -1455,14 +1593,16 @@ pub fn requested_game_version(value: Option<&Value>) -> Result<GameVersion, Stri
 }
 
 /// A `game_version` value as the wire carries it (see [`game_version_of`]):
-/// `None` / `null` is the default build; otherwise exactly one of the
-/// supported spellings (`"v0.107.1"`, `"v0.111.0"`).
+/// `None` / `null` is the default build; otherwise one of the supported
+/// spellings (`"v0.107.1"`, `"v0.111.0"`), or a hotfix of one in the same
+/// spelling (`"v0.113.1"`, which a position from the live game carries),
+/// read as its base build (`GameVersion::from_str`).
 pub fn parse_game_version(value: Option<&Value>) -> Result<GameVersion, String> {
     match value {
         None | Some(Value::Null) => Ok(GameVersion::default()),
-        Some(Value::String(s)) => GameVersion::ALL
-            .into_iter()
-            .find(|v| v.as_str() == s)
+        Some(Value::String(s)) => (s.starts_with('v') && s.trim() == s)
+            .then(|| s.parse::<GameVersion>().ok())
+            .flatten()
             .ok_or_else(|| {
                 format!(
                     "unknown game_version {s:?} (supported: {})",
@@ -1496,18 +1636,140 @@ pub fn line_entry(action: &str, args: Value) -> Value {
 }
 
 /// [`Game::start_e2e`], or a 409 when this build has no e2e feature.
-fn start_e2e_game(game: &mut Game, seed: &ModeSeed, ascension: u8) -> Result<Value, SessionError> {
+fn start_e2e_game(
+    game: &mut Game,
+    character: &str,
+    seed: &ModeSeed,
+    ascension: u8,
+) -> Result<Value, SessionError> {
     #[cfg(feature = "e2e")]
     {
-        game.start_e2e_seed(seed, ascension)
+        game.start_e2e_seed(character, seed, ascension)
             .map_err(|e| SessionError::new(409, e.0))
     }
     #[cfg(not(feature = "e2e"))]
     {
-        let _ = (game, seed, ascension);
+        let _ = (game, character, seed, ascension);
         Err(SessionError::new(
             409,
             "this build has no e2e feature; cannot build an e2e run",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The first run of two or more ASCII letters in `s`, if any.
+    #[cfg(workbench_game_data)]
+    fn english_word(s: &str) -> Option<String> {
+        let mut run = String::new();
+        for c in s.chars().chain(std::iter::once(' ')) {
+            if c.is_ascii_alphabetic() {
+                run.push(c);
+            } else if run.len() >= 2 {
+                return Some(run);
+            } else {
+                run.clear();
+            }
+        }
+        None
+    }
+
+    /// A few steps of a v0.111.0 run whose page language is Chinese: every
+    /// branch-tree label, detail line, combat-log row and option label is
+    /// Chinese, while the run log keeps English labels (and the Chinese one
+    /// beside them).
+    #[cfg(workbench_game_data)]
+    #[test]
+    fn chinese_session_writes_no_english_labels() {
+        if !crate::data::zh_tables().is_present() {
+            return;
+        }
+        assert!(crate::localization::set_display_language("zh"));
+        let mut sess = Session::new_for(GameVersion::V0_111_0);
+        let mut state = sess
+            .start("Ironclad", "1234567890", 0, "roll")
+            .expect("start");
+        let mut shown: Vec<String> = vec![sess.active_node().unwrap().label.clone()];
+        let mut kinds = std::collections::BTreeSet::new();
+        for _ in 0..40 {
+            let decision = state["decision"].as_str().unwrap_or("").to_string();
+            kinds.insert(decision.clone());
+            let named = resolve_state_names(Some(&state), sess.loc());
+            for o in crate::options::normalize_options(&named) {
+                if let Some(l) = o["label"].as_str() {
+                    shown.push(l.to_string());
+                }
+            }
+            let (action, args) = match decision.as_str() {
+                "game_over" => break,
+                "combat_play" => {
+                    let hand = state["hand"].as_array().cloned().unwrap_or_default();
+                    let enemy = state["enemies"][0]["index"].clone();
+                    hand.iter()
+                        .find(|c| c["can_play"].as_bool() == Some(true))
+                        .map_or(("end_turn", json!({})), |c| {
+                            let mut a = json!({"card_index": c["index"]});
+                            if c["target_type"] == json!("AnyEnemy") {
+                                a["target_index"] = enemy.clone();
+                            }
+                            ("play_card", a)
+                        })
+                }
+                "map_select" => {
+                    let ch = &state["choices"][0];
+                    (
+                        "select_map_node",
+                        json!({"col": ch["col"], "row": ch["row"]}),
+                    )
+                }
+                "card_reward" => ("select_card_reward", json!({"card_index": 0})),
+                "event_choice" | "rest_site" => ("choose_option", json!({"option_index": 0})),
+                "card_select" => ("select_cards", json!({"indices": "0"})),
+                "shop" => ("leave_room", json!({})),
+                _ => ("proceed", json!({})),
+            };
+            let r = sess.apply(action, &args).expect("apply");
+            assert!(r.error.is_none(), "{action} {args}: {:?}", r.error);
+            shown.push(r.label);
+            shown.extend(r.details);
+            for row in &sess.active_node().unwrap().combat_log {
+                shown.push(row["text"].as_str().unwrap_or("").to_string());
+            }
+            state = r.state;
+        }
+        assert!(kinds.contains("combat_play"), "{kinds:?}");
+        for line in &shown {
+            assert!(english_word(line).is_none(), "English in {line:?}");
+        }
+        // The run log keeps English labels, with the shown one beside them.
+        let log = crate::runlog::write_run_log(&sess, crate::runlog::DEFAULT_NOW_ISO).unwrap();
+        let actions: Vec<Value> = log
+            .text
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .filter(|r| r["type"] == json!("action"))
+            .collect();
+        assert!(!actions.is_empty());
+        for a in &actions {
+            let en = a["data"]["label"].as_str().unwrap();
+            assert!(en.is_ascii() || en.contains("→"), "label {en:?}");
+            assert!(a["data"]["label_zh"].is_string());
+        }
+        crate::localization::set_display_language("en");
+    }
+
+    /// A position from a hotfixed game (`v0.113.1`) opens on its base build;
+    /// other spellings and other builds stay refused.
+    #[test]
+    fn parse_game_version_reads_a_hotfix_as_its_base_build() {
+        let parse = |s: &str| parse_game_version(Some(&json!(s)));
+        assert_eq!(parse("v0.113.0"), Ok(GameVersion::V0_113_0));
+        assert_eq!(parse("v0.113.1"), Ok(GameVersion::V0_113_0));
+        for bad in ["0.113.1", " v0.113.1", "V0.113.1", "v0.114.0", "v9.9.9"] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
     }
 }

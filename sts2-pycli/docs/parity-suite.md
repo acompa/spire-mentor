@@ -199,6 +199,38 @@ run-setup RNG cascade or a masked spawn-roster bug. These scripts fill the gaps:
 | `run_parity.py` | **whole-RUN** lockstep (Neow → map → combats → events → shops → rewards → act transitions → boss), C# as the oracle. Component checks via flags: `--map-parity` / `--encounter-parity` / `--reward-parity` / `--relic-reward-parity` / `--shop-parity` / `--roster-parity` / `--rng-parity` / `--counters`. **`--sweep` is the productionized triage surface (§7a).** |
 | `draw_sequence_trace.py` | **draw-order cascade tracer.** `run_trial` stops at the FIRST diverging snapshot; for a `PILE_COUNT\|end_turn` / `DRAW_ORDER` / `HAND_COST` cascade the real desync (a reshuffle/draw a few steps earlier) is long past. This re-runs the same lockstep driver but records the ORDERED piles of both engines at EVERY step, classifies each pile per step (`match` / `order` / `content`), reports whether the WHOLE-deck multiset is conserved (draw-order desync) or differs (real card loss), and flags which RNG stream diverges — separating benign run-setup offsets (`up_front`, potion/orb gen) from a real COMBAT `shuffle`/draw desync. `--seed N --character Silent [--max-turns T] [--full]`. |
 
+### Gated event effect sweep (`just event-parity`, GH #1500)
+
+`--effect` alone resolves the first page of one seed's events, and one seed has
+one act-1 variant: the Underdocks event gaps #1491-#1494 sat outside it while it
+printed CLEAN. `event_parity.py --gate` is the gated form, run by `just
+event-parity` on every gated build and by `just gate-full`:
+
+* the events of `GATE_SEEDS` (`EVTPAR0` = Overgrowth act 1, `EVTPAR` =
+  Underdocks, on both builds; the sweep fails if a variant is missing), each
+  resolved once per character, every character of the build (The Fool on
+  v0.113.0);
+* every follow-up page, breadth-first, each path replayed from a fresh run on
+  both engines, to `GATE_MAX_DEPTH`; a cap hit is a `truncated` row;
+* no silent skips: a menu mismatch, a resolve error or a diff fails unless
+  `KNOWN_EFFECT_DIFFS` names it with a reason; `CONTEXT_DEPENDENT_EVENTS` and
+  locked options are `skip:*` rows, reported as not exercised;
+* the build's event universe (`content_universe.events`) minus
+  `NOT_IN_ACT_POOLS` (Ancients, placeholders) must all be offered by a seed;
+* `data/parity/event_effect_floor.json` holds every path that matched at the
+  last `--write-floor`; a path that stops matching fails. Regenerate it per
+  build after a deliberate change: `STS2_GAME_VERSION=<ver>
+  scripts/wheel-venv.sh run -- python python/event_parity.py --gate
+  --write-floor` (each build keeps its own section).
+
+An event offered by both seeds is resolved from the first one (`EVTPAR0`), so
+`EVTPAR` exercises only the Underdocks-only events: shared events are checked
+on Overgrowth runs only.
+
+The Rust side starts with `act1="roll"`, the seed's own act 1. Before GH #1500
+it ran RustGame's Overgrowth default, so every Underdocks seed compared a C#
+Underdocks run against a Rust Overgrowth one.
+
 ### Running them
 
 ```bash
@@ -206,6 +238,7 @@ scripts/wheel-venv.sh run -- python python/run_setup_parity.py --character Ironc
 scripts/wheel-venv.sh run -- python python/act23_map_parity.py --all-characters -n 50
 scripts/wheel-venv.sh run -- python python/event_parity.py --all-characters --pool-seeds 30
 scripts/wheel-venv.sh run -- python python/event_parity.py --all-characters --effect  # resolve every option + diff the EFFECT
+STS2_GAME_VERSION=v0.113.0 scripts/wheel-venv.sh run -- python python/event_parity.py --gate  # the gated sweep (`just event-parity`)
 scripts/wheel-venv.sh run -- python python/spawn_roster_parity.py --character Ironclad
 scripts/wheel-venv.sh run -- python python/mutation_test.py --tier quick --axes fuzz
 ```

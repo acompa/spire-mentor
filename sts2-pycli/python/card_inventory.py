@@ -153,10 +153,10 @@ def has_v0111_cards(game_version: str) -> bool:
     return _version_tuple(game_version) >= (0, 111, 0)
 
 
-def sweepable_cards(game_version: str = "v0.107.1") -> set[str]:
+def sweepable_cards(game_version: str) -> set[str]:
     """Card ids the coverage sweep's card axis is expected to cover.
 
-    `game_version` picks the build: v0.107.1 (the default) leaves out the
+    `game_version` picks the build: v0.107.1 leaves out the
     v0.111.0-only cards; v0.111.0 and later leave out the cards v0.111.0
     removed (Rust gates the same split on ``>= V0_111_0``). Builds before
     v0.113.0 also leave out the v0.113.0-only cards.

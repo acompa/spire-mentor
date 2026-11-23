@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from sts2_client import LEGACY_GAME_VERSION, SUPPORTED_GAME_VERSIONS
+from sts2_client import DEFAULT_GAME_VERSION, LEGACY_GAME_VERSION, SUPPORTED_GAME_VERSIONS
 
 _VER_NUMS = re.compile(r"\d+")
 
@@ -92,6 +92,21 @@ def available_game_versions(repo_root: Path | None = None) -> list[str]:
         for v in SUPPORTED_GAME_VERSIONS
         if v == LEGACY_GAME_VERSION or loc_dir_for(v, repo_root).is_dir()
     ]
+
+
+def launcher_default_game_version(repo_root: Path | None = None) -> str:
+    """The build a run starts on when nobody names one.
+
+    :data:`DEFAULT_GAME_VERSION` when this checkout can display it (see
+    :func:`available_game_versions`), else :data:`LEGACY_GAME_VERSION`. A
+    public snapshot ships only the legacy build's localization, so a run
+    started on the default build there would show every card, relic and
+    creature as a raw id (GH #1368). The SPA's launcher and a server request
+    that names no build both use this.
+    """
+    if DEFAULT_GAME_VERSION in available_game_versions(repo_root):
+        return DEFAULT_GAME_VERSION
+    return LEGACY_GAME_VERSION
 
 
 def _highest_version(paths: list[Path]) -> Path:
@@ -530,8 +545,9 @@ def load_affliction_localization(loc_dir: Path) -> dict[str, str]:
     return out
 
 
-# The nine `RestSiteOption` subclasses the game ships
-# (`MegaCrit.Sts2.Core.Entities.RestSite/`). Their `OptionId` is what the
+# The `RestSiteOption` subclasses the game ships
+# (`MegaCrit.Sts2.Core.Entities.RestSite/`): v0.111.0's nine, then v0.113.0's
+# EVOLVE (Byrdpip) and RESTORE (Wuppy). Their `OptionId` is what the
 # engine's `RestSiteOption::option_id()` returns and what keys both the
 # plaque art (`ui/rest_site/option_<id>.png`) and the loc rows
 # (`RestSiteOption.Title` = `rest_site_ui`/`OPTION_<ID>.name`).
@@ -545,6 +561,8 @@ _REST_SITE_OPTION_IDS = (
     "HATCH",
     "KINDLE",
     "MEND",
+    "EVOLVE",
+    "RESTORE",
 )
 
 
@@ -782,7 +800,8 @@ def resolve_state_names(state: dict[str, Any] | None, loc: dict[str, str]) -> di
         return state or {}
     out = copy.deepcopy(state)
     # ``relics``/``potions`` at the top level are the shop / treasure offerings
-    # (the persistent player trays are handled below under ``player``).
+    # (the persistent player trays are handled below under ``player``);
+    # ``rewards`` is the Blitz chest's relics (GH #1347).
     card_lists = (
         "hand",
         "cards",
@@ -792,6 +811,7 @@ def resolve_state_names(state: dict[str, Any] | None, loc: dict[str, str]) -> di
         "enemies",
         "relics",
         "potions",
+        "rewards",
     )
     for key in card_lists:
         for item in out.get(key) or []:

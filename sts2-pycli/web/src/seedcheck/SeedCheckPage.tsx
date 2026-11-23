@@ -4,8 +4,8 @@
  * copy the verdict, open the winning (or best) run in the replay viewer.
  * "Win rate" measures the bot's sampled win rate on the seed separately.
  *
- * Character, build and ascension are picked on the page. Instinct only plays
- * Ironclad on v0.111.0 for now, so the other characters and builds are shown
+ * Character, build and ascension are picked on the page. Instinct plays its
+ * five characters on v0.111.0 only (GH #1197), so the other builds are shown
  * grayed out; any ascension 0-10 works (it trained at A10).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +14,7 @@ import { defaultPoolSize, SeedCheckPool, type Job, type JobResult } from "./pool
 import type { PoolWorker } from "./protocol";
 import { deathsByFloor, tally, type AttemptResult, type FloorDeaths } from "./stats";
 import { checkVerdict, rateVerdict, type Conditions } from "./verdict";
+import { t } from "../i18n";
 
 /** What the page needs from a pool (tests pass a fake). */
 export interface PoolLike {
@@ -28,10 +29,10 @@ export const CHECK_CAP_MS = 300_000;
 /** Every character and build the game has; only the enabled ones are playable. */
 export const CHARACTERS = [
   { id: "Ironclad", enabled: true },
-  { id: "Silent", enabled: false },
-  { id: "Defect", enabled: false },
-  { id: "Necrobinder", enabled: false },
-  { id: "Regent", enabled: false },
+  { id: "Silent", enabled: true },
+  { id: "Defect", enabled: true },
+  { id: "Necrobinder", enabled: true },
+  { id: "Regent", enabled: true },
 ] as const;
 export const VERSIONS = [
   { id: "v0.111.0", enabled: true },
@@ -112,7 +113,7 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
     // A reply for an older text must not land on the current one.
     let current = true;
     const t = setTimeout(() => {
-      api.preview(s, ascension).then(
+      api.preview(s, ascension, character).then(
         (p) => current && setPreview(p),
         (e: unknown) => current && setPreviewError(e instanceof Error ? e.message : String(e)),
       );
@@ -121,7 +122,7 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
       current = false;
       clearTimeout(t);
     };
-  }, [seedText, ascension, api]);
+  }, [seedText, ascension, character, api]);
 
   useEffect(() => {
     if (!running) return;
@@ -135,12 +136,12 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
     async (r: AttemptResult | null): Promise<string | null> => {
       if (!r || !seed) return null;
       try {
-        return (await api.saveLog(seed, ascension, r.classes, r.seq, r.k)).path;
+        return (await api.saveLog(seed, ascension, r.classes, r.seq, r.k, character)).path;
       } catch {
         return null;
       }
     },
-    [api, seed, ascension],
+    [api, seed, ascension, character],
   );
 
   async function runCheck(startK: number, resume: number[] = []) {
@@ -152,6 +153,7 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
     setLive(before);
     const job: Job = {
       seed,
+      character,
       seq: "check",
       ascension,
       startK,
@@ -171,7 +173,7 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
     const deaths = deathsByFloor(all);
     // The line to follow: the winning attempt's, else the one that got furthest.
     const line = firstWin ?? t.best;
-    const summary = line ? await api.summary(seed, ascension, line.classes).catch(() => null) : null;
+    const summary = line ? await api.summary(seed, ascension, line.classes, character).catch(() => null) : null;
     const logPath = await save(line);
     setCheck({
       verdict: checkVerdict({ seed, build: BUILD, conditions, tally: t, firstWin, summary, deaths }),
@@ -192,6 +194,7 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
     setLive([]);
     const job: Job = {
       seed,
+      character,
       seq: "rate",
       ascension,
       startK: 0,
@@ -230,22 +233,22 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
   return (
     <div className="sc-app">
       <header className="sc-header">
-        <h1>🎲 Seed check</h1>
-        <a href="/">← workbench</a>
+        <h1>🎲 {t("Seed check")}</h1>
+        <a href="/">← {t("workbench")}</a>
       </header>
       <p className="sc-blurb">
-        Paste a game seed. Instinct (the end-to-end bot) plays it until it wins, first greedily,
-        then sampling its moves, in {makePool === defaultPool ? defaultPoolSize() : "several"} parallel workers for up to{" "}
-        {CHECK_CAP_MS / 60_000} minutes. You get a verdict to paste into a thread and the run to replay. Results are from
-        the simulator.
+        {t("Paste a game seed. Instinct (the end-to-end bot) plays it until it wins, first greedily, then sampling its moves, in {workers} parallel workers for up to {minutes} minutes. You get a verdict to paste into a thread and the run to replay. Results are from the simulator.", {
+          workers: makePool === defaultPool ? defaultPoolSize() : t("several"),
+          minutes: CHECK_CAP_MS / 60_000,
+        })}
       </p>
 
       <section className="sc-panel">
         <div className="sc-row sc-options">
           <label>
-            Character
+            {t("Character")}
             <select
-              aria-label="character"
+              aria-label={t("character")}
               value={character}
               disabled={running !== null}
               onChange={(e) => setCharacter(e.target.value)}
@@ -253,15 +256,15 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
               {CHARACTERS.map((c) => (
                 <option key={c.id} value={c.id} disabled={!c.enabled}>
                   {c.id}
-                  {c.enabled ? "" : " (not yet)"}
+                  {c.enabled ? "" : ` ${t("(not yet)")}`}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            Version
+            {t("Version")}
             <select
-              aria-label="version"
+              aria-label={t("version")}
               value={version}
               disabled={running !== null}
               onChange={(e) => setVersion(e.target.value)}
@@ -269,15 +272,15 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
               {VERSIONS.map((v) => (
                 <option key={v.id} value={v.id} disabled={!v.enabled}>
                   {v.id}
-                  {v.enabled ? "" : " (not yet)"}
+                  {v.enabled ? "" : ` ${t("(not yet)")}`}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            Ascension
+            {t("Ascension")}
             <select
-              aria-label="ascension"
+              aria-label={t("ascension")}
               value={ascension}
               disabled={running !== null}
               onChange={(e) => setAscension(Number(e.target.value))}
@@ -291,13 +294,13 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
           </label>
         </div>
         {ascension !== TRAINED_ASCENSION && (
-          <div className="sc-note">Instinct trained at A{TRAINED_ASCENSION}; it plays A{ascension} with the same net.</div>
+          <div className="sc-note">{t("Instinct trained at A{trained}; it plays A{asc} with the same net.", { trained: TRAINED_ASCENSION, asc: ascension })}</div>
         )}
-        <div className="sc-label">Seed</div>
+        <div className="sc-label">{t("Seed")}</div>
         <div className="sc-row">
           <input
             className="sc-seed"
-            aria-label="seed"
+            aria-label={t("seed")}
             value={seedText}
             disabled={running !== null}
             placeholder="1SNVTCEXKR0Q"
@@ -309,29 +312,29 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
             onChange={(e) => setSeedText(e.target.value)}
           />
           <button type="button" disabled={!seed || running !== null} onClick={() => void runCheck(0)}>
-            Check
+            {t("Check")}
           </button>
           <button type="button" disabled={!seed || running !== null} onClick={() => void runRate()}>
-            Win rate ({RATE_RUNS} runs)
+            {t("Win rate ({n} runs)", { n: RATE_RUNS })}
           </button>
           <button type="button" disabled={running === null} onClick={() => pool().stop()}>
-            Stop
+            {t("Stop")}
           </button>
         </div>
         {previewError && <div className="sc-error">{previewError}</div>}
         {preview && (
           <>
             {!preview.length_ok && (
-              <div className="sc-warn">Game seeds are 12 characters; this one is {preview.seed.length}.</div>
+              <div className="sc-warn">{t("Game seeds are 12 characters; this one is {n}.", { n: preview.seed.length })}</div>
             )}
             <dl className="sc-kv">
-              <dt>Seed</dt>
+              <dt>{t("Seed")}</dt>
               <dd className="mono">{preview.seed}</dd>
-              <dt>Neow offers</dt>
+              <dt>{t("Neow offers")}</dt>
               <dd>{preview.neow.join(" · ")}</dd>
-              <dt>Act 1</dt>
+              <dt>{t("Act {n}", { n: 1 })}</dt>
               <dd>{preview.act1}</dd>
-              <dt>Bosses</dt>
+              <dt>{t("Bosses")}</dt>
               <dd>{preview.bosses.map((b) => b.join(" + ")).join(" → ")}</dd>
             </dl>
           </>
@@ -339,11 +342,15 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
       </section>
 
       {(running || live.length > 0) && (
-        <section className="sc-panel" aria-label="progress">
-          <div className="sc-label">{running === "rate" || (!running && rate && !check) ? "Win rate" : "Check"}</div>
+        <section className="sc-panel" aria-label={t("progress")}>
+          <div className="sc-label">{running === "rate" || (!running && rate && !check) ? t("Win rate") : t("Check")}</div>
           <div className="sc-progress">
-            {progress.played} attempts · {progress.wins} won · {progress.errored} errored · best floor{" "}
-            {progress.bestFloor}
+            {t("{played} attempts · {wins} won · {errored} errored · best floor {floor}", {
+              played: progress.played,
+              wins: progress.wins,
+              errored: progress.errored,
+              floor: progress.bestFloor,
+            })}
             {running && (
               <>
                 {" "}
@@ -357,14 +364,14 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
 
       {check && (
         <Result
-          title="Verdict"
+          title={t("Verdict")}
           outcome={check}
           copied={copied === "check"}
           onCopy={() => void copy("check", check.verdict)}
           extra={
             check.reason !== "won" && check.reason !== "failed" && nextK !== null ? (
               <button type="button" disabled={running !== null} onClick={() => void runCheck(nextK, pending.current)}>
-                Keep searching ({CHECK_CAP_MS / 60_000} more minutes)
+                {t("Keep searching ({n} more minutes)", { n: CHECK_CAP_MS / 60_000 })}
               </button>
             ) : null
           }
@@ -372,7 +379,7 @@ export default function SeedCheckPage(props: { api?: SeedCheckApi; makePool?: ()
       )}
       {rate && (
         <Result
-          title="Win rate"
+          title={t("Win rate")}
           outcome={rate}
           copied={copied === "rate"}
           onCopy={() => void copy("rate", rate.verdict)}
@@ -394,36 +401,37 @@ function Result(props: {
   return (
     <section className="sc-panel" aria-label={props.title}>
       <div className="sc-label">{props.title}</div>
-      <textarea className="sc-verdict" readOnly value={outcome.verdict} aria-label={`${props.title} text`} />
+      <textarea className="sc-verdict" readOnly value={outcome.verdict} aria-label={t("{title} text", { title: props.title })} />
       <div className="sc-row">
         <button type="button" onClick={props.onCopy}>
-          {props.copied ? "Copied" : "Copy"}
+          {props.copied ? t("Copied") : t("Copy")}
         </button>
         {outcome.logPath && (
           <a href={`/?open=${encodeURIComponent(outcome.logPath)}`} target="_blank" rel="noopener">
-            {outcome.logLabel} ↗
+            {/* logLabel: one of three English constants set above, listed in zh/simlab.ts */}
+            {t(outcome.logLabel)} ↗
           </a>
         )}
         {props.extra}
       </div>
-      {outcome.reason === "failed" && <div className="sc-error">The check stopped: {outcome.errors.join("; ")}</div>}
+      {outcome.reason === "failed" && <div className="sc-error">{t("The check stopped: {errors}", { errors: outcome.errors.join("; ") })}</div>}
       {outcome.reason !== "failed" && outcome.errors.length > 0 && (
-        <div className="sc-warn">Some workers failed: {outcome.errors.join("; ")}</div>
+        <div className="sc-warn">{t("Some workers failed: {errors}", { errors: outcome.errors.join("; ") })}</div>
       )}
       {outcome.deaths.length > 0 && (
         <table className="sc-deaths">
           <thead>
             <tr>
-              <th>Floor</th>
-              <th>Died to</th>
-              <th>Runs</th>
+              <th>{t("Floor")}</th>
+              <th>{t("Died to")}</th>
+              <th>{t("Runs")}</th>
             </tr>
           </thead>
           <tbody>
             {outcome.deaths.slice(0, 8).map((d) => (
               <tr key={`${d.floor}|${d.room}`}>
                 <td>{d.floor}</td>
-                <td>{d.room ?? "unknown"}</td>
+                <td>{d.room ?? t("unknown")}</td>
                 <td>{d.count}</td>
               </tr>
             ))}

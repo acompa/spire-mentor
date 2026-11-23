@@ -15,18 +15,18 @@ use serde_json::Value;
 use sts2_core::run_manager::RunManager;
 use sts2_e2e::env::{new_run, take_run_action, ApplyKind, Decision, Driver, E2eEnv, Next, Step};
 use sts2_e2e::net::E2eNet;
-use sts2_e2e::tokens::{encode, TokCache};
+use sts2_e2e::tokens::{encode_for, TokCache};
 
 fn weights() -> Option<E2eNet> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../sts2-pycli/data/e2e/ironclad_e2e_d5250_ema0999.e2ew");
+        .join("../../../sts2-pycli/data/e2e/allchar_e2e_d2500_ema0999.e2ew");
     let bytes = std::fs::read(p).ok()?;
     Some(E2eNet::from_bytes(&bytes).expect("shipped weights load"))
 }
 
 fn choose(net: Option<&E2eNet>, d: &Decision, rm: &RunManager, cache: &mut TokCache) -> usize {
     match net {
-        Some(net) => net.act_greedy(&encode(d, rm, cache).expect("tokenize").into()),
+        Some(net) => net.act_greedy(&encode_for(net, d, rm, cache).expect("tokenize").into()),
         None => (d.row * 7 + 3) % d.n_classes(),
     }
 }
@@ -99,17 +99,35 @@ fn host_run(net: Option<&E2eNet>, seed: i64, max: usize) -> (Vec<Sig>, String) {
     }
 }
 
+/// The first seed of `host_peek_apply_reproduces_the_env`'s set. One full run
+/// with the net is ~30 s, so the per-PR gate walks one seed and the slow
+/// profile (`cargo nextest run --profile slow`, `just gate-full`) the rest.
 #[test]
 fn host_peek_apply_reproduces_the_env() {
     let net = weights();
     let seeds: &[i64] = if net.is_some() {
-        &[170_000_000, 170_000_002]
+        &[170_000_000]
     } else {
-        &[170_000_000, 170_000_002, 170_000_007, 5, 77]
+        &[170_000_000, 5, 77]
     };
+    host_matches_env_on(net.as_ref(), seeds);
+}
+
+#[test]
+fn slow_host_peek_apply_reproduces_the_env_on_more_seeds() {
+    let net = weights();
+    let seeds: &[i64] = if net.is_some() {
+        &[170_000_002]
+    } else {
+        &[170_000_002, 170_000_007]
+    };
+    host_matches_env_on(net.as_ref(), seeds);
+}
+
+fn host_matches_env_on(net: Option<&E2eNet>, seeds: &[i64]) {
     for &seed in seeds {
-        let (want, want_end) = env_run(net.as_ref(), seed, 2000);
-        let (got, got_end) = host_run(net.as_ref(), seed, 2000);
+        let (want, want_end) = env_run(net, seed, 2000);
+        let (got, got_end) = host_run(net, seed, 2000);
         assert!(
             want.len() > if net.is_some() { 300 } else { 15 } && want_end != "error",
             "seed {seed}: {} decisions, end {want_end}",

@@ -295,6 +295,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/eye_with_teeth/eye_with_teeth",
+    "rig_arrow_x": 1.0,
+    "rig_arrow_y": -210.0,
     "rig_bounds_h": 345.0,
     "rig_bounds_w": 270.0,
     "rig_scale": 0.35,
@@ -338,6 +340,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/fogmog/fogmog",
+    "rig_arrow_x": 2.0,
+    "rig_arrow_y": -111.0,
     "rig_bounds_h": 235.0,
     "rig_bounds_w": 245.0,
     "rig_scale": 0.35,
@@ -777,6 +781,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/silent/silent",
+   "rig_arrow_x": 0.0,
+   "rig_arrow_y": -146.0,
    "rig_bounds_h": 244.0,
    "rig_bounds_w": 244.0,
    "rig_scale": 0.29

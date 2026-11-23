@@ -124,6 +124,13 @@ public static class SimStateExtractor
         // `FilePathIdentifier` says the same thing but is protected.
         msg["act_name"] = SafeString(() => runState?.Act?.Id.Entry) ?? "";
         msg["floor"] = runState?.TotalFloor ?? 0;
+        // The room the player stands in (RoomType name: "Event", "Shop",
+        // "RestSite", ...). A screen that opens outside a fight (an event's
+        // upgrade, a relic's grant) carries no room of its own, and the
+        // Instinct student reads it (GH #1197).
+        string? currentRoom = SafeString(() => runState?.CurrentRoom?.RoomType.ToString());
+        if (!string.IsNullOrEmpty(currentRoom))
+            msg["current_room"] = currentRoom;
         msg["mod_version"] = MainFile.ModVersion;
         // Which game build is running ("v0.107.1" / "v0.111.0"): the advisor
         // builds its engine for it and refuses a build it does not support.
@@ -266,6 +273,13 @@ public static class SimStateExtractor
                 // winning. Null when there is no run to read.
                 ["is_last_act"] = runState == null ? null : (bool?)(runState.CurrentActIndex >= runState.Acts.Count - 1),
                 ["awaiting_second_boss"] = runState == null ? null : (bool?)SafeBool(() => SimAutoSlayer.IsFirstOfDoubleBoss(runState)),
+                // The run's game mode, lower-cased (`standard`, `daily`,
+                // `dread`, `blitz`, ...), and a Dread run's act dominion
+                // (v0.113.0; null in a standard run and inside the act's boss
+                // room). The advisor rebuilds a Dread fight from them
+                // (`realgame_adapter.to_headless_combat_play`, GH #1346).
+                ["game_mode"] = runState == null ? null : SafeString(() => runState.GameMode.ToString().ToLowerInvariant()),
+                ["dominion"] = DominionEntry(runState),
                 ["character"] = player?.Character?.Id.Entry,
                 ["unlocked_epochs"] = SerializeUnlockedEpochs(runState, player),
             };
@@ -780,6 +794,24 @@ public static class SimStateExtractor
         catch { return SafeCost(card); }
     }
 
+    // `RunState.Dominion` exists from v0.113.0 on; one DLL ships for every
+    // game build, so it is read by name.
+    private static readonly System.Reflection.PropertyInfo? DominionProperty =
+        typeof(RunState).GetProperty("Dominion",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+    /// <summary>
+    /// The act's Dread dominion as its model id entry (`KAISER_CRAB_DOMINION`),
+    /// or null: no run, a build without Dread, a standard run, or the act's
+    /// boss room, where the game has removed it.
+    /// </summary>
+    private static string? DominionEntry(RunState? runState)
+    {
+        if (runState == null || DominionProperty == null)
+            return null;
+        return SafeString(() => (DominionProperty.GetValue(runState) as AbstractModel)?.Id.Entry);
+    }
+
     private static bool SafeBool(Func<bool> f)
     {
         try { return f(); } catch { return false; }
@@ -1070,6 +1102,23 @@ public static class SimStateExtractor
     /// swallows any per-power failure — a missing var bag is a lost fidelity
     /// nicety, never a reason to drop the whole power.
     /// </summary>
+    /// <summary>The creature's slot in its encounter's slot order (GH #1838): the order
+    /// <c>SortEnemiesBySlotName</c> keeps the board in. A summon takes the first free
+    /// slot, which a removed corpse's can be, so creation order alone cannot place a
+    /// corpse among the living. Null without a named slot.</summary>
+    private static int? SlotIndex(Creature c, EncounterModel? encounter = null)
+    {
+        try
+        {
+            // A removed corpse has left its combat state: the caller names the fight's.
+            var slots = (c.CombatState?.Encounter ?? encounter)?.Slots;
+            if (slots == null || string.IsNullOrEmpty(c.SlotName)) return null;
+            for (int i = 0; i < slots.Count; i++) if (slots[i] == c.SlotName) return i;
+        }
+        catch (Exception) { }
+        return null;
+    }
+
     private static Dictionary<string, object?>? PowerVars(PowerModel power)
     {
         try
@@ -1091,6 +1140,27 @@ public static class SimStateExtractor
             if (power.GetType().Name == "SurroundedPower"
                 && power.GetType().GetProperty("Facing")?.GetValue(power) is System.Enum facing)
                 d["Facing"] = Convert.ToInt32(facing, System.Globalization.CultureInfo.InvariantCulture);
+            // Possess Strength / Speed keep what they stole in private data and
+            // give it back on death; the engine counts it on `counter` (GH #1836).
+            string? stolenField = power.GetType().Name switch
+            {
+                "PossessStrengthPower" => "stolenStrength",
+                "PossessSpeedPower" => "stolenDexterity",
+                _ => null,
+            };
+            if (stolenField != null
+                && typeof(PowerModel)
+                    .GetField("_internalData", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.GetValue(power) is object data
+                && data.GetType()
+                    .GetField(stolenField, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.GetValue(data) is System.Collections.IDictionary stolen)
+            {
+                decimal total = 0m;
+                foreach (System.Collections.DictionaryEntry e in stolen)
+                    total += e.Value is decimal v ? v : 0m;
+                d["Stolen"] = (int)(-total);
+            }
             return d.Count > 0 ? d : null;
         }
         catch { return null; }
@@ -1265,6 +1335,18 @@ public static class SimStateExtractor
             ulong? playerTarget = ImitationLearningTarget(power);
             if (playerTarget != null)
                 d["player_target"] = playerTarget.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            // Co-op: the player an instanced monster power belongs to
+            // (`PowerModel.Target`). The Insatiable puts one SandpitPower per
+            // player on itself and Aeonglass one WitheringPresence, each bound
+            // to its player by `Target`; Frantic Escape raises only the
+            // Sandpit whose `Target` is its owner. Their `applier` is the
+            // monster, so without this every instance read as ours and the
+            // teammate's countdown ran out on us (GH #1813). Absent when the
+            // power targets no player.
+            ulong? target = null;
+            try { target = power.Target?.Player?.NetId; } catch { }
+            if (target != null)
+                d["target"] = target.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return d;
         }
         catch (Exception ex)
@@ -1344,6 +1426,7 @@ public static class SimStateExtractor
             ["max_hp"] = creature.MaxHp,
             ["block"] = creature.Block,
             ["slot_name"] = creature.SlotName,
+            ["slot"] = SlotIndex(creature),
         };
 
         var powers = new List<Dictionary<string, object?>>();

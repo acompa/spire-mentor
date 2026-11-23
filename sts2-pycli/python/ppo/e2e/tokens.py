@@ -30,6 +30,9 @@ declares it, also carries the "chars" fill event (GH #1373, SCHEMA.md section
 13): the character in RUNCTX's `X_CHAR`, and on a combat row the pet (`ALLY`:
 Osty) and the orb belt (`ORB`) between the `BOSS` tokens and the S_ctx block,
 `E_DOOMED` on the enemies, and the Osty and Frost terms of `S_HP_LOSS_END`.
+Since GH #1197 such a row also prices its tactical and S_ctx damage / block
+columns live (`tactical.live_snapshot`, SCHEMA.md 13.5) and carries the star
+cost, dies-first, turn-counter, player-Doom and armed-relic columns (13.2).
 Without the declaration an Ironclad row is unchanged.
 
 PRIV tokens (value only) go in the separate `pcat`/`pcont`/`psec` arrays:
@@ -827,18 +830,27 @@ def _ironclad_chars() -> bool:
     return os.environ.get(factory.CHARS_ENV, "") == "1"
 
 
+def _ally(buf: _Buf, species: str, o: dict[str, Any]) -> None:
+    """One ALLY token: a pet (`$.player.osty`, `$.player.wuppy`) and its HP."""
+    cat, cont = buf.new("ALLY")
+    cat[XC["X_ID_MAIN"]] = _vid("monster", species)
+    hp, mhp = _f(o.get("hp")), max(1.0, _f(o.get("max_hp")))
+    cont[CT.SCTX_C["E_HPF"]] = hp / mhp
+    cont[CT.SCTX_C["E_HP"]] = hp / 200.0
+    cont[CT.SCTX_C["E_MAXHP"]] = mhp / 200.0
+    cont[CT.SCTX_C["E_ALIVE"]] = float(bool(o.get("alive")))
+
+
 def _chars_tokens(buf: _Buf, player: dict[str, Any]) -> None:
-    """The "chars" tokens of a combat row, after the BOSS tokens: the pet
-    (`ALLY`: Osty, alive or dead) and the orb belt (`ORB`, one per slot)."""
+    """The "chars" tokens of a combat row, after the BOSS tokens: the pets
+    (`ALLY`: Osty, then the "fool" event's Wuppy, alive or dead), the orb belt
+    (`ORB`, one per slot), then the "fool" event's ARROW and MELODY tokens."""
     o = player.get("osty")
     if o:
-        cat, cont = buf.new("ALLY")
-        cat[XC["X_ID_MAIN"]] = _vid("monster", "Osty")
-        hp, mhp = _f(o.get("hp")), max(1.0, _f(o.get("max_hp")))
-        cont[CT.SCTX_C["E_HPF"]] = hp / mhp
-        cont[CT.SCTX_C["E_HP"]] = hp / 200.0
-        cont[CT.SCTX_C["E_MAXHP"]] = mhp / 200.0
-        cont[CT.SCTX_C["E_ALIVE"]] = float(bool(o.get("alive")))
+        _ally(buf, "Osty", o)
+    w = player.get("wuppy")
+    if w:
+        _ally(buf, "Wuppy", w)
     orbs = player.get("orbs") or []
     slots = max(int(player.get("orb_slots") or 0), len(orbs))
     for i in range(min(slots, CT.MAX_ORB_TOKENS)):
@@ -850,6 +862,39 @@ def _chars_tokens(buf: _Buf, player: dict[str, Any]) -> None:
             cont[XF["C_ORB_EVOKE"]] = _f(orbs[i].get("evoke")) / 20.0
         else:
             cat[XC["X_ID_MAIN"]] = _vid("orb", "Empty")
+    fool = player.get("fool")
+    if fool:
+        _fool_tokens(buf, fool)
+
+
+def _fool_tokens(buf: _Buf, fool: dict[str, Any]) -> None:
+    """The "fool" event's ARROW and MELODY tokens (SCHEMA.md section 13.6) from
+    `$.player.fool`: one ARROW per slot, a pending Shoot slot as one more ready
+    arrow after them, then the MELODY token."""
+    cap = CT.FOOL_COUNT_CAP
+    slots = [(int(a[0]), int(a[1])) for a in fool.get("arrows") or []]
+    nxt = int(fool.get("next", -1))
+    if fool.get("pending"):
+        if nxt < 0:
+            nxt = len(slots)
+        slots.append((1, 0))
+    for i, (status, quietus) in enumerate(slots[: CT.MAX_ARROW_TOKENS]):
+        cat, _ = buf.new("ARROW")
+        cat[XC["X_POS"]] = _pos(i)
+        cat[XC["X_FOOL1"]] = status
+        cat[XC["X_FOOL2"]] = 1 + quietus + 2 * int(i == nxt)
+    wah, cho, ki, cards = [*(fool.get("melody") or []), 0, 0, 0, 0][:4]
+    cat, _ = buf.new("MELODY")
+    cat[XC["X_FOOL1"]] = min(int(wah), cap)
+    cat[XC["X_FOOL2"]] = min(int(cho), cap)
+    cat[XC["X_FOOL3"]] = min(int(ki), cap)
+    cat[XC["X_POS"]] = _pos(int(cards))
+
+
+def _impaled(player: dict[str, Any] | None) -> dict[int, int]:
+    """`$.player.fool.impaled`: encounter index -> arrows impaled in that enemy."""
+    fool = (player or {}).get("fool") or {}
+    return {int(j): int(n) for j, n in fool.get("impaled") or []}
 
 
 def _head(
@@ -861,7 +906,7 @@ def _head(
 ) -> tuple[_Buf, list[Any], list[Any]]:
     """The head. `player` is `state_to_dict(bv)["player"]` on a combat row of
     another character's run (`run_char(run) != 0`), else None."""
-    # A combat head is at most 8 tokens (19 with the "chars" tokens); an OOC
+    # A combat head is at most 8 tokens (29 with the "chars" and "fool" tokens); an OOC
     # row grows from 64.
     buf = _Buf(8 if d.is_combat else 64)
     stc = _static(run)
@@ -1045,18 +1090,25 @@ def _sctx_trailing(
     if player is None:
         md, kill, loss = TC.tactical(snap, acts)
         doomed: list[float] = []
+        first: list[float] = []
     else:
-        md, kill, loss = TC.tactical(
-            snap, acts, end_block=TC.end_turn_block(player), ally_hp=TC.ally_hp_of(player)
-        )
+        # A "chars" row: `snap` is the `live_snapshot` (GH #1197, SCHEMA.md 13.5).
+        md, kill, loss = TC.tactical_live(snap, acts, player)
         doomed = TC.doomed(snap)
+        first = TC.dies_before_acting(snap, player)
+        _chars_trailing(xf, s, a0, snap, acts, player, _class_reps(d))
     em = np.flatnonzero(s[:a0] == SEC["ENEMY"])
     enemies = snap.get("enemies") or []
+    impaled = _impaled(player)
     for j, ti in enumerate(em):
+        if j in impaled:
+            xc[ti, XC["X_FOOL1"] - NS_CAT] = min(impaled[j], CT.FOOL_COUNT_CAP)
         xf[ti, XF["E_MAXDMG"] - NS_CONT] = md[j] / 50.0 if j < len(md) else 0.0
         xf[ti, XF["E_KILLABLE"] - NS_CONT] = kill[j] if j < len(kill) else 0.0
         if j < len(doomed):
             xf[ti, XF["E_DOOMED"] - NS_CONT] = doomed[j]
+        if j < len(first):
+            xf[ti, XF["E_DIES_FIRST"] - NS_CONT] = first[j]
         if (tele is not None or fc is not None) and not _dead(enemies, j):
             cat_row = np.zeros(N_CAT, np.int16)
             cont_row = np.zeros(N_CONT, np.float32)
@@ -1065,6 +1117,123 @@ def _sctx_trailing(
             xf[ti] += cont_row[NS_CONT:]
     xf[0, XF["S_HP_LOSS_END"] - NS_CONT] = loss / 50.0
     return xc, xf
+
+
+def _star_cost(c: dict[str, Any], stars: float) -> float:
+    """`C_STAR_COST` of hand card `c`: its star cost now (`star_cost_live`) / 5, a
+    star-X card's (-1) the stars it would spend (all of them), 0 without one."""
+    sc = c.get("star_cost_live")
+    if sc is None:
+        return 0.0
+    return (stars if int(sc) == -1 else float(sc)) / 5.0
+
+
+def _dmg_live(v: Any) -> float:
+    """`dmg x hits` of one `dmg_live` entry (`[damage per hit, hits]`)."""
+    return float(v[0]) * float(v[1])
+
+
+def _class_reps(d: Any) -> list[int]:
+    """Per member, the member its class applies (`d.members[class][0]`). A live value
+    on an action token is its representative's, so the members of a class stay
+    token-identical (as the potion slot, `_sctx_trailing`): the honest merge key does
+    not see a per-instance live value (a pile card's Sly this turn; a free-this-turn
+    star cost on an Ironclad fight, which `env.combat_keys` splits on for every other
+    character, GH #1407)."""
+    return [d.members[int(c)][0] for c in d.classes]
+
+
+def _chars_trailing(
+    xf: np.ndarray,
+    s: np.ndarray,
+    a0: int,
+    snap: dict[str, Any],
+    acts: list[dict[str, Any]],
+    player: dict[str, Any],
+    reps: list[int],
+) -> None:
+    """The trailing columns only a "chars" row has (GH #1197, SCHEMA.md 13.2): star
+    cost on HAND / ACT_PLAY (the class representative's, `_class_reps`), the turn
+    counters and Doom on STATE, armed relics."""
+    hand = snap["hand"]
+    stars = _f(snap["player"].get("stars"))
+    for i, ti in enumerate(np.flatnonzero(s[:a0] == SEC["HAND"])):
+        if i < len(hand):
+            xf[ti, XF["C_STAR_COST"] - NS_CONT] = _star_cost(hand[i], stars)
+    for k in range(len(acts)):
+        a = acts[reps[k]]
+        if a.get("action") == "play" and s[a0 + k] == SEC["ACT_PLAY"]:
+            i = int(a["card_index"])
+            if 0 <= i < len(hand):
+                xf[a0 + k, XF["C_STAR_COST"] - NS_CONT] = _star_cost(hand[i], stars)
+    xf[0, XF["S_DISCARDS_TURN"] - NS_CONT] = _f(player.get("discards_this_turn")) / 10.0
+    xf[0, XF["S_ATTACKS_TURN"] - NS_CONT] = _f(player.get("attacks_played_this_turn")) / 10.0
+    xf[0, XF["S_PLAYER_DOOMED"] - NS_CONT] = TC.player_doomed(snap)
+    relics = player.get("relics") or []
+    for j, ti in enumerate(np.flatnonzero(s[:a0] == SEC["RELIC"])):
+        if j < len(relics):
+            xf[ti, XF["R_ARMED"] - NS_CONT] = float(bool(relics[j].get("armed")))
+
+
+def _is_sly(card: dict[str, Any] | None) -> bool:
+    """Sly now: the keyword, or Sly this turn, in a hand card's `flags` or a pile
+    card's `pile_flags`."""
+    if not card:
+        return False
+    f = [*(card.get("flags") or []), *(card.get("pile_flags") or [])]
+    return "sly" in f or "sly_turn" in f
+
+
+def _chars_sctx(
+    cont: np.ndarray,
+    sec: np.ndarray,
+    n_act: int,
+    snap: dict[str, Any],
+    acts: list[dict[str, Any]],
+    reps: list[int],
+    bv: Any,
+    d_bv: dict[str, Any],
+) -> None:
+    """The S_ctx columns a "chars" row prices live (GH #1197, SCHEMA.md 13.5), written
+    over `combat_ctx`'s values in `cont` (`[T, 122]` float32): `DMG_PREV` and `T_DMG`
+    from `dmg_live` (`dmg x hits`, the scaling `combat_ctx` uses), `BLK_PREV` from
+    `blk_live`, on HAND and ACT_PLAY; `SLY` on ACT_CHOOSE. An action token takes its
+    class representative's values (`_class_reps`). `snap` is the `live_snapshot`.
+    `ppo.combat_ctx` itself is untouched."""
+    s = sec.astype(np.int64)
+    a0 = len(s) - n_act
+    hand = snap["hand"]
+
+    def card_cols(ti: int, c: dict[str, Any]) -> None:
+        vals = [_dmg_live(v) for v in (c.get("dmg_live") or {}).values()]
+        cont[ti, T.C_DMG_PREV] = (max(vals) if vals else 0.0) / 30.0
+        cont[ti, T.C_BLK_PREV] = _f(c.get("blk_live")) / 20.0
+
+    for i, ti in enumerate(np.flatnonzero(s[:a0] == SEC["HAND"])):
+        if i < len(hand):
+            card_cols(ti, hand[i])
+    ch = snap.get("choice")
+    pc_cards: list[Any] | None = None
+    for k in range(len(acts)):
+        ti = a0 + k
+        a = acts[reps[k]]
+        if s[ti] == SEC["ACT_PLAY"]:
+            i = int(a["card_index"])
+            if not 0 <= i < len(hand):
+                continue
+            card_cols(ti, hand[i])
+            tix = a.get("target_index")
+            if tix is not None and int(tix) < len(snap["enemies"]):
+                v = (hand[i].get("dmg_live") or {}).get(str(int(tix)))
+                cont[ti, T.C_T_DMG] = (_dmg_live(v) if v else 0.0) / 30.0
+        elif s[ti] == SEC["ACT_CHOOSE"] and ch is not None:
+            if pc_cards is None:
+                pc = bv.pending_choice()
+                pc_cards = (pc or {}).get("cards") or []
+            opt = _at(pc_cards, int(a["selection"][0]))
+            pile = (d_bv.get("deck") or {}).get(CT._PILES.get(str((opt or {}).get("pile")), ""))
+            card = _at(pile, opt.get("index")) if opt and pile is not None else None
+            cont[ti, T.C_SLY] = float(_is_sly(card))
 
 
 def _choice_ench(pc_cards: list[Any], s: int, piles: dict[str, Any]) -> int:
@@ -1095,10 +1264,11 @@ def encode_combat(d: Any, *, rare: Any = None, priv: bool = True, check: bool = 
     d_bv = getattr(d, "d_bv", None)
     player = None
     if run_char(run):
-        # The row carries the "chars" fill event.
+        # The row carries the "chars" fill event: its live keys, and only here.
         if d_bv is None:
             d_bv = sts2_rs.state_to_dict(bv)
         player = d_bv.get("player") or {}
+        snap = TC.live_snapshot(snap, bv, d_bv)
     buf, _deck, _ench = _head(d, run, snap, d.room, player)
     hcat, hcont, hsec, hflags = buf.arrays()
     rf = sts2_rs.rollout_features(bv, version=1)
@@ -1106,6 +1276,8 @@ def encode_combat(d: Any, *, rare: Any = None, priv: bool = True, check: bool = 
     cat15 = tk["cat"]
     sec = tk["sec"]
     n_act = int(tk["n_act"])
+    if player is not None:
+        _chars_sctx(tk["cont"], sec, n_act, snap, acts, _class_reps(d), bv, d_bv)
     tele = fc = None
     g = _getter(bv, "telegraph")
     if g is not None:
@@ -1124,13 +1296,14 @@ def encode_combat(d: Any, *, rare: Any = None, priv: bool = True, check: bool = 
     cat = np.empty((n, N_CAT), np.int16)
     cat[:lo] = hcat
     # The assignments cast exactly as `Encoder.encode`'s `astype` calls do
-    # (`RareMap.apply`'s int64 to int16; `T.f16`'s saturating float16).
+    # (`RareMap.apply`'s int64 to int16; `T.f16`'s saturating float16, which every
+    # float16 column here shares: an outlier saturates at ±65504, never inf).
     cat[lo:, :NS_CAT] = cat15 if rare is None else rare.apply(cat15)
     cat[lo:, NS_CAT:] = xc
     cont = np.empty((n, N_CONT), np.float16)
-    cont[:lo] = hcont
+    np.clip(hcont, -T.F16_MAX, T.F16_MAX, out=cont[:lo], casting="unsafe")
     np.clip(tk["cont"], -T.F16_MAX, T.F16_MAX, out=cont[lo:, :NS_CONT], casting="unsafe")
-    cont[lo:, NS_CONT:] = xf
+    np.clip(xf, -T.F16_MAX, T.F16_MAX, out=cont[lo:, NS_CONT:], casting="unsafe")
     secs = np.empty(n, np.int8)
     secs[:lo] = hsec
     secs[lo:] = sec
@@ -1191,7 +1364,7 @@ def _pool_arrays(buf: _Buf) -> dict[str, np.ndarray]:
     return {
         "pool_tok": np.asarray(buf.pool_tok, np.uint16),
         "pool_vid": np.asarray(buf.pool_vid, np.uint16),
-        "pool_w": np.asarray(buf.pool_w, np.float64).astype(np.float16),
+        "pool_w": T.f16(np.asarray(buf.pool_w, np.float64)),
     }
 
 
@@ -1237,13 +1410,16 @@ def _ench_amount(e: Any) -> float:
     return 0.0
 
 
-def _deck_tokens(buf: _Buf, deck: list[Any], ench: list[Any]) -> None:
-    """One DECK token per distinct (card, upgraded, enchantment)."""
+def _deck_tokens(buf: _Buf, deck: list[Any], ench: list[Any], picked: Any = ()) -> None:
+    """One DECK token per distinct (card, upgraded, enchantment); the cards an
+    open pick-N deck select has picked (`picked`, master-deck positions, the
+    "deck-select" event) are their own groups, with K_PICKED."""
+    chosen = {int(i) for i in picked or ()}
     groups: dict[Any, int] = {}
     order: list[Any] = []
     for i, (cid, up) in enumerate(deck):
         e = ench[i] if i < len(ench) else None
-        key = (str(cid), bool(up), _hashable(e))
+        key = (str(cid), bool(up), _hashable(e), i in chosen)
         if key not in groups:
             groups[key] = 0
             order.append((key, e))
@@ -1253,6 +1429,8 @@ def _deck_tokens(buf: _Buf, deck: list[Any], ench: list[Any]) -> None:
         _card_cats(cat, key[0], key[1], e)
         cont[CT.SCTX_C["ENCH_AMT"]] = _ench_amount(e) / 5.0
         cont[CT.SCTX_C["COUNT"]] = groups[key] / 5.0
+        if key[3]:
+            cont[XF["K_PICKED"]] = 1.0
 
 
 def _map_nodes(fm: dict[str, Any]) -> dict[tuple[int, int], dict[str, Any]]:
@@ -1325,6 +1503,13 @@ def _map_body(
     boss_row = _boss_row(fm)
     route = _route(nodes, boss_row)
     cur = fm.get("current_coord")
+    if not cur:
+        # An act's first move (GH #1616): no node is current yet and the moves
+        # are the start node's children (`next_map_children_cols`), so the
+        # player stands on the start node, the one node of row 0.
+        row0 = [k for k in nodes if k[1] == 0]
+        if len(row0) == 1:
+            cur = {"col": row0[0][0], "row": 0}
     cur_row = int(cur["row"]) if cur else -1
     if cur and (int(cur["col"]), cur_row) in nodes:
         start = _kids(nodes[int(cur["col"]), cur_row])
@@ -1390,7 +1575,7 @@ def _option(
 ) -> None:
     """The token of option `i` (the representative of its class)."""
     obs = run.obs
-    name = CT.ACTION_KINDS[kind].name
+    name = CT.kind_name(kind)
     flags = CT.TF_OPTION | CT.TF_REP
 
     def card_opt(cid: Any, up: Any, ench: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -1461,6 +1646,19 @@ def _option(
     elif name == "POTION_SWAP_DISCARD":
         cat, cont = buf.new("OPT_POTION", flags)
         cat[XC["X_ID_MAIN"]] = _vid("potion", _at(run.potions(), a["discard_slot"]))
+    elif name in ("USE_POTION_OOC", "DISCARD_POTION"):
+        # The "ooc-potion" fill event (SCHEMA.md section 14): the belt's potion.
+        cat, cont = buf.new("RES_OPT_POTION_USE", flags)
+        cat[XC["X_ID_MAIN"]] = _vid("potion", _at(run.potions(), a["potion_slot"]))
+    elif CT.FILL_KIND_SECTION.get(kind) == CT.REWARD_SCREEN_SECTION:
+        # The "#1069" fill event (SCHEMA.md section 17): the reward the option takes
+        # or leaves, as the reward button shows it.
+        cat, cont = buf.new("RES_OPT_REWARD", flags)
+        reg = _REWARD_REGISTRY.get(str(a.get("reward")))
+        if reg is not None:
+            cat[XC["X_ID_MAIN"]] = _vid(reg, a.get("id"))
+        if a.get("reward") == "gold":
+            cont[XF["O_PRICE"]] = _f(a.get("amount")) / 300.0
     elif name == "MOVE":
         cat, cont = buf.new("OPT_MOVE", flags)
         col = int(a["col"])
@@ -1505,10 +1703,21 @@ def _rest_options(run: _Run) -> list[Any]:
     return list(run.f.rest_site_options())
 
 
+# A reward-screen option's content registry, by `available_actions()` `reward`.
+_REWARD_REGISTRY: dict[str, str] = {"potion": "potion", "relic": "relic", "special_card": "card"}
+
+
 def _offer(buf: _Buf, d: Any, run: _Run) -> None:
     """Offered content that is not an option: the potion a swap would add,
-    the enchantment an enchant pick stamps."""
-    if d.dtype == DT["POTION_SWAP"]:
+    the enchantment an enchant pick stamps, the chest's relic."""
+    if d.dtype == DT["TREASURE_CHOICE"]:
+        # The "#1069" fill event (SCHEMA.md section 17): the relic the chest holds.
+        relic = next((a.get("id") for a in d.obs_actions if a.get("reward") == "chest_relic"), None)
+        if relic:
+            cat, _cont = buf.new("OFFER")
+            cat[XC["X_KIND"]] = AK["COLLECT_TREASURE"]
+            cat[XC["X_ID_MAIN"]] = _vid("relic", relic)
+    elif d.dtype == DT["POTION_SWAP"]:
         pot = run.obs.get("pending_potion_swap")
         if pot is None:
             pot = run.f.pending_potion_swap
@@ -1530,7 +1739,7 @@ def encode_ooc(d: Any, *, priv: bool = True) -> Tok:
     """An out-of-combat decision's row."""
     run = _Run(d)
     buf, deck, ench = _head(d, run, None, None)
-    _deck_tokens(buf, deck, ench)
+    _deck_tokens(buf, deck, ench, run.obs.get("deck_select_picked_deck"))
     for r in run.relics():
         cat, _cont = buf.new("RELIC")
         cat[XC["X_ID_MAIN"]] = _vid("relic", r)
@@ -1555,7 +1764,7 @@ def encode_ooc(d: Any, *, priv: bool = True) -> Tok:
         is_combat=False,
         dtype=int(d.dtype),
         cat=cat,
-        cont=cont.astype(np.float16),
+        cont=T.f16(cont),
         sec=sec,
         tok_flags=flags,
         mem_tok=cls_tok_a[mem_class.astype(np.int64)],
@@ -1780,8 +1989,8 @@ def _priv_run_static(
     )
     ent = [(vid, float(w)) for vid, w in enc.items() if vid]
     vids = np.asarray([v for v, _w in ent], np.uint16)
-    ws = np.asarray([w for _v, w in ent], np.float64).astype(np.float16)
-    return row[None], f.astype(np.float16)[None], vids, ws
+    ws = T.f16(np.asarray([w for _v, w in ent], np.float64))
+    return row[None], T.f16(f)[None], vids, ws
 
 
 class RunPriv:
@@ -1904,7 +2113,11 @@ class Tokenizer:
         d_bv = sts2_rs.state_to_dict(bv)
         room = fight_room(policy.run())
         snap = snapshot_from_parts(
-            d_bv, bv.card_damage_preview(), bv.card_block_preview(), bv.pending_choice(), room
+            bv.corpse_intents(d_bv) or d_bv,  # GH #1835, as env.snapshot_of
+            bv.card_damage_preview(),
+            bv.card_block_preview(),
+            bv.pending_choice(),
+            room,
         )
         self._view = (bv, d_bv, self._ilog.observe(snap), room)
 

@@ -109,6 +109,54 @@ def _choose_branch(rest: str, value: Any) -> str | None:
     return branches[idx] if idx < len(branches) else ""
 
 
+def _cond_value(stats: dict[str, Any], key: str) -> Any:
+    """The value a ``{Var:cond:...}`` tests. The game's text vars name a
+    property of the variable (``{CardTitles.StringValue:cond:...}``), while
+    ``stats`` is keyed by the bare variable name, so a dotted key falls back to
+    its first segment."""
+    if key in stats:
+        return stats[key]
+    base, dot, _ = key.partition(".")
+    return stats.get(base) if dot else None
+
+
+_COND_TEST = re.compile(r"^(<=|>=|==|!=|<|>)\s*(-?\d+(?:\.\d+)?)\s*\?(.*)$", re.DOTALL)
+
+
+def _cond_branch(body: str, value: Any) -> str:
+    """The branch a SmartFormat ``cond:`` directive renders, unrendered.
+
+    Tested branches (``{Amount:cond:==1? next turn|>1? for {} turns|}``) are
+    tried in order and the first untested branch is the default. Plain branches
+    (``{CardTitles.StringValue:cond:Cards devoured: {}|}``) pick the first for a
+    truthy value and the second otherwise; a missing value is falsy.
+    """
+    branches = _split_top_level(body, "|")
+    if any(_COND_TEST.match(b) for b in branches):
+        num = value if isinstance(value, (int, float)) else None
+        for branch in branches:
+            m = _COND_TEST.match(branch)
+            if m is None:
+                return branch
+            if num is None:
+                continue
+            op, threshold, text = m.group(1), float(m.group(2)), m.group(3)
+            hit = {
+                "<=": num <= threshold,
+                ">=": num >= threshold,
+                "==": num == threshold,
+                "!=": num != threshold,
+                "<": num < threshold,
+                ">": num > threshold,
+            }[op]
+            if hit:
+                return text
+        return ""
+    if value:
+        return branches[0]
+    return branches[1] if len(branches) > 1 else ""
+
+
 def _eval_directive(
     body: str, stats: dict[str, Any], flags: dict[str, bool], markup: bool = False
 ) -> str:
@@ -165,6 +213,15 @@ def _eval_directive(
             return "★" if kind == "star" else " Energy"
         noun = "Stars" if kind == "star" else "Energy"
         return f"{int(count)} {noun}" if isinstance(count, (int, float)) else noun
+
+    if rest.startswith("cond:"):
+        value = _cond_value(stats, key)
+        chosen = _cond_branch(rest[len("cond:") :], value)
+        # ``{}`` inside the chosen branch prints the tested value itself
+        # (``Cards devoured: {}``); the empty key carries it.
+        if "{}" in chosen:
+            stats = {**stats, "": value}
+        return _render_template(chosen, stats, flags, markup)
 
     if rest.startswith("plural:"):
         halves = _split_top_level(rest[len("plural:") :], "|")
@@ -244,6 +301,18 @@ def _collect_directive(body: str, flags: dict[str, bool], out: set[str]) -> None
         halves = _split_top_level(branches, "|")
         chosen = halves[0] if flags.get(key) else (halves[1] if len(halves) > 1 else "")
         _collect_vars(chosen, flags, out)
+        return
+    if rest.startswith("cond:"):
+        branches = _split_top_level(rest[len("cond:") :], "|")
+        # A numeric test needs its number; a truthiness test reads a missing
+        # value as false (Pael's Tooth before it has devoured anything), so
+        # only the tested form makes the var required.
+        if any(_COND_TEST.match(b) for b in branches):
+            out.add(key)
+        for branch in branches:
+            m = _COND_TEST.match(branch)
+            text = m.group(3) if m else branch
+            _collect_vars(text.replace("{}", ""), flags, out)
         return
     if rest.startswith("plural:"):
         if key not in _PSEUDO_VARS:
@@ -367,6 +436,25 @@ def _enemy_named(items: list[dict[str, Any]] | None, idx: int | None) -> str:
     return enemy_labels(items)[pos]
 
 
+def _blitz_ware_title(state: dict[str, Any], idx: Any) -> str | None:
+    """The title of the Blitz merchant ware listed at ``idx``: from the
+    enriched ``blitz_wares``, else from the engine's own ``blitz_choice``
+    options. ``None`` when the state names no such ware."""
+    for ware in state.get("blitz_wares") or []:
+        if isinstance(ware, dict) and ware.get("index") == idx and ware.get("title"):
+            return str(ware["title"])
+    for opt in state.get("options") or []:
+        if (
+            isinstance(opt, dict)
+            and opt.get("action") == "blitz_choice"
+            and opt.get("index") == idx
+        ):
+            title = (opt.get("item") or {}).get("title")
+            if title:
+                return str(title)
+    return None
+
+
 def _card_name(cards: list[dict[str, Any]] | None, idx: int | None) -> str:
     """Like :func:`_named` but marks upgraded cards with a trailing ``+``."""
     it = _find(cards, idx)
@@ -452,6 +540,14 @@ def describe_action(state: dict[str, Any] | None, action: dict[str, Any] | None)
             "buy_potion": ("potions", "potion_index"),
         }[act]
         return f"Buy {_named(state.get(key), args.get(idx_arg), key[:-1])}"
+    if act == "blitz_choice":
+        # GH #1347: a Blitz merchant ware, by the index the shop lists it at.
+        title = _blitz_ware_title(state, args.get("index"))
+        return f"Take {title}" if title else f"Take ware {args.get('index')}"
+    if act == "take_reward":
+        return f"Take {_named(state.get('rewards'), args.get('reward_index'), 'reward')}"
+    if act == "skip_reward":
+        return "Leave the chest"
     if act == "choose_option":
         oi = args.get("option_index")
         options = state.get("options") or []

@@ -171,11 +171,12 @@ def packed_forward(net: Any, dec: Decoded, attn: str = "auto", up: Any = None) -
 
     Embeddings, norms and MLPs run on the `[sum T, d]` token matrix with no
     padding. Attention runs per row: with `attn="varlen"` through
-    `torch.nn.attention.varlen.varlen_attn` (CUDA, bf16/fp16), with
-    `attn="pad"` by scattering q, k, v into a padded batch for
-    `scaled_dot_product_attention` and back. `"auto"` picks varlen when it
-    can run. Returns logits `[B, A]` (-inf off the actions) and value `[B]`,
-    like `CombatCtxNet.forward` (the net must be in eval mode: no dropout).
+    `torch.nn.attention.varlen.varlen_attn` (CUDA on Ampere or newer,
+    bf16/fp16), with `attn="pad"` by scattering q, k, v into a padded batch
+    for `scaled_dot_product_attention` and back. `"auto"` picks varlen when it
+    can run (autocast on, a GPU `flash_attn_ok` accepts). Returns logits
+    `[B, A]` (-inf off the actions) and value `[B]`, like
+    `CombatCtxNet.forward` (the net must be in eval mode: no dropout).
     """
     import torch
     import torch.nn.functional as F
@@ -197,7 +198,9 @@ def packed_forward(net: Any, dec: Decoded, attn: str = "auto", up: Any = None) -
     n = x.shape[0]
     d = x.shape[1]
     if attn == "auto":
-        attn = "varlen" if dev.type == "cuda" and torch.is_autocast_enabled("cuda") else "pad"
+        from ..net import flash_attn_ok
+
+        attn = "varlen" if flash_attn_ok(dev) and torch.is_autocast_enabled("cuda") else "pad"
     row = col = None
     if attn == "pad":
         row, col = _rows_cols(lens[0], int(n_tok.sum()))

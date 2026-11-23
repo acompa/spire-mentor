@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use crate::advisors;
 use crate::assets::AssetResolver;
 use crate::enrich::EnrichCtx;
+use crate::i18n::{tr, trf};
 use crate::localization::embedded_monster_hp_ranges_for;
 use crate::localization::Loc;
 use crate::ppo;
@@ -24,7 +25,7 @@ use crate::runlog::{self, ReplayStore, RunLog};
 use crate::saves;
 use crate::session::{Session, SessionError};
 use crate::step::live_step;
-use sts2_core::GameVersion;
+use sts2_core::{GameMode, GameVersion};
 
 /// A failed route: `status` is the HTTP status, `detail` the message
 /// (FastAPI's `{"detail": ...}` body).
@@ -37,8 +38,10 @@ pub struct ApiError {
 /// Whether the e2e student advises the live run's hand-played moves
 /// (`advisor: "e2e"`): the hint, the auto-action, the policy panel and the
 /// choice ranker then answer with its evaluation (`session_e2e.rs`).
+///
+/// Never in a Blitz run: the student is a run-level net (GH #1347).
 fn advises_e2e(sess: &Session) -> bool {
-    cfg!(feature = "e2e") && sess.advisor_is_e2e()
+    cfg!(feature = "e2e") && sess.advisor_is_e2e() && !sess.game_mode.is_blitz()
 }
 
 /// One advisor surface the e2e student answers in the search's shape.
@@ -108,6 +111,78 @@ fn body_game_version(body: &Value) -> Result<GameVersion, ApiError> {
     crate::session::requested_game_version(body.get("game_version"))
         .map_err(|e| ApiError::new(400, e))
 }
+
+/// The optional `game_mode` of a start request (GH #1346, #1347):
+/// `"standard"` (also when absent), `"dread"` or `"blitz"`; anything else is
+/// a 400.
+fn body_game_mode(body: &Value) -> Result<GameMode, ApiError> {
+    crate::session::game_mode_of(body).map_err(|e| ApiError::new(400, e))
+}
+
+/// 400 for a Dread or Blitz request on a route that starts standard runs
+/// only (the run AI knows neither the Blitz merchant nor its map).
+fn refuse_special_mode(body: &Value, what: &str) -> Result<(), ApiError> {
+    let mode = body_game_mode(body)?;
+    if !mode.is_default() {
+        return Err(ApiError::new(
+            400,
+            format!(
+                "{} mode is not available for {what}: start it from the run launcher",
+                mode.name()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// The live routes that ask the run-level AI (run policy, run advisors,
+/// autoplay, the e2e student) about the run. Refused in a Blitz run: see
+/// `Workbench::refuse_ai_in_blitz`. Twin of `server._BLITZ_NO_AI_ROUTES`.
+const BLITZ_NO_AI_ROUTES: [&str; 18] = [
+    "/api/live/e2e-advice",
+    "/api/live/last-choice-grade",
+    "/api/live/regret-review",
+    "/api/live/card-advisor",
+    "/api/live/card-advisor/stream",
+    "/api/live/decision-advisor",
+    "/api/live/decision-advisor/stream",
+    "/api/live/last-choice-check/stream",
+    "/api/live/run-mode",
+    "/api/live/run-mode-step",
+    "/api/live/faithful-step",
+    "/api/live/play-to-end",
+    "/api/live/autobattle/advance",
+    "/api/live/autobattle/step",
+    "/api/live/autobattle/verdict",
+    "/api/live/ppo-policy",
+    "/api/live/wpa-review",
+    "/api/live/wpa-verify",
+];
+
+/// The live routes that ask the combat search about the fight on screen: the
+/// hint, the search tree, the in-fight choice ranker, "play best" (an
+/// in-fight choice only, in Blitz) and the per-turn grade. A Blitz run
+/// answers them in a fight and nowhere else. Twin of
+/// `server._BLITZ_FIGHT_AI_ROUTES`.
+const BLITZ_FIGHT_AI_ROUTES: [&str; 5] = [
+    "/api/live/hint",
+    "/api/live/search_tree",
+    "/api/live/choice-ranker",
+    "/api/live/auto-action",
+    "/api/live/last-turn-grade",
+];
+
+/// The 409 of a run-level AI route in a Blitz run.
+const BLITZ_NO_RUN_AI: &str =
+    "the run-level AI (run policy, advisors, autoplay) is not available in Blitz mode";
+
+/// The 409 of a fight AI route in a Blitz run that is not in a fight.
+const BLITZ_FIGHT_AI_ONLY: &str = "in Blitz mode the AI answers in a fight only";
+
+/// The Blitz refusals, for the i18n coverage test (they reach `tr` through
+/// a constant, which the literal-key scan does not see).
+#[cfg(test)]
+pub(crate) const BLITZ_MESSAGES: [&str; 2] = [BLITZ_NO_RUN_AI, BLITZ_FIGHT_AI_ONLY];
 
 /// `{}`: the default `args` of an action request.
 fn empty_object() -> Value {
@@ -187,12 +262,18 @@ pub struct Workbench {
     /// the host's reason a load was not attempted / failed (`set_ppo_error`).
     ppo: std::collections::BTreeMap<String, ppo::Net>,
     ppo_errors: std::collections::BTreeMap<String, String>,
-    /// The e2e Ironclad student (`load_e2e`) and why it is not loaded
+    /// The e2e all-character student (`load_e2e`) and why it is not loaded
     /// (`set_e2e_error`).
     #[cfg(feature = "e2e")]
     e2e: Option<crate::e2e::Net>,
     #[cfg(feature = "e2e")]
     e2e_error: Option<String>,
+    /// The Fool's student (`e2e::E2E_FOOL_FILE`, v0.113.0) and why it is not
+    /// loaded.
+    #[cfg(feature = "e2e")]
+    e2e_fool: Option<crate::e2e::Net>,
+    #[cfg(feature = "e2e")]
+    e2e_fool_error: Option<String>,
     /// The host's advisor preference (`POST /api/advisor`), applied to every
     /// run installed after it — start, save-load, import, resume — that the
     /// advisor can read; `None` until the host says (a resumed run keeps the
@@ -222,6 +303,10 @@ impl Workbench {
             e2e: None,
             #[cfg(feature = "e2e")]
             e2e_error: None,
+            #[cfg(feature = "e2e")]
+            e2e_fool: None,
+            #[cfg(feature = "e2e")]
+            e2e_fool_error: None,
             advisor_pref: None,
             sweeps: crate::simlab_sweep::SweepRegistry::default(),
         }
@@ -403,13 +488,13 @@ impl Workbench {
     fn store(&self) -> Result<&ReplayStore, ApiError> {
         self.store
             .as_ref()
-            .ok_or_else(|| ApiError::new(400, "no run loaded"))
+            .ok_or_else(|| ApiError::new(400, tr("no run loaded")))
     }
 
     fn store_mut(&mut self) -> Result<&mut ReplayStore, ApiError> {
         self.store
             .as_mut()
-            .ok_or_else(|| ApiError::new(400, "no run loaded"))
+            .ok_or_else(|| ApiError::new(400, tr("no run loaded")))
     }
 
     // ── PPO champions (host-loaded) ────────────────────────────────────
@@ -461,9 +546,23 @@ impl Workbench {
         }
     }
 
-    /// Load the e2e student from the `.e2ew` bytes and attach it to the live
-    /// run. 400 with the loader's error when the bytes are not a weights file
-    /// of the build the student plays.
+    /// The Fool's e2e weights filename (`""` without the e2e feature).
+    #[must_use]
+    pub fn e2e_fool_file() -> &'static str {
+        #[cfg(feature = "e2e")]
+        {
+            crate::e2e::E2E_FOOL_FILE
+        }
+        #[cfg(not(feature = "e2e"))]
+        {
+            ""
+        }
+    }
+
+    /// Load an e2e student from the `.e2ew` bytes and attach it to the live
+    /// run: a v0.113.0 net is the Fool's ([`Self::e2e_fool_file`]), a v0.111.0
+    /// one the all-character student. 400 with the loader's error when the
+    /// bytes are not a weights file of either build.
     pub fn load_e2e(&mut self, bytes: &[u8]) -> Result<Value, ApiError> {
         #[cfg(feature = "e2e")]
         {
@@ -473,10 +572,16 @@ impl Workbench {
                 "source_sha256": net.header().source_sha256,
                 "game_version": net.header().game_version,
             });
-            self.e2e = Some(net);
-            self.e2e_error = None;
+            let file = crate::e2e::file_of(&net);
+            if file == crate::e2e::E2E_FOOL_FILE {
+                self.e2e_fool = Some(net);
+                self.e2e_fool_error = None;
+            } else {
+                self.e2e = Some(net);
+                self.e2e_error = None;
+            }
             self.attach_ppo();
-            Ok(json!({"ok": true, "file": crate::e2e::E2E_FILE, "header": header}))
+            Ok(json!({"ok": true, "file": file, "header": header}))
         }
         #[cfg(not(feature = "e2e"))]
         {
@@ -497,7 +602,18 @@ impl Workbench {
         let _ = reason;
     }
 
-    /// Whether the e2e student is loaded.
+    /// [`Self::set_e2e_error`] for the Fool's student.
+    pub fn set_e2e_fool_error(&mut self, reason: &str) {
+        #[cfg(feature = "e2e")]
+        {
+            self.e2e_fool_error = Some(reason.to_string());
+            self.attach_ppo();
+        }
+        #[cfg(not(feature = "e2e"))]
+        let _ = reason;
+    }
+
+    /// Whether the e2e all-character student is loaded.
     #[must_use]
     pub fn has_e2e(&self) -> bool {
         #[cfg(feature = "e2e")]
@@ -510,17 +626,41 @@ impl Workbench {
         }
     }
 
-    /// `POST /api/e2e/selfplay {seed, ascension?, max_decisions?}`: the
+    /// Whether the Fool's student is loaded.
+    #[must_use]
+    pub fn has_e2e_fool(&self) -> bool {
+        #[cfg(feature = "e2e")]
+        {
+            self.e2e_fool.is_some()
+        }
+        #[cfg(not(feature = "e2e"))]
+        {
+            false
+        }
+    }
+
+    /// The student that plays `character` (by name; the Fool's for "Fool")
+    /// and why it is not loaded.
+    #[cfg(feature = "e2e")]
+    fn e2e_for(&self, character: &str) -> (Option<crate::e2e::Net>, Option<String>) {
+        let fool = crate::e2e::character(character).is_ok_and(crate::e2e::is_fool);
+        if fool {
+            let why = self.e2e_fool_error.clone().or_else(|| {
+                self.e2e_fool
+                    .is_none()
+                    .then(|| format!("{} not fetched yet", crate::e2e::E2E_FOOL_FILE))
+            });
+            (self.e2e_fool.clone(), why)
+        } else {
+            (self.e2e.clone(), self.e2e_error.clone())
+        }
+    }
+
+    /// `POST /api/e2e/selfplay {seed, character?, ascension?, max_decisions?}`: the
     /// student plays a fresh campaign run with no UI (speed + parity probe).
     fn e2e_selfplay(&mut self, body: &Value) -> Result<Value, ApiError> {
         #[cfg(feature = "e2e")]
         {
-            let net = self.e2e.clone().ok_or_else(|| {
-                ApiError::new(
-                    crate::e2e::NO_NET_STATUS,
-                    crate::e2e::missing_net_error(self.e2e_error.as_deref()),
-                )
-            })?;
             let seed = match body.get("seed") {
                 Some(Value::Number(n)) => n.as_i64(),
                 Some(Value::String(s)) => Some(i64::from(crate::runmode::hash_seed(s))),
@@ -546,9 +686,23 @@ impl Workbench {
                 .get("max_decisions")
                 .and_then(Value::as_u64)
                 .map_or(usize::MAX, |m| usize::try_from(m).unwrap_or(usize::MAX));
+            let who = crate::e2e::character(
+                body.get("character")
+                    .and_then(Value::as_str)
+                    .unwrap_or(crate::e2e::DEFAULT_CHARACTER),
+            )
+            .map_err(|e| ApiError::new(400, e))?;
+            let (net, why) = self.e2e_for(sts2_wire::emit::names::character_str(who));
+            let net = net.ok_or_else(|| {
+                ApiError::new(
+                    crate::e2e::NO_NET_STATUS,
+                    crate::e2e::missing_net_error_for(crate::e2e::file_for(who), why.as_deref()),
+                )
+            })?;
             let clock = self.config.perf_ms.unwrap_or(crate::e2e::fallback_ms);
             Ok(crate::e2e::selfplay(
                 &net,
+                who,
                 seed,
                 ascension,
                 max_decisions,
@@ -603,17 +757,19 @@ impl Workbench {
                     })
                     .collect()
             };
-            // The run Instinct plays: Ironclad on v0.111.0 only (the page
-            // shows the other characters and builds, grayed out), at any
-            // ascension 0-10 (it trained at A10).
-            let character = body
-                .get("character")
-                .and_then(Value::as_str)
-                .unwrap_or(crate::e2e::CHARACTER);
-            if !character.eq_ignore_ascii_case(crate::e2e::CHARACTER) {
-                return Err(bad(format!(
-                    "the seed checker only plays {} for now, not {character}",
-                    crate::e2e::CHARACTER
+            // The run Instinct plays: one of its characters on v0.111.0
+            // (the page shows the other builds grayed out), at any ascension
+            // 0-10 (it trained at A10).
+            let who = crate::e2e::character(
+                body.get("character")
+                    .and_then(Value::as_str)
+                    .unwrap_or(crate::e2e::DEFAULT_CHARACTER),
+            )
+            .map_err(bad)?;
+            if crate::e2e::is_fool(who) {
+                return Err(bad(trf(
+                    "the seed checker only plays {version} for now, not the Fool",
+                    &[("version", &crate::e2e::GAME_VERSION)],
                 )));
             }
             let version = body
@@ -621,9 +777,9 @@ impl Workbench {
                 .and_then(Value::as_str)
                 .unwrap_or(crate::e2e::GAME_VERSION);
             if version != crate::e2e::GAME_VERSION {
-                return Err(bad(format!(
-                    "the seed checker only plays {} for now, not {version}",
-                    crate::e2e::GAME_VERSION
+                return Err(bad(trf(
+                    "the seed checker only plays {version} for now, not {other}",
+                    &[("version", &crate::e2e::GAME_VERSION), ("other", &version)],
                 )));
             }
             let ascension = match body.get("ascension") {
@@ -633,7 +789,10 @@ impl Workbench {
                     .and_then(|a| u8::try_from(a).ok())
                     .filter(|a| *a <= 10)
                     .ok_or_else(|| {
-                        ApiError::new(400, format!("ascension must be 0-10, not {v}"))
+                        ApiError::new(
+                            400,
+                            trf("ascension must be 0-10, not {value}", &[("value", v)]),
+                        )
                     })?,
             };
             let net = || {
@@ -645,9 +804,9 @@ impl Workbench {
                 })
             };
             match what {
-                "preview" => crate::seedcheck::preview(seed, ascension).map_err(bad),
+                "preview" => crate::seedcheck::preview(who, seed, ascension).map_err(bad),
                 "summary" => {
-                    crate::seedcheck::line_summary(seed, ascension, &classes()?).map_err(bad)
+                    crate::seedcheck::line_summary(who, seed, ascension, &classes()?).map_err(bad)
                 }
                 "attempt" => {
                     sts2_e2e::env::canonical_game_seed(seed).map_err(bad)?;
@@ -659,6 +818,7 @@ impl Workbench {
                     let clock = self.config.perf_ms.unwrap_or(crate::e2e::fallback_ms);
                     let a = crate::e2e::attempt(
                         &net,
+                        who,
                         seed,
                         ascension,
                         seq()?,
@@ -673,9 +833,13 @@ impl Workbench {
                     sts2_e2e::env::canonical_game_seed(seed).map_err(bad)?;
                     net()?;
                     let now = body.get("now").and_then(Value::as_str).unwrap_or("");
-                    let mut sess = self.new_session(crate::e2e::CHARACTER, GameVersion::V0_111_0);
+                    let mut sess = self.new_session(
+                        sts2_wire::emit::names::character_str(who),
+                        GameVersion::V0_111_0,
+                    );
                     let log = crate::seedcheck::run_log(
                         &mut sess,
+                        who,
                         seed,
                         ascension,
                         &classes()?,
@@ -698,12 +862,16 @@ impl Workbench {
 
     /// Point the live session at its character's net (or error).
     fn attach_ppo(&mut self) {
+        #[cfg(feature = "e2e")]
+        let student = self.live.as_ref().map(|s| self.e2e_for(&s.character));
         let Some(sess) = self.live.as_mut() else {
             return;
         };
         sess.set_perf_clock(self.config.perf_ms);
         #[cfg(feature = "e2e")]
-        sess.set_e2e(self.e2e.clone(), self.e2e_error.clone());
+        if let Some((net, why)) = student {
+            sess.set_e2e(net, why);
+        }
         let key = sess.character.to_lowercase();
         let net = self.ppo.get(&key).cloned();
         let error = self
@@ -793,7 +961,10 @@ impl Workbench {
         sess.set_ppo(self.ppo.get(&key).cloned(), error);
         sess.set_perf_clock(self.config.perf_ms);
         #[cfg(feature = "e2e")]
-        sess.set_e2e(self.e2e.clone(), self.e2e_error.clone());
+        {
+            let (net, why) = self.e2e_for(character);
+            sess.set_e2e(net, why);
+        }
         sess
     }
 
@@ -837,10 +1008,38 @@ impl Workbench {
         self.live.as_ref()
     }
 
+    /// The live session, mutably. A test surface, see [`Session::game_mut`].
+    #[doc(hidden)]
+    pub fn session_mut(&mut self) -> Option<&mut Session> {
+        self.live.as_mut()
+    }
+
     fn live(&mut self) -> Result<&mut Session, ApiError> {
         self.live
             .as_mut()
-            .ok_or_else(|| ApiError::new(400, "no live run"))
+            .ok_or_else(|| ApiError::new(400, tr("no live run")))
+    }
+
+    /// 409 for an AI route the live Blitz run cannot answer (GH #1347).
+    ///
+    /// The run policies, the run-level advisors and the autoplayers know
+    /// neither the Blitz merchant nor its chest or map, so their answer
+    /// would be about a different game: their routes are refused throughout.
+    /// A fight is the same game in every mode (the combat search reads the
+    /// fight's own ascension, which a Blitz run fills with the standard
+    /// level that scales its enemies), so the fight routes answer, in a
+    /// fight only. The SPA shows the controls to match.
+    fn refuse_ai_in_blitz(&self, path: &str) -> Result<(), ApiError> {
+        let Some(sess) = self.live.as_ref().filter(|s| s.game_mode.is_blitz()) else {
+            return Ok(());
+        };
+        if BLITZ_NO_AI_ROUTES.contains(&path) {
+            return Err(ApiError::new(409, tr(BLITZ_NO_RUN_AI)));
+        }
+        if BLITZ_FIGHT_AI_ROUTES.contains(&path) && !sess.in_fight() {
+            return Err(ApiError::new(409, tr(BLITZ_FIGHT_AI_ONLY)));
+        }
+        Ok(())
     }
 
     /// Dispatch one route. `method` is `"GET"` or `"POST"`; `body` is the
@@ -848,6 +1047,7 @@ impl Workbench {
     pub fn call(&mut self, method: &str, route: &str, body: &Value) -> Result<Value, ApiError> {
         // Strip a query string: the SPA never sends one on these routes.
         let path = route.split('?').next().unwrap_or(route);
+        self.refuse_ai_in_blitz(path)?;
         match (method, path) {
             ("GET", "/api/health") => Ok(json!({"ok": true})),
             ("GET", "/api/capabilities") => Ok(json!({
@@ -941,12 +1141,13 @@ impl Workbench {
                 } else {
                     advisors::hint_remembered(sess, &config_of(body))?
                 };
-                out.ok_or_else(|| ApiError::new(409, "hint only available during combat"))
+                out.ok_or_else(|| ApiError::new(409, tr("hint only available during combat")))
             }
             ("POST", "/api/live/e2e-advice") => self.live_e2e_advice(),
             ("POST", "/api/live/search_tree") => {
-                advisors::live_search_tree(self.live()?, &config_of(body))?
-                    .ok_or_else(|| ApiError::new(409, "search tree only available during combat"))
+                advisors::live_search_tree(self.live()?, &config_of(body))?.ok_or_else(|| {
+                    ApiError::new(409, tr("search tree only available during combat"))
+                })
             }
             ("POST", "/api/live/choice-ranker") => {
                 let sess = self.live()?;
@@ -958,7 +1159,7 @@ impl Workbench {
                 out.ok_or_else(|| {
                     ApiError::new(
                         409,
-                        "choice ranker only available at an in-combat card-select",
+                        tr("choice ranker only available at an in-combat card-select"),
                     )
                 })
             }
@@ -969,7 +1170,7 @@ impl Workbench {
                 } else {
                     sess.recommended_action()
                 };
-                out.ok_or_else(|| ApiError::new(409, "no recommendation here"))
+                out.ok_or_else(|| ApiError::new(409, tr("no recommendation here")))
             }
             ("POST", "/api/live/last-turn-grade") => {
                 let sess = self.live()?;
@@ -981,25 +1182,25 @@ impl Workbench {
                 } else {
                     advisors::last_turn_grade(sess, &config_of(body))?
                 };
-                out.ok_or_else(|| ApiError::new(409, "no gradable turn just ended"))
+                out.ok_or_else(|| ApiError::new(409, tr("no gradable turn just ended")))
             }
             ("POST", "/api/live/last-choice-grade") => self
                 .live()?
                 .last_choice_grade()?
-                .ok_or_else(|| ApiError::new(409, "no prior run-level choice to grade")),
+                .ok_or_else(|| ApiError::new(409, tr("no prior run-level choice to grade"))),
             ("POST", "/api/live/regret-review") => {
                 Ok(advisors::review_run(self.live()?, &config_of(body))?)
             }
             ("POST", "/api/live/card-advisor") => {
                 advisors::advise_card_reward(self.live()?, &config_of(body), None)?.ok_or_else(
-                    || ApiError::new(409, "card advisor only available at a card reward"),
+                    || ApiError::new(409, tr("card advisor only available at a card reward")),
                 )
             }
             ("POST", "/api/live/decision-advisor") => {
                 advisors::advise_decision(self.live()?, &config_of(body), None)?.ok_or_else(|| {
                     ApiError::new(
                         409,
-                        "decision advisor only available at a shop, event, or choice",
+                        tr("decision advisor only available at a shop, event, or choice"),
                     )
                 })
             }
@@ -1180,16 +1381,22 @@ impl Workbench {
             Option<advisors::Progress<'_>>,
         ) -> Result<Option<Value>, SessionError>;
         let path = route.split('?').next().unwrap_or(route);
+        if let Err(e) = self.refuse_ai_in_blitz(path) {
+            sink(&json!({"type": "error", "error": e.detail}));
+            return;
+        }
         let (unavailable, run): (&str, Advisor) = match (method, path) {
             ("POST", "/api/live/card-advisor/stream") => {
-                ("not at a card reward", advisors::advise_card_reward)
+                (tr("not at a card reward"), advisors::advise_card_reward)
             }
-            ("POST", "/api/live/decision-advisor/stream") => {
-                ("not at an advisable decision", advisors::advise_decision)
-            }
-            ("POST", "/api/live/last-choice-check/stream") => {
-                ("nothing to check", crate::session_choice::last_choice_check)
-            }
+            ("POST", "/api/live/decision-advisor/stream") => (
+                tr("not at an advisable decision"),
+                advisors::advise_decision,
+            ),
+            ("POST", "/api/live/last-choice-check/stream") => (
+                tr("nothing to check"),
+                crate::session_choice::last_choice_check,
+            ),
             _ => {
                 match self.call(method, route, body) {
                     Ok(v) => sink(&result_frame(v)),
@@ -1223,7 +1430,7 @@ impl Workbench {
         let cs = sess
             .game()
             .and_then(|g| g.combat_state())
-            .ok_or_else(|| ApiError::new(400, "bench needs a live combat"))?;
+            .ok_or_else(|| ApiError::new(400, tr("bench needs a live combat")))?;
         Ok(crate::bench::run(cs, sims, playouts, seed))
     }
 
@@ -1242,6 +1449,7 @@ impl Workbench {
         let ascension = u8::try_from(ascension)
             .map_err(|_| ApiError::new(400, format!("ascension {ascension} out of range")))?;
         let version = body_game_version(body)?;
+        let mode = body_game_mode(body)?;
         if backend != "rust" {
             return Err(ApiError::new(
                 400,
@@ -1250,16 +1458,25 @@ impl Workbench {
                 ),
             ));
         }
+        // GH #1346, #1347: a Dread or Blitz start on a build without the
+        // mode, and a Blitz level off its 0..=5 ladder, are refused here, by
+        // name, before any engine is built.
+        crate::game::check_game_mode(mode, version).map_err(|e| ApiError::new(400, e))?;
+        crate::game::check_mode_ascension(mode, ascension).map_err(|e| ApiError::new(400, e))?;
         // Build the new run BEFORE touching the slot, so a rejected start never
         // costs the client the run they already had.
         let mut sess = self.new_session(&character, version);
+        sess.game_mode = mode;
         let state = match sess.start(&character, &seed, ascension, &act1) {
             Ok(v) => v,
             Err(e) => {
                 sess.discard();
                 return Err(ApiError::new(
                     400,
-                    format!("could not start the {backend:?} engine: {}", e.message),
+                    trf(
+                        "could not start the {backend} engine: {error}",
+                        &[("backend", &format!("{backend:?}")), ("error", &e.message)],
+                    ),
                 ));
             }
         };
@@ -1397,6 +1614,7 @@ impl Workbench {
     fn live_import_state(&mut self, body: &Value) -> Result<Value, ApiError> {
         let payload = payload_of(body)?;
         let version = body_game_version(body)?;
+        refuse_special_mode(body, "an imported run")?;
         let imported = crate::state_import::parse_pasted_state(payload)
             .map_err(|e| ApiError::new(422, e.0))?;
         // `_import_lane`: which lane to rebuild, and why the other is not
@@ -1412,9 +1630,9 @@ impl Workbench {
             "combat" if !imported.has_combat() => {
                 return Err(ApiError::new(
                     409,
-                    format!(
-                        "this paste carries no fight — it was copied on the {} screen. Import it as a run instead.",
-                        imported.surface
+                    trf(
+                        "this paste carries no fight — it was copied on the {surface} screen. Import it as a run instead.",
+                        &[("surface", &imported.surface)],
                     ),
                 ));
             }
@@ -1443,7 +1661,10 @@ impl Workbench {
                 // it with the engine's words rather than a bare 500.
                 return Err(ApiError::new(
                     400,
-                    format!("could not rebuild this state: {}", e.message),
+                    trf(
+                        "could not rebuild this state: {error}",
+                        &[("error", &e.message)],
+                    ),
                 ));
             }
         };
@@ -1469,6 +1690,7 @@ impl Workbench {
         let idx = idx_of(body)?;
         let (ident, line) = replay::resume_plan(self.store()?, idx)?;
         let mut sess = self.new_session(&ident.character, ident.game_version);
+        sess.game_mode = ident.game_mode;
         sess.set_e2e_setup(ident.run_mode && ident.e2e_setup);
         let state = match sess.load_line(
             &ident.character,
@@ -1484,7 +1706,10 @@ impl Workbench {
                 sess.discard();
                 return Err(ApiError::new(
                     409,
-                    format!("could not rebuild this run: {}", e.message),
+                    trf(
+                        "could not rebuild this run: {error}",
+                        &[("error", &e.message)],
+                    ),
                 ));
             }
         };
@@ -1508,18 +1733,16 @@ impl Workbench {
                     }),
             }
         };
-        // `e2e: true`: the e2e student's training run (Ironclad, v0.111.0,
-        // act 1 rolled, potion swap on; ascension default 10) driven by the
-        // `e2e` brain. The run's character and build are forced.
+        // `e2e: true`: the e2e student's training run (v0.111.0, act 1
+        // rolled, potion swap on; ascension default 10) driven by the `e2e`
+        // brain, for the character asked (any the student plays; GH #1197).
+        // The build is forced; `start_e2e_seed` refuses another character.
+        refuse_special_mode(body, "a run-mode run")?;
         let e2e = body.get("e2e").and_then(Value::as_bool).unwrap_or(false);
         if e2e && !cfg!(feature = "e2e") {
             return Err(ApiError::new(400, "this build has no e2e feature"));
         }
-        let character = if e2e {
-            "Ironclad".to_string()
-        } else {
-            s("character", "Ironclad")
-        };
+        let character = s("character", "Ironclad");
         let seed = s("seed", "run_1");
         let default_asc = if e2e { 10 } else { 0 };
         let ascension = body
@@ -1532,7 +1755,8 @@ impl Workbench {
         let boss_sims = u("boss_sims", 4000)?;
         let threads = u("threads", 1)?;
         let version = if e2e {
-            GameVersion::V0_111_0
+            // The student's own build: v0.113.0 for the Fool's net.
+            crate::e2e::character(&character).map_or(GameVersion::V0_111_0, crate::e2e::build_for)
         } else {
             body_game_version(body)?
         };
@@ -1663,9 +1887,9 @@ impl Workbench {
         let sess = self
             .live
             .as_ref()
-            .ok_or_else(|| ApiError::new(400, "no live run"))?;
+            .ok_or_else(|| ApiError::new(400, tr("no live run")))?;
         if name.trim().is_empty() {
-            return Err(ApiError::new(400, "save name must not be blank"));
+            return Err(ApiError::new(400, tr("save name must not be blank")));
         }
         let (line, progress) = sess.active_line()?;
         let values = sess.active_node_values()?;
@@ -1679,6 +1903,7 @@ impl Workbench {
             sess.run_mode(),
             &sess.act1,
             sess.game_version,
+            sess.game_mode,
             &progress,
             &line,
             &values,
@@ -1696,12 +1921,22 @@ impl Workbench {
     /// diverges.
     pub fn restore_save(&mut self, payload: &Value, now: &str) -> Result<Value, ApiError> {
         if !saves::is_valid(payload) {
-            return Err(ApiError::new(404, "unknown save"));
+            return Err(ApiError::new(404, tr("unknown save")));
         }
         // An unknown build is refused outright rather than replayed as
         // v0.107.1 (`RunIdentity` reads it as the default).
-        crate::session::game_version_of(payload)
-            .map_err(|e| ApiError::new(409, format!("cannot restore this save: {e}")))?;
+        crate::session::game_version_of(payload).map_err(|e| {
+            ApiError::new(
+                409,
+                trf("cannot restore this save: {error}", &[("error", &e)]),
+            )
+        })?;
+        crate::session::game_mode_of(payload).map_err(|e| {
+            ApiError::new(
+                409,
+                trf("cannot restore this save: {error}", &[("error", &e)]),
+            )
+        })?;
         let ident = saves::RunIdentity::from_save(payload);
         if ident.backend != "rust" {
             return Err(ApiError::new(
@@ -1724,6 +1959,7 @@ impl Workbench {
         let mut failures = Vec::new();
         for run_mode in ident.restore_attempts() {
             let mut sess = self.new_session(&ident.character, ident.game_version);
+            sess.game_mode = ident.game_mode;
             sess.set_e2e_setup(run_mode && ident.e2e_setup);
             match sess.load_line(
                 &ident.character,
@@ -1775,9 +2011,20 @@ impl Workbench {
             .get("character")
             .and_then(Value::as_str)
             .unwrap_or("");
-        let version = crate::session::game_version_of(payload)
-            .map_err(|e| ApiError::new(409, format!("cannot restore this session: {e}")))?;
+        let version = crate::session::game_version_of(payload).map_err(|e| {
+            ApiError::new(
+                409,
+                trf("cannot restore this session: {error}", &[("error", &e)]),
+            )
+        })?;
+        let mode = crate::session::game_mode_of(payload).map_err(|e| {
+            ApiError::new(
+                409,
+                trf("cannot restore this session: {error}", &[("error", &e)]),
+            )
+        })?;
         let mut sess = self.new_session(character, version);
+        sess.game_mode = mode;
         let state = match sess.import_persist(payload, progress) {
             Ok(v) => v,
             Err(e) => {

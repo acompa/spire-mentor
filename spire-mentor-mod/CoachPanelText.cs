@@ -65,19 +65,19 @@ internal static class CoachPanelText
         {
             Id = CoachChipText.Str(rec, "id"),
             Kind = "recap",
-            Title = $"Fight recap · floor {Int(rec, "floor")}",
+            Title = L10n.F("Fight recap · floor {0}", Int(rec, "floor")),
         };
         (text.LogName, _) = CoachChipText.LogPosition(rec);
 
-        string summary = $"−{Int(rec, "hp_lost")} HP";
+        string summary = L10n.F("−{0} HP", Int(rec, "hp_lost"));
         if (CoachChipText.Num(rec, "ai_hp_lost") is double ai)
         {
-            summary += $" (AI line typically −{CoachChipText.Whole(ai)})";
+            summary += L10n.F(" (AI line typically −{0})", CoachChipText.Whole(ai));
         }
         int ungraded = Int(rec, "turns_ungraded");
         if (ungraded > 0)
         {
-            summary += $" · {Plural(ungraded, "turn")} ungraded";
+            summary += " · " + TurnsUngraded(ungraded);
         }
         text.Summary = summary;
 
@@ -104,9 +104,9 @@ internal static class CoachPanelText
         {
             Id = CoachChipText.Str(rec, "id"),
             Kind = "autopsy",
-            Title = $"Run autopsy · died on floor {Int(rec, "floor")}",
-            Footer = $"{Plural(Int(rec, "decisions_graded"), "decision")} graded · " +
-                     $"{Plural(Int(rec, "turns_ungraded"), "turn")} ungraded",
+            Title = L10n.F("Run autopsy · died on floor {0}", Int(rec, "floor")),
+            Footer = DecisionsGraded(Int(rec, "decisions_graded")) + " · " +
+                     TurnsUngraded(Int(rec, "turns_ungraded")),
         };
         (text.LogName, _) = CoachChipText.LogPosition(rec);
 
@@ -124,8 +124,8 @@ internal static class CoachPanelText
                 if (kind == "turn")
                 {
                     List<string> block = TurnBlock(record);
-                    block[0] = $"Floor {Int(record, "floor")} · {block[0]}";
-                    section.Heading = $"{n + 1}. Combat turn";
+                    block[0] = L10n.F("Floor {0} · {1}", Int(record, "floor"), block[0]);
+                    section.Heading = L10n.F("{0}. Combat turn", n + 1);
                     section.Lines = block;
                 }
                 else if (kind == "choice" && CoachChipText.Choice(record, showGood: false) is ChipText chip)
@@ -143,7 +143,7 @@ internal static class CoachPanelText
                 text.LogName ??= CoachChipText.LogPosition(record).Name;
             }
         }
-        text.Summary = n == 0 ? "No costly decisions found." : "";
+        text.Summary = n == 0 ? L10n.T("No costly decisions found.") : "";
         return text;
     }
 
@@ -157,7 +157,8 @@ internal static class CoachPanelText
         if (turn["context"] is JsonObject ctx)
         {
             string hand = string.Join(", ", CoachChipText.StrList(ctx, "hand"));
-            lines.Add($"Turn {number} — hand: {(hand.Length > 0 ? hand : "(empty)")} · {Int(ctx, "energy")} energy");
+            lines.Add(L10n.F("Turn {0} — hand: {1} · {2} energy", number,
+                hand.Length > 0 ? hand : L10n.T("(empty)"), Int(ctx, "energy")));
             if (ctx["enemies"] is JsonArray enemies)
             {
                 foreach (JsonObject e in enemies.OfType<JsonObject>())
@@ -165,28 +166,28 @@ internal static class CoachPanelText
                     string intent = CoachChipText.Str(e, "intent");
                     if (intent.Length > 0)
                     {
-                        lines.Add($"{CoachChipText.Str(e, "name")} intends: {intent}");
+                        lines.Add(L10n.F("{0} intends: {1}", CoachChipText.Str(e, "name"), intent));
                     }
                 }
             }
         }
         else
         {
-            lines.Add($"Turn {number}");
+            lines.Add(L10n.F("Turn {0}", number));
         }
-        lines.Add($"You: {string.Join(" → ", CoachChipText.StrList(turn, "you"))}");
-        lines.Add($"AI:  {string.Join(" → ", CoachChipText.StrList(turn, "ai"))}");
+        lines.Add(L10n.F("You: {0}", string.Join(" → ", CoachChipText.StrList(turn, "you"))));
+        lines.Add(L10n.F("AI:  {0}", string.Join(" → ", CoachChipText.StrList(turn, "ai"))));
 
-        string peeked = CoachChipText.Bool(turn, "peeked") ? " (peeked)" : "";
+        string peeked = CoachChipText.Bool(turn, "peeked") ? L10n.T(" (peeked)") : "";
         if (CoachChipText.Num(turn, "hp_drop") is double drop &&
             (long)Math.Round(drop, MidpointRounding.AwayFromZero) >= 1)
         {
-            lines.Add($"≈ {CoachChipText.Whole(drop)} HP more lost{peeked}");
+            lines.Add(L10n.F("≈ {0} HP more lost", CoachChipText.Whole(drop)) + peeked);
         }
         else
         {
-            lines.Add($"win {CoachChipText.Pct(CoachChipText.Num(turn, "win_before"))} → " +
-                      $"{CoachChipText.Pct(CoachChipText.Num(turn, "win_after"))}{peeked}");
+            lines.Add(L10n.F("win {0} → {1}", CoachChipText.Pct(CoachChipText.Num(turn, "win_before")),
+                      CoachChipText.Pct(CoachChipText.Num(turn, "win_after"))) + peeked);
         }
         string why = CoachChipText.Str(turn, "why");
         if (why.Length > 0)
@@ -199,6 +200,9 @@ internal static class CoachPanelText
     private static int Int(JsonObject o, string key) =>
         CoachChipText.Num(o, key) is double d ? (int)Math.Round(d, MidpointRounding.AwayFromZero) : 0;
 
-    private static string Plural(int n, string noun) =>
-        n.ToString(CultureInfo.InvariantCulture) + " " + (n == 1 ? noun : noun + "s");
+    private static string TurnsUngraded(int n) =>
+        n == 1 ? L10n.F("{0} turn ungraded", n) : L10n.F("{0} turns ungraded", n);
+
+    private static string DecisionsGraded(int n) =>
+        n == 1 ? L10n.F("{0} decision graded", n) : L10n.F("{0} decisions graded", n);
 }

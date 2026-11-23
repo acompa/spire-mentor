@@ -30,8 +30,6 @@
 //! were `rs.rng.combat_potion.next_int(...)` in Python become
 //! `rs.rng.combat_potion_mut().next_int(...)` in Rust.
 
-use std::collections::BTreeMap;
-
 #[cfg(test)]
 use crate::dotnet_rng::deterministic_hash_code;
 use crate::dotnet_rng::Rng;
@@ -211,7 +209,87 @@ pub struct RunRngSet {
 
     /// Per-act map RNGs, lazily created via [`Self::map_rng`]. Mirrors
     /// Python `self.map_rngs: dict[int, Rng]`.
-    pub map_rngs: BTreeMap<i32, Rng>,
+    pub map_rngs: MapRngs,
+}
+
+/// The per-act map RNGs, keyed by 0-based act index: a small inline map
+/// kept sorted by key, with the lookup, insert and ascending-key iteration
+/// order the `BTreeMap<i32, Rng>` it replaces had. A run holds at most one
+/// entry per act, so the first lives inline and cloning a `CombatState`
+/// (once per MCTS node) no longer allocates a B-tree leaf.
+#[derive(PartialEq, Eq, Default)]
+pub struct MapRngs(smallvec::SmallVec<[(i32, Rng); 1]>);
+
+impl Clone for MapRngs {
+    #[inline]
+    fn clone(&self) -> Self {
+        if self.0.is_empty() {
+            return Self::default();
+        }
+        Self(self.0.iter().cloned().collect())
+    }
+}
+
+impl std::fmt::Debug for MapRngs {
+    /// Formats like the `BTreeMap` it replaces (`{0: Rng { .. }}`).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
+    }
+}
+
+impl MapRngs {
+    /// Number of acts with a map RNG.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// `true` when no act has a map RNG yet.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Drop every act's map RNG.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// The map RNG of `act_index`, if it was created.
+    #[must_use]
+    pub fn get(&self, act_index: i32) -> Option<&Rng> {
+        self.0
+            .binary_search_by_key(&act_index, |(k, _)| *k)
+            .ok()
+            .map(|i| &self.0[i].1)
+    }
+
+    /// Entries in ascending act order, like `BTreeMap::iter`.
+    pub fn iter(&self) -> impl Iterator<Item = (&i32, &Rng)> + '_ {
+        debug_assert!(self.0.windows(2).all(|w| w[0].0 < w[1].0));
+        self.0.iter().map(|(k, v)| (k, v))
+    }
+
+    /// `BTreeMap::entry(act_index).or_insert_with(make)`.
+    pub fn get_or_insert_with(&mut self, act_index: i32, make: impl FnOnce() -> Rng) -> &mut Rng {
+        let i = match self.0.binary_search_by_key(&act_index, |(k, _)| *k) {
+            Ok(i) => i,
+            Err(i) => {
+                self.0.insert(i, (act_index, make()));
+                i
+            }
+        };
+        &mut self.0[i].1
+    }
+}
+
+impl<'a> IntoIterator for &'a MapRngs {
+    type Item = (&'a i32, &'a Rng);
+    type IntoIter =
+        std::iter::Map<std::slice::Iter<'a, (i32, Rng)>, fn(&'a (i32, Rng)) -> (&'a i32, &'a Rng)>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|(k, v)| (k, v))
+    }
 }
 
 impl RunRngSet {
@@ -302,7 +380,7 @@ impl RunRngSet {
             shops: named(player_seed, "shops"),
             transformations: named(player_seed, "transformations"),
             non_combat_generation: named(player_seed, "non_combat_generation"),
-            map_rngs: BTreeMap::new(),
+            map_rngs: MapRngs::default(),
         }
     }
 
@@ -502,7 +580,7 @@ impl RunRngSet {
     /// the 0-based `act_index` argument.
     pub fn map_rng(&mut self, act_index: i32) -> &mut Rng {
         let (seed, version) = (self.seed, self.game_version);
-        self.map_rngs.entry(act_index).or_insert_with(|| {
+        self.map_rngs.get_or_insert_with(act_index, || {
             Rng::with_name_for(version, seed, &format!("act_{}_map", act_index + 1))
         })
     }
@@ -724,6 +802,30 @@ mod tests {
         let mut set2 = RunRngSet::new(7);
         let direct_v = set2.combat_potion_generation.next_int(0, 100);
         assert_eq!(v, direct_v);
+    }
+
+    #[test]
+    fn map_rngs_matches_btreemap() {
+        use std::collections::BTreeMap;
+        let mut set = RunRngSet::new(7);
+        let mut model: BTreeMap<i32, Rng> = BTreeMap::new();
+        for &act in &[2, 0, 2, 1, 0, 3, 1] {
+            let (seed, version) = (set.seed, set.game_version);
+            let want = model.entry(act).or_insert_with(|| {
+                Rng::with_name_for(version, seed, &format!("act_{}_map", act + 1))
+            });
+            let got = set.map_rng(act);
+            assert_eq!(got, want);
+            let _ = got.next_int(0, 100);
+            let _ = want.next_int(0, 100);
+            let snapshot = set.map_rngs.clone();
+            assert_eq!(snapshot, set.map_rngs);
+            assert!(snapshot.iter().eq(model.iter()));
+            assert_eq!(format!("{snapshot:?}"), format!("{model:?}"));
+            assert_eq!(snapshot.get(act), model.get(&act));
+        }
+        assert_eq!(set.map_rngs.len(), model.len());
+        assert!(MapRngs::default().clone().is_empty());
     }
 
     #[test]

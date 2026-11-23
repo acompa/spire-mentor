@@ -4,12 +4,16 @@ import { MarkBadge } from "../advice/AdviceContext";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type ChoiceRankRow, type Step, type ChooseHandler, type Card } from "../api";
 import CardFrame from "./CardFrame";
+import ViewUpgradesToggle from "./ViewUpgradesToggle";
+import { upgradedTwin, useGlossary, useViewUpgrades } from "../glossary";
 import { cardBoxHeight } from "../cardGeometry";
 import { useHints } from "../hints/useHints";
 import { useMediaQuery, SHORT_QUERY, TOUCH_QUERY } from "../useMediaQuery";
 import { DECK_OP_CONTEXTS } from "../choiceKinds";
+import { isBlitz } from "../blitz";
 import { DecisionAnalyzeButton, DecisionAnalyzeStatus, DecisionWinChip } from "./DecisionAdvisor";
 import { useDecisionAdvisor } from "./useDecisionAdvisor";
+import { t } from "../i18n";
 
 // Which card_selects are in-combat pending choices (vs. deck operations) lives
 // in ../choiceKinds — App shares the same distinction for "play best".
@@ -84,6 +88,8 @@ const CHOICE_TITLES: Record<string, string> = {
  * upgraded / removed / picked) is highlighted and captioned.
  */
 export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: ChooseHandler }) {
+  const glossary = useGlossary();
+  const [showUpgrades] = useViewUpgrades();
   // Tablet in landscape: ~517px of screen box under the chrome, against a
   // layout authored for a maximised desktop window. The option cards and the
   // upgrade preview both come down a size, and the padding/gaps with them —
@@ -124,7 +130,12 @@ export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: 
   // ("upgrade" = rest-site Smith, "remove" = deck removal, otherwise a
   // combat pending-choice kind).
   const context = (s as { context?: string }).context;
-  const title = (context && CHOICE_TITLES[context]) ?? "Choose a card";
+  // GH #1347: a Blitz merchant ware's deck pick can be backed out of, which
+  // returns to the merchant with the ware still on the table. That is a
+  // cancel, not a skip: nothing is spent.
+  const backsOut = isBlitz(s) && s.can_skip === true && DECK_OP_CONTEXTS.has(context ?? "");
+  // Runtime key: one of the CHOICE_TITLES constants (all listed in i18n/zh/screens.ts).
+  const title = t((context && CHOICE_TITLES[context]) ?? "Choose a card");
   const verb = context === "upgrade" ? "upgraded" : context === "remove" ? "removed" : "chosen";
   const action = step.chosen_action as { action?: string; args?: { indices?: string } } | null;
   const chosen: number[] =
@@ -190,7 +201,11 @@ export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: 
   // selects. Options key by ``choice:<index>`` (skip = ``choice:skip``) to join
   // the win-rate chips, in both cases.
   const isCombatChoice = !DECK_OP_CONTEXTS.has(context ?? "");
-  const advEnabled = onChoose != null && isCombatChoice && max === 1;
+  const rankEnabled = onChoose != null && isCombatChoice && max === 1;
+  // GH #1347: the EV advisor plays the act out with a run policy, and a
+  // Blitz run has none (the server refuses the route); the fight's own
+  // ranking below still answers there.
+  const advEnabled = rankEnabled && !isBlitz(s);
   const resetKey = cards.map((c) => `${c.index}:${c.id}`).join(",");
   const adv = useDecisionAdvisor(resetKey, advEnabled);
   // The fast ranking chips below are AI advice fetched with no button press at
@@ -204,7 +219,7 @@ export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: 
   const [ranking, setRanking] = useState<Map<string, ChoiceRankRow>>(new Map());
   useEffect(() => {
     setRanking(new Map());
-    if (!advEnabled || !hints.on) return; // live, single-pick, in-combat choices only
+    if (!rankEnabled || !hints.on) return; // live, single-pick, in-combat choices only
     let alive = true;
     api.live
       .choiceRanker({})
@@ -214,7 +229,7 @@ export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: 
       })
       .catch(() => {}); // 409 off-choice / search failure → silently omit
     return () => { alive = false; };
-  }, [resetKey, advEnabled, hints.on]);
+  }, [resetKey, rankEnabled, hints.on]);
   // The fight's own choice ranking rings the cards like every other pick (the
   // raw search % only with engine numbers on).
   const rankMarks = useMemo(
@@ -234,16 +249,21 @@ export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: 
         <h2 style={{ margin: 0, fontWeight: 600 }}>{title}</h2>
         <span style={{ color: "var(--muted)" }}>
           {onChoose
-            ? `${min === max ? `choose ${max}` : `choose ${min}–${max}`} · ${picked.length} selected`
+            ? `${min === max ? t("choose {n}", { n: max }) : t("choose {min}–{max}", { min, max })} · ${t("{n} selected", { n: picked.length })}`
             : chosen.length > 0
-              ? `${verb}: ${chosen.map((i) => cards.find((c) => c.index === i)?.name ?? `#${i}`).join(", ")}`
+              ? t("{verb}: {cards}", {
+                  // Runtime key: "upgraded" / "removed" / "chosen".
+                  verb: t(verb),
+                  cards: chosen.map((i) => cards.find((c) => c.index === i)?.name ?? `#${i}`).join(", "),
+                })
               : action?.action === "skip_select"
-                ? "skipped"
-                : "no selection recorded"}
+                ? t("skipped")
+                : t("no selection recorded")}
         </span>
         <DecisionAnalyzeButton adv={adv} style={{ marginLeft: "auto" }} />
       </div>
       <DecisionAnalyzeStatus adv={adv} />
+      {!isUpgrade && <ViewUpgradesToggle className="gs-cardselect-upgrades" />}
       {isUpgrade && (
         <UpgradeComparison card={focus} live={onChoose != null}
           width={short ? PV_CARD_W_SHORT : PV_CARD_W} reserveEmpty={!touch} />
@@ -251,16 +271,19 @@ export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: 
       <div style={{ display: "flex", gap: short ? 10 : 16, flexWrap: "wrap" }}>
         {cards.map((c) => (
           <div key={c.index} style={{ textAlign: "center" }}
-            onMouseEnter={isUpgrade ? () => setHovered(c.index) : undefined}
-            onMouseLeave={isUpgrade ? () => setHovered(null) : undefined}>
-            <CardFrame card={c} width={cardW}
+            // Not on a touchscreen: a tap's compatibility mouse events, or a
+            // tap on the Smith button that left the pointer over a card, would
+            // fill the preview with a card nobody picked (GH #1613).
+            onMouseEnter={isUpgrade && !touch ? () => setHovered(c.index) : undefined}
+            onMouseLeave={isUpgrade && !touch ? () => setHovered(null) : undefined}>
+            <CardFrame card={showUpgrades && !isUpgrade ? upgradedTwin(c, glossary) : c} width={cardW}
               best={picked.includes(c.index) || chosen.includes(c.index)}
               mark={cardMarks.get(c.index)?.tier} step={cardMarks.get(c.index)?.order}
               dim={(onChoose != null && picked.length >= max && !picked.includes(c.index)) ||
                 (chosen.length > 0 && !chosen.includes(c.index))}
               onClick={onChoose ? () => toggle(c.index) : undefined} />
             {chosen.includes(c.index) && (
-              <div style={{ fontFamily: "var(--game-font)", fontSize: 12, color: "var(--accent-strong)", marginTop: 6 }}>✓ {verb}</div>
+              <div style={{ fontFamily: "var(--game-font)", fontSize: 12, color: "var(--accent-strong)", marginTop: 6 }}>✓ {t(verb)}</div>
             )}
             {adv.byKey.has(`choice:${c.index}`) ? (
               <DecisionWinChip c={adv.byKey.get(`choice:${c.index}`)!} adv={adv} />
@@ -273,17 +296,17 @@ export default function CardSelect({ step, onChoose }: { step: Step; onChoose?: 
       {onChoose && (
         <div style={{ display: "flex", gap: 12 }}>
           {needsDone && (
-            <button className="gs-select-btn" disabled={picked.length < min} onClick={() => void submit(picked)}>Done ({picked.length})</button>
+            <button className="gs-select-btn" disabled={picked.length < min} onClick={() => void submit(picked)}>{t("Done ({n})", { n: picked.length })}</button>
           )}
           {previewFirst && picked.length === 1 && (
-            <span style={{ alignSelf: "center", color: "var(--muted)", fontFamily: "var(--game-font)" }}>tap the card again to {context === "upgrade" ? "upgrade it" : "choose it"}</span>
+            <span style={{ alignSelf: "center", color: "var(--muted)", fontFamily: "var(--game-font)" }}>{context === "upgrade" ? t("tap the card again to upgrade it") : t("tap the card again to choose it")}</span>
           )}
           {skippable && (
             <div style={{ textAlign: "center" }}>
               <button className={`gs-select-btn ${markClass(skipMark).trim()}`.trim()} style={{ position: "relative" }}
                 onClick={() => onChoose("skip_select", {})}>
                 <MarkBadge mark={skipMark} />
-                Skip
+                {backsOut ? t("Cancel") : t("Skip")}
               </button>
               {adv.byKey.has("choice:skip") ? (
                 <DecisionWinChip c={adv.byKey.get("choice:skip")!} adv={adv} />
@@ -348,9 +371,9 @@ function UpgradeComparison(
       }}>
         {filled ? (
           <>
-            <Labeled label="now"><CardFrame card={card} width={width} /></Labeled>
+            <Labeled label={t("now")}><CardFrame card={card} width={width} /></Labeled>
             <div aria-hidden="true" style={{ fontSize: 30, color: "var(--accent-strong)" }}>→</div>
-            <Labeled label="upgraded" footer={after.keyword_delta}>
+            <Labeled label={t("upgraded")} footer={after.keyword_delta}>
               <CardFrame card={after} width={width} />
             </Labeled>
           </>
@@ -358,9 +381,9 @@ function UpgradeComparison(
           <span style={{ color: "var(--muted)" }}>
             {live
               ? reserveEmpty
-                ? "Hover or pick a card to preview its upgrade"
-                : "Pick a card to preview its upgrade"
-              : "No upgrade preview for this pick"}
+                ? t("Hover or pick a card to preview its upgrade")
+                : t("Pick a card to preview its upgrade")
+              : t("No upgrade preview for this pick")}
           </span>
         )}
       </div>
@@ -400,10 +423,9 @@ function SearchChip({ c }: { c: ChoiceRankRow | undefined }) {
   return (
     <div
       title={e2e
-        ? "Instinct's probability for this option — one forward of the net, " +
-          "a policy probability, not a win chance."
-        : "Combat-MCTS win probability from one search over this choice — the same " +
-          `search the deployed run-AI uses here (${c.visits} visits; q ${c.q?.toFixed(2) ?? "—"}).`
+        ? t("Instinct's probability for this option — one forward of the net, a policy probability, not a win chance.")
+        : t("Combat-MCTS win probability from one search over this choice — the same search the deployed run-AI uses here ({visits} visits; q {q}).",
+          { visits: c.visits, q: c.q?.toFixed(2) ?? "—" })
       }
       style={{
         fontFamily: "var(--game-font)",
@@ -413,7 +435,7 @@ function SearchChip({ c }: { c: ChoiceRankRow | undefined }) {
         fontWeight: c.is_best ? 600 : 400,
       }}
     >
-      {c.is_best ? "★ " : ""}{e2e ? "Instinct" : "search"} {(c.win_prob * 100).toFixed(1)}%
+      {c.is_best ? "★ " : ""}{e2e ? t("Instinct") : t("search")} {(c.win_prob * 100).toFixed(1)}%
     </div>
   );
 }

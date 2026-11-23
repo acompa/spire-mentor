@@ -290,6 +290,15 @@ describe("actionCues", () => {
       .toEqual(["res://debug_audio/sts_sfx_shovel_v1.mp3"]);
   });
 
+  it("plays the Byrdlett evolution for an Evolve", () => {
+    const evolve = "event:/sfx/byrdpip/byrdlett_evolution";
+    const m: SfxMap = { ...M, generic: { ...M.generic, restEvolve: evolve } };
+    const s = state({ rest_options: [{ index: 0, option_id: "HEAL" }, { index: 1, option_id: "EVOLVE" }] });
+    expect(events(actionCues(m, s, "rest_site", "choose_option", { option_index: 1 }))).toEqual([evolve]);
+    // A map from a build without the node names no `restEvolve`: silence.
+    expect(actionCues(M, s, "rest_site", "choose_option", { option_index: 1 })).toEqual([]);
+  });
+
   it("says nothing for a rest-site option with no sound of its own", () => {
     const s = state({ rest_options: [{ index: 0, option_id: "COOK" }] });
     expect(actionCues(M, s, "rest_site", "choose_option", { option_index: 0 })).toEqual([]);

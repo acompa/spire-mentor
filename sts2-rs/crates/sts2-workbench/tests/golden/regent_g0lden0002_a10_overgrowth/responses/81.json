@@ -271,6 +271,8 @@
     "name": "Leaf Slime (M)",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/leaf_slime_m/leaf_slime_m",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -52.0,
     "rig_bounds_h": 143.0,
     "rig_bounds_w": 200.0,
     "rig_scale": 0.45,
@@ -294,6 +296,8 @@
     "name": "Twig Slime (S)",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/twig_slime_s/twig_slime_s",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -45.0,
     "rig_bounds_h": 106.0,
     "rig_bounds_w": 140.0,
     "rig_scale": 0.275,
@@ -582,6 +586,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/regent/regent",
+   "rig_arrow_x": 0.0,
+   "rig_arrow_y": -178.0,
    "rig_bounds_h": 335.0,
    "rig_bounds_w": 230.0,
    "rig_scale": 0.29

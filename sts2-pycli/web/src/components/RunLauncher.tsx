@@ -1,14 +1,19 @@
 import { useEffect, useId, useState, type CSSProperties } from "react";
 import { assetUrl, type Advisor } from "../api";
-import { e2eAdvisable } from "../advisor";
+import { e2eAdvisable, e2eGameVersion } from "../advisor";
 import { characterArt, characterInBuild, characterKey } from "../characters";
 import { ASCENSION_LEVELS, ascensionLevel, ascensionModifiers } from "../ascension";
 import { canonicalizeSeed, generateSeed } from "../seed";
-import { LEGACY_GAME_VERSION, gameVersionLabel } from "../gameVersion";
+import { LEGACY_GAME_VERSION, gameVersionLabel, pickerVersions } from "../gameVersion";
+import {
+  DREAD_ASCENSION, DREAD_GAME_VERSION, dreadUnavailableReason, effectiveGameMode, type GameMode,
+} from "../dread";
+import { BLITZ_LEVELS, blitzLevel, blitzModifiers, blitzUnavailableReason } from "../blitz";
 import CombatBudget, { type CombatPreset } from "./CombatBudget";
 import RichText from "./RichText";
 import "../skins/runend.css";
 import "../skins/launcher.css";
+import { t } from "../i18n";
 
 /** The playable characters, in the game's roster order. The Fool is
  *  v0.113.0-only: the launcher offers it only for a build that has it. */
@@ -42,6 +47,8 @@ export default function RunLauncher({
   act1, onAct1,
   backend, onBackend, backends,
   gameVersion = LEGACY_GAME_VERSION, onGameVersion, gameVersions = [],
+  gameMode = "standard", onGameMode,
+  blitzAscension = 0, onBlitzAscension,
   onPlay, onWatch, busy, error,
   offCombatBrain, onOffCombatBrain, e2eAvailable = false,
   advisor = "search", onAdvisor,
@@ -64,6 +71,15 @@ export default function RunLauncher({
   gameVersion?: string;
   onGameVersion?: (v: string) => void;
   gameVersions?: string[];
+  /** GH #1346, #1347: the remembered mode pick. Dread (which locks the
+   *  ascension at 10) and Blitz apply only on the Rust engine at v0.113.0;
+   *  the control shows when the server has that build. */
+  gameMode?: GameMode;
+  onGameMode?: (m: GameMode) => void;
+  /** GH #1347: the Blitz level 0..5, kept apart from `ascension` so the
+   *  standard pick is still there when the mode goes back. */
+  blitzAscension?: number;
+  onBlitzAscension?: (a: number) => void;
   /** "Play yourself": start an interactive run. */
   onPlay: () => void;
   /** "Watch the AI play": start a run and let the run agent play it out.
@@ -77,7 +93,7 @@ export default function RunLauncher({
   /** The engine has the e2e student brain (`features.e2e`). */
   e2eAvailable?: boolean;
   /** Who advises the hand-played run ("Play yourself"). The picker shows
-   *  only where the e2e student can advise (Ironclad, v0.111.0, Rust). */
+   *  only where the e2e student can advise (its characters, v0.111.0, Rust). */
   advisor?: Advisor;
   onAdvisor?: (a: Advisor) => void;
   combat: {
@@ -105,8 +121,25 @@ export default function RunLauncher({
   useEffect(() => {
     if (!characterInBuild(slug, runVersion)) onCharacter(CHARACTERS[0]);
   }, [slug, runVersion, onCharacter]);
-  const level = ascensionLevel(ascension);
-  const stacked = ascensionModifiers(ascension);
+  // Dread (GH #1346): offered when the server has its build, enabled when
+  // the engine and build picked can run it. In Dread the ladder shows the
+  // 10 the game embarks at and cannot be moved; the page's own ascension
+  // pick is untouched, so Standard brings it back.
+  // (`dreadOffered` gates the whole Mode control: Blitz shares the build.)
+  const dreadOffered = !!onGameMode && gameVersions.includes(DREAD_GAME_VERSION);
+  const dreadBlocked = dreadUnavailableReason(backend, runVersion);
+  const mode = dreadOffered ? effectiveGameMode(gameMode, backend, runVersion) : "standard";
+  const dread = mode === "dread";
+  // Blitz (GH #1347) arrived in the same build, so it is offered with
+  // Dread. It has a ladder of its own (0..5, a different modifier per
+  // level), picked apart from the standard one.
+  const blitzBlocked = blitzUnavailableReason(backend, runVersion);
+  const blitz = mode === "blitz";
+  const ladder = blitz ? BLITZ_LEVELS : ASCENSION_LEVELS;
+  const shownAscension = dread ? DREAD_ASCENSION : blitz ? blitzAscension : ascension;
+  const level = blitz ? blitzLevel(shownAscension) : ascensionLevel(shownAscension);
+  const stacked = blitz ? blitzModifiers(shownAscension) : ascensionModifiers(shownAscension);
+  const pickAscension = blitz ? (onBlitzAscension ?? (() => {})) : onAscension;
   const [heroOk, setHeroOk] = useState(true);
   useEffect(() => setHeroOk(true), [slug]);
 
@@ -114,15 +147,15 @@ export default function RunLauncher({
     <div className="gs-scene gs-scene--plain gs-launch" data-testid="run-launcher">
       <div className="gs-launch-frame">
         <header className="gs-launch-head">
-          <h1 className="gs-launch-title">New run</h1>
-          <p className="gs-launch-sub">Pick a character, a seed and an ascension, then decide who plays.</p>
+          <h1 className="gs-launch-title">{t("New run")}</h1>
+          <p className="gs-launch-sub">{t("Pick a character, a seed and an ascension, then decide who plays.")}</p>
         </header>
 
         <div className="gs-launch-grid">
           <div className="gs-launch-setup">
             {/* ---- character ---- */}
             <section className="gs-launch-field">
-              <h2 className="gs-launch-label" id={`${ids}-char`}>Character</h2>
+              <h2 className="gs-launch-label" id={`${ids}-char`}>{t("Character")}</h2>
               <div className="gs-launch-chars" role="radiogroup" aria-labelledby={`${ids}-char`}>
                 {CHARACTERS.filter((ch) => characterInBuild(characterKey(ch), runVersion)).map((ch) => {
                   const k = characterKey(ch);
@@ -138,7 +171,7 @@ export default function RunLauncher({
                           ? <img src={assetUrl(characterArt(k, `ui/top_panel/character_icon_${k}.png`))} alt="" draggable={false} />
                           : <b>{ch[0]}</b>}
                       </span>
-                      <span className="gs-launch-charname">{ch}</span>
+                      <span className="gs-launch-charname">{t(ch)}</span>
                     </button>
                   );
                 })}
@@ -147,41 +180,87 @@ export default function RunLauncher({
 
             {/* ---- seed ---- */}
             <section className="gs-launch-field">
-              <label className="gs-launch-label" htmlFor={`${ids}-seed`}>Seed</label>
+              <label className="gs-launch-label" htmlFor={`${ids}-seed`}>{t("Seed")}</label>
               <div className="gs-launch-seedrow">
                 <input
-                  id={`${ids}-seed`} className="gs-launch-seed mono" aria-label="seed"
+                  id={`${ids}-seed`} className="gs-launch-seed mono" aria-label={t("seed")}
                   value={seed} onChange={(e) => onSeed(e.target.value)}
-                  placeholder="random" spellCheck={false} autoComplete="off"
+                  placeholder={t("random")} spellCheck={false} autoComplete="off"
                   maxLength={64} disabled={busy}
                 />
                 <button type="button" className="gs-launch-reroll" onClick={() => onSeed(generateSeed())}
-                  disabled={busy} title="roll a new seed" aria-label="new seed">
-                  <span aria-hidden="true">⟳</span> New seed
+                  disabled={busy} title={t("roll a new seed")} aria-label={t("new seed")}>
+                  <span aria-hidden="true">⟳</span> {t("New seed")}
                 </button>
               </div>
               <p className="gs-launch-hint">
                 {seed.trim() === ""
-                  ? "Empty rolls a fresh seed when the run starts."
+                  ? t("Empty rolls a fresh seed when the run starts.")
                   : canonical !== seed
-                    ? <>Runs as <b className="mono">{canonical}</b> — the game upper-cases seeds and reads O as 0 and I as 1.</>
-                    : "The same seed replays the same map, rewards and fights."}
+                    ? (() => {
+                        const [pre, post] = t("Runs as {seed} — the game upper-cases seeds and reads O as 0 and I as 1.").split("{seed}");
+                        return <>{pre}<b className="mono">{canonical}</b>{post}</>;
+                      })()
+                    : t("The same seed replays the same map, rewards and fights.")}
               </p>
             </section>
 
+            {/* ---- mode ---- */}
+            {dreadOffered && (
+              <section className="gs-launch-field">
+                <h2 className="gs-launch-label" id={`${ids}-mode`}>{t("Mode")}</h2>
+                <div className="gs-launch-modes" role="radiogroup" aria-labelledby={`${ids}-mode`}>
+                  <button type="button" role="radio" aria-checked={mode === "standard"}
+                    className={`gs-launch-rung gs-launch-mode${mode === "standard" ? " is-on" : ""}`}
+                    onClick={() => onGameMode?.("standard")} disabled={busy}>
+                    {t("Standard")}
+                  </button>
+                  <button type="button" role="radio" aria-checked={dread}
+                    className={`gs-launch-rung gs-launch-mode${dread ? " is-on" : ""}`}
+                    title={dreadBlocked ?? undefined} aria-describedby={`${ids}-dread`}
+                    onClick={() => onGameMode?.("dread")} disabled={busy || dreadBlocked !== null}>
+                    {t("Dread")}
+                  </button>
+                  <button type="button" role="radio" aria-checked={blitz}
+                    className={`gs-launch-rung gs-launch-mode${blitz ? " is-on" : ""}`}
+                    title={blitzBlocked ?? undefined} aria-describedby={`${ids}-blitz`}
+                    onClick={() => onGameMode?.("blitz")} disabled={busy || blitzBlocked !== null}>
+                    {t("Blitz")}
+                  </button>
+                </div>
+                {/* One line per mode; the picked mode's line stands alone. */}
+                {!blitz && (
+                  <p className="gs-launch-hint" id={`${ids}-dread`} data-testid="dread-note">
+                    {dreadBlocked
+                      ?? (dread
+                        ? t("Dread is always ascension 10. Each act's fights carry its boss's dominion, and bosses are stronger.")
+                        : t("Dread: ascension 10, with each act's fights under its boss's dominion."))}
+                  </p>
+                )}
+                {!dread && (
+                  <p className="gs-launch-hint" id={`${ids}-blitz`} data-testid="blitz-note">
+                    {blitzBlocked
+                      ?? (blitz
+                        ? t("Blitz has its own ascension ladder, 0 to 5. Each act is a fixed line of eight rooms with no map: Neow gives 3 of 10 cards, rooms pay no gold, the merchant gives 3 free wares and the chest holds 2 relics.")
+                        : t("Blitz: three short acts with no map, and an ascension ladder of its own."))}
+                  </p>
+                )}
+              </section>
+            )}
+
             {/* ---- ascension ---- */}
             <section className="gs-launch-field">
-              <h2 className="gs-launch-label" id={`${ids}-asc`}>Ascension</h2>
+              <h2 className="gs-launch-label" id={`${ids}-asc`}>{t("Ascension")}</h2>
               <div className="gs-launch-ladder" role="radiogroup" aria-labelledby={`${ids}-asc`}>
-                {ASCENSION_LEVELS.map((l) => {
+                {ladder.map((l) => {
                   const on = l.level === level.level;
                   const lit = l.level <= level.level;
                   return (
                     <button
                       key={l.level} type="button" role="radio" aria-checked={on}
-                      aria-label={`ascension ${l.level}`} title={l.level === 0 ? l.title : `A${l.level} · ${l.title}`}
+                      aria-label={t("ascension {n}", { n: l.level })} title={l.level === 0 ? t(l.title) : `A${l.level} · ${t(l.title)}`}
                       className={`gs-launch-rung${on ? " is-on" : ""}${lit ? " is-lit" : ""}`}
-                      onClick={() => onAscension(l.level)} disabled={busy}
+                      onClick={() => pickAscension(l.level)} disabled={busy || dread}
                     >
                       {l.level}
                     </button>
@@ -194,14 +273,16 @@ export default function RunLauncher({
                 </span>
                 <div className="gs-launch-asctext">
                   <div className="gs-launch-asctitle">
-                    {level.level === 0 ? level.title : `Ascension ${level.level} · ${level.title}`}
+                    {level.level === 0
+                      ? t(level.title)
+                      : `${blitz ? t("Blitz ascension {n}", { n: level.level }) : t("Ascension {n}", { n: level.level })} · ${t(level.title)}`}
                   </div>
                   <ul className="gs-launch-mods">
                     {level.level === 0
-                      ? <li><RichText text={level.description} /></li>
+                      ? <li><RichText text={t(level.description)} /></li>
                       : stacked.map((m) => (
                         <li key={m.level} className={m.level === level.level ? "is-top" : undefined}>
-                          <RichText text={m.description} />
+                          <RichText text={t(m.description)} />
                         </li>
                       ))}
                   </ul>
@@ -220,63 +301,59 @@ export default function RunLauncher({
                 onError={() => setHeroOk(false)}
               />
             )}
-            <div className="gs-launch-heroname">{character}</div>
+            <div className="gs-launch-heroname">{t(character)}</div>
           </div>
         </div>
 
         {/* ---- the two ways to play ---- */}
         <div className={`gs-launch-actions${onWatch ? "" : " gs-launch-actions--solo"}`}>
           <section className="gs-launch-action gs-launch-action--play">
-            <h2 className="gs-launch-actiontitle">Play yourself</h2>
+            <h2 className="gs-launch-actiontitle">{t("Play yourself")}</h2>
             <p className="gs-launch-actiondesc" id={`${ids}-play`}>
-              You make every decision — map, cards, fights, shops. AI hints stay off unless you switch them on.
+              {t("You make every decision — map, cards, fights, shops. AI hints stay off unless you switch them on.")}
             </p>
             {onAdvisor && e2eAdvisable(e2eAvailable, character, gameVersion, backend) && (
               <div className="gs-launch-knobs">
-                <label title={"Who the AI hints, the policy panel, the choice coach and \"play best\" ask. "
-                  + "Search: the combat MCTS in fights, the PPO run policy elsewhere. "
-                  + "Instinct: one transformer, no search — for every decision "
-                  + "(its ~21 MB net downloads the first time you pick it)."}>
-                  advisor{" "}
-                  <select aria-label="advisor" value={advisor} disabled={busy}
+                <label title={t("Who the AI hints, the policy panel, the choice coach and \"play best\" ask. Search: the combat MCTS in fights, the PPO run policy elsewhere. Instinct: one transformer, no search — for every decision (its ~21 MB net downloads the first time you pick it).")}>
+                  {t("advisor")}{" "}
+                  <select aria-label={t("advisor")} value={advisor} disabled={busy}
                     onChange={(e) => onAdvisor(e.target.value as Advisor)}>
-                    <option value="search">Search (MCTS + PPO)</option>
-                    <option value="e2e">Instinct (PPO only)</option>
+                    <option value="search">{t("Search (MCTS + PPO)")}</option>
+                    <option value="e2e">{t("Instinct")}</option>
                   </select>
                 </label>
               </div>
             )}
             <button type="button" className="gs-runend-btn gs-runend-btn--primary gs-launch-go"
               onClick={onPlay} disabled={busy} aria-describedby={`${ids}-play`}>
-              <span className="gs-runend-btnface">Play yourself</span>
+              <span className="gs-runend-btnface">{t("Play yourself")}</span>
             </button>
           </section>
 
           {onWatch && (
             <section className="gs-launch-action gs-launch-action--watch">
-              <h2 className="gs-launch-actiontitle">Watch the AI play</h2>
+              <h2 className="gs-launch-actiontitle">{t("Watch the AI play")}</h2>
               <p className="gs-launch-actiondesc" id={`${ids}-watch`}>
-                The run AI plays the whole run out while you watch. Stop it any time and take over from there.
+                {t("The run AI plays the whole run out while you watch. Stop it any time and take over from there.")}
               </p>
               <div className="gs-launch-knobs">
                 <label title={e2eAvailable
-                  ? "Brain: Heuristic and PPO drive card rewards / shops / events / map / rest while the combat MCTS agent searches every fight. Instinct is one transformer that makes EVERY decision, fights included, with no search (Ironclad, v0.111.0 only; its ~21 MB net downloads the first time you pick it)."
-                  : "Off-combat brain: which policy drives card rewards / shops / events / map / rest. Combat itself is always searched by the combat MCTS agent, regardless of this choice."}>
-                  brain{" "}
+                  ? t("Brain: Heuristic drives card rewards / shops / events / map / rest while the combat MCTS agent searches every fight. Instinct is one transformer that makes EVERY decision, fights included, with no search (Ironclad, Silent, Defect, Regent and Necrobinder on v0.111.0, the Fool on v0.113.0; its ~21 MB net downloads the first time you pick it).")
+                  : t("Off-combat brain: the heuristic drives card rewards / shops / events / map / rest. Combat itself is always searched by the combat MCTS agent.")}>
+                  {t("brain")}{" "}
                   <select
-                    aria-label="brain"
+                    aria-label={t("brain")}
                     value={offCombatBrain}
                     disabled={busy}
                     onChange={(e) => onOffCombatBrain(e.target.value as OffCombatBrain)}
                   >
-                    <option value="heuristic">Heuristic</option>
-                    <option value="ppo">PPO</option>
-                    {e2eAvailable && <option value="e2e">Instinct (PPO only)</option>}
+                    <option value="heuristic">{t("Heuristic")}</option>
+                    {e2eAvailable && <option value="e2e">{t("Instinct")}</option>}
                   </select>
                 </label>
                 {offCombatBrain === "e2e" ? (
                   <span className="gs-launch-hint" data-testid="e2e-note">
-                    Ironclad · v0.111.0 · act 1 rolled · no combat search
+                    {t(character)} · {e2eGameVersion(character)} · {t("act 1 rolled")} · {t("no combat search")}
                   </span>
                 ) : (
                   <CombatBudget
@@ -287,13 +364,15 @@ export default function RunLauncher({
                 )}
               </div>
               <button type="button" className="gs-runend-btn gs-runend-btn--secondary gs-launch-go"
-                onClick={onWatch} disabled={busy} aria-describedby={`${ids}-watch`}>
-                <span className="gs-runend-btnface">{busy ? "Running…" : "Watch the AI play"}</span>
+                onClick={onWatch} disabled={busy || dread || blitz} aria-describedby={`${ids}-watch`}>
+                <span className="gs-runend-btnface">{busy ? t("Running…") : t("Watch the AI play")}</span>
               </button>
               <p className="gs-launch-footnote">
-                {offCombatBrain === "e2e"
-                  ? "Instinct plays the run it was trained on: Rust engine, Ironclad, v0.111.0, the rolled act 1."
-                  : "AI runs always use the Rust engine and the Overgrowth act 1."}
+                {dread || blitz
+                  ? t("AI runs are standard runs. Switch the mode to Standard to watch one.")
+                  : offCombatBrain === "e2e"
+                    ? t("Instinct plays the run it was trained on: Rust engine, {version}, the rolled act 1.", { version: e2eGameVersion(character) })
+                    : t("AI runs always use the Rust engine and the Overgrowth act 1.")}
               </p>
             </section>
           )}
@@ -306,33 +385,33 @@ export default function RunLauncher({
 
         {/* ---- dev knobs ---- */}
         <div className="gs-launch-advanced">
-          <span className="gs-launch-advlabel">Advanced</span>
-          <label title="Which Act 1 to walk. STS2 ships two: Overgrowth and Underdocks. Roll = the real game's seed-driven pick (50/50), which is what makes a seed reproduce your actual run.">
-            act 1{" "}
+          <span className="gs-launch-advlabel">{t("Advanced")}</span>
+          <label title={t("Which Act 1 to walk. STS2 ships two: Overgrowth and Underdocks. Roll = the real game's seed-driven pick (50/50), which is what makes a seed reproduce your actual run.")}>
+            {t("act 1")}{" "}
             <select value={act1} onChange={(e) => onAct1(e.target.value)} disabled={busy}>
-              <option value="roll">Roll (as the game does)</option>
-              <option value="overgrowth">Overgrowth</option>
-              <option value="underdocks">Underdocks</option>
+              <option value="roll">{t("Roll (as the game does)")}</option>
+              <option value="overgrowth">{t("Overgrowth")}</option>
+              <option value="underdocks">{t("Underdocks")}</option>
             </select>
           </label>
-          <label title="Game engine: C# headless or the Rust port">
-            engine{" "}
+          <label title={t("Game engine: C# headless or the Rust port")}>
+            {t("engine")}{" "}
             <select value={backend} onChange={(e) => onBackend(e.target.value)} disabled={busy}>
               {backends.map((b) => (
                 <option key={b} value={b}>{ENGINE_LABELS[b] ?? b}</option>
               ))}
             </select>
           </label>
-          {gameVersions.length > 1 && onGameVersion && (
-            <label title="Which game build the engine plays. v0.111.0 is the beta: its content and RNG seeding differ, so the same seed is a different run.">
-              version{" "}
+          {pickerVersions(gameVersions, runVersion).length > 1 && onGameVersion && (
+            <label title={t("Which game build the engine plays. Builds differ in content and RNG seeding, so the same seed is a different run.")}>
+              {t("version")}{" "}
               {/* Only the Rust engine plays a non-default build: with C#
                   the picker shows (and the run starts on) the default. */}
-              <select aria-label="version"
-                value={backend === "rust" ? gameVersion : LEGACY_GAME_VERSION}
+              <select aria-label={t("version")}
+                value={runVersion}
                 onChange={(e) => onGameVersion(e.target.value)}
                 disabled={busy || backend !== "rust"}>
-                {gameVersions.map((v) => (
+                {pickerVersions(gameVersions, runVersion).map((v) => (
                   <option key={v} value={v}>{gameVersionLabel(v)}</option>
                 ))}
               </select>

@@ -2,6 +2,9 @@ import { assetUrl, type CombatState, type Score } from "../api";
 import RelicTray from "./RelicTray";
 import PotionTray from "./PotionTray";
 import { characterArt, characterKey } from "../characters";
+import { dominionTitle, isDread } from "../dread";
+import { blitzAscensionTitle, isBlitz } from "../blitz";
+import { t } from "../i18n";
 
 /**
  * The in-viewport game HUD band — the drawn top bar every game screen carries,
@@ -126,6 +129,13 @@ export default function GameHud({
   const socketCount = Math.max(potions.length, beltSlots);
   const deck = p.deck ?? [];
   const deckCount = p.deck_size ?? deck.length;
+  // GH #1346: a Dread run says so beside the ascension flame, with the
+  // dominion in force (none in a boss room, where the game removes it).
+  const dread = isDread(state);
+  const dominion = dread && state.dominion ? dominionTitle(state.dominion) : null;
+  // GH #1347: in a Blitz run the flame's number is the Blitz level (0..5),
+  // whose modifiers are not the standard ladder's; the tooltip names them.
+  const blitz = isBlitz(state);
 
   return (
     <div className="gs-hud" data-testid="game-hud">
@@ -136,21 +146,40 @@ export default function GameHud({
             : <span className="gs-hud-charletter" aria-hidden="true">{(p.name ?? "?").slice(0, 1)}</span>}
         </div>
         {state.ascension != null && (
-          <span className="gs-hud-asc" role="img" aria-label={`A${state.ascension}`}
-            title={`Ascension ${state.ascension}`}>
+          <span className="gs-hud-asc" role="img"
+            aria-label={blitz ? t("Blitz A{n}", { n: state.ascension }) : `A${state.ascension}`}
+            title={blitz ? blitzAscensionTitle(state.ascension) : t("Ascension {n}", { n: state.ascension })}>
             <FlameIcon />
             <b aria-hidden="true">{state.ascension}</b>
           </span>
         )}
       </div>
+      {dread && (
+        <span className="gs-hud-dread" data-testid="hud-dread" role="img"
+          aria-label={dominion ? t("Dread, {dominion}", { dominion }) : t("Dread")}
+          title={dominion
+            ? t("Dread mode. {dominion} acts on this act's fights, up to its boss.", { dominion })
+            : t("Dread mode. No dominion is in force here.")}>
+          <b aria-hidden="true">{t("Dread")}</b>
+          {dominion && <span className="gs-hud-dominion" aria-hidden="true">{dominion}</span>}
+        </span>
+      )}
+      {blitz && (
+        <span className="gs-hud-dread gs-hud-blitz" data-testid="hud-blitz" role="img"
+          aria-label={t("Blitz")}
+          title={t("Blitz mode. Each act is a fixed line of eight rooms; rooms pay no gold. ")
+            + blitzAscensionTitle(state.ascension ?? 0) + "."}>
+          <b aria-hidden="true">{t("Blitz")}</b>
+        </span>
+      )}
       <span className="gs-hud-stat gs-hud-hp" role="img"
-        aria-label={`hp ${p.hp}/${p.max_hp}`} title={`HP ${p.hp}/${p.max_hp}`}>
+        aria-label={t("hp {hp}/{max}", { hp: p.hp, max: p.max_hp })} title={t("HP {hp}/{max}", { hp: p.hp, max: p.max_hp })}>
         <HeartIcon />
         <b className="gs-hud-hpnum" aria-hidden="true">{p.hp}/{p.max_hp}</b>
       </span>
       {p.gold != null && (
         <span className="gs-hud-stat gs-hud-gold" role="img"
-          aria-label={`gold ${p.gold}`} title={`Gold ${p.gold}`}>
+          aria-label={t("gold {n}", { n: p.gold })} title={t("Gold {n}", { n: p.gold })}>
           <CoinIcon />
           <b className="gs-hud-goldnum" aria-hidden="true">{p.gold}</b>
         </span>
@@ -163,7 +192,7 @@ export default function GameHud({
       <span className="gs-hud-right">
         {onOpenMap && (
           <button type="button" className="gs-hud-plaque gs-hud-map" onClick={onOpenMap}
-            aria-label="map" title="show the act map">
+            aria-label={t("map")} title={t("show the act map")}>
             <span className="gs-hud-scroll" aria-hidden="true">
               <img src={assetUrl("map_icons/map_spoils_map_marker.png")} alt="" />
             </span>
@@ -171,7 +200,7 @@ export default function GameHud({
         )}
         {onOpenDeck && deckCount > 0 && (
           <button type="button" className="gs-hud-plaque gs-hud-deck" onClick={onOpenDeck}
-            aria-label={`deck ${deckCount}`} title={`view deck (${deckCount} cards)`}>
+            aria-label={t("deck {n}", { n: deckCount })} title={t("view deck ({n} cards)", { n: deckCount })}>
             <img src={assetUrl("ui/combat_ui/draw_pile.png")} alt="" />
             <span className="gs-hud-deckcount" aria-hidden="true">{deckCount}</span>
           </button>

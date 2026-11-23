@@ -1,4 +1,5 @@
 import type { IntentModifier } from "./intentBreakdown";
+import type { BlitzWare, ChestReward } from "./blitz";
 // Every /api/* call goes through apiFetch: a plain fetch against the Python
 // backend, or — in the browser-only build (VITE_WORKBENCH_MODE=static) — the
 // WASM engine in a Web Worker. See src/transport/.
@@ -8,6 +9,7 @@ import { gameVersionBody } from "./gameVersion";
 // Static mode has no server to build a bug report: the page builds the dump
 // and posts it to the host's Pages Function. See src/bugreport.ts.
 import { captureBrowserBugReport, fetchBrowserBugReport } from "./bugreport";
+import { t } from "./i18n";
 
 export interface Card {
   index: number;
@@ -16,6 +18,13 @@ export interface Card {
   cost: number;
   type: string;
   rarity?: string;
+  /** Chinese display mode: the words the frame PRINTS for `type` / `rarity`
+   *  / `enchantment` (the game's `CARD_TYPE.*`, `CARD_RARITY.*`,
+   *  `enchantments.json`). The English fields stay the keys the skin and
+   *  colour read; absent in English. */
+  type_name?: string;
+  rarity_name?: string;
+  enchantment_name?: string;
   // Frame tint key for the card skin — the card's POOL colour, not the run
   // character's ("colorless" for a Colorless card in an Ironclad deck). Set by
   // the backend, which is the only side that knows the card's own character.
@@ -33,6 +42,14 @@ export interface Card {
   // like `CardCostHelper.GetEnergyCostColor`. Combat cards only.
   base_cost?: number | null;
   upgraded?: boolean;
+  // C# `CurrentUpgradeLevel` of a card that upgrades more than once (v0.113.0
+  // Dingy Dagger, GH #1391); its title reads `<name>+<level>`. Absent for
+  // every other card.
+  upgrade_level?: number;
+  // GH #1600: the card's enchantment (UPPER_SNAKE id, e.g. "ADROIT") and its
+  // amount; absent on an unenchanted card. The glossary names and explains it.
+  enchantment?: string | null;
+  enchantment_amount?: number | null;
   stats?: Record<string, number>;
   // Per-enemy fully-modified per-hit attack damage (Strength/Vulnerable/Weak/
   // relics folded in), keyed by the enemy's full encounter-array index as a
@@ -82,6 +99,9 @@ export interface Power {
    *  backend; match on this rather than on `name`, which is a display
    *  string and differs from the id by spacing and casing. */
   id?: string;
+  /** Chinese display mode: the title to SHOW; `name` stays the English key
+   *  the art, sounds and log matching read. Absent in English. */
+  display_name?: string;
   amount: number;
   display_amount?: number;
   description?: string;
@@ -95,6 +115,9 @@ export interface Power {
    *  the flash fall back to `image` as they did before. */
   image_big?: string | null;
 }
+/** `ArrowSlot.Status`: in the quiver, stuck in an enemy, or gone for the combat. */
+export type ArrowStatus = "retrieved" | "away" | "destroyed";
+
 export interface Enemy {
   index: number;
   /** The engine's `CreatureUid`. `index` is a board slot; combat-log rows key
@@ -102,6 +125,9 @@ export interface Enemy {
    *  Two enemies of the same species share a display name but never a uid. */
   uid?: number;
   name: string;
+  /** Chinese display mode: the monster's name to SHOW; `name` stays the
+   *  English key the rig, skin and sounds read. Absent in English. */
+  display_name?: string;
   /** The raw `MonsterKind`, PascalCase — `server.py`'s `normalize_kind` folds
    *  both producers' spellings (the engine's `DecimillipedeSegmentFront`, the
    *  bridge's `DECIMILLIPEDE_SEGMENT_FRONT`) onto it. It is what disambiguates
@@ -121,6 +147,11 @@ export interface Enemy {
     hits?: number;
     intent_image?: string | null;
     modifiers?: IntentModifier[];
+    /** Chinese display mode: the game's intent title and hover sentence
+     *  (`intents.json`), filled. Absent in English, where `intentInfo`
+     *  supplies them from `type`. */
+    display_name?: string;
+    description?: string;
   }[];
   powers?: Power[];
   /** Cards this enemy is holding hostage right now — the Thieving Hopper's
@@ -128,11 +159,19 @@ export interface Enemy {
    *  it escapes is what gets the card back, so WHICH card it took is the whole
    *  decision. Absent (not `[]`) for every enemy that has stolen nothing. */
   stolen_cards?: Card[];
+  /** Arrows the Fool has stuck in this enemy (`ImpaledPower.Arrows.Count`).
+   *  Absent when none. */
+  impaled_arrows?: number;
   image: string | null;
   rig?: string | null;
   rig_scale?: number | null;
   rig_bounds_h?: number | null;
   rig_bounds_w?: number | null;
+  /** Where the Fool's arrow sticks in this creature when its rig has no arrow
+   *  slots: the scene's `ArrowPosition`, else `%CenterPos`, in scene px from
+   *  the creature's origin on the ground line (`creature_scales.json`). */
+  rig_arrow_x?: number | null;
+  rig_arrow_y?: number | null;
   /** Per-instance size and tint from `NCombatRoom.RandomizeEnemyScalesAndHues`:
    *  the game sizes every member of a group of two or more monsters of one type
    *  by where its rolled max HP landed in that monster's initial-HP band, and
@@ -215,6 +254,8 @@ export interface Orb {
   passive: number;    // per-turn passive value
   evoke: number;      // value released when evoked
   image?: string | null;
+  /** Chinese display mode: the game's hover text, filled. */
+  description?: string;
 }
 
 export interface CombatState {
@@ -236,6 +277,9 @@ export interface CombatState {
   exhaust_pile?: Card[];
   player: {
     name: string;
+    /** Chinese display mode: the character's name to SHOW; `name` stays the
+     *  class key the art, sounds and advisors read. Absent in English. */
+    display_name?: string;
     hp: number;
     max_hp: number;
     block: number;
@@ -259,6 +303,9 @@ export interface CombatState {
   // Defect channels an orb; absent for other characters.
   orbs?: Orb[];
   orb_slots?: number;
+  // The Fool's quiver, one entry per arrow slot in gain order. Present once a
+  // Fool mechanic has given the player a slot; absent otherwise.
+  arrows?: ArrowStatus[];
   enemies: Enemy[];
   hand: Card[];
   energy_image?: string | null;
@@ -275,6 +322,11 @@ export interface CombatState {
   // event_choice / rest_site (their own option shapes; `options` above is the
   // normalized contract, these are the rich per-decision payloads)
   event_name?: string;
+  /** Chinese display mode: `event_name` is then Chinese, so this is the
+   *  English name the room keys on (`"Neow"`); and an ancient's epithet for
+   *  its name plaque. Both absent in English. */
+  event_name_en?: string;
+  event_epithet?: string;
   description?: string;
   art?: { illustration?: string | null };
   event_options?: EventOption[];
@@ -289,7 +341,24 @@ export interface CombatState {
   // the UI elsewhere). `floor` is the cumulative total floor across all acts.
   floor?: number | null;
   act?: number | null;
+  /** Chinese display mode: the act's name to SHOW (`act_name` stays the
+   *  English key the painted region is picked by). */
+  act_display_name?: string;
   ascension?: number | null;
+  /** GH #1346, #1347: `"dread"` on a Dread run, `"blitz"` on a Blitz one;
+   *  absent on a standard one. */
+  game_mode?: string;
+  /** GH #1347, the Blitz merchant (`decision: "shop"`): how many wares may
+   *  still be taken, and the six wares. Absent at a standard merchant. */
+  blitz_choices_remaining?: number;
+  blitz_wares?: BlitzWare[];
+  /** GH #1347, the Blitz chest (`decision: "rewards"`): the relics still in
+   *  it and how many rounds are left (2, then 1). */
+  rewards?: ChestReward[];
+  chest_picks_left?: number;
+  /** GH #1346: the Dread dominion in force, as its model entry
+   *  (`KAISER_CRAB_DOMINION`); `null` in a boss room, absent outside Dread. */
+  dominion?: string | null;
   // What a room the engine resolved on its own just handed you. A treasure
   // chest is auto-opened on entry (see `_treasure_reveal` in the backend), so
   // this rides on the NEXT decision's state — usually the map — and is the
@@ -445,7 +514,7 @@ export interface CoachTurnContext {
   hp: number;
   max_hp: number;
   block: number;
-  enemies: { name: string; hp: number; intent: string }[];
+  enemies: { name: string; display_name?: string; hp: number; intent: string }[];
 }
 export interface CoachTurnRecord {
   kind: "turn";
@@ -1143,6 +1212,9 @@ export interface CombatLogRow {
   target_side: "player" | "enemy" | null;
   amount: number | null;
   noun: string | null;   // Block / the power / the orb / the move
+  /** The noun in the display language (power / move rows, Chinese only);
+   *  `noun` stays English: icons, amounts and sounds key on it. */
+  noun_display?: string | null;
   source: string | null; // the card or move it came from ("using Strike")
   /** Creature uids for the actor / target, for joining a row to a board slot.
    *  `null` for the player (who has no monster uid) and for rows with no
@@ -1627,6 +1699,10 @@ export const api = {
       act1?: string;
       /** GH #801: "v0.107.1" (default) | "v0.111.0". */
       game_version?: string;
+      /** GH #1347: also "blitz", where `ascension` is the Blitz level 0..5.
+       *  GH #1346: "standard" (default) | "dread" — an ascension-10 run on
+       *  the Rust engine at v0.113.0; anything else is a 400. */
+      game_mode?: string;
     }) =>
       apiFetch("/api/live/start", {
         method: "POST",
@@ -1810,7 +1886,7 @@ export const api = {
           }
         }
       }
-      if (result == null) throw new Error("card advisor stream ended without a result");
+      if (result == null) throw new Error(t("card advisor stream ended without a result"));
       return result;
     },
     // Generic sibling of cardAdvisor for shops / events / in-combat card
@@ -1861,7 +1937,7 @@ export const api = {
           }
         }
       }
-      if (result == null) throw new Error("decision advisor stream ended without a result");
+      if (result == null) throw new Error(t("decision advisor stream ended without a result"));
       return result;
     },
     // "Blunder right after you did one": regret of the move that produced the
@@ -1915,7 +1991,7 @@ export const api = {
           }
         }
       }
-      if (result == null) throw new Error("choice check stream ended without a result");
+      if (result == null) throw new Error(t("choice check stream ended without a result"));
       return result;
     },
     // Per-turn coach: grade the combat turn the End turn just closed, as the

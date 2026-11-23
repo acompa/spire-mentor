@@ -1,0 +1,382 @@
+{
+ "details": [],
+ "error": null,
+ "label": "Map → (3,3)",
+ "step": {
+  "action_label": "",
+  "assets_base": "https://assets.test",
+  "chosen_action": null,
+  "decision": "shop",
+  "idx": 0,
+  "meta": {
+   "act": 1,
+   "act_name": "Overgrowth",
+   "bg_col": 3,
+   "bg_row": 3,
+   "bg_seed": "11180935036767329045",
+   "floor": 4,
+   "step_no": 0,
+   "turn": null
+  },
+  "pv": null,
+  "scores": [],
+  "source": "live",
+  "state": {
+   "act": 1,
+   "act1": "overgrowth",
+   "act_name": "Overgrowth",
+   "ascension": 0,
+   "bg_col": 3,
+   "bg_row": 3,
+   "bg_seed": "11180935036767329045",
+   "blitz_choices_remaining": 3,
+   "blitz_wares": [
+    {
+     "cursed": false,
+     "description": "Receive [blue]1[/blue] [gold]Enchanted[/gold] card reward.",
+     "enabled": true,
+     "index": 1,
+     "kind": "EnchantedCardReward",
+     "rare": false,
+     "status": "Available",
+     "title": "Enchanted Card Reward"
+    },
+    {
+     "cursed": false,
+     "description": "Receive [blue]2[/blue] card rewards.",
+     "enabled": true,
+     "index": 2,
+     "kind": "CardRewards",
+     "rare": false,
+     "status": "Available",
+     "title": "Card Rewards"
+    },
+    {
+     "cursed": false,
+     "description": "[gold]Upgrade[/gold] a card in your [gold]Deck[/gold].",
+     "enabled": true,
+     "index": 3,
+     "kind": "CardUpgrade",
+     "rare": false,
+     "status": "Available",
+     "title": "Card Upgrade Service"
+    },
+    {
+     "cursed": false,
+     "description": "Obtain [blue]1[/blue] random [gold]Relic[/gold].",
+     "enabled": true,
+     "index": 4,
+     "kind": "Relic",
+     "rare": false,
+     "status": "Available",
+     "title": "Relic"
+    },
+    {
+     "cursed": false,
+     "description": "Remove a card from your [gold]Deck[/gold].",
+     "enabled": true,
+     "index": 5,
+     "kind": "CardRemoval",
+     "rare": false,
+     "status": "Available",
+     "title": "Card Removal Service"
+    },
+    {
+     "cursed": true,
+     "description": "Receive [red]1[/red] random [red]Curse[/red].\nRaise your Max HP by [blue]6[/blue] and heal all of your HP.",
+     "enabled": true,
+     "index": 6,
+     "kind": "FullHealAndMaxHp",
+     "rare": false,
+     "status": "Available",
+     "title": "Cursed Heal"
+    }
+   ],
+   "card_removal_cost": null,
+   "cards": [],
+   "decision": "shop",
+   "floor": 4,
+   "game_mode": "blitz",
+   "game_version": "v0.113.0",
+   "options": [
+    {
+     "action": "blitz_choice",
+     "args": {
+      "index": 1
+     },
+     "enabled": true,
+     "label": "Enchanted Card Reward"
+    },
+    {
+     "action": "blitz_choice",
+     "args": {
+      "index": 2
+     },
+     "enabled": true,
+     "label": "Card Rewards"
+    },
+    {
+     "action": "blitz_choice",
+     "args": {
+      "index": 3
+     },
+     "enabled": true,
+     "label": "Card Upgrade Service"
+    },
+    {
+     "action": "blitz_choice",
+     "args": {
+      "index": 4
+     },
+     "enabled": true,
+     "label": "Relic"
+    },
+    {
+     "action": "blitz_choice",
+     "args": {
+      "index": 5
+     },
+     "enabled": true,
+     "label": "Card Removal Service"
+    },
+    {
+     "action": "blitz_choice",
+     "args": {
+      "index": 6
+     },
+     "enabled": true,
+     "label": "Cursed Heal"
+    },
+    {
+     "action": "leave_room",
+     "args": {},
+     "enabled": true,
+     "label": "Leave shop"
+    }
+   ],
+   "player": {
+    "block": 0,
+    "deck": [
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 0,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 1,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 2,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 3,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 4,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 5,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 6,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 7,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 8,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 2,
+      "description": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "description_rich": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "id": "BASH",
+      "image": "https://assets.test/card_atlas/ironclad/bash.png",
+      "index": 9,
+      "name": "Bash",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 10 damage.\nDouble the enemy's Vulnerable.\nExhaust.",
+      "description_rich": "Deal 10 damage.\nDouble the enemy's Vulnerable.\n[gold]Exhaust[/gold].",
+      "id": "MOLTEN_FIST",
+      "image": "https://assets.test/card_atlas/ironclad/molten_fist.png",
+      "index": 10,
+      "name": "Molten Fist",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "description_rich": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "id": "TAUNT",
+      "image": "https://assets.test/card_atlas/ironclad/taunt.png",
+      "index": 11,
+      "name": "Taunt",
+      "rarity": "Common",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 5 damage X times.",
+      "description_rich": "Deal 5 damage X times.",
+      "id": "TWIN_STRIKE",
+      "image": "https://assets.test/card_atlas/ironclad/twin_strike.png",
+      "index": 12,
+      "name": "Twin Strike",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 0,
+      "description": "Deal 6 damage.\nAdd a copy of this card into your Discard Pile.",
+      "description_rich": "Deal 6 damage.\nAdd a copy of this card into your Discard Pile.",
+      "id": "ANGER",
+      "image": "https://assets.test/card_atlas/ironclad/anger.png",
+      "index": 13,
+      "name": "Anger",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Lose 1 HP.\nDeal 9 damage to ALL enemies.",
+      "description_rich": "Lose 1 HP.\nDeal 9 damage to ALL enemies.",
+      "id": "BREAKTHROUGH",
+      "image": "https://assets.test/card_atlas/ironclad/breakthrough.png",
+      "index": 14,
+      "name": "Breakthrough",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     }
+    ],
+    "gold": 99,
+    "hp": 73,
+    "max_hp": 80,
+    "name": "Ironclad",
+    "potion_slots": 3,
+    "potions": [
+     {
+      "description": "Draw 3 cards.",
+      "id": "SWIFT_POTION",
+      "image": "https://assets.test/potion_atlas/swift_potion.png",
+      "name": "Swift Potion"
+     }
+    ],
+    "relics": [
+     {
+      "description": "At the end of combat, heal 6 HP.",
+      "id": "BURNING_BLOOD",
+      "image": "https://assets.test/relic_atlas/burning_blood.png",
+      "name": "Burning Blood"
+     }
+    ]
+   },
+   "potions": [],
+   "relics": []
+  }
+ }
+}

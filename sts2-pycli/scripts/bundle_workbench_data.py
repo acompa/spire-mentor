@@ -16,7 +16,7 @@ loaders read).
 Regenerate with ``just workbench-data``; ``just check-workbench-data`` fails
 on drift between the sources and the committed bundle.
 
-**One bundle per game build (GH #801).** The default build (v0.107.1) is
+**One bundle per game build (GH #801).** The legacy build (v0.107.1) is
 written to ``data/game/`` exactly as before; every other supported build gets a
 full sibling set under ``data/game/<ver>/`` (``data/game/v0.111.0/``), built
 from that build's vendored loc dir (``localization_eng_<ver>/``) and wiki
@@ -82,6 +82,50 @@ _LOC_FILES = (
     "powers.json",
     "relics.json",
     "rest_site_ui.json",
+)
+
+# The game's Simplified Chinese tables (``localization_zhs/``, vendored by
+# ``scripts/vendor_localization.py`` from the newest build), copied VERBATIM
+# into ``game/localization_zhs/``: the browser workbench's DISPLAY text when
+# the page runs in Chinese (``sts2-workbench`` ``localization::zh_overlay``).
+# One set for every build: a key a build lacks simply stays English. Absent
+# sources = no zh bundle (``build.rs`` stubs it; the page shows English).
+_ZH_LOC_DIR = _REPO_ROOT / "localization_zhs"
+_ZH_LOC_FILES = (
+    "BUILD.txt",
+    "afflictions.json",
+    "card_keywords.json",
+    "cards.json",
+    "characters.json",
+    "encounters.json",
+    "events.json",
+    "potions.json",
+    "relics.json",
+    "rest_site_ui.json",
+)
+# More Chinese tables, merged into ONE ``extra.json`` (``{table: {key: text}}``)
+# for the names and words the engine and the page write themselves
+# (monster / power / orb / intent names, acts, game modes, ascension levels,
+# the game's UI words). Read through ``data::ZhTables::extra``.
+_ZH_EXTRA_TABLES = (
+    "acts",
+    "ancients",
+    "ascension",
+    "card_reward_ui",
+    "card_selection",
+    "combat_messages",
+    "enchantments",
+    "game_modes",
+    "game_over_screen",
+    "gameplay_ui",
+    "intents",
+    "map",
+    "merchant_room",
+    "modifiers",
+    "monsters",
+    "orbs",
+    "powers",
+    "static_hover_tips",
 )
 
 # The wiki card fields ``localization.load_card_localization`` /
@@ -253,13 +297,92 @@ def build(out_dir: Path, versions: tuple[str, ...] | None = None) -> dict[str, i
     sizes: dict[str, int] = {}
     for version in versions:
         sizes.update(_build_version(out_dir, version))
+    if _ZH_LOC_DIR.is_dir():
+        sizes.update(_build_zh(out_dir))
+    else:
+        print(
+            f"note: no {_ZH_LOC_DIR.name}/ — the workbench shows game text in English only",
+            file=sys.stderr,
+        )
+    return sizes
+
+
+def _owned_vars() -> dict[str, dict[str, Any]]:
+    """``{LOC_KEY: {var_type_lower: base_value}}`` for every relic and potion,
+    newest wiki build last (it wins). The zh overlay renders the Chinese
+    description templates with these, since the wiki's pre-resolved plain
+    text (``wiki_owned.json``) is English."""
+    out: dict[str, dict[str, Any]] = {}
+    for version in _VERSIONS:
+        for kind in ("relics", "potions"):
+            path = _WIKI_ROOT / version / f"{kind}.json"
+            if not path.is_file():
+                continue
+            rows: Any = json.loads(path.read_text(encoding="utf-8"))
+            for row in rows if isinstance(rows, list) else []:
+                key = row.get("loc_key") if isinstance(row, dict) else None
+                if not key:
+                    continue
+                values = {
+                    str(v["type"]).lower(): v["base_value"]
+                    for v in row.get("vars") or []
+                    if isinstance(v, dict) and v.get("type") and _is_int(v.get("base_value"))
+                }
+                out[key] = values
+    return {k: out[k] for k in sorted(out)}
+
+
+def _first_line(path: Path) -> str:
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    return lines[0].strip() if lines else ""
+
+
+def _write_zh_set(src_dir: Path, zh_out: Path, out_dir: Path) -> dict[str, int]:
+    """Copy one Chinese set's tables (and its merged ``extra.json``)."""
+    zh_out.mkdir(parents=True, exist_ok=True)
+    sizes: dict[str, int] = {}
+    for name in _ZH_LOC_FILES:
+        src = src_dir / name
+        if name.endswith(".json"):
+            _check_loc_file(src)
+        dst = zh_out / name
+        shutil.copyfile(src, dst)
+        sizes[str(dst.relative_to(out_dir))] = dst.stat().st_size
+    extra: dict[str, Any] = {}
+    for table in _ZH_EXTRA_TABLES:
+        src = src_dir / f"{table}.json"
+        _check_loc_file(src)
+        extra[table] = json.loads(src.read_text(encoding="utf-8"))
+    path = zh_out / "extra.json"
+    path.write_text(_dumps(extra), encoding="utf-8", newline="\n")
+    sizes[str(path.relative_to(out_dir))] = path.stat().st_size
+    return sizes
+
+
+def _build_zh(out_dir: Path) -> dict[str, int]:
+    """Write ``game/localization_zhs/`` (the shared set, from the newest
+    build) and, for each other build that has its own vendored set
+    (``localization_zhs_<ver>/``), ``game/<ver>/localization_zhs/``: the
+    Rust side guards the shared set by that build's English and lays the
+    build's own set over it (``data::zh_tables_for``)."""
+    sizes = _write_zh_set(_ZH_LOC_DIR, out_dir / "game" / "localization_zhs", out_dir)
+    path = out_dir / "game" / "localization_zhs" / "owned_vars.json"
+    path.write_text(_dumps(_owned_vars()), encoding="utf-8", newline="\n")
+    sizes[str(path.relative_to(out_dir))] = path.stat().st_size
+    for version in _VERSIONS:
+        own = _REPO_ROOT / f"localization_zhs_{version}"
+        if version == _ENGINE_WIKI_VERSION or not own.is_dir():
+            continue  # the default build's own set is not bundled (none exists)
+        if _first_line(own / "BUILD.txt") == _first_line(_ZH_LOC_DIR / "BUILD.txt"):
+            continue  # the shared set IS this build's (no copy needed)
+        sizes.update(_write_zh_set(own, out_dir / "game" / version / "localization_zhs", out_dir))
     return sizes
 
 
 def _build_version(out_dir: Path, version: str) -> dict[str, int]:
     """Write one build's bundle (``game/`` or ``game/<ver>/``)."""
     sys.path.insert(0, str(_HERE))
-    from build_asset_manifest import build_manifest
+    from build_asset_manifest import added_audio_of, build_manifest
 
     if version not in _VERSIONS:
         raise SystemExit(
@@ -312,7 +435,11 @@ def _build_version(out_dir: Path, version: str) -> dict[str, int]:
     # The default build never sees an overlay; a later build lists its own
     # (GH #801), so its resolver finds the art that build added.
     overlays = () if version == _ENGINE_WIKI_VERSION else (version,)
-    manifest = build_manifest(_IMAGES, _AUDIO, overlays=overlays)
+    # Likewise for sound: a later build's new events live in the SHARED audio
+    # tree, so every other build's manifest leaves out what that build's
+    # import recorded as its own (`import_game.record_added_audio`).
+    exclude_audio = added_audio_of(_WIKI_ROOT, [v for v in _VERSIONS if v != version])
+    manifest = build_manifest(_IMAGES, _AUDIO, overlays=overlays, exclude_audio=exclude_audio)
 
     scales_src = _IMAGES / "creature_scales.json"
     if not scales_src.is_file():
@@ -353,7 +480,7 @@ def _build_version(out_dir: Path, version: str) -> dict[str, int]:
         ("creature_scales.json", scales),
     ):
         path = game_out / name
-        path.write_text(_dumps(obj), encoding="utf-8")
+        path.write_text(_dumps(obj), encoding="utf-8", newline="\n")
         sizes[rel(path)] = path.stat().st_size
     return sizes
 

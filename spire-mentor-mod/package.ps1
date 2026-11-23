@@ -4,7 +4,8 @@
 # install instruction is exactly "extract into the Slay the Spire 2 folder".
 #
 #   mods/SpireMentor/   SpireMentor.dll, SpireMentor.json, SpireMentor.conf.template,
-#                     SimAdvisor/            (the packaged torch-free advisor)
+#                     SimAdvisor/            (the native advisor: one Rust binary
+#                                             + its nets and tables, GH #1426)
 #                     SpireMentorFrame/      (the panels' own window, .NET
 #                                             Framework 4.8; SimFrameLauncher)
 #                     workbench/             (the browser-only workbench, which
@@ -26,7 +27,11 @@
 # from the BaseLib-StS2 upstream before distributing the zip.
 #
 # The SimAdvisor exe is taken prebuilt from sts2-pycli/dist/SimAdvisor by
-# default; pass -BuildAdvisor to rebuild it first (slow-ish).
+# default; pass -BuildAdvisor to rebuild it first (the native advisor,
+# sts2-pycli/scripts/build_advisor.ps1). The folder ships every platform's
+# binary staged into it (SimAdvisor.exe, plus SimAdvisor-linux-x64,
+# SimAdvisor-macos-arm64, ... added with `stage_advisor.py --add`); the mod
+# launches the one for the OS it runs on.
 #
 # The workbench is built here (`just workbench-static` with
 # VITE_BRIDGE_SAME_ORIGIN=1, so the page talks to the control plane that
@@ -113,12 +118,18 @@ if (-not (Test-Path (Join-Path $frameOut "SpireMentorFrame.exe"))) { throw "miss
 
 $advisorDist = Join-Path $pycli "dist/SimAdvisor"
 if ($BuildAdvisor) {
-    pwsh -NoProfile -File (Join-Path $pycli "scripts/build_advisor_exe.ps1")
+    pwsh -NoProfile -File (Join-Path $pycli "scripts/build_advisor.ps1")
     if ($LASTEXITCODE -ne 0) { throw "advisor exe build failed" }
 }
 if (-not (Test-Path (Join-Path $advisorDist "SimAdvisor.exe"))) {
     throw "missing $advisorDist\SimAdvisor.exe -- no prebuilt advisor found; build one with " +
-          "-BuildAdvisor (runs sts2-pycli/scripts/build_advisor_exe.ps1)"
+          "-BuildAdvisor (runs sts2-pycli/scripts/build_advisor.ps1)"
+}
+$otherAdvisors = @(Get-ChildItem $advisorDist -File -Filter "SimAdvisor-*" | ForEach-Object Name)
+if ($otherAdvisors.Count -gt 0) {
+    Write-Host "advisor binaries besides SimAdvisor.exe: $($otherAdvisors -join ', ')"
+} else {
+    Write-Warning "only SimAdvisor.exe is staged: the mod's advisor will not launch on macOS or Linux"
 }
 
 # The workbench: always rebuilt (a web/dist left by `npm run build` is the
@@ -159,6 +170,8 @@ Copy-Item -Recurse $advisorDist (Join-Path $simDir "SimAdvisor")
 # The frame without its debug symbols / XML docs.
 $frameDir = New-Item -ItemType Directory -Path (Join-Path $simDir "SpireMentorFrame") -Force
 Copy-Item -Recurse (Join-Path $frameOut "*") $frameDir -Exclude *.pdb, *.xml
+# The Linux host beside it: one Python file the host's python3 runs (no build).
+Copy-Item (Join-Path $frameProj "linux/spire_mentor_frame.py") $frameDir
 # The nets stay out (8.5 MB each); /ppo/index.json stays, and the control
 # plane serves the files from the advisor's own data/ppo.
 Copy-Item -Recurse $workbenchDist (Join-Path $simDir "workbench")

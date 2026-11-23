@@ -27,6 +27,12 @@ pub(crate) fn play_cosmic_indifference(
     _t: Option<CreatureUid>,
 ) -> EffectResult {
     gain_block_player(state, current_block(state));
+    // C# `FromCombatPile` returns nothing once the combat is ending (`IsEnding`, v0.111.0 `CardSelectCmd.cs:452`),
+    // before its lone-candidate shortcut: a block that Juggernaut turned into
+    // the killing blow leaves no pick at all (GH #1623).
+    if sts2_core::combat_loop::combat_is_ending(state) {
+        return EffectResult::Resolved;
+    }
     // FromSimpleGrid(Discard, prefs(1)) → put chosen card on top of draw.
     if state.player.discard.len() <= 1 {
         // ≤1 discard card → decomp auto-takes it (count<=MinSelect short-circuit):

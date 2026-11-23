@@ -21,9 +21,9 @@
 //! run start, as `TokenizerRows.begin_run` clears Python's).
 //!
 //! Numerics follow numpy: values computed in f64, stored in a float32 buffer,
-//! cast to float16 (round to nearest even); the 122 S_ctx columns of combat
-//! tokens saturate at ±65504 first (`T.f16`), every other column casts
-//! plainly. Pool weights cast f64 -> f16 directly.
+//! cast to float16 (round to nearest even), every column and pool weight
+//! saturating at ±65504 first (`T.f16`), so an outlier (a ~1e9 enemy HP, an
+//! edited save's gold) stays finite. Pool weights cast f64 -> f16 directly.
 
 use std::collections::BTreeMap;
 
@@ -41,10 +41,11 @@ use crate::schema::{
     TF_HIDDEN, TF_OPTION, TF_POOLED, TF_REP, TF_TEACHER,
 };
 use crate::sctx::{self, py_int, py_str, pysum, Rl2};
+use crate::snapshot;
 use crate::tactical;
 use crate::vocab::{self, Reg};
 
-/// `T.F16_MAX`: the S_ctx columns saturate here.
+/// `T.F16_MAX`: every float16 column and pool weight saturates here.
 pub const F16_MAX: f32 = 65504.0;
 
 /// One decision's policy row: the arrays `contracts.ROW_FIELDS` names for
@@ -150,7 +151,10 @@ impl TokCache {
         Self::default()
     }
 
-    /// Declare (or drop) the "chars" fill event for Ironclad rows.
+    /// Declare (or drop) the "chars" fill event for Ironclad rows. A host
+    /// that tokenizes for a net calls [`encode_for`] instead, which sets it
+    /// from the net; this is for the training workers and parity fixtures,
+    /// which carry the flag without a net.
     pub fn set_chars(&mut self, on: bool) {
         self.chars = on;
     }
@@ -221,8 +225,15 @@ fn ench_amount(e: Option<&Value>) -> f64 {
     }
 }
 
+/// `x` as float16 bits, saturating at ±[`F16_MAX`] (`T.f16`). In-range values
+/// round exactly as a plain cast does.
 fn to_f16(x: f32) -> u16 {
-    f16::from_f32(x).to_bits()
+    f16::from_f32(x.clamp(-F16_MAX, F16_MAX)).to_bits()
+}
+
+/// A pool weight as float16 bits: f64 -> f16 directly, saturating like [`to_f16`].
+fn w_to_f16(w: f64) -> u16 {
+    f16::from_f64(w.clamp(-f64::from(F16_MAX), f64::from(F16_MAX))).to_bits()
 }
 
 // ── token buffer ─────────────────────────────────────────────────────────
@@ -385,7 +396,7 @@ impl<'a> Run<'a> {
     fn ascension(&self) -> i64 {
         self.og("ascension")
             .and_then(py_int)
-            .unwrap_or_else(|| i64::from(self.rm.run_state.ascension_level))
+            .unwrap_or_else(|| crate::env::obs_ascension(self.rm))
     }
 }
 
@@ -668,24 +679,11 @@ fn pile_summary(counted: &[Value], singles: &[&[Value]]) -> (Members, i64, i64) 
 /// one per slot).
 #[allow(clippy::cast_precision_loss)]
 fn chars_tokens(buf: &mut Buf, player: &Value) {
-    if let Some(o) = get(player, "osty").filter(|o| truthy(o)) {
-        let t = buf.new_tok(const { schema::sec("ALLY") }, 0);
-        buf.c(
-            t,
-            const { xc("X_ID_MAIN") },
-            vid_s(Reg::Monster, Some("Osty")),
-        );
-        let hp = ff(get(o, "hp"));
-        let mhp = ff(get(o, "max_hp")).max(1.0);
-        buf.f(t, const { schema::sc("E_HPF") }, hp / mhp);
-        buf.f(t, const { schema::sc("E_HP") }, hp / 200.0);
-        buf.f(t, const { schema::sc("E_MAXHP") }, mhp / 200.0);
-        let alive = get(o, "alive").is_some_and(truthy);
-        buf.f(
-            t,
-            const { schema::sc("E_ALIVE") },
-            f64::from(u8::from(alive)),
-        );
+    // The pets: the Osty, then the "fool" event's Wuppy (GH #1535).
+    for (key, species) in [("osty", "Osty"), ("wuppy", "Wuppy")] {
+        if let Some(o) = get(player, key).filter(|o| truthy(o)) {
+            ally(buf, species, o);
+        }
     }
     let orbs = list_or_empty(player, "orbs");
     let cap = get(player, "orb_slots")
@@ -709,6 +707,93 @@ fn chars_tokens(buf: &mut Buf, player: &Value) {
             buf.c(t, const { xc("X_ID_MAIN") }, vid_s(Reg::Orb, Some("Empty")));
         }
     }
+    if let Some(f) = get(player, "fool").filter(|f| truthy(f)) {
+        fool_tokens(buf, f);
+    }
+}
+
+/// `_ally(buf, species, o)`: one ALLY token, a pet and its HP.
+fn ally(buf: &mut Buf, species: &str, o: &Value) {
+    let t = buf.new_tok(const { schema::sec("ALLY") }, 0);
+    buf.c(
+        t,
+        const { xc("X_ID_MAIN") },
+        vid_s(Reg::Monster, Some(species)),
+    );
+    let hp = ff(get(o, "hp"));
+    let mhp = ff(get(o, "max_hp")).max(1.0);
+    buf.f(t, const { schema::sc("E_HPF") }, hp / mhp);
+    buf.f(t, const { schema::sc("E_HP") }, hp / 200.0);
+    buf.f(t, const { schema::sc("E_MAXHP") }, mhp / 200.0);
+    let alive = get(o, "alive").is_some_and(truthy);
+    buf.f(
+        t,
+        const { schema::sc("E_ALIVE") },
+        f64::from(u8::from(alive)),
+    );
+}
+
+/// A count in an `X_FOOL` column, capped at `FOOL_COUNT_CAP`.
+fn fool_count(v: Option<&Value>) -> i16 {
+    let n = v
+        .and_then(py_int)
+        .unwrap_or(0)
+        .clamp(0, schema::FOOL_COUNT_CAP);
+    i16::try_from(n).unwrap_or(0)
+}
+
+/// `_fool_tokens(buf, fool)`: the "fool" event's ARROW and MELODY tokens from
+/// `$.player.fool` (SCHEMA.md section 13.6).
+fn fool_tokens(buf: &mut Buf, fool: &Value) {
+    let mut slots: Vec<(i16, i16)> = list_or_empty(fool, "arrows")
+        .iter()
+        .map(|a| {
+            let at = |i: usize| {
+                a.as_array()
+                    .and_then(|v| v.get(i))
+                    .and_then(py_int)
+                    .and_then(|x| i16::try_from(x).ok())
+                    .unwrap_or(0)
+            };
+            (at(0), at(1))
+        })
+        .collect();
+    let mut next = get(fool, "next").and_then(py_int).unwrap_or(-1);
+    if get(fool, "pending").is_some_and(truthy) {
+        if next < 0 {
+            next = slots.len() as i64;
+        }
+        slots.push((1, 0));
+    }
+    for (i, &(status, quietus)) in slots.iter().take(schema::MAX_ARROW_TOKENS).enumerate() {
+        let t = buf.new_tok(const { schema::sec("ARROW") }, 0);
+        buf.c(t, const { xc("X_POS") }, pos(i as i64));
+        buf.c(t, const { xc("X_FOOL1") }, status);
+        let is_next = i16::from(i as i64 == next);
+        buf.c(t, const { xc("X_FOOL2") }, 1 + quietus + 2 * is_next);
+    }
+    let m = list_or_empty(fool, "melody");
+    let t = buf.new_tok(const { schema::sec("MELODY") }, 0);
+    buf.c(t, const { xc("X_FOOL1") }, fool_count(m.first()));
+    buf.c(t, const { xc("X_FOOL2") }, fool_count(m.get(1)));
+    buf.c(t, const { xc("X_FOOL3") }, fool_count(m.get(2)));
+    let cards = m.get(3).and_then(py_int).unwrap_or(0);
+    buf.c(t, const { xc("X_POS") }, pos(cards));
+}
+
+/// `_impaled(player)`: encounter index -> the player's arrows impaled in it.
+fn impaled(player: Option<&Value>) -> Vec<(usize, i16)> {
+    let Some(f) = player.and_then(|p| get(p, "fool")).filter(|f| truthy(f)) else {
+        return Vec::new();
+    };
+    list_or_empty(f, "impaled")
+        .iter()
+        .filter_map(|e| {
+            let a = e.as_array()?;
+            let j = usize::try_from(py_int(a.first()?)?).ok()?;
+            Some((j, fool_count(a.get(1))))
+        })
+        .collect()
 }
 
 /// `_head`: `player` is `state_to_dict(bv)["player"]` on a combat row of
@@ -912,6 +997,196 @@ fn intent_cols(j: usize, tele: &Value, fc: &Value) -> (Vec<(usize, i16)>, Vec<(u
     (cats, conts)
 }
 
+/// `_star_cost(c, stars)`: `C_STAR_COST` of hand card `c`, its star cost now
+/// (`star_cost_live`) / 5, a star-X card's (-1) the stars it would spend (all
+/// of them), 0 without one.
+fn star_cost(c: &Value, stars: f64) -> f64 {
+    match get(c, "star_cost_live").filter(|v| !v.is_null()) {
+        None => 0.0,
+        Some(v) if py_int(v) == Some(-1) => stars / 5.0,
+        Some(v) => ff(Some(v)) / 5.0,
+    }
+}
+
+/// `_dmg_live(v)`: `dmg x hits` of one `dmg_live` entry.
+fn dmg_live(v: &Value) -> f64 {
+    let a = v.as_array().map_or(&[][..], Vec::as_slice);
+    ff(a.first()) * ff(a.get(1))
+}
+
+/// `_class_reps(d)`: per member, the member its class applies. A live value
+/// on an action token is its representative's, so the members of a class
+/// stay token-identical: the honest merge key does not see a per-instance
+/// live value (a pile card's Sly this turn; a free-this-turn star cost on an
+/// Ironclad fight, which `env::combat_keys` splits on for every other
+/// character, GH #1407).
+fn class_reps(d: &Decision) -> Vec<usize> {
+    d.classes.iter().map(|&c| d.members[c][0]).collect()
+}
+
+/// `_chars_trailing`: the trailing columns only a "chars" row has (GH #1197,
+/// SCHEMA.md 13.2): star cost on HAND / ACT_PLAY (the class
+/// representative's, [`class_reps`]), the turn counters and Doom on STATE,
+/// armed relics.
+#[allow(clippy::cast_possible_truncation)]
+fn chars_trailing(
+    xcont: &mut [f32],
+    sec: &[u8],
+    a0: usize,
+    snap: &Value,
+    acts: &[Value],
+    player: &Value,
+    reps: &[usize],
+) {
+    let fo = SCTX_N_CONT;
+    let fw = N_CONT - SCTX_N_CONT;
+    let mut put = |ti: usize, col: usize, v: f64| xcont[ti * fw + col - fo] = v as f32;
+    let hand = list_or_empty(snap, "hand");
+    let stars = ff(get(snap, "player").and_then(|p| get(p, "stars")));
+    let hand_tok = (0..a0).filter(|&i| sec[i] == const { schema::sec("HAND") });
+    for (i, ti) in hand_tok.enumerate() {
+        if let Some(c) = hand.get(i) {
+            put(ti, const { xf("C_STAR_COST") }, star_cost(c, stars));
+        }
+    }
+    for k in 0..acts.len() {
+        let a = &acts[reps[k]];
+        if get(a, "action").and_then(Value::as_str) == Some("play")
+            && sec[a0 + k] == const { schema::sec("ACT_PLAY") }
+        {
+            let i = get(a, "card_index").and_then(py_int).unwrap_or(-1);
+            if let Some(c) = usize::try_from(i).ok().and_then(|i| hand.get(i)) {
+                put(a0 + k, const { xf("C_STAR_COST") }, star_cost(c, stars));
+            }
+        }
+    }
+    put(
+        0,
+        const { xf("S_DISCARDS_TURN") },
+        ff(get(player, "discards_this_turn")) / 10.0,
+    );
+    put(
+        0,
+        const { xf("S_ATTACKS_TURN") },
+        ff(get(player, "attacks_played_this_turn")) / 10.0,
+    );
+    put(
+        0,
+        const { xf("S_PLAYER_DOOMED") },
+        tactical::player_doomed(snap),
+    );
+    let relics = list_or_empty(player, "relics");
+    let relic_tok = (0..a0).filter(|&i| sec[i] == const { schema::sec("RELIC") });
+    for (j, ti) in relic_tok.enumerate() {
+        if let Some(r) = relics.get(j) {
+            let armed = get(r, "armed").is_some_and(truthy);
+            put(ti, const { xf("R_ARMED") }, f64::from(u8::from(armed)));
+        }
+    }
+}
+
+/// `_is_sly(card)`: Sly now, the keyword or Sly this turn, in a hand card's
+/// `flags` or a pile card's `pile_flags`.
+fn is_sly(card: Option<&Value>) -> bool {
+    let Some(card) = card.filter(|c| truthy(c)) else {
+        return false;
+    };
+    list_or_empty(card, "flags")
+        .iter()
+        .chain(list_or_empty(card, "pile_flags"))
+        .any(|f| matches!(f.as_str(), Some("sly" | "sly_turn")))
+}
+
+/// `_chars_sctx`: the S_ctx columns a "chars" row prices live (GH #1197,
+/// SCHEMA.md 13.5), written over the S_ctx block's values: `DMG_PREV` and
+/// `T_DMG` from `dmg_live` (`dmg x hits`, the block's own scaling),
+/// `BLK_PREV` from `blk_live`, on HAND and ACT_PLAY; `SLY` on ACT_CHOOSE.
+/// An action token takes its class representative's values ([`class_reps`]).
+/// `snap` is the live snapshot.
+#[allow(clippy::cast_possible_truncation)]
+fn chars_sctx(
+    tk: &mut sctx::SctxTokens,
+    snap: &Value,
+    acts: &[Value],
+    reps: &[usize],
+    bv: &CombatState,
+    d_bv: &Value,
+) {
+    const DMG_PREV: usize = const { sc("DMG_PREV") };
+    const BLK_PREV: usize = const { sc("BLK_PREV") };
+    const T_DMG: usize = const { sc("T_DMG") };
+    const SLY: usize = const { sc("SLY") };
+    const W: usize = SCTX_N_CONT;
+    let a0 = tk.len() - tk.n_act;
+    let hand = list_or_empty(snap, "hand");
+    let card_cols = |cont: &mut [f32], ti: usize, c: &Value| {
+        let mut mx: Option<f64> = None;
+        if let Some(m) = get(c, "dmg_live").and_then(Value::as_object) {
+            for v in m.values() {
+                let x = dmg_live(v);
+                if mx.is_none_or(|m| x > m) {
+                    mx = Some(x);
+                }
+            }
+        }
+        cont[ti * W + DMG_PREV] = (mx.unwrap_or(0.0) / 30.0) as f32;
+        cont[ti * W + BLK_PREV] = (ff(get(c, "blk_live")) / 20.0) as f32;
+    };
+    let hand_tok: Vec<usize> = (0..a0)
+        .filter(|&i| tk.sec[i] == const { schema::sec("HAND") })
+        .collect();
+    for (i, &ti) in hand_tok.iter().enumerate() {
+        if let Some(c) = hand.get(i) {
+            card_cols(&mut tk.cont, ti, c);
+        }
+    }
+    let ch = get(snap, "choice").filter(|c| !c.is_null());
+    let n_enemies = list_or_empty(snap, "enemies").len();
+    let mut pc_cards: Option<Vec<Value>> = None;
+    for k in 0..acts.len() {
+        let ti = a0 + k;
+        let act = &acts[reps[k]];
+        if tk.sec[ti] == const { schema::sec("ACT_PLAY") } {
+            let i = get(act, "card_index").and_then(py_int).unwrap_or(-1);
+            let Some(c) = usize::try_from(i).ok().and_then(|i| hand.get(i)) else {
+                continue;
+            };
+            card_cols(&mut tk.cont, ti, c);
+            let tix = get(act, "target_index")
+                .filter(|v| !v.is_null())
+                .and_then(py_int);
+            if let Some(tix) = tix.filter(|t| usize::try_from(*t).is_ok_and(|t| t < n_enemies)) {
+                let v = get(c, "dmg_live").and_then(|m| get(m, &tix.to_string()));
+                tk.cont[ti * W + T_DMG] = (v.map_or(0.0, dmg_live) / 30.0) as f32;
+            }
+        } else if tk.sec[ti] == const { schema::sec("ACT_CHOOSE") } && ch.is_some() {
+            let pcc = pc_cards.get_or_insert_with(|| {
+                sts2_wire::emit::pending_choice(bv)
+                    .and_then(|pc| get(&pc, "cards").and_then(Value::as_array).cloned())
+                    .unwrap_or_default()
+            });
+            let card = list_or_empty(act, "selection")
+                .first()
+                .and_then(py_int)
+                .and_then(|s| usize::try_from(s).ok())
+                .and_then(|s| pcc.get(s))
+                .filter(|o| truthy(o))
+                .and_then(|opt| {
+                    let key = match get(opt, "pile").map(py_str).as_deref() {
+                        Some("hand") => "hand",
+                        Some("draw") => "draw_pile",
+                        Some("discard") => "discard_pile",
+                        Some("exhaust") => "exhaust_pile",
+                        _ => "",
+                    };
+                    let pile = get(d_bv, "deck").and_then(|dk| get(dk, key))?;
+                    at(Some(pile), get(opt, "index")).cloned()
+                });
+            tk.cont[ti * W + SLY] = f32::from(u8::from(is_sly(card.as_ref())));
+        }
+    }
+}
+
 /// `_choice_ench(pc_cards, s, piles)`.
 fn choice_ench(pc_cards: &[Value], s: usize, piles: &Value) -> i16 {
     let Some(opt) = pc_cards.get(s).filter(|o| truthy(o)) else {
@@ -991,14 +1266,15 @@ fn encode_combat(
         .as_ref()
         .ok_or("combat decision without a combat view")?;
     let bv: &CombatState = &cv.bv;
-    let snap = &cv.snap;
     let acts = &d.obs_actions;
     let run = Run::new(rm, None);
-    let picked = combat_picks(snap, acts);
-    // The row carries the "chars" fill event.
+    // The row carries the "chars" fill event: its live keys, and only here.
     let no_player = Value::Object(serde_json::Map::new());
     let player =
         (run.char_id(cache.chars) != 0).then(|| get(&cv.d_bv, "player").unwrap_or(&no_player));
+    let live = player.map(|_| snapshot::live_snapshot(&cv.snap, bv, &cv.d_bv));
+    let snap = live.as_ref().unwrap_or(&cv.snap);
+    let picked = combat_picks(snap, acts);
     let (hb, _fm) = head(
         d,
         &run,
@@ -1009,7 +1285,10 @@ fn encode_combat(
         player,
     );
     let rl2 = Rl2::of(bv);
-    let tk = sctx::tokens(snap, acts, &rl2)?;
+    let mut tk = sctx::tokens(snap, acts, &rl2)?;
+    if player.is_some() {
+        chars_sctx(&mut tk, snap, acts, &class_reps(d), bv, &cv.d_bv);
+    }
     let tele = sts2_wire::emit::combat::enemy_telegraphs(bv).map_err(|e| e.to_string())?;
     let fc = sts2_wire::emit::combat::enemy_intent_forecast(bv, 3).map_err(|e| e.to_string())?;
     let n_mem = acts.len();
@@ -1145,23 +1424,30 @@ fn encode_combat(
     // Tactical and intent columns per enemy.
     let (md, kill, loss) = match player {
         None => tactical::tactical(snap, acts),
-        Some(p) => tactical::tactical_with(
-            snap,
-            acts,
-            tactical::end_turn_block(p),
-            tactical::ally_hp_of(p),
-        ),
+        // A "chars" row: `snap` is the live snapshot (GH #1197, SCHEMA.md 13.5).
+        Some(p) => tactical::tactical_live(snap, acts, p),
     };
     let doomed = player.map_or_else(Vec::new, |_| tactical::doomed(snap));
+    let first = player.map_or_else(Vec::new, |p| tactical::dies_before_acting(snap, p));
+    if let Some(p) = player {
+        chars_trailing(&mut xcont, &tk.sec, a0, snap, acts, p, &class_reps(d));
+    }
     let em: Vec<usize> = (0..a0)
         .filter(|&i| tk.sec[i] == const { schema::sec("ENEMY") })
         .collect();
+    let imp = impaled(player);
     for (j, &ti) in em.iter().enumerate() {
+        if let Some(&(_, n)) = imp.iter().find(|(e, _)| *e == j) {
+            setc(&mut xcat, ti, const { xc("X_FOOL1") }, n);
+        }
         xcont[ti * fw + const { xf("E_MAXDMG") } - fo] =
             md.get(j).map_or(0.0, |m| (m / 50.0) as f32);
         xcont[ti * fw + const { xf("E_KILLABLE") } - fo] = kill.get(j).map_or(0.0, |k| *k as f32);
         if let Some(x) = doomed.get(j) {
             xcont[ti * fw + const { xf("E_DOOMED") } - fo] = *x as f32;
+        }
+        if let Some(x) = first.get(j) {
+            xcont[ti * fw + const { xf("E_DIES_FIRST") } - fo] = *x as f32;
         }
         let dead = enemies
             .get(j)
@@ -1190,7 +1476,7 @@ fn encode_combat(
     cont.extend(hb.cont.iter().map(|&x| to_f16(x)));
     for ti in 0..t {
         let r = &tk.cont[ti * SCTX_N_CONT..(ti + 1) * SCTX_N_CONT];
-        cont.extend(r.iter().map(|&x| to_f16(x.clamp(-F16_MAX, F16_MAX))));
+        cont.extend(r.iter().map(|&x| to_f16(x)));
         cont.extend(xcont[ti * fw..(ti + 1) * fw].iter().map(|&x| to_f16(x)));
     }
     let mut sec = hb.sec.clone();
@@ -1219,11 +1505,7 @@ fn encode_combat(
         cls_kind: reps.iter().map(|&r| d.kinds[r]).collect(),
         pool_tok: hb.pool_tok,
         pool_vid: hb.pool_vid,
-        pool_w: hb
-            .pool_w
-            .iter()
-            .map(|&w| f16::from_f64(w).to_bits())
-            .collect(),
+        pool_w: hb.pool_w.iter().map(|&w| w_to_f16(w)).collect(),
         sctx_lo: lo,
         n_sctx: t,
         dtype: d.dtype,
@@ -1292,27 +1574,49 @@ fn card_cats(buf: &mut Buf, t: usize, cid: &Value, up: bool, ench: Option<&Value
 }
 
 fn deck_tokens(buf: &mut Buf, run: &Run<'_>) {
-    // One DECK token per distinct (card, upgraded, enchantment), first-seen order.
-    let mut groups: Vec<(String, bool, Value, usize)> = Vec::new();
+    // One DECK token per distinct (card, upgraded, enchantment), first-seen
+    // order; the cards an open pick-N deck select picked (the "deck-select"
+    // event, GH #1790: `deck_select_picked_deck`) are their own groups, with
+    // K_PICKED.
+    let chosen: Vec<usize> = run
+        .obs
+        .and_then(|o| get(o, "deck_select_picked_deck"))
+        .map(|v| {
+            list_or_empty_v(v)
+                .iter()
+                .filter_map(py_int)
+                .filter_map(|i| usize::try_from(i).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut groups: Vec<(String, bool, Value, bool, usize)> = Vec::new();
     for (i, (cid, up)) in run.deck.iter().enumerate() {
         let e = run.ench.get(i).cloned().unwrap_or(Value::Null);
+        let p = chosen.contains(&i);
         if let Some(g) = groups
             .iter_mut()
-            .find(|g| g.0 == *cid && g.1 == *up && g.2 == e)
+            .find(|g| g.0 == *cid && g.1 == *up && g.2 == e && g.3 == p)
         {
-            g.3 += 1;
+            g.4 += 1;
         } else {
-            groups.push((cid.clone(), *up, e, 1));
+            groups.push((cid.clone(), *up, e, p, 1));
         }
     }
-    for (cid, up, e, n) in groups {
+    for (cid, up, e, p, n) in groups {
         let t = buf.new_tok(const { schema::sec("DECK") }, 0);
         let e = (!e.is_null()).then_some(e);
         card_cats(buf, t, &Value::String(cid), up, e.as_ref());
         buf.f(t, const { sc("ENCH_AMT") }, ench_amount(e.as_ref()) / 5.0);
         #[allow(clippy::cast_precision_loss)]
         buf.f(t, const { sc("COUNT") }, n as f64 / 5.0);
+        if p {
+            buf.f(t, const { xf("K_PICKED") }, 1.0);
+        }
     }
+}
+
+fn list_or_empty_v(v: &Value) -> &[Value] {
+    v.as_array().map_or(&[], Vec::as_slice)
 }
 
 type Coord = (i64, i64);
@@ -1412,11 +1716,21 @@ fn map_body(buf: &mut Buf, fm: &Value, moves: &[Value]) -> BTreeMap<i64, [f64; 8
     let br = boss_row(fm);
     let rt = route(&mn, br);
     let cur = get(fm, "current_coord").filter(|c| truthy(c));
-    let cr = cur
+    let mut cr = cur
         .and_then(|c| get(c, "row"))
         .and_then(py_int)
         .unwrap_or(-1);
-    let cur_key = cur.map(|c| (get(c, "col").and_then(py_int).unwrap_or(0), cr));
+    let mut cur_key = cur.map(|c| (get(c, "col").and_then(py_int).unwrap_or(0), cr));
+    if cur.is_none() {
+        // An act's first move (GH #1616): no node is current yet and the
+        // moves are the start node's children (`next_map_children_cols`),
+        // so the player stands on the start node, the one node of row 0.
+        let row0: Vec<Coord> = mn.order.iter().copied().filter(|k| k.1 == 0).collect();
+        if let [k] = row0[..] {
+            cr = 0;
+            cur_key = Some(k);
+        }
+    }
     let start: Vec<Coord> = match cur_key.and_then(|k| mn.nodes.get(&k)) {
         Some(n) => kids(n),
         None => mn.order.iter().copied().filter(|k| k.1 == cr + 1).collect(),
@@ -1715,6 +2029,42 @@ fn option(buf: &mut Buf, cx: &OptCtx<'_, '_>, i: usize, a: &Value, kind: u8) {
             );
             t
         }
+        // The "ooc-potion" fill event (SCHEMA.md section 14): the belt's potion.
+        "USE_POTION_OOC" | "DISCARD_POTION" => {
+            let t = buf.new_tok(const { schema::sec("RES_OPT_POTION_USE") }, flags);
+            let p = get(a, "potion_slot")
+                .and_then(py_int)
+                .and_then(|s| usize::try_from(s).ok())
+                .and_then(|s| run.potions.get(s));
+            buf.c(
+                t,
+                const { xc("X_ID_MAIN") },
+                vid_s(Reg::Potion, p.map(String::as_str)),
+            );
+            t
+        }
+        // The "#1069" fill event (SCHEMA.md section 17): the reward the option
+        // takes or leaves, as the reward button shows it.
+        _ if kind != ak::PROCEED_REWARDS
+            && crate::contracts::REWARD_SCREEN_KINDS.contains(&kind) =>
+        {
+            let t = buf.new_tok(const { schema::sec("RES_OPT_REWARD") }, flags);
+            let reward = get(a, "reward").and_then(Value::as_str);
+            let reg = match reward {
+                Some("potion") => Some(Reg::Potion),
+                Some("relic") => Some(Reg::Relic),
+                Some("special_card") => Some(Reg::Card),
+                _ => None,
+            };
+            if let Some(reg) = reg {
+                let id = get(a, "id").map(py_str);
+                buf.c(t, const { xc("X_ID_MAIN") }, vid_s(reg, id.as_deref()));
+            }
+            if reward == Some("gold") {
+                buf.f(t, const { xf("O_PRICE") }, ff(get(a, "amount")) / 300.0);
+            }
+            t
+        }
         "MOVE" => {
             let t = buf.new_tok(const { schema::sec("OPT_MOVE") }, flags);
             let col = get(a, "col").and_then(py_int).unwrap_or(0);
@@ -1798,9 +2148,23 @@ fn option(buf: &mut Buf, cx: &OptCtx<'_, '_>, i: usize, a: &Value, kind: u8) {
 }
 
 /// `_offer`: the potion a swap would add, the enchantment an enchant pick
-/// stamps.
+/// stamps, the chest's relic.
 fn offer(buf: &mut Buf, d: &Decision, run: &Run<'_>) {
-    if d.dtype == dt::POTION_SWAP {
+    if d.dtype == dt::TREASURE_CHOICE {
+        // The "#1069" fill event (SCHEMA.md section 17): the chest's relic.
+        let relic = d
+            .obs_actions
+            .iter()
+            .find(|a| get(a, "reward").and_then(Value::as_str) == Some("chest_relic"))
+            .and_then(|a| get(a, "id"))
+            .map(py_str)
+            .filter(|r| !r.is_empty());
+        if let Some(r) = relic {
+            let t = buf.new_tok(const { schema::sec("OFFER") }, 0);
+            buf.c(t, const { xc("X_KIND") }, i16::from(ak::COLLECT_TREASURE));
+            buf.c(t, const { xc("X_ID_MAIN") }, vid_s(Reg::Relic, Some(&r)));
+        }
+    } else if d.dtype == dt::POTION_SWAP {
         let pot = match run.og("pending_potion_swap").filter(|v| !v.is_null()) {
             Some(v) => Some(py_str(v)),
             None => run
@@ -1900,11 +2264,7 @@ fn encode_ooc(d: &Decision, rm: &RunManager, cache: &mut TokCache) -> Result<Tok
         cls_tok,
         pool_tok: buf.pool_tok,
         pool_vid: buf.pool_vid,
-        pool_w: buf
-            .pool_w
-            .iter()
-            .map(|&w| f16::from_f64(w).to_bits())
-            .collect(),
+        pool_w: buf.pool_w.iter().map(|&w| w_to_f16(w)).collect(),
         sctx_lo: 0,
         n_sctx: 0,
         dtype: d.dtype,
@@ -1932,6 +2292,99 @@ pub fn prime(d: &Decision, rm: &RunManager, cache: &mut TokCache) {
 /// members, or a telegraph the wire cannot emit.
 pub fn encode(d: &Decision, rm: &RunManager, cache: &mut TokCache) -> Result<TokRow, String> {
     encode_with(d, rm, cache, None, false, false)
+}
+
+/// [`encode`] for `net`: the row `net` reads. Whether an Ironclad row
+/// carries the "chars" fill event is a property of the net (its launch's
+/// `filled`, GH #1197), so it is taken from `net` here on every call rather
+/// than left to each host's cache; so is the build whose tables it reads
+/// (its header's `game_version`, [`crate::net::E2eNet::build`]). Use this for
+/// any row a net evaluates.
+///
+/// # Errors
+///
+/// As [`encode`].
+pub fn encode_for(
+    net: &crate::net::E2eNet,
+    d: &Decision,
+    rm: &RunManager,
+    cache: &mut TokCache,
+) -> Result<TokRow, String> {
+    cache.set_chars(net.fills("chars"));
+    let _tables = crate::build::Scope::enter(net.build()?);
+    let row = encode(d, rm, cache)?;
+    dump_row(d, &row);
+    Ok(row)
+}
+
+thread_local! {
+    static DUMP_MUTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `f` without dumping its rows (`STS2_E2E_ROW_DUMP`): for encodes of
+/// positions no decision is taken at, such as the map screen's projected
+/// route, which would otherwise interleave with the real rows.
+pub fn without_row_dump<T>(f: impl FnOnce() -> T) -> T {
+    let was = DUMP_MUTED.with(|m| m.replace(true));
+    let out = f();
+    DUMP_MUTED.with(|m| m.set(was));
+    out
+}
+
+/// Debug: with `STS2_E2E_ROW_DUMP=<path>`, append every policy row the net
+/// is fed as one JSON line (floor, decision type, the fight's turn and the
+/// tokens), so a native run and a real-game run of the same seed can be
+/// diffed input by input.
+fn dump_row(d: &Decision, row: &TokRow) {
+    use std::io::Write as _;
+    if DUMP_MUTED.with(std::cell::Cell::get) {
+        return;
+    }
+    let Some(path) = std::env::var_os("STS2_E2E_ROW_DUMP") else {
+        return;
+    };
+    let n = row.n_tok();
+    let w_cat = row.cat.len().checked_div(n).unwrap_or(0);
+    let w_cont = row.cont.len().checked_div(n).unwrap_or(0);
+    let toks: Vec<serde_json::Value> = (0..n)
+        .map(|t| {
+            let cont: Vec<f32> = row.cont[t * w_cont..(t + 1) * w_cont]
+                .iter()
+                .map(|b| half::f16::from_bits(*b).to_f32())
+                .collect();
+            serde_json::json!([
+                row.sec[t],
+                row.tok_flags[t],
+                &row.cat[t * w_cat..(t + 1) * w_cat],
+                cont
+            ])
+        })
+        .collect();
+    let pool_w: Vec<f32> = row
+        .pool_w
+        .iter()
+        .map(|b| half::f16::from_bits(*b).to_f32())
+        .collect();
+    let line = serde_json::json!({
+        "act": d.act,
+        "floor": d.floor,
+        "dtype": row.dtype,
+        "turn": d.combat.as_ref().map(|c| c.turn),
+        "fight": d.combat.as_ref().map(|c| c.fight),
+        "toks": toks,
+        "cls_tok": row.cls_tok,
+        "cls_kind": row.cls_kind,
+        "pool_tok": row.pool_tok,
+        "pool_vid": row.pool_vid,
+        "pool_w": pool_w,
+    });
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "{line}");
+    }
 }
 
 /// `tokens.encode(d, rare=rare, priv=priv_, check=check)`: the training
@@ -2103,8 +2556,7 @@ fn priv_draw(r: &mut TokRow, cs: &CombatState, rare: Option<&RareMap>) -> Result
         row[const { xc("X_ID_MOD") }] = lut(ENCH);
         r.pcat.extend_from_slice(&row);
         let c = &tk.cont[ti * SCTX_N_CONT..(ti + 1) * SCTX_N_CONT];
-        r.pcont
-            .extend(c.iter().map(|&x| to_f16(x.clamp(-F16_MAX, F16_MAX))));
+        r.pcont.extend(c.iter().map(|&x| to_f16(x)));
         r.pcont
             .extend(std::iter::repeat_n(0u16, N_CONT - SCTX_N_CONT));
         r.psec.push(const { schema::sec("PRIV_DRAW") });
@@ -2226,9 +2678,134 @@ fn priv_run_static(rm: &RunManager, act: u8, fm: &Value) -> PrivRun {
         cat: row,
         cont: f.iter().map(|&x| to_f16(x)).collect(),
         vids: ent.iter().map(|(v, _)| *v as u16).collect(),
-        ws: ent
+        ws: ent.iter().map(|(_, w)| w_to_f16(f64::from(*w))).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// In-range values cast exactly as a plain cast does (the lane's checkpoints and
+    /// the parity fixtures don't move); past ±65504 they saturate instead of going
+    /// infinite (an edited save's ~1e9 gold, allchar it 7806).
+    #[test]
+    fn f16_saturates_and_leaves_in_range_bits_alone() {
+        let mut x = 1e-8_f32;
+        while x < 65_520.0 {
+            for v in [x, -x] {
+                assert_eq!(to_f16(v), f16::from_f32(v).to_bits(), "{v}");
+                assert_eq!(
+                    w_to_f16(f64::from(v)),
+                    f16::from_f64(f64::from(v)).to_bits()
+                );
+            }
+            x *= 1.000_37;
+        }
+        let max = f16::from_f32(F16_MAX).to_bits();
+        let min = f16::from_f32(-F16_MAX).to_bits();
+        for v in [65_520.0, 3.3e6, 1e30, f32::INFINITY] {
+            assert_eq!(to_f16(v), max, "{v}");
+            assert_eq!(to_f16(-v), min, "{v}");
+            assert_eq!(w_to_f16(f64::from(v)), max, "{v}");
+        }
+        assert!(f16::from_bits(to_f16(f32::NAN)).is_nan());
+    }
+
+    fn col(x: &[f32], t: usize, c: usize) -> f32 {
+        x[t * (N_CONT - SCTX_N_CONT) + c - SCTX_N_CONT]
+    }
+
+    /// `chars_trailing` on a hand-built row: star cost (fixed, star-X, none,
+    /// and the class representative's on ACT_PLAY), the STATE counters and
+    /// Doom, armed relics.
+    #[test]
+    fn chars_trailing_columns() {
+        // STATE, HAND x3, RELIC x2, ACT_PLAY x2.
+        let sec: Vec<u8> = [
+            "STATE", "HAND", "HAND", "HAND", "RELIC", "RELIC", "ACT_PLAY", "ACT_PLAY",
+        ]
+        .iter()
+        .map(|s| schema::sec(s))
+        .collect();
+        let snap = json!({
+            "player": {"hp": 10, "stars": 4},
+            "powers": [{"name": "DOOM", "amount": 12}],
+            "hand": [{"star_cost_live": 2}, {"star_cost_live": -1}, {}],
+        });
+        let acts = vec![
+            json!({"action": "play", "card_index": 0}),
+            json!({"action": "play", "card_index": 2}),
+        ];
+        let player = json!({
+            "discards_this_turn": 3,
+            "attacks_played_this_turn": 5,
+            "relics": [{"id": "MINI_REGENT", "armed": true}, {"id": "ANCHOR"}],
+        });
+        let mut x = vec![0f32; sec.len() * (N_CONT - SCTX_N_CONT)];
+        // One class: member 1 carries member 0's (the representative's) star cost.
+        chars_trailing(&mut x, &sec, 6, &snap, &acts, &player, &[0, 0]);
+        let sc = const { xf("C_STAR_COST") };
+        assert_eq!(
+            [col(&x, 1, sc), col(&x, 2, sc), col(&x, 3, sc)],
+            [0.4, 0.8, 0.0]
+        );
+        assert_eq!([col(&x, 6, sc), col(&x, 7, sc)], [0.4, 0.4]);
+        assert!((col(&x, 0, const { xf("S_DISCARDS_TURN") }) - 0.3).abs() < 1e-6);
+        assert!((col(&x, 0, const { xf("S_ATTACKS_TURN") }) - 0.5).abs() < 1e-6);
+        assert_eq!(col(&x, 0, const { xf("S_PLAYER_DOOMED") }), 1.0);
+        let ra = const { xf("R_ARMED") };
+        assert_eq!([col(&x, 4, ra), col(&x, 5, ra)], [1.0, 0.0]);
+    }
+
+    /// The "fool" event's tokens from a hand-built `$.player` (the same board
+    /// as `test_e2e_fool.py::test_the_fool_tokens_from_a_player_dict`): Osty and
+    /// Wuppy, three arrow slots plus a pending one, the melody, capped counts.
+    #[test]
+    fn fool_tokens_from_a_player_dict() {
+        let player = json!({
+            "osty": {"alive": true, "hp": 7, "max_hp": 12, "block": 0},
+            "wuppy": {"alive": true, "hp": 3, "max_hp": 6, "block": 0},
+            "fool": {
+                "arrows": [[1, 0], [2, 1], [3, 0]],
+                "pending": true,
+                "next": 0,
+                "melody": [2, 0, 40, 3],
+                "impaled": [[1, 1]],
+            },
+        });
+        let mut buf = Buf::new(16);
+        chars_tokens(&mut buf, &player);
+        let secs: Vec<u8> = ["ALLY", "ALLY", "ARROW", "ARROW", "ARROW", "ARROW", "MELODY"]
             .iter()
-            .map(|(_, w)| f16::from_f64(f64::from(*w)).to_bits())
-            .collect(),
+            .map(|s| schema::sec(s))
+            .collect();
+        assert_eq!(buf.sec, secs);
+        let c = |t: usize, name: &str| buf.cat[t * N_CAT + xc(name)];
+        assert_eq!(c(0, "X_ID_MAIN"), vid_s(Reg::Monster, Some("Osty")));
+        assert_eq!(c(1, "X_ID_MAIN"), vid_s(Reg::Monster, Some("Wuppy")));
+        let hpf = buf.cont[N_CONT + schema::sc("E_HPF")];
+        assert!((hpf - 0.5).abs() < 1e-6);
+        let arrows: Vec<[i16; 3]> = (2..6)
+            .map(|t| [c(t, "X_POS"), c(t, "X_FOOL1"), c(t, "X_FOOL2")])
+            .collect();
+        assert_eq!(arrows, [[1, 1, 3], [2, 2, 2], [3, 3, 1], [4, 1, 1]]);
+        let m = [
+            c(6, "X_FOOL1"),
+            c(6, "X_FOOL2"),
+            c(6, "X_FOOL3"),
+            c(6, "X_POS"),
+        ];
+        assert_eq!(m, [2, 0, 15, 4]);
+        assert_eq!(impaled(Some(&player)), [(1, 1)]);
+        // A pending slot with no ready arrow is the next one.
+        let mut lone = Buf::new(4);
+        chars_tokens(
+            &mut lone,
+            &json!({"fool": {"arrows": [], "pending": true, "next": -1}}),
+        );
+        assert_eq!(lone.cat[xc("X_FOOL2")], 3);
+        assert_eq!(lone.sec.len(), 2);
     }
 }

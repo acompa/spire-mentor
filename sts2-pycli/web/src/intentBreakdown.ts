@@ -19,6 +19,8 @@
  *  number the engine actually telegraphed.
  */
 
+import { t } from "./i18n";
+
 export type IntentModifier = {
   /** Engine registry id — `WEAK`, `STRENGTH`, `BURNING_BLOOD`. */
   name: string;
@@ -46,7 +48,7 @@ function label(m: IntentModifier): string {
   // "(you)" / "(attacker)" is the distinction the bug report needed: the same
   // Vulnerable icon means "it takes more" on the enemy and "you take more" on
   // the player, and only one of those is in this number.
-  const whose = m.side === "player" ? " (you)" : m.side === "enemy" ? " (attacker)" : "";
+  const whose = m.side === "player" ? t(" (you)") : m.side === "enemy" ? t(" (attacker)") : "";
   return `${name}${whose}`;
 }
 
@@ -72,7 +74,7 @@ export function describeIntent(intent: IntentLike): string | undefined {
   // Pipeline order, not listener order: the engine walks the player's powers
   // before each enemy's, but it APPLIES additive -> multiplicative -> cap, and
   // a reader following the sum needs the second order.
-  const lines = [`${base} base`];
+  const lines = [t("{n} base", { n: base })];
   for (const m of modifiers) {
     if (m.add) lines.push(`${m.add > 0 ? "+" : ""}${m.add} ${label(m)}`);
   }
@@ -80,8 +82,10 @@ export function describeIntent(intent: IntentLike): string | undefined {
     if (m.mul) lines.push(`${formatMul(m.mul)} ${label(m)}`);
   }
   for (const m of modifiers) {
-    if (m.cap != null) lines.push(`capped at ${m.cap} ${label(m)}`);
+    if (m.cap != null) lines.push(t("capped at {cap} {label}", { cap: m.cap, label: label(m) }));
   }
-  const per = intent.hits && intent.hits > 1 ? " per hit" : "";
-  return `${damage} damage${per}\n${lines.join("\n")}`;
+  const head = intent.hits && intent.hits > 1
+    ? t("{n} damage per hit", { n: damage })
+    : t("{n} damage", { n: damage });
+  return `${head}\n${lines.join("\n")}`;
 }

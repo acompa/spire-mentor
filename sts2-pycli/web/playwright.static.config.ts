@@ -1,12 +1,9 @@
-import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
+import { chromiumLaunch } from "./playwright.chromium";
 
-// A host that ships its own Chromium (the remote dev containers put one at
-// /opt/pw-browsers/chromium, or PLAYWRIGHT_CHROMIUM_PATH names one) may not
-// have the revision this Playwright version pins; use it when present.
-export const chromiumPath = [process.env.PLAYWRIGHT_CHROMIUM_PATH, "/opt/pw-browsers/chromium"].find(
-  (p): p is string => !!p && existsSync(p),
-);
+// A host Chromium (PLAYWRIGHT_CHROMIUM_PATH, /opt/pw-browsers/chromium) is
+// found by playwright.chromium.ts; re-exported for e2e-static/bridge.spec.ts.
+export { chromiumPath } from "./playwright.chromium";
 
 // End-to-end tests for the BROWSER-ONLY workbench: no Python backend at all.
 // The SPA is built in static mode (`npm run build:static`, which needs the
@@ -33,7 +30,7 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
-        ...(chromiumPath ? { launchOptions: { executablePath: chromiumPath } } : {}),
+        ...chromiumLaunch,
       },
     },
   ],

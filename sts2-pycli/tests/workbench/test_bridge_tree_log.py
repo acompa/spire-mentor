@@ -34,7 +34,7 @@ def _client(tmp_path, monkeypatch, tree: dict[str, Any]):
     images = tmp_path / "images"
     images.mkdir()
     logs = tmp_path / "logs"
-    logs.mkdir()
+    logs.mkdir(exist_ok=True)
     return TestClient(create_app(images_root=images, logs_dir=logs))
 
 
@@ -122,7 +122,8 @@ def test_a_replayed_step_renders_its_rows_too(tmp_path, monkeypatch):
         "unblocked": 6,
         "blocked": 0,
     }
-    run = tmp_path / "run.jsonl"
+    (tmp_path / "logs").mkdir()
+    run = tmp_path / "logs" / "run.jsonl"
     run.write_text(
         "\n".join(
             _json.dumps(rec)

@@ -137,4 +137,16 @@ def test_instinct_plans_the_turn_and_draws_the_route_on_live_payloads() -> None:
                 lone_routes += len(msg.get("nodes") or []) == 1 and len(path) >= 2
     assert plans > 20 and longer > 5
     assert routes > 0 and lone_routes > 0
-    assert estimates > PLAN_REQUESTS // 2
+    # The win probe rides in the weights (GH #1222); the all-character net
+    # (GH #1197) ships without one until it is refit, and then answers none.
+    if _weights_carry_probe():
+        assert estimates > PLAN_REQUESTS // 2
+    else:
+        assert estimates == 0
+
+
+def _weights_carry_probe() -> bool:
+    """Whether the shipped weights carry a win probe (the loader's answer)."""
+    import sts2_rs
+
+    return bool(sts2_rs.E2eStudent(str(ri.default_weights_path())).has_probe)

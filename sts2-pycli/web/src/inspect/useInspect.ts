@@ -1,6 +1,7 @@
 // The inspect context, types and hooks live apart from the provider so that
 // file exports only the component (react-refresh/only-export-components).
 import { createContext, useContext, useEffect } from "react";
+import { t } from "../i18n";
 
 /** One thing to explain on a phone, where there is no hover: a power, an
  *  intent, the block badge, a relic. `list` is for a group (the powers behind a
@@ -18,7 +19,7 @@ export type InspectItem = {
 };
 
 /** What the sheet says for a relic the state carries no text for. */
-export const NO_DESCRIPTION = "No description available";
+export const NO_DESCRIPTION = t("No description available");
 
 export type InspectApi = {
   item: InspectItem | null;

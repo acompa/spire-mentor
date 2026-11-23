@@ -2,22 +2,23 @@
 
 [b]Beta build of Spire Mentor, for testing.[/b] Unsubscribe from the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3821016481]regular Spire Mentor item[/url] while this one is installed: the game loads only one mod per id. Everything the regular item does, this one does too; its page has the full description, keys and settings.
 
-[h2]New in this beta (0.11.3-beta.2)[/h2]
+[h2]New in this beta (0.11.6-beta.1)[/h2]
 [list]
-[*][b]Game v0.113.0 is simulated exactly[/b] for Ironclad, Silent, Defect, Regent and Necrobinder, so the advice there no longer carries the "approximate" tag. The Fool's cards that show up in other characters' runs (Splash, Colorful Philosophers and the like) are simulated too. Runs as The Fool still get no advice.
-[*][b]Stronger Instinct[/b]: new weights that win 73% of Ironclad A10 test runs, up from 57%.
-[*][b]Instinct answers on v0.113.0 instead of handing over to Search[/b]: it rebuilt v0.113.0 runs on the older build's map, so route advice, rest sites, card screens and the card a Skill Potion or Discovery offers fell back to the slower Search. A card new in v0.113.0 (My Shinies) offered in a fight still does.
-[*][b]Instinct's win estimate leads the advice panel[/b]: "Run 71% · Fight 100%", colored green, amber or red, with the HP this fight is expected to cost. Both numbers assume Instinct plays every move from here. The [b]Show win bar[/b] setting turns it off.
-[*][b]AI partners and co-op lobbies work on v0.113.0[/b]. Partners used to fail to join there. Co-op Blitz lobbies work too.
-[*][b]Instinct in Blitz shops[/b]: it no longer leaves the merchant without buying. Blitz wares now go through the same simple rule as the other brains.
-[*][b]Fixes[/b]: the advice frame on a chest relic sits on the relic again. Autopilot takes both relics of a two-relic Blitz chest. AI partners no longer try card picks the game refuses, such as enchanting a card that cannot take the enchantment. Autopilot no longer reads a stale hand while a card's selection is still open. It no longer gets stuck at the next act's Ancient because the map still offered the previous act's rooms.
+[*][b]Linux[/b]: the AI now runs on native Linux Steam too (x86-64, glibc 2.28 or newer: any current distribution). Please report how it goes; it has not been played on Linux much yet.
+[*][b]A new AI program[/b]: the coach (SimAdvisor) is rewritten as one native program instead of a bundled Python one. It should advise exactly as before; tell us if anything differs.
+[*][b]Instinct plays all five characters[/b]: Ironclad, Silent, Defect, Regent and Necrobinder, on v0.111.0 and v0.113.0, with new weights.
+[*][b]The Fool gets combat advice[/b] on v0.113.0: fights are searched and ranked as for the other characters. Map, card reward, shop, rest and event screens get no advice for The Fool yet (no trained network for it).
+[*][b]More of v0.113.0 simulated[/b]: the Wuppy relic (its pet, Wuppy's Loyalty and the Restore rest option) and the Punch Off event's fight.
+[*][b]Panels beside the game[/b]: when the panels' window is closed, a button next to the badge brings it back, so you no longer have to find it under Panels.
+[*][b]Workbench[/b]: The Fool's art and every character's energy orb show in the replay of a live run, and live runs replay on the game build they were played on.
+[*][b]Fixes[/b]: a game set to another language (Chinese, for example) no longer has fights refused for orb, monster or potion names. Enchant screens tell the AI which enchantment the pick gets. Watch the AI play with Instinct keeps the character you picked.
 [/list]
-Everything else is the regular item's 0.11.2.
+Everything else is the regular item's 0.11.5.
 
 [h2]Requirements[/h2]
 [list]
-[*][b]Windows only.[/b] The AI runs as a bundled Windows program (SimAdvisor.exe). On Mac or Linux the mod loads but the coach cannot start.
-[*][b]Game builds v0.107.1, v0.111.0 and v0.113.0 (public beta; no The Fool yet).[/b] A game update can break the mod until a new version is out.
+[*][b]Windows or Linux.[/b] The AI runs as a bundled program (SimAdvisor). On a Mac the mod loads but the coach cannot start. On Linux the panels' own window also needs python3 with PyGObject, GTK 3 and WebKitGTK (webkit2gtk-4.1) installed, and the game on X11 or XWayland (its default); without them the panels stay in the game.
+[*][b]Game builds v0.111.1 (stable) and v0.113.0 (public beta), including hotfixes of them such as v0.113.1.[/b] A game update can break the mod until a new version is out.
 [*][b]BaseLib[/b] (by Alchyr), which Steam installs alongside this mod as a required item.
 [/list]
 

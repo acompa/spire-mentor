@@ -18,7 +18,11 @@ use crate::assets::{normalize_kind, AssetResolver};
 use crate::combat_view::{py_str, title_case, truthy};
 use crate::combatlog::{format_combat_log, LogNames};
 use crate::data::CreatureScale;
-use crate::display_maps::{monster_title, power_title};
+use crate::display_maps::{
+    monster_display_name, pascal_to_screaming_snake, power_display_description, power_display_name,
+    power_title, render_zh_text,
+};
+use crate::i18n::{game_name, tr};
 use crate::localization::{
     self, affliction_card_line, card_var_value, keyword_card_lines, looks_like_unresolved_key,
     named_description_vars, plain_description, plain_owned_description, resolve, resolve_name,
@@ -101,7 +105,7 @@ fn id_tail(v: &Value) -> String {
 }
 
 /// Python `s.lstrip("-").isdigit()` → int, else the string as-is.
-fn int_or_str(s: &str) -> Value {
+pub(crate) fn int_or_str(s: &str) -> Value {
     let digits = s.trim_start_matches('-');
     if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
         match s.parse::<i64>() {
@@ -214,7 +218,18 @@ fn event_option_vars(opt: &Value, loc: &Loc, key: &str) -> Map<String, Value> {
     if let Some(Value::Object(vars)) = opt.get(key) {
         for (name, val) in vars {
             let v = match val {
-                Value::String(s) => json!(resolve_name(Some(s), loc)),
+                Value::String(s) => {
+                    let name = resolve_name(Some(s), loc);
+                    // In Chinese an English item name (`Glowwater Potion`)
+                    // reads as the game's Chinese name for it.
+                    match localization::display_zh()
+                        .then(|| localization::zh_name_for_english(&name))
+                        .flatten()
+                    {
+                        Some(zh) => json!(zh),
+                        None => json!(name),
+                    }
+                }
                 other => other.clone(),
             };
             out.insert(name.to_lowercase(), v);
@@ -262,10 +277,21 @@ fn mad_science_flags(card: &Value) -> Option<Map<String, Value>> {
 /// `card_select` contexts whose pick UPGRADES the chosen card.
 const UPGRADE_CONTEXTS: [&str; 2] = ["upgrade", "upgrade_in_hand"];
 
+/// The name an art lookup keys on for the loc key `raw` whose display form
+/// is `display`: `display` itself in English mode, the English name in
+/// Chinese mode (the art slugs are English).
+fn art_name(raw: Option<&str>, display: &str) -> String {
+    if !localization::display_zh() {
+        return display.to_string();
+    }
+    resolve_name(raw, Loc::english_for(sts2_core::GameVersion::default()))
+}
+
 /// `_enrich_relic`: name / image / description of a relic dict.
 fn enrich_relic(relic: &mut Value, ctx: &EnrichCtx<'_>) {
-    let name = resolve_name(relic.get("name").and_then(Value::as_str), ctx.loc);
-    let image = asset_url(ctx.assets_base, ctx.assets.relic(&name));
+    let raw = relic.get("name").and_then(Value::as_str);
+    let name = resolve_name(raw, ctx.loc);
+    let image = asset_url(ctx.assets_base, ctx.assets.relic(&art_name(raw, &name)));
     let m = relic.as_object_mut().expect("relic dict");
     m.insert("name".into(), json!(name));
     m.insert("image".into(), image);
@@ -276,10 +302,32 @@ fn enrich_relic(relic: &mut Value, ctx: &EnrichCtx<'_>) {
         .insert("description".into(), json!(desc));
 }
 
+/// `_blitz_ware`: one Blitz merchant option (the oracle's `blitz_choice`
+/// shape) as the ware the shop screen draws; `None` for the leave option.
+fn blitz_ware(opt: &Value) -> Option<Value> {
+    if opt.get("action").and_then(Value::as_str) != Some("blitz_choice") {
+        return None;
+    }
+    let null = Value::Null;
+    let item = opt.get("item").unwrap_or(&null);
+    let of = |v: &Value, k: &str| v.get(k).cloned().unwrap_or(Value::Null);
+    Some(json!({
+        "index": of(opt, "index"),
+        "kind": of(item, "blitz_kind"),
+        "title": of(item, "title"),
+        "description": of(item, "description"),
+        "cursed": truthy(item.get("cursed").unwrap_or(&null)),
+        "rare": truthy(item.get("rare").unwrap_or(&null)),
+        "status": of(opt, "status"),
+        "enabled": truthy(opt.get("enabled").unwrap_or(&null)),
+    }))
+}
+
 /// `_enrich_potion`.
 fn enrich_potion(potion: &mut Value, ctx: &EnrichCtx<'_>) {
-    let name = resolve_name(potion.get("name").and_then(Value::as_str), ctx.loc);
-    let image = asset_url(ctx.assets_base, ctx.assets.potion(&name));
+    let raw = potion.get("name").and_then(Value::as_str);
+    let name = resolve_name(raw, ctx.loc);
+    let image = asset_url(ctx.assets_base, ctx.assets.potion(&art_name(raw, &name)));
     let m = potion.as_object_mut().expect("potion dict");
     m.insert("name".into(), json!(name));
     m.insert("image".into(), image);
@@ -297,10 +345,15 @@ pub fn log_names(loc: &'static Loc) -> LogNames {
     let titled = move |raw: &str| resolve_name(Some(&format!("{raw}.title")), loc);
     LogNames {
         card: Box::new(titled),
-        monster: Box::new(|raw: &str| monster_title(raw)),
+        monster: Box::new(|raw: &str| monster_display_name(raw)),
+        // English in both languages: the page matches a log row's power
+        // `noun` against the state's power `name` (amounts, icons, sounds).
         power: Box::new(|raw: &str| power_title(raw)),
         potion: Box::new(titled),
-        orb: Box::new(move |raw: &str| titled(&format!("{raw}_ORB"))),
+        orb: Box::new(move |raw: &str| {
+            let key = format!("{raw}_ORB.title");
+            game_name("orbs", &key, &titled(&format!("{raw}_ORB")))
+        }),
         character: Box::new(titled),
         ..LogNames::default()
     }
@@ -453,20 +506,122 @@ pub fn apply_instance_jitter(enemies: &mut [Value], hp_ranges: &BTreeMap<String,
     }
 }
 
-/// `enrich_powers`: the two icons every power carries.
-fn enrich_powers(powers: Option<&mut Value>, ctx: &EnrichCtx<'_>) {
+/// `enrich_powers`: the two icons every power carries. In Chinese display
+/// mode also its `display_name` and hover `description` (the game's own
+/// text; `owner` fills `{OwnerName}`). `name` stays the English title: the
+/// art, the log's `noun` matching and the sound map key off it.
+fn enrich_powers(powers: Option<&mut Value>, ctx: &EnrichCtx<'_>, owner: &str) {
     let Some(Value::Array(list)) = powers else {
         return;
     };
+    let zh = localization::display_zh();
+    // The build these powers belong to: the one whose display map `ctx` holds.
+    let shown_version = zh
+        .then(|| {
+            sts2_core::GameVersion::ALL
+                .into_iter()
+                .find(|v| std::ptr::eq(ctx.loc, Loc::embedded_for(*v)))
+        })
+        .flatten();
     for pw in list.iter_mut() {
         let name = sval(pw, "name").to_string();
         let image = asset_url(ctx.assets_base, ctx.assets.power(&name));
         let image_big = asset_url(ctx.assets_base, ctx.assets.power_big(&name));
+        let id = pw
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map_or_else(|| name.clone(), str::to_string);
+        let amount = pw.get("amount").and_then(Value::as_i64).unwrap_or(0);
         if let Some(m) = pw.as_object_mut() {
             m.insert("image".into(), image);
             m.insert("image_big".into(), image_big);
+            if zh {
+                m.insert("display_name".into(), json!(power_display_name(&id)));
+                if let Some(d) = power_display_description(&id, amount, owner, shown_version) {
+                    m.entry("description").or_insert(json!(d));
+                }
+            }
         }
     }
+}
+
+/// `intents.json`'s key stem for an engine `IntentType`.
+fn intent_loc_stem(itype: &str) -> String {
+    match itype {
+        "StatusCard" => "STATUS".to_string(),
+        other => pascal_to_screaming_snake(other),
+    }
+}
+
+/// An intent's Chinese name and hover text (the game's `intents.json`, its
+/// placeholders filled from what the wire carries), for Chinese display
+/// mode. `Hidden` has no tip in the game; a `{CardCount}` the wire does not
+/// carry reads without the count.
+fn zh_intent_text(itype: &str, damage: Option<i64>, hits: Option<i64>) -> (String, Option<String>) {
+    if itype == "Hidden" {
+        return (
+            tr("Hidden").to_string(),
+            Some(tr("This enemy's intention is hidden.").to_string()),
+        );
+    }
+    let zh = crate::data::zh_tables();
+    let stem = intent_loc_stem(itype);
+    let name = zh
+        .get("intents", &format!("{stem}.title"))
+        .map_or_else(|| itype.to_string(), str::to_string);
+    let desc = match (itype, damage) {
+        ("StatusCard", _) => Some(tr("This enemy intends to give you Status cards.").to_string()),
+        ("DeathBlow", None) => Some(
+            tr("This creature is trying to take you down with it before being destroyed.")
+                .to_string(),
+        ),
+        _ => zh
+            .get("intents", &format!("{stem}.description"))
+            .and_then(|t| {
+                let mut stats = Map::new();
+                if let Some(d) = damage {
+                    stats.insert("damage".into(), json!(d));
+                }
+                stats.insert("repeat".into(), json!(hits.unwrap_or(1)));
+                // The game's `{IsMultiplayer:all|}`: a solo run takes the
+                // empty else-branch.
+                let solo = match t.find("{IsMultiplayer:") {
+                    Some(i) => match t[i..].find('}') {
+                        Some(j) => format!("{}{}", &t[..i], &t[i + j + 1..]),
+                        None => t.to_string(),
+                    },
+                    None => t.to_string(),
+                };
+                // `{Repeat:choose(1):|[blue]{}[/blue]x}`: nothing for one
+                // hit, else the hit count (`{}`) in the second branch — the
+                // shared renderer reads a missed `choose` as its FIRST branch.
+                let hits_n = hits.unwrap_or(1);
+                let solo = match solo.find("{Repeat:choose(1):|") {
+                    Some(i) => {
+                        let body_start = i + "{Repeat:choose(1):|".len();
+                        let rest = &solo[body_start..];
+                        let close = rest
+                            .find("{}")
+                            .and_then(|k| rest[k + 2..].find('}').map(|c| (k, k + 2 + c)));
+                        match close {
+                            Some((_, end)) => {
+                                let branch = if hits_n > 1 {
+                                    rest[..end].replacen("{}", &hits_n.to_string(), 1)
+                                } else {
+                                    String::new()
+                                };
+                                format!("{}{branch}{}", &solo[..i], &rest[end + 1..])
+                            }
+                            None => solo,
+                        }
+                    }
+                    None => solo,
+                };
+                render_zh_text(&solo, &Value::Object(stats))
+            }),
+    };
+    (name, desc)
 }
 
 /// `_enemy_has_power`: whether an enriched enemy carries a power whose
@@ -486,8 +641,10 @@ fn enemy_has_power(enemy: &Value, token: &str) -> bool {
     })
 }
 
-/// Stamp `rig_scale` / `rig_bounds_h` / `rig_bounds_w` from a creature
-/// scale dict (`pscale.get(...)`: missing → `null`).
+/// Stamp `rig_scale` / `rig_bounds_h` / `rig_bounds_w` / `rig_arrow_x` /
+/// `rig_arrow_y` from a creature scale dict (`pscale.get(...)`: missing →
+/// `null`). The arrow pair is where the Fool's arrow sticks in a creature whose
+/// rig has no arrow slots (`extract_creature_bounds.py`).
 fn stamp_scale(target: &mut Map<String, Value>, scale: &CreatureScale) {
     let get = |k: &str| {
         scale
@@ -499,6 +656,8 @@ fn stamp_scale(target: &mut Map<String, Value>, scale: &CreatureScale) {
     target.insert("rig_scale".into(), get("scale"));
     target.insert("rig_bounds_h".into(), get("bounds_h"));
     target.insert("rig_bounds_w".into(), get("bounds_w"));
+    target.insert("rig_arrow_x".into(), get("arrow_x"));
+    target.insert("rig_arrow_y".into(), get("arrow_y"));
 }
 
 /// `_enrich_intent_modifiers`: a display title and an icon per modifier row.
@@ -513,14 +672,21 @@ fn enrich_intent_modifiers(intent: &mut Value, ctx: &EnrichCtx<'_>) {
             "power" => {
                 let t = power_title(&name);
                 let img = asset_url(ctx.assets_base, ctx.assets.power(&t));
-                (t, Some(img))
+                (power_display_name(&name), Some(img))
             }
             "relic" => {
                 let t = title_case(&name.replace('_', " "));
                 let img = asset_url(ctx.assets_base, ctx.assets.relic(&t));
-                (t, Some(img))
+                let shown = if localization::display_zh() {
+                    ctx.loc
+                        .get(&format!("{}.title", pascal_to_screaming_snake(&name)))
+                        .map_or(t, str::to_string)
+                } else {
+                    t
+                };
+                (shown, Some(img))
             }
-            _ => ("Other".to_string(), None),
+            _ => (tr("Other").to_string(), None),
         };
         if let Some(mm) = m.as_object_mut() {
             mm.insert("title".into(), json!(title));
@@ -533,6 +699,36 @@ fn enrich_intent_modifiers(intent: &mut Value, ctx: &EnrichCtx<'_>) {
 
 /// `enrich_card`: art, real type / rarity / frame colour, manifest cost,
 /// and the fully rendered description (plain + rich), for one card dict.
+/// v0.113.0 Dingy Dagger's upgrade level (C# `CurrentUpgradeLevel`) when
+/// `cid` is that card, else `None`: the card dict's `upgrade_level`, or 1 /
+/// 0 from its `upgraded` flag (GH #1391).
+fn dingy_dagger_level(cid: &str, card: &Value) -> Option<u8> {
+    if cid != "DINGY_DAGGER" {
+        return None;
+    }
+    let level = card
+        .get("upgrade_level")
+        .and_then(Value::as_u64)
+        .map(|l| u8::try_from(l).unwrap_or(u8::MAX));
+    Some(level.unwrap_or_else(|| u8::from(truthy(card.get("upgraded").unwrap_or(&Value::Null)))))
+}
+
+/// `DingyDagger.Title` / `GetPortraitFilename`: Dingy below level 3, Fine
+/// below 6, Pristine from 6 — the loc title suffix and the portrait name.
+fn dingy_dagger_tier(level: u8) -> (&'static str, &'static str) {
+    match level {
+        0..=2 => ("dingy", "dingy_dagger"),
+        3..=5 => ("fine", "fine_dagger"),
+        _ => ("pristine", "pristine_dagger"),
+    }
+}
+
+/// Dingy Dagger's damage at `level`: `DamageVar(7)` plus, per upgrade to
+/// level `l`, `OnUpgrade`'s `3 + l` (7, 11, 16, 22, …).
+fn dingy_dagger_damage(level: u8) -> i32 {
+    (1..=i32::from(level)).fold(7, |d, l| d + 3 + l)
+}
+
 fn enrich_card(
     card: &mut Value,
     in_combat: bool,
@@ -543,7 +739,14 @@ fn enrich_card(
     let loc = ctx.loc;
     let cid = id_tail(card);
     let morph = mad_science_flags(card);
-    let image = if let Some(m) = &morph {
+    let dingy = dingy_dagger_level(&cid, card);
+    let image = if let Some(level) = dingy {
+        asset_url(
+            ctx.assets_base,
+            ctx.assets
+                .card(character, "", dingy_dagger_tier(level).1, None),
+        )
+    } else if let Some(m) = &morph {
         let variant = format!(
             "mad_science_{}",
             py_str(m.get("cardtype").unwrap_or(&Value::Null)).to_lowercase()
@@ -579,6 +782,9 @@ fn enrich_card(
             }
         }
     }
+    if localization::display_zh() {
+        zh_card_labels(card);
+    }
     let color = frame_color(
         loc.get(&format!("{cid}.character")),
         card.get("type").and_then(Value::as_str),
@@ -592,8 +798,27 @@ fn enrich_card(
     } else {
         None
     };
-    let name = resolve(card.get("name").and_then(Value::as_str), loc);
+    let name = match dingy {
+        Some(level) => resolve(
+            Some(&format!("{cid}.title.{}", dingy_dagger_tier(level).0)),
+            loc,
+        ),
+        None => resolve(card.get("name").and_then(Value::as_str), loc),
+    };
     let template = resolve(card.get("description").and_then(Value::as_str), loc);
+    if let Some(level) = dingy {
+        let m = card.as_object_mut().expect("card dict");
+        if level > 0 {
+            m.insert("upgrade_level".into(), json!(level));
+        }
+        // Out of combat the card has no stats; its damage depends on the
+        // level, which the loc's single upgraded value cannot give.
+        let stats = m.entry("stats").or_insert_with(|| json!({}));
+        if let Some(s) = stats.as_object_mut() {
+            s.entry("damage")
+                .or_insert_with(|| json!(dingy_dagger_damage(level)));
+        }
+    }
     {
         let m = card.as_object_mut().expect("card dict");
         m.insert("color".into(), json!(color));
@@ -724,6 +949,41 @@ fn enrich_card(
     }
 }
 
+/// Chinese display mode: the words a card's frame prints, as extra fields
+/// beside the English ones the frame colour / skin key off — `type_name`
+/// (the type plaque, `gameplay_ui` `CARD_TYPE.*`), `rarity_name`
+/// (`CARD_RARITY.*`) and `enchantment_name` (`enchantments.json`).
+fn zh_card_labels(card: &mut Value) {
+    let zh = crate::data::zh_tables();
+    let field = |card: &Value, key: &str| {
+        card.get(key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(pascal_to_screaming_snake)
+    };
+    let type_name = field(card, "type")
+        .and_then(|t| zh.get("gameplay_ui", &format!("CARD_TYPE.{t}")))
+        .map(str::to_string);
+    let rarity_name = field(card, "rarity")
+        .and_then(|r| zh.get("gameplay_ui", &format!("CARD_RARITY.{r}")))
+        .map(str::to_string);
+    let enchantment_name = field(card, "enchantment")
+        .and_then(|e| zh.get("enchantments", &format!("{e}.title")))
+        .map(str::to_string);
+    let Some(m) = card.as_object_mut() else {
+        return;
+    };
+    for (key, value) in [
+        ("type_name", type_name),
+        ("rarity_name", rarity_name),
+        ("enchantment_name", enchantment_name),
+    ] {
+        if let Some(v) = value {
+            m.insert(key.into(), json!(v));
+        }
+    }
+}
+
 fn enrich_cards(
     list: Option<&mut Value>,
     in_combat: bool,
@@ -801,6 +1061,24 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
+    // Chinese display mode: the character's name to SHOW (`name` stays the
+    // class key the art, sounds and advisors read).
+    let zh = localization::display_zh();
+    if zh && !character.is_empty() {
+        let key = format!("{}.title", crate::display_maps::loc_id(&character));
+        if let (Some(shown), Some(player)) = (
+            loc.get(&key),
+            state.get_mut("player").and_then(Value::as_object_mut),
+        ) {
+            player.insert("display_name".into(), json!(shown));
+        }
+    }
+    let player_shown = state
+        .get("player")
+        .and_then(|p| p.get("display_name"))
+        .and_then(Value::as_str)
+        .unwrap_or(&character)
+        .to_string();
 
     // Relics and potions persist across the whole run.
     if let Some(player) = state.get_mut("player").and_then(Value::as_object_mut) {
@@ -842,7 +1120,7 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
                     stamp_scale(player, pscale);
                 }
             }
-            enrich_powers(state.get_mut("player_powers"), ctx);
+            enrich_powers(state.get_mut("player_powers"), ctx, &player_shown);
             if let Some(osty) = state.get_mut("osty").filter(|o| o.is_object()) {
                 if truthy(osty.get("alive").unwrap_or(&Value::Null)) {
                     let om = osty.as_object_mut().expect("osty dict");
@@ -859,6 +1137,15 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
                     let ekind = normalize_kind(enemy.get("kind").and_then(Value::as_str));
                     let ekind = ekind.as_deref();
                     let ename = sval(enemy, "name").to_string();
+                    let eshown = match ekind.filter(|_| zh) {
+                        Some(_) => monster_display_name(sval(enemy, "kind")),
+                        None => ename.clone(),
+                    };
+                    if zh {
+                        if let Some(em) = enemy.as_object_mut() {
+                            em.insert("display_name".into(), json!(eshown));
+                        }
+                    }
                     let image = url(assets.monster(&ename));
                     let rig = url(assets.monster_rig(&ename, ekind));
                     let escale = assets.monster_rig_scale(&ename, ekind);
@@ -922,13 +1209,20 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
                             let total = dmg.map(|d| d * hits);
                             let itype = sval(intent, "type").to_string();
                             let img = url(assets.intent(&itype, total));
+                            let shown = zh.then(|| zh_intent_text(&itype, dmg, Some(hits)));
                             if let Some(im) = intent.as_object_mut() {
                                 im.insert("intent_image".into(), img);
+                                if let Some((name, desc)) = shown {
+                                    im.insert("display_name".into(), json!(name));
+                                    if let Some(d) = desc {
+                                        im.insert("description".into(), json!(d));
+                                    }
+                                }
                             }
                             enrich_intent_modifiers(intent, ctx);
                         }
                     }
-                    enrich_powers(enemy.get_mut("powers"), ctx);
+                    enrich_powers(enemy.get_mut("powers"), ctx, &eshown);
                     enrich_cards(enemy.get_mut("stolen_cards"), false, false, &character, ctx);
                 }
                 if let Some(hp_ranges) = ctx.hp_ranges {
@@ -947,10 +1241,31 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
             if let Some(Value::Array(orbs)) = state.get_mut("orbs") {
                 for orb in orbs.iter_mut() {
                     let img = url(assets.orb(sval(orb, "type")));
-                    let name = resolve(orb.get("name").and_then(Value::as_str), loc);
+                    let raw = orb.get("name").and_then(Value::as_str).unwrap_or("");
+                    let name = game_name("orbs", raw, &resolve(Some(raw), loc));
+                    // Chinese display mode: the game's hover text too.
+                    let desc = if zh {
+                        raw.strip_suffix(".title")
+                            .and_then(|stem| {
+                                crate::data::zh_tables()
+                                    .get("orbs", &format!("{stem}.smartDescription"))
+                            })
+                            .and_then(|t| {
+                                let stats = json!({
+                                    "passive": orb.get("passive").cloned().unwrap_or(Value::Null),
+                                    "evoke": orb.get("evoke").cloned().unwrap_or(Value::Null),
+                                });
+                                render_zh_text(t, &stats)
+                            })
+                    } else {
+                        None
+                    };
                     if let Some(om) = orb.as_object_mut() {
                         om.insert("image".into(), img);
                         om.insert("name".into(), json!(name));
+                        if let Some(d) = desc {
+                            om.insert("description".into(), json!(d));
+                        }
                     }
                 }
             }
@@ -989,10 +1304,17 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
                     .is_some_and(|c| UPGRADE_CONTEXTS.contains(&c));
             if let Some(Value::Array(cards)) = state.get_mut("cards") {
                 for card in cards.iter_mut() {
-                    if previews && !truthy(card.get("upgraded").unwrap_or(&Value::Null)) {
+                    let next_level = dingy_dagger_level(&id_tail(card), card).map(|l| l + 1);
+                    if previews
+                        && (next_level.is_some()
+                            || !truthy(card.get("upgraded").unwrap_or(&Value::Null)))
+                    {
                         let mut twin = card.as_object().cloned().unwrap_or_default();
                         twin.insert("upgraded".into(), json!(true));
                         twin.remove("stats");
+                        if let Some(level) = next_level {
+                            twin.insert("upgrade_level".into(), json!(level));
+                        }
                         apply_upgrade_cost(&mut twin, card, loc);
                         let cid = id_tail(card);
                         if let Some(delta) = loc
@@ -1036,6 +1358,42 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
                     enrich_potion(potion, ctx);
                 }
             }
+            // GH #1347: the Blitz merchant's wares, under their own key: the
+            // live step overwrites `options` with the normalized action list.
+            if state
+                .get("blitz_choices_remaining")
+                .is_some_and(|v| !v.is_null())
+            {
+                let wares: Vec<Value> = state
+                    .get("options")
+                    .and_then(Value::as_array)
+                    .map(|opts| opts.iter().filter_map(blitz_ware).collect())
+                    .unwrap_or_default();
+                state.insert("blitz_wares".into(), Value::Array(wares));
+            }
+        }
+        // GH #1347: the Blitz chest's relics.
+        "rewards" => {
+            if let Some(Value::Array(rewards)) = state.get_mut("rewards") {
+                for reward in rewards.iter_mut() {
+                    if reward.get("type").and_then(Value::as_str) == Some("relic") {
+                        enrich_relic(reward, ctx);
+                    } else if localization::display_zh() {
+                        // A potion / card reward named in English by the
+                        // engine reads as the game's Chinese name for it.
+                        let shown = reward
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .map(|raw| resolve_name(Some(raw), loc))
+                            .and_then(|n| {
+                                localization::zh_name_for_english(&n).map(str::to_string)
+                            });
+                        if let (Some(zh), Some(m)) = (shown, reward.as_object_mut()) {
+                            m.insert("name".into(), json!(zh));
+                        }
+                    }
+                }
+            }
         }
         "bundle_select" => {
             if let Some(Value::Array(bundles)) = state.get_mut("bundles") {
@@ -1047,8 +1405,9 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
         "treasure" => {
             if let Some(Value::Array(relics)) = state.get_mut("relics") {
                 for relic in relics.iter_mut() {
-                    let name = resolve_name(relic.get("name").and_then(Value::as_str), loc);
-                    let img = url(assets.relic(&name));
+                    let raw = relic.get("name").and_then(Value::as_str);
+                    let name = resolve_name(raw, loc);
+                    let img = url(assets.relic(&art_name(raw, &name)));
                     if let Some(rm) = relic.as_object_mut() {
                         rm.insert("name".into(), json!(name));
                         rm.insert("image".into(), img);
@@ -1057,12 +1416,32 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
             }
         }
         "event_choice" => {
-            let event_name = resolve_name(state.get("event_name").and_then(Value::as_str), loc);
+            let raw_event = state
+                .get("event_name")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let event_name = resolve_name(raw_event.as_deref(), loc);
+            let event_key = art_name(raw_event.as_deref(), &event_name);
             state.insert("event_name".into(), json!(event_name));
             state.insert(
                 "art".into(),
-                json!({"illustration": url(assets.event_illustration(&event_name))}),
+                json!({"illustration": url(assets.event_illustration(&event_key))}),
             );
+            // Chinese display mode: `event_name` is Chinese, so the page gets
+            // the English name it keys the room on (`"Neow"`), and an
+            // ancient's epithet (`ancients.json`) for its name plaque.
+            if zh {
+                state.insert("event_name_en".into(), json!(event_key));
+                let epithet = raw_event
+                    .as_deref()
+                    .and_then(|k| k.strip_suffix(".title"))
+                    .and_then(|stem| {
+                        crate::data::zh_tables().get("ancients", &format!("{stem}.epithet"))
+                    });
+                if let Some(e) = epithet {
+                    state.insert("event_epithet".into(), json!(e));
+                }
+            }
             let raw_options: Vec<Value> = state
                 .get("options")
                 .and_then(Value::as_array)
@@ -1079,15 +1458,17 @@ pub fn enrich(mut step: Value, ctx: &EnrichCtx<'_>) -> Value {
                 body = String::new();
             }
             let ev = Value::Object(event_vars);
+            // The page body reads the same single-player flags as the options
+            // (`{IsMultiplayer:some wuppys are|a lone wuppy is}`).
+            let eflags = event_flags();
             state.insert(
                 "description".into(),
                 json!(resolve_card_text(
                     Some(&body),
                     Some(&ev),
-                    flags(false, false, None, false)
+                    flags(false, false, Some(&eflags), false)
                 )),
             );
-            let eflags = event_flags();
             let mut options_out = Vec::with_capacity(raw_options.len());
             for opt in &raw_options {
                 let mut opt_vars = event_option_vars(opt, loc, "vars");
@@ -1320,5 +1701,203 @@ mod tests {
         let mut twin = card.as_object().cloned().unwrap();
         apply_upgrade_cost(&mut twin, &card, &loc);
         assert!(twin.get("cost").is_none());
+    }
+}
+
+#[cfg(test)]
+mod dingy_dagger_tests {
+    use super::*;
+    use crate::localization::Loc;
+    use sts2_core::GameVersion;
+
+    fn enriched(card: Value) -> Value {
+        let ctx = EnrichCtx {
+            assets: AssetResolver::embedded_for(GameVersion::V0_113_0),
+            loc: Loc::embedded_for(GameVersion::V0_113_0),
+            hp_ranges: None,
+            assets_base: "/assets",
+        };
+        let mut card = card;
+        enrich_card(&mut card, false, false, "Ironclad", &ctx);
+        card
+    }
+
+    fn deck_dagger(level: Option<u8>) -> Value {
+        let mut card = crate::combat_view::deck_card(0, "DingyDagger", level.is_some());
+        if let Some(l) = level {
+            card["upgrade_level"] = json!(l);
+        }
+        card
+    }
+
+    /// GH #1391: the title, portrait and damage follow the upgrade level
+    /// (`DingyDagger.Title` / `GetPortraitFilename` / `OnUpgrade`).
+    #[test]
+    fn dingy_dagger_is_named_and_drawn_by_its_level() {
+        for (level, name, art, damage) in [
+            (None, "Dingy Dagger", "dingy_dagger", 7),
+            (Some(1), "Dingy Dagger", "dingy_dagger", 11),
+            (Some(3), "Fine Dagger", "fine_dagger", 22),
+            (Some(6), "Pristine Dagger", "pristine_dagger", 46),
+        ] {
+            let card = enriched(deck_dagger(level));
+            assert_eq!(card["name"], json!(name), "level {level:?}");
+            let image = card["image"].as_str().unwrap_or_default();
+            assert!(
+                image.contains(&format!("/{art}.")),
+                "level {level:?}: {image}"
+            );
+            let text = card["description"].as_str().unwrap_or_default();
+            assert!(
+                text.contains(&format!("Deal {damage} damage")),
+                "level {level:?}: {text}"
+            );
+            assert_eq!(
+                card.get("upgrade_level").and_then(Value::as_u64),
+                level.map(u64::from)
+            );
+        }
+    }
+
+    #[test]
+    fn dingy_dagger_damage_by_level() {
+        let got: Vec<i32> = (0..=4).map(dingy_dagger_damage).collect();
+        assert_eq!(got, [7, 11, 16, 22, 29]);
+    }
+}
+
+/// Chinese display mode end to end: a v0.111.0 run played into its first
+/// fight shows the game's Chinese names (enemies, powers, intents, the
+/// character) beside the English keys the page looks art up by.
+#[cfg(test)]
+mod zh_names_tests {
+    use super::*;
+    use crate::localization::{set_display_language, Loc};
+    use crate::session::Session;
+    use sts2_core::GameVersion;
+
+    /// CJK present, and no ASCII letter (digits / symbols / `#2` are fine).
+    fn chinese(s: &str) -> bool {
+        s.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
+            && !s.chars().any(|c| c.is_ascii_alphabetic())
+    }
+
+    fn assert_chinese(what: &str, s: Option<&str>) {
+        let s = s.unwrap_or_else(|| panic!("{what}: missing"));
+        assert!(chinese(s), "{what}: {s:?} is not Chinese");
+    }
+
+    #[test]
+    fn first_fight_shows_chinese_game_names() {
+        if !crate::data::zh_tables().is_present() {
+            return;
+        }
+        assert!(set_display_language("zh"));
+        let version = GameVersion::V0_111_0;
+        let mut sess = Session::new_for(version);
+        sess.start("Ironclad", "ZHTEST", 0, "overgrowth")
+            .expect("start");
+        let mut state = sess.state().expect("state");
+        for _ in 0..80 {
+            if state["decision"] == json!("combat_play") {
+                break;
+            }
+            let opts = crate::options::normalize_options(&state);
+            let opt = opts
+                .iter()
+                .find(|o| o["enabled"] != json!(false))
+                .unwrap_or_else(|| panic!("no option at {}", state["decision"]));
+            let action = opt["action"].as_str().unwrap_or("").to_string();
+            let args = opt.get("args").cloned().unwrap_or_else(|| json!({}));
+            state = sess.apply(&action, &args).expect("apply").state;
+        }
+        assert_eq!(
+            state["decision"],
+            json!("combat_play"),
+            "never reached a fight"
+        );
+
+        // The history / advisor labels read the raw view.
+        let raw_enemies = state["enemies"].as_array().cloned().unwrap_or_default();
+        for label in crate::enemy_labels::enemy_labels(&raw_enemies) {
+            assert_chinese("enemy label", Some(&label));
+        }
+
+        let ctx = EnrichCtx {
+            assets: AssetResolver::embedded_for(version),
+            loc: Loc::embedded_for(version),
+            hp_ranges: None,
+            assets_base: "/assets",
+        };
+        let step = crate::step::live_step(state, &ctx);
+        let st = &step["state"];
+        assert_chinese("player", st["player"]["display_name"].as_str());
+        // `name` stays the English class key.
+        assert_eq!(st["player"]["name"], json!("Ironclad"));
+        let enemies = st["enemies"].as_array().expect("enemies");
+        assert!(!enemies.is_empty());
+        let mut powers = st["player_powers"].as_array().cloned().unwrap_or_default();
+        for e in enemies {
+            assert_chinese("enemy", e["display_name"].as_str());
+            assert!(
+                e["name"].as_str().is_some_and(str::is_ascii),
+                "enemy name must stay English: {}",
+                e["name"]
+            );
+            for intent in e["intents"].as_array().cloned().unwrap_or_default() {
+                assert_chinese("intent", intent["display_name"].as_str());
+                assert_chinese("intent tip", intent["description"].as_str());
+            }
+            powers.extend(e["powers"].as_array().cloned().unwrap_or_default());
+        }
+        for p in &powers {
+            assert_chinese("power", p["display_name"].as_str());
+        }
+        for card in st["hand"].as_array().cloned().unwrap_or_default() {
+            assert_chinese("card type", card["type_name"].as_str());
+        }
+
+        // Powers the first fight may not show.
+        assert_chinese("Strength", Some(&power_display_name("STRENGTH")));
+        assert_chinese("Vulnerable", Some(&power_display_name("VULNERABLE")));
+        let tip = power_display_description("STRENGTH", 2, "铁甲战士", None).expect("Strength tip");
+        assert!(tip.contains('2') && !tip.contains('{'), "{tip}");
+        let (name, desc) = zh_intent_text("Attack", Some(6), Some(2));
+        assert_chinese("Attack intent", Some(&name));
+        let desc = desc.expect("attack tip");
+        assert!(
+            desc.contains('6') && desc.contains('2') && chinese(&desc),
+            "{desc}"
+        );
+        assert_chinese("Corpse Slug", Some(&monster_display_name("CorpseSlug")));
+        // Card plaque / rarity / enchantment words.
+        let mut card = json!({"type": "Attack", "rarity": "Basic", "enchantment": "ADROIT"});
+        zh_card_labels(&mut card);
+        assert_chinese("type_name", card["type_name"].as_str());
+        assert_chinese("rarity_name", card["rarity_name"].as_str());
+        assert_chinese("enchantment_name", card["enchantment_name"].as_str());
+        // Neow: Chinese title, English room key, the ancient's epithet.
+        let ev = enrich(
+            json!({"decision": "event_choice",
+                   "state": {"decision": "event_choice", "event_name": "NEOW.title", "options": []}}),
+            &ctx,
+        );
+        assert_chinese("event", ev["state"]["event_name"].as_str());
+        assert_eq!(ev["state"]["event_name_en"], json!("Neow"));
+        assert_chinese("epithet", ev["state"]["event_epithet"].as_str());
+        // Relic art still resolves off the English name.
+        let mut relic = json!({"name": "BURNING_BLOOD.title"});
+        enrich_relic(&mut relic, &ctx);
+        assert_chinese("relic", relic["name"].as_str());
+        assert!(relic["image"].is_string(), "relic art lost: {relic}");
+        // The map's next boss.
+        let mut boss = serde_json::Map::new();
+        boss.insert("id".into(), json!("WATERFALL_GIANT_BOSS"));
+        crate::game::zh_boss_name(&mut boss);
+        assert_chinese("boss", boss["name"].as_str());
+
+        set_display_language("en");
+        assert_eq!(power_display_name("STRENGTH"), "Strength");
+        assert_eq!(monster_display_name("CorpseSlug"), "Corpse Slug");
     }
 }

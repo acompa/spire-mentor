@@ -114,6 +114,8 @@ pub struct BossNodeObs {
 /// "current_coord": coord|None}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullMapObs {
+    /// Absent reads as no rows, as `mapfeat.py`'s `full_map.get("rows") or []` does.
+    #[serde(default)]
     pub rows: Vec<Vec<MapNodeObs>>,
     #[serde(default)]
     pub boss: Option<BossNodeObs>,

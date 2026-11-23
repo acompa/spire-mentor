@@ -55,6 +55,19 @@ def test_deep_runs_and_practice_agree_row_for_row() -> None:
     assert ls.mismatches == 0, _report(ls)
 
 
+def test_an_outlier_saturates_alike_in_both_envs() -> None:
+    """~1e9 gold (an edited save's, allchar it 7806) is ~3e6 in R_GOLD: both tokenizers
+    saturate it at float16's 65504 instead of inf, bit for bit."""
+    ls = Lockstep(f9_p=0.0)
+    seed = SEED + 9
+    rng = np.random.default_rng(seed)
+    rm = E.make_run_manager(seed)
+    rm.set_player(100_000, 100_000, 1_000_000_000)
+    ls.segment(seed, rm, E.RUN, lambda d, _k: int(rng.integers(d.n_classes)), tag="outlier")
+    assert ls.stats["rows"] > 20
+    assert ls.mismatches == 0, _report(ls)
+
+
 def test_a_rare_map_reaches_sctx_and_priv_draw() -> None:
     """A RareMap that sends every card to row 1 changes the rows of both envs alike."""
     n = C.SCTX_TABLE_SIZES["card"]

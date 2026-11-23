@@ -543,6 +543,7 @@ fn listener_potion_belt(rs: &mut RunState) -> EffectResult {
         return EffectResult::NotImplemented;
     }
     rs.gain_potion_slots(POTION_BELT_SLOTS);
+    rs.settle_waiting_potions();
     EffectResult::Resolved
 }
 
@@ -2124,6 +2125,7 @@ mod tests {
             card_type,
             target_type: TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: sts2_core::cards::CombatVars::new(),

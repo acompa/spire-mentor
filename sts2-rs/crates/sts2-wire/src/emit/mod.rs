@@ -67,8 +67,9 @@ pub mod run_action;
 pub mod run_manager;
 
 pub use combat::{
-    card_block_preview, card_damage_preview, combat_action_to_value, combat_state_to_value,
-    legal_actions, locate_card, pending_choice,
+    card_block_live, card_block_preview, card_damage_live, card_damage_preview, card_gen_live,
+    combat_action_to_value, combat_state_to_value, end_turn_live, legal_actions, locate_card,
+    pending_choice, EndTurnLive, GenLive,
 };
 pub use run_action::{run_action_from_value, run_action_to_value};
 

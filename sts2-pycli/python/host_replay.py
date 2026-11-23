@@ -10,6 +10,17 @@ replay; its kind and detail are the result.
     python python/host_replay.py --run <file>            # one run, verbose
     python python/host_replay.py --census 300 --out DIR  # sample and tally
 
+The log does not hold two things the run depends on, and the replay finds both
+by trying:
+
+- The player's profile: what they have unlocked, which bosses they have met,
+  whether it is their first run. With `--infer-profile` a run that does not
+  replay with everything unlocked is replayed under other profiles
+  (`host_replay_profile`); the result names the one it was replayed under.
+  `--profiles` takes an earlier census' results as the first guesses.
+- The Crystal Sphere's clicks. The log has the rewards; the clicks are planned
+  from the host's list of the items under the fog (`host_replay_sphere`).
+
 GH #1286. The log holds events, not full state: a match means everything the
 log records agrees, not that every hidden field does.
 """
@@ -19,6 +30,7 @@ from __future__ import annotations
 import argparse
 import glob
 import gzip
+import itertools
 import json
 import os
 import random
@@ -29,7 +41,23 @@ from multiprocessing import Pool
 from pathlib import Path
 from typing import Any
 
+import host_replay_sphere
 from sts2_client import Game, set_game_version
+
+
+def _reveal_to_the_harness() -> None:
+    """What the hosts started from here show a replay and no player.
+
+    The Crystal Sphere is played click by click, with the items under the fog
+    listed: the log holds what the player dug up, not where they dug. A card
+    pick from the draw pile comes with the pile's order. Set when a replay
+    starts, not on import: a test that imports this module must not change
+    the hosts other tests start.
+    """
+    os.environ.setdefault("STS2_CRYSTAL_SPHERE_INTERACTIVE", "1")
+    os.environ.setdefault("STS2_CRYSTAL_SPHERE_REVEAL", "1")
+    os.environ.setdefault("STS2_REVEAL_DRAW_ORDER", "1")
+
 
 GAME_VERSION = "v0.111.0"
 
@@ -67,10 +95,13 @@ _REWARD_TYPE = {
 class Desync(Exception):
     """The host and the log disagree."""
 
-    def __init__(self, kind: str, detail: str) -> None:
+    def __init__(self, kind: str, detail: str, size: int = 0) -> None:
         super().__init__(f"{kind}: {detail}")
         self.kind = kind
         self.detail = detail
+        #: How many things differ, where the stop can count them: of two
+        #: replays stopping at the same place, the smaller is the nearer.
+        self.size = size
 
 
 class LogEnd(Exception):
@@ -146,6 +177,26 @@ def eligible(rows: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _with(profile: dict[str, Any], key: str, ids: list[str]) -> dict[str, Any]:
+    """`profile` with `ids` added to its list `key`."""
+    return {**profile, key: sorted({*profile.get(key, []), *ids})}
+
+
+_BOSS_ORDERS: dict[str, list[str]] = {}
+
+
+def _boss_orders() -> dict[str, list[str]]:
+    """Each act's boss discovery order, read from the host once."""
+    if not _BOSS_ORDERS:
+        g = Game()
+        try:
+            acts = g.epochs().get("acts") or {}
+        finally:
+            g.close()
+        _BOSS_ORDERS.update({k: v["boss_discovery_order"] for k, v in acts.items()})
+    return _BOSS_ORDERS
+
+
 def _norm(card_id: str) -> str:
     return card_id.removeprefix("CARD.").removesuffix("_CARD")
 
@@ -196,6 +247,181 @@ def _with_missing_end_turns(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def _with_missing_resolves(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add the `resolve` rows of a reward screen the recorder logged none for.
+
+    A taken reward is a `resolve` row. Some screens after a won fight have
+    none, though their `gold`, `potion_got`, `relic` and `acquire` rows show
+    what the player took; each of those then gets its `resolve` row.
+    """
+    out: list[dict[str, Any]] = []
+    i = 0
+    while i < len(rows):
+        r = rows[i]
+        out.append(r)
+        i += 1
+        if r["t"] != "combat_end" or r.get("result") != "victory":
+            continue
+        j = i
+        while j < len(rows) and rows[j]["t"] not in ("room_exit", "room", "combat_start", "end"):
+            j += 1
+        screen = rows[i:j]
+        if any(x["t"] == "resolve" for x in screen) or not any(
+            x["t"] == "decision" and x.get("source") == "reward" for x in screen
+        ):
+            continue
+        relic_offered = False
+        for x in screen:
+            out.append(x)
+            t = x["t"]
+            add: dict[str, Any] | None = None
+            if t == "decision" and x.get("decision_type") == "relic_reward":
+                relic_offered = True
+            elif t == "gold":
+                add = {"reward_kind": "GoldReward"}
+            elif t == "potion_got":
+                add = {"reward_kind": "PotionReward", "id": x.get("id")}
+            elif t == "relic" and relic_offered:
+                add = {"reward_kind": "RelicReward", "id": x.get("id")}
+            elif t == "acquire" and x.get("source") == "reward":
+                add = {"reward_kind": "CardReward", "decision_id": x.get("decision_id")}
+            if add is not None:
+                out.append({"t": "resolve", "floor": x.get("floor"), "added": True, **add})
+        i = j
+    return out
+
+
+def _with_missing_acquires(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add the `acquire` row of a card reward the recorder logged as taken only.
+
+    A card taken from a reward is an `acquire` row, then its `resolve` row.
+    Some logs have the `resolve` alone; the next `deck` row then holds the
+    instance of one of the offer's options, and that is the card taken.
+    """
+    out = list(rows)
+    k = 0
+    while k < len(out):
+        dec = out[k]
+        k += 1
+        if (
+            dec["t"] != "decision"
+            or dec.get("decision_type") != "card_reward"
+            or dec.get("source") != "reward"
+        ):
+            continue
+        offered = {
+            o.get("instance_id"): n
+            for n, o in enumerate(dec.get("options") or [])
+            if o.get("instance_id") is not None
+        }
+        end = next(
+            (j for j in range(k, len(out)) if out[j]["t"] in ("room_exit", "combat_start", "end")),
+            len(out),
+        )
+        span = out[k:end]
+        if any(
+            x["t"] in ("acquire", "outcome") and x.get("decision_id") == dec.get("decision_id")
+            for x in span
+        ):
+            continue
+        at = next(
+            (
+                j
+                for j in range(k, end)
+                if out[j]["t"] == "resolve" and out[j].get("reward_kind") == "CardReward"
+            ),
+            None,
+        )
+        if at is None:
+            continue
+        deck = next((x for x in out[at:end] if x["t"] == "deck"), None)
+        card = next((c for c in (deck or {}).get("cards", []) if c.get("c") in offered), None)
+        if card is None:
+            continue
+        out.insert(
+            at,
+            {
+                "t": "acquire",
+                "floor": dec.get("floor"),
+                "decision_id": dec.get("decision_id"),
+                "source": "reward",
+                "c": card["c"],
+                "id": card["id"],
+                "option_index": offered[card["c"]],
+                "added": True,
+            },
+        )
+    return out
+
+
+def _pile_picks(
+    pile: list[str], spots: list[int], n: int, coming: list[str]
+) -> tuple[int, ...] | None:
+    """Which `n` of the pile places `spots` were picked, given the draws that follow.
+
+    `pile` is the draw pile from its top and `coming` the cards drawn next. A
+    picked card leaves the pile or stays as another card (a transform). The
+    places whose pick lets the pile give the most of `coming` in order; None
+    when two choices do as well.
+    """
+
+    def reach(marks: frozenset[int]) -> int:
+        ends = {0}  # how much of `coming` the pile can have given up to here
+        best = 0
+        for i, card in enumerate(pile):
+            nxt: set[int] = set()
+            for j in ends:
+                if j >= len(coming):
+                    return len(coming)
+                if i in marks:
+                    nxt |= {j, j + 1}
+                elif card == coming[j]:
+                    nxt.add(j + 1)
+                else:
+                    best = max(best, j)
+            if not nxt:
+                return best
+            ends = nxt
+        return max(best, *ends)
+
+    scored = sorted(
+        ((reach(frozenset(combo)), combo) for combo in itertools.combinations(spots, n)),
+        reverse=True,
+    )
+    if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
+        return None
+    return scored[0][1]
+
+
+def _plays_lost(fight: list[dict[str, Any]]) -> bool:
+    """Whether the log of this fight lacks plays the player made.
+
+    An orb evoked and kept (Dualcast's first evoke), or an enemy killed by an
+    attack, in a player turn with no play or potion row before it: the recorder
+    dropped the turn's plays, and the choices that won the fight are not in
+    the log.
+    """
+    acted = True
+    for r in fight:
+        t = r["t"]
+        if t == "turn" and r.get("side") == "player":
+            acted = False
+        elif t in ("play", "potion_start", "potion_used") or (
+            t == "end_turn" and r.get("side") == "player"
+        ):
+            acted = True
+        elif t == "orb_evoke" and r.get("kept") and not acted:
+            return True
+        elif (
+            t == "death"
+            and r.get("tgt") != "player"
+            and r.get("killed_by") == "ATTACK_COMMAND"
+            and not acted
+        ):
+            return True  # an enemy killed by an attack no row shows
+    return False
+
+
 def _hits_lost(fight: list[dict[str, Any]]) -> bool:
     """Whether an enemy's attack move in this fight has no `hit` row at all."""
     waiting = False
@@ -214,13 +440,22 @@ def _foe_hits_lost_from(fight: list[dict[str, Any]]) -> int | None:
     """Offset in `fight` after which the log misses hits on an enemy, if it does.
 
     An enemy that dies to an attack has a `hit` row with `killed`. When that row is
-    missing, the hits since the last one logged on that enemy were dropped.
+    missing, the hits since the last one logged on that enemy were dropped. So
+    were those of a player's attack that announces hits and has no `hit` row.
     """
     first: int | None = None
     last_hit: dict[Any, int] = {}
     killed: set[Any] = set()
+    open_attack: int | None = None  # a player's `attack` row with no hit yet
     for i, r in enumerate(fight):
         t = r["t"]
+        if t == "hit":
+            open_attack = None
+        elif t in ("play", "potion_start", "end_turn", "attack", "combat_end"):
+            if open_attack is not None:
+                first = open_attack if first is None else min(first, open_attack)
+            mine = t == "attack" and r.get("src") == "player" and r.get("hits")
+            open_attack = i if mine else None
         if t == "hit" and r.get("dst_cid") is not None:
             last_hit[r["dst_cid"]] = i
             if r.get("killed"):
@@ -237,6 +472,25 @@ def _foe_hits_lost_from(fight: list[dict[str, Any]]) -> int | None:
     return first
 
 
+#: `Replayer.rarities`, asked of the host once.
+_RARITY: dict[str, dict[str, str]] = {}
+
+
+def _forced_pick(decision: dict[str, Any]) -> bool:
+    """A deck pick with as many cards to choose from as must be chosen.
+
+    The game logs it as a decision and picks at once; the host does not ask.
+    The deck check at the room's end covers what it did.
+    """
+    if not str(decision.get("decision_type", "")).startswith(_DECK_SELECT):
+        return False
+    least = decision.get("min_select") or 0
+    n = decision.get("n_selectable")
+    return len(decision.get("options") or []) <= least or (
+        n is not None and n == least == decision.get("max_select")
+    )
+
+
 class Tracker:
     """What the log says the player and the enemies look like, fed row by row."""
 
@@ -249,6 +503,7 @@ class Tracker:
         self.relics: list[str] = list(header.get("starting_relics", []))
         self.belt: list[str] = []
         self.enemies: dict[int, list[Any]] = {}  # cid -> [monster id, hp]
+        self.slots: dict[int, Any] = {}  # cid -> the enemy's slot in its encounter
         self.hp_events_carry_damage = False
         self.prev: dict[str, Any] = {}
         self.hp_unknown = False  # the recorder dropped a hit on the player
@@ -260,19 +515,23 @@ class Tracker:
         # is listed although it may have gone to another pile (see `hand_rank`).
         self.hand: list[list[Any]] = []
         self.draw_pile: list[Any] = []  # instances in draw order, from the shuffle rows
+        self.discard: list[Any] = []  # instances in the order they were discarded
         self.ids: dict[Any, str] = {}  # instance -> card id
 
     def hand_rank(self, c: Any, n_host: int) -> int | None:
         """Position of instance `c` among the copies of its card in its pile.
 
-        The pile is the hand, else the draw pile. None when the host shows more
-        copies than the log's pile holds: then the order is unknown.
+        The pile is the hand, else the draw pile, else the discard pile. None
+        when the host shows more copies than the log's pile holds: then the
+        order is unknown.
         """
         mine = next((x for x in self.hand if x[0] == c), None)
         if mine is not None:
             same = [x[0] for x in self.hand if x[1] == mine[1]]
         elif c in self.draw_pile and c in self.ids:
             same = [x for x in self.draw_pile if self.ids.get(x) == self.ids[c]]
+        elif c in self.discard and c in self.ids:
+            same = [x for x in self.discard if self.ids.get(x) == self.ids[c]]
         else:
             return None
         # The host can offer fewer copies than the pile holds (a pick that leaves out
@@ -287,6 +546,14 @@ class Tracker:
             self.ids[d["c"]] = _norm(str(d["id"]))
         if t in ("draw", "play", "discard", "exhaust") and d.get("c") in self.draw_pile:
             self.draw_pile.remove(d["c"])
+        if t in ("draw", "play", "discard", "exhaust") and d.get("c") in self.discard:
+            self.discard.remove(d["c"])
+        if t in ("combat_start", "shuffle"):
+            self.discard = []
+        elif t == "discard" or (t == "play" and d.get("result_pile") == "discard"):
+            self.discard.append(d.get("c"))
+        elif t == "flush":
+            self.discard += [c for c in d.get("flushed_c") or [] if c not in self.discard]
         if t == "draw_order":
             self.draw_pile = list(d.get("order_c") or [])
             by_deck = {c.get("c"): c.get("id") for c in self.deck}
@@ -372,8 +639,13 @@ class Tracker:
                 self.hp = d["hp"] if isinstance(d.get("hp"), int) else self.hp + d.get("d", 0)
                 self.hp_unknown = False
                 self.hp_seen = True
-            elif d.get("dst_cid") in self.enemies and d.get("d", 0) > 0:
-                self.enemies[d["dst_cid"]][1] += d["d"]
+            elif d.get("dst_cid") in self.enemies:
+                if d.get("src") == "set" and isinstance(d.get("hp"), int):
+                    # Hp set outright, with no hit (Fur Coat leaves a marked
+                    # room's enemies at 1).
+                    self.enemies[d["dst_cid"]][1] = d["hp"]
+                elif d.get("d", 0) > 0:
+                    self.enemies[d["dst_cid"]][1] += d["d"]
         elif t == "hit":
             if d.get("dst") == "player":
                 if not self.hp_events_carry_damage:
@@ -391,6 +663,7 @@ class Tracker:
                 self.hp -= d.get("dmg", 0)
         elif t == "spawn" and d.get("side") == "enemy":
             self.enemies[d["cid"]] = [d["id"], d["hp"]]
+            self.slots[d["cid"]] = d.get("slot")
         elif t == "death" and d.get("tgt_cid") in self.enemies:
             if not d.get("removal_prevented"):
                 self.enemies[d["tgt_cid"]][1] = 0
@@ -399,11 +672,53 @@ class Tracker:
 
 
 class Replayer:
-    def __init__(self, path: str, *, verbose: bool = False) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        verbose: bool = False,
+        profile: dict[str, Any] | None = None,
+        sphere_attempts: dict[int, int] | None = None,
+        sphere_cap: int | None = None,
+        potion_last: bool = False,
+        sphere_restarts: int = 0,
+    ) -> None:
         self.path = path
         self.verbose = verbose
-        self.rows = _with_missing_end_turns(load(path))
+        #: Times the run may start over with another Crystal Sphere click plan
+        #: (None: until the plans run out). Each is a replay from the start,
+        #: so a search over many profiles caps it; the result then says
+        #: `sphere_capped`. `sphere_restarts` counts the starts so far.
+        _reveal_to_the_harness()
+        self.sphere_cap = sphere_cap
+        #: Of two potions alike, use the one further along the belt.
+        self.potion_last = potion_last
+        #: The log's row a card reward was opened for, and its decision's row.
+        self.card_take: tuple[int, int] | None = None
+        self.belt_differs = False  # the belt's order is not the log's: try the other way
+        self.sphere_restarts = sphere_restarts
+        #: Crystal Sphere rooms (by room index) -> which click plan to play.
+        #: The log has the rewards, not the clicks; `run` starts over with the
+        #: next plan when one's rewards are not the log's.
+        self.sphere_attempts = dict(sphere_attempts or {})
+        self.sphere_clicks: list[tuple[int, int, str]] = []
+        self.sphere_live: int | None = None  # the sphere room whose rewards are being checked
+        #: Row of a pick the host asks for only once the turn is ended.
+        self.late_pick: int | None = None
+        self.sphere_more = False  # that room has plans not tried yet
+        #: The player's profile to start the host with (`Game.start`), or None
+        #: for the host's defaults. `run` adds what the log states outright.
+        self.profile = profile
+        self.rows = _with_missing_acquires(
+            _with_missing_resolves(_with_missing_end_turns(load(path)))
+        )
         self.header = self.rows[0]
+        #: The recorder logged no hit in the whole run (two logs of the corpus):
+        #: no hp lost is in the log, in a fight or out of one.
+        self.order_noted = False
+        self.damage_blind = not any(r["t"] == "hit" for r in self.rows) and any(
+            r["t"] == "move" and "attack" in (r.get("intents") or []) for r in self.rows
+        )
         self.track = Tracker(self.header)
         self.fed = 1  # rows[:fed] have been fed to the tracker
         self.used: set[int] = set()
@@ -482,6 +797,15 @@ class Replayer:
         end = min(len(self.rows), self.segs[self.k][1] + 40)
         found: dict[str, Any] | None = None
         inst = {o.get("instance_id") for o in dec.get("options", [])} - {None}
+        if inst and dtype == "card_reward":
+            # An egg relic taken with the offer open upgrades its cards, and
+            # the log then knows the upgraded card by a new instance.
+            ids = {_norm(o.get("option_id") or "") for o in dec.get("options", [])}
+            inst |= {
+                r.get("c")
+                for r in self.rows[i:end]
+                if r["t"] == "upgrade" and _norm(r.get("id") or "") in ids
+            }
         for r in self.rows[i:end]:
             if r.get("decision_id") != did:
                 continue
@@ -495,6 +819,9 @@ class Replayer:
                 and t == "acquire"
                 and r.get("option_index") is not None
                 and r.get("c") not in self.removed  # not a stolen card coming back
+                # With several rewards on one screen the row can carry another
+                # reward's id: the card must be one this reward offered.
+                and (not inst or r.get("c") is None or r.get("c") in inst)
             ):
                 return r
             if dtype == "rest" and t == "rest":
@@ -533,9 +860,7 @@ class Replayer:
                     continue  # the host takes these itself; checked in leave_room
                 if res is None or res.get("outcome") in ("skip", "decline"):
                     continue
-                if dtype.startswith(_DECK_SELECT) and len(r["options"]) <= (
-                    r.get("min_select") or 0
-                ):
+                if _forced_pick(r):
                     continue  # nothing to choose: the host resolves it without asking
                 out.append(i)
             elif t in ("buy", "potion_used", "potion_dropped") or (
@@ -547,6 +872,10 @@ class Replayer:
                 out.append(i)
         return out
 
+    def log_over(self) -> bool:
+        """The log's last room, with no choice left in it: the player left the run here."""
+        return self.k == len(self.segs) - 1 and not self.pending()
+
     # ---- host helpers ------------------------------------------------
 
     def act(self, action: str, **args: Any) -> dict[str, Any]:
@@ -554,6 +883,8 @@ class Replayer:
         self.log("  ->", action, args)
         d = self.g.act(action, **args)
         self.actions += 1
+        if action == "select_map_node":
+            self.sphere_live = None  # the sphere's rewards were the log's
         if d.get("type") == "error":
             raise Desync("host_rejected", f"{action} {args}: {str(d.get('message'))[:200]}")
         if d.get("type") != "decision":
@@ -592,6 +923,51 @@ class Replayer:
         self.next_choice = None
         self.feed_to(self.combat_end + 1)
 
+    def enchantment_of(self, c: Any) -> str | None:
+        """The enchantment of the deck card a combat card instance is, if the log tells."""
+        if c is None:
+            return None
+        a = self.segs[self.k][0]
+        deck_c = next(
+            (
+                r["deck_c"]
+                for r in self.rows[a : self.combat_end + 1]
+                if r.get("c") == c and r.get("deck_c") is not None
+            ),
+            None,
+        )
+        src = next((x for x in self.track.deck if x.get("c") == deck_c), None)
+        return (src or {}).get("enchantment")
+
+    def skip_choiceless_fight(self) -> None:
+        """Account for a fight won before the player's first choice.
+
+        A relic can kill the last enemy as the first turn starts (Mr.
+        Struggles on a Fabricator left at 1 hp): the host never asks for a
+        play, and is at the reward screen with the log's fight not yet read.
+        """
+        start = next(
+            (i for i in self.seg() if i not in self.used and self.rows[i]["t"] == "combat_start"),
+            None,
+        )
+        if start is None or any(i < start for i in self.pending()):
+            return
+        end = next(
+            (i for i in range(start, len(self.rows)) if self.rows[i]["t"] == "combat_end"),
+            None,
+        )
+        if (
+            end is None
+            or self.rows[end].get("result") != "victory"
+            or any(_is_combat_choice(r) for r in self.rows[start:end])
+        ):
+            return
+        self.log(f"== combat {self.rows[start].get('encounter')}: won with no choice")
+        self.used.update((start, end))
+        self.combat_end = end
+        self.combats += 1
+        self.feed_to(end + 1)
+
     def enter_combat(self, d: dict[str, Any]) -> None:
         start = next(
             (i for i in self.seg() if i not in self.used and self.rows[i]["t"] == "combat_start"),
@@ -620,10 +996,16 @@ class Replayer:
         self.track.enemies = {
             e["cid"]: [e["id"], e["hp"]] for e in row.get("enemies", []) if "cid" in e
         }
+        self.track.slots = {e["cid"]: e.get("slot") for e in row.get("enemies", []) if "cid" in e}
         self.track.hp_events_carry_damage = any(
             r["t"] == "hp" and r.get("d", 0) < 0 and r.get("dst", "player") == "player"
             for r in self.rows[start:end]
         )
+        if _plays_lost(self.rows[start:end]):
+            raise Desync(
+                "unsupported",
+                f"the log of the fight {row.get('encounter')} lacks plays the player made",
+            )
         self.hand_noted = False
         self.hits_lost = _hits_lost(self.rows[start:end])
         off = _foe_hits_lost_from(self.rows[start:end])
@@ -654,10 +1036,13 @@ class Replayer:
         # `combat_start`, so compare once the log has reached the first choice.
         host = Counter((m["kind"], m["hp"]) for m in st.get("monsters", []) if m.get("alive"))
         want = Counter((mid, hp) for mid, hp in self.track.enemies.values() if hp > 0)
-        if self.next_choice is not None and self.rows[self.next_choice]["t"] == "end_turn":
+        if self.hits_lost or (
+            self.next_choice is not None and self.rows[self.next_choice]["t"] == "end_turn"
+        ):
             # A first turn with no choice before `end_turn` (every card played
             # by itself): the log has the end-of-turn effects before that row,
             # the host has not run them yet. Hp is compared after the turn.
+            # A log without this fight's hits lacks a relic's opening damage too.
             host = Counter(kind for kind, _ in host.elements())
             want = Counter(kind for kind, _ in want.elements())
         if host != want:
@@ -694,6 +1079,27 @@ class Replayer:
         host = Counter((m["kind"], m["hp"]) for m in st.get("monsters", []) if m.get("alive"))
         want = Counter((mid, hp) for mid, hp in self.track.enemies.values() if hp > 0)
         if host != want:
+            # A card played with not one row of what it did (an attack on all
+            # enemies whose hits the recorder dropped): the log has lost the
+            # enemies' hp from here on.
+            stop = self.next_choice if self.next_choice is not None else self.combat_end
+            play = next(
+                (i for i in range(stop - 1, self.ci - 2, -1) if self.rows[i]["t"] == "play"), None
+            )
+            after = [] if play is None else self.rows[play + 1 : stop]
+            if play is not None and (
+                all(r["t"] == "energy" for r in after)
+                or (
+                    # An attack on one enemy with no `hit` row, blocked or not.
+                    self.rows[play].get("target_cid") is not None
+                    and not any(r["t"] in ("hit", "attack") for r in after)
+                    and all(n <= dict(want.elements()).get(k, 0) for k, n in host.elements())
+                )
+            ):
+                row = self.rows[play]
+                self.note(f"foe_hits_lost f{row.get('floor')} play {row.get('id')} has no hit rows")
+                self.foe_blind_from = play
+                return
             raise Desync("enemy_hp", f"host {sorted(host.items())} log {sorted(want.items())}")
 
     def target_index(self, d: dict[str, Any], row: dict[str, Any]) -> int | None:
@@ -727,9 +1133,166 @@ class Replayer:
                 twins = [c for c in cids if self.track.enemies[c][1] == hp]
                 if by_hp:
                     pos = by_hp[min(twins.index(cid) if cid in twins else 0, len(by_hp) - 1)]
+            # Two alike in kind and hp stand in different slots of the encounter.
+            slot = self.track.slots.get(cid)
+            at = [i for i in same if slot is not None and alive[i].get("slot") == slot]
+            if len(at) == 1:
+                pos = at[0]
         return shown[pos]["index"]
 
+    def on_belt(self, belt: list[dict[str, Any]], pid: str) -> dict[str, Any] | None:
+        """The host's potion `pid`. The log does not say which of two alike was
+        used; it shows later, in the order the belt is left in (`potion_last`)."""
+        same = [p for p in belt if p.get("entry") == pid]
+        if not same:
+            return None
+        return same[-1] if self.potion_last else same[0]
+
+    def plays_itself_at_turn_end(self, i: int) -> bool:
+        """Whether the pick in row `i` is asked by a card played for the player
+        (`auto`) with nothing chosen between it and the turn's end."""
+        before = next((r for r in reversed(self.rows[self.ci - 1 : i]) if r["t"] == "play"), None)
+        after = next((r for r in self.rows[i + 1 : self.combat_end] if _is_combat_choice(r)), None)
+        if not (before and before.get("auto")) or (after is not None and after["t"] != "end_turn"):
+            return False
+        # Only Stampede plays a card as the turn ends; a card another card
+        # played (Cascade, Catastrophe) asks at once or not at all.
+        for r in reversed(self.rows[:i]):
+            if r["t"] == "combat_start":
+                break
+            if r["t"] == "play" and _norm(r.get("id", "")) == "STAMPEDE":
+                return True
+        return False
+
+    def drawn_rank(self, c: Any, card: str) -> int | None:
+        """Place of instance `c` among the copies of `card` made in this fight
+        and lying in the draw pile, by the order the log draws them in later.
+
+        Statuses go into the draw pile at random places, and a pick among
+        them (Charge) names an instance: only the draws up to the next shuffle
+        tell which of the copies it was.
+        """
+        if any(x[0] == c and x[2] for x in self.track.hand):
+            return None  # a card the log drew: it is in hand
+        if c in self.track.discard:
+            return None  # picked out of the discard pile: its place there tells
+        start = self.next_choice if self.next_choice is not None else self.ci
+        was: dict[Any, Any] = {}  # an instance a pick transformed, by what it became
+        order: list[Any] = []
+        for r in self.rows[start : self.combat_end]:
+            if r["t"] == "shuffle":
+                break
+            if r["t"] == "transform":
+                was[r.get("to_c")] = was.get(r.get("from_c"), r.get("from_c"))
+            elif r["t"] == "draw":
+                x = was.get(r.get("c"), r.get("c"))
+                if self.track.ids.get(x) == card and x not in order:
+                    order.append(x)
+        return order.index(c) if c in order else None
+
+    def picks_by_pile(self, d: dict[str, Any], row: dict[str, Any]) -> dict[int, int]:
+        """Host options for the picks among several cards alike in the draw pile.
+
+        By the row's card number. The host says where each offered card lies
+        in the pile (`STS2_REVEAL_DRAW_ORDER`); the copies picked are the ones
+        whose leaving makes the pile's order the order the log draws in next.
+        """
+        pile = [_norm(x) for x in d.get("draw_order") or []]
+        cards = d.get("cards", [])
+        if not pile:
+            return {}
+        at = self.rows.index(row)
+        coming: list[str] = []
+        for r in self.rows[at + 1 : self.combat_end]:
+            if r["t"] == "shuffle":
+                break
+            if r["t"] == "draw":
+                coming.append(_norm(r["id"]))
+        out: dict[int, int] = {}
+        wanted = [_card(c) for c in row.get("cards", [])]
+        for kind in set(wanted):
+            mine = [n for n, w in enumerate(wanted) if w == kind]
+            spots = {
+                x["draw_index"]: x["index"] for x in cards if _card(x) == kind and "draw_index" in x
+            }
+            if len(spots) <= len(mine):
+                continue
+            taken = _pile_picks(pile, sorted(spots), len(mine), coming)
+            if taken is not None:
+                self.log(f"     pick {kind[0]}: pile places {taken} of {sorted(spots)}")
+                out.update({n: spots[k] for n, k in zip(mine, taken, strict=True)})
+        return out
+
+    def pick_cards(self, d: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
+        """Answer the host's in-fight card pick with the log's `pick` row."""
+        cards = d.get("cards", [])
+        sel: list[int] = []
+        told = self.picks_by_pile(d, row)
+        for n, c in enumerate(row.get("cards", [])):
+            if n in told:
+                sel.append(told[n])
+                continue
+            want = _card(c)
+            hit = next((x for x in cards if _card(x) == want and x["index"] not in sel), None)
+            copies = [x for x in cards if _norm(x["id"]) == want[0]]
+            rank = self.track.hand_rank(c.get("c"), len(copies))
+            ahead = self.drawn_rank(c.get("c"), want[0])
+            if ahead is not None and ahead < len(copies):
+                rank = ahead
+            self.log(
+                f"     pick {c.get('c')} rank {rank} of {len(copies)} host copies; host list "
+                f"{[_norm(x['id']) for x in cards]}; log draw pile "
+                f"{[(x, self.track.ids.get(x)) for x in self.track.draw_pile]}"
+            )
+            if rank is not None and len(copies) > 1:
+                at = copies[rank]
+                if _card(at) == want and at["index"] not in sel:
+                    hit = at
+            elif len(copies) > 1:
+                # Copies that differ by their enchantment only: the one
+                # enchanted like the deck card the log's instance is.
+                ench = self.enchantment_of(c.get("c"))
+                hit = next(
+                    (
+                        x
+                        for x in cards
+                        if _card(x) == want
+                        and x["index"] not in sel
+                        and _loose(x.get("enchantment") or "") == _loose(ench or "")
+                    ),
+                    hit,
+                )
+            # Copies at different costs (Adaptive Strike's free copy): the
+            # one at the cost the log next plays this instance for.
+            mine = [x for x in cards if _card(x) == want and x["index"] not in sel]
+            played = next(
+                (
+                    r
+                    for r in self.rows[self.next_choice or self.ci : self.combat_end]
+                    if r["t"] == "play" and r.get("c") == c.get("c")
+                ),
+                None,
+            )
+            if played is not None and len({x.get("cost") for x in mine}) > 1:
+                priced = [x for x in mine if x.get("cost") == played.get("cost_value")]
+                if priced and (hit is None or hit.get("cost") != played.get("cost_value")):
+                    hit = priced[0]
+            if hit is None:
+                raise Desync("pick", f"{want} not among host options {[_card(x) for x in cards]}")
+            sel.append(hit["index"])
+        if sel:
+            return self.act("select_cards", indices=",".join(map(str, sel)))
+        return self.act("skip_select")
+
     def combat_action(self, d: dict[str, Any]) -> dict[str, Any]:
+        if d["decision"] == "card_select" and self.late_pick is not None:
+            # The pick of a card that played itself as the turn ended.
+            row, self.late_pick = self.rows[self.late_pick], None
+            self.log(f"  log pick (at the turn's end) {row.get('cards')}")
+            out = self.pick_cards(d, row)
+            if self.next_choice is not None or out["decision"] in ("combat_play", "card_select"):
+                return out
+            return self.finish_combat(out)
         if self.next_choice is None:
             if self.combat_end >= len(self.rows):
                 raise LogEnd  # the player left mid-fight
@@ -754,6 +1317,14 @@ class Replayer:
         t = row["t"]
         selecting = d["decision"] == "card_select"
         self.log(f"  log {t} {row.get('id') or row.get('cards') or ''}")
+        if t == "pick" and not selecting and self.plays_itself_at_turn_end(self.next_choice):
+            # Stampede plays an attack as the turn ends, and the log has its
+            # rows, a pick among them, before the `end_turn` row; the host
+            # asks once the turn is ended.
+            self.late_pick = self.next_choice
+            self.ci = self.next_choice + 1
+            self.scan_choice()
+            return self.combat_action(d)
         if t == "pick" and not selecting:
             # A choice with no real alternative: the host resolves it without asking.
             self.note(
@@ -766,6 +1337,12 @@ class Replayer:
             raise Desync("pick", f"host at {d['decision']}, log has {t} {row.get('id', '')}")
         if t == "end_turn":
             out = self.act("end_turn")
+            if self.late_pick is not None and (
+                out["decision"] != "card_select"
+                or (d.get("round") is not None and out.get("round", d["round"]) > d["round"])
+            ):
+                # The host did not ask as the turn ended: it had no real choice.
+                self.late_pick = None
         elif t == "play":
             hand = d.get("hand", [])
             want = _card(row)
@@ -792,10 +1369,19 @@ class Replayer:
             rank = self.track.hand_rank(row.get("c"), len(copies))
             if rank is not None and len(copies) > 1:
                 at = copies[rank]
-                if at in playable:
+                if at in playable and at.get("cost") != paid and card.get("cost") == paid:
+                    # The place in hand is a guess when a card came in by a pick;
+                    # what the log paid is not.
+                    self.note(f"copy_cost f{row.get('floor')} {want[0]}")
+                elif at in playable:
                     card = at
                 else:
                     self.note(f"copy_rank_miss f{row.get('floor')} {want[0]}")
+            if len(same) > 1:
+                self.log(
+                    f"     copies at cost {[c.get('cost') for c in same]}, energy "
+                    f"{d.get('energy')}; log paid {paid}, rank {rank}; plays {card['index']}"
+                )
             if ench or any(c.get("enchantment") for c in same):
                 self.log(
                     f"     log enchant {ench}; host copies {[c.get('enchantment') for c in same]}"
@@ -805,7 +1391,7 @@ class Replayer:
             )
         elif t == "potion_dropped":
             belt = d.get("player", {}).get("potions") or []
-            slot = next((p for p in belt if p.get("entry") == row["id"]), None)
+            slot = self.on_belt(belt, row["id"])
             if slot is None:
                 raise Desync(
                     "potion", f"{row['id']} not on host belt {[p.get('entry') for p in belt]}"
@@ -815,7 +1401,7 @@ class Replayer:
             if t == "potion_start":
                 self.pending_potion[row["id"]] += 1
             belt = d.get("player", {}).get("potions") or []
-            slot = next((p for p in belt if p.get("entry") == row["id"]), None)
+            slot = self.on_belt(belt, row["id"])
             if slot is None:
                 raise Desync(
                     "potion", f"{row['id']} not on host belt {[p.get('entry') for p in belt]}"
@@ -824,32 +1410,7 @@ class Replayer:
                 "use_potion", potion_index=slot["index"], target_index=self.target_index(d, row)
             )
         else:  # pick
-            cards = d.get("cards", [])
-            sel: list[int] = []
-            for c in row.get("cards", []):
-                want = _card(c)
-                hit = next((x for x in cards if _card(x) == want and x["index"] not in sel), None)
-                copies = [x for x in cards if _norm(x["id"]) == want[0]]
-                rank = self.track.hand_rank(c.get("c"), len(copies))
-                self.log(
-                    f"     pick {c.get('c')} rank {rank} of {len(copies)} host copies; host list "
-                    f"{[_norm(x['id']) for x in cards]}; log draw pile "
-                    f"{[(x, self.track.ids.get(x)) for x in self.track.draw_pile]}"
-                )
-                if rank is not None and len(copies) > 1:
-                    at = copies[rank]
-                    if _card(at) == want and at["index"] not in sel:
-                        hit = at
-                if hit is None:
-                    raise Desync(
-                        "pick", f"{want} not among host options {[_card(x) for x in cards]}"
-                    )
-                sel.append(hit["index"])
-            out = (
-                self.act("select_cards", indices=",".join(map(str, sel)))
-                if sel
-                else self.act("skip_select")
-            )
+            out = self.pick_cards(d, row)
 
         self.ci = self.next_choice + 1
         self.scan_choice()
@@ -879,14 +1440,18 @@ class Replayer:
         while (
             self.next_choice is not None
             and self.rows[self.next_choice]["t"] == "pick"
-            and out["decision"] == "combat_play"
+            and not (out["decision"] == "card_select" and out.get("combat"))
         ):
             # A pick with no real alternative: the host resolved it inside the action,
-            # so what the log records after the pick has already happened there.
+            # so what the log records after the pick has already happened there
+            # (the fight's end included, when the pick's card play killed).
             row = self.rows[self.next_choice]
-            self.note(
-                f"auto_pick f{row.get('floor')} {[c.get('id') for c in row.get('cards', [])]}"
-            )
+            if self.plays_itself_at_turn_end(self.next_choice):
+                self.late_pick = self.next_choice  # asked once the turn is ended
+            else:
+                self.note(
+                    f"auto_pick f{row.get('floor')} {[c.get('id') for c in row.get('cards', [])]}"
+                )
             self.ci = self.next_choice + 1
             self.scan_choice()
         if t == "end_turn" and out["decision"] == "combat_play" and not self.hand_noted:
@@ -914,6 +1479,14 @@ class Replayer:
         else:
             if not host_in:
                 nxt = self.rows[self.next_choice]
+                if nxt["t"] == "end_turn" and not any(
+                    _is_combat_choice(r) for r in self.rows[self.next_choice + 1 : self.combat_end]
+                ):
+                    # The card ended the turn itself (Void Form) and the fight
+                    # ended with the turn: the log's `end_turn` is not a choice.
+                    self.ci = self.next_choice + 1
+                    self.scan_choice()
+                    return self.finish_combat(out)
                 raise Desync(
                     "ended_early",
                     f"host left the fight, log goes on with {nxt['t']} {nxt.get('id', '')}",
@@ -926,9 +1499,21 @@ class Replayer:
     def finish_combat(self, out: dict[str, Any]) -> dict[str, Any]:
         end = self.rows[self.combat_end]
         self.in_combat = False
+        self.late_pick = None
         self.used.add(self.combat_end)
         self.combats += 1
         lost = out["decision"] == "game_over" and not out.get("victory")
+        if (
+            end.get("result") == "loss"
+            and not lost
+            and any(
+                r["t"] == "death"
+                and r.get("tgt") == "player"
+                and r.get("killed_by") == "RUN_MANAGER"
+                for r in self.rows[max(0, self.combat_end - 12) : self.combat_end]
+            )
+        ):
+            raise LogEnd  # the player gave the run up while the enemies moved
         if (end.get("result") == "loss") != lost:
             raise Desync("combat_result", f"log {end.get('result')}, host {out['decision']}")
         if self.hits_lost and not lost:
@@ -958,17 +1543,23 @@ class Replayer:
         )
 
     def on_event(self, d: dict[str, Any]) -> dict[str, Any]:
-        if any(
-            self.rows[i]["t"] == "room" and self.rows[i].get("id") == "CRYSTAL_SPHERE"
-            for i in self.seg()
-        ):
-            raise Desync("unsupported", "the log does not hold the Crystal Sphere moves")
         opts = d.get("options", [])
         keys = [o.get("text_key") for o in opts]
         dec = self.find_decision(lambda r: r.get("decision_type") == "event")
         if dec is not None:
             ids = [o.get("option_id") for o in dec.get("options", [])]
-            if {_loose(i) for i in ids} == {_loose(k) for k in keys}:
+            # A game in another language logs a relic option under the relic's
+            # title in that language; the host's is English. Such options go by
+            # position (the relic gained is checked at the next map screen).
+            alias = (
+                {i: k for i, k in zip(ids, keys, strict=True) if not str(i).isascii()}
+                if len(ids) == len(keys)
+                else {}
+            )
+            if alias:
+                self.note(f"localized_options f{dec.get('floor')} {dec.get('event_id')}")
+            named = [alias.get(i, i) for i in ids]
+            if {_loose(i) for i in named} == {_loose(k) for k in keys}:
                 self.use(dec)
                 res = self.resolution(dec)
                 # The same page can be logged again (the player looked at the map and
@@ -986,16 +1577,48 @@ class Replayer:
                         res = res or self.resolution(r)
                 if res is None:
                     raise LogEnd
-                want = _loose(res.get("option_id"))
+                want = _loose(alias.get(res.get("option_id"), res.get("option_id")))
                 # Two options can share an id (one per potion slot): go by position first.
                 oi = res.get("option_index")
                 at = next((o for o in opts if o.get("index") == oi), None)
-                same_order = [_loose(i) for i in ids] == [_loose(k) for k in keys]
+                same_order = [_loose(i) for i in named] == [_loose(k) for k in keys]
                 pick = (
                     at
                     if at is not None and same_order and _loose(at.get("text_key")) == want
                     else next((o for o in opts if _loose(o.get("text_key")) == want), None)
                 )
+                twins = [o for o in opts if _loose(o.get("text_key")) == want]
+                if len(twins) > 1:
+                    # One option for each potion on the belt (The Future of
+                    # Potions): the one for the potion the log gave away. Two
+                    # potions alike drunk in another order leave the belt in
+                    # another order than the log's.
+                    at_row = self.rows.index(res)
+                    gone = next(
+                        (
+                            r.get("id")
+                            for r in self.rows[at_row + 1 : at_row + 6]
+                            if r["t"] == "potion_dropped"
+                        ),
+                        None,
+                    )
+                    belt = [
+                        x.get("entry")
+                        for x in d.get("player", {}).get("potions") or []
+                        if x.get("entry")
+                    ]
+                    if gone in belt and len(twins) == len(belt[: len(twins)]):
+                        if isinstance(oi, int) and oi < len(twins) and belt[oi] == gone:
+                            pick = twins[oi]
+                        elif belt.count(gone) == 1 and belt.index(gone) < len(twins):
+                            # The event deals each potion its card type in the
+                            # belt's order, so the order has to be the log's.
+                            self.belt_differs = not self.potion_last
+                            raise Desync(
+                                "potion_order",
+                                f"{gone} is potion {belt.index(gone)} of the host's belt {belt}, "
+                                f"potion {oi} of the log's",
+                            )
                 if pick is None:
                     raise Desync(
                         "event_options", f"chosen {res.get('option_id')} not in host {keys}"
@@ -1006,9 +1629,30 @@ class Replayer:
         open_opts = [o for o in opts if not o.get("is_locked")]
         if len(open_opts) == 1:
             return self.act("choose_option", option_index=open_opts[0]["index"])  # a proceed page
+        if dec is None:
+            # An event whose choice the log holds without the offer.
+            j = next(
+                (
+                    i
+                    for i in self.seg()
+                    if i not in self.used
+                    and self.rows[i]["t"] == "outcome"
+                    and self.rows[i].get("decision_type") == "event"
+                    and self.rows[i].get("decision_id") is None
+                ),
+                None,
+            )
+            if j is not None:
+                want = _loose(self.rows[j].get("option_id"))
+                hit = [o for o in open_opts if _loose(o.get("text_key")) == want]
+                if len(hit) == 1:
+                    self.used.add(j)
+                    return self.act("choose_option", option_index=hit[0]["index"])
         if not self.pending() and self.k + 1 < len(self.segs):
             self.leave_room()
             return self.on_event(d)
+        if self.log_over():
+            raise LogEnd  # the player left the run with this event open
         raise Desync("event_extra", f"host offers {keys}, log has no event decision here")
 
     def on_card_reward(self, d: dict[str, Any]) -> dict[str, Any]:
@@ -1063,6 +1707,16 @@ class Replayer:
                 return self.act("card_reward_alternative", alternative_index=alternatives["REROLL"])
             self.use(dec)
             res = self.resolution(dec)
+            take, self.card_take = self.card_take, None
+            if (
+                take is not None
+                and self.dec_rows[did] != take[1]
+                and not (res is not None and res["t"] == "acquire")
+            ):
+                # The host lists a Crystal Sphere's card rewards in another order
+                # than the log: this is one the human left, and the one they took
+                # is still on the screen.
+                self.used.discard(take[0])
             if res is not None and res["t"] == "acquire":
                 # The host hands out a screen's card rewards in a fixed order; the
                 # human may take them in another, which changes the deck's order.
@@ -1158,7 +1812,11 @@ class Replayer:
             if self.rows[i]["t"] == "decision"
             and self.rows[i].get("decision_type") == "card_reward"
         ]
-        raise Desync("card_reward_offer", f"host {host} log {logged}")
+        size = min(
+            (sum(a != b for a, b in zip(host, offer, strict=False)) for offer in logged),
+            default=len(host),
+        )
+        raise Desync("card_reward_offer", f"host {host} log {logged}", size)
 
     def on_card_select(self, d: dict[str, Any]) -> dict[str, Any]:
         cards = d.get("cards", [])
@@ -1188,6 +1846,35 @@ class Replayer:
             )
 
         dec = self.find_decision(lambda r: str(r.get("decision_type", "")).startswith(_DECK_SELECT))
+
+        def backed_out(r: dict[str, Any] | None) -> bool:
+            return r is not None and (
+                r.get("outcome") == "decline" or (r["t"] == "pick" and not r.get("cards"))
+            )
+
+        while dec is not None:
+            # A screen the human opened and left without a pick, before the deck
+            # changed or another pick came up (a shop's card removal, looked at
+            # between two purchases): the host never opened it.
+            opts = dec.get("options", [])
+            fits = d.get("max_select") is None or dec.get("max_select") in (None, d["max_select"])
+            if (
+                fits
+                and (
+                    Counter(_card(o) for o in opts if o.get("selectable", True)) == host
+                    or Counter(_card(o) for o in opts) == host
+                )
+            ) or not backed_out(self.resolution(dec)):
+                break
+            nxt = self.find_decision(
+                lambda r, dec=dec: (  # type: ignore[misc]
+                    r is not dec and str(r.get("decision_type", "")).startswith(_DECK_SELECT)
+                )
+            )
+            if nxt is None:
+                break
+            self.use(dec)
+            dec = nxt
         if (
             dec is not None
             and d.get("max_select") is not None
@@ -1206,6 +1893,23 @@ class Replayer:
                     "reward_order",
                     f"host asks {other.get('decision_type')} before {dec.get('decision_type')}",
                 )
+        if dec is not None:
+            opts = dec.get("options", [])
+            differs = (
+                Counter(_card(o) for o in opts if o.get("selectable", True)) != host
+                and Counter(_card(o) for o in opts) != host
+            )
+            j = self.loose_pick()
+            if (
+                differs
+                and j is not None
+                and j < self.dec_rows[dec["decision_id"]]
+                and all(_card(c) in host for c in self.rows[j].get("cards", []))
+            ):
+                # An earlier pick the log holds without its offer (Hefty Tablet's
+                # cards, before Precarious Shears' removal on the same screen).
+                dec = None
+
         if dec is not None:
             opts = dec.get("options", [])
             if (
@@ -1236,7 +1940,35 @@ class Replayer:
             res = self.resolution(dec)
             if res is None:
                 raise LogEnd
-            if res.get("outcome") == "decline" or (res["t"] == "pick" and not res.get("cards")):
+
+            def declined(r: dict[str, Any]) -> bool:
+                return r.get("outcome") == "decline" or (r["t"] == "pick" and not r.get("cards"))
+
+            while declined(res):
+                # The human backed out of the pick and opened it again at once (a
+                # card removal on a reward screen): the game keeps the reward, the
+                # host would drop it, so only the last opening is answered.
+                at = self.dec_rows[dec["decision_id"]]
+                first = dec
+                again = self.find_decision(
+                    lambda r, first=first: (  # type: ignore[misc]
+                        r.get("decision_type") == first.get("decision_type")
+                        and [o.get("option_id") for o in r.get("options", [])]
+                        == [o.get("option_id") for o in first.get("options", [])]
+                    )
+                )
+                if again is None or any(
+                    r["t"] in ("decision", "rest", "room")
+                    for r in self.rows[at + 1 : self.dec_rows[again["decision_id"]]]
+                ):
+                    break
+                res2 = self.resolution(again)
+                if res2 is None:
+                    break
+                dec, res = again, res2
+                opts = dec.get("options", [])
+                self.use(dec)
+            if declined(res):
                 return self.act("skip_select")
             if res["t"] == "pick":
                 chosen = [_card(c) for c in res["cards"]]
@@ -1255,6 +1987,25 @@ class Replayer:
                 if chosen
                 else self.act("skip_select")
             )
+        empty = next(
+            (
+                i
+                for i in self.seg()
+                if i not in self.used
+                and self.rows[i]["t"] == "pick"
+                and self.rows[i].get("selector") == "human"
+                and not self.rows[i].get("decision_id")
+                and not self.rows[i].get("cards")
+                and not self.in_some_combat(i)
+            ),
+            None,
+        )
+        if empty is not None:
+            # A pick the human left empty (Lead Paperweight's two cards, neither taken).
+            self.used.add(empty)
+            return self.act("skip_select")
+        if self.log_over():
+            raise LogEnd  # the player left the run with this pick open
         raise Desync(
             "card_select_extra",
             f"host asks to pick from {sorted(host.elements())}, log has no pick here",
@@ -1305,6 +2056,43 @@ class Replayer:
             for i in self.seg():
                 if self.rows[i]["t"] == "shop":
                     self.used.add(i)
+            if "LORDS_PARASOL" in self.track.relics:
+                # Lord's Parasol buys the whole stock on entry, for nothing: the
+                # host's shop is the one after those purchases.
+                free = [
+                    i
+                    for i in self.seg()
+                    if self.rows[i]["t"] == "buy" and self.rows[i].get("cost_current") == 0
+                ]
+                self.used.update(free)
+                if free:
+                    row = next(
+                        (
+                            self.rows[i]
+                            for i in range(free[-1], self.segs[self.k][1])
+                            if self.rows[i]["t"] == "shop"
+                        ),
+                        row,
+                    )
+            stock = [
+                x
+                for g in ("cards", "relics", "potions")
+                for x in row.get(g, [])
+                if x.get("stocked")
+            ]
+            if (
+                stock
+                and "LORDS_PARASOL" not in self.track.relics
+                and not any(x.get("cost") for x in stock)
+                and row.get("removal_cost") == 0
+            ):
+                raise Desync(
+                    "unsupported",
+                    "the log's shop sells its whole stock and the card removal for nothing: "
+                    "the game was modded",
+                )
+            off: list[str] = []
+            amiss = 0
             for group in ("cards", "relics", "potions"):
                 log_items = sorted(
                     (_norm(x.get("id", "?")), x.get("cost"))
@@ -1322,18 +2110,42 @@ class Replayer:
                     if x.get("is_stocked", True)
                 )
                 if log_items != host_items:
-                    raise Desync("shop_stock", f"{group}: host {host_items} log {log_items}")
+                    off.append(f"{group}: host {host_items} log {log_items}")
+                    amiss += len(set(host_items) ^ set(log_items))
+            if off:
+                # All three at once: each has its own cause (card pools, the
+                # relic bag, potion pools), and one put right is a step.
+                raise Desync("shop_stock", "; ".join(off), amiss)
             if row.get("removal_stocked") and row.get("removal_cost") != d.get("card_removal_cost"):
                 raise Desync(
                     "shop_stock",
                     f"removal: host {d.get('card_removal_cost')} log {row.get('removal_cost')}",
                 )
+        # Rows this visit just accounted for (Lord's Parasol's purchases) may
+        # have hidden a potion the human drank or dropped before buying more.
+        out = self.loose_potion(d)
+        if out is not None:
+            return out
         j = next((i for i in self.pending() if self.rows[i]["t"] == "buy"), None)
         if j is None:
             return self.act("leave_room")
         row = self.rows[j]
         self.used.add(j)
         kind = row.get("kind")
+        after = next((r for r in self.rows[j + 1 : self.segs[self.k][1]] if r["t"] == "shop"), None)
+        if (
+            kind in ("card", "relic", "potion")
+            and self.rows[j - 1]["t"] == "remove"
+            and after is not None
+            and not after.get("removal_stocked")
+            and any(
+                x.get("id") == row.get("id") and x.get("stocked") for x in after.get(kind + "s", [])
+            )
+        ):
+            # The recorder files some card removals under an item of the stock:
+            # the row follows the removal, the item stays in stock and the
+            # removal service is gone.
+            kind = "removal_service"
         if kind in ("card", "relic", "potion"):
             items = d.get(kind + "s") or []
             want = _norm(row.get("id", ""))
@@ -1355,6 +2167,70 @@ class Replayer:
         if "remov" in str(kind):
             return self.act("remove_card")
         raise Desync("unsupported", f"shop buy kind {kind}")
+
+    def rarities(self) -> dict[str, dict[str, str]]:
+        """How rare each card and each potion is, in lower case, from the host."""
+        if not _RARITY:
+            res = self.g.epochs()
+            for what in ("card", "potion"):
+                _RARITY[what] = {
+                    _norm(k): str(v).lower() for k, v in (res.get(f"{what}_rarity") or {}).items()
+                }
+        return _RARITY
+
+    def on_sphere(self, d: dict[str, Any]) -> dict[str, Any]:
+        """One divination of the Crystal Sphere, from a plan that digs up the log's rewards."""
+        if not self.sphere_clicks:
+            if "items" not in d:
+                raise Desync(
+                    "unsupported",
+                    "Crystal Sphere: the host does not list the items (STS2_CRYSTAL_SPHERE_REVEAL=1)",
+                )
+            want: Counter[str] = Counter()
+            order: list[str] = []  # the rewards that are rolled, as the log lists them
+            at: dict[str, int] = {}  # draws made before a card reward, where the host tells
+            rarity = self.rarities()
+            for i in self.seg():
+                r = self.rows[i]
+                kind = r.get("reward_kind")
+                if r["t"] == "resolve" and kind == "GoldReward":
+                    want["big_gold" if (r.get("gold") or 0) >= 20 else "gold"] += 1
+                elif r["t"] == "resolve" and kind == "PotionReward":
+                    rare = rarity["potion"].get(_norm(r.get("id") or ""))
+                    order.append(f"{rare}_potion" if rare else "potion")
+                elif r["t"] == "decision" and r.get("decision_type") == "relic_reward":
+                    order.append("relic")
+                elif (
+                    r["t"] == "decision"
+                    and r.get("decision_type") == "card_reward"
+                    and not r.get("offer_generation")
+                ):
+                    # The three cards of a sphere's reward are of one rarity.
+                    ids = [_norm(o.get("option_id") or "") for o in r.get("options") or []]
+                    rare = rarity["card"].get(ids[0]) if ids else None
+                    order.append(f"{rare}_card" if rare else "card")
+                    ahead = (d.get("card_draws") or {}).get(rare or "", [])
+                    if ids in ahead:
+                        at[f"{rare}_card"] = ahead.index(ids)
+                elif r["t"] == "acquire" and _norm(r.get("id", "")) == "DOUBT":
+                    want["curse"] += 1
+            want.update(order)
+            found = host_replay_sphere.plans(d, want, order, at)
+            # A potion left on the reward screen has no row in the log.
+            for extra in (1, 2):
+                found += host_replay_sphere.plans(d, want + Counter(potion=extra), order, at)
+            attempt = self.sphere_attempts.get(self.k, 0)
+            if attempt >= len(found):
+                raise Desync(
+                    "crystal_sphere",
+                    f"none of {len(found)} click plans gives the log's rewards {dict(want)}",
+                )
+            self.log(f"   sphere: plan {attempt + 1} of {len(found)} for {dict(want)}")
+            self.sphere_clicks = list(found[attempt])
+            self.sphere_live = self.k
+            self.sphere_more = attempt + 1 < len(found)
+        x, y, tool = self.sphere_clicks.pop(0)
+        return self.act("crystal_sphere_click", x=x, y=y, tool=tool)
 
     def on_bundle(self, d: dict[str, Any]) -> dict[str, Any]:
         j = self.loose_pick()
@@ -1509,6 +2385,22 @@ class Replayer:
                 )
         takes = self.reward_takes()
         if not takes:
+            # A card reward the human rerolled and then left: the reroll drew
+            # its cards, so the host rerolls it too.
+            listed = [e for e in entries if e.get("type") == "card"]
+            for rank, i in enumerate(self.screen_cards):
+                did = self.rows[i]["decision_id"]
+                if (
+                    rank < len(listed)
+                    and did not in self.rerolled
+                    and any(
+                        r["t"] == "outcome"
+                        and r.get("decision_id") == did
+                        and r.get("outcome") == "reroll"
+                        for r in self.rows[screen.start : self.segs[self.k][1] + 40]
+                    )
+                ):
+                    return self.act("take_reward", reward_index=listed[rank]["index"])
             # Everything left on the screen the human left too.
             for i in screen:
                 if self.rows[i]["t"] == "decision" and self.rows[i].get("decision_type") in (
@@ -1521,7 +2413,7 @@ class Replayer:
         r = self.rows[j]
         if r["t"] in ("potion_used", "potion_dropped"):
             belt = d.get("player", {}).get("potions") or []
-            slot = next((p for p in belt if p.get("entry") == r["id"]), None)
+            slot = self.on_belt(belt, r["id"])
             if slot is None:
                 raise Desync(
                     "potion", f"{r['id']} not on host belt {[p.get('entry') for p in belt]}"
@@ -1571,6 +2463,7 @@ class Replayer:
             if row in self.screen_cards:
                 rank = self.screen_cards.index(row)
                 cands = cands[rank : rank + 1]
+                self.card_take = (j, row)
             elif not self.screen_cards and len(cands) > 1:
                 raise Desync(
                     "unsupported",
@@ -1602,6 +2495,10 @@ class Replayer:
         bad = []
         if not t.hp_seen and p.get("hp") is not None:
             t.hp, t.hp_seen = p["hp"], True  # the log's first hp reading is still to come
+        if p.get("hp") != t.hp and self.damage_blind and p.get("hp") is not None:
+            # Hp lost outside a fight (an event's price) has no row either; the
+            # log's next reading, a heal's, checks the host's value.
+            t.hp = p["hp"]
         if p.get("hp") != t.hp:
             bad.append(f"hp host {p.get('hp')} log {t.hp}")
         if p.get("max_hp") != t.max_hp:
@@ -1626,6 +2523,12 @@ class Replayer:
         if "deck" in p:
             hd = Counter(_card(c) for c in p["deck"])
             ld = Counter(_card(c) for c in t.deck)
+            ho, lo = [_card(c) for c in p["deck"]], [_card(c) for c in t.deck]
+            if hd == ld and ho != lo and not self.order_noted:
+                # The same cards in another order: the next shuffle will differ.
+                self.order_noted = True
+                self.note(f"deck_order f{self.rows[self.segs[self.k][1] - 1].get('floor')}")
+                self.log(f"     deck order host {ho}\n                log  {lo}")
             a, b = self.segs[max(self.k - 1, 0)][0], self.segs[self.k][1]
             stolen = Counter(_norm(r["id"]) for r in self.rows[a:b] if r["t"] == "remove")
             back = Counter(
@@ -1659,6 +2562,7 @@ class Replayer:
                 "floor_state",
                 f"after floor {self.rows[self.segs[self.k][1] - 1].get('floor')}: "
                 + "; ".join(bad),
+                len(bad),
             )
 
     def leave_room(self) -> None:
@@ -1676,7 +2580,19 @@ class Replayer:
                     )
         pend = self.pending()
         if pend:
-            raise Desync("unconsumed", json.dumps(self.rows[pend[0]])[:300])
+            left = self.rows[pend[0]]
+            a = self.segs[self.k][0]
+            if left["t"] == "combat_start" and any(
+                self.rows[i]["t"] == "combat_end" and self.rows[i].get("result") == "victory"
+                for i in range(a, pend[0])
+            ):
+                # A second fight after a won one, in one room: the recorder
+                # missed the room change, and the map node taken with it.
+                raise Desync(
+                    "unsupported",
+                    f"the log has no room row for the fight {left.get('encounter')}",
+                )
+            raise Desync("unconsumed", json.dumps(left)[:300])
         self.feed_to(self.segs[self.k][1])
         if self.k + 1 >= len(self.segs):
             raise LogEnd
@@ -1727,8 +2643,12 @@ class Replayer:
             self.used.add(pend[0])  # the event took the potion, the player did not drop it
             return None
         belt = d.get("player", {}).get("potions") or []
-        slot = next((p for p in belt if p.get("entry") == row["id"]), None)
+        slot = self.on_belt(belt, row["id"])
         if slot is None:
+            if d.get("decision") == "shop" and any(self.rows[i]["t"] == "buy" for i in pend[1:]):
+                # A purchase is logged when it is complete: Cauldron's potions,
+                # and what the human did with them, come before its `buy` row.
+                return None
             raise Desync("potion", f"{row['id']} not on host belt {[p.get('entry') for p in belt]}")
         self.used.add(pend[0])
         if row["t"] == "potion_dropped":
@@ -1745,7 +2665,10 @@ class Replayer:
             return self.combat_action(d)
         if self.in_combat:
             raise Desync("ended_early", f"host at {kind} while the log's fight goes on")
-        if kind not in ("potion_swap", "rewards"):
+        self.skip_choiceless_fight()
+        # A potion the log drops in a Crystal Sphere room is one the sphere
+        # gave: it goes on the rewards screen that follows the clicks.
+        if kind not in ("potion_swap", "rewards", "crystal_sphere"):
             out = self.loose_potion(d)
             if out is not None:
                 return out
@@ -1759,10 +2682,100 @@ class Replayer:
             "bundle_select": self.on_bundle,
             "potion_swap": self.on_potion_swap,
             "rewards": self.on_rewards,
+            "crystal_sphere": self.on_sphere,
         }.get(kind)
         if handler is None:
             raise Desync("unknown_host_decision", f"{kind}: {json.dumps(d)[:400]}")
         return handler(d)
+
+    def start(self, neow: bool, out: dict[str, Any]) -> dict[str, Any]:
+        """Start the host on the log's run; returns its first decision.
+
+        With a profile, what the log states outright is added to it first, and
+        the host is started again with the result: whether Neow is revealed,
+        the act-1 variant the roll cannot give (Underdocks locked, or forced
+        because never entered), and an act boss the roll does not give (the
+        first boss in the act's discovery order the player had not met).
+        """
+        h = self.header
+        acts = [r.get("name") for r in self.rows if r["t"] == "act"]
+        maps = {r.get("act"): r for r in self.rows if r["t"] == "map" and r.get("act")}
+        if self.profile is not None and not neow:
+            self.profile = _with(self.profile, "locked_epochs", ["NEOW_EPOCH"])
+        rooms: list[dict[str, Any]] = []
+        for _ in range(4):
+            if self.g is not None:
+                self.g.close()
+            self.g = Game(forward_stderr=os.environ.get("HOST_REPLAY_STDERR") == "1")
+            d = self.g.start(
+                character=str(h["character"]).capitalize(),
+                seed=h["seed"],
+                ascension=h.get("ascension") or 0,
+                act1="roll",
+                played_save=not neow and self.profile is None,
+                interactive_potion_swap=True,
+                profile=self.profile,
+            )
+            if d.get("type") != "decision":
+                raise Desync("host_start", json.dumps(d)[:200])
+            host_act = str(d.get("context", {}).get("act_name", "")).upper()
+            if acts and host_act != acts[0]:
+                locked = (self.profile or {}).get("locked_epochs", [])
+                if self.profile is None:
+                    raise Desync("act", f"host {host_act} log {acts[0]}")
+                if acts[0] == "OVERGROWTH" and "UNDERDOCKS_EPOCH" not in locked:
+                    self.profile = _with(self.profile, "locked_epochs", ["UNDERDOCKS_EPOCH"])
+                elif acts[0] == "UNDERDOCKS" and not self.profile.get("undiscovered_acts"):
+                    self.profile = _with(self.profile, "undiscovered_acts", ["UNDERDOCKS"])
+                else:
+                    raise Desync("act", f"host {host_act} log {acts[0]}")
+                continue
+            if self.profile is None:
+                break
+            rooms = self.g.send({"cmd": "dump_rooms"}).get("acts") or []
+            forced: list[str] = []
+            for i, room_set in enumerate(rooms):
+                m = maps.get(i + 1)
+                if m is None:
+                    continue
+                if m.get("boss") and room_set.get("boss") != m["boss"]:
+                    order = _boss_orders().get(acts[i] if i < len(acts) else "", [])
+                    if m["boss"] not in order or m["boss"] in self.profile.get(
+                        "unseen_encounters", []
+                    ):
+                        raise Desync(
+                            "boss", f"act {i + 1}: host {room_set.get('boss')} log {m['boss']}"
+                        )
+                    forced += order[order.index(m["boss"]) :]
+            if not forced:
+                break
+            self.profile = _with(self.profile, "unseen_encounters", forced)
+        else:
+            raise Desync("host_start", "the profile did not settle in 4 starts")
+        st = self.g.get_state()
+        hc = st.get("rng_counters") or {}
+        rng = h.get("rng_state") or {}
+        diff = {
+            k: (hc[_STREAM.get(k, k)], v)
+            for k, v in rng.items()
+            if _STREAM.get(k, k) in hc and hc[_STREAM.get(k, k)] != v
+        }
+        if diff:
+            self.note(f"rng@start host/log {diff}")
+        out["rng_start_diff"] = {k: v[0] - v[1] for k, v in diff.items()}
+        if self.profile is None:
+            return d
+        # The rooms are drawn off `up_front` at the start, after the relic bags:
+        # a profile with another number of relics or events gives other rooms.
+        if diff:
+            raise Desync("rng_start", f"host/log {diff}")
+        for i, room_set in enumerate(rooms):
+            m = maps.get(i + 1)
+            if m and m.get("ancient") and room_set.get("ancient") != m["ancient"]:
+                raise Desync(
+                    "ancient", f"act {i + 1}: host {room_set.get('ancient')} log {m['ancient']}"
+                )
+        return d
 
     def run(self) -> dict[str, Any]:
         h = self.header
@@ -1776,38 +2789,18 @@ class Replayer:
                 1 for r in self.rows if _is_combat_choice(r) or r["t"] in ("outcome", "buy", "rest")
             ),
         }
+        # Some logs hold Neow's room and the choice made there without the offer.
         neow = any(
-            r["t"] == "decision" and r.get("event_id") == "NEOW"
+            (r["t"] == "decision" and r.get("event_id") == "NEOW")
+            or (r["t"] == "room" and r.get("id") == "NEOW")
             for r in self.rows[: self.segs[0][1]]
         )
         t0 = time.time()
-        self.g = Game(forward_stderr=os.environ.get("HOST_REPLAY_STDERR") == "1")
+        self.g = None
+        again: int | None = None  # a Crystal Sphere room to play with its next plan
+        flip = False  # replay using the other of two potions alike
         try:
-            d = self.g.start(
-                character=str(h["character"]).capitalize(),
-                seed=h["seed"],
-                ascension=h.get("ascension") or 0,
-                act1="roll",
-                played_save=not neow,
-                interactive_potion_swap=True,
-            )
-            if d.get("type") != "decision":
-                raise Desync("host_start", json.dumps(d)[:200])
-            act = next((r.get("name") for r in self.rows[:12] if r["t"] == "act"), None)
-            host_act = str(d.get("context", {}).get("act_name", "")).upper()
-            if act and host_act != act:
-                raise Desync("act", f"host {host_act} log {act}")
-            st = self.g.get_state()
-            hc = st.get("rng_counters") or {}
-            rng = h.get("rng_state") or {}
-            diff = {
-                k: (hc[_STREAM.get(k, k)], v)
-                for k, v in rng.items()
-                if _STREAM.get(k, k) in hc and hc[_STREAM.get(k, k)] != v
-            }
-            if diff:
-                self.note(f"rng@start host/log {diff}")
-            out["rng_start_diff"] = {k: v[0] - v[1] for k, v in diff.items()}
+            d = self.start(neow, out)
             while True:
                 self.log(f"host {d['decision']} (floor {d.get('context', {}).get('total_floor')})")
                 if d["decision"] == "game_over":
@@ -1841,6 +2834,14 @@ class Replayer:
         except Desync as e:
             out["desync"] = e.kind
             out["detail"] = e.detail[:600]
+            out["mismatch"] = e.size
+            if self.belt_differs:
+                flip = True
+            elif self.sphere_live is not None and self.sphere_more:
+                if self.sphere_cap is None or self.sphere_restarts < self.sphere_cap:
+                    again = self.sphere_live
+                else:
+                    out["sphere_capped"] = True
         except Exception as e:
             out["desync"] = "harness:" + type(e).__name__
             out["detail"] = str(e)[:400]
@@ -1850,7 +2851,40 @@ class Replayer:
                 out["world_errors"] = errs.get("count", 0) if isinstance(errs, dict) else 0
             except Exception:
                 pass
-            self.g.close()
+            if self.g is not None:
+                self.g.close()
+        if flip:
+            self.log("== the belt's order differs from the log's: the other of two potions alike")
+            return Replayer(
+                self.path,
+                verbose=self.verbose,
+                profile=self.profile,
+                sphere_cap=self.sphere_cap,
+                sphere_restarts=self.sphere_restarts,
+                sphere_attempts=self.sphere_attempts,
+                potion_last=True,
+            ).run()
+        if again is not None:
+            self.log(f"== Crystal Sphere in room {again}: the rewards differ, next plan")
+            return Replayer(
+                self.path,
+                verbose=self.verbose,
+                profile=self.profile,
+                sphere_cap=self.sphere_cap,
+                sphere_restarts=self.sphere_restarts + 1,
+                potion_last=self.potion_last,
+                sphere_attempts={
+                    **self.sphere_attempts,
+                    again: self.sphere_attempts.get(again, 0) + 1,
+                },
+            ).run()
+        if self.profile is not None:
+            out["profile"] = self.profile
+        if self.sphere_attempts:
+            out["sphere_attempts"] = {str(k): v for k, v in self.sphere_attempts.items()}
+        #: How far this replay got: rows of the log the host agreed with, then
+        #: actions the host took (a reward screen is many actions on one row).
+        out["progress"] = [len(self.rows) if "desync" not in out else self.fed, self.actions]
         out["floor"] = self.rows[min(self.fed, len(self.rows)) - 1].get("floor")
         out["rooms"] = self.k
         out["actions"] = self.actions
@@ -1871,14 +2905,81 @@ def replay_file(path: str) -> dict[str, Any]:
     return Replayer(path).run()
 
 
+def _player_groups(files: list[str]) -> list[list[str]]:
+    """`files` grouped by player, from the scraper's listing; unknown runs stand alone."""
+    token: dict[str, str] = {}
+    listing = Path(replays_root()) / "_listing.jsonl"
+    if listing.is_file():
+        with listing.open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if row.get("run_hash") and row.get("player_token"):
+                    token[row["run_hash"]] = row["player_token"]
+    groups: dict[str, list[str]] = {}
+    for f in files:
+        run_hash = Path(f).name.split(".")[0]
+        groups.setdefault(token.get(run_hash, "run:" + run_hash), []).append(f)
+    return list(groups.values())
+
+
+def replay_group_inferring(task: tuple[list[str], dict[str, Any]]) -> list[dict[str, Any]]:
+    """One player's runs, oldest first: a profile found for one run is tried on the next.
+
+    `task` is the files and the profiles known from an earlier census, by file.
+    """
+    import host_replay_profile
+
+    files, known = task
+    loaded: list[tuple[int, str]] = []
+    out: list[dict[str, Any]] = []
+    for path in files:
+        try:
+            rows = load(path)
+        except (OSError, EOFError) as e:
+            out.append({"file": path, "skip": f"unreadable:{type(e).__name__}"})
+            continue
+        why = eligible(rows)
+        if why:
+            out.append({"file": path, "skip": why})
+            continue
+        loaded.append((rows[0].get("start_time") or 0, path))
+    found: list[dict[str, Any]] = []
+    for _, path in sorted(loaded):
+        hints = [*([known[path]] if path in known else []), *reversed(found)][:3]
+        res = host_replay_profile.infer(path, hints=hints)
+        if res.get("profile") and res["profile"] not in found:
+            found.append(res["profile"])
+        out.append(res)
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0] if __doc__ else "")
     ap.add_argument("--run", help="replay one file, verbosely")
     ap.add_argument("--census", type=int, default=0, help="number of eligible runs to replay")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument(
+        "--apart",
+        action="store_true",
+        help="with --infer-profile: every run on its own, not one player's runs in turn "
+        "(for a rerun of the hard ones, with --profiles)",
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--character", help="restrict to one character directory")
     ap.add_argument("--out", help="directory for results.jsonl and summary.json")
+    ap.add_argument("--files", help="replay the files this text file lists, one path a line")
+    ap.add_argument(
+        "--infer-profile",
+        action="store_true",
+        help="search for the player's unlocks when the run does not replay with everything unlocked",
+    )
+    ap.add_argument(
+        "--profiles",
+        help="results.jsonl of an earlier --infer-profile census: its profiles are tried first",
+    )
     args = ap.parse_args()
     set_game_version(GAME_VERSION)
 
@@ -1886,33 +2987,63 @@ def main() -> None:
         why = eligible(load(args.run))
         if why:
             print(f"not eligible: {why}")
+        if args.infer_profile:
+            import host_replay_profile
+
+            res = host_replay_profile.infer(args.run, verbose=True)
+            print(json.dumps(res, indent=1))
+            if "desync" in res:
+                Replayer(args.run, verbose=True, profile=res.get("profile")).run()
+            return
         print(json.dumps(Replayer(args.run, verbose=True).run(), indent=1))
         return
 
     pattern = f"{replays_root()}/{args.character or '*'}/*/*.replay.ndjson.gz"
-    files = sorted(glob.glob(pattern))
-    random.Random(args.seed).shuffle(files)
+    if args.files:
+        files = Path(args.files).read_text(encoding="utf-8").split()
+        args.census = args.census or len(files)
+    else:
+        files = sorted(glob.glob(pattern))
+        random.Random(args.seed).shuffle(files)
     out_dir = Path(args.out or ".")
     out_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     skips: Counter[str] = Counter()
+    known: dict[str, Any] = {}
+    if args.profiles:
+        for line in Path(args.profiles).read_text(encoding="utf-8").splitlines():
+            row = json.loads(line)
+            if row.get("profile"):
+                known[row["file"]] = row["profile"]
     with (
         Pool(args.workers) as pool,
         (out_dir / "results.jsonl").open("w", encoding="utf-8") as fh,
     ):
-        for res in pool.imap_unordered(replay_file, files):
-            if "skip" in res:
-                skips[res["skip"]] += 1
-                continue
-            results.append(res)
-            fh.write(json.dumps(res) + "\n")
-            fh.flush()
-            print(
-                f"[{len(results)}] {res['character']} A{res['ascension']} rooms {res['rooms']} "
-                f"actions {res['actions']} -> {res.get('desync') or res.get('end')}",
-                flush=True,
-            )
-            if len(results) >= args.census:
+        if args.infer_profile:
+            # The largest groups first: they run longest.
+            groups = sorted(_player_groups(files), key=len, reverse=True)
+            if args.apart:
+                groups = [[f] for f in files]
+            batches = pool.imap_unordered(replay_group_inferring, [(g, known) for g in groups])
+        else:
+            batches = ([res] for res in pool.imap_unordered(replay_file, files))
+        done = False
+        for batch in batches:
+            for res in batch:
+                if "skip" in res:
+                    skips[res["skip"]] += 1
+                    continue
+                results.append(res)
+                fh.write(json.dumps(res) + "\n")
+                fh.flush()
+                print(
+                    f"[{len(results)}] {res['character']} A{res['ascension']} rooms {res['rooms']} "
+                    f"actions {res['actions']} -> {res.get('desync') or res.get('end')}"
+                    + (f" ({res['profile_trials']} trials)" if "profile_trials" in res else ""),
+                    flush=True,
+                )
+                done = done or len(results) >= args.census
+            if done:
                 pool.terminate()
                 break
     kinds = Counter(

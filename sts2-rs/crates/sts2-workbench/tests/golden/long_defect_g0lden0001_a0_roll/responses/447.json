@@ -18,7 +18,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_select",
-   "details": [],
+   "details": [
+    "+Card Ultimate Strike"
+   ],
    "floor": 1,
    "idx": 1,
    "label": "Select Ultimate Strike",
@@ -598,7 +600,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Boost Away"
+   ],
    "floor": 2,
    "idx": 14,
    "label": "Take Boost Away",
@@ -1118,7 +1122,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card TURBO"
+   ],
    "floor": 3,
    "idx": 26,
    "label": "Take TURBO",
@@ -1659,7 +1665,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Sweeping Beam"
+   ],
    "floor": 5,
    "idx": 40,
    "label": "Take Sweeping Beam",
@@ -1681,7 +1689,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "event_choice",
-   "details": [],
+   "details": [
+    "+Card Spoils Map"
+   ],
    "floor": 6,
    "idx": 42,
    "label": "Choose: Nab the Map",
@@ -2997,7 +3007,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Go for the Eyes"
+   ],
    "floor": 7,
    "idx": 66,
    "label": "Take Go for the Eyes",
@@ -3030,7 +3042,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_select",
-   "details": [],
+   "details": [
+    "Upgraded Strike → Strike+"
+   ],
    "floor": 8,
    "idx": 69,
    "label": "Upgrade Strike",
@@ -3053,7 +3067,8 @@
    "combat_log": [],
    "decision": "shop",
    "details": [
-    "Gold 221→169"
+    "Gold 221→169",
+    "+Card Go for the Eyes"
    ],
    "floor": 9,
    "idx": 71,
@@ -3091,7 +3106,8 @@
    "combat_log": [],
    "decision": "card_select",
    "details": [
-    "Gold 118→43"
+    "Gold 118→43",
+    "−Card Strike+"
    ],
    "floor": 9,
    "idx": 74,
@@ -3150,7 +3166,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_select",
-   "details": [],
+   "details": [
+    "Upgraded Strike → Strike+"
+   ],
    "floor": 11,
    "idx": 79,
    "label": "Upgrade Strike",
@@ -4387,7 +4405,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Cold Snap"
+   ],
    "floor": 12,
    "idx": 104,
    "label": "Take Cold Snap",
@@ -5795,7 +5815,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Compact"
+   ],
    "floor": 13,
    "idx": 130,
    "label": "Take Compact",
@@ -6544,7 +6566,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Beam Cell"
+   ],
    "floor": 14,
    "idx": 146,
    "label": "Take Beam Cell",
@@ -8174,7 +8198,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Leap"
+   ],
    "floor": 15,
    "idx": 174,
    "label": "Take Leap",
@@ -12119,7 +12145,8 @@
    "combat_log": [],
    "decision": "card_reward",
    "details": [
-    "You HP 10→75 (+65)"
+    "You HP 10→75 (+65)",
+    "+Card Machine Learning"
    ],
    "floor": 17,
    "idx": 243,
@@ -13359,7 +13386,9 @@
    "act_name": "Hive",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Rocket Punch"
+   ],
    "floor": 19,
    "idx": 270,
    "label": "Take Rocket Punch",
@@ -14997,7 +15026,9 @@
    "act_name": "Hive",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Rocket Punch"
+   ],
    "floor": 20,
    "idx": 305,
    "label": "Take Rocket Punch",

@@ -44,6 +44,13 @@ been merged into the campaign branch. They were reverted there (`git revert
 -m 1`) and live on in the workbench branch. To bring that work back after the
 campaign, revert the two revert commits first, or git will skip the changes.
 
+On Nov 8 the lane moved to W4 (PREREG Amendment 6): the campaign branch
+fast-forwarded to 05759fc34, the workbench head merged with the campaign docs.
+The workbench work (#1156, #1159, #1172) now sits in the campaign tree too; the
+pinned wheel is the W4 pin `~/runs/e2e-pin/87de4d1a0bbffeeb`, whose Rust
+sources are 0297d646a's. Rust stays frozen on both branches until the campaign
+ends. Lane scripts for W4: `t0/box_env_w4.sh`, `t0/box_run_w4.sh`.
+
 ## Where things live
 
 On the a4000:

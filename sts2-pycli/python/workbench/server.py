@@ -22,7 +22,7 @@ from typing import Any
 
 import sts2_client
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sts2_hint import display_maps
@@ -96,6 +96,11 @@ class StartRequest(BaseModel):
     # GH #801: the game build to simulate — `"v0.107.1"` (default) or
     # `"v0.111.0"`. Anything else is a 400 naming the supported builds.
     game_version: str | None = None
+    # GH #1346, #1347: `"standard"` (default), `"dread"` or `"blitz"`. A
+    # Dread run is an ascension-10 run (`ascension` is overridden); in a
+    # Blitz run `ascension` is the Blitz level 0..5. Both need the Rust
+    # engine at v0.113.0; any other combination is a 400 that says why.
+    game_mode: str | None = None
 
 
 class ImportStateRequest(BaseModel):
@@ -107,6 +112,9 @@ class ImportStateRequest(BaseModel):
     """``"auto"`` (the fight if the paste has one, else the run), ``"combat"``, or ``"run"``."""
     game_version: str | None = None
     """The game build to rebuild the paste under (GH #801); default ``"v0.107.1"``."""
+    game_mode: str | None = None
+    """Only ``"standard"`` (GH #1346, #1347): an import rebuilds a standard run, so
+    ``"dread"`` and ``"blitz"`` are 400s."""
 
 
 class SimlabSweepRequest(BaseModel):
@@ -155,6 +163,9 @@ class StartFaithfulRequest(BaseModel):
     threads: int = 1
     reward_sims: int | None = None  # accepted, ignored — stale SPA compat
     game_version: str | None = None  # GH #801; see StartRequest.game_version
+    # GH #1346, #1347: run-mode runs are standard runs; `"dread"` and
+    # `"blitz"` are 400s.
+    game_mode: str | None = None
 
 
 class ActionRequest(BaseModel):
@@ -580,6 +591,24 @@ def _enrich_relic(relic: dict[str, Any], assets: AssetResolver, loc: dict[str, s
     relic["description"] = _resolve_owned_text(relic, loc)
 
 
+def _blitz_ware(opt: dict[str, Any]) -> dict[str, Any] | None:
+    """One Blitz merchant option (the oracle's ``blitz_choice`` shape) as the
+    ware the shop screen draws; ``None`` for the leave option. GH #1347."""
+    if not isinstance(opt, dict) or opt.get("action") != "blitz_choice":
+        return None
+    item = opt.get("item") or {}
+    return {
+        "index": opt.get("index"),
+        "kind": item.get("blitz_kind"),
+        "title": item.get("title"),
+        "description": item.get("description"),
+        "cursed": bool(item.get("cursed")),
+        "rare": bool(item.get("rare")),
+        "status": opt.get("status"),
+        "enabled": bool(opt.get("enabled")),
+    }
+
+
 def _enrich_potion(potion: dict[str, Any], assets: AssetResolver, loc: dict[str, str]) -> None:
     """Attach an ``image`` URL and resolve the name/description of a potion."""
     potion["name"] = _resolve_name(potion.get("name"), loc)
@@ -854,6 +883,8 @@ def _enrich(
             player["rig_scale"] = pscale.get("scale")
             player["rig_bounds_h"] = pscale.get("bounds_h")
             player["rig_bounds_w"] = pscale.get("bounds_w")
+            player["rig_arrow_x"] = pscale.get("arrow_x")
+            player["rig_arrow_y"] = pscale.get("arrow_y")
         enrich_powers(state.get("player_powers"))
         # Osty (or any pet mirrored into the ``osty`` slot -- Byrdpip and
         # Pael's Legion summon on ANY character) gets the same sprite/rig
@@ -868,6 +899,8 @@ def _enrich(
                 osty["rig_scale"] = oscale.get("scale")
                 osty["rig_bounds_h"] = oscale.get("bounds_h")
                 osty["rig_bounds_w"] = oscale.get("bounds_w")
+                osty["rig_arrow_x"] = oscale.get("arrow_x")
+                osty["rig_arrow_y"] = oscale.get("arrow_y")
         for enemy in state.get("enemies", []) or []:
             # `kind` (raw MonsterKind) disambiguates segments that share one
             # display name (the three Decimillipede segments → distinct rigs).
@@ -883,6 +916,8 @@ def _enrich(
                 enemy["rig_scale"] = escale.get("scale")
                 enemy["rig_bounds_h"] = escale.get("bounds_h")
                 enemy["rig_bounds_w"] = escale.get("bounds_w")
+                enemy["rig_arrow_x"] = escale.get("arrow_x")
+                enemy["rig_arrow_y"] = escale.get("arrow_y")
             # Multi-part bosses (Kaiser Crab arms) share ONE rig; tell the frontend
             # which shared skeleton + animation-track family this combatant drives,
             # so it renders the rig once and pins each arm's overlay over its claw.
@@ -1034,6 +1069,20 @@ def _enrich(
             _enrich_relic(relic, assets, loc)
         for potion in state.get("potions", []) or []:
             _enrich_potion(potion, assets, loc)
+        # GH #1347: the Blitz merchant's wares, under their own key:
+        # ``_live_step`` overwrites ``state["options"]`` with the normalized
+        # action list.
+        if state.get("blitz_choices_remaining") is not None:
+            state["blitz_wares"] = [
+                ware
+                for ware in map(_blitz_ware, state.get("options", []) or [])
+                if ware is not None
+            ]
+    elif decision == "rewards":
+        # GH #1347: the Blitz chest's relics.
+        for reward in state.get("rewards", []) or []:
+            if reward.get("type") == "relic":
+                _enrich_relic(reward, assets, loc)
     elif decision == "bundle_select":
         for bundle in state.get("bundles", []) or []:
             for card in bundle.get("cards", []) or []:
@@ -1066,7 +1115,7 @@ def _enrich(
         # showing the raw key. Real prose (with spaces) and C# bodies pass through.
         if localization.looks_like_unresolved_key(body):
             body = ""
-        state["description"] = render.resolve_card_text(body, event_vars)
+        state["description"] = render.resolve_card_text(body, event_vars, extra_flags=_EVENT_FLAGS)
         # Stash the rich per-option payload under a dedicated key: ``_live_step``
         # overwrites ``state["options"]`` with the normalized action list, so the
         # frontend reads ``event_options`` for titles/descriptions in both modes.
@@ -1270,21 +1319,100 @@ def _faithful_replay_plan(
 def _requested_game_version(raw: str | None, backend: str = "rust") -> str:
     """The game build a start/import request names, or a 400 (GH #801).
 
-    Exact match only: the wire takes ``"v0.107.1"`` / ``"v0.111.0"``. A
-    request that names none gets :data:`sts2_client.DEFAULT_GAME_VERSION` on
+    Exact spelling only: the wire takes ``"v0.107.1"`` / ``"v0.111.0"``, or a
+    hotfix of one spelled the same way (``"v0.113.1"``, from a live-game
+    position), read as its base build (:func:`sts2_client.hotfix_base`; the
+    Rust twin is ``session::parse_game_version``). A request that names none gets :func:`workbench.localization.launcher_default_game_version` on
     the Rust engine, and on the C# backend the one build this process's
     oracle was selected for. (A FILE that names none is another matter: that
     is :data:`sts2_client.LEGACY_GAME_VERSION`.)
     """
     if raw is None:
-        return sts2_client.DEFAULT_GAME_VERSION if backend == "rust" else sts2_client.GAME_VERSION
-    if raw not in sts2_client.SUPPORTED_GAME_VERSIONS:
+        return (
+            localization.launcher_default_game_version()
+            if backend == "rust"
+            else sts2_client.GAME_VERSION
+        )
+    if raw in sts2_client.SUPPORTED_GAME_VERSIONS:
+        return raw
+    base = (
+        sts2_client.hotfix_base(raw)
+        if isinstance(raw, str) and raw.startswith("v") and raw.strip() == raw
+        else None
+    )
+    if base is None:
         raise HTTPException(
             400,
             f"unsupported game_version {raw!r} "
             f"(supported: {', '.join(sts2_client.SUPPORTED_GAME_VERSIONS)})",
         )
-    return raw
+    return base
+
+
+#: The live routes that ask the run-level AI (run policy, run advisors,
+#: autoplay, the e2e student) about the run. Refused in a Blitz run
+#: (GH #1347); twin of the Rust port's ``BLITZ_NO_AI_ROUTES``, which also
+#: lists its browser-only routes.
+_BLITZ_NO_AI_ROUTES: frozenset[str] = frozenset(
+    {
+        "/api/live/e2e-advice",
+        "/api/live/last-choice-grade",
+        "/api/live/regret-review",
+        "/api/live/card-advisor",
+        "/api/live/card-advisor/stream",
+        "/api/live/decision-advisor",
+        "/api/live/decision-advisor/stream",
+        "/api/live/last-choice-check/stream",
+        "/api/live/run-mode",
+        "/api/live/run-mode-step",
+        "/api/live/faithful-step",
+        "/api/live/play-to-end",
+        "/api/live/autobattle/advance",
+        "/api/live/autobattle/step",
+        "/api/live/autobattle/verdict",
+        "/api/live/ppo-policy",
+        "/api/live/wpa-review",
+        "/api/live/wpa-verify",
+    }
+)
+
+#: The live routes that ask the combat search about the fight on screen: the
+#: hint, the search tree, the in-fight choice ranker, "play best" (an in-fight
+#: choice only, in Blitz) and the browser build's per-turn grade. A Blitz run
+#: answers them in a fight and nowhere else. Twin of the Rust port's
+#: ``BLITZ_FIGHT_AI_ROUTES``.
+_BLITZ_FIGHT_AI_ROUTES: frozenset[str] = frozenset(
+    {
+        "/api/live/hint",
+        "/api/live/search_tree",
+        "/api/live/choice-ranker",
+        "/api/live/auto-action",
+        "/api/live/last-turn-grade",
+    }
+)
+
+#: The 409 of a run-level AI route in a Blitz run.
+_BLITZ_NO_RUN_AI = (
+    "the run-level AI (run policy, advisors, autoplay) is not available in Blitz mode"
+)
+
+#: The 409 of a fight AI route in a Blitz run that is not in a fight.
+_BLITZ_FIGHT_AI_ONLY = "in Blitz mode the AI answers in a fight only"
+
+
+def _refuse_special_mode(game_mode: str | None, what: str) -> None:
+    """400 for a Dread or Blitz request on a route that starts standard runs
+    only (GH #1346, #1347: the run AI knows neither the Blitz merchant nor
+    its map); also 400 for an unknown mode."""
+    if game_mode is None or game_mode == saves_mod.STANDARD_GAME_MODE:
+        return
+    if game_mode not in saves_mod.GAME_MODES:
+        raise HTTPException(400, saves_mod.unknown_game_mode_message(game_mode))
+    raise HTTPException(
+        400,
+        f"{saves_mod.game_mode_name(game_mode)} mode is not available for {what}: "
+        "start it from the run launcher",
+    )
 
 
 def create_app(
@@ -1365,6 +1493,33 @@ def create_app(
         """
         sid = request.scope.get(SID_SCOPE_KEY) or uuid.uuid4().hex
         return sessions.get_or_create(sid)
+
+    @app.middleware("http")
+    async def _no_ai_in_blitz(request: Request, call_next: Any) -> Any:
+        """409 for an AI route the live Blitz run cannot answer (GH #1347).
+
+        The run policies, the run-level advisors and the autoplayers know
+        neither the Blitz merchant nor its chest or map, so their answer would
+        be about a different game: their routes are refused throughout. A
+        fight is the same game in every mode (the combat search reads the
+        fight's own ascension, which a Blitz run fills with the standard level
+        that scales its enemies), so the fight routes answer, in a fight only.
+        The SPA shows the controls to match. Twin of
+        ``Workbench::refuse_ai_in_blitz``.
+        """
+        path = request.url.path
+        if path in _BLITZ_NO_AI_ROUTES or path in _BLITZ_FIGHT_AI_ROUTES:
+            session = sessions.get(request.scope.get(SID_SCOPE_KEY))
+            live = session.live if session is not None else None
+            if getattr(live, "game_mode", None) == saves_mod.BLITZ_GAME_MODE:
+                detail = None
+                if path in _BLITZ_NO_AI_ROUTES:
+                    detail = _BLITZ_NO_RUN_AI
+                elif not live.in_fight():
+                    detail = _BLITZ_FIGHT_AI_ONLY
+                if detail is not None:
+                    return JSONResponse({"detail": detail}, status_code=409)
+        return await call_next(request)
 
     # Card loc-key fallback: in-repo localization + sibling wiki manifest.
     repo_root = Path(__file__).resolve().parents[2]
@@ -1454,15 +1609,11 @@ def create_app(
         # carries the display data for.
         return {
             "backends": backends,
-            "game_versions": (versions := localization.available_game_versions(repo_root)),
+            "game_versions": localization.available_game_versions(repo_root),
             # What the launcher starts on until the user picks: the default
             # build when this checkout can display it (a public snapshot may
             # carry only the legacy build's localization).
-            "default_game_version": (
-                sts2_client.DEFAULT_GAME_VERSION
-                if sts2_client.DEFAULT_GAME_VERSION in versions
-                else sts2_client.LEGACY_GAME_VERSION
-            ),
+            "default_game_version": localization.launcher_default_game_version(),
         }
 
     @app.get("/api/runs")
@@ -1581,6 +1732,24 @@ def create_app(
         """Companion MCTS tree over the live game's current combat board."""
         return _bridge_call("/search_tree", {"sims": req.sims}, timeout=120.0)
 
+    def _run_file(path: str) -> Path:
+        """Resolve ``path`` and require it to sit inside ``logs_dir``.
+
+        Every run-log writer (the live advisor's ``--workbench-logs`` default,
+        play mode, the recorder, the seed checker) writes there, so a path
+        outside it is never a run the UI listed. Symlinks are resolved first,
+        so a link inside ``logs_dir`` cannot point out of it.
+
+        Raises:
+            HTTPException: 400 if the path resolves outside ``logs_dir``.
+        """
+        try:
+            resolved = Path(path).resolve()
+            resolved.relative_to(logs_dir.resolve())
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, f"path outside logs dir: {path}") from exc
+        return resolved
+
     @app.get("/api/runs/stat")
     def runs_stat(path: str) -> dict[str, Any]:
         """Cheap change probe for one run file: ``{size, mtime}``.
@@ -1588,16 +1757,10 @@ def create_app(
         The SPA's Follow mode polls this every couple of seconds and only
         re-issues the (much heavier) ``/api/load`` when either value moved —
         a still-being-written live-game log grows in place, so size+mtime is
-        a sufficient dirty bit. Constrained to ``logs_dir`` (unlike
-        ``/api/load``'s TODO, a poll endpoint should not leak arbitrary
-        file metadata).
+        a sufficient dirty bit. Constrained to ``logs_dir``, like
+        ``/api/load``.
         """
-        p = Path(path)
-        try:
-            resolved = p.resolve()
-            resolved.relative_to(logs_dir.resolve())
-        except (OSError, ValueError) as exc:
-            raise HTTPException(400, f"path outside logs dir: {path}") from exc
+        resolved = _run_file(path)
         try:
             st = resolved.stat()
         except (FileNotFoundError, OSError) as exc:
@@ -1634,16 +1797,17 @@ def create_app(
         """Load a JSONL run into the in-memory timeline store.
 
         Args:
-            req: ``{"path": "<absolute path to .jsonl>"}``
+            req: ``{"path": "<absolute path to .jsonl>"}``; it must resolve
+                inside ``logs_dir`` (400 otherwise).
 
         Returns:
             ``{"count": <steps loaded>, "resume": {...}}`` — ``resume`` is
             :func:`~workbench.live_runs.resume_capability`, which tells the UI
             whether (and where) "play from here" can take this recording over.
         """
-        # TODO: constrain `req.path` to within logs_dir before exposing beyond localhost.
+        path = _run_file(req.path)
         try:
-            session.store = TimelineStore.load_jsonl(req.path)
+            session.store = TimelineStore.load_jsonl(path)
         except (FileNotFoundError, OSError) as exc:
             raise HTTPException(404, f"file not found: {exc}") from exc
         except json.JSONDecodeError as exc:
@@ -2092,6 +2256,7 @@ def create_app(
                 act1=req.act1,
                 backend=req.backend,
                 game_version=game_version,
+                game_mode=req.game_mode,
             )
         except RestoreError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
@@ -2107,6 +2272,7 @@ def create_app(
         integer seed, no interactive UI flags). Follow with ``/api/live/play-to-end``
         to run it out with the benchmark policy. 400 on a bad seed / config."""
         game_version = _requested_game_version(req.game_version)
+        _refuse_special_mode(req.game_mode, "a run-mode run")
         try:
             state = live_runs.start_run_mode(
                 session,
@@ -2202,6 +2368,7 @@ def create_app(
         requested lane, 400 when the engine cannot rebuild it.
         """
         game_version = _requested_game_version(req.game_version)
+        _refuse_special_mode(req.game_mode, "an imported run")
         imported = _parse_import(req.payload)
         lane = _import_lane(imported, req.lane)
         version_loc = loc_bundle(game_version)[0]
@@ -2907,6 +3074,7 @@ def create_app(
             act1=sess.act1,
             node_values=sess.active_node_values(),
             game_version=getattr(sess, "game_version", saves_mod.LEGACY_GAME_VERSION),
+            game_mode=getattr(sess, "game_mode", saves_mod.STANDARD_GAME_MODE),
         )
         return {"name": req.name, "path": str(path), "step_count": len(line)}
 

@@ -4,8 +4,9 @@ use super::prelude::*;
 /// Dagger Spray. Cost 1. Deal 4 damage to ALL enemies twice. `silent.py`
 pub(crate) fn play_dagger_spray(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
     let base = current_card_damage(state);
-    deal_damage_player_to_all(state, base);
-    deal_damage_player_to_all(state, base);
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
+        deal_damage_player_to_all(state, base);
+    }
     EffectResult::Resolved
 }
 

@@ -38,12 +38,15 @@ export class Workbench {
   load_e2e = missing;
   set_e2e_error = missing;
   has_e2e = () => false;
+  set_e2e_fool_error = missing;
+  has_e2e_fool = () => false;
   take_run_log = () => "null";
   load_run = missing;
   free = () => {};
   static save_header = missing;
   static ppo_champion_file = missing;
   static e2e_file = () => "";
+  static e2e_fool_file = () => "";
   static mcts_runs = missing;
   static aggregate_runs = missing;
 }

@@ -3,6 +3,7 @@ import { assetUrl, type Enemy, type Orb, type Power } from "../api";
 import type { DissolveEffect } from "../effects/manifest";
 import CardFrame from "./CardFrame";
 import Orbs from "./Orbs";
+import ImpaledArrows from "./ImpaledArrows";
 import Powers from "./Powers";
 import HealthBar from "./HealthBar";
 import { powerItem } from "../inspect/powerItem";
@@ -26,9 +27,12 @@ import {
   bodyScale,
   dyingChromeFadeSeconds,
 } from "./combatantMetrics";
+import { t } from "../i18n";
 
 export interface PlayerLike {
   name: string; hp: number; max_hp: number; block: number;
+  /** Chinese display mode: the name to SHOW (`name` stays the art key). */
+  display_name?: string;
   image?: string | null;
   rig?: string | null;
   rig_scale?: number | null;
@@ -41,6 +45,9 @@ export interface PlayerLike {
   intents?: Enemy["intents"];
   powers?: Power[];
   stolen_cards?: Enemy["stolen_cards"];
+  impaled_arrows?: Enemy["impaled_arrows"];
+  rig_arrow_x?: Enemy["rig_arrow_x"];
+  rig_arrow_y?: Enemy["rig_arrow_y"];
 }
 
 /** The game's OWN intent art (images/intent_atlas/), for the kinds the server
@@ -235,6 +242,13 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
   // `other` row: it exists so the printed arithmetic reconciles, but it names
   // no listener and so has no icon to draw.
   const intentTip = intent ? describeIntent(intent) : undefined;
+  // The name to SHOW; `c.name` stays the key art, skins and ids read.
+  const shownName = c.display_name ?? c.name;
+  // The intent's title and sentence: the backend's (Chinese display mode)
+  // over our English table.
+  const intentText = intent
+    ? { name: intent.display_name ?? intentInfo(intent).name, description: intent.description ?? intentInfo(intent).description }
+    : undefined;
   const intentDir = intent ? intentDirection(intent) : null;
   const intentMods = (intent?.modifiers ?? []).filter((m) => m.kind !== "other");
   const intentArt = intent
@@ -247,6 +261,8 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
   // instead of popping in high and then dropping. Combatants with no rig (static
   // image) never report, so they show immediately at the box top as before.
   const [rigHeadTop, setRigHeadTop] = useState<number | null>(null);
+  // The rig has `ARROW_HIT_FRONT`, so SpineSprite draws the impaled arrows.
+  const [hasArrowSlots, setHasArrowSlots] = useState(false);
   // A noSprite arm has no rig of its own, so it never "loads" — show chrome at once.
   const rigLoading = !noSprite && !!c.rig && rigHeadTop == null;
   // How tall this creature is actually DRAWN — crown to feet, i.e. the box less
@@ -343,6 +359,12 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
   // (`NCreature.cs`'s bounds refresh). `100%` resolves against the wrap at
   // each consumer's `top`/`bottom`, i.e. the body box the feet stand on.
   const scale = noSprite ? 1 : bodyScale(c.powers);
+  // The Fool's arrows stuck in this enemy, once its rig has drawn. A rig with
+  // arrow slots draws them itself (SpineSprite); the rest get them here, at
+  // the scene's arrow anchor (half the authored box up, if the table has none).
+  const impaled = isEnemy && !rigLoading ? (c.impaled_arrows ?? 0) : 0;
+  const freeArrows = hasArrowSlots ? 0 : impaled;
+  const arrowAnchor: [number, number] = [c.rig_arrow_x ?? 0, c.rig_arrow_y ?? -(c.rig_bounds_h ?? 200) / 2];
   const rigTop = scale === 1
     ? `${rigHeadTop ?? 0}px`
     : `calc(100% - (100% - ${rigHeadTop ?? 0}px) * ${scale})`;
@@ -364,7 +386,7 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
         {wantOrbs && !rigLoading && <Orbs orbs={orbs} slots={orbSlots} bodyH={bodyH} />}
         {hotkey != null && !rigLoading && <span aria-hidden="true" className="gs-hotkey">{hotkey}</span>}
         {reticle && !rigLoading && (
-          <span className="gs-reticle" data-testid="advice-reticle" aria-label="the AI's target">
+          <span className="gs-reticle" data-testid="advice-reticle" aria-label={t("the AI's target")}>
             <i className="gs-reticle-tl" /><i className="gs-reticle-tr" />
             <i className="gs-reticle-bl" /><i className="gs-reticle-br" />
           </span>
@@ -385,12 +407,12 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
             // desktop, plus one row per modifier.
             // Phone only (desktop gets nothing): a named button, Enter / Space
             // open it too.
-            {...inspectTrigger(inspect.enabled, `Intent: ${intentTip ?? intentInfo(intent).name}`, () => {
+            {...inspectTrigger(inspect.enabled, t("Intent: {name}", { name: intentTip ?? intentText!.name }), () => {
               // The breakdown's arithmetic when there is one (it is what the
               // desktop tooltip shows); the kind's own name otherwise, never
               // the raw enum id. Either way the game's sentence under it.
               inspect.open({ key: `intent:${inspectId}:${intent.type}:${intent.damage ?? ''}:${intentMods.map((m) => m.name).join(',')}`, icon: intentArt,
-                name: intentTip ?? intentInfo(intent).name, description: intentInfo(intent).description,
+                name: intentTip ?? intentText!.name, description: intentText!.description,
                 list: intentMods.map((m) => ({ key: m.name, icon: m.image, name: m.title || m.name })) });
             })}>
             {intent.damage != null && (
@@ -419,7 +441,7 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
               </div>
             )}
             {intentArt && (
-              <img className="gs-intent-img" src={intentArt} alt={intentName(intent.type)} title={intentName(intent.type)} />
+              <img className="gs-intent-img" src={intentArt} alt={intent.display_name ?? intentName(intent.type)} title={intent.display_name ?? intentName(intent.type)} />
             )}
           </div>
         )}
@@ -445,8 +467,8 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
           <div className="gs-stolen">
             {c.stolen_cards.map((sc, i) => (
               <div key={`${sc.id}-${i}`} className="gs-stolen-card"
-                title={`Stolen from your deck: ${sc.name}${sc.upgraded ? "+" : ""} — kill ${c.name} before it escapes to get it back`}
-                aria-label={`${c.name} stole ${sc.name}${sc.upgraded ? "+" : ""}`}>
+                title={t("Stolen from your deck: {card} — kill {enemy} before it escapes to get it back", { card: `${sc.name}${sc.upgraded ? "+" : ""}`, enemy: shownName })}
+                aria-label={t("{enemy} stole {card}", { enemy: shownName, card: `${sc.name}${sc.upgraded ? "+" : ""}` })}>
                 <CardFrame card={sc} width={64} />
               </div>
             ))}
@@ -464,7 +486,7 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
             dump and was never the source for either string. */}
         {effects?.blocked && (
           <div key={`bt${effects.nonce}`} className="gs-blocked-text">
-            {locStrings?.blocked ?? "Blocked"}
+            {t(locStrings?.blocked ?? "Blocked")}
           </div>
         )}
         {effects?.powerPop && (
@@ -489,7 +511,7 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
               // colour class: `NPowerRemovedVfx` has no `_isBuff` to drive one.
               <span className="gs-power-pop-textcol">
                 <span className="gs-power-pop-label">{effects.powerPop.power}</span>
-                <span className="gs-power-pop-wearsoff">{locStrings?.powerWearsOff ?? "Wears Off"}</span>
+                <span className="gs-power-pop-wearsoff">{t(locStrings?.powerWearsOff ?? "Wears Off")}</span>
               </span>
             )}
           </div>
@@ -499,6 +521,7 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
             and its ground shadow but none of the chrome riding on the wrap.
             Unset at 1 rather than `scale: 1`, which would still open a
             stacking context and lift the ground shadow's `z-index: -1`. */}
+        {freeArrows > 0 && <ImpaledArrows count={freeArrows} layer="back" pxPerScene={pxPerScene} anchor={arrowAnchor} />}
         <div className="gs-sprite-body" style={scale === 1 && !bodyDx ? undefined
           : { ...(scale === 1 ? {} : { scale: String(scale) }), ...(bodyDx ? { left: bodyDx } : {}) }}>
           {/* Ground-contact shadow (skipped for noSprite spacers — their shared
@@ -518,6 +541,8 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
                     : undefined}
                   hueShift={c.hue_jitter}
                   pxPerScene={pxPerScene}
+                  impaledArrows={impaled}
+                  onArrowSlots={setHasArrowSlots}
                   /* Reserve the rig's REAL body, from the generated rig-bounds
                      table, rather than the authored Bounds box — that box is a
                      hitbox, drawn a median 1.07x the rig, and the overlays below
@@ -525,13 +550,14 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
                   boundsH={spriteBodyH(c, isEnemy)}
                   maxBodyH={maxBodyH}
                   fallbackHeight={(isEnemy ? FALLBACK_BODY_H.enemy : FALLBACK_BODY_H.player) * pxPerScene}
-                  fallback={c.image} alt={c.name}
+                  fallback={c.image} alt={shownName}
                   actionAnim={actionAnim} actionAnimCandidates={actionAnimCandidates}
                   actionNonce={actionNonce} holdLast={holdLast} dissolve={dissolve} onMeasure={onRigMeasure} />
               : c.image
-                ? <img className={`gs-sprite ${isEnemy ? "gs-enemy" : "gs-player"}`} src={c.image} alt={c.name} />
+                ? <img className={`gs-sprite ${isEnemy ? "gs-enemy" : "gs-player"}`} src={c.image} alt={shownName} />
                 : <div className="gs-sprite-fallback" />}
         </div>
+        {freeArrows > 0 && <ImpaledArrows count={freeArrows} layer="front" pxPerScene={pxPerScene} anchor={arrowAnchor} />}
       </div>
       {/* Game order: HP bar right under the feet, name under the bar.
           Three layers so the chevron silhouette survives: frame (teal edge) ->
@@ -547,7 +573,7 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
           bare name; the full name (with the tag) lives on the tooltip and
           the accessible label so nothing is lost. */}
       {!noChrome && powerChrome !== "compact" && (() => {
-        const { text, full } = nameplateText(c.name, label);
+        const { text, full } = nameplateText(shownName, label);
         return (
           <div className="gs-nameplate" title={full}
             aria-label={full}>{text}</div>
@@ -572,7 +598,7 @@ export default function Combatant({ c, isEnemy, dataIndex, onClick, onHoverChang
                 : powerHit ? 2 * powerFit(powerBoxW, powerHit) : undefined}
               minShown={cells != null ? (powerChrome === "compact" ? 1 : 2 * cells) : undefined}
               inspectScope={inspectId}
-              onOverflow={(hidden) => inspect.open({ key: `powers:${inspectId}`, name: "More powers",
+              onOverflow={(hidden) => inspect.open({ key: `powers:${inspectId}`, name: t("More powers"),
                 list: hidden.map((p) => powerItem(p, inspectId)) })} />
           </div>
         );

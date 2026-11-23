@@ -93,6 +93,12 @@ sts2-vocab = { workspace = true }
 # Instinct: the e2e Ironclad student (env driver, tokenizer, forward) for the
 # mod's advisor (`src/e2e.rs`, `realgame_instinct.py`). Plain Rust, no ML crate.
 sts2-e2e = { path = "../sts2-e2e" }
+# The live board -> engine wire translation (`combat_import`), shared with the
+# wasm workbench, behind `sts2_rs.combat_wire_from_bridge` (GH #1426 step 1).
+sts2-workbench = { workspace = true }
+# The advisor logic ported from sts2-pycli (`combat_mirror`'s comparisons
+# behind `sts2_rs.mirror_*`, GH #1426 step 1).
+sts2-advisor = { workspace = true }
 pyo3 = { version = "0.24", features = ["abi3-py311"] }
 # `pythonize` 0.24 matches the pyo3 0.24 minor — required for converting
 # the `serde_json::Value` returned by `sts2_core::parity::combat_state_to_bridge_state`

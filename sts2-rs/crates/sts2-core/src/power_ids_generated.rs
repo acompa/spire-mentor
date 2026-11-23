@@ -728,6 +728,27 @@ pub enum PowerKind {
     /// `Amount` Unpowered to every hittable enemy, then remove itself. Not a
     /// Fool power: appended after the Fool block so their indices hold.
     GodByrd,
+    // ── v0.113.0-only: Dread mode (GH #1346). Like the Fool's, not in
+    // [`PowerKind::all`]; see [`PowerKind::V0113_ONLY`].
+    /// v0.113.0 Dread `AeonglassDominionPower`: Debuff; before each of the owner's hand draws a Wither goes on top of their draw pile.
+    AeonglassDominion,
+    /// v0.113.0 Dread `AmnesiaPower`: Debuff, Single; draw 2 fewer cards and lose 1 energy this turn, removed at the player side's turn end.
+    Amnesia,
+    /// v0.113.0 Dread `ExplosivePower` (WaterfallGiantDominion): Buff; when the owner dies, deal `Amount` unpowered damage to every living player. NOT [`Self::ExplosiveArrows`].
+    Explosive,
+    /// v0.113.0 Dread `InsatiableDominionPower`: Debuff; at the owner's turn end (late) take `2 + turn number` unpowered damage.
+    InsatiableDominion,
+    /// v0.113.0 Dread `LagavulinMatriarchDominionPower`: Debuff, Single; at the owner's first turn end lose `Amount` Strength and Dexterity, then removed.
+    LagavulinMatriarchDominion,
+    /// v0.113.0 Dread `YouAreMinePower` (QueenDominion): Debuff, Single; at the owner's turn-2 start apply `Amount` Weak, Vulnerable and Frail, then removed.
+    YouAreMine,
+    /// v0.113.0 `WuppysLoyaltyPower` (on the Wuppy relic's pet): Buff,
+    /// Single. A living Wuppy takes every powered attack aimed at its owner
+    /// BEFORE block (`ModifyPreBlockDamageTarget`); while it is in the fight
+    /// no corpse receives powers (`ShouldAllowHitting => IsAlive`); its dead
+    /// owner stays in the fight and keeps the power. Appended after Dread's
+    /// so their indices hold.
+    WuppysLoyalty,
 }
 
 impl PowerKind {
@@ -1050,6 +1071,13 @@ impl PowerKind {
             Self::ViolentChord => "VIOLENT_CHORD",
             Self::Yah => "YAH",
             Self::GodByrd => "GOD_BYRD",
+            Self::AeonglassDominion => "AEONGLASS_DOMINION",
+            Self::Amnesia => "AMNESIA",
+            Self::Explosive => "EXPLOSIVE",
+            Self::InsatiableDominion => "INSATIABLE_DOMINION",
+            Self::LagavulinMatriarchDominion => "LAGAVULIN_MATRIARCH_DOMINION",
+            Self::YouAreMine => "YOU_ARE_MINE",
+            Self::WuppysLoyalty => "WUPPYS_LOYALTY",
         }
     }
 
@@ -1348,8 +1376,9 @@ impl PowerKind {
     ];
 
     /// Powers that exist only from game build v0.113.0 on: The Fool's
-    /// (`Models.Powers`, alphabetical like the decomp directory).
-    pub const V0113_ONLY: [PowerKind; 32] = [
+    /// (`Models.Powers`, alphabetical like the decomp directory), then
+    /// `GodByrd`, then Dread mode's, then `WuppysLoyalty`.
+    pub const V0113_ONLY: [PowerKind; 39] = [
         Self::Aim,
         Self::AllIsWell,
         Self::Archery,
@@ -1382,6 +1411,15 @@ impl PowerKind {
         Self::ViolentChord,
         Self::Yah,
         Self::GodByrd,
+        // Dread mode (GH #1346).
+        Self::AeonglassDominion,
+        Self::Amnesia,
+        Self::Explosive,
+        Self::InsatiableDominion,
+        Self::LagavulinMatriarchDominion,
+        Self::YouAreMine,
+        // The Wuppy relic's pet (GH #1496).
+        Self::WuppysLoyalty,
     ];
 
     /// Powers that v0.111.0 deleted (GH #794): `DiamondDiademPower` went with
@@ -1435,7 +1473,14 @@ impl PowerKind {
             | Self::Tune
             | Self::ViolentChord
             | Self::Yah
-            | Self::GodByrd => crate::GameVersion::V0_113_0,
+            | Self::GodByrd
+            | Self::AeonglassDominion
+            | Self::Amnesia
+            | Self::Explosive
+            | Self::InsatiableDominion
+            | Self::LagavulinMatriarchDominion
+            | Self::YouAreMine
+            | Self::WuppysLoyalty => crate::GameVersion::V0_113_0,
             _ => crate::GameVersion::V0_107_1,
         }
     }

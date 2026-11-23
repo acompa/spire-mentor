@@ -1,7 +1,10 @@
 {
  "coverage": [
   "card_select:discard_from_hand",
+  "card_select:enchant",
   "card_select:none",
+  "card_select:remove|upgrade",
+  "card_select:upgrade",
   "combat_card_select",
   "decision:card_reward",
   "decision:card_select",
@@ -9,6 +12,10 @@
   "decision:event_choice",
   "decision:game_over",
   "decision:map_select",
+  "decision:rest_site",
+  "decision:shop",
+  "potion_used",
+  "room_reveal",
   "route:/api/deck/reward-preview",
   "route:/api/deck/trend",
   "route:/api/live/action",
@@ -20,6 +27,7 @@
   "route:/api/live/map",
   "route:/api/live/ppo-policy",
   "route:/api/live/quit",
+  "route:/api/live/regret-review",
   "route:/api/live/save",
   "route:/api/live/search_tree",
   "route:/api/live/seek",
@@ -42,16 +50,17 @@
   "route:/api/timeline",
   "route:/api/wpa-review",
   "seek_fork",
+  "smith",
   "status:404",
   "status:409"
  ],
  "engine": {
-  "src_hash": "60cab7da25b2ee48",
+  "src_hash": "6effe22e5a79f136",
   "version": "0.0.1"
  },
  "final_act": 1,
- "final_floor": 7,
- "full_responses": 46,
+ "final_floor": 12,
+ "full_responses": 56,
  "full_steps": 0,
  "patches": {
   "assets_base_url": "https://assets.test",
@@ -60,7 +69,7 @@
  },
  "python": "3.13",
  "reached_game_over": true,
- "requests": 139,
+ "requests": 171,
  "scenario": {
   "act1": "underdocks",
   "ascension": 10,
@@ -223,5 +232,5 @@
   ],
   "seed": "G0LDEN0001"
  },
- "steps_played": 88
+ "steps_played": 114
 }

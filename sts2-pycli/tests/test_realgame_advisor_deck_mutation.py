@@ -21,6 +21,7 @@ from typing import Any
 
 import realgame_hand_select
 import realgame_ppo as rp
+from wire_parity import build_card_select_both
 
 
 def _card(cid: str, index: int, ctype: str, rarity: str, **kw: Any) -> dict[str, Any]:
@@ -84,7 +85,7 @@ def test_the_three_prompts_route_to_their_own_trained_surfaces() -> None:
         ("TO_TRANSFORM", "transform_deck_card"),
         ("TO_ENCHANT", "enchant_deck_card"),
     ):
-        decision = rp._build_card_select(_state(prompt, _RUN025_CARDS), None)
+        decision = build_card_select_both(_state(prompt, _RUN025_CARDS), None)
         assert decision is not None, prompt
         assert {a["action"] for a in decision.actions} == {kind}, prompt
         # One action per offered card -- a RANKING, not a single forced answer.
@@ -94,8 +95,8 @@ def test_the_three_prompts_route_to_their_own_trained_surfaces() -> None:
 
 def test_the_trained_heads_keep_their_own_prompts() -> None:
     """TO_UPGRADE -> `smith`, TO_OBTAIN -> `grant`, unchanged by the retirement."""
-    up = rp._build_card_select(_state("TO_UPGRADE", _RUN025_CARDS), None)
-    ob = rp._build_card_select(_state("TO_OBTAIN", _RUN025_CARDS), None)
+    up = build_card_select_both(_state("TO_UPGRADE", _RUN025_CARDS), None)
+    ob = build_card_select_both(_state("TO_OBTAIN", _RUN025_CARDS), None)
     assert up is not None and {a["action"] for a in up.actions} == {"smith_card"}
     assert ob is not None and {a["action"] for a in ob.actions} == {"grant_deck_card"}
 
@@ -107,14 +108,69 @@ def test_transform_and_enchant_carry_deck_indices_not_card_pairs() -> None:
     `ctx.deck`, so the obs must carry master-deck INDICES. Getting this wrong
     is silent: the net would score a different card than the screen offered.
     """
-    d = rp._build_card_select(_state("TO_TRANSFORM", _RUN025_CARDS), None)
+    d = build_card_select_both(_state("TO_TRANSFORM", _RUN025_CARDS), None)
     assert d is not None
     # deck order is Strike, Defend, Clumsy -- and the offers are in that order.
     assert d.obs["transform_select_deck_indices"] == [0, 1, 2]
 
-    e = rp._build_card_select(_state("TO_ENCHANT", _RUN025_CARDS), None)
+    e = build_card_select_both(_state("TO_ENCHANT", _RUN025_CARDS), None)
     assert e is not None
     assert e.obs["enchant_select_deck_indices"] == [0, 1, 2]
+
+
+def test_an_enchant_screen_carries_the_wire_pending_enchantment() -> None:
+    """GH #574: the mod names the stamp, and the obs carries it.
+
+    The training lanes read `rm.pending_enchantment` (UPPER_SNAKE); this lane
+    used to hardcode `None`, so every enchant decision read the pad row and
+    Goopy (adds Exhaust) featurized like Perfect Fit.
+    """
+    for wire, expect in (("GOOPY", "GOOPY"), ("PERFECT_FIT", "PERFECT_FIT")):
+        d = build_card_select_both(
+            _state("TO_ENCHANT", _RUN025_CARDS, pending_enchantment=wire, source_model="IGNORED"),
+            None,
+        )
+        assert d is not None
+        assert d.obs["pending_enchantment"] == expect
+
+
+def test_the_pending_enchantment_is_the_field_not_a_cards_own_enchantment() -> None:
+    """A card's `enchantment` is one it already carries, never the stamp."""
+    cards = [
+        _card("STRIKE_IRONCLAD", 0, "Attack", "Basic", enchantment="SHARP"),
+        _card("DEFEND_IRONCLAD", 1, "Skill", "Basic"),
+    ]
+    d = build_card_select_both(
+        _state("TO_ENCHANT", cards, pending_enchantment="SWIFT", source_kind="enchantment"), None
+    )
+    assert d is not None
+    assert d.obs["pending_enchantment"] == "SWIFT"
+
+
+def test_an_older_mod_falls_back_to_source_model_then_to_none() -> None:
+    """Before the field, `source_model` already named the enchantment (it is
+    `FromDeckForEnchantment`'s first model argument). Absent both, or with the
+    source attributed to something that is not an enchantment, it is `None`.
+    The explicit field wins even when it is null."""
+
+    def pending(**kw: Any) -> object:
+        d = build_card_select_both(_state("TO_ENCHANT", _RUN025_CARDS, **kw), None)
+        assert d is not None
+        return d.obs["pending_enchantment"]
+
+    assert pending(source_model="GOOPY") == "GOOPY"  # autoplay lane: no source_kind
+    assert pending(source_model="GOOPY", source_kind="enchantment") == "GOOPY"
+    assert pending(source_model="BURNING_PACT", source_kind="card") is None
+    assert pending() is None
+    assert pending(pending_enchantment=None, source_model="GOOPY") is None
+
+
+def test_only_the_enchant_surface_sets_a_pending_enchantment() -> None:
+    d = build_card_select_both(
+        _state("TO_REMOVE", _RUN025_CARDS, pending_enchantment="GOOPY"), None
+    )
+    assert d is not None
+    assert d.obs.get("pending_enchantment") is None
 
 
 def test_a_deck_index_resolves_to_the_offered_card() -> None:
@@ -127,7 +183,7 @@ def test_a_deck_index_resolves_to_the_offered_card() -> None:
         _card("CLUMSY", 0, "Curse", "Curse"),
         _card("STRIKE_IRONCLAD", 1, "Attack", "Basic"),
     ]
-    d = rp._build_card_select(_state("TO_TRANSFORM", cards), None)
+    d = build_card_select_both(_state("TO_TRANSFORM", cards), None)
     assert d is not None
     deck = d.obs["deck"]
     for offer, deck_i in zip(cards, d.obs["transform_select_deck_indices"], strict=True):
@@ -139,7 +195,7 @@ def test_a_card_absent_from_the_master_deck_degrades_instead_of_raising() -> Non
     identity (`encoder._at` returns None -> unknown-card token); it must not
     raise and must not silently point at some OTHER card in the deck."""
     cards = [_card("NOT_IN_DECK", 0, "Attack", "Common")]
-    d = rp._build_card_select(_state("TO_TRANSFORM", cards), None)
+    d = build_card_select_both(_state("TO_TRANSFORM", cards), None)
     assert d is not None
     (idx,) = d.obs["transform_select_deck_indices"]
     assert idx >= len(d.obs["deck"]), "must not alias onto an unrelated deck card"
@@ -153,7 +209,7 @@ def test_the_response_still_uses_the_option_list_index() -> None:
         _card("CLUMSY", 7, "Curse", "Curse"),
         _card("STRIKE_IRONCLAD", 9, "Attack", "Basic"),
     ]
-    d = rp._build_card_select(_state("TO_TRANSFORM", cards), None)
+    d = build_card_select_both(_state("TO_TRANSFORM", cards), None)
     assert d is not None
     assert [r["index"] for r in d.responses] == [7, 9]
 
@@ -190,7 +246,7 @@ def test_a_multi_pick_deck_mutation_is_ranked_by_the_net() -> None:
     `minSelect`.
     """
     state = _state("TO_REMOVE", _RUN025_CARDS, min_select=2, max_select=2)
-    decision = rp._build_card_select(state, None)
+    decision = build_card_select_both(state, None)
     assert decision is not None, "a multi-pick removal is still a ranking over cards"
     assert decision.pick_count == 2
     assert len(decision.actions) == len(_RUN025_CARDS)
@@ -381,7 +437,7 @@ def test_a_relic_that_adds_to_the_deck_is_ranked_not_leftmost() -> None:
     `logs/f7-mirror-check18` run 004, answered by the rarity heuristic.
     """
     state = _state("SEA_GLASS.selectionScreenPrompt", _RUN025_CARDS, min_select=0, max_select=3)
-    decision = rp._build_card_select(state, None)
+    decision = build_card_select_both(state, None)
     assert decision is not None, "a deck grant is not an unranked screen"
     assert [a["action"] for a in decision.actions] == ["grant_deck_card"] * 3
 
@@ -396,6 +452,6 @@ def test_blitz_neow_pick_is_ranked_not_leftmost() -> None:
     min/max 3 and the list one card shorter, so each ask is a grant ranking.
     """
     state = _state("BLITZ.NEOW.selectionScreenPrompt", _RUN025_CARDS, min_select=3, max_select=3)
-    decision = rp._build_card_select(state, None)
+    decision = build_card_select_both(state, None)
     assert decision is not None, "the Blitz Neow pick is a deck grant, not an unranked screen"
     assert [a["action"] for a in decision.actions] == ["grant_deck_card"] * 3

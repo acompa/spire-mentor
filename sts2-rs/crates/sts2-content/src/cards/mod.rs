@@ -19,6 +19,8 @@ pub mod dispatch;
 pub mod draw_then;
 // What a card face shows for a value the card only knows at play time.
 pub mod preview;
+// A card's live base damage, hit count and dealer against one enemy (GH #1197).
+pub mod live;
 pub mod types;
 
 pub use types::{CardEffect, CardKeywords, CardRarity, CardSpec};

@@ -1,16 +1,25 @@
-"""Crystal Sphere: which cell to divine (GH #872).
+"""Crystal Sphere: which cell to divine.
 
-The minigame (``CrystalSphereMinigame.cs``) hides fifteen items on an 11x11 grid
-and reveals an item only once EVERY cell it covers is clear. The mod never
-changes the tool, so each ``divine_cell`` is the default Big tool: the clicked
-cell and its eight neighbours. The game enables proceed only once the
+The policy is the digger (``sts2_content::events::crystal_sphere_digger``,
+through the wheel's ``sts2_rs.crystal_sphere_pick``). It needs what the screen
+shows: the fogged cells, the item class of every cleared cell showing a piece
+(``revealed``) and the divinations left and at the start
+(``divinations_left`` / ``divinations_total``). :func:`choose` asks it when a
+message carries all three; an older mod's message, or anything the digger
+cannot answer, falls back to the fixed block order below (GH #872), and the
+note says so.
+
+The fallback rule (GH #872). The minigame (``CrystalSphereMinigame.cs``)
+hides fifteen items on an 11x11 grid and reveals an item only once EVERY cell
+it covers is clear. The mod never changes the tool, so each ``divine_cell`` is
+the default Big tool: the clicked cell and its eight neighbours. The game enables proceed only once the
 divinations are spent (``NCrystalSphereScreen``: ``if (_entity.IsFinished)``),
 so stopping early is never a choice -- only which cells to clear. A cell click
 after that is a no-op, which is why proceed always wins when it is offered:
 picking a cell there just loops the screen.
 
-The bridge sends only the hidden cells' coordinates, not the board's contents,
-so the rule is geometric. The relic is 4x4: only adjacent, non-overlapping 3x3
+An older bridge sends only the hidden cells' coordinates, not the board's
+contents, so the rule is geometric. The relic is 4x4: only adjacent, non-overlapping 3x3
 blocks can uncover it. :data:`CENTERS` clears a 3-wide column first (the
 3-divination event option) and then the column beside it (the 6-divination
 option, a 6x9 rectangle). A Monte Carlo over the decomp's placement rules
@@ -29,7 +38,10 @@ answers the screen itself). Keep the two orders identical.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 #: ``_defaultWidth`` / ``_defaultHeight`` (``CrystalSphereMinigame.cs``).
 GRID_SIZE = 11
@@ -38,26 +50,16 @@ GRID_SIZE = 11
 CENTERS: tuple[tuple[int, int], ...] = ((3, 2), (3, 5), (3, 8), (6, 2), (6, 5), (6, 8))
 
 #: Names the deciding policy in the action's ``annotations`` (and so in the
-#: driver's JSONL step record).
+#: driver's JSONL step record): the #872 rule, and the digger.
 POLICY_NAME = "crystal_sphere_rule"
+DIGGER_POLICY_NAME = "crystal_sphere_digger"
 
 
 def pick_cell(hidden: list[tuple[int, int]]) -> int | None:
     """Index into ``hidden`` of the cell to divine, or ``None`` if none is hidden."""
-    if not hidden:
-        return None
-    for center in CENTERS:
-        if center in hidden:
-            return hidden.index(center)
-    hidden_set = set(hidden)
-    mid = GRID_SIZE // 2
+    import sts2_rs
 
-    def key(i: int) -> tuple[int, int, int]:
-        x, y = hidden[i]
-        cover = sum((x + dx, y + dy) in hidden_set for dx in (-1, 0, 1) for dy in (-1, 0, 1))
-        return (-cover, (x - mid) ** 2 + (y - mid) ** 2, i)
-
-    return min(range(len(hidden)), key=key)
+    return sts2_rs.crystal_sphere_pick_cell(hidden)
 
 
 def choose(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -66,45 +68,65 @@ def choose(state: dict[str, Any]) -> dict[str, Any] | None:
 
     The message shape is ``SimCrystalSphereScreenHandler``'s (PROTOCOL.md
     ``crystal_sphere``): ``{index, action: "divine_cell", x, y, enabled}`` per
-    hidden cell plus a trailing ``{index, action: "proceed", enabled}``.
+    hidden cell plus a trailing ``{index, action: "proceed", enabled}``, and,
+    from the digger's mod on, ``divinations_left``, ``divinations_total`` and
+    ``revealed: [{x, y, item}]``. Proceed wins when offered; then the digger,
+    when all three fields are there; then :func:`pick_cell`.
     """
-    options = state.get("options") or []
-    enabled = [
-        (pos, o) for pos, o in enumerate(options) if isinstance(o, dict) and o.get("enabled", True)
-    ]
+    import sts2_rs
 
-    def _index(pos: int, o: dict[str, Any]) -> int:
-        idx = o.get("index")
-        return idx if isinstance(idx, int) else pos
+    # Rust: `sts2_advisor::crystal_sphere::choose`. A rule pick where the
+    # digger's fields were there must never pass for the digger's: the note
+    # says why, and so does the log.
+    action, warning = sts2_rs.crystal_sphere_choose(state)
+    if warning is not None:
+        logger.warning("%s", warning)
+    return action
 
-    for pos, o in enabled:
-        if o.get("action") == "proceed":
-            return {
-                "action": "choose",
-                "index": _index(pos, o),
-                "annotations": {
-                    "note": f"{POLICY_NAME}: divinations spent -> proceed",
-                    "policy": POLICY_NAME,
-                },
-            }
 
-    cells: list[tuple[int, dict[str, Any], tuple[int, int]]] = []
-    for pos, o in enabled:
-        if o.get("action") != "divine_cell":
-            continue
-        try:
-            cells.append((pos, o, (int(o["x"]), int(o["y"]))))
-        except (KeyError, TypeError, ValueError):
-            continue
-    picked = pick_cell([xy for _, _, xy in cells])
-    if picked is None:
-        return None
-    pos, o, (x, y) = cells[picked]
-    return {
-        "action": "choose",
-        "index": _index(pos, o),
-        "annotations": {
-            "note": f"{POLICY_NAME}: divine cell ({x},{y}) (fixed 3x3 block order)",
-            "policy": POLICY_NAME,
-        },
+#: The headless host names a cleared cell's item by its texture
+#: (``RunSimulator.CrystalSphereItemKind``: ``crystal_sphere_relic``,
+#: ``crystal_sphere_rare_potion``, ``crystal_sphere_big_gold``, ...). The
+#: digger wants the class; the word that decides it is in the name.
+_HOST_KIND_CLASSES = ("relic", "potion", "card", "curse", "gold")
+
+
+def _host_item_class(kind: str) -> str:
+    for cls in _HOST_KIND_CLASSES:
+        if cls in kind:
+            return cls
+    return kind  # unknown: the digger refuses it and the rule answers
+
+
+def host_click(state: dict[str, Any]) -> dict[str, Any] | None:
+    """The click for the headless host's ``crystal_sphere`` decision: the
+    arguments of a ``crystal_sphere_click``, or ``None`` when no cell is fogged.
+
+    The host (referee mode, GH #1325) sends the whole grid as
+    ``cells: [{x, y, hidden, item?: {kind, ...}}]`` and takes any fogged cell
+    with either tool. This plays the same policy as :func:`choose`, always
+    with the Big tool; the Small tool is the client's to pick, not ours.
+    """
+    options: list[dict[str, Any]] = []
+    revealed: list[dict[str, Any]] = []
+    for cell in state.get("cells") or []:
+        if cell.get("hidden"):
+            options.append({"index": len(options), "action": "divine_cell", **_xy(cell)})
+        elif isinstance(cell.get("item"), dict):
+            kind = str(cell["item"].get("kind", ""))
+            revealed.append({**_xy(cell), "item": _host_item_class(kind)})
+    message = {
+        "options": options,
+        "divinations_left": state.get("divinations_left"),
+        "divinations_total": state.get("divinations_total"),
+        "revealed": revealed,
     }
+    answer = choose(message)
+    if answer is None:
+        return None
+    picked = options[answer["index"]]
+    return {"x": picked["x"], "y": picked["y"], "tool": "big"}
+
+
+def _xy(cell: dict[str, Any]) -> dict[str, int]:
+    return {"x": int(cell["x"]), "y": int(cell["y"])}

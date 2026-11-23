@@ -64,6 +64,11 @@ declare module "sts2-workbench-wasm" {
     load_e2e(bytes: Uint8Array): ReplyJson;
     set_e2e_error(reason: string): void;
     has_e2e(): boolean;
+    /** The Fool's student (v0.113.0): its filename, why it is not loaded,
+     *  whether it is. `load_e2e` takes its bytes too. */
+    static e2e_fool_file(): string;
+    set_e2e_fool_error(reason: string): void;
+    has_e2e_fool(): boolean;
     free(): void;
   }
 

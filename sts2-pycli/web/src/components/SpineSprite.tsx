@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { RING_TRACK, RINGS_IDLE, ringClipFor } from "../spineRingTrack";
 import * as spine from "@esotericsoftware/spine-webgl";
 import { effectAssetUrl, type DissolveEffect } from "../effects/manifest";
+import { SlotArrows, type ArrowLayer } from "./ImpaledArrows";
 import {
   createDissolveProgram, createGradientTexture, createRigFramebuffer,
   dissolveThreshold, drawDissolveQuad, loadImage,
@@ -73,7 +75,7 @@ function composeSetupSkin(skeleton: spine.Skeleton, data: spine.SkeletonData): v
   skeleton.setSlotsToSetupPose();
 }
 
-export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetup = false, worldScale, pxPerScene = 1, boundsH, maxBodyH, fallbackHeight = 200, fallback, alt, actionAnim, actionNonce, actionAnimCandidates, holdLast, onClips, onMeasure, onFrame, flipX, skin, hueShift, dissolve }: {
+export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetup = false, worldScale, pxPerScene = 1, boundsH, maxBodyH, fallbackHeight = 200, fallback, alt, actionAnim, actionNonce, actionAnimCandidates, holdLast, onClips, onMeasure, onFrame, flipX, skin, hueShift, dissolve, impaledArrows = 0, onArrowSlots }: {
   rigBase: string; animation?: string;
   /** Hold the rig's SETUP pose instead of looping an idle, until an
    *  `actionNonce` fires. The idle picker falls through to `animations[0]` when
@@ -155,6 +157,15 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
   // `sceneScaleRef` uses in `VfxLayer.tsx` for a per-frame value a draw loop
   // needs but a load effect must not restart over.
   dissolve?: { effect: DissolveEffect; rev: string; startedAt: number } | null;
+  /** The Fool's arrows stuck in this creature. Drawn here only when the rig has
+   *  the `ARROW_HIT_FRONT` slot (`NCreature.HasSpineArrowSlots`): the game then
+   *  parents each arrow's halves to the `ARROW_HIT_FRONT` / `ARROW_HIT_BACK`
+   *  slots, so they ride the animation. The back half goes behind the body
+   *  (`ShowBehindParent`). A rig without the slot leaves them to the caller. */
+  impaledArrows?: number;
+  /** Whether the loaded rig has the arrow slots: `false` at every (re)load,
+   *  then the answer once the skeleton is read. */
+  onArrowSlots?: (has: boolean) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<spine.AnimationState | null>(null);
@@ -199,6 +210,27 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
   // reads this fresh each frame instead of closing over a stale prop value.
   const dissolveRef = useRef<{ effect: DissolveEffect; rev: string; startedAt: number } | null>(null);
   dissolveRef.current = dissolve ?? null;
+  // The arrow slots' bones, read once per load; the boxes that follow them,
+  // moved straight from the frame loop (a React state per frame would
+  // re-render the combatant 60 times a second); and the rig-unit → px factor
+  // they need, which is a render-time value (`k` below).
+  const arrowBonesRef = useRef<Record<ArrowLayer, spine.Bone> | null>(null);
+  const [hasArrowSlots, setHasArrowSlots] = useState(false);
+  const arrowSlotsCbRef = useRef(onArrowSlots); arrowSlotsCbRef.current = onArrowSlots;
+  const arrowBoxRef = useRef<Record<ArrowLayer, HTMLDivElement | null>>({ back: null, front: null });
+  const kRef = useRef(1);
+  // A bone's world matrix (y up) as a CSS matrix (y down) in px about the root.
+  const placeArrowBoxes = () => {
+    const bones = arrowBonesRef.current;
+    if (!bones) return;
+    const k = kRef.current;
+    for (const layer of ["back", "front"] as const) {
+      const el = arrowBoxRef.current[layer];
+      const b = bones[layer];
+      if (el) el.style.transform = `matrix(${k * b.a}, ${-k * b.c}, ${-k * b.b}, ${k * b.d}, ${k * b.worldX}, ${-k * b.worldY})`;
+    }
+  };
+  const placeArrowBoxesRef = useRef(placeArrowBoxes); placeArrowBoxesRef.current = placeArrowBoxes;
 
   useEffect(() => {
     const canvasEl = canvasRef.current;
@@ -206,6 +238,7 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
     setWorld(null); setInkTop(null); setFailed(false); frameRef.current = null;
     inkRef.current = null; visDoneRef.current = false; visTriesRef.current = 0;
     visBufRef.current = null; visSkipRef.current = 0;
+    arrowBonesRef.current = null; setHasArrowSlots(false); arrowSlotsCbRef.current?.(false);
 
     let skeleton: spine.Skeleton | null = null;
     // The dissolve post-pass's own GL resources (Task 14) — created lazily,
@@ -285,6 +318,11 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
           } else {
             composeSetupSkin(skeleton, data);
           }
+          const front = skeleton.findSlot("ARROW_HIT_FRONT");
+          if (front) {
+            arrowBonesRef.current = { front: front.bone, back: (skeleton.findSlot("ARROW_HIT_BACK") ?? front).bone };
+          }
+          setHasArrowSlots(!!front); arrowSlotsCbRef.current?.(!!front);
           // Exact idle candidates first, then a prefix match — some rigs only
           // have per-phase/variant idles ("idle_loop1/2/3" on the Test
           // Subject's three-form skeleton), and falling through to
@@ -302,6 +340,8 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
           // Measure the IDLE pose (FX hidden) to know the body box for framing.
           const st = new spine.AnimationState(new spine.AnimationStateData(data));
           if (idle) st.setAnimation(0, idle, true);
+          // Aeonglass: its rings loop on their own track, as the game's VFX node plays them.
+          if (names.includes(RINGS_IDLE)) st.setAnimation(RING_TRACK, RINGS_IDLE, true);
           skeleton.setToSetupPose();
           st.apply(skeleton);
           hideFx(skeleton);
@@ -337,6 +377,8 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
             // meant to disappear into the floor, so let it clip there instead.
             const isDeath = /(^|[_/])(die|death|defeat)/i.test(nm);
             scan.setAnimation(0, nm, false);
+            const scanRings = ringClipFor(nm, names, idleRef.current) ?? (names.includes(RINGS_IDLE) ? RINGS_IDLE : undefined);
+            if (scanRings) scan.setAnimation(RING_TRACK, scanRings, false);
             const dur = Math.max(anim.duration, 0.0001), STEPS = 14;
             for (let i = 0; i <= STEPS; i++) {
               skeleton.setToSetupPose();
@@ -385,6 +427,7 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
         // (ears, tails) see a wrong timestep and oscillate way too fast.
         skeleton.update(delta);
         skeleton.updateWorldTransform(spine.Physics.update);
+        placeArrowBoxesRef.current();
       },
       render(c) {
         if (!skeleton || size.y <= 0) return;
@@ -621,6 +664,13 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
     if (!clip) return;
     inActionRef.current = true;
     st.setAnimation(0, clip, false);
+    // Aeonglass: the clip's ring twin on the ring track, then the idle rings
+    // again (none after death, as the game).
+    const rings = ringClipFor(clip, names, idleRef.current);
+    if (rings) {
+      st.setAnimation(RING_TRACK, rings, false);
+      if (!holdLast) st.addAnimation(RING_TRACK, RINGS_IDLE, true, 0);
+    }
     // On death (holdLast), setAnimation(loop=false) freezes the last frame —
     // do not queue idle. Otherwise resume the idle loop after the one-shot.
     // On `holdSetup` there is no idle to go back to — the setup pose is the
@@ -651,6 +701,7 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
     k = worldScale != null ? worldScale * pxPerScene : fallbackHeight / Math.max(1, world.h);
     if (maxBodyH != null && maxBodyH > 0 && world.h * k > maxBodyH) k = maxBodyH / Math.max(1, world.h);
   }
+  kRef.current = k;
   const body = world && {
     w: world.w * k, h: world.h * k,
     sideM: world.sideMw * k, topM: world.topMw * k, botM: world.botMw * k,
@@ -760,6 +811,19 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
     ? `${footprint.canvasW},${footprint.canvasH},${footprint.bodyW},${footprint.bodyH}`
     : "";
   useEffect(() => { frameCbRef.current?.(footprintRef.current); }, [footprintKey]);
+  // The arrows in the slots, about the rig's root (the box's bottom-centre),
+  // mirrored with the rig. `placeArrowBoxes` moves the inner box every frame.
+  const showSlotArrows = impaledArrows > 0 && hasArrowSlots && !!body && !failed && rootAnchored;
+  const slotArrows = (layer: ArrowLayer) => showSlotArrows && (
+    <div aria-hidden="true" style={{ position: "absolute", left: "50%", bottom: 0, width: 0, height: 0,
+      transform: flipX ? "scaleX(-1)" : undefined, pointerEvents: "none" }}>
+      <div className={`gs-slot-arrows gs-slot-arrows-${layer}`} data-testid={layer === "front" ? "slot-arrows" : undefined}
+        data-count={impaledArrows}
+        ref={(el) => { arrowBoxRef.current[layer] = el; if (el) placeArrowBoxes(); }}>
+        <SlotArrows count={impaledArrows} layer={layer} bodyScale={worldScale ?? 1} />
+      </div>
+    </div>
+  );
   return (
     <div
       /* The rig failed to load, so the `<img>` fallback below is standing in
@@ -768,6 +832,7 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
          subtree; `Combatant` has no way to see this state from outside. */
       className={failed ? "gs-rig-failed" : undefined}
       style={{ position: "relative", height: Math.round(boxH), width: Math.round(boxW) }}>
+      {slotArrows("back")}
       <canvas
         ref={canvasRef}
         width={Math.max(64, Math.round(canvasW * 1.3))} height={Math.max(64, Math.round(canvasH * 1.3))}
@@ -779,6 +844,7 @@ export default function SpineSprite({ rigBase, animation = "idle_loop", holdSetu
           opacity: body ? 1 : 0, transition: "opacity 140ms ease-out",
           display: failed ? "none" : "block", pointerEvents: "none", filter: spriteFilter }}
       />
+      {slotArrows("front")}
       {showFallback && (
         <img src={fallback!} alt={alt}
           style={{ position: "absolute", bottom: 0, left: "50%",

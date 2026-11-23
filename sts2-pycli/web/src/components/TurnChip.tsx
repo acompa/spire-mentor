@@ -1,5 +1,6 @@
 import type { CoachTurnRecord } from "../api";
 import { turnChipText } from "../coach/coachText";
+import { t } from "../i18n";
 
 /** Coach chip for one graded combat turn — live (the wasm's
  *  `last-turn-grade`) and in follow / replay (the advisor's logged record). */
@@ -21,13 +22,13 @@ export default function TurnChip({ record, onDismiss, onSeek }: {
         {text.lines.map((l, i) => <div key={i}>{l}</div>)}
       </div>
       {onSeek && (
-        <button type="button" onClick={onSeek} title="jump to the turn's first decision"
+        <button type="button" onClick={onSeek} title={t("jump to the turn's first decision")}
           style={{ font: "inherit", background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>
           ↗
         </button>
       )}
       {onDismiss && (
-        <button type="button" onClick={onDismiss} aria-label="Dismiss"
+        <button type="button" onClick={onDismiss} aria-label={t("Dismiss")}
           style={{ font: "inherit", background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>
           ✕
         </button>

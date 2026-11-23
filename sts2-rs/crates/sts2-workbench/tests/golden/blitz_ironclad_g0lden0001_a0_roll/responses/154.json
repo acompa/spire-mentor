@@ -1,0 +1,362 @@
+{
+ "details": [],
+ "error": null,
+ "label": "Map → (3,6)",
+ "step": {
+  "action_label": "",
+  "assets_base": "https://assets.test",
+  "chosen_action": null,
+  "decision": "rest_site",
+  "idx": 0,
+  "meta": {
+   "act": 1,
+   "act_name": "Overgrowth",
+   "bg_col": 3,
+   "bg_row": 6,
+   "bg_seed": "11180935036767329045",
+   "floor": 7,
+   "step_no": 0,
+   "turn": null
+  },
+  "pv": null,
+  "scores": [],
+  "source": "live",
+  "state": {
+   "act": 1,
+   "act1": "overgrowth",
+   "act_name": "Overgrowth",
+   "ascension": 0,
+   "bg_col": 3,
+   "bg_row": 6,
+   "bg_seed": "11180935036767329045",
+   "decision": "rest_site",
+   "floor": 7,
+   "game_mode": "blitz",
+   "game_version": "v0.113.0",
+   "options": [
+    {
+     "action": "choose_option",
+     "args": {
+      "option_index": 0
+     },
+     "enabled": true,
+     "label": "HEAL"
+    },
+    {
+     "action": "choose_option",
+     "args": {
+      "option_index": 1
+     },
+     "enabled": true,
+     "label": "SMITH"
+    }
+   ],
+   "player": {
+    "block": 0,
+    "deck": [
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 9 damage.",
+      "description_rich": "Deal 9 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 0,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": true
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 1,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 2,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 3,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 4,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 5,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 6,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 7,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 8,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 2,
+      "description": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "description_rich": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "id": "BASH",
+      "image": "https://assets.test/card_atlas/ironclad/bash.png",
+      "index": 9,
+      "name": "Bash",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 10 damage.\nDouble the enemy's Vulnerable.\nExhaust.",
+      "description_rich": "Deal 10 damage.\nDouble the enemy's Vulnerable.\n[gold]Exhaust[/gold].",
+      "id": "MOLTEN_FIST",
+      "image": "https://assets.test/card_atlas/ironclad/molten_fist.png",
+      "index": 10,
+      "name": "Molten Fist",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "description_rich": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "id": "TAUNT",
+      "image": "https://assets.test/card_atlas/ironclad/taunt.png",
+      "index": 11,
+      "name": "Taunt",
+      "rarity": "Common",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 5 damage X times.",
+      "description_rich": "Deal 5 damage X times.",
+      "id": "TWIN_STRIKE",
+      "image": "https://assets.test/card_atlas/ironclad/twin_strike.png",
+      "index": 12,
+      "name": "Twin Strike",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 0,
+      "description": "Deal 6 damage.\nAdd a copy of this card into your Discard Pile.",
+      "description_rich": "Deal 6 damage.\nAdd a copy of this card into your Discard Pile.",
+      "id": "ANGER",
+      "image": "https://assets.test/card_atlas/ironclad/anger.png",
+      "index": 13,
+      "name": "Anger",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Lose 1 HP.\nDeal 9 damage to ALL enemies.",
+      "description_rich": "Lose 1 HP.\nDeal 9 damage to ALL enemies.",
+      "id": "BREAKTHROUGH",
+      "image": "https://assets.test/card_atlas/ironclad/breakthrough.png",
+      "index": 14,
+      "name": "Breakthrough",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "description_rich": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "enchantment": "STEADY",
+      "enchantment_amount": 1,
+      "id": "TAUNT",
+      "image": "https://assets.test/card_atlas/ironclad/taunt.png",
+      "index": 15,
+      "name": "Taunt",
+      "rarity": "Common",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal damage equal to your Block.",
+      "description_rich": "Deal damage equal to your [gold]Block[/gold].",
+      "id": "BODY_SLAM",
+      "image": "https://assets.test/card_atlas/ironclad/body_slam.png",
+      "index": 16,
+      "name": "Body Slam",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.\nUpgrade a card in your Hand.",
+      "description_rich": "Gain 5 Block.\nUpgrade a card in your Hand.",
+      "id": "ARMAMENTS",
+      "image": "https://assets.test/card_atlas/ironclad/armaments.png",
+      "index": 17,
+      "name": "Armaments",
+      "rarity": "Common",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Whenever a card is Exhausted, gain 3 Block.",
+      "description_rich": "Whenever a card is Exhausted, gain 3 Block.",
+      "id": "FEEL_NO_PAIN",
+      "image": "https://assets.test/card_atlas/ironclad/feel_no_pain.png",
+      "index": 18,
+      "name": "Feel No Pain",
+      "rarity": "Uncommon",
+      "type": "Power",
+      "upgraded": false
+     }
+    ],
+    "gold": 99,
+    "hp": 22,
+    "max_hp": 80,
+    "name": "Ironclad",
+    "potion_slots": 5,
+    "potions": [],
+    "relics": [
+     {
+      "description": "At the end of combat, heal 6 HP.",
+      "id": "BURNING_BLOOD",
+      "image": "https://assets.test/relic_atlas/burning_blood.png",
+      "name": "Burning Blood"
+     },
+     {
+      "description": "The first Hand you draw each combat is Upgraded.",
+      "id": "BELLOWS",
+      "image": "https://assets.test/relic_atlas/bellows.png",
+      "name": "Bellows"
+     },
+     {
+      "description": "Every 3 turns, gain 1 Energy.",
+      "id": "HAPPY_FLOWER",
+      "image": "https://assets.test/relic_atlas/happy_flower.png",
+      "name": "Happy Flower"
+     },
+     {
+      "description": "Upon pickup, gain 2 potion slots.",
+      "id": "POTION_BELT",
+      "image": "https://assets.test/relic_atlas/potion_belt.png",
+      "name": "Potion Belt"
+     },
+     {
+      "description": "At the start of each combat, draw 2 additional cards.",
+      "id": "BAG_OF_PREPARATION",
+      "image": "https://assets.test/relic_atlas/bag_of_preparation.png",
+      "name": "Bag of Preparation"
+     }
+    ]
+   },
+   "rest_options": [
+    {
+     "index": 0,
+     "is_enabled": true,
+     "name": "Rest",
+     "option_id": "HEAL"
+    },
+    {
+     "index": 1,
+     "is_enabled": true,
+     "name": "Smith",
+     "option_id": "SMITH"
+    }
+   ]
+  }
+ }
+}

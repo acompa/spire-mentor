@@ -11,9 +11,11 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.AutoSlay.Helpers;
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.Events;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes;
@@ -30,7 +32,7 @@ public static class MainFile
     // and refuses to stage when they differ; tests/run_all.sh checks it too).
     // It drifted once: beta.4 to beta.6 shipped saying "beta.3" in the toolbar,
     // F1 help, bug reports and every envelope's mod_version.
-    public const string ModVersion = "0.11.3";
+    public const string ModVersion = "0.11.7";
 
     private static Harmony? _patcher;
     private static SimAutoSlayer? _autoSlayer;
@@ -49,17 +51,24 @@ public static class MainFile
 
         SimConfig config = SimConfig.Instance;
         SimRuntime.InitializeFrom(config);
+        SimLanguage.Install(config);
         Logger.Log($"Startup mode: {SimRuntime.Mode} (auto_start={config.AutoStart})");
 
         try
         {
             _patcher = new Harmony(ModId);
 
+            // First: it must see the runtime's signal actions before the
+            // game's Sentry shutdown drops them (LinuxCrashGuard.cs).
+            LinuxCrashGuard.Install(_patcher);
+
             ApplyPatch(typeof(IsReleaseGamePatch));
             ApplyPatch(typeof(CardSelectContextPatch));
             ApplyPatch(typeof(CardSelectContextNoPrefsPatch));
             ShieldBaseLibDamagePreview();
             ApplyPatch(typeof(HitStopTimeScalePatch));
+            // 8x on a slow frame made a hand card spin forever (SimStableLerp.cs).
+            SimStableLerp.Install(_patcher);
             ApplyPatch(typeof(GameQuitPatch));
             ApplyPatch(typeof(FrameFullscreenPatch));
             ApplyPatch(typeof(FrameWindowedDisplayPatch));
@@ -161,6 +170,7 @@ public static class MainFile
         TaskHelper.RunSafely(SimHelp.ShowBootHintWhenReadyAsync());
 
         SimAdvisor.Instance.Prime();
+        TaskHelper.RunSafely(InstallAdvisorHooksWhenReadyAsync());
 
         if (SimRuntime.Mode == SimMode.Autopilot)
         {
@@ -177,14 +187,14 @@ public static class MainFile
             SimCoopDummy.InstallIfRequested();
         }
         else if (SimRuntime.Mode == SimMode.Off && SpireMentorModConfig.CoachOnAtLaunch &&
-                 OperatingSystem.IsWindows())
+                 SimAdvisorProcess.CanStartAtLaunch())
         {
             // Enabling the mod in the game's mod list should be the only step;
             // a second "now switch the coach on" confused players. Autopilot
             // (auto_start, every sweep) and the advisor_autoplay harness never
-            // reach this branch. Windows only: elsewhere the bundled advisor
-            // cannot start (SimAdvisorProcess) and the toolbar would just read
-            // "crashed".
+            // reach this branch. Only where an advisor can start (Windows, or
+            // a packaged binary for this platform: Linux x64 today), else the
+            // toolbar would just read "crashed".
             TaskHelper.RunSafely(CoachOnWhenReadyAsync());
         }
 
@@ -336,9 +346,7 @@ public static class MainFile
     /// </summary>
     private static async Task CoachOnWhenReadyAsync()
     {
-        using var cts = new CancellationTokenSource(GameStartupWait);
-        await WaitHelper.Until(() => NGame.Instance != null, cts.Token, GameStartupWait,
-            "NGame.Instance did not appear");
+        await WaitForGameAsync();
         Callable.From(() =>
         {
             if (SimRuntime.Mode != SimMode.Off)
@@ -352,6 +360,25 @@ public static class MainFile
                        "(settings: \"Turn the coach on when the game starts\").");
             SimRuntime.SetModeAndStyle(SimMode.Advisor, style);
         }).CallDeferred();
+    }
+
+    /// <summary>
+    /// Install the advisor's game hooks once the game node exists, whatever
+    /// the mode: they also write the action log, which shows with the AI off
+    /// too (bug report wb-c99acd6bfabfef7d). Every hook self-gates on the
+    /// mode, so in Off they only log.
+    /// </summary>
+    private static async Task InstallAdvisorHooksWhenReadyAsync()
+    {
+        await WaitForGameAsync();
+        Callable.From(SimAdvisor.Instance.InstallHooks).CallDeferred();
+    }
+
+    private static async Task WaitForGameAsync()
+    {
+        using var cts = new CancellationTokenSource(GameStartupWait);
+        await WaitHelper.Until(() => NGame.Instance != null, cts.Token, GameStartupWait,
+            "NGame.Instance did not appear");
     }
 
     /// <summary>
@@ -813,12 +840,71 @@ public static class SimCardSelectContext
     /// amounts and neither shows in an enemy-HP comparison.</summary>
     public static bool? SourceUpgraded;
 
+    /// <summary>
+    /// The enchantment a deck-enchant select will stamp (GH #574): the
+    /// <c>EnchantmentModel enchantment</c> argument of
+    /// <c>CardSelectCmd.FromDeckForEnchantment</c> (all three overloads,
+    /// CardSelectCmd.cs:533/548/565), as its <c>Id.Entry</c>
+    /// (<c>"GOOPY"</c>, <c>"PERFECT_FIT"</c>). Null for every other entry
+    /// point.
+    ///
+    /// <para>The per-card <c>enchantment</c> on a <c>card_select</c> card
+    /// names one the card ALREADY carries, not the pending stamp. Today the
+    /// same id also reaches <c>source_model</c>, but only because
+    /// <see cref="ModelFrom"/> happens to find the enchantment as the first
+    /// <c>AbstractModel</c> argument; this field names it on purpose, so the
+    /// advisor can tell Goopy (adds Exhaust) from Perfect Fit the way the
+    /// training lanes do (<c>RunManager.pending_enchantment</c>).</para>
+    /// </summary>
+    public static string? PendingEnchantment;
+
+    /// <summary>The <c>Id.Entry</c> of an entry point's enchantment argument;
+    /// null when it takes none. The one rule for every lane (this capture and
+    /// the AI partner's deck screens).</summary>
+    public static string? PendingEnchantmentFrom(object?[]? args) =>
+        EntryOf(args?.OfType<MegaCrit.Sts2.Core.Models.EnchantmentModel>().FirstOrDefault());
+
     public static void Set(string source, string? promptKey, string? sourceModel, bool? cancelable)
     {
         Source = source;
         PromptKey = promptKey;
         SourceModel = sourceModel;
         Cancelable = cancelable;
+    }
+
+    /// <summary>
+    /// The entry point's <c>PlayerChoiceContext</c> and chooser, null for the
+    /// deck selections that take none. Without a selector the game brackets
+    /// each context-taking selection with <c>SignalPlayerChoiceBegun</c> /
+    /// <c>SignalPlayerChoiceEnded</c> (CardSelectCmd.cs:462-466, :523-526);
+    /// with one installed it skips both, so a pick in a turn's setup no
+    /// longer paused it and the turn's later hooks ran after the pick
+    /// (GH #1367). <see cref="SimCardSelector"/> puts the bracket back.
+    /// </summary>
+    public static PlayerChoiceContext? ChoiceContext;
+    public static Player? ChoicePlayer;
+    public static PlayerChoiceOptions ChoiceOptions;
+
+    /// <summary>Capture <see cref="ChoiceContext"/> from an entry point's arguments.</summary>
+    public static void SetChoice(object?[]? args, string entryPoint)
+    {
+        ChoiceContext = args?.OfType<PlayerChoiceContext>().FirstOrDefault();
+        ChoicePlayer = args?.OfType<Player>().FirstOrDefault();
+        // The hand selections cancel queued card plays (CardSelectCmd.cs:837,
+        // :928; FromHandForDiscard goes through FromHand); the rest signal None.
+        ChoiceOptions = entryPoint is "FromHand" or "FromHandForDiscard" or "FromHandForUpgrade"
+            ? PlayerChoiceOptions.CancelPlayCardActions
+            : PlayerChoiceOptions.None;
+    }
+
+    /// <summary>Take the captured choice context, clearing it for the next selection.</summary>
+    public static (PlayerChoiceContext?, Player?, PlayerChoiceOptions) ConsumeChoice()
+    {
+        var v = (ChoiceContext, ChoicePlayer, ChoiceOptions);
+        ChoiceContext = null;
+        ChoicePlayer = null;
+        ChoiceOptions = default;
+        return v;
     }
 
     /// <summary>Record the source model's own detail alongside its name.
@@ -890,6 +976,7 @@ public static class SimCardSelectContext
         SourceKind = null;
         SourceTargetIndex = null;
         SourceUpgraded = null;
+        PendingEnchantment = null;
         return v;
     }
 
@@ -1019,6 +1106,10 @@ public static class CardSelectContextPatch
         {
             if (SimMp.IsAnotherPlayers(__args))
                 return;
+            // First, so a capture below that throws can never leave the
+            // previous selection's enchantment standing (GH #574).
+            SimCardSelectContext.PendingEnchantment =
+                SimCardSelectContext.PendingEnchantmentFrom(__args);
             object? source = SimCardSelectContext.SourceObjectFrom(__args);
             SimCardSelectContext.Set(
                 __originalMethod.Name,
@@ -1026,6 +1117,7 @@ public static class CardSelectContextPatch
                 SimCardSelectContext.EntryOf(source),
                 prefs.Cancelable);
             SimCardSelectContext.SetSourceDetail(source);
+            SimCardSelectContext.SetChoice(__args, __originalMethod.Name);
         }
         catch { /* capture-only: never break the game's selection flow */ }
     }
@@ -1052,6 +1144,7 @@ public static class CardSelectContextNoPrefsPatch
         {
             if (SimMp.IsAnotherPlayers(__args))
                 return;
+            SimCardSelectContext.PendingEnchantment = null;
             bool isUpgrade = __originalMethod.Name == "FromHandForUpgrade";
             string? key = isUpgrade ? "TO_UPGRADE" : "TO_OBTAIN";
             // `FromChooseACardScreen(context, cards, player, bool canSkip)` —
@@ -1068,6 +1161,7 @@ public static class CardSelectContextNoPrefsPatch
                 SimCardSelectContext.EntryOf(source),
                 cancelable);
             SimCardSelectContext.SetSourceDetail(source);
+            SimCardSelectContext.SetChoice(__args, __originalMethod.Name);
         }
         catch { }
     }

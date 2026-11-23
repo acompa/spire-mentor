@@ -158,13 +158,28 @@ def _sort_powers(powers: list[dict] | None) -> list[dict]:
     return sorted(
         (
             {
-                "kind": _strip_power_suffix(p["kind"]),
+                "kind": _canon_cs_power(p["kind"]),
                 "amount": int(p["amount"]),
             }
             for p in powers
         ),
         key=lambda p: p["kind"],
     )
+
+
+#: C# power classes the Rust engine keeps under another name. v0.113.0 renamed
+#: v0.111.0's ``AmbergrisPower`` to ``ExtraTurnPower`` (same body; the Ambergris
+#: potion and The Hanged Man apply it), and the engine kept
+#: ``PowerKind::Ambergris`` for both builds.
+CS_POWER_KIND_ALIASES: dict[str, str] = {
+    "EXTRA_TURN": "AMBERGRIS",
+}
+
+
+def _canon_cs_power(kind: str) -> str:
+    """A C# power kind as the Rust side names it."""
+    short = _strip_power_suffix(kind)
+    return CS_POWER_KIND_ALIASES.get(short, short)
 
 
 def _strip_power_suffix(kind: str) -> str:

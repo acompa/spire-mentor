@@ -6,7 +6,8 @@
 (``KnowledgeDemon._curseOfKnowledgeCounter``) on the enemy/creature object.
 These tests pin the two python consumers:
 
-* ``realgame_adapter._translate_enemy`` (bridge dialect -> headless dialect)
+* ``realgame_adapter.to_headless_combat_play`` (bridge dialect -> headless
+  dialect, in Rust since GH #1426)
   forwards both fields verbatim, and stays silent when a pre-field mod build
   omits them.
 * ``sts2_hint.adapter._translate_enemy`` (headless dialect -> engine dict)
@@ -15,15 +16,21 @@ These tests pin the two python consumers:
   the Fabricator counter from the max-uid living bot and rebuilds the curse
   counter at 0).
 
-No game process and no ``sts2_rs`` needed.
+No game process needed.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from realgame_adapter import _translate_enemy as bridge_translate_enemy
+from realgame_adapter import to_headless_combat_play
 from sts2_hint.adapter import _translate_enemy as hint_translate_enemy
+
+
+def bridge_translate_enemy(enemy: dict[str, Any], index: int) -> dict[str, Any]:
+    """One enemy as :func:`to_headless_combat_play` translates it."""
+    board = {"type": "combat_action", "enemies": [{}] * index + [enemy]}
+    return to_headless_combat_play(board)["enemies"][index]
 
 
 def _bridge_enemy(**extra: Any) -> dict[str, Any]:
@@ -105,3 +112,14 @@ class TestHintAdapterPassthrough:
         out = hint_translate_enemy(raw, "$.enemies[0]", 0)
         assert out["kind"] == "KnowledgeDemon"
         assert out["curse_of_knowledge_counter"] == 0
+
+    def test_forwards_the_thiefs_stolen_card(self) -> None:
+        # GH #1693: the engine rebuilds the steal from `stolen_cards`.
+        raw = _headless_enemy(
+            "Thieving Hopper", stolen_cards=[{"id": "Strike_Ironclad", "upgraded": True}]
+        )
+        out = hint_translate_enemy(raw, "$.enemies[0]", 0)
+        assert out["stolen_cards"] == [{"id": "STRIKE_IRONCLAD", "upgraded": True}]
+        assert "stolen_cards" not in hint_translate_enemy(
+            _headless_enemy("Thieving Hopper"), "$.enemies[0]", 0
+        )

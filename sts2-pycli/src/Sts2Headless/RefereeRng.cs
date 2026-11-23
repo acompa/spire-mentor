@@ -18,6 +18,17 @@ internal static class Referee
         Environment.GetEnvironmentVariable("STS2_REFEREE") == "1";
 
     /// <summary>
+    /// The referee's game without its view: keyed RNG (every <c>start_run</c>
+    /// needs an <c>rng_key</c>) and the referee's interactive screens, but the
+    /// full state and every command. With <c>STS2_KEYED_RNG=1</c> a plain host
+    /// plays the same dice as a referee given the same key and the same
+    /// actions, so a full-information control arm can be paired with a
+    /// referee arm episode for episode. Never run it for scored episodes.
+    /// </summary>
+    public static readonly bool Keyed =
+        Mode || Environment.GetEnvironmentVariable("STS2_KEYED_RNG") == "1";
+
+    /// <summary>
     /// Operator diagnostics (<c>referee_stats</c>, <c>referee_selftest</c>,
     /// <c>referee_project</c>). Off unless the process starts with
     /// <c>STS2_REFEREE_DIAG=1</c>: the self-test re-arms the generator with a
@@ -37,10 +48,10 @@ internal static class Referee
     /// action, instead of by the host's fixed sweep. Same switch pattern.
     /// </summary>
     public static readonly bool InteractiveSphere =
-        Mode || Environment.GetEnvironmentVariable("STS2_CRYSTAL_SPHERE_INTERACTIVE") == "1";
+        Keyed || Environment.GetEnvironmentVariable("STS2_CRYSTAL_SPHERE_INTERACTIVE") == "1";
 
     public static readonly bool DoubleDownAbandons =
-        Mode || Environment.GetEnvironmentVariable("STS2_TRIAL_DOUBLE_DOWN_ABANDONS") == "1";
+        Keyed || Environment.GetEnvironmentVariable("STS2_TRIAL_DOUBLE_DOWN_ABANDONS") == "1";
 
     /// <summary>
     /// GH #1282: the reward screen is the player's. After a combat and in a
@@ -49,7 +60,7 @@ internal static class Referee
     /// relics, potions and special cards itself. Same switch pattern.
     /// </summary>
     public static readonly bool InteractiveRewards =
-        Mode || Environment.GetEnvironmentVariable("STS2_INTERACTIVE_REWARDS") == "1";
+        Keyed || Environment.GetEnvironmentVariable("STS2_INTERACTIVE_REWARDS") == "1";
 
     /// <summary>
     /// GH #1286: a pick the game opens at the start of the player's turn is
@@ -60,7 +71,7 @@ internal static class Referee
     /// Same switch pattern.
     /// </summary>
     public static readonly bool InteractiveTurnStartPicks =
-        Mode || Environment.GetEnvironmentVariable("STS2_INTERACTIVE_TURN_START_PICKS") == "1";
+        Keyed || Environment.GetEnvironmentVariable("STS2_INTERACTIVE_TURN_START_PICKS") == "1";
 }
 
 /// <summary>
@@ -198,9 +209,17 @@ internal static class RefereeRng
         Prefix("NextDouble", Type.EmptyTypes, nameof(NextDouble0Prefix));
         Prefix("NextDouble", new[] { typeof(double), typeof(double) }, nameof(NextDouble2Prefix));
 
-        // Rng.Chaotic is seeded from the wall clock. Track it like any other
-        // stream (its static initialiser runs here, after the ctor patch).
-        Track(Rng.Chaotic);
+        // Rng.Chaotic is seeded from the wall clock, and the game draws from it
+        // for cosmetics only (skins, screen shake, VFX, Trial's entrant number,
+        // dialogue lines). Some of those draws run on frame timers, so how many
+        // there are depends on wall time. A counted, clock-labelled stream made
+        // the observation depend on both: Trial's entrant number broke 14 of
+        // 150 transcript replays (2026-11-20, #1636). So Chaotic gets a fixed
+        // label and does not count: every draw is the same keyed function of
+        // the episode key, and it never touches a gameplay stream.
+        var chaotic = Track(Rng.Chaotic);
+        lock (Gate) chaotic.Label = ChaoticLabel;
+        _chaotic = Rng.Chaotic;
     }
 
     /// <summary>
@@ -336,6 +355,11 @@ internal static class RefereeRng
     /// <summary>
     /// Advances the stream's counter and returns the keyed 64 raw bits.
     /// </summary>
+    /// <summary>Rng.Chaotic's stream label (see <see cref="Install"/>).</summary>
+    private const uint ChaoticLabel = 0xC4A071C5;
+
+    private static Rng? _chaotic;
+
     private static ulong DrawRaw(Rng rng)
     {
         var stream = Track(rng);
@@ -348,7 +372,7 @@ internal static class RefereeRng
             key = stream.Key ??= DeriveStreamKey(label);
             _draws++;
         }
-        int counter = ++CounterRef(rng);
+        int counter = ReferenceEquals(rng, _chaotic) ? 0 : ++CounterRef(rng);
 
         Span<byte> message = stackalloc byte[8];
         BitConverter.TryWriteBytes(message, (long)counter);

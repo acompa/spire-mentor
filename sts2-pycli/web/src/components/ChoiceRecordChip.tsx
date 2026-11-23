@@ -1,5 +1,6 @@
 import type { CoachChoiceRecord } from "../api";
 import { choiceChipText } from "../coach/coachText";
+import { t } from "../i18n";
 
 /** A logged run-level choice grade (follow / replay): the mod's chip copy.
  *  No "check it" button — the rollout check needs a live session. */
@@ -19,7 +20,7 @@ export default function ChoiceRecordChip({ record, onSeek }: {
         {text.lines.map((l, i) => <div key={i}>{l}</div>)}
       </div>
       {onSeek && (
-        <button type="button" onClick={onSeek} title="jump to this decision"
+        <button type="button" onClick={onSeek} title={t("jump to this decision")}
           style={{ font: "inherit", background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>
           ↗
         </button>

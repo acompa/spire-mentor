@@ -4,6 +4,7 @@ import { useInspect } from "../inspect/useInspect";
 import { inspectTrigger } from "../inspect/trigger";
 import { doomAmount } from "./combatantMetrics";
 import type { CombatantEffects, PlayerLike } from "./Combatant";
+import { t } from "../i18n";
 
 /** A creature's health bar: the chevron bar, its numerals, the Doom band and
  *  the block shield. `Combatant` draws it under every creature's feet; the
@@ -101,12 +102,12 @@ export default function HealthBar({ c, widthPx, effects, inspectId, badgeFor, sh
       <div
         className={`gs-block${effects?.blockPop && blockFromZero ? " gs-block-pop" : ""}`}
         style={blocked ? undefined : { opacity: 0, pointerEvents: "none" }}
-        title={`block ${c.block}`}
+        title={t("block {n}", { n: c.block })}
         data-block-badge="true"
         data-block-badge-for={badgeFor}
-        {...inspectTrigger(inspect.enabled && blocked, `Block ${c.block}`, () => {
-          inspect.open({ key: `block:${inspectId}`, icon: assetUrl("ui/combat/block.png"), name: "Block",
-            amount: c.block, description: "Absorbs damage before it reaches HP." });
+        {...inspectTrigger(inspect.enabled && blocked, t("Block {n}", { n: c.block }), () => {
+          inspect.open({ key: `block:${inspectId}`, icon: assetUrl("ui/combat/block.png"), name: t("Block"),
+            amount: c.block, description: t("Absorbs damage before it reaches HP.") });
         })}
       >
         <img className="gs-block-icon" src={assetUrl("ui/combat/block.png")} alt="" aria-hidden="true" draggable={false} />

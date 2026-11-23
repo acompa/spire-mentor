@@ -54,8 +54,8 @@
   </PropertyGroup>
 
   <!--
-    One DLL for every supported game build (GH #800): v0.107.1 (stable) and
-    v0.111.0 (beta). It compiles against whichever sts2.dll is installed; the
+    One DLL for every supported game build (GH #800): v0.107.1, v0.111.0
+    (stable as v0.111.1) and v0.113.0 (beta). It compiles against whichever sts2.dll is installed; the
     members whose signature differs between the builds are reached through
     SimGameApi.cs, and tests/compile/build_mod.sh checks the DLL binds against
     every build present.
@@ -159,6 +159,8 @@
       <FrameFiles Include="$(SpireMentorFrameOut)**/*" Exclude="$(SpireMentorFrameOut)**/*.pdb;$(SpireMentorFrameOut)**/*.xml" />
     </ItemGroup>
     <Copy Condition="Exists('$(SpireMentorFrameOut)SpireMentorFrame.exe')" SourceFiles="@(FrameFiles)" DestinationFiles="@(FrameFiles->'$(ModsPath)SpireMentor/SpireMentorFrame/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" ContinueOnError="WarnAndContinue" />
+    <!-- The Linux host: one Python file, no build (spire-mentor-frame/linux/). -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../spire-mentor-frame/linux/spire_mentor_frame.py" DestinationFolder="$(ModsPath)SpireMentor/SpireMentorFrame/" SkipUnchangedFiles="true" ContinueOnError="true" />
     <Message Condition="!Exists('$(SpireMentorFrameOut)SpireMentorFrame.exe')" Text="No Spire Mentor frame build at $(SpireMentorFrameOut) (dotnet build -c Release in spire-mentor-frame/): 'Panels in their own window' will say the frame is missing." Importance="high" />
   </Target>
 

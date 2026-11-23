@@ -486,11 +486,17 @@ fn dampen_after_applied(
     // re-upgrade them when the power is removed.
     let uids = all_player_card_uids(state);
     for uid in uids {
+        // C# keeps each card's old `CurrentUpgradeLevel` and upgrades it that
+        // many times on removal (a Dingy Dagger can be past level 1).
+        let level = crate::card_by_uid_mut(&mut state.cards, uid).map_or(0, |c| c.upgrade_level());
         if crate::card_effects::downgrade_card_in_combat(state, uid) {
-            // Mark this card as downgraded by Dampen so we can re-upgrade
-            // it when Dampen is removed.
+            // Mark this card as downgraded by Dampen (with its old level) so
+            // we can re-upgrade it when Dampen is removed.
             if let Some(card) = crate::card_by_uid_mut(&mut state.cards, uid) {
-                card.set_combat_var(crate::cards::VarKey::DampenDowngradedMarker, 1);
+                card.set_combat_var(
+                    crate::cards::VarKey::DampenDowngradedMarker,
+                    i32::from(level.max(1)),
+                );
             }
         }
     }
@@ -516,8 +522,11 @@ fn dampen_after_removed(state: &mut CombatState, _old_owner: CreatureUid) -> Eff
     let uids = all_player_card_uids(state);
     for uid in uids {
         if let Some(card) = state.cards.iter_mut().find(|c| c.uid == uid) {
-            if card.combat_var(crate::cards::VarKey::DampenDowngradedMarker) != 0 {
-                card.upgrade_for(state.game_version);
+            let levels = card.combat_var(crate::cards::VarKey::DampenDowngradedMarker);
+            if levels != 0 {
+                for _ in 0..levels {
+                    card.upgrade_for(state.game_version);
+                }
                 // Clear the marker.
                 card.set_combat_var(crate::cards::VarKey::DampenDowngradedMarker, 0);
             }

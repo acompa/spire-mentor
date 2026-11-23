@@ -52,6 +52,7 @@ pub(crate) fn play_stardust(state: &mut CombatState, _t: Option<CreatureUid>) ->
     // star X too, so Stardust hits twice even at 0 stars (random-loadout
     // v0.107.1 seed 1142).
     let hits = sts2_core::relic_effects::dispatch_modify_x_value(state, last_stars_spent);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(state, hits);
     if hits <= 0 {
         return EffectResult::Resolved;
     }

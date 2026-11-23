@@ -79,6 +79,8 @@ pub fn ironclad_content_callbacks() -> ContentCallbacks {
         // unspecified `Reward::Potion` sentinels (Lost Coffer / event
         // "procure 1 random potion") drained by the run loop.
         roll_potion_reward_kind: Some(roll_out_of_combat_potion_kind),
+        // GH #1606: an out-of-combat Entropic Brew's fills.
+        roll_entropic_brew_potion: Some(roll_entropic_brew_potion),
         roll_neows_bones_curse: Some(crate::relics::neow_relics::roll_neows_bones_curse),
         // Pre-roll the act's boss at map-generation time so the workbench
         // map widget can label the boss from floor 1 (matching the C#
@@ -102,6 +104,11 @@ pub fn ironclad_content_callbacks() -> ContentCallbacks {
         resume_event_after_combat: Some(
             crate::events::dispatch::resume_event_after_combat_callback,
         ),
+        // GH #1347: the Blitz merchant and the Blitz room potion.
+        generate_blitz_merchant: Some(crate::blitz::generate_merchant),
+        blitz_merchant_select: Some(crate::blitz::merchant_select),
+        blitz_merchant_after_pick: Some(crate::blitz::merchant_after_pick),
+        blitz_room_potion: Some(crate::blitz::room_potion),
     }
 }
 
@@ -501,8 +508,9 @@ pub fn initialize_run_setup(rm: &mut sts2_core::run_manager::RunManager) {
     // v0.111.0: encounter retags (decomp SlitheringStranglerNormal.cs:33,
     // SnappingJaxfruitNormal.cs:12) change the no-repeat picks.
     let version = rm.run_state.game_version;
-    rm.run_state.generated_rooms = sts2_core::run_room_gen::generate_all_rooms_for(
+    rm.run_state.generated_rooms = sts2_core::run_room_gen::generate_all_rooms_in(
         version,
+        rm.run_state.game_mode,
         &mut rm.run_state.rng.up_front,
         has_double_boss,
         act1,
@@ -532,6 +540,21 @@ fn roll_out_of_combat_potion_kind(rs: &mut RunState) -> Option<sts2_core::potion
     crate::potions::all::create_random_potions_out_of_combat(&mut rs.rng.rewards, character, 1)
         .into_iter()
         .next()
+}
+
+/// Roll one out-of-combat Entropic Brew fill (GH #1606) on the stream the
+/// in-combat Brew uses (`potions::all::entropic_brew_fill_belt`): C#
+/// `CreateRandomPotionOutOfCombat(owner, Rng.CombatPotionGeneration)`,
+/// `PlayerRng.NonCombatGeneration` from v0.113.0 on.
+fn roll_entropic_brew_potion(rs: &mut RunState) -> Option<sts2_core::potions::PotionKind> {
+    let character = rs.character_id;
+    crate::potions::all::create_random_potions_out_of_combat(
+        rs.rng.non_combat_or_combat_potion(),
+        character,
+        1,
+    )
+    .into_iter()
+    .next()
 }
 
 /// Apply a Monster/Elite combat win's gold + potion rewards, consuming the
@@ -579,6 +602,17 @@ fn roll_out_of_combat_potion_kind(rs: &mut RunState) -> Option<sts2_core::potion
 /// Returns whether the potion dropped: the set's `PotionReward` takes a slot
 /// in `RewardsSet`'s sort, which picks the card reward offered first.
 fn apply_combat_gold_and_potion(rs: &mut RunState, room_type: RoomType) -> bool {
+    if rs.game_mode.is_blitz() {
+        // A Blitz room's replaced reward set (`BlitzRunModel.
+        // TryReplaceDefaultRoomRewards`, `BlitzRunModel.cs:90-118`) has no
+        // `GoldReward` and never calls `RollForPotionAndAddTo`: no gold
+        // draw, no potion-odds draw, no pity move. Its `PotionReward`, when
+        // it has one, populates after the card reward
+        // (`crate::blitz::room_potion`). The room's `ExtraRewards` are still
+        // appended (`RewardsSet.cs:100`).
+        rs.grant_extra_reward_gold();
+        return false;
+    }
     // (1) potion-odds NextFloat + pity update; `true` ⇒ a potion drops.
     let potion_drops = rs.roll_potion_reward(room_type);
     // (2) gold NextInt, scaled by the escaped-creature GoldProportion that
@@ -624,12 +658,14 @@ fn apply_combat_gold_and_potion(rs: &mut RunState, room_type: RoomType) -> bool 
     // (`RewardsSetIndex`: gold 1, potion 2; stable among the golds): the
     // base gold, the fight's extra gold (Heist, Royalties) and the hook gold,
     // then the potion.
+    // `gain_reward_gold`: on a reward-screen run (GH #1620) each gold reward
+    // waits on the screen instead.
     if let Some(amount) = base_gold {
-        rs.gain_gold(amount);
+        rs.gain_reward_gold(amount);
     }
     rs.grant_extra_reward_gold();
     if bonus_gold > 0 {
-        rs.gain_gold(bonus_gold);
+        rs.gain_reward_gold(bonus_gold);
     }
     if let Some(kind) = potion {
         // Reward claim: on a full belt this queues an interactive
@@ -932,13 +968,15 @@ fn build_combat_for_room(
     let mut enc_rng = rs
         .rng
         .named_at(i64::from(rs.total_floor + i32::from(act_index)), enc.id);
-    let roster_kinds = enc.roster(&mut enc_rng);
+    let roster_kinds = enc.roster_in(&mut enc_rng, rs.game_mode);
     let kinds: Vec<MonsterKind> = roster_kinds.iter().map(|&(k, _)| k).collect();
-    let hps = sts2_core::monsters::roll_unique_max_hps_for(
+    let combat_ascension = rs.combat_ascension();
+    let hps = sts2_core::monsters::roll_unique_max_hps_in(
         &kinds,
         &mut rs.rng.niche,
-        rs.ascension_level,
+        combat_ascension,
         rs.game_version,
+        rs.game_mode,
     );
     let roster: Vec<(MonsterKind, MonsterSpawnArgs, i32)> = roster_kinds
         .iter()
@@ -963,11 +1001,12 @@ fn build_combat_for_room(
     // + the summoners' free-slot search). It is stamped BEFORE combat starts:
     // a summon can happen inside entry (Whispering Earring + Void Form runs
     // the first enemy turn there).
-    Some(crate::run_bridge::enter_combat_from_roster_in_slots(
+    Some(crate::run_bridge::enter_combat_from_roster_for_encounter(
         rs,
         &roster,
-        enc.member_slots(),
+        enc.member_slots_in(rs.game_mode),
         room_type,
+        sts2_core::run_room_gen::encounter_is_weak(enc.id),
     ))
 }
 
@@ -1001,6 +1040,30 @@ pub fn dump_roster_for_encounter(
     rs: &mut RunState,
     encounter_id: &str,
 ) -> Option<Vec<(&'static str, i32, i32)>> {
+    // Roster-HP oracle dump: room type is irrelevant to the HP roll it
+    // gates, so pass `Unknown` (no draw-modifier influence).
+    let state =
+        enter_combat_for_encounter(rs, encounter_id, sts2_core::runstate::RoomType::Unknown)?;
+    let out = state
+        .enemy_uids
+        .iter()
+        .filter_map(|uid| {
+            let c = state.creatures.iter().find(|c| c.id == uid.0)?;
+            Some((c.species?.python_name(), c.max_hp, c.current_hp))
+        })
+        .collect();
+    Some(out)
+}
+
+/// The combat [`dump_roster_for_encounter`] reads its roster off:
+/// `encounter_id` entered on `rs` as the run's next combat (roster off the
+/// per-encounter stream at `total_floor + 1`, HP off `niche`) in a room of
+/// `room_type`. MUTATES `rs.rng.niche`. `None` for an unknown id.
+pub fn enter_combat_for_encounter(
+    rs: &mut RunState,
+    encounter_id: &str,
+    room_type: RoomType,
+) -> Option<sts2_core::CombatState> {
     use crate::monster_dispatch::MonsterSpawnArgs;
     use sts2_core::MonsterKind;
 
@@ -1028,7 +1091,7 @@ pub fn dump_roster_for_encounter(
     // `build_combat_for_room` path will instead read the run's real
     // post-entry `total_floor` when step-c wires it onto this stream.
     let mut enc_rng = rs.rng.named_at(i64::from(rs.total_floor + 1), enc.id);
-    let roster_kinds = enc.roster(&mut enc_rng);
+    let roster_kinds = enc.roster_in(&mut enc_rng, rs.game_mode);
     // Per-monster HP off niche via the shared two-pass roller — C#'s
     // creation-then-finalize split (raw side-wide exclusion in pass 1, the
     // even-unique Decimillipede / Door-sentinel fix-up off the mixed
@@ -1037,34 +1100,25 @@ pub fn dump_roster_for_encounter(
     // SAME roller the live `build_combat_for_room` path uses, so the oracle
     // gates exactly what the live run produces.
     let kinds: Vec<MonsterKind> = roster_kinds.iter().map(|&(k, _)| k).collect();
-    let hps = sts2_core::monsters::roll_unique_max_hps_for(
+    let combat_ascension = rs.combat_ascension();
+    let hps = sts2_core::monsters::roll_unique_max_hps_in(
         &kinds,
         &mut rs.rng.niche,
-        rs.ascension_level,
+        combat_ascension,
         rs.game_version,
+        rs.game_mode,
     );
     let roster: Vec<(MonsterKind, MonsterSpawnArgs, i32)> = roster_kinds
         .iter()
         .zip(hps)
         .map(|(&(kind, args), hp)| (kind, args, hp))
         .collect();
-    // Roster-HP oracle dump: room type is irrelevant to the HP roll it
-    // gates, so pass `Unknown` (no draw-modifier influence).
-    let state = crate::run_bridge::enter_combat_from_roster_in_slots(
+    Some(crate::run_bridge::enter_combat_from_roster_in_slots(
         rs,
         &roster,
-        enc.member_slots(),
-        sts2_core::runstate::RoomType::Unknown,
-    );
-    let out = state
-        .enemy_uids
-        .iter()
-        .filter_map(|uid| {
-            let c = state.creatures.iter().find(|c| c.id == uid.0)?;
-            Some((c.species?.python_name(), c.max_hp, c.current_hp))
-        })
-        .collect();
-    Some(out)
+        enc.member_slots_in(rs.game_mode),
+        room_type,
+    ))
 }
 
 // ── starter-deck loader (sts2-rs-rkz98) ─────────────────────────────
@@ -1326,6 +1380,14 @@ pub fn new_ironclad_run_manager_with_deck_and_hp(
 /// follow-up will upgrade the dispatch to carry the full `Card`
 /// POD). Bead `sts2-rs-81xxo`.
 pub fn generate_card_reward_options(rs: &mut RunState) -> Vec<CardId> {
+    if rs.game_mode.is_blitz() {
+        // `BlitzRunModel.TryReplaceDefaultRoomRewards` swaps the room's card
+        // reward for a fixed-rarity, uniform-odds one (GH #1347).
+        let cards = crate::blitz::roll_room_card_reward(rs);
+        rs.card_reward_upgraded_flags = cards.iter().map(|c| c.upgraded).collect();
+        rs.card_reward_enchantments = cards.iter().map(|c| c.enchantments).collect();
+        return cards.into_iter().map(|c| c.card_id).collect();
+    }
     let character = rs.character_id;
     let context = room_card_reward_context(rs);
     // The combat room's own card reward: `CardCreationOptions.ForRoom(...)
@@ -1933,7 +1995,9 @@ mod tests {
         let resolve = cb.resolve_event_at.expect("event resolver wired");
         let mut rs = RunState::new();
         let before = rs.visited_event_ids.len();
-        assert!(resolve(&mut rs, 0));
+        // Option 1 (AbyssalBaths' Abstain): its option 0 opens a multi-page
+        // loop rather than finishing (GH #1492).
+        assert!(resolve(&mut rs, 1));
         assert!(rs.current_event.is_none());
         assert_eq!(rs.visited_event_ids.len(), before + 1);
     }

@@ -473,6 +473,7 @@ fn play_card_state_with_one(card_id: CardId, cost: i8, ctype: CardType) -> Comba
         card_type: ctype,
         target_type: TargetType::None,
         upgraded: false,
+        extra_upgrades: 0,
         base_damage: 0,
         base_block: 0,
         combat_vars: sts2_core::cards::CombatVars::new(),

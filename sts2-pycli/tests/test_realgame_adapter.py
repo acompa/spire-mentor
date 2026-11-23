@@ -253,6 +253,61 @@ class TestToHeadlessCombatPlayShape:
         del bridge_state["floor"]
         assert "total_floor" not in translate(to_headless_combat_play(bridge_state))
 
+    def test_a_dread_run_reaches_the_wire(self) -> None:
+        """GH #1346: the mod reports a Dread run as ``run_state.game_mode``
+        and the act's dominion as ``run_state.dominion`` (C#
+        ``RunState.Dominion.Id.Entry``, null inside the act's boss room). Both
+        ride to the wire; without them the engine plans a standard fight, with
+        no dominion power and the standard boss moves."""
+        from sts2_hint.adapter import translate
+
+        bridge_state = _load_fixture("single_enemy_ironclad.json")["state"]
+        bridge_state["run_state"].update(game_mode="dread", dominion="KAISER_CRAB_DOMINION")
+        wire = translate(to_headless_combat_play(bridge_state))
+        assert (wire["game_mode"], wire["dominion"]) == ("dread", "KAISER_CRAB_DOMINION")
+
+        # The act's boss room: still Dread, the dominion is gone.
+        bridge_state["run_state"]["dominion"] = None
+        wire = translate(to_headless_combat_play(bridge_state))
+        assert wire["game_mode"] == "dread" and "dominion" not in wire
+
+    def test_a_blitz_run_reaches_the_wire_at_its_fight_ascension(self) -> None:
+        """GH #1347: the mod reports a Blitz run as ``run_state.game_mode``
+        ``"blitz"`` with the Blitz level 0..5 as its ascension. Blitz levels
+        are a set, not a threshold (C# ``AscensionHelper.GetLevelForBlitz``:
+        3 is ToughEnemies, 4 adds DeadlyEnemies, 5 adds Ascender's Bane), and
+        the wire's ``rng.ascension`` is the number a fight thresholds: 0 below
+        level 3, 8 at 3, 9 at 4 and 5. Sent as the raw level, a Blitz A3 fight
+        would be planned without its tougher enemies and a Blitz A5 one as a
+        standard A5 fight."""
+        from sts2_hint.adapter import translate
+
+        bridge_state = _load_fixture("single_enemy_ironclad.json")["state"]
+        bridge_state["run_state"]["game_mode"] = "Blitz"
+        got = []
+        for level in range(6):
+            wire = translate(to_headless_combat_play(bridge_state), ascension=level)
+            assert wire["game_mode"] == "blitz" and "dominion" not in wire
+            got.append(wire["rng"]["ascension"])
+        assert got == [0, 0, 0, 8, 9, 9]
+
+        # A standard run's ascension is sent as it is.
+        bridge_state["run_state"]["game_mode"] = "standard"
+        wire = translate(to_headless_combat_play(bridge_state), ascension=5)
+        assert wire["rng"]["ascension"] == 5
+
+    def test_a_standard_run_names_no_game_mode_on_the_wire(self) -> None:
+        """A standard run, and a mod too old to say, leave the wire as it was."""
+        from sts2_hint.adapter import translate
+
+        bridge_state = _load_fixture("single_enemy_ironclad.json")["state"]
+        for mode in (None, "standard", "Standard"):
+            bridge_state["run_state"].pop("game_mode", None)
+            if mode is not None:
+                bridge_state["run_state"]["game_mode"] = mode
+            wire = translate(to_headless_combat_play(bridge_state))
+            assert "game_mode" not in wire and "dominion" not in wire, mode
+
     def test_skittish_latch_and_a_teammates_plays_reach_the_wire(self) -> None:
         """GH #989: Skittish's once-a-turn latch (sent with the power's vars)
         becomes the engine's ``counter``, and a teammate's play buckets ride
@@ -337,6 +392,28 @@ class TestToHeadlessCombatPlayShape:
         (theirs,) = wire["allies"][0]["powers"]
         assert "applier_seat" not in theirs
         assert "applier" not in theirs
+
+    def test_a_sandpits_seat_is_the_player_it_targets(self) -> None:
+        """GH #1813: The Insatiable puts one Sandpit per player on itself; its
+        ``applier`` is the boss, so the seat is the mod's ``target`` (C#
+        ``PowerModel.Target``). Without one (an older mod) there is no seat."""
+        from sts2_hint.adapter import translate
+
+        bridge_state = _load_fixture("single_enemy_ironclad.json")["state"]
+        bridge_state["player"]["net_id"] = "1"
+        sandpit = {"id": "SANDPIT_POWER", "name": "Sandpit", "amount": 3}
+        bridge_state["enemies"][0]["powers"] = [
+            {**sandpit, "target": "1000"},
+            {**sandpit, "target": "1"},
+            sandpit,
+        ]
+        bridge_state["allies"] = [
+            {"character": "SILENT", "hp": 50, "max_hp": 70, "block": 0, "net_id": "1000"},
+        ]
+        wire = translate(to_headless_combat_play(bridge_state))
+        powers = wire["encounter"][0]["powers"]
+        assert [p.get("applier_seat") for p in powers] == [1, 0, None]
+        assert all("applier" not in p and "target" not in p for p in powers)
 
     def test_a_teammates_osty_reaches_their_seat(self) -> None:
         """GH #1017: a Necrobinder teammate's ``pets`` (newer mods) become
@@ -1111,10 +1188,10 @@ class TestOrbDialect:
     def test_both_dialects_resolve_to_the_title_key(
         self, orb: dict[str, Any], expected: str
     ) -> None:
-        from realgame_adapter import _orb_type_stem
         from sts2_hint.canonical_maps import ORB_TITLE_TO_ID
 
-        stem = _orb_type_stem(orb)
+        board = {"type": "combat_action", "orbs": [orb]}
+        stem = to_headless_combat_play(board)["orbs"][0]["type"]
         assert stem == expected
         assert stem in ORB_TITLE_TO_ID, "stem must be a key the hint adapter accepts"
 
@@ -1262,6 +1339,35 @@ class TestPetDialect:
         assert bridge_state["run_state"]["character"] == "DEFECT"
 
         assert "osty" not in to_headless_combat_play(bridge_state)
+
+    def test_a_wuppy_pet_rides_its_own_key(self) -> None:
+        """GH #1496: the v0.113.0 Wuppy pet is not an Osty. Both stages carry
+        it as ``wuppy`` in the Osty's shape, a dead one keeping its max HP
+        (``WuppysLoyaltyPower`` keeps the corpse in the fight)."""
+        from sts2_hint import adapter
+
+        fixture = _load_fixture("orbs_empty_defect.json")
+        bridge_state = json.loads(json.dumps(fixture["state"]))
+        wuppy = {
+            "id": "WUPPY",
+            "name": "Wuppy",
+            "is_alive": True,
+            "hp": 17,
+            "max_hp": 30,
+            "block": 2,
+            "powers": [],
+        }
+        bridge_state["pets"] = [wuppy]
+
+        out = to_headless_combat_play(bridge_state)
+
+        assert "osty" not in out
+        assert out["wuppy"] == {"alive": True, "hp": 17, "max_hp": 30, "block": 2}
+        assert adapter.translate(out)["player"]["wuppy"] == out["wuppy"]
+
+        bridge_state["pets"] = [{**wuppy, "is_alive": False, "hp": 0}]
+        dead = adapter.translate(to_headless_combat_play(bridge_state))
+        assert dead["player"]["wuppy"] == {"alive": False, "hp": 0, "max_hp": 30, "block": 2}
 
     def test_an_osty_less_necrobinder_gets_the_headless_sentinel(self) -> None:
         """The headless twin emits an explicit "no Osty" block for a Necrobinder

@@ -10,7 +10,10 @@ pub(crate) fn play_peck(state: &mut CombatState, target: Option<CreatureUid>) ->
     let t = target.expect("Peck: Enemy-targeted");
     let dmg = current_damage(state);
     // C# Peck.cs: RepeatVar(3), OnUpgrade Repeat +1 → 3 base / 4 upgraded.
-    let hits = if current_upgraded(state) { 4 } else { 3 };
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        if current_upgraded(state) { 4 } else { 3 },
+    );
     for _ in 0..hits {
         let alive = state
             .creatures

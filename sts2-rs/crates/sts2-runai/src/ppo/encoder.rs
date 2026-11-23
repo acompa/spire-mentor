@@ -1,10 +1,14 @@
 //! Decision -> token arrays for the run-level policy net — a straight
-//! Rust port of `sts2-pycli/python/ppo/encoder.py` (porting authority;
-//! never modify that file). Schema constants mirror
-//! `sts2-pycli/python/ppo/model.py` verbatim (never modify that file
-//! either — the drift guard is `tests/ppo_encoder_parity.rs`'s
-//! committed-fixture Gate A1, which requires bit-for-bit continuous
-//! output and exact categorical/section output on every row).
+//! Rust port of `sts2-pycli/python/ppo/encoder.py`, and since GH #1426 the
+//! one implementation training, the arena and the advisor all run
+//! (`ppo.encoder.featurize_row` calls it through `sts2_rs.ppo_featurize`).
+//! The Python body survives as `featurize_row_py`, the reference: a change
+//! here lands in both, and two gates hold them together — this crate's
+//! `tests/ppo_encoder_parity.rs` (committed fixtures dumped from the Python
+//! reference, bit-for-bit continuous output and exact categorical/section
+//! output on every row) and `sts2-pycli/tests/test_ppo_encoder_rust.py`
+//! (every array, `aux_room` included, on fixtures and fresh env decisions).
+//! Schema constants mirror `sts2-pycli/python/ppo/schema.py` verbatim.
 //!
 //! Correspondence notes (see the Task 6 brief for the full 7-point
 //! contract this module honors point-by-point):
@@ -73,11 +77,9 @@ pub const ACT_FLOOR_SCALE: f64 = 0.05;
 /// `ASC_SCALE`). Written only on the state token, in the appended slot
 /// [`C_ASC`], so an 18-cont champion drops it cleanly (see [`super::net`]).
 pub const ASC_SCALE: f64 = 0.1;
-/// Aux dest-room-label sentinel (`model.py::AUX_IGNORE`). The aux head
-/// is excluded from this port's `Featurized` (ONNX export drops it —
-/// see the plan's Design §7), so this constant is unused here but kept
-/// for schema-doc parity with `model.py`.
-#[allow(dead_code)]
+/// Aux dest-room-label sentinel (`model.py::AUX_IGNORE`): the label of
+/// every action that is not a map move with a known destination. Only the
+/// trainer's aux head reads [`Featurized::aux_room`]; ONNX export drops it.
 pub const AUX_IGNORE: i64 = -100;
 
 // Continuous indices (see `model.py`'s module docstring).
@@ -128,9 +130,7 @@ pub type Cat = [i64; N_CAT];
 /// `f32` at the point it's written into a [`Featurized`] vector).
 type ContF64 = [f64; N_CONT];
 
-/// Per-decision token arrays. Mirrors `model.py::Featurized` minus the
-/// `aux_room` field (the aux head is excluded from this port — see the
-/// module doc comment).
+/// Per-decision token arrays. Mirrors `model.py::Featurized`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Featurized {
     pub obs_cat: Vec<Cat>,
@@ -139,6 +139,10 @@ pub struct Featurized {
     pub act_cat: Vec<Cat>,
     pub act_cont: Vec<[f32; N_CONT]>,
     pub act_sec: Vec<i64>,
+    /// Per action, the destination room index a map move leads to, or
+    /// [`AUX_IGNORE`]: the trainer's aux-head label (`encoder.py`'s
+    /// `aux_room`). The policy itself never reads it.
+    pub aux_room: Vec<i64>,
     pub n_actions: usize,
 }
 
@@ -624,9 +628,8 @@ impl<'a> Ctx<'a> {
 }
 
 /// `(section, cat, cont)` for one action. Mirrors
-/// `encoder.py::_build_action_token` arm by arm (the `aux_room_label`
-/// fourth return value is dropped — see the module doc comment on why
-/// this port's `Featurized` has no `aux_room` field).
+/// `encoder.py::_build_action_token` arm by arm; its fourth return value,
+/// the aux label, is [`aux_label`].
 fn build_action_token(ctx: &Ctx<'_>, a: &ActionDesc) -> (i64, Cat, ContF64) {
     match a {
         ActionDesc::Move { .. } => {
@@ -1031,8 +1034,10 @@ pub fn featurize_with(obs: &PpoObs, actions: &[ActionDesc], features: Features) 
     let mut act_cat: Vec<Cat> = Vec::with_capacity(actions.len());
     let mut act_cont: Vec<[f32; N_CONT]> = Vec::with_capacity(actions.len());
     let mut act_sec: Vec<i64> = Vec::with_capacity(actions.len());
+    let mut aux_room: Vec<i64> = Vec::with_capacity(actions.len());
     for a in actions {
         let (sec, cat, cont) = build_action_token(&ctx, a);
+        aux_room.push(aux_label(a, &cat));
         act_sec.push(sec);
         act_cat.push(cat);
         act_cont.push(to_f32_arr(cont));
@@ -1050,7 +1055,22 @@ pub fn featurize_with(obs: &PpoObs, actions: &[ActionDesc], features: Features) 
         act_cat,
         act_cont,
         act_sec,
+        aux_room,
         n_actions: actions.len(),
+    }
+}
+
+/// The aux-head label of one action token: a map move's destination room
+/// (`cat[4]`, which [`build_action_token`] leaves at the pad row when the
+/// move has no cone), else [`AUX_IGNORE`]. Mirrors the fourth value of
+/// `encoder.py::_build_action_token`. Read before [`stamp_card_kind`],
+/// which never touches the room column anyway.
+fn aux_label(a: &ActionDesc, cat: &Cat) -> i64 {
+    let pad = empty_cat()[4];
+    if matches!(a, ActionDesc::Move { .. }) && cat[4] != pad {
+        cat[4]
+    } else {
+        AUX_IGNORE
     }
 }
 

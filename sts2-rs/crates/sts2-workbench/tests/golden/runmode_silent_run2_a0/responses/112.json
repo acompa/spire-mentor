@@ -1,3 +1,153 @@
 {
- "detail": "ppo policy only available at a non-combat decision"
+ "error": null,
+ "impl": "rust",
+ "options": [
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "0"
+   },
+   "is_best": false,
+   "label": "Upgrade Strike",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "1"
+   },
+   "is_best": false,
+   "label": "Upgrade Strike",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "2"
+   },
+   "is_best": false,
+   "label": "Upgrade Strike",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "3"
+   },
+   "is_best": false,
+   "label": "Upgrade Strike",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "4"
+   },
+   "is_best": false,
+   "label": "Upgrade Strike",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "5"
+   },
+   "is_best": false,
+   "label": "Upgrade Defend",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "6"
+   },
+   "is_best": false,
+   "label": "Upgrade Defend",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "7"
+   },
+   "is_best": false,
+   "label": "Upgrade Defend",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "8"
+   },
+   "is_best": false,
+   "label": "Upgrade Defend",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "9"
+   },
+   "is_best": false,
+   "label": "Upgrade Defend",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "10"
+   },
+   "is_best": false,
+   "label": "Upgrade Neutralize",
+   "prob": 0.0209
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "11"
+   },
+   "is_best": false,
+   "label": "Upgrade Survivor",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "12"
+   },
+   "is_best": true,
+   "label": "Upgrade Snakebite",
+   "prob": 0.8784
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "13"
+   },
+   "is_best": false,
+   "label": "Upgrade Finisher",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "14"
+   },
+   "is_best": false,
+   "label": "Upgrade Reflex",
+   "prob": 0.0
+  },
+  {
+   "action": "select_cards",
+   "args": {
+    "indices": "15"
+   },
+   "is_best": false,
+   "label": "Upgrade Deadly Poison",
+   "prob": 0.1005
+  }
+ ],
+ "ppo_available": true,
+ "surface": "card-pick",
+ "value": 0.6985
 }

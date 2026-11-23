@@ -16,7 +16,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-ENGINE_BUILD = "v0.107.1"  # the default build; a dump reports its session's own
+from sts2_client import LEGACY_GAME_VERSION
+
+# A dump reports its session's own build; a session or run log that names
+# none predates the stamp and is the legacy build (as `web/src/bugreport.ts`).
+ENGINE_BUILD = LEGACY_GAME_VERSION
 
 
 def _git_commit() -> str:

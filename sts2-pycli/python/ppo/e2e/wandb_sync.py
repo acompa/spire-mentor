@@ -18,6 +18,13 @@ DEV-2000, which share their first seeds) at the evaluated state's decision count
 from its file name (``..._d<decisions>...``). Records without a ``variant`` count as
 ``raw``. Cursor schema 1 keyed evals by panel only, so the three variants of a DEV-2000
 pin landed on one series: a cursor below ``EVAL_SCHEMA`` re-logs every eval once.
+
+Per character (GH #1197): a stats row's ``by_char.<C>.<k>`` logs as ``<C>/train/<k>``
+(``Silent/train/win``, ``Silent/train/entropy/COMBAT_TURN``), next to the pooled keys.
+An eval record with a ``character`` (``scripts/e2e_allchar_evalq.py``) logs only
+``<C>/dev/<variant>/win_rate`` (+ wins, runs, the Wilson 95% ``ci_lo`` / ``ci_hi``,
+rc), one curve per character and variant across its panel's milestones; it stays off
+the pooled ``eval/...`` keys, which would mix characters.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from . import ops_contract as OC
+from . import stats as ST
 
 CURSOR = "ops/wandb_sync.json"
 DEFAULT_PROJECT = "sts2-ppo-ironclad-e2e"
@@ -50,6 +58,10 @@ def flatten(row: Mapping[str, Any], prefix: str = "") -> dict[str, float]:
         elif isinstance(v, (int, float)):
             if math.isfinite(v):
                 out[key] = float(v)
+        elif isinstance(v, Mapping) and k == "by_char" and not prefix:
+            for char, d in v.items():
+                if isinstance(d, Mapping):
+                    out.update(flatten(d, f"{char}/train/"))
         elif isinstance(v, Mapping) and k != "stamps":
             out.update(flatten(v, key + "/"))
     return out
@@ -110,6 +122,21 @@ def eval_points(done_dir: Path, seen: set[str]) -> Iterator[tuple[str, dict[str,
         if m:
             point["decisions"] = float(m.group(1))
         wins, runs = rec.get("wins"), rec.get("runs")
+        char = rec.get("character")
+        if char:
+            # A held-out human-start eval (`"env": "human"`) gets its own curve.
+            kind = "human" if rec.get("env") == "human" else "dev"
+            key = f"{char}/{kind}/{variant}"
+            if isinstance(wins, int) and isinstance(runs, int) and runs > 0:
+                lo, hi = ST.wilson(wins, runs)
+                point[f"{key}/win_rate"] = wins / runs
+                point[f"{key}/wins"] = float(wins)
+                point[f"{key}/runs"] = float(runs)
+                point[f"{key}/ci_lo"] = lo
+                point[f"{key}/ci_hi"] = hi
+            point[f"{key}/rc"] = float(rec.get("rc", -1) or 0)
+            yield p.stem, point
+            continue
         key = f"eval/{panel}/{variant}"
         if isinstance(wins, int) and isinstance(runs, int) and runs > 0:
             point[f"{key}/win_rate"] = wins / runs

@@ -38,7 +38,8 @@ PY = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "python"))
 # margin; the walks dominate runtime, hence not more. Each walk is its own
 # test so xdist spreads them over workers: as one module fixture the six ran
 # back to back (~40 s) on every worker that drew a test from this file, the
-# pytest gate's long pole.
+# pytest gate's long pole. One test per seed makes both checks on its walk;
+# as two tests on a shared fixture, two workers walked the same seed.
 SEEDS = range(1000, 1006)
 
 
@@ -62,11 +63,6 @@ def _walk(seed: int):
     return events, env.resolution_log
 
 
-@pytest.fixture(scope="module", params=SEEDS, ids=lambda s: f"seed{s}")
-def walk(request):
-    return _walk(request.param)
-
-
 def _swallowed_event_entries(log) -> list[tuple]:
     """Event decisions auto-resolved on ARRIVAL, i.e. not after an event decision.
 
@@ -85,13 +81,12 @@ def _swallowed_event_entries(log) -> list[tuple]:
     ]
 
 
-def test_no_event_room_is_auto_resolved(walk) -> None:
+def _assert_no_event_room_is_auto_resolved(log) -> None:
     """The bug, stated directly: an event room's entry must never be `single-option-auto`.
 
     This is the assertion that fails against the pre-fix env — every ordinary
     event room took exactly this branch.
     """
-    _, log = walk
     swallowed = _swallowed_event_entries(log)
     assert not swallowed, f"{len(swallowed)} event rooms auto-resolved without a decision"
 
@@ -119,15 +114,22 @@ def test_ordinary_events_reach_the_policy() -> None:
     assert names - {"Neow"}, "no ordinary event room ever became a decision"
 
 
-def test_every_event_decision_carries_a_resolvable_identity(walk) -> None:
+def _assert_every_event_decision_carries_a_resolvable_identity(events) -> None:
     """An unbound event yields `event_name=None` -> the encoder's pad row, and
     a name outside the registry yields the shared OOV row. Both make the
     decision anonymous to the net; neither may happen."""
     from ppo import vocab
 
     reg = vocab.events()
-    events, _ = walk
     for name, n_actions in events:
         assert name, "event decision with no bound event id"
         assert reg.index(name) != reg.oov, f"event id {name!r} lands on the OOV row"
         assert n_actions > 1, f"{name} yielded a decision with {n_actions} action(s)"
+
+
+@pytest.mark.parametrize("seed", SEEDS, ids=lambda s: f"seed{s}")
+def test_event_rooms_reach_the_policy_with_an_identity(seed) -> None:
+    """Both checks above on one walk of ``seed`` (a walk is the whole cost)."""
+    events, log = _walk(seed)
+    _assert_no_event_room_is_auto_resolved(log)
+    _assert_every_event_decision_carries_a_resolvable_identity(events)

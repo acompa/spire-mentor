@@ -1137,7 +1137,11 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--sample-seed", type=int, default=0)
     e.add_argument("--ascension", type=int, default=10)
     e.add_argument("--character", default="Ironclad", choices=sorted(STARTERS))
-    e.add_argument("--build", default="v0.107.1")
+    e.add_argument(
+        "--build",
+        default="v0.107.1",
+        help="corpus build (the human corpus's largest build slice, which past studies used; not the simulator's default build)",
+    )
     e.add_argument("--out", required=True)
     p = sub.add_parser("play")
     p.add_argument("--fights", required=True)

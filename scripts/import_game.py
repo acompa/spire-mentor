@@ -100,12 +100,16 @@ STEAM_APP = "2868840"
 STEAM_DEPOT = "2868841"
 DEPOT_MANIFESTS = {
     "v0.107.1": "4733892780027453168",
-    "v0.111.0": "5661886308395090154",
-    "v0.113.0": "5756684179086186957",
+    # v0.111.1 (commit cc1f9462), the stable release that replaced the
+    # v0.111.0 beta (5661886308395090154); it is imported as v0.111.0.
+    "v0.111.0": "5729339753299691508",
+    # v0.113.1 (commit d09d48e5), the hotfix that replaced v0.113.0
+    # (5756684179086186957) on public-beta; it is imported as v0.113.0.
+    "v0.113.0": "8445808044584180628",
 }
 DEPOT_BRANCHES = {
     "v0.107.1": "public",
-    "v0.111.0": "public-beta",
+    "v0.111.0": "public",
     "v0.113.0": "public-beta",
 }
 # What the import reads from a build; the rest (the ~0.9 GB executable) is skipped.
@@ -303,6 +307,30 @@ def read_version(release_info: Path) -> str:
     return str(json.loads(release_info.read_text(encoding="utf-8"))["version"])
 
 
+_BUILD_RE = re.compile(r"v(\d{1,9})\.(\d{1,9})\.(\d{1,9})")
+
+
+def engine_version(version: str) -> str:
+    """The supported build `version` imports as: itself, or for a hotfix (same
+    major.minor, higher patch: v0.113.1) the newest supported build of its line
+    whose patch is not above it (v0.113.0). Anything else is returned as is.
+    Mirrors sts2-pycli's `sts2_client.hotfix_base` (stdlib only, so copied)."""
+    if version in SUPPORTED_VERSIONS:
+        return version
+    m = _BUILD_RE.fullmatch(version.strip())
+    if m is None:
+        return version
+    major, minor, patch = (int(g) for g in m.groups())
+    best: tuple[int, str] | None = None
+    for v in SUPPORTED_VERSIONS:
+        vm = _BUILD_RE.fullmatch(v)
+        assert vm is not None, v
+        s_major, s_minor, s_patch = (int(g) for g in vm.groups())
+        if (s_major, s_minor) == (major, minor) and s_patch <= patch and (best is None or s_patch > best[0]):
+            best = (s_patch, v)
+    return version if best is None else best[1]
+
+
 def link_or_copy(src: Path, dst: Path, copy: bool) -> str:
     """Put `src` at `dst`; returns how ("present", "symlink", "junction", "hardlink", "copy")."""
     if dst.is_symlink() or dst.exists():
@@ -378,7 +406,7 @@ def find_depotdownloader(explicit: str | None) -> str:
 def downloaded(dest: Path, version: str) -> bool:
     """Whether `dest` already holds `version`'s pck, data folder and release info."""
     info = dest / "release_info.json"
-    return (dest / "SlayTheSpire2.pck").is_file() and info.is_file() and read_version(info) == version \
+    return (dest / "SlayTheSpire2.pck").is_file() and info.is_file() and engine_version(read_version(info)) == version \
         and find_data_dir(dest) is not None
 
 
@@ -439,7 +467,8 @@ def copy_new_art(extracted: Path, shared: Path, overlay: Path) -> int:
 
     -> the number copied. A non-default build's art overlay: its new content
     and the art the default build ships only as a sketch (`beta/`); a file the
-    shared tree has stays shared, even where the build redrew it.
+    shared tree has stays shared, even where the build redrew it (redrawn
+    rigs go over it in `copy_rigs`).
     """
     copied = 0
     for src in sorted(extracted.rglob("*")):
@@ -455,18 +484,109 @@ def copy_new_art(extracted: Path, shared: Path, overlay: Path) -> int:
     return copied
 
 
-def write_new_creature_scales(fresh: Path, shared: Path, out: Path) -> int:
+#: The rig folders an art overlay re-exports, and where render_portraits puts
+#: each one's still (room rigs have none).
+RIG_PORTRAITS = {"monster_rigs": "monsters", "character_rigs": "character_sprites", "room_rigs": None}
+
+
+def copy_rigs(extracted: Path, baseline: Path, overlay: Path) -> int:
+    """Copy every rig file under `extracted` into `overlay`, over what is there,
+    plus each copied rig's portrait where it differs from the `baseline` one.
+
+    Returns the number copied. For a build extracted with `extract_rig
+    --new-since`, whose rigs are only the ones that build added or redrew
+    (`new_rigs`): the shared tree has the default build's copy, which
+    `copy_new_art` leaves alone. `baseline` holds the default build's copies
+    of those rigs, rendered by the same `render_portraits` (it is
+    deterministic), so a portrait comes along only where the rig now draws
+    differently: a new idle, a recolour. A rig that only gained the Fool's
+    arrow slots renders the same still, which stays shared. (Comparing against
+    the shared still instead would also count every change made to the
+    renderer since that still was rendered.)
+    """
+    copied = 0
+    for rigs, portraits in RIG_PORTRAITS.items():
+        for rig_dir in sorted(p for p in (extracted / rigs).glob("*") if p.is_dir()):
+            files = [f for f in sorted(rig_dir.rglob("*")) if f.is_file()]
+            still = extracted / portraits / f"{rig_dir.name}.png" if portraits else None
+            if still is not None and still.is_file():
+                was = baseline / still.relative_to(extracted)
+                # An added rig has no baseline: copy_new_art brings its still.
+                if was.is_file() and was.read_bytes() != still.read_bytes():
+                    files.append(still)
+            for src in files:
+                dst = overlay / src.relative_to(extracted)
+                if dst.is_file() and dst.read_bytes() == src.read_bytes():
+                    continue
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                copied += 1
+    return copied
+
+
+def record_added_audio(encoded: Path, shared: Path, record: Path) -> list[str]:
+    """Add to `record` every file under `encoded` that the `shared` audio tree
+    lacks; -> the record's whole list (paths relative to the audio tree).
+
+    A later build's sound lands in the SHARED audio tree (`copy_new_art`), so
+    the tree alone no longer says which build a file came from. The record
+    does: `bundle_workbench_data` keeps these files out of the default build's
+    asset manifest, so a tree imported from the default build alone is not
+    reported short of the Fool's voice (`scripts/check_art.py`). Call it
+    BEFORE the copy. It only ever adds, so re-running the merge once the
+    files are in place keeps them listed.
+    """
+    have = set(json.loads(record.read_text(encoding="utf-8"))) if record.is_file() else set()
+    for src in encoded.rglob("*"):
+        rel = src.relative_to(encoded).as_posix()
+        if src.is_file() and not (shared / rel).exists():
+            have.add(rel)
+    rels = sorted(have)
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(json.dumps(rels, indent=1) + "\n", encoding="utf-8")
+    return rels
+
+
+def write_new_creature_scales(fresh: Path, shared: Path, out: Path, default: Path | None = None) -> int:
     """Write to `out` the `fresh` creature-scale rows whose slug `shared` lacks.
 
-    -> the number written. `fresh` is `extract_creature_bounds`' table for a
-    later build; `shared` is the art tree's creature_scales.json (the default
-    build's, with its hand-overridden scales). A creature both carry keeps the
-    shared row, like the shared art itself (`copy_new_art`).
+    -> the number of rows `out` holds. `fresh` is `extract_creature_bounds`'
+    table for a later build; `shared` is the art tree's creature_scales.json
+    (the default build's, with its hand-overridden scales). A creature both
+    carry keeps the shared row, like the shared art itself (`copy_new_art`),
+    except where this build's scene moved:
+
+    - where the Fool's arrow sticks in it (`arrow_x` / `arrow_y`; v0.113.0 gave
+      the Mecha Knight an `ArrowPosition` marker);
+    - its authored `scale`, against `default` (the default build's own table):
+      v0.111.1 replaced the Aeonglass's static hourglass sprite (0.29) with a
+      Spine rig drawn at 0.2; v0.113.0 drew the Byrdpip at 0.18 instead of 0.25.
+
+    Either gets the shared row with this build's values, since the bundle
+    replaces whole rows. A row `out` already holds that none of these rules
+    writes is kept: it was set by hand for a rig this build re-exported at
+    another size (the v0.113.0 Mawler).
     """
     rows = json.loads(fresh.read_text(encoding="utf-8"))
     have = json.loads(shared.read_text(encoding="utf-8")) if shared.is_file() else {}
-    new = {k: rows[k] for k in sorted(rows) if k not in have}
+    base = json.loads(default.read_text(encoding="utf-8")) if default and default.is_file() else {}
+    kept = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+    arrow = ("arrow_x", "arrow_y")
+    new = dict(kept)
+    for k in sorted(rows):
+        if k not in have:
+            new[k] = rows[k]
+            continue
+        moved = {}
+        if all(a in rows[k] for a in arrow) and any(have[k].get(a) != rows[k][a] for a in arrow):
+            moved.update({a: rows[k][a] for a in arrow})
+        was, now = base.get(k, {}).get("scale"), rows[k].get("scale")
+        if was is not None and now is not None and abs(was - now) > 1e-3 * max(abs(was), abs(now)):
+            moved["scale"] = now
+        if moved:
+            new[k] = {**have[k], **kept.get(k, {}), **moved}
     out.parent.mkdir(parents=True, exist_ok=True)
+    new = {k: new[k] for k in sorted(new)}
     out.write_text(json.dumps(new, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return len(new)
 
@@ -561,7 +681,7 @@ def build_steps(build: Path, version: str) -> list[Step]:
             "--install-root", str(install_root)], PYCLI)
 
     def extract_pck():
-        for prefix in ("localization/eng", "images/atlases"):
+        for prefix in ("localization/eng", "localization/zhs", "images/atlases"):
             uv_python(["-m", "scripts.extract_pck", pck, str(extracted), "--prefix", prefix], WIKI, wiki_env)
 
     def localization():
@@ -571,6 +691,28 @@ def build_steps(build: Path, version: str) -> list[Step]:
             shutil.copytree(loc_eng_default, loc_eng)
         sh([sys.executable, "scripts/vendor_localization.py", pck, "--version", version,
             "--out", str(loc_eng)], PYCLI)
+
+    loc_zhs = PYCLI / "localization_zhs"
+
+    def zhs_done() -> bool:
+        # One Chinese set for every build, newest wins: done once it holds
+        # this build's text or a newer one's (imports run oldest first).
+        build_txt = loc_zhs / "BUILD.txt"
+        if not (loc_zhs / "cards.json").is_file() or not build_txt.is_file():
+            return False
+        have = build_txt.read_text(encoding="utf-8").splitlines()[:1]
+        key = lambda v: tuple(int(x) for x in v.lstrip("v").split(".") if x.isdigit())  # noqa: E731
+        own = PYCLI / f"localization_zhs_{version}" / "cards.json"
+        return bool(have) and key(have[0]) >= key(version) and own.is_file()
+
+    def localization_zhs():
+        # The shared set (newest build wins) and this build's own exact set:
+        # the workbench guards the shared one by each build's English and
+        # lays the build's own over it (sts2-workbench data::zh_tables_for).
+        sh([sys.executable, "scripts/vendor_localization.py", pck, "--version", version,
+            "--lang", "zhs", "--out", str(loc_zhs)], PYCLI)
+        sh([sys.executable, "scripts/vendor_localization.py", pck, "--version", version,
+            "--lang", "zhs", "--out", str(PYCLI / f"localization_zhs_{version}")], PYCLI)
 
     def decompile():
         env = dict(wiki_env)
@@ -611,22 +753,40 @@ def build_steps(build: Path, version: str) -> list[Step]:
             uv_python(["scripts/extract_images.py", pck, f"extracted/{version}", tmp], WIKI, wiki_env)
             uv_python(["-m", "scripts.extract_card_template", pck, tmp], WIKI, wiki_env)
             uv_python(["-m", "scripts.extract_rooms", pck, tmp], WIKI, wiki_env)
-            # Only the rigs this build ADDED: the shared tree's rigs keep their
-            # own slugs and atlas pages, and a file-level diff against them
-            # would pick up alias folders and stray pages (extract_rig.new_rigs).
+            # Only the rigs this build ADDED or REDREW, by the pck's own files: the
+            # shared tree's rigs keep their own slugs and atlas pages, and a
+            # file-level diff against them would pick up alias folders and stray
+            # pages (extract_rig.new_rigs).
             rig_args = ["--new-since", str(default_pck)] if default_pck.is_file() else []
             uv_python(["-m", "scripts.extract_rig", pck, "--all", tmp, *rig_args], WIKI, wiki_env)
             for rigs in ("monster_rigs", "character_rigs"):
                 (Path(tmp) / rigs).mkdir(exist_ok=True)
             uv_python(["-m", "scripts.render_portraits", tmp], WIKI, wiki_env)
             n = copy_new_art(Path(tmp), images, overlay)
+            # `--new-since` also kept the rigs this build redrew (v0.111.1: four
+            # characters; v0.113.0: the Fool's arrow slots too); the shared tree
+            # has the default build's copy, which copy_new_art leaves alone, so
+            # they and their portraits go over it.
+            if rig_args:
+                with tempfile.TemporaryDirectory() as baseline:
+                    uv_python(["-m", "scripts.extract_rig", str(default_pck), "--all", baseline,
+                               "--only-under", tmp], WIKI, wiki_env)
+                    for rigs in ("monster_rigs", "character_rigs"):
+                        (Path(baseline) / rigs).mkdir(exist_ok=True)
+                    uv_python(["-m", "scripts.render_portraits", baseline], WIKI, wiki_env)
+                    n += copy_rigs(Path(tmp), Path(baseline), overlay)
             # The new creatures' authored scale + %Bounds box; the bundle step
             # merges this over the shared creature_scales.json for this build.
             bounds = Path(tmp) / "creature_bounds.json"
             uv_python(["-m", "scripts.extract_creature_bounds", pck, str(bounds)], WIKI, wiki_env)
+            default_bounds = None
+            if default_pck.is_file():
+                default_bounds = Path(tmp) / "default_creature_bounds.json"
+                uv_python(["-m", "scripts.extract_creature_bounds", str(default_pck), str(default_bounds)],
+                          WIKI, wiki_env)
             n_scales = write_new_creature_scales(bounds, images / "creature_scales.json",
-                                                 overlay / "creature_scales.json")
-        log(f"art overlay: {n} files the shared art tree lacks, {n_scales} new creature scales "
+                                                 overlay / "creature_scales.json", default_bounds)
+        log(f"art overlay: {n} files the shared art tree lacks, {n_scales} creature scale rows "
             f"-> {overlay.relative_to(ROOT)}/")
 
     def scene_art():
@@ -680,6 +840,7 @@ def build_steps(build: Path, version: str) -> list[Step]:
         py_env = {"PYTHONPATH": str(PYCLI / "python")}
         sh([sys.executable, "-m", "synergy.gen_card_text", "--version", version], PYCLI, env=py_env)
         sh([sys.executable, "-m", "workbench.build_card_db", "--version", version], PYCLI, env=py_env)
+        sh([sys.executable, "-m", "workbench.gen_glossary", "--version", version], PYCLI, env=py_env)
 
     def workbench_data():
         if is_default:
@@ -706,10 +867,15 @@ def build_steps(build: Path, version: str) -> list[Step]:
                 # gain from the loudest cue in the tree it encodes, so a subset
                 # would come out at a different level than the shared sounds.
                 uv_python(["-m", "scripts.encode_sfx", f"extracted/{version}/audio", tmp], WIKI, wiki_env)
+                added = record_added_audio(Path(tmp), audio, wiki_data / "added_audio.json")
                 n = copy_new_art(Path(tmp), audio, audio)
-            log(f"sound: {n} events the shared audio tree lacks -> {audio.relative_to(ROOT)}/")
-            # This build's map now resolves the events just added.
+            log(f"sound: {n} events the shared audio tree lacks -> {audio.relative_to(ROOT)}/ "
+                f"({len(added)} listed in {(wiki_data / 'added_audio.json').relative_to(ROOT).as_posix()})")
+            # This build's map now resolves the events just added, and its
+            # bundle's asset manifest lists them (the default build's leaves
+            # them out: `record_added_audio`).
             uv_python(["-m", "scripts.build_sfx_map", f"decompiled/{version}", sfx_map_json], WIKI, wiki_env)
+            sh([sys.executable, "scripts/bundle_workbench_data.py", "--version", version], PYCLI)
             sfx_merged.write_text(f"{dt.datetime.now().isoformat()}\n", encoding="utf-8")
         # The map's `audioRev` is a hash of the audio tree it is served with
         # (the URLs' cache-buster). The committed map carries the maintainers'
@@ -729,6 +895,8 @@ def build_steps(build: Path, version: str) -> list[Step]:
         Step(f"localization -> sts2-pycli/{loc_eng.name}/", "oracle",
              lambda: (loc_eng / "cards.json").is_file() and (loc_eng / "BUILD.txt").is_file(), localization, ("uv",),
              versioned=True),
+        Step("Chinese localization -> sts2-pycli/localization_zhs/", "oracle", zhs_done, localization_zhs,
+             ("uv",), versioned=True),
         Step("decompile sts2.dll -> sts2-wiki/decompiled/", "workbench",
              lambda: (WIKI / "decompiled" / version).is_dir(), decompile, ("ilspycmd",), versioned=True),
         Step("wiki data JSON -> sts2-wiki/data/", "workbench",
@@ -769,8 +937,9 @@ def build_steps(build: Path, version: str) -> list[Step]:
              art_tables),
         Step(f"sfx map -> {(public_ver / 'sfx_map.json').relative_to(ROOT).as_posix()}", "workbench",
              lambda: (public_ver / "sfx_map.json").is_file(), sfx_map, ("uv",), versioned=True),
-        Step("card text + card db -> sts2-pycli/", "workbench",
-             lambda: (public_ver / "card_text.json").is_file() and card_db_json.is_file(),
+        Step("card text + card db + glossary -> sts2-pycli/", "workbench",
+             lambda: ((public_ver / "card_text.json").is_file() and card_db_json.is_file()
+                      and (public_ver / "glossary.json").is_file()),
              card_text_and_db, versioned=True),
         Step(f"workbench bundle -> {bundle_dir.relative_to(ROOT).as_posix()}/", "workbench",
              lambda: (bundle_dir / "wiki_cards.json").is_file(), workbench_data, versioned=True),
@@ -888,8 +1057,11 @@ def main(argv: list[str] | None = None) -> int:
 def import_build(game_dir: str | None, tier: str, args: argparse.Namespace) -> None:
     """Stage the install at `game_dir` (None: find it) and run `tier`'s steps on it."""
     data_dir, pck, release_info = locate(game_dir)
-    version = read_version(release_info)
-    log(f"game install: data={data_dir} pck={pck} version={version}")
+    installed = read_version(release_info)
+    version = engine_version(installed)
+    log(f"game install: data={data_dir} pck={pck} version={installed}")
+    if version != installed:
+        log(f"{installed} is a hotfix of {version}: importing it as {version}")
     if version not in SUPPORTED_VERSIONS and not args.allow_version_mismatch:
         raise SystemExit(
             f"the install is {version} but the engine supports {', '.join(SUPPORTED_VERSIONS)}; the parity oracle "

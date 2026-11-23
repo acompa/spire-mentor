@@ -6,6 +6,8 @@
  * are surfaced as `errors` strings naming the offending line.
  */
 
+import { t } from "../i18n";
+
 /**
  * Matches a count-prefixed line: an optional integer count, the `x`/`X`
  * separator, then the rest. A missing count (`x FOO`) or non-positive count
@@ -33,7 +35,7 @@ export function parseDeckText(text: string): { cards: string[]; errors: string[]
       const count = m[1] === undefined ? NaN : Number(m[1]);
       const id = m[2].trim();
       if (!Number.isInteger(count) || count <= 0 || id === "") {
-        errors.push(`invalid line: "${line}"`);
+        errors.push(t("invalid line: \"{line}\"", { line }));
         continue;
       }
       for (let i = 0; i < count; i++) cards.push(id);

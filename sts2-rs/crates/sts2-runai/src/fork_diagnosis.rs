@@ -326,6 +326,7 @@ fn base_spec(seed: i32, arm: ForkArm) -> CellSpec {
         max_steps: DEFAULT_MAX_STEPS,
         livelock_stall_limit: DEFAULT_LIVELOCK_STALL_LIMIT,
         act1: FORK_ACT1,
+        game_version: FORK_GAME_VERSION,
         audit: false,
         ablate: None,
     }
@@ -343,6 +344,11 @@ fn base_spec(seed: i32, arm: ForkArm) -> CellSpec {
 /// `CorpusRun` instead of pinned here.
 const FORK_ACT1: crate::arena::Act1Choice = crate::arena::Act1Choice::Overgrowth;
 
+/// The game build the fork corpora were recorded on (GH #1359), pinned for
+/// the same reason as [`FORK_ACT1`]: every existing corpus is a v0.107.1
+/// arena run, from before `run_arena` had a build switch.
+const FORK_GAME_VERSION: sts2_core::GameVersion = sts2_core::GameVersion::V0_107_1;
+
 fn new_run(seed: i32, ascension: u8) -> RunManager {
     // Mirror arena::run_cell EXACTLY by calling the same constructor it
     // does — a hand-rolled copy here silently fell behind when the
@@ -356,6 +362,7 @@ fn new_run(seed: i32, ascension: u8) -> RunManager {
         parse_character("ironclad").expect("ironclad parses"),
         ascension,
         FORK_ACT1,
+        FORK_GAME_VERSION,
     )
 }
 

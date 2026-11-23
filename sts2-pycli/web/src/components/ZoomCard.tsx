@@ -5,6 +5,7 @@ import { cardKey } from "../advice/marks";
 import { useStageZoom } from "../phone";
 import type { ZoomPlacement } from "../zoomPlacement";
 import CardFrame from "./CardFrame";
+import { t } from "../i18n";
 
 /** The zoomed card's description in real px: the 13px text floor, with a
  *  little to spare for rounding. */
@@ -69,7 +70,7 @@ export default function ZoomCard({ card, placement, onTap, onClose, wouldPlay = 
   // same name and text again, split over a dozen layers) is hidden from the
   // accessibility tree rather than read twice.
   const text = plainText(card.description_rich ?? card.description ?? "");
-  const label = `${wouldPlay ? `Play ${card.name}` : `${card.name}, zoomed`}${text ? `: ${text}` : ""}`;
+  const label = `${wouldPlay ? t("Play {name}", { name: card.name }) : t("{name}, zoomed", { name: card.name })}${text ? `: ${text}` : ""}`;
   // Landscape: only the part above the hand strip takes taps (`placement.hit`);
   // the rest of the card is drawn but lets a tap through to the slot under
   // it, which selects that card and never plays this one.
@@ -111,7 +112,7 @@ export default function ZoomCard({ card, placement, onTap, onClose, wouldPlay = 
       />
       </div>
       {onClose && (
-        <button type="button" className="gs-zoomcard-close" aria-label="Close"
+        <button type="button" className="gs-zoomcard-close" aria-label={t("Close")}
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           style={{ position: "absolute", width: CLOSE_PX / k, height: CLOSE_PX / k,
             top: -CLOSE_OUT / k, right: -CLOSE_OUT / k, fontSize: 26 / k }}>

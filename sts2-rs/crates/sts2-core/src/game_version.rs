@@ -31,11 +31,14 @@ use std::str::FromStr;
     serde::Deserialize,
 )]
 pub enum GameVersion {
-    /// v0.107.1 — the stable Steam build ("Major Update #2"). Default.
+    /// v0.107.1 — the previous stable Steam build ("Major Update #2"). Default
+    /// for artifacts that name no build.
     #[default]
     #[serde(rename = "v0.107.1")]
     V0_107_1,
-    /// v0.111.0 — the Steam `public-beta` build (commit `41cef1ea`).
+    /// v0.111.0 — the stable Steam build since v0.111.1 ("Major Update #3",
+    /// commit `cc1f9462`), which decompiles identically to the
+    /// `public-beta` v0.111.0 (commit `41cef1ea`) this was ported from.
     #[serde(rename = "v0.111.0")]
     V0_111_0,
     /// v0.113.0 — the Steam `public-beta` build (commit `16ac0fe3`). Same
@@ -218,7 +221,7 @@ impl fmt::Display for GameVersion {
 
 /// Error from parsing an unknown game-version string.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("unknown game version {0:?} (expected one of: v0.107.1, v0.111.0)")]
+#[error("unknown game version {0:?} (expected one of: v0.107.1, v0.111.0, v0.113.0)")]
 pub struct ParseGameVersionError(pub String);
 
 impl FromStr for GameVersion {
@@ -226,19 +229,48 @@ impl FromStr for GameVersion {
 
     /// Accepts `v0.111.0` and `0.111.0` (and the 0.107.1 forms); leading /
     /// trailing whitespace and a capital `V` are tolerated.
+    ///
+    /// A hotfix of a supported build — same major and minor, higher patch,
+    /// e.g. `v0.113.1` — parses as the newest supported build of that line
+    /// whose patch is not above it (`V0_113_0`). The game ships those as
+    /// bug-fix updates, and refusing them left the live advisor dead for
+    /// every player the moment Steam patched the game. A new minor
+    /// (`v0.114.0`) is a content update and still fails, as does a build
+    /// older than every supported one of its line. Python twin:
+    /// `sts2_client.hotfix_base`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let trimmed = s.trim();
         let bare = trimmed
             .strip_prefix('v')
             .or_else(|| trimmed.strip_prefix('V'))
             .unwrap_or(trimmed);
-        match bare {
-            "0.107.1" => Ok(GameVersion::V0_107_1),
-            "0.111.0" => Ok(GameVersion::V0_111_0),
-            "0.113.0" => Ok(GameVersion::V0_113_0),
-            _ => Err(ParseGameVersionError(s.to_string())),
-        }
+        let err = || ParseGameVersionError(s.to_string());
+        let (major, minor, patch) = parse_triple(bare).ok_or_else(err)?;
+        GameVersion::ALL
+            .into_iter()
+            .filter_map(|v| {
+                let (v_major, v_minor, v_patch) = parse_triple(&v.as_str()[1..])?;
+                (v_major == major && v_minor == minor && v_patch <= patch).then_some((v_patch, v))
+            })
+            .max_by_key(|&(v_patch, _)| v_patch)
+            .map(|(_, v)| v)
+            .ok_or_else(err)
     }
+}
+
+/// `"0.113.1"` → `(0, 113, 1)`: exactly three dot-separated ASCII-digit
+/// components.
+fn parse_triple(s: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = s.split('.');
+    let mut next = || {
+        let p = parts.next()?;
+        if p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        p.parse::<u32>().ok()
+    };
+    let triple = (next()?, next()?, next()?);
+    parts.next().is_none().then_some(triple)
 }
 
 #[cfg(test)]
@@ -277,8 +309,40 @@ mod tests {
 
     #[test]
     fn parse_rejects_unknown() {
-        for bad in ["", "v0.103.2", "0.111", "latest", "v0.111.0.1"] {
+        for bad in [
+            "",
+            "v0.103.2",
+            "0.111",
+            "latest",
+            "v0.111.0.1",
+            // A new minor is a content update, not a hotfix.
+            "v0.114.0",
+            "v0.112.0",
+            // Older than every supported build of its line.
+            "v0.107.0",
+            "v0.113.-1",
+            "v0.113.+1",
+            "v0.113.1-beta",
+            "v0..113.1",
+        ] {
             assert!(bad.parse::<GameVersion>().is_err(), "{bad:?}");
+        }
+    }
+
+    /// A hotfix (same major.minor, higher patch) plays on its line's newest
+    /// supported build: v0.113.1 shipped 2026-11-14 with one Stretch fix and
+    /// UI changes, and the advisor refused it outright.
+    #[test]
+    fn parse_maps_hotfixes_to_their_base_build() {
+        for (raw, want) in [
+            ("v0.113.1", GameVersion::V0_113_0),
+            ("0.113.1", GameVersion::V0_113_0),
+            (" V0.113.12 ", GameVersion::V0_113_0),
+            ("v0.111.1", GameVersion::V0_111_0),
+            ("v0.111.3", GameVersion::V0_111_0),
+            ("v0.107.2", GameVersion::V0_107_1),
+        ] {
+            assert_eq!(raw.parse::<GameVersion>(), Ok(want), "{raw:?}");
         }
     }
 

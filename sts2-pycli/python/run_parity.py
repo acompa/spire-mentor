@@ -246,10 +246,101 @@ def diff_snaps(cs: Snap, rs: Snap) -> list[str]:
     return out
 
 
+def diff_blitz_offers(cs_view: dict[str, Any], rs_view: dict[str, Any]) -> list[str]:
+    """GH #1347: what a Blitz decision OFFERS, compared directly.
+
+    ``Snap`` only sees what the player holds, so a merchant ware, a chest
+    relic or a reward card that differs between the engines stays invisible
+    unless the random walk happens to take it. In a Blitz run both engines
+    emit the same three shapes, so their contents are compared here:
+
+    * ``shop``: each ware's kind and status, and the picks remaining;
+    * ``rewards`` (the chest): the relics still in it, by listed index;
+    * ``card_reward``: the offered card ids.
+
+    Empty outside ``--game-mode blitz`` (standard and Dread baselines are
+    untouched), and whenever the two sides are not on the same decision (the
+    phase diff reports that).
+    """
+    if game_mode_kwargs().get("game_mode") != "blitz":
+        return []
+    dec = cs_view.get("decision")
+    if dec != rs_view.get("decision"):
+        return []
+    out: list[str] = []
+    if dec == "shop" and "blitz_choices_remaining" in cs_view:
+
+        def wares(view: dict[str, Any]) -> list[tuple[Any, Any]]:
+            return [
+                (o.get("label"), o.get("status"))
+                for o in view.get("options") or []
+                if o.get("action") == "blitz_choice"
+            ]
+
+        cw, rw = wares(cs_view), wares(rs_view)
+        if cw != rw:
+            out.append(f"blitz.wares: cs={cw} rs={rw}")
+        cn, rn = cs_view.get("blitz_choices_remaining"), rs_view.get("blitz_choices_remaining")
+        if cn != rn:
+            out.append(f"blitz.choices_remaining: cs={cn} rs={rn}")
+    elif dec == "rewards":
+
+        def relics(view: dict[str, Any]) -> list[tuple[Any, str]]:
+            out_: list[tuple[Any, str]] = []
+            for r in view.get("rewards") or []:
+                rid = _canon(r.get("id") or "?")
+                out_.append((r.get("index"), rid.removeprefix("RELIC")))
+            return out_
+
+        cr, rr = relics(cs_view), relics(rs_view)
+        if cr != rr:
+            out.append(f"blitz.chest: cs={cr} rs={rr}")
+    elif dec == "card_reward":
+
+        def cards(view: dict[str, Any]) -> list[str]:
+            return [_canon_reward_card(c.get("id") or "?") for c in view.get("cards") or []]
+
+        cc, rc = cards(cs_view), cards(rs_view)
+        if cc != rc:
+            out.append(f"blitz.card_reward: cs={cc} rs={rc}")
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Map signature: rows of node-types + boss + current coord. A foundational
 # run-level RNG surface (map generation). Compared whenever in the map phase.
 # --------------------------------------------------------------------------- #
+def diff_fake_merchant_offers(cs_view: dict[str, Any], rs_view: dict[str, Any]) -> list[str]:
+    """GH #1607: the Fake Merchant's shopfront, compared directly.
+
+    Both engines show it as a ``shop`` decision named ``FAKE_MERCHANT``:
+    six fake relics in the event's shuffle order at prices rolled off the
+    shared ``Shops`` stream (``FakeMerchant.BeforeEventStarted``). ``Snap``
+    only sees what was bought, so the stock, each slot's price and whether
+    it is still stocked are compared here, by slot.
+    """
+    cs_fake = cs_view.get("event_name") == "FAKE_MERCHANT"
+    rs_fake = rs_view.get("event_name") == "FAKE_MERCHANT"
+    if (cs_view.get("decision") or cs_view.get("type")) != "shop" or not (cs_fake or rs_fake):
+        return []
+    if (rs_view.get("decision") or rs_view.get("type")) != "shop":
+        return []  # the phase diff reports it
+    if cs_fake != rs_fake:
+        return [f"fake_merchant: cs={cs_fake} rs={rs_fake}"]
+
+    def stock(view: dict[str, Any], stocked_key: str) -> list[tuple[str, Any] | None]:
+        # A bought slot is just "gone": what it held is not compared.
+        return [
+            (_canon(str(r.get("id") or "").removeprefix("RELIC.")), r.get("cost"))
+            if r.get(stocked_key)
+            else None
+            for r in view.get("relics") or []
+        ]
+
+    cs_stock, rs_stock = stock(cs_view, "is_stocked"), stock(rs_view, "is_available")
+    return [] if cs_stock == rs_stock else [f"fake_merchant.stock: cs={cs_stock} rs={rs_stock}"]
+
+
 def map_signature(backend: Any) -> dict[Any, Any] | None:
     """Coord-keyed map graph `{(col, row): (type, children)}` for the default
     lockstep's per-step map diff. Uses the SAME normalization as
@@ -374,7 +465,20 @@ def enumerate_choices(g: Any, cs_view: dict[str, Any]) -> list[tuple[str, dict[s
         for p in cs_view.get("potions") or []:
             if p.get("affordable", True) and not p.get("sold_out"):
                 out.append(("buy_potion", {"potion_index": p["index"]}))
+        # GH #1347: the Blitz merchant's wares (free, a fixed number of picks).
+        if int(cs_view.get("blitz_choices_remaining") or 0) > 0:
+            for o in cs_view.get("options") or []:
+                if o.get("action") == "blitz_choice" and o.get("enabled", True):
+                    out.append(("blitz_choice", {"index": o["index"]}))
         out.append(("leave_room", {}))  # always allow leaving the shop
+
+    elif dec == "rewards":
+        # The reward screen (GH #1282), and a Blitz chest's two picks
+        # (GH #1347): take or skip each reward, or leave the rest.
+        for r in cs_view.get("rewards") or []:
+            out.append(("take_reward", {"reward_index": r["index"]}))
+            out.append(("skip_reward", {"reward_index": r["index"]}))
+        out.append(("proceed", {}))
 
     elif dec == "combat_play":
         try:
@@ -396,6 +500,16 @@ def potion_swap_enabled() -> bool:
     ``--no-potion-swap`` sets ``RUN_PARITY_POTION_SWAP=0``, which pool
     workers inherit."""
     return os.environ.get("RUN_PARITY_POTION_SWAP", "1") != "0"
+
+
+def game_mode_kwargs() -> dict[str, Any]:
+    """GH #1346: the game mode both engines start in, as ``start`` keywords.
+
+    ``--game-mode dread`` sets ``RUN_PARITY_GAME_MODE``, which pool workers
+    inherit. Empty for a standard run, so those start exactly as before.
+    """
+    mode = os.environ.get("RUN_PARITY_GAME_MODE")
+    return {"game_mode": mode} if mode and mode != "standard" else {}
 
 
 @dataclass
@@ -438,10 +552,18 @@ def run_one(
     try:
         swap = potion_swap_enabled()
         cs_view = g.start(
-            character=character, seed=seed, ascension=ascension, interactive_potion_swap=swap
+            character=character,
+            seed=seed,
+            ascension=ascension,
+            interactive_potion_swap=swap,
+            **game_mode_kwargs(),
         )
         rs_view = r.start(
-            character=character, seed=seed, ascension=ascension, interactive_potion_swap=swap
+            character=character,
+            seed=seed,
+            ascension=ascension,
+            interactive_potion_swap=swap,
+            **game_mode_kwargs(),
         )
 
         for step in range(max_steps):
@@ -481,30 +603,9 @@ def run_one(
                 rs_snap = Snap.of(rs_view, "rs")
                 sel_guard += 1
 
-            # Event-granularity skip: C# headless auto-skips Custom-layout events
-            # (FakeMerchant → empty options → MapRoom) so it is already on the map
-            # while Rust surfaces the event. Drive Rust ALONE through its no-op
-            # ``leave`` option (no shared run RNG — private ``FAKE_MERCHANT``
-            # stream), then re-snap. Bead sts2-rs-1hiht.
-            if rs_snap.phase == "event" and cs_snap.phase == "map":
-                leave = next(
-                    (
-                        o
-                        for o in (rs_view.get("options") or [])
-                        if o.get("option_id") == "leave" and not o.get("is_locked")
-                    ),
-                    None,
-                )
-                if leave is not None:
-                    nxt_rs = r.act("choose_option", option_index=leave["index"])
-                    if not (
-                        isinstance(nxt_rs, dict)
-                        and (nxt_rs.get("error") or nxt_rs.get("type") == "error")
-                    ):
-                        rs_view = nxt_rs
-                        rs_snap = Snap.of(rs_view, "rs")
-
             fields = diff_snaps(cs_snap, rs_snap)
+            fields += diff_blitz_offers(cs_view, rs_view)
+            fields += diff_fake_merchant_offers(cs_view, rs_view)
             if cs_snap.phase == "map":
                 fields += diff_maps(map_signature(g), map_signature(r))
             if verbose:
@@ -1383,6 +1484,7 @@ def _record_cs_trajectory(
             seed=seed,
             ascension=ascension,
             interactive_potion_swap=potion_swap_enabled(),
+            **game_mode_kwargs(),
         )
         for _ in range(max_steps):
             watchdog.reset()  # per step: trips only a wedged step
@@ -1453,6 +1555,7 @@ def _replay_against_rust(rec: dict[str, Any], stop_on_diverge: bool = True) -> R
             seed=seed,
             ascension=ascension,
             interactive_potion_swap=potion_swap_enabled(),
+            **game_mode_kwargs(),
         )
         for step, e in enumerate(entries):
             res.steps = step
@@ -1496,30 +1599,9 @@ def _replay_against_rust(rec: dict[str, Any], stop_on_diverge: bool = True) -> R
                 rs_view = nxt
                 rs_snap = Snap.of(rs_view, "rs")
                 sel_guard += 1
-            # Event-granularity skip: the C# HEADLESS auto-skips Custom-layout
-            # events (FakeMerchant → empty options → MapRoom), so the recorded C#
-            # entry is on the ``map`` while Rust surfaces the FakeMerchant
-            # ``event``. Drive Rust ALONE through its no-op ``leave`` option
-            # (consumes no shared run RNG — private ``FAKE_MERCHANT`` stream) so it
-            # re-aligns to the map, then diff against the recorded map entry. A
-            # real room-behind desync still surfaces there. Bead sts2-rs-1hiht.
-            if rs_snap.phase == "event" and cs_snap.phase == "map":
-                leave = next(
-                    (
-                        o
-                        for o in (rs_view.get("options") or [])
-                        if o.get("option_id") == "leave" and not o.get("is_locked")
-                    ),
-                    None,
-                )
-                if leave is not None:
-                    nxt = r.act("choose_option", option_index=leave["index"])
-                    if not (
-                        isinstance(nxt, dict) and (nxt.get("error") or nxt.get("type") == "error")
-                    ):
-                        rs_view = nxt
-                        rs_snap = Snap.of(rs_view, "rs")
             fields = diff_snaps(cs_snap, rs_snap)
+            fields += diff_blitz_offers(cs_view, rs_view)
+            fields += diff_fake_merchant_offers(cs_view, rs_view)
             if cs_snap.phase == "map":
                 cs_map = _norm_map_graph(e["map"]) if e.get("map") else None
                 fields += diff_maps(cs_map, map_signature(r))
@@ -1637,6 +1719,8 @@ class _RunTraceCache:
         if not potion_swap_enabled():
             # The drop-mode trajectory differs from the swap-mode one (GH #1069).
             key["potion_swap"] = False
+        # A Dread trajectory is its own run (GH #1346); standard keys are unchanged.
+        key.update(game_mode_kwargs())
         payload = json.dumps(
             key,
             sort_keys=True,
@@ -2112,11 +2196,21 @@ def main() -> int:
         "no-game-DLL agents). Warm the bundle first with "
         "data/run-parity-cache/unpack.sh. (env: STS2_RUNPARITY_REPLAY_ONLY)",
     )
+    ap.add_argument(
+        "--game-mode",
+        choices=["standard", "dread", "blitz"],
+        default=os.environ.get("RUN_PARITY_GAME_MODE", "standard"),
+        help="GH #1346: the game mode both engines start in. 'dread' needs "
+        "--game-version v0.113.0 and forces ascension 10, as the game does. "
+        "GH #1347: 'blitz' needs v0.113.0 too; --ascension is then the Blitz "
+        "level 0..5. (env: RUN_PARITY_GAME_MODE)",
+    )
     add_game_version_arg(ap)
     args = ap.parse_args()
     if args.no_potion_swap:
         os.environ["RUN_PARITY_POTION_SWAP"] = "0"
-    apply_game_version_arg(args)
+    os.environ["RUN_PARITY_GAME_MODE"] = args.game_mode
+    game_version = apply_game_version_arg(args)
 
     if args.sweep:
         chars = list(CHARACTERS) if args.all_characters else [args.character]

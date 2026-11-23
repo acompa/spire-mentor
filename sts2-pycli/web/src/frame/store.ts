@@ -2,6 +2,8 @@
 // (spire-mentor-mod/FrameLink.cs; protocol in spire-mentor-frame/README.md)
 // and the host's own state messages. Pure reducer.
 
+import { t } from "../i18n";
+
 export interface Ui {
   mode: string;
   mode_name: string;
@@ -296,8 +298,8 @@ export function tieBandLines(inBand: string[], reason: string | null, gapHp: num
   const maxNamed = 3;
   let moves = inBand.slice(0, maxNamed).join(" ≈ ");
   if (inBand.length > maxNamed) moves += ` (+${inBand.length - maxNamed})`;
-  let line = "about equal: " + moves;
-  if (gapHp != null && Math.abs(gapHp) >= 0.5) line += ` (~${Math.abs(gapHp).toFixed(0)} HP)`;
+  let line = t("about equal: {moves}", { moves });
+  if (gapHp != null && Math.abs(gapHp) >= 0.5) line += ` ${t("(~{n} HP)", { n: Math.abs(gapHp).toFixed(0) })}`;
   const lines = [line];
   if (reason) lines.push(`→ ${inBand[0]}: ${reason}`);
   return lines;

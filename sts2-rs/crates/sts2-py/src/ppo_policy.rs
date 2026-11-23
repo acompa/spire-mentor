@@ -94,9 +94,9 @@ fn depythonize(value: &Bound<'_, PyAny>, what: &str) -> PyResult<serde_json::Val
 /// [`Self::distribution`] up to 8 times per decision.
 #[pyclass(name = "PpoNetPolicy", module = "sts2_rs")]
 pub struct PyPpoNetPolicy {
-    net: Arc<PpoNet>,
+    pub(crate) net: Arc<PpoNet>,
     /// Encoder schema THIS net was trained at — see [`Self::new`].
-    features: Features,
+    pub(crate) features: Features,
 }
 
 /// Hand-written because `PpoNet` wraps a `tract` plan, which is not
@@ -290,4 +290,161 @@ mod tests {
         assert_eq!(map.boss.expect("boss").col, 1);
         assert_eq!(obs.shop.expect("shop").cards[0].price, 50);
     }
+}
+
+/// The state token's scalars, which `encoder.py::featurize_row` reads from
+/// `metrics` (as `int(metrics.get(k) or 0)`), not from `obs`.
+const METRIC_SCALARS: [&str; 7] = [
+    "hp",
+    "gold",
+    "act_index",
+    "num_upgraded",
+    "num_relics",
+    "total_floor",
+    "act_floor",
+];
+
+/// [`PpoObs`]'s required keys, with the value `encoder.py` reads when one
+/// is missing or `None` (it reads every key with `.get(k) or <default>`).
+/// The env's observations carry them all; hand-built test rows and the e2e
+/// `honest_obs` view need not.
+fn obs_defaults() -> [(&'static str, serde_json::Value); 16] {
+    use serde_json::json;
+    [
+        ("phase", json!("")),
+        ("seed", json!(0)),
+        ("ascension", json!(0)),
+        ("deck", json!([])),
+        ("relics", json!([])),
+        ("potions", json!([])),
+        ("total_floor", json!(0)),
+        ("act_index", json!(0)),
+        ("act_floor", json!(0)),
+        ("hp", json!(0)),
+        ("max_hp", json!(0)),
+        ("gold", json!(0)),
+        ("deck_size", json!(0)),
+        ("num_upgraded", json!(0)),
+        ("num_relics", json!(0)),
+        ("num_potions", json!(0)),
+    ]
+}
+
+/// `metrics[k]` as `featurize_row` reads it: a missing, null, zero or
+/// false value is `0`.
+fn metric_scalar(metrics: &serde_json::Map<String, serde_json::Value>, key: &str) -> i64 {
+    match metrics.get(key) {
+        Some(serde_json::Value::Number(n)) => n
+            .as_i64()
+            .or_else(|| n.as_f64().map(|f| f as i64))
+            .unwrap_or(0),
+        Some(serde_json::Value::Bool(b)) => i64::from(*b),
+        _ => 0,
+    }
+}
+
+/// One `[n, w]` array as `(bytearray of little-endian values, n)`.
+fn rows_bytes<T: Copy, const W: usize>(
+    py: Python<'_>,
+    rows: &[[T; W]],
+    to_le: impl Fn(T) -> [u8; 8],
+    width: usize,
+) -> Py<pyo3::types::PyByteArray> {
+    let mut out = Vec::with_capacity(rows.len() * W * width);
+    for row in rows {
+        for &v in row {
+            out.extend_from_slice(&to_le(v)[..width]);
+        }
+    }
+    pyo3::types::PyByteArray::new(py, &out).unbind()
+}
+
+fn i64s_bytes(py: Python<'_>, v: &[i64]) -> Py<pyo3::types::PyByteArray> {
+    let out: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+    pyo3::types::PyByteArray::new(py, &out).unbind()
+}
+
+/// The candidate actions, with one that names no kind (no string
+/// `"action"` key) read as [`ActionDesc::Unknown`]: `encoder.py` reads the
+/// kind with `.get("action")` and degrades it to the generic fixed token.
+fn tolerant_actions(actions: serde_json::Value) -> PyResult<Vec<ActionDesc>> {
+    let serde_json::Value::Array(items) = actions else {
+        return Err(PyValueError::new_err("ppo policy: actions must be a list"));
+    };
+    items
+        .into_iter()
+        .map(|a| match a {
+            serde_json::Value::Object(ref m)
+                if !m.get("action").is_some_and(serde_json::Value::is_string) =>
+            {
+                Ok(ActionDesc::Unknown)
+            }
+            a => from_json(a, "actions"),
+        })
+        .collect()
+}
+
+/// `ppo/encoder.py::featurize_row` in Rust: the run-policy encoder the
+/// trainer, the arena and the advisor all share (GH #1426 step 2).
+///
+/// `features` is the comma-separated `STS2_PPO_FEATURES` schema. Returns a
+/// dict of little-endian `bytearray`s (`obs_cat`, `act_cat`: int64 `[n, 14]`;
+/// `obs_cont`, `act_cont`: float32 `[n, N_CONT]`; `obs_sec`, `act_sec`,
+/// `aux_room`: int64 `[n]`) plus `n_obs` and `n_actions`; `ppo.encoder`
+/// wraps them as numpy arrays without a copy.
+///
+/// The state token's scalars come from `metrics`, exactly as Python reads
+/// them; everything else from `{**metrics, **obs}`.
+#[pyfunction]
+#[pyo3(signature = (obs, actions, metrics, features = ""))]
+pub fn ppo_featurize<'py>(
+    py: Python<'py>,
+    obs: &Bound<'py, PyAny>,
+    actions: &Bound<'py, PyAny>,
+    metrics: &Bound<'py, PyAny>,
+    features: &str,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let features = Features::try_parse(features).map_err(PyValueError::new_err)?;
+    let metrics = depythonize(metrics, "metrics")?;
+    let mut merged = merge_obs(depythonize(obs, "obs")?, metrics.clone())?;
+    if let (serde_json::Value::Object(m), serde_json::Value::Object(metrics)) =
+        (&mut merged, &metrics)
+    {
+        for (key, default) in obs_defaults() {
+            if m.get(key).is_none_or(serde_json::Value::is_null) {
+                m.insert(key.into(), default);
+            }
+        }
+        for key in METRIC_SCALARS {
+            m.insert(key.into(), metric_scalar(metrics, key).into());
+        }
+    }
+    let obs: PpoObs = from_json(merged, "obs")?;
+    let actions = tolerant_actions(depythonize(actions, "actions")?)?;
+    let f = encoder::featurize_with(&obs, &actions, features);
+
+    let out = pyo3::types::PyDict::new(py);
+    let i64_le = |v: i64| v.to_le_bytes();
+    let f32_le = |v: f32| {
+        let mut b = [0u8; 8];
+        b[..4].copy_from_slice(&v.to_le_bytes());
+        b
+    };
+    out.set_item("obs_cat", rows_bytes(py, &f.obs_cat, i64_le, 8))?;
+    out.set_item("obs_cont", rows_bytes(py, &f.obs_cont, f32_le, 4))?;
+    out.set_item("obs_sec", i64s_bytes(py, &f.obs_sec))?;
+    out.set_item("act_cat", rows_bytes(py, &f.act_cat, i64_le, 8))?;
+    out.set_item("act_cont", rows_bytes(py, &f.act_cont, f32_le, 4))?;
+    out.set_item("act_sec", i64s_bytes(py, &f.act_sec))?;
+    out.set_item("aux_room", i64s_bytes(py, &f.aux_room))?;
+    out.set_item("n_obs", f.obs_cat.len())?;
+    out.set_item("n_actions", f.n_actions)?;
+    Ok(out)
+}
+
+/// `ppo/encoder.py::fine_surface` in Rust: the state token's surface key.
+#[pyfunction]
+pub fn ppo_fine_surface(actions: &Bound<'_, PyAny>) -> PyResult<&'static str> {
+    let actions: Vec<ActionDesc> = from_json(depythonize(actions, "actions")?, "actions")?;
+    Ok(encoder::fine_surface(&actions))
 }

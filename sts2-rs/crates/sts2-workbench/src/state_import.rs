@@ -30,6 +30,20 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
+use crate::i18n::{tr, trf};
+
+/// The warning for a fight the adapter refused (`{error}`: why). SimLab
+/// picks it out of the warnings by this template.
+pub(crate) const FIGHT_NOT_REBUILT: &str =
+    "The fight could not be rebuilt ({error}). Copy at a decision point rather than mid-animation.";
+/// The warnings for what the run lane left out; SimLab carries them with the
+/// board (matched by template, in either language).
+pub(crate) const LEFT_OUT: [&str; 3] = [
+    "{n} deck card(s) this engine does not know were left out: {list}",
+    "{n} relic(s) this engine does not model were left out: {list}",
+    "{n} potion(s) this engine does not model were left out: {list}",
+];
+
 /// A pasted state the importer cannot turn into a position. The message is
 /// shown to the user verbatim, so it says what is wrong with the paste and
 /// what to paste instead.
@@ -136,6 +150,9 @@ pub struct RunSnapshot {
     /// `(registry_card_id, upgraded)` per master-deck card, in engine order.
     pub deck: Vec<(String, bool)>,
     pub relics: Vec<String>,
+    /// `(registry relic id, counter)` for each relic the board shows a
+    /// counter on, the game's number (`counter`, C# `DisplayAmount`).
+    pub relic_counters: Vec<(String, i64)>,
     pub potions: Vec<String>,
     pub potion_slots: i64,
     /// The act map graph as the mod serialized it, or `None`.
@@ -208,20 +225,20 @@ impl ImportedState {
     #[must_use]
     pub fn fidelity(&self) -> Value {
         let mut exact = vec![
-            "seed",
-            "character",
-            "ascension",
-            "deck",
-            "relics",
-            "potions",
-            "gold",
-            "hp",
+            tr("seed"),
+            tr("character"),
+            tr("ascension"),
+            tr("deck"),
+            tr("relics"),
+            tr("potions"),
+            tr("gold"),
+            tr("hp"),
         ];
         if self.run.map.is_some() {
-            exact.push("map + position");
+            exact.push(tr("map + position"));
         }
         if self.has_combat() {
-            exact.push("combat board (hand, piles, powers, intents)");
+            exact.push(tr("combat board (hand, piles, powers, intents)"));
         }
         json!({
             "exact": exact,
@@ -271,7 +288,7 @@ impl ImportedState {
 fn load_candidates(text: &str) -> Result<Vec<Value>, StateImportError> {
     let stripped = text.trim();
     if stripped.is_empty() {
-        return err("Nothing to import — the paste is empty.");
+        return err(tr("Nothing to import — the paste is empty."));
     }
     if let Ok(value) = serde_json::from_str::<Value>(stripped) {
         return Ok(match value {
@@ -290,10 +307,9 @@ fn load_candidates(text: &str) -> Result<Vec<Value>, StateImportError> {
         }
     }
     if out.is_empty() {
-        return err(
-            "That does not look like JSON. Paste one wire message, one log \
-             line, or a whole JSONL log.",
-        );
+        return err(tr(
+            "That does not look like JSON. Paste one wire message, one log line, or a whole JSONL log.",
+        ));
     }
     Ok(out)
 }
@@ -370,9 +386,7 @@ fn combat_wire(
             Some(ImportedCombat { wire, room_type })
         }
         Err(e) => {
-            warnings.push(format!(
-                "The fight could not be rebuilt ({e}). Copy at a decision point rather than mid-animation."
-            ));
+            warnings.push(trf(FIGHT_NOT_REBUILT, &[("error", &e)]));
             None
         }
     }
@@ -419,10 +433,9 @@ fn deck_from_wire(cards: &[Value], warnings: &mut Vec<String>) -> Vec<(String, b
         dropped.sort();
         dropped.dedup();
         let head: Vec<&str> = dropped.iter().take(6).map(String::as_str).collect();
-        warnings.push(format!(
-            "{} deck card(s) this engine does not know were left out: {}",
-            dropped.len(),
-            head.join(", ")
+        warnings.push(trf(
+            LEFT_OUT[0],
+            &[("n", &dropped.len()), ("list", &head.join(", "))],
         ));
     }
     out
@@ -430,9 +443,24 @@ fn deck_from_wire(cards: &[Value], warnings: &mut Vec<String>) -> Vec<(String, b
 
 /// Registry ids off the wire's own `id` field, dropping what we lack. `id` is
 /// the canonical `Id.Entry` for both relics and potions.
+/// The counters the board shows on its relics, by registry id.
+fn relic_counters_from_wire(entries: &[Value]) -> Vec<(String, i64)> {
+    entries
+        .iter()
+        .filter_map(|raw| {
+            let counter = raw.get("counter").filter(|v| !v.is_boolean())?.as_i64()?;
+            let id = raw.get("id").and_then(Value::as_str)?.trim();
+            let relic = sts2_content::names::relic_id_from_str_any_build(
+                id.strip_prefix("RELIC.").unwrap_or(id),
+            )?;
+            Some((relic.to_python_name().to_string(), counter))
+        })
+        .collect()
+}
+
 fn ids_from_wire(
     entries: &[Value],
-    label: &str,
+    template: &'static str,
     resolve: impl Fn(&str) -> Option<String>,
     warnings: &mut Vec<String>,
 ) -> Vec<String> {
@@ -443,7 +471,16 @@ fn ids_from_wire(
         if obj.get("empty").and_then(Value::as_bool).unwrap_or(false) {
             continue;
         }
-        let raw_id = obj.get("id").and_then(Value::as_str).unwrap_or("").trim();
+        // The registry id (`entry`) where the producer sends one beside a
+        // display-name `id`: the names do not all resolve ("Clarity
+        // Extract" is CLARITY; GH #1679).
+        let raw_id = obj
+            .get("entry")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| obj.get("id").and_then(Value::as_str))
+            .unwrap_or("")
+            .trim();
         if raw_id.is_empty() {
             continue;
         }
@@ -455,10 +492,9 @@ fn ids_from_wire(
     if !dropped.is_empty() {
         dropped.sort();
         dropped.dedup();
-        warnings.push(format!(
-            "{} {label} this engine does not model were left out: {}",
-            dropped.len(),
-            dropped.join(", ")
+        warnings.push(trf(
+            template,
+            &[("n", &dropped.len()), ("list", &dropped.join(", "))],
         ));
     }
     out
@@ -496,7 +532,7 @@ fn rng_block(msg: &Map<String, Value>) -> Option<RngBlock> {
     Some(RngBlock { run_seed, counters })
 }
 
-fn run_snapshot(
+pub fn run_snapshot(
     msg: &Map<String, Value>,
     warnings: &mut Vec<String>,
 ) -> Result<RunSnapshot, StateImportError> {
@@ -505,34 +541,33 @@ fn run_snapshot(
         .and_then(Value::as_object)
         .ok_or_else(|| {
             StateImportError(
-                "This message carries no run_state, so there is no run to rebuild. \
-             Copy a state while a run is in progress."
+                tr("This message carries no run_state, so there is no run to rebuild. Copy a state while a run is in progress.")
                     .into(),
             )
         })?;
     let character_id = rs.get("character").and_then(Value::as_str).unwrap_or("");
     if character_id.is_empty() {
-        return err("This message names no character, so it was copied outside a run.");
+        return err(tr(
+            "This message names no character, so it was copied outside a run.",
+        ));
     }
     let Some(display) = character_display_name(character_id) else {
-        return err(format!(
-            "Unknown character {character_id:?} — this engine has no port."
+        return err(trf(
+            "Unknown character {character} — this engine has no port.",
+            &[("character", &format!("{character_id:?}"))],
         ));
     };
     let seed = msg.get("seed").and_then(Value::as_str).unwrap_or("").trim();
     if seed.is_empty() {
-        return err(
-            "This message carries no run seed, so the map and every roll would \
-             belong to a different run.",
-        );
+        return err(tr(
+            "This message carries no run seed, so the map and every roll would belong to a different run.",
+        ));
     }
 
     let rng = rng_block(msg);
     if rng.is_none() {
         warnings.push(
-            "No RNG cursors in this paste — the map and deck are exact, but the \
-             next card reward, shop and event will be this engine's rolls, not \
-             the live run's."
+            tr("No RNG cursors in this paste — the map and deck are exact, but the next card reward, shop and event will be this engine's rolls, not the live run's.")
                 .into(),
         );
     }
@@ -540,8 +575,7 @@ fn run_snapshot(
         Some(Value::Object(m)) if m.get("error").is_none() => Some(Value::Object(m.clone())),
         _ => {
             warnings.push(
-                "No map graph in this paste — the run will start at the act \
-                 entrance instead of where you were standing."
+                tr("No map graph in this paste — the run will start at the act entrance instead of where you were standing.")
                     .into(),
             );
             None
@@ -570,16 +604,19 @@ fn run_snapshot(
         combat: None,
         relics: ids_from_wire(
             arr("relics"),
-            "relic(s)",
+            LEFT_OUT[1],
             |s| {
-                sts2_content::names::relic_id_from_str(s.strip_prefix("RELIC.").unwrap_or(s))
-                    .map(|r| r.to_python_name().to_string())
+                sts2_content::names::relic_id_from_str_any_build(
+                    s.strip_prefix("RELIC.").unwrap_or(s),
+                )
+                .map(|r| r.to_python_name().to_string())
             },
             warnings,
         ),
+        relic_counters: relic_counters_from_wire(arr("relics")),
         potions: ids_from_wire(
             arr("potions"),
-            "potion(s)",
+            LEFT_OUT[2],
             |s| sts2_content::names::potion_kind_from_str(s).map(|p| p.python_name().to_string()),
             warnings,
         ),
@@ -603,18 +640,15 @@ pub fn parse_pasted_state(text: &str) -> Result<ImportedState, StateImportError>
     let mut last_error: Option<StateImportError> = None;
     for value in candidates.iter().rev() {
         if is_engine_wire(value) {
-            return err(
-                "That is an engine wire dict, not a live-game state. It has no \
-                 run attached (no seed, deck or map), so there is no run to \
-                 rebuild — copy the state from the mod instead.",
-            );
+            return err(tr(
+                "That is an engine wire dict, not a live-game state. It has no run attached (no seed, deck or map), so there is no run to rebuild — copy the state from the mod instead.",
+            ));
         }
         let Some(msg) = unwrap(value) else { continue };
         if is_headless_combat_play(&Value::Object(msg.clone())) {
-            return err(
-                "That is a headless combat_play decision, which carries no run \
-                 (no seed, deck or map). Copy the state from the mod instead.",
-            );
+            return err(tr(
+                "That is a headless combat_play decision, which carries no run (no seed, deck or map). Copy the state from the mod instead.",
+            ));
         }
         let Some(surface) = surface_of(msg) else {
             continue;
@@ -653,11 +687,9 @@ pub fn parse_pasted_state(text: &str) -> Result<ImportedState, StateImportError>
     if let Some(e) = last_error {
         return Err(e);
     }
-    err(
-        "No game state in that paste. Expected a SpireMentor wire message \
-         (advice_request / combat_action / a screen), an advisor log line, or \
-         a whole advisor log.",
-    )
+    err(tr(
+        "No game state in that paste. Expected a SpireMentor wire message (advice_request / combat_action / a screen), an advisor log line, or a whole advisor log.",
+    ))
 }
 
 #[cfg(test)]
@@ -704,6 +736,38 @@ mod tests {
                 "intents": [{"intent_type": "Attack", "damage": 6}]}],
             "potions": [{"slot": 0, "id": "FIRE_POTION", "name": "Fire Potion"}, {"slot": 1, "empty": true}],
         })
+    }
+
+    /// GH #1679: the headless host names a potion by its title, which does
+    /// not always resolve; its registry `entry` does.
+    #[test]
+    fn a_potion_resolves_by_its_registry_entry_over_its_title() {
+        let mut msg = wire();
+        msg["run_state"]["potions"] =
+            json!([{"slot": 0, "id": "Clarity Extract", "entry": "CLARITY"}]);
+        let mut warnings = Vec::new();
+        let snap = run_snapshot(msg.as_object().unwrap(), &mut warnings).unwrap();
+        assert_eq!(snap.potions, vec!["CLARITY".to_string()], "{warnings:?}");
+    }
+
+    /// A potion only a later build has (v0.111.0's Ambergris, which Neow's
+    /// Sacrifice gives; the Fool's v0.113.0 potions) is held, not left out
+    /// (Spire Bench seeds 170000047 and 170000058).
+    #[test]
+    fn a_later_builds_potion_is_held() {
+        let mut msg = wire();
+        let fool = sts2_core::potions::PotionKind::V0113_ONLY[0].python_name();
+        msg["run_state"]["potions"] = json!([
+            {"slot": 0, "id": "Ambergris", "entry": "AMBERGRIS"},
+            {"slot": 1, "id": fool, "entry": fool},
+        ]);
+        let mut warnings = Vec::new();
+        let snap = run_snapshot(msg.as_object().unwrap(), &mut warnings).unwrap();
+        assert_eq!(
+            snap.potions,
+            vec!["AMBERGRIS".to_string(), fool.to_string()],
+            "{warnings:?}"
+        );
     }
 
     #[test]

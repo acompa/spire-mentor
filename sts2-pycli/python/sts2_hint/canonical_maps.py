@@ -423,6 +423,7 @@ CARD_ID_PREFIX_TO_CLASS: Final[dict[str, str]] = {
     "DEFECT": "defect",
     "NECROBINDER": "necrobinder",
     "REGENT": "regent",
+    "FOOL": "fool",
 }
 
 # ---------------------------------------------------------------------------
@@ -525,6 +526,18 @@ POTION_NAME_TO_ID: Final[dict[str, str]] = POTION_TITLE_TO_ID
 ORB_NAME_TO_ID: Final[dict[str, str]] = dict(ORB_TITLE_TO_ID)
 
 
+def id_key(raw_id: str) -> str:
+    """Spelling-blind form of a model id: underscores dropped, upper-cased.
+
+    C# ``Id.Entry`` is ``StringHelper.Slugify(type.Name)`` (``SHRINKER_BEETLE``,
+    ``BATTLE_FRIEND_V1``) while the engine's monster ids are the CamelCase class
+    names (``ShrinkerBeetle``, ``BattleFriendV1``). Both collapse to the same key
+    here, so neither side's word-splitting rules need re-deriving. The Rust
+    importer (``sts2-workbench`` ``combat_import::id_key``) uses the same rule.
+    """
+    return raw_id.replace("_", "").upper()
+
+
 __all__ = [
     "CARD_ID_PREFIX_TO_CLASS",
     "CARD_NAME_TO_ID",
@@ -543,4 +556,5 @@ __all__ = [
     "RELIC_NAME_TO_ID",
     "RELIC_TITLE_TO_ID",
     "STATUS_CARD_TITLES",
+    "id_key",
 ]

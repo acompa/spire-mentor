@@ -77,6 +77,11 @@ use super::{apply_power_to_player_via_legacy_surface, apply_signed_power_to_play
 /// `GremlinMerc.cs:88/104/119` where the `foreach … Steal()` runs after the
 /// attack and BEFORE the move's own power application.
 fn thievery_steal(state: &mut CombatState, owner: sts2_core::CreatureUid) {
+    // `GremlinMerc.Steal` returns at once in a Blitz run (`GremlinMerc.cs:
+    // 136-146`, v0.113.0): no gold is taken and the power counts nothing.
+    if state.game_mode.is_blitz() {
+        return;
+    }
     // C# `Target` is the player; a dead player ends combat before any of this.
     if state.is_over || state.player.current_hp <= 0 || state.gold <= 0 {
         return;
@@ -334,8 +339,16 @@ fn sewer_clam_pressurize_effect(state: &mut CombatState, owner: sts2_core::Creat
 /// through `apply_power_to_creature` (the d03 mirror) like every other
 /// monster self-buff in this file.
 fn lagavulin_soul_siphon_effect(state: &mut CombatState, owner: sts2_core::CreatureUid) {
-    apply_signed_power_to_player(state, PowerKind::Strength, -2);
-    apply_signed_power_to_player(state, PowerKind::Dexterity, -2);
+    // `DebuffAmount`: -2, and -3 in Dread (v0.113.0
+    // `LagavulinMatriarch.cs:63-73`, `:252-253`, GH #1346).
+    let drain = 2 + crate::dread_bosses::power_bonus(
+        state,
+        sts2_core::MonsterKind::LagavulinMatriarch,
+        "SOUL_SIPHON",
+        PowerKind::Strength,
+    );
+    apply_signed_power_to_player(state, PowerKind::Strength, -drain);
+    apply_signed_power_to_player(state, PowerKind::Dexterity, -drain);
     sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::Strength, 2);
 }
 
@@ -1992,13 +2005,27 @@ fn waterfall_giant_pressurize_effect(state: &mut CombatState, owner: sts2_core::
 /// 15-damage attack). C# `StompMove`.
 fn waterfall_giant_stomp_effect(state: &mut CombatState, owner: sts2_core::CreatureUid) {
     apply_power_to_player_via_legacy_surface(state, PowerKind::Weak, 1);
-    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, 3);
+    let steam = waterfall_giant_steam_boost(state, "STOMP");
+    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, steam);
+}
+
+/// `WaterfallGiant.SteamBoostAmount` (v0.113.0 `WaterfallGiant.cs:85-95`): 3,
+/// and 4 in Dread (GH #1346), for the move `move_id` that applies it.
+fn waterfall_giant_steam_boost(state: &CombatState, move_id: &str) -> i32 {
+    3 + crate::dread_bosses::power_bonus(
+        state,
+        sts2_core::MonsterKind::WaterfallGiant,
+        move_id,
+        PowerKind::SteamEruption,
+    )
 }
 
 /// SteamEruption(+3) self only — shared by RAM / PRESSURE_GUN / PRESSURE_UP
 /// (their attacks land via the `Intent::Attack` telegraph).
 fn waterfall_giant_steam_only_effect(state: &mut CombatState, owner: sts2_core::CreatureUid) {
-    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, 3);
+    // RAM and PRESSURE_UP share this body and the amount.
+    let steam = waterfall_giant_steam_boost(state, "RAM");
+    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, steam);
 }
 
 /// SIPHON: Heal `SiphonHeal` (×player-count in C#; single-player here) +
@@ -2014,7 +2041,8 @@ fn waterfall_giant_siphon_effect(state: &mut CombatState, owner: sts2_core::Crea
     );
     // `SiphonHeal * Players.Count` (WaterfallGiant.cs:267).
     state.creature_heal(owner, heal * sts2_core::coop::player_count(state));
-    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, 3);
+    let steam = waterfall_giant_steam_boost(state, "SIPHON");
+    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, steam);
 }
 
 /// PRESSURE_GUN: SteamEruption(+3) self, then ramp this creature's stored
@@ -2027,7 +2055,8 @@ fn waterfall_giant_siphon_effect(state: &mut CombatState, owner: sts2_core::Crea
 /// this monster's own `MonsterAi`, so multiple WaterfallGiants scale
 /// independently.
 fn waterfall_giant_pressure_gun_effect(state: &mut CombatState, owner: sts2_core::CreatureUid) {
-    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, 3);
+    let steam = waterfall_giant_steam_boost(state, "PRESSURE_GUN");
+    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::SteamEruption, steam);
     if let Some(idx) = state.creatures.iter().position(|c| c.id == owner.0) {
         if let Some(ai) = state.creatures[idx].ai.as_mut() {
             if let Some(MonsterState::Move(m)) =
@@ -2436,8 +2465,16 @@ fn soul_fysh_beckon_effect(state: &mut CombatState, _owner: sts2_core::CreatureU
     // C# for the rest of the combat, so the next reshuffle dealt a different
     // hand. Found by the Underdocks encounter sweep (GH #544).
     // Co-op: every player the move targets gets these cards.
+    //
+    // v0.113.0 Dread (`BeckonMoveAmount` 3, `SoulFysh.cs:60-70`, `:155-159`,
+    // GH #1346): a third Beckon goes to the HAND between the two, with no
+    // position and so no `Rng.Shuffle` read.
+    let dread = state.game_mode.is_dread();
     sts2_core::coop::each_player(state, |state| {
         crate::cards::status::spawn_beckon_into_draw_at_random(state);
+        if dread {
+            crate::cards::status::spawn_beckon(state, sts2_core::card_effects::PileKind::Hand);
+        }
         crate::cards::status::spawn_beckon(state, sts2_core::card_effects::PileKind::Discard);
     });
 }
@@ -2567,11 +2604,16 @@ fn lagavulin_asleep(combat: &CombatState, owner: sts2_core::CreatureUid) -> bool
 fn lagavulin_matriarch_slash2_effect(state: &mut CombatState, owner: sts2_core::CreatureUid) {
     // `Slash2Block => GetValueIfAscension(ToughEnemies, 14, 12)`
     // (`LagavulinMatriarch.cs:57,219`, GH #858).
+    // + 2 in Dread (v0.113.0 `LagavulinMatriarch.cs:57`, GH #1346).
     let amount = crate::ascension_scaling::tough_block(
         state.ascension,
         sts2_core::MonsterKind::LagavulinMatriarch,
         "SLASH2",
         12,
+    ) + crate::dread_bosses::block_bonus(
+        state,
+        sts2_core::MonsterKind::LagavulinMatriarch,
+        "SLASH2",
     );
     sts2_core::hooks::apply_effects(
         state,
@@ -2776,6 +2818,45 @@ mod tests {
             );
             (mv.effect)(&mut state, owner);
             assert_eq!(state.gold, 79, "{id} runs ThieveryPower.Steal");
+        }
+    }
+
+    /// `GremlinMerc.Steal` (`GremlinMerc.cs:136-146`, v0.113.0): in a Blitz
+    /// run no move steals, and the Thievery counter stays put.
+    #[test]
+    fn gremlin_merc_steals_nothing_in_blitz() {
+        let ai = create_gremlin_merc_ai();
+        for id in ["GIMME", "DOUBLE_SMASH", "HEHE"] {
+            let sts2_core::monster_ai::MonsterState::Move(mv) = ai.states.get(id).expect("state")
+            else {
+                panic!("{id} is not a Move state");
+            };
+            let (mut state, owner) = combat_with_one_enemy();
+            state.game_mode = sts2_core::GameMode::Blitz;
+            state.gold = 99;
+            sts2_core::card_effects::apply_power_to_creature(
+                &mut state,
+                owner,
+                PowerKind::Thievery,
+                20,
+            );
+            (mv.effect)(&mut state, owner);
+            assert_eq!(state.gold, 99, "{id} steals nothing in Blitz");
+            let stolen = state
+                .creatures
+                .iter()
+                .find(|c| c.id == owner.0)
+                .and_then(|c| {
+                    c.powers.iter().find_map(|pu| {
+                        state
+                            .powers
+                            .get_by_id(pu.0)
+                            .filter(|p| p.kind == PowerKind::Thievery)
+                            .map(|p| p.counter)
+                    })
+                })
+                .expect("thievery instance");
+            assert_eq!(stolen, 0, "{id}");
         }
     }
 

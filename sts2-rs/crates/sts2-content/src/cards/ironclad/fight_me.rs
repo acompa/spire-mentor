@@ -8,8 +8,9 @@ use super::prelude::*;
 pub(crate) fn play_fight_me(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
     let t = target.expect("FightMe: Enemy-targeted");
     let dmg = current_damage(state);
-    let _ = deal_damage_player_to_enemy(state, t, dmg);
-    let _ = deal_damage_player_to_enemy(state, t, dmg);
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
+        let _ = deal_damage_player_to_enemy(state, t, dmg);
+    }
     let player_str = if current_upgraded(state) { 4 } else { 3 };
     apply_power_to_player(state, PowerKind::Strength, player_str);
     let strength_uid = |state: &CombatState| {

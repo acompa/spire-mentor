@@ -6,7 +6,7 @@
  "idx": 0,
  "meta": {
   "act": 1,
-  "act_name": "Overgrowth",
+  "act_name": "Underdocks",
   "bg_col": 0,
   "bg_row": 3,
   "bg_seed": 3,
@@ -19,8 +19,8 @@
  "source": "live",
  "state": {
   "act": 1,
-  "act1": "overgrowth",
-  "act_name": "Overgrowth",
+  "act1": "underdocks",
+  "act_name": "Underdocks",
   "ascension": 10,
   "bg_col": 0,
   "bg_row": 3,
@@ -241,71 +241,28 @@
   "enemies": [
    {
     "block": 0,
-    "hp": 2,
-    "image": "https://assets.test/monsters/twig_slime_s.png",
+    "hp": 36,
+    "image": "https://assets.test/monsters/sludge_spinner.png",
     "index": 0,
     "intents": [
      {
-      "damage": 5,
+      "damage": 9,
       "intent_image": "https://assets.test/intent_atlas/attack/intent_attack_2.png",
       "type": "Attack"
      }
     ],
-    "kind": "TwigSlimeS",
-    "max_hp": 8,
-    "move_state": "BUTT",
-    "name": "Twig Slime (S)",
+    "kind": "SludgeSpinner",
+    "max_hp": 42,
+    "move_state": "OIL_SPRAY",
+    "name": "Sludge Spinner",
     "powers": [],
-    "rig": "https://assets.test/monster_rigs/twig_slime_s/twig_slime_s",
-    "rig_bounds_h": 106.0,
-    "rig_bounds_w": 140.0,
-    "rig_scale": 0.275,
+    "rig": "https://assets.test/monster_rigs/sludge_spinner/sludge_spinner",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -175.0,
+    "rig_bounds_h": 246.0,
+    "rig_bounds_w": 192.0,
+    "rig_scale": 0.25,
     "uid": 2
-   },
-   {
-    "block": 0,
-    "hp": 36,
-    "image": "https://assets.test/monsters/leaf_slime_m.png",
-    "index": 1,
-    "intents": [
-     {
-      "intent_image": null,
-      "type": "StatusCard"
-     }
-    ],
-    "kind": "LeafSlimeM",
-    "max_hp": 36,
-    "move_state": "STICKY_SHOT",
-    "name": "Leaf Slime (M)",
-    "powers": [],
-    "rig": "https://assets.test/monster_rigs/leaf_slime_m/leaf_slime_m",
-    "rig_bounds_h": 143.0,
-    "rig_bounds_w": 200.0,
-    "rig_scale": 0.45,
-    "uid": 3
-   },
-   {
-    "block": 0,
-    "hp": 12,
-    "image": "https://assets.test/monsters/leaf_slime_s.png",
-    "index": 2,
-    "intents": [
-     {
-      "damage": 4,
-      "intent_image": "https://assets.test/intent_atlas/attack/intent_attack_1.png",
-      "type": "Attack"
-     }
-    ],
-    "kind": "LeafSlimeS",
-    "max_hp": 12,
-    "move_state": "BUTT",
-    "name": "Leaf Slime (S)",
-    "powers": [],
-    "rig": "https://assets.test/monster_rigs/leaf_slime_s/leaf_slime_s",
-    "rig_bounds_h": 102.0,
-    "rig_bounds_w": 154.0,
-    "rig_scale": 0.2734,
-    "uid": 4
    }
   ],
   "energy": 0,
@@ -338,9 +295,7 @@
     "color": "blue",
     "cost": 1,
     "damage_preview": {
-     "0": 6,
-     "1": 6,
-     "2": 6
+     "0": 6
     },
     "description": "Deal 6 damage.",
     "description_rich": "Deal 6 damage.",
@@ -545,7 +500,7 @@
     }
    ],
    "gold": 124,
-   "hp": 37,
+   "hp": 35,
    "image": "https://assets.test/character_sprites/defect.png",
    "max_hp": 75,
    "name": "Defect",
@@ -566,6 +521,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/defect/defect",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -179.0,
    "rig_bounds_h": 260.0,
    "rig_bounds_w": 250.0,
    "rig_scale": 0.125

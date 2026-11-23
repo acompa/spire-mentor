@@ -2,8 +2,8 @@
 
 That file is the single source of truth; this module is the only thing that
 parses it. Everything that serves or analyzes a champion goes through here --
-:mod:`workbench.ppo_policy` (both inference backends), the frozen advisor exe's
-PyInstaller spec, :mod:`synergy.embed_geometry`, and the generator that keeps
+:mod:`workbench.ppo_policy` (both inference backends), the SimAdvisor
+packaging (``scripts/stage_advisor.py``), :mod:`synergy.embed_geometry`, and the generator that keeps
 the Rust match arms and the Dockerfile ``COPY`` lines in sync.
 
 **Why a manifest and not a glob.** The previous resolver globbed

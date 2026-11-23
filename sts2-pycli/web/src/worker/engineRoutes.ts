@@ -87,6 +87,10 @@ export interface WorkbenchLike {
   load_e2e?(bytes: Uint8Array): string;
   set_e2e_error?(reason: string): void;
   has_e2e?(): boolean;
+  /** The Fool's student (GH #1535, a v0.113.0 net): `load_e2e` takes its
+   *  bytes too. Absent = no Fool net in this host. */
+  set_e2e_fool_error?(reason: string): void;
+  has_e2e_fool?(): boolean;
   /** Run logs (M4): the log the last quit wrote (`{filename, text}` JSON or
    *  `"null"`), and a stored log's text parsed into the replay store. */
   /** The oldest run log not yet collected (`{filename, text}` JSON), or
@@ -119,6 +123,9 @@ export interface EngineDeps {
   /** `Workbench.e2e_file()`: the e2e weights filename; absent / empty = no
    *  e2e brain in this host. */
   e2eFile?: string;
+  /** `Workbench.e2e_fool_file()`: the Fool's weights filename, fetched only
+   *  for a Fool run; absent / empty = no Fool net in this host. */
+  e2eFoolFile?: string;
   /** Fetch the e2e weights (`/e2e/<file>` in the worker), on demand only. */
   fetchE2e?: (file: string) => Promise<Uint8Array>;
   kv: KvStore;
@@ -307,6 +314,11 @@ function selectsE2e(key: string, body: unknown): boolean {
   return false;
 }
 
+/** Whether `character` is played by the Fool's net (`e2eFoolFile`). */
+function isFool(character: string): boolean {
+  return character.trim().toLowerCase() === "fool";
+}
+
 function characterOf(body: unknown): string {
   const c = (body as { character?: unknown } | null)?.character;
   return typeof c === "string" && c ? c : "Ironclad";
@@ -344,7 +356,7 @@ function nameOf(body: unknown): string | null {
 }
 
 export function createEngine(deps: EngineDeps): Engine {
-  const { wb, kv, saveHeader, championFile, fetchChampion, e2eFile, fetchE2e } = deps;
+  const { wb, kv, saveHeader, championFile, fetchChampion, e2eFile, e2eFoolFile, fetchE2e } = deps;
   const now = deps.now ?? isoNow;
 
   /** Make sure `character`'s champion is loaded; never throws — a failure
@@ -369,22 +381,32 @@ export function createEngine(deps: EngineDeps): Engine {
     }
   }
 
-  /** Make sure the e2e student is loaded; resolves to whether it is. Never
-   *  throws — a failure is recorded on the engine (the brain's 424 says
-   *  why) and the next e2e call tries again. */
-  async function ensureE2e(): Promise<boolean> {
-    if (!e2eFile || !fetchE2e || !wb.load_e2e || !wb.has_e2e) return false;
-    if (wb.has_e2e()) return true;
+  /** Make sure an e2e student is loaded (the Fool's when `fool`, else the
+   *  all-character one); resolves to whether it is. Never throws — a failure
+   *  is recorded on the engine (the brain's 424 says why) and the next e2e
+   *  call tries again. */
+  async function ensureE2e(fool = false): Promise<boolean> {
+    const file = fool ? e2eFoolFile : e2eFile;
+    const has = fool ? wb.has_e2e_fool : wb.has_e2e;
+    const setError = fool ? wb.set_e2e_fool_error : wb.set_e2e_error;
+    if (!file || !fetchE2e || !wb.load_e2e || !has) return false;
+    if (has.call(wb)) return true;
     try {
-      const bytes = await fetchE2e(e2eFile);
+      const bytes = await fetchE2e(file);
       const r = parseReply(wb.load_e2e(bytes));
       if (r.status !== 200) {
-        wb.set_e2e_error?.(String((r.body as { detail?: string } | null)?.detail ?? "load failed"));
+        setError?.call(wb, String((r.body as { detail?: string } | null)?.detail ?? "load failed"));
       }
     } catch (err) {
-      wb.set_e2e_error?.(`fetch of /e2e/${e2eFile} failed: ${String(err)}`);
+      setError?.call(wb, `fetch of /e2e/${file} failed: ${String(err)}`);
     }
-    return wb.has_e2e();
+    return has.call(wb);
+  }
+
+  /** Whether a 424 asks for the Fool's net (its detail names the file). */
+  function wantsFool(reply: Reply): boolean {
+    const d = (reply.body as { detail?: unknown } | null)?.detail;
+    return !!e2eFoolFile && typeof d === "string" && d.includes(e2eFoolFile);
   }
 
   async function persist(): Promise<void> {
@@ -667,13 +689,20 @@ export function createEngine(deps: EngineDeps): Engine {
             ? await resumeIfPersisted(onProgress)
             : null;
         const triedE2e = selectsE2e(key, body);
-        if (triedE2e) await ensureE2e();
+        const triedFool = triedE2e && isFool(characterOf(body));
+        if (triedE2e) await ensureE2e(triedFool);
         const sent = REPLACES_RUN.has(key) ? { ...((body as object | null) ?? {}), now: now() } : body;
         const send = () => parseReply(wb.call(m, path, sent == null ? "null" : JSON.stringify(sent)));
         reply = resumed ?? send();
         // An e2e run restored or resumed before its net arrived: fetch it
         // now and ask again, once (not when this call already tried).
-        if (!resumed && !triedE2e && reply.status === NO_E2E_NET && !wb.has_e2e?.() && (await ensureE2e())) reply = send();
+        // A Fool run (its 424 names the Fool's file) gets the Fool's net.
+        if (!resumed && reply.status === NO_E2E_NET) {
+          const fool = wantsFool(reply);
+          const tried = fool ? triedFool : triedE2e && !triedFool;
+          const has = fool ? wb.has_e2e_fool?.() : wb.has_e2e?.();
+          if (!tried && !has && (await ensureE2e(fool))) reply = send();
+        }
         if (REPLACES_RUN.has(key) && reply.status === 200) await storeRunLogs();
       } else {
         return detail(501, `not available in the browser build: ${key}`);

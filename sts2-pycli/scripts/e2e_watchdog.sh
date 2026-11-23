@@ -166,6 +166,39 @@ isleep() {
   wait "$s" 2>/dev/null
 }
 
+# Run a rule call (`wdpy ARGS`) in the background and wait for it, so a
+# trapped signal cuts the wait short. Bash runs a trap only after the
+# foreground child returns, so a call that stalls under load (a slow import, a
+# lock) would hold a stop for as long as it hangs (GH #1450). Sets WDOUT to its
+# stdout and returns its status, or 255 when a stop request arrived first (the
+# call is then terminated and its answer dropped).
+WDOUT=""
+wdpy_bg() {
+  local out=$SAVE/ops/wdpy.out pid rc rc2
+  WDOUT=""
+  # A simple command: the background child execs Python, so $! is Python.
+  PYTHONPATH="$ROOT/python" "$PY" -m ppo.e2e.watchdog "$@" >"$out" &
+  pid=$!
+  while :; do
+    wait "$pid" 2>/dev/null
+    rc=$?
+    if ((rc > 128)); then
+      if kill -0 "$pid" 2>/dev/null; then
+        [[ -z $STOP_REQ ]] && continue # some other trapped signal
+        kill -TERM "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+        return 255
+      fi
+      wait "$pid" 2>/dev/null # it exited while the trap ran
+      rc2=$?
+      ((rc2 != 127)) && rc=$rc2
+    fi
+    break
+  done
+  WDOUT=$(<"$out")
+  return "$rc"
+}
+
 LPID="" RC=0 SINCE=0
 
 # Wait for the learner (our child) and set RC; then SIGKILL what is left of
@@ -235,7 +268,7 @@ start_learner() { # RESUME OFFSET
 # Poll the learner until it exits or a rule acts. Sets OUTCOME (exit, signal,
 # stop, stall, nan), RC, STOP_CODE and NAN_AT.
 supervise() {
-  local verdict v1 v2 fails=0
+  local verdict v1 v2 rc fails=0
   OUTCOME="" STOP_CODE=0 NAN_AT=-1
   while :; do
     isleep "$WD_POLL_S"
@@ -250,11 +283,20 @@ supervise() {
       OUTCOME=exit
       return
     fi
-    if ! verdict=$(wdpy tick "$SAVE" --since "$SINCE" --pid "$LPID"); then
+    wdpy_bg tick "$SAVE" --since "$SINCE" --pid "$LPID"
+    rc=$?
+    if ((rc == 255)) && [[ -n $STOP_REQ ]]; then
+      log "SIG$STOP_REQ during a tick: stopping the learner"
+      stop_learner "$WD_STOP_GRACE_MS"
+      OUTCOME=signal
+      return
+    fi
+    if ((rc != 0)); then
       fails=$((fails + 1))
       log "tick failed ($fails in a row); the learner runs on"
       continue
     fi
+    verdict=$WDOUT
     fails=0
     read -r v1 v2 _ <<<"$verdict"
     case $v1 in

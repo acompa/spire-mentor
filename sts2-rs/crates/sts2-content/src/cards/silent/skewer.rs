@@ -12,7 +12,10 @@ use super::prelude::*;
 /// `energy_spent` to match the engine.
 pub(crate) fn play_skewer(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
     let t = target.expect("Skewer: Enemy-targeted");
-    let hits = current_card_energy_spent(state);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        current_card_energy_spent(state),
+    );
     let base = current_card_damage(state);
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, base);

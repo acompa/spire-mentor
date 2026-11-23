@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { lookupTerm, useGlossary } from "../glossary";
+import TermTip from "./TermTip";
 
 // STS2 inline color codes used in event/option text, e.g. "[red]6[/red] HP".
 const COLOR: Record<string, string> = {
@@ -37,20 +39,31 @@ function emphasisRe(words: string[]): RegExp | null {
  *  bold-keyword rhythm ("This room is full of **cheese**!!!") cannot be
  *  recovered from the payload; the caller supplies the words it can justify
  *  (see ``EventScreen.emphasisWords``). No word is ever added, removed or
- *  rewritten — only wrapped. */
+ *  rewritten — only wrapped.
+ *
+ *  ``tips`` (default on): a ``[gold]``/``[purple]`` run that names a term the
+ *  build's glossary knows (an enchantment, relic, potion, card keyword or
+ *  static tip) gets that term's hover tip, as the game's text does (GH
+ *  #1599). An enchantment's amount is the number in the run or the
+ *  ``[blue]N[/blue]`` right after it ("[purple]Nimble[/purple] [blue]3[/blue]"). */
 export default function RichText({
   text,
   emphasize,
+  tips = true,
 }: {
   text?: string | null;
   emphasize?: string[];
+  tips?: boolean;
 }) {
+  const glossary = useGlossary();
   if (!text) return null;
   const re = emphasize && emphasize.length > 0 ? emphasisRe(emphasize) : null;
   const out: ReactNode[] = [];
   let color: string | null = null;
+  let colorName: string | null = null;
   let bold = 0;
-  text.split(SPLIT).forEach((part, i) => {
+  const parts = text.split(SPLIT);
+  parts.forEach((part, i) => {
     if (!part) return;
     const tag = part.match(TAG);
     if (tag) {
@@ -58,6 +71,7 @@ export default function RichText({
       const name = tag[2];
       if (name in COLOR) {
         color = closing ? null : COLOR[name];
+        colorName = closing ? null : name;
         return;
       }
       if (name === "b") {
@@ -77,6 +91,15 @@ export default function RichText({
       bits.length > 1
         ? bits.map((b, j) => (j % 2 === 1 ? <strong key={j}>{b}</strong> : b))
         : part;
+    const term = tips && (colorName === "gold" || colorName === "purple")
+      ? lookupTerm(glossary, part, amountAfter(parts, i))
+      : null;
+    if (term) {
+      out.push(
+        <TermTip key={i} tip={term}><span style={style}>{body}</span></TermTip>,
+      );
+      return;
+    }
     out.push(
       Object.keys(style).length > 0 ? (
         <span key={i} style={style}>{body}</span>
@@ -86,4 +109,17 @@ export default function RichText({
     );
   });
   return <>{out}</>;
+}
+
+/** The number in a `[blue]N[/blue]` that follows the run at `parts[i]`
+ *  across its own closing tag and at most a space, or null. */
+function amountAfter(parts: string[], i: number): number | null {
+  let k = i + 1;
+  if (parts[k]?.startsWith("[/")) k += 1;
+  while (k < parts.length && parts[k] === "") k += 1;
+  if (parts[k] === " ") k += 1;
+  while (k < parts.length && parts[k] === "") k += 1;
+  if (parts[k] !== "[blue]") return null;
+  const n = Number.parseInt(parts[k + 1] ?? "", 10);
+  return Number.isFinite(n) ? n : null;
 }

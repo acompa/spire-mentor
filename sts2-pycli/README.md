@@ -20,7 +20,7 @@ This project began as a fork of [wuhao21/sts2-cli](https://github.com/wuhao21/st
 | PPO training | `python/ppo/`, `data/ppo/champions.toml` | Full-run self-play PPO for the run policy; champion nets are promoted via `just promote-champion`. Playbook: `../docs/ppo-champion-training-playbook.md`. |
 | Web workbench | `python/workbench/` + `web/` | FastAPI backend + Vite frontend for replaying recorded runs, regret review, and live advice. |
 | Real-game bridge client | `python/realgame_*.py`, `python/sts2_realgame.py` | TCP clients for the Spire Mentor mod (`../spire-mentor-mod/PROTOCOL.md`) that drive or observe the live game process. |
-| Advisor exe | `packaging/SimAdvisor.spec`, `scripts/build_advisor_exe.ps1` | PyInstaller-frozen `realgame_advisor` shipped alongside the Spire Mentor mod. |
+| Advisor packaging | `scripts/build_advisor.ps1`, `scripts/stage_advisor.py`, `just advisor-dist` | Builds and stages the native SimAdvisor binary (`../sts2-rs/crates/sim-advisor`) shipped with the Spire Mentor mod. |
 | MCP server | `python/sts2_mcp.py` | Lets Claude (or any MCP client) play the game through typed tools. |
 
 `python/` itself is a flat script tree with several packages inside; see [`python/README.md`](python/README.md) for the per-concern file map and entry points.

@@ -50,16 +50,53 @@ BETA_GAME_VERSIONS: frozenset[str] = frozenset()
 GAME_VERSION_ENV = "STS2_GAME_VERSION"
 
 
+_BUILD_RE = re.compile(r"v(\d{1,9})\.(\d{1,9})\.(\d{1,9})")
+
+
+def hotfix_base(version: str) -> str | None:
+    """The supported build a hotfix of it plays on, or None.
+
+    A hotfix keeps the major and minor numbers and raises the patch
+    (``v0.113.1`` after ``v0.113.0``). The game ships those as bug-fix
+    updates, so the engine of the newest supported build in the same line,
+    patch not above the hotfix's, is the right one: ``v0.113.1`` →
+    ``v0.113.0``. A new minor (``v0.114.0``) is a content update and maps to
+    nothing; neither does a build older than every supported one of its line.
+    Rust twin: ``GameVersion::from_str`` (``sts2-core/src/game_version.rs``).
+    """
+    m = _BUILD_RE.fullmatch(version.strip())
+    if m is None:
+        return None
+    major, minor, patch = (int(g) for g in m.groups())
+    best: tuple[int, str] | None = None
+    for supported in SUPPORTED_GAME_VERSIONS:
+        sm = _BUILD_RE.fullmatch(supported)
+        assert sm is not None, supported
+        s_major, s_minor, s_patch = (int(g) for g in sm.groups())
+        if (s_major, s_minor) == (major, minor) and s_patch <= patch:
+            if best is None or s_patch > best[0]:
+                best = (s_patch, supported)
+    return None if best is None else best[1]
+
+
 def normalize_game_version(version: str) -> str:
-    """``"0.111.0"`` / ``"v0.111.0"`` → ``"v0.111.0"``; rejects unsupported builds."""
+    """``"0.111.0"`` / ``"v0.111.0"`` → ``"v0.111.0"``; rejects unsupported builds.
+
+    A hotfix of a supported build resolves to that build (:func:`hotfix_base`),
+    so a game patched to ``v0.113.1`` is advised with the ``v0.113.0`` engine
+    instead of refused.
+    """
     v = version.strip()
     if v and not v.startswith("v"):
         v = "v" + v
-    if v not in SUPPORTED_GAME_VERSIONS:
+    if v in SUPPORTED_GAME_VERSIONS:
+        return v
+    base = hotfix_base(v)
+    if base is None:
         raise ValueError(
             f"unsupported game version {version!r} (supported: {', '.join(SUPPORTED_GAME_VERSIONS)})"
         )
-    return v
+    return base
 
 
 def resolve_game_version() -> str:
@@ -748,6 +785,9 @@ class Game:
         played_save: bool = False,
         act1: str | None = None,
         interactive_potion_swap: bool = False,
+        game_mode: str | None = None,
+        rng_key: str | None = None,
+        profile: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Start a new headless run.
 
@@ -772,6 +812,29 @@ class Game:
                 full belt parks as a ``potion_swap`` decision (discard a held
                 potion to take it, or decline), as the real reward screen
                 allows. Default False keeps the historical silent drop.
+            game_mode: GH #1346. ``"dread"`` starts a Dread run (v0.113.0 and
+                later): ascension is forced to 10, as in the game, and the
+                context carries ``game_mode``, ``ascension`` and ``dominion``.
+                None or ``"standard"`` is a standard run.
+                GH #1347: ``"blitz"`` starts a Blitz run (v0.113.0 and later).
+                ``ascension`` is then the Blitz level 0..5 (more is refused);
+                the context carries ``game_mode`` and ``ascension``. Blitz
+                decisions are the standard ones, with three differences: every
+                ``map_select`` has one choice (the fixed line's next node), the
+                ``shop`` carries ``blitz_choices_remaining`` and ``options``
+                (answer with :meth:`blitz_choice`), and the treasure chest is
+                a two-pick ``rewards`` decision (``take_reward``).
+            rng_key: 64 hex chars. A host started with ``STS2_KEYED_RNG=1``
+                (or as a referee) needs it: the episode key behind every draw.
+            profile: GH #1286. The player's profile as far as it shapes a run,
+                for replaying a recorded run of a player who has not unlocked
+                everything: ``locked_epochs`` (timeline epoch ids not
+                revealed), ``unseen_encounters`` (an act's boss is the first
+                unseen one in its discovery order), ``undiscovered_acts`` (an
+                unlocked act never entered is forced) and ``number_of_runs``
+                (0: the first run ever, with its fixed rooms). It replaces
+                ``played_save`` and is refused in referee mode. :meth:`epochs`
+                lists the ids.
         """
         cmd: dict[str, Any] = {
             "cmd": "start_run",
@@ -786,7 +849,17 @@ class Game:
             cmd["act1"] = act1
         if interactive_potion_swap:
             cmd["interactive_potion_swap"] = True
+        if game_mode is not None:
+            cmd["game_mode"] = game_mode
+        if rng_key is not None:
+            cmd["rng_key"] = rng_key
+        if profile is not None:
+            cmd["profile"] = profile
         return self.send(cmd)
+
+    def epochs(self) -> dict[str, Any]:
+        """What each timeline epoch unlocks, and each act's bosses (GH #1286)."""
+        return self.send({"cmd": "epochs"})
 
     def act(self, action: str, **args: Any) -> dict[str, Any]:
         cmd: dict[str, Any] = {"cmd": "action", "action": action}
@@ -848,6 +921,16 @@ class Game:
         """
         return self.send({"cmd": "legal_actions"})
 
+    def potion_belt(self) -> dict[str, Any]:
+        """Per held slot, whether the potion popup allows Use / Discard now.
+
+        Returns ``{"type": "ok", "slots": [{"potion_index": int, "usable":
+        bool, "discardable": bool}, ...]}`` (``RunSimulator.PotionBelt``, the
+        same list a referee observation appends as ``use_potion`` /
+        ``discard_potion``). Read-only; GH #1610.
+        """
+        return self.send({"cmd": "potion_belt"})
+
     def get_state(self) -> dict[str, Any]:
         """Return a normalized snapshot of the current combat state.
 
@@ -889,6 +972,14 @@ class Game:
 
     def remove_card(self) -> dict[str, Any]:
         return self.act("remove_card")
+
+    def blitz_choice(self, index: int) -> dict[str, Any]:
+        """Take a Blitz merchant ware by its ``options`` index (1..6).
+
+        Not in :data:`ACTIONS`, which is the MCP server's tool list: that
+        server has no Blitz tool.
+        """
+        return self.act("blitz_choice", index=index)
 
     def select_bundle(self, bundle_index: int) -> dict[str, Any]:
         return self.act("select_bundle", bundle_index=bundle_index)

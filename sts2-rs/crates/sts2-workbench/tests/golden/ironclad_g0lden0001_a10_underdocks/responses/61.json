@@ -268,6 +268,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/corpse_slug/corpse_slug",
+    "rig_arrow_x": -3.0,
+    "rig_arrow_y": -74.0,
     "rig_bounds_h": 164.0,
     "rig_bounds_w": 232.0,
     "rig_scale": 0.23,
@@ -302,6 +304,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/corpse_slug/corpse_slug",
+    "rig_arrow_x": -3.0,
+    "rig_arrow_y": -74.0,
     "rig_bounds_h": 164.0,
     "rig_bounds_w": 232.0,
     "rig_scale": 0.23,
@@ -589,6 +593,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/ironclad/ironclad",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -168.0,
    "rig_bounds_h": 278.0,
    "rig_bounds_w": 242.0,
    "rig_scale": 0.28

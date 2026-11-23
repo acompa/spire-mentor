@@ -491,7 +491,7 @@ internal static class SimChoiceCapture
     // Game reads (never throw)
     // ------------------------------------------------------------------
 
-    private static bool SafeInCombat()
+    internal static bool SafeInCombat()
     {
         try
         {

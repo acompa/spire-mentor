@@ -146,7 +146,7 @@ fn devoted_sculptor_forbidden_incantation_effect(state: &mut CombatState, owner:
 /// (stock 1) gains `3 * (2 - 1) = 3`, the second (stock 0) gains `3 * 2 = 6`.
 /// `axebot_stock_after_death` overwrites the respawn's Stock to `dead - 1`, so
 /// reading the owner's live Stock amount here matches C#'s `StockAmount`.
-fn axebot_boot_up_strength(state: &CombatState, owner: CreatureUid) -> i32 {
+pub(crate) fn axebot_boot_up_strength(state: &CombatState, owner: CreatureUid) -> i32 {
     use sts2_core::ascension::{get_value_if_ascension, AscensionLevel::DeadlyEnemies};
     // BootUpStrGain (Axebot.cs:68): 4 at A9 DeadlyEnemies, else 3.
     let str_gain = get_value_if_ascension(state.ascension, DeadlyEnemies, 4, 3);
@@ -658,7 +658,12 @@ fn aeonglass_increasing_intensity_effect(state: &mut CombatState, owner: Creatur
         PowerKind::Strength,
         3,
     );
-    let wither_amount = get_value_if_ascension(state.ascension, DeadlyEnemies, 2, 1);
+    // `WitherAmount => GetValueIfAscension(DeadlyEnemies, 2, 1) + (IsDread()
+    // ? 1 : 0)` and `pileType = IsDread() ? Draw : Discard` (v0.113.0
+    // `Aeonglass.cs:58`, `:162`, GH #1346).
+    let dread = state.game_mode.is_dread();
+    let wither_amount =
+        get_value_if_ascension(state.ascension, DeadlyEnemies, 2, 1) + i32::from(dread);
 
     // AdditionalStrength == WitherUpgradeCount BEFORE this move's increment.
     let count_before = aeonglass_wither_upgrade_count(state);
@@ -673,9 +678,16 @@ fn aeonglass_increasing_intensity_effect(state: &mut CombatState, owner: Creatur
     // Co-op: every player the move targets gets these cards.
     sts2_core::coop::each_player(state, |state| {
         for _ in 0..wither_amount {
-            let uid = crate::cards::status::spawn_wither(state, PileKind::Discard);
             // v0.113 adds each Wither at `CardPilePosition.Random`
-            // (Aeonglass.cs:162-163): one `Rng.Shuffle.NextInt(Count + 1)`.
+            // (Aeonglass.cs:162-163): one `Rng.Shuffle.NextInt(Count + 1)`,
+            // over the pile it goes to — the draw pile in Dread, so the same
+            // reads pick other positions there.
+            if dread {
+                let uid = crate::cards::status::spawn_wither(state, PileKind::Draw);
+                state.insert_card_into_draw_pile(uid, true);
+                continue;
+            }
+            let uid = crate::cards::status::spawn_wither(state, PileKind::Discard);
             if state.game_version >= sts2_core::GameVersion::V0_113_0 {
                 state.insert_card_into_discard_pile(uid, true);
             }
@@ -2456,8 +2468,15 @@ fn queen_burn_bright_effect(state: &mut CombatState, owner: CreatureUid) {
         .map(|c| CreatureUid(c.id))
         .filter(|&uid| uid != owner && state.creature_kind(uid) == CreatureKind::Monster)
         .collect();
+    // `strengthAmount = IsDread() ? 2 : 1` (v0.113.0 `Queen.cs:205`, GH #1346).
+    let strength = 1 + crate::dread_bosses::power_bonus(
+        state,
+        sts2_core::MonsterKind::Queen,
+        "BURN_BRIGHT_FOR_ME_MOVE",
+        PowerKind::Strength,
+    );
     for uid in teammates {
-        sts2_core::card_effects::apply_power_to_creature(state, uid, PowerKind::Strength, 1);
+        sts2_core::card_effects::apply_power_to_creature(state, uid, PowerKind::Strength, strength);
     }
     // Via the shared `CreatureCmd.GainBlock` funnel (modify chain +
     // `after_block_gained` buses + the combat-log row), not a raw field write
@@ -2504,6 +2523,15 @@ fn queen_has_amalgam_died(_state: &CombatState, _owner: CreatureUid, counter: i3
 /// `sts2-rs-hmxmc`).
 fn queen_puppet_strings_effect(state: &mut CombatState, _owner: CreatureUid) {
     apply_power_to_player_via_legacy_surface(state, PowerKind::ChainsOfBinding, 3);
+}
+
+/// DREAD_INITIAL_MOVE (v0.113.0 `Queen.cs:189-199` `DreadInitialMove`, GH
+/// #1346): `ChainsOfBindingPower(ChainsOfBindingAmount = 3)`, then Frail,
+/// Weak and Vulnerable 99 — PUPPET_STRINGS and YOU_ARE_MINE in one turn, in
+/// that order.
+fn queen_dread_initial_effect(state: &mut CombatState, owner: CreatureUid) {
+    queen_puppet_strings_effect(state, owner);
+    queen_youre_mine_effect(state, owner);
 }
 
 /// `AfterDeath` listener for the Queen — bead `sts2-rs-6g4v4` (m70xg.3).
@@ -2608,7 +2636,46 @@ fn queen_after_death(
 ///   flips Queen's counter to 1 and force-jumps her to ENRAGE if her
 ///   resolved next move is BURN_BRIGHT_FOR_ME_MOVE.
 pub fn create_queen_ai() -> MonsterAi {
+    queen_ai(false)
+}
+
+/// The Queen of a Dread run (v0.113.0 `Queen.cs:139-168`, GH #1346):
+/// `new MonsterMoveStateMachine(list, IsDread() ? moveState3 : moveState)`.
+/// She opens on `DREAD_INITIAL_MOVE` (`CardDebuffIntent` + `DebuffIntent`,
+/// [`queen_dread_initial_effect`]), whose follow-up is
+/// `YOURE_MINE_NOW_BRANCH`; the rest of the machine is
+/// [`create_queen_ai`]'s. C# lists the state in a standard run too, where
+/// nothing leads to it; here only the Dread table carries it, so the
+/// standard one keeps its bytes.
+pub fn create_queen_dread_ai() -> MonsterAi {
+    queen_ai(true)
+}
+
+fn queen_ai(dread: bool) -> MonsterAi {
     let mut s = BTreeMap::new();
+    if dread {
+        s.insert(
+            "DREAD_INITIAL_MOVE",
+            MonsterState::Move(MoveState {
+                id: "DREAD_INITIAL_MOVE",
+                effect: queen_dread_initial_effect,
+                // PUPPET_STRINGS's telegraph, then YOU_ARE_MINE's single
+                // `DebuffIntent`.
+                intents: smallvec![
+                    Intent::Debuff {
+                        kind: PowerKind::ChainsOfBinding,
+                        amount: 3,
+                    },
+                    Intent::Debuff {
+                        kind: PowerKind::Frail,
+                        amount: 99,
+                    },
+                ],
+                follow_up: Some("YOURE_MINE_NOW_BRANCH"),
+                must_perform_once: false,
+            }),
+        );
+    }
     s.insert(
         "PUPPET_STRINGS_MOVE",
         MonsterState::Move(MoveState {
@@ -2716,7 +2783,12 @@ pub fn create_queen_ai() -> MonsterAi {
             must_perform_once: false,
         }),
     );
-    let mut ai = MonsterAi::new(s, "PUPPET_STRINGS_MOVE");
+    let initial = if dread {
+        "DREAD_INITIAL_MOVE"
+    } else {
+        "PUPPET_STRINGS_MOVE"
+    };
+    let mut ai = MonsterAi::new(s, initial);
     // Bead `sts2-rs-6g4v4` (m70xg.3): TorchHeadAmalgam AfterDeath flips
     // Queen's `HasAmalgamDied` counter and short-circuits BURN_BRIGHT →
     // ENRAGE per C# `Queen.cs:213-225`.
@@ -2763,6 +2835,13 @@ fn test_subject_burning_growl_effect(state: &mut CombatState, owner: CreatureUid
         "BURNING_GROWL",
         PowerKind::Strength,
         test_subject::BURNING_GROWL_STRENGTH,
+    ) + crate::dread_bosses::power_bonus(
+        // `BurningGrowlStrengthGain` + 3 in Dread (v0.113.0
+        // `TestSubject.cs:113`, GH #1346).
+        state,
+        sts2_core::MonsterKind::TestSubject,
+        "BURNING_GROWL",
+        PowerKind::Strength,
     );
     sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::Strength, strength);
 }

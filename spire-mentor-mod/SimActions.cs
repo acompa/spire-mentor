@@ -47,7 +47,7 @@ internal static class SimActions
         SimSnapshotMeta? target = SimSnapshots.CurrentRoomEntry();
         if (target == null)
         {
-            SimActionLog.Note("Nothing to rewind to yet (the game saves at each room entry).");
+            SimActionLog.Note(L10n.T("Nothing to rewind to yet (the game saves at each room entry)."));
             return;
         }
         SimRestore.RequestRestore(target.Id);
@@ -59,7 +59,7 @@ internal static class SimActions
         SimSnapshotMeta? target = SimSnapshots.PreviousRoomEntry();
         if (target == null)
         {
-            SimActionLog.Note("No earlier room snapshot in this run yet.");
+            SimActionLog.Note(L10n.T("No earlier room snapshot in this run yet."));
             return;
         }
         SimRestore.RequestRestore(target.Id);
@@ -87,12 +87,6 @@ internal static class SimActions
     public static void ToggleAutobattle(string surface) =>
         RequireAdvisor(surface, () => SimAdvisor.Instance.ToggleAutobattle());
 
-    /// <summary>Advisor brain (Shift+F8 / toolbar / frame), toggled: Search
-    /// &lt;-&gt; Instinct (SimAdvisor.SetBrain). A preference, not a takeover,
-    /// so it needs no Advisor mode: set with the AI off, it applies from the
-    /// next advice.</summary>
-    public static void ToggleBrain(string surface) => SimAdvisor.Instance.ToggleBrain(surface);
-
     /// <summary>"Partner: go" (Shift+F6 / toolbar), co-op with AI partners:
     /// every partner that is waiting for you this turn (your first play, your
     /// end turn, your setup play) plays the rest of it now. Needs no coach:
@@ -104,18 +98,18 @@ internal static class SimActions
         {
             if (partner.Brain.Go())
             {
-                released.Add(partner.Label);
+                released.Add(partner.DisplayName);
             }
         }
         if (released.Count > 0)
         {
-            SimActionLog.Note($"{surface}: {string.Join(", ", released)} plays now.");
+            SimActionLog.Note(L10n.F("{0}: {1} plays now.", L10n.T(surface), string.Join(", ", released)));
         }
         else
         {
             SimActionLog.Note(SimAiPartner.All.Count == 0
-                ? $"{surface}: no AI partner in this run."
-                : $"{surface}: no AI partner is waiting for you.");
+                ? L10n.F("{0}: no AI partner in this run.", L10n.T(surface))
+                : L10n.F("{0}: no AI partner is waiting for you.", L10n.T(surface)));
         }
     }
 
@@ -138,7 +132,7 @@ internal static class SimActions
             SimRuntime.SetModeAndStyle((SimMode)(int)nextMode, nextStyle);
             string style = CoachStyle.StyleLabel(nextStyle);
             GD.Print($"[SpireMentor] Autopilot stopped -> {style} (you have the controls).");
-            SimActionLog.Note($"Autopilot stopped; you have the controls ({style}).");
+            SimActionLog.Note(L10n.F("Autopilot stopped; you have the controls ({0}).", style));
             return;
         }
         SimRuntime.SetModeAndStyle((SimMode)(int)nextMode, nextStyle);
@@ -147,8 +141,8 @@ internal static class SimActions
         if (nextMode == SimModeLite.Advisor)
         {
             SimActionLog.Note(nextStyle == AdviceStyle.Coach
-                ? "Coach: nothing shows before you act -- F5 peeks at the AI's next pick."
-                : "Hints: the AI's opinion shows while you decide.");
+                ? L10n.T("Coach: nothing shows before you act -- F5 peeks at the AI's next pick.")
+                : L10n.T("Hints: the AI's opinion shows while you decide."));
         }
     }
 
@@ -179,11 +173,11 @@ internal static class SimActions
         SimRuntime.SetModeAndStyle((SimMode)(int)p.Mode, p.Style);
         if (p.StopAutopilot)
         {
-            SimActionLog.Note($"Autopilot stopped; you have the controls ({CoachStyle.ModeName(p.Mode, p.Style)}).");
+            SimActionLog.Note(L10n.F("Autopilot stopped; you have the controls ({0}).", CoachStyle.ModeName(p.Mode, p.Style)));
         }
         else if (p.Mode == SimModeLite.Off)
         {
-            SimActionLog.Note("AI off.");
+            SimActionLog.Note(L10n.T("AI off."));
         }
         if (p.DisarmAutoplay && SimRuntime.AdvisorAutoplayArmed)
         {
@@ -200,8 +194,8 @@ internal static class SimActions
         else if (p.Mode == SimModeLite.Advisor && !p.StopAutopilot)
         {
             SimActionLog.Note(p.Style == AdviceStyle.Coach
-                ? "Coach: nothing shows before you act -- F5 peeks at the AI's next pick."
-                : "Hints: the AI's opinion shows while you decide.");
+                ? L10n.T("Coach: nothing shows before you act -- F5 peeks at the AI's next pick.")
+                : L10n.T("Hints: the AI's opinion shows while you decide."));
         }
     }
 
@@ -240,8 +234,8 @@ internal static class SimActions
         SpireMentorModConfig.SaveSoon();
         GD.Print($"[SpireMentor] Style -> {CoachStyle.StyleLabel(nextStyle)}");
         SimActionLog.Note(nextStyle == AdviceStyle.Coach
-            ? "Coach: nothing shows before you act -- F5 peeks at the AI's next pick."
-            : "Hints: the AI's opinion shows while you decide.");
+            ? L10n.T("Coach: nothing shows before you act -- F5 peeks at the AI's next pick.")
+            : L10n.T("Hints: the AI's opinion shows while you decide."));
     }
 
     /// <summary>
@@ -255,14 +249,14 @@ internal static class SimActions
         GD.Print($"[SpireMentor] F5 pressed (mode {SimRuntime.Mode}, style {SimRuntime.Style}).");
         if (SimRuntime.Mode == SimMode.Advisor && SimRuntime.Style == AdviceStyle.Hints)
         {
-            SimToolbar.Instance.SetNote("Hints already shows the AI's pick (F5 peeks in Coach)");
+            SimToolbar.Instance.SetNote(L10n.T("Hints already shows the AI's pick (F5 peeks in Coach)"));
             return;
         }
         if (!SimRuntime.CoachStyleActive)
         {
             GD.Print("[SpireMentor] F5 peeks in Coach mode.");
-            SimToolbar.Instance.SetNote("F5 peeks in Coach mode");
-            SimActionLog.Note("F5 peeks in Coach mode (click the Spire Mentor badge and pick Coach).");
+            SimToolbar.Instance.SetNote(L10n.T("F5 peeks in Coach mode"));
+            SimActionLog.Note(L10n.T("F5 peeks in Coach mode (click the Spire Mentor badge and pick Coach)."));
             return;
         }
         SimAdvisor.Instance.Peek();
@@ -282,7 +276,9 @@ internal static class SimActions
                 ? "the AI is already playing (Autopilot) -- press F8 to take over"
                 : "press F8 to turn Advisor mode on";
             GD.Print($"[SpireMentor] {what} needs Advisor mode: {how}.");
-            SimActionLog.Note($"{what} needs Advisor mode: {how}.");
+            SimActionLog.Note(L10n.F("{0} needs Advisor mode: {1}.", L10n.T(what), SimRuntime.Mode == SimMode.Autopilot
+                ? L10n.T("the AI is already playing (Autopilot) -- press F8 to take over")
+                : L10n.T("press F8 to turn Advisor mode on")));
             return;
         }
         action();

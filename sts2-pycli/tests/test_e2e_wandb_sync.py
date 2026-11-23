@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from ppo.e2e import ops_contract as OC
+from ppo.e2e import stats as S
 from ppo.e2e import wandb_sync as W
 
 
@@ -167,3 +168,68 @@ def test_variants_get_their_own_series_and_an_old_cursor_relogs_evals(tmp_path: 
     # The new cursor is schema 2: a second Sync logs nothing again.
     run2 = FakeRun()
     assert W.Sync(sd, run2).tick() == 0
+
+
+# ── per-character keys (GH #1197) ──
+
+
+def test_wandb_flatten_by_char_keys() -> None:
+    row = {
+        "it": 3,
+        "decisions": 1000,
+        "win": 0.25,
+        "mix_share": 0.4,
+        "by_char": {
+            "Silent": {"runs": 4, "win": 0.5, "entropy": {"combat": 0.3}, "kl": {}},
+            "Ironclad": {"runs": 2, "win": 0.0, "boss_win_act1": None},
+        },
+    }
+    out = W.flatten(row)
+    assert (out["Silent/train/win"], out["Silent/train/runs"]) == pytest.approx((0.5, 4.0))
+    assert out["Silent/train/entropy/combat"] == pytest.approx(0.3)
+    assert out["Ironclad/train/win"] == pytest.approx(0.0)
+    assert "Ironclad/train/boss_win_act1" not in out
+    assert (out["win"], out["mix_share"]) == pytest.approx((0.25, 0.4))
+    assert not any(k.startswith("by_char") for k in out)
+
+
+def test_wandb_eval_points_character(tmp_path: Path) -> None:
+    done = tmp_path / "done"
+    done.mkdir()
+    rec = {
+        "panel": "DEV-500",
+        "variant": "ema0999",
+        "character": "Regent",
+        "state": "/lane/ckpt/pinned/state_d0000100000005_it9.pt",
+        "wins": 60,
+        "runs": 500,
+        "rc": 0,
+    }
+    (done / "a.json").write_text(json.dumps(rec), encoding="utf-8")
+    old = {k: v for k, v in rec.items() if k != "character"} | {"panel": "DEV-1000", "runs": 1000}
+    (done / "b.json").write_text(json.dumps(old), encoding="utf-8")
+    pts = dict(W.eval_points(done, set()))
+    a = pts["a"]
+    lo, hi = S.wilson(60, 500)
+    assert a["decisions"] == pytest.approx(100000005.0)
+    assert a["Regent/dev/ema0999/win_rate"] == pytest.approx(0.12)
+    assert (a["Regent/dev/ema0999/wins"], a["Regent/dev/ema0999/runs"]) == pytest.approx((60, 500))
+    assert (a["Regent/dev/ema0999/ci_lo"], a["Regent/dev/ema0999/ci_hi"]) == pytest.approx((lo, hi))
+    # A character's record stays off the pooled curves (one per character instead).
+    assert not any(k.startswith("eval/") and "win_rate" in k for k in a)
+    b = pts["b"]  # a record without a character keeps its old keys
+    assert b["eval/DEV-1000/ema0999/win_rate"] == pytest.approx(0.06)
+    assert b["eval/ema0999/win_rate"] == pytest.approx(0.06)
+
+
+def test_wandb_eval_points_human_env(tmp_path: Path) -> None:
+    """A held-out human-start eval (`"env": "human"`) logs under `<C>/human/...`, off
+    the character's DEV curve."""
+    done = tmp_path / "done"
+    done.mkdir()
+    rec = {"panel": "DEV-500", "variant": "ema0999", "character": "Silent", "env": "human",
+           "state": "/x/state_d000000500000000.pt", "wins": 100, "runs": 500, "rc": 0}  # fmt: skip
+    (done / "h.json").write_text(json.dumps(rec))
+    [(rid, point)] = list(W.eval_points(done, set()))
+    assert rid == "h" and point["Silent/human/ema0999/win_rate"] == pytest.approx(0.2)
+    assert not [k for k in point if "/dev/" in k]

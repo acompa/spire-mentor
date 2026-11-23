@@ -217,6 +217,41 @@ fn checkers_hold_over_random_legal_play(tc: TestCase) {
     }
 }
 
+/// `CombatState::clone` and the hand-written clones under it (`PlayerCombatState`,
+/// `TurnEvents`, `CoopState`, `OrbSlots`, ...) must produce a state equal to
+/// the original at every point of a real combat, and the clone must play on
+/// exactly like the original: both copies take the same next action and must
+/// stay equal.
+#[hegel::test(test_cases = 40)]
+fn clone_equals_original_over_random_legal_play(tc: TestCase) {
+    let seed = tc.draw(gs::integers::<u64>());
+    let n_steps = tc.draw(gs::integers::<u32>().min_value(1).max_value(60)) as usize;
+    let picks: Vec<u16> = (0..n_steps)
+        .map(|_| tc.draw(gs::integers::<u16>()))
+        .collect();
+
+    let mut state = ironclad_vs_nibbit(seed);
+    let mut twin = state.clone();
+    assert_eq!(twin, state, "seed={seed}: fresh clone");
+
+    for (step, pick) in picks.iter().copied().enumerate() {
+        if state.is_over {
+            break;
+        }
+        let actions = legal_actions(&state);
+        assert_eq!(legal_actions(&twin), actions, "seed={seed} step={step}");
+        if actions.is_empty() {
+            break;
+        }
+        let action = actions[pick as usize % actions.len()].clone();
+        apply(&mut state, action.clone());
+        apply(&mut twin, action.clone());
+        assert_eq!(twin, state, "seed={seed} step={step} action={action:?}");
+        twin = state.clone();
+        assert_eq!(twin, state, "seed={seed} step={step}: re-clone");
+    }
+}
+
 /// Invariant 8 (`d03` player/creature unification) says the mirror row and
 /// the legacy `PlayerCombatState` scalars always agree, and every
 /// player-block mutation micro-syncs the row (bead `sts2-rs-73up8`:

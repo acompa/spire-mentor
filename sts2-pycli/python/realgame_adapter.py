@@ -23,15 +23,16 @@ draw-pile semantics -- see the real-game-bridge plan's phase-2 task list):
   ``sts2_rs.list_registry_names("card")`` directly, so
   :mod:`sts2_hint.adapter`'s bare-id resolution path (``_resolve_card_id``)
   accepts them verbatim. No re-mapping needed.
-* **Relic / monster ids.** The bridge sends canonical relic ids
-  (``"BURNING_BLOOD"``) that also match the ``sts2_rs`` registry directly,
-  but :mod:`sts2_hint.adapter`'s relic translator only accepts a display
-  **title** (looked up via ``RELIC_TITLE_TO_ID``) -- so relics are emitted
-  keyed by the bridge's ``name`` field, not ``id``. Monsters are the same
-  story: the bridge's ``id`` (``"SHRINKER_BEETLE"``) does NOT match the
-  registry's CamelCase monster ids (``"ShrinkerBeetle"``), but the bridge's
-  ``name`` (``"Shrinker Beetle"``) matches ``MONSTER_TITLE_TO_ID`` exactly,
-  so enemies are also emitted keyed by ``name``.
+* **Ids, not names (GH #1423).** Every ``name`` the bridge sends is the
+  game's localized title, so on a Chinese game it is ``"闪电"``, not
+  ``"Lightning"``. Relics, monsters, orbs, potions and powers are therefore
+  resolved by their model ``id`` and the title is only the fallback.
+  Relic ids (``"BURNING_BLOOD"``) and potion ids match the ``sts2_rs``
+  registry directly. Monster ids (``"SHRINKER_BEETLE"``) are matched to the
+  registry's CamelCase kinds (``"ShrinkerBeetle"``) ignoring underscores and
+  case (``sts2_hint.adapter._monster_kind_from_wire``). Orbs: see the orb
+  stem in ``to_headless_combat_play``. Powers: see the next bullet. Both
+  ``id`` and ``name`` are forwarded.
 * **Powers.** The bridge's power ``id`` is the C# ``Id.Entry``, which
   keeps a ``_POWER`` suffix the Rust registry strips for most powers
   (``VULNERABLE_POWER`` vs the engine's ``VULNERABLE``) -- exactly the
@@ -137,6 +138,7 @@ import logging
 from typing import Any
 
 from sts2_client import LEGACY_GAME_VERSION, SUPPORTED_GAME_VERSIONS, normalize_game_version
+from sts2_hint.canonical_maps import ORB_TITLE_TO_ID, id_key
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +165,8 @@ def envelope_game_version(msg: dict[str, Any]) -> str:
     Read from the envelope's ``game_version`` (``SimStateExtractor.ApplyEnvelope``,
     PROTOCOL.md section 1). Absent, ``None`` or blank -- every mod build before
     the field -- means :data:`sts2_client.LEGACY_GAME_VERSION` (v0.107.1), so an
-    old mod gets exactly the engine it always got.
+    old mod gets exactly the engine it always got. A hotfix of a supported
+    build (``v0.113.1``) is that build (:func:`sts2_client.hotfix_base`).
 
     Raises:
         UnsupportedGameVersionError: a build outside
@@ -175,9 +178,19 @@ def envelope_game_version(msg: dict[str, Any]) -> str:
     if not isinstance(raw, str):
         raise UnsupportedGameVersionError(raw)
     try:
-        return normalize_game_version(raw)
+        version = normalize_game_version(raw)
     except ValueError:
         raise UnsupportedGameVersionError(raw) from None
+    if raw.strip().lstrip("vV") != version.lstrip("v") and raw not in _HOTFIXES_LOGGED:
+        _HOTFIXES_LOGGED.add(raw)
+        logger.info(
+            "game build %s is a hotfix of %s; advising with the %s engine", raw, version, version
+        )
+    return version
+
+
+#: Hotfix builds already logged by :func:`envelope_game_version` (once each).
+_HOTFIXES_LOGGED: set[str] = set()
 
 
 #: Bridge ``run_state.character`` (SCREAMING_CASE) -> the Title-Case
@@ -189,61 +202,55 @@ CHARACTER_ID_TO_DISPLAY: dict[str, str] = {
     "DEFECT": "Defect",
     "NECROBINDER": "Necrobinder",
     "REGENT": "Regent",
+    "FOOL": "Fool",
 }
-
-#: Bridge Orb ``id`` -> the stem ``sts2_hint.canonical_maps.ORB_TITLE_TO_ID``
-#: keys on (the localized display title: ``"Lightning"``, ``"Frost"``, ...).
-#: Two dialects reach us: ``PROTOCOL.md`` documents CamelCase
-#: ``"LightningOrb"``, but the live v0.107.1 game's ``OrbModel.Id.Entry`` is
-#: SCREAMING_SNAKE (``"LIGHTNING_ORB"`` -- observed on every Defect wire).
-_ORB_ID_SUFFIX = "Orb"
-_ORB_ID_SUFFIX_SNAKE = "_ORB"
-
-#: The bridge Creature ``id`` (``Monster.Id.Entry``, via
-#: ``SimStateExtractor.SafeCreatureId``) of the Necrobinder's Osty. Used to pick
-#: Osty out of ``PlayerCombatState.Pets``, which also holds Byrdpip/PaelsLegion.
-_OSTY_PET_ID = "OSTY"
-
-#: ``run_state.character`` value the headless twin gates its "no Osty" sentinel
-#: on (RunSimulator.cs:3988-3990).
-_NECROBINDER_CHARACTER_ID = "NECROBINDER"
 
 
 class UnsupportedCharacterError(ValueError):
-    """A board with a character the engine does not simulate yet (v0.113.0's
-    The Fool). ``str(exc)`` is the player-facing HUD note; ``raw`` the id."""
+    """A board with a character the reported game build has no rules for
+    (v0.113.0's The Fool on an older build). ``str(exc)`` is the
+    player-facing HUD note; ``raw`` the id."""
 
-    def __init__(self, raw: str) -> None:
+    def __init__(self, raw: str, build: str) -> None:
         self.raw = raw
-        name = _UNSUPPORTED_CHARACTER_NAMES[raw]
+        name, first = _BUILD_GATED_CHARACTERS[raw]
         super().__init__(
-            f"{name} support is coming soon to Spire Mentor. Until then there is no advice "
-            f"for runs with this character (supported: {', '.join(CHARACTER_ID_TO_DISPLAY.values())})."
+            f"{name} needs game version {first} or newer; this game reports {build}, so there "
+            "is no advice for this run."
         )
 
 
-#: Display names of characters the engine does not simulate yet.
-_UNSUPPORTED_CHARACTER_NAMES = {"FOOL": "The Fool"}
+#: Characters that exist only from a game build on: id -> (display name,
+#: first build). Rust twin: `sts2_advisor::serve::BUILD_GATED_CHARACTERS`.
+_BUILD_GATED_CHARACTERS = {"FOOL": ("The Fool", "v0.113.0")}
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in version.lstrip("vV").split("."))
 
 
 def check_supported_characters(msg: dict[str, Any]) -> None:
-    """Refuse a board whose own character or any ally's is one the engine
-    knows it cannot simulate (`_UNSUPPORTED_CHARACTER_NAMES`).
+    """Refuse a board whose own character or any ally's does not exist on the
+    game build the board reports (`_BUILD_GATED_CHARACTERS`): the engine has
+    no rules for The Fool before v0.113.0.
 
-    Only that named set is refused. Any other id outside
-    ``CHARACTER_ID_TO_DISPLAY`` (a modded or renamed character) passes, as
-    do absent / blank ids: the adapter then infers the character from card
-    ids, as it did before the gate existed.
+    Any other id (a modded or renamed character) passes, as do absent / blank
+    ids: the adapter then infers the character from card ids. Call it after
+    :func:`envelope_game_version`, which refuses an unknown build first.
 
     Raises:
-        UnsupportedCharacterError: the first known-unsupported character id.
+        UnsupportedCharacterError: the first character the build lacks.
     """
+    build = envelope_game_version(msg)
     run_state = msg.get("run_state")
     ids = [run_state.get("character") if isinstance(run_state, dict) else None]
     ids += [a.get("character") for a in (msg.get("allies") or []) if isinstance(a, dict)]
     for cid in ids:
-        if isinstance(cid, str) and cid.strip().upper() in _UNSUPPORTED_CHARACTER_NAMES:
-            raise UnsupportedCharacterError(cid.strip().upper())
+        if not isinstance(cid, str):
+            continue
+        gated = _BUILD_GATED_CHARACTERS.get(cid.strip().upper())
+        if gated is not None and _version_key(build) < _version_key(gated[1]):
+            raise UnsupportedCharacterError(cid.strip().upper(), build)
 
 
 def character_display_name(character_id: str | None) -> str | None:
@@ -283,395 +290,6 @@ def run_ascension(run_state: dict[str, Any], default: int = 0) -> int:
     return default if value is None else int(value)
 
 
-def _normalize_affliction_name(name: str) -> str:
-    """Normalize a per-card affliction onto the class-name wire vocabulary
-    (``card_affliction_kind_from_wire`` in sts2-rs). Converts the unresolved
-    headless loc-key form ``"<NAME>.title"`` -> ``"Name"`` (headless echoes
-    the key when ``localization_eng/afflictions.json`` lacks the entry —
-    currently Tainted/Devoured/Weighted); the bare class name passes through.
-    """
-    if name.endswith(".title"):
-        stem = name[: -len(".title")]
-        return stem.replace("_", " ").title().replace(" ", "")
-    return name
-
-
-def _translate_power(power: dict[str, Any]) -> dict[str, Any]:
-    """One bridge Power object -> a headless power dict.
-
-    ``display_amount`` and ``vars`` are forwarded verbatim for
-    :func:`sts2_hint.adapter._translate_power` to interpret — it owns the
-    ``amount``-vs-``DisplayAmount`` rule (WitheringPresence's countdown) and the
-    ``_POWER_VAR_TO_ENGINE_FIELD`` table (CrimsonMantle/Inferno ``SelfDamage``).
-    Passed through as ``None``-tolerant keys so a mod build that predates the
-    bridge emitting them behaves exactly as before rather than claiming zero.
-
-    ``applier`` is the net id of the player who applied it (co-op, GH #1004),
-    which :func:`sts2_hint.adapter._resolve_power_appliers` maps to a seat.
-    ``player_target`` is the teammate an Imitation Learning copies (GH #992).
-    """
-    out = {
-        "id": power.get("id"),
-        "name": power.get("name"),
-        "amount": power.get("amount", 0),
-        "display_amount": power.get("display_amount"),
-        "vars": power.get("vars"),
-    }
-    for key in ("applier", "player_target"):
-        if power.get(key) is not None:
-            out[key] = power[key]
-    return out
-
-
-def _keywords_for_hand_card(card: dict[str, Any]) -> list[str]:
-    """Static keyword flags for a bridge hand Card object.
-
-    Only flags that are true *card properties* (independent of the
-    current energy/turn state) are forwarded -- see the module docstring's
-    "``unplayable`` keyword" note for why ``playable: false`` alone must
-    NOT set the ``unplayable`` flag.
-    """
-    kws: list[str] = []
-    if card.get("retain"):
-        kws.append("retain")
-    if card.get("ethereal"):
-        kws.append("ethereal")
-    if card.get("innate"):
-        kws.append("innate")
-    reason = card.get("unplayable_reason") or ""
-    if "HasUnplayableKeyword" in reason:
-        kws.append("unplayable")
-    return kws
-
-
-def _translate_card(card: dict[str, Any], index: int, *, hand: bool = False) -> dict[str, Any]:
-    """One bridge Card object (any pile) -> a headless CombatCard dict.
-
-    Args:
-        card: Bridge Card object (see ``PROTOCOL.md`` "Card object").
-        index: Assigned wire ``index`` -- for hand cards this MUST be the
-            card's position within the hand list (see module docstring's
-            "Hand ``stable_idx``" note); for other piles any unique value
-            is fine, it's otherwise unread.
-        hand: Whether this card came from ``hand`` -- gates keyword-flag
-            translation, mirroring ``sts2_hint.adapter._translate_card``.
-    """
-    out: dict[str, Any] = {
-        "index": index,
-        "id": card.get("id"),
-        "name": card.get("name"),
-        "type": card.get("type"),
-        # effective_cost is authoritative (handles X-cost cards); fall
-        # back to cost if a fixture/older snapshot omits it. For non-X cards
-        # the two are identical by construction (both are
-        # ``Max(0, GetWithModifiers(All))`` -- decomp ``CardEnergyCost``).
-        "cost": card.get("effective_cost", card.get("cost")),
-        "upgraded": bool(card.get("upgrade_level")) or bool(card.get("upgraded")),
-    }
-    # The layered cost model -- forwarded verbatim so
-    # ``sts2_hint.adapter._translate_card`` sees the identical shape the
-    # headless (Sts2Headless) wire gives it. ``base_cost`` is the instance's
-    # OWN cost (local modifiers applied, global power hooks excluded -- C#
-    # ``GetWithModifiers(CostModifiers.Local)``, ``-1`` = X-cost sentinel);
-    # ``persistent_cost``/``played_cost``/``stable_cost`` are what it becomes
-    # after the end-of-turn / when-played / both cleanup edges. Without these
-    # the engine rebuilds ``Card.cost`` from the resolved ``cost`` alone, and
-    # every transient discount bakes in as a permanent one while every
-    # per-turn dynamic (Stomp, Cascade) loses its spring-back -- on the first
-    # persistent-CombatMirror live sweep 171 of 451 pile-only desync records
-    # differed ONLY in the cost element of the pile card key, dominated by
-    # exactly those dynamic-cost cards (logs/diag/mirror_live1.jsonl). The
-    # ``isinstance`` guard keeps a pre-field mod build's absent/null values
-    # off the wire so absent behaves exactly as before rather than claiming a
-    # cost of ``None``.
-    #
-    # ``star_cost`` / ``persistent_star_cost`` are the same idea for STARS
-    # (C# ``CurrentStarCost`` / ``GetStarCostThisCombat``). ``SetToFreeThisTurn``
-    # zeroes both currencies, so without them a Splash- or Discovery-generated
-    # Regent star card rebuilt free in energy but at its printed star cost --
-    # unplayable for a star-less Silent, who then ended the turn holding a free
-    # attack.
-    for cost_key in (
-        "base_cost",
-        "persistent_cost",
-        "played_cost",
-        "stable_cost",
-        "star_cost",
-        "persistent_star_cost",
-    ):
-        v = card.get(cost_key)
-        if isinstance(v, int) and not isinstance(v, bool):
-            out[cost_key] = v
-    # Current base stats (the card's DynamicVars: post-upgrade,
-    # post-enchantment, post-permanent-growth base values). The headless
-    # dialect ships them as ``stats`` and ``sts2_hint.adapter._translate_card``
-    # maps ``damage``/``block`` onto the engine's ``base_damage``/``base_block``
-    # -- the ONLY wire signal that a card's base differs from its registry
-    # spec beyond the upgrade flag (Sharp/Nimble enchantment deltas, Rampage's
-    # own permanent growth). Absent on pre-field mod builds, which leaves the
-    # engine's registry/upgraded-build fallback in charge exactly as before.
-    stats = card.get("stats")
-    if isinstance(stats, dict):
-        clean_stats = {
-            k: v for k, v in stats.items() if isinstance(v, int) and not isinstance(v, bool)
-        }
-        if clean_stats:
-            out["stats"] = clean_stats
-    # Run-persistent enchantment (Nimble/Sharp/Steady/...). The engine
-    # resolves the name via ``EnchantmentId::from_wire_name`` (case- and
-    # punctuation-insensitive, ``.title``-suffix tolerant), so the bridge's
-    # ``Id.Entry`` ("NIMBLE") and the headless localized title ("Nimble")
-    # both land on the same kind. Amount follows the headless convention:
-    # absent means one stack (``ParsedCard::enchantment_amount``).
-    enchantment = card.get("enchantment")
-    if isinstance(enchantment, str) and enchantment:
-        out["enchantment"] = enchantment
-        ench_amount = card.get("enchantment_amount")
-        if isinstance(ench_amount, int) and not isinstance(ench_amount, bool):
-            out["enchantment_amount"] = ench_amount
-    # Per-card affliction (Bound/Tainted/...): forwarded so the engine's
-    # reconstruction respects play vetoes like ChainsOfBinding (the Queen
-    # fight) and self-damage taxes like Tainted (Infested Prism) inside
-    # rollouts, not just at the root mask. Headless without a localized
-    # afflictions.json entry emits an unresolved loc key ("TAINTED.title");
-    # normalize it onto the class-name wire vocabulary or state_from_dict
-    # silently drops the affliction (the un-tainted-deck gap).
-    affliction = card.get("affliction")
-    if isinstance(affliction, str) and affliction:
-        out["affliction"] = _normalize_affliction_name(affliction.split(" / ", 1)[0].strip())
-        stacks = card.get("affliction_stacks", card.get("affliction_amount"))
-        if isinstance(stacks, int):
-            out["affliction_stacks"] = stacks
-    # Per-instance combat scratch the mod disclosed (``combat_vars``, the
-    # engine's ``VarKey`` wire names): forwarded for ``sts2_hint.adapter``.
-    combat_vars = card.get("combat_vars")
-    if isinstance(combat_vars, dict) and combat_vars:
-        out["combat_vars"] = dict(combat_vars)
-    # Extra plays the instance gained this combat (Soldier's Stew, Hidden Gem).
-    replays = card.get("base_replay_count")
-    if isinstance(replays, int) and not isinstance(replays, bool) and replays:
-        out["base_replay_count"] = replays
-    if hand:
-        kws = _keywords_for_hand_card(card)
-        if kws:
-            out["keywords"] = kws
-    return out
-
-
-def _translate_pile(
-    cards: list[dict[str, Any]], start_index: int, *, hand: bool = False
-) -> tuple[list[dict[str, Any]], int]:
-    """Translate a list of bridge Card objects, assigning sequential indices.
-
-    Returns the translated list and the next free index (for the caller
-    to thread through subsequent piles).
-    """
-    out = []
-    idx = start_index
-    for card in cards:
-        out.append(_translate_card(card, idx, hand=hand))
-        idx += 1
-    return out, idx
-
-
-def _translate_relic(relic: dict[str, Any]) -> dict[str, Any]:
-    """One bridge Relic object -> a headless relic dict (id- and title-keyed).
-
-    The headless dialect (RunSimulator.cs relic serializer) carries the live
-    progress as a TOP-LEVEL ``counter`` plus the ToyBox ``is_wax``/
-    ``is_melted`` flags, and that is what ``sts2_hint.adapter._translate_relic``
-    reads. Nesting the counter under ``vars`` (the old shape here) meant every
-    counter relic (Nunchaku, Kusarigama, HappyFlower, Pen Nib, ...)
-    reconstructed with ``counter=None`` on the live path only, and melted wax
-    relics stayed hook-active in the mirror.
-
-    The canonical ``id`` (``RelicModel.Id.Entry``) is forwarded alongside the
-    ``name`` because the live ``name`` is neither stable nor complete:
-
-    * ``SimStateExtractor.SerializeRelic`` sends ``relic.Title.GetFormattedText()``,
-      and ``RelicModel.Title`` PREFIXES a wax relic with ToyBox's
-      ``"Wax {Title}"`` template (RelicModel.cs:48-61, ToyBox.cs:26,
-      ``localization_eng/relics.json`` ``"TOY_BOX.waxRelicPrefix"``). Every wax
-      title therefore misses ``RELIC_TITLE_TO_ID`` -- and ToyBox grants FOUR
-      wax relics at once (ToyBox.cs:87-95), so all four vanished from every
-      reconstructed live combat state.
-    * Relics that exist in the live build but not in this repo's
-      ``localization_eng/`` snapshot (FISHING_ROD, SILKEN_TRESS) have no title
-      key at all and soft-dropped the same way.
-
-    ``sts2_hint.adapter._translate_relic`` prefers a registry-valid ``id`` and
-    keeps the title path as the fallback, mirroring what the headless wire
-    already does (RunSimulator.cs:5047 emits both ``id`` and ``name``).
-    """
-    variables: dict[str, int] = {}
-    stack_count = relic.get("stack_count")
-    if isinstance(stack_count, int) and stack_count > 1:
-        variables["stack_count"] = stack_count
-    out: dict[str, Any] = {
-        "id": relic.get("id"),
-        "name": relic.get("name"),
-        "vars": variables or None,
-    }
-    counter = relic.get("counter")
-    if isinstance(counter, int) and not isinstance(counter, bool):
-        out["counter"] = counter
-    # Same only-when-true convention as both C# producers' wires.
-    if relic.get("is_wax"):
-        out["is_wax"] = True
-    if relic.get("is_melted"):
-        out["is_melted"] = True
-    return out
-
-
-def _translate_intent(intent: dict[str, Any]) -> dict[str, Any]:
-    """One bridge Intent object -> a headless intent dict.
-
-    Uses ``intent_type`` (the ``IntentType`` enum member, e.g.
-    ``"Attack"``/``"Buff"``) for the headless ``type`` field --
-    ``sts2_hint.canonical_maps.INTENT_TYPES`` is exactly that enum's
-    value set, whereas the bridge's ``kind`` is the raw C# intent *class*
-    name (``"SingleAttackIntent"``) which doesn't match it.
-    """
-    out: dict[str, Any] = {"type": intent.get("intent_type")}
-    if intent.get("damage") is not None:
-        out["damage"] = intent["damage"]
-    if intent.get("hits") is not None:
-        out["hits"] = intent["hits"]
-    return out
-
-
-def _translate_enemy(enemy: dict[str, Any], index: int) -> dict[str, Any]:
-    """One bridge Creature (enemy) object -> a headless enemy dict."""
-    out = {
-        "index": index,
-        "name": enemy.get("name"),
-        "hp": enemy.get("hp"),
-        "max_hp": enemy.get("max_hp"),
-        "block": enemy.get("block", 0),
-        # The bridge ships the FULL creature list (corpses inline, matching
-        # its own target_index space). Flag corpses so the reconstruction
-        # builds them as proper 0-hp revivers (Decimillipede REATTACH,
-        # IllusionPower) instead of pseudo-alive hp-0 creatures.
-        "is_dead": not enemy.get("is_alive", True),
-        "powers": [_translate_power(p) for p in (enemy.get("powers") or [])],
-        "intents": [_translate_intent(i) for i in (enemy.get("intents") or [])],
-        # Enemy AI move-state id, so sts2-rs rebuilds the real move-state
-        # machine (state_dict.rs `force_current_state_by_name`) and rollouts
-        # replay the actual moveset past turn 1 instead of falling back to the
-        # heuristic enemy AI. The bridge's telegraphed `next_move_id` (the
-        # monster's current MonsterState id, e.g. Kin Priest `RITUAL_MOVE`)
-        # IS that current state -- the id strings match the sts2-rs AI state
-        # names 1:1 (verified: ORB_OF_FRAILTY_MOVE/ORB_OF_WEAKNESS_MOVE/
-        # BEAM_MOVE/RITUAL_MOVE). An unknown/absent id falls back to None in
-        # sts2-rs (the prior heuristic-AI behavior), so this never regresses a
-        # monster whose id doesn't match.
-        "move_state": enemy.get("move_state") or enemy.get("next_move_id"),
-    }
-    # Allowlisted private-AI-state disclosures (both C# producers emit the
-    # same field names -- ``SimStateExtractor.AppendMonsterHiddenState`` /
-    # ``RunSimulator.AppendMonsterHiddenState``): ``fabricator_last_spawned``
-    # is the last-spawned bot's canonical ``Id.Entry`` (Fabricator's next
-    # SpawnBot pool excludes it; the engine otherwise infers it from the
-    # max-uid living bot, unrecoverable once that bot died) and
-    # ``curse_of_knowledge_counter`` is KnowledgeDemon's curse index (the
-    # Disintegration 6/7/8 table -- the off-by-one when rebuilt at 0).
-    # Forwarded verbatim; absent on pre-field mod builds, which keeps the
-    # engine's existing inference in charge exactly as before.
-    last_spawned = enemy.get("fabricator_last_spawned")
-    if isinstance(last_spawned, str) and last_spawned:
-        out["fabricator_last_spawned"] = last_spawned
-    curse_counter = enemy.get("curse_of_knowledge_counter")
-    if isinstance(curse_counter, int) and not isinstance(curse_counter, bool):
-        out["curse_of_knowledge_counter"] = curse_counter
-    # The move machine's state (#1181, ``AppendMoveMachineState`` in both C#
-    # producers): ``log`` (``StateLog`` ids), ``performed_first_move``,
-    # ``performed``. The engine restores the AI's move log from it, which the
-    # repeat rules and cooldowns read. Forwarded verbatim.
-    ai = enemy.get("ai")
-    if isinstance(ai, dict):
-        out["ai"] = ai
-    # C# ``Creature.CombatId`` (newer mods): what a combat-log row names its
-    # target by, so a co-op replay can find it (``coop_replay``).
-    combat_id = enemy.get("combat_id")
-    if isinstance(combat_id, int) and not isinstance(combat_id, bool):
-        out["combat_id"] = combat_id
-    return out
-
-
-def _orb_type_stem(orb: dict[str, Any]) -> str:
-    """Resolve a bridge Orb object onto an ``ORB_TITLE_TO_ID`` key.
-
-    The rendered ``name`` IS that key (``"Lightning"``), so it is preferred --
-    the same reason relics and enemies are emitted keyed by ``name``. The
-    ``id`` fallback covers both spellings the producers use: CamelCase
-    ``"LightningOrb"`` (``PROTOCOL.md``) and the live game's SCREAMING_SNAKE
-    ``"LIGHTNING_ORB"``.
-    """
-    name = orb.get("name")
-    if isinstance(name, str) and name.strip():
-        return name
-    raw_id = orb.get("id") or ""
-    if raw_id.endswith(_ORB_ID_SUFFIX):
-        return raw_id[: -len(_ORB_ID_SUFFIX)]
-    if raw_id.endswith(_ORB_ID_SUFFIX_SNAKE):
-        return raw_id[: -len(_ORB_ID_SUFFIX_SNAKE)].replace("_", " ").title()
-    return raw_id
-
-
-def _translate_orb(orb: dict[str, Any]) -> dict[str, Any]:
-    """One bridge Orb object -> a headless orb dict."""
-    return {
-        "type": _orb_type_stem(orb),
-        "passive": orb.get("passive_value", 0),
-        "evoke": orb.get("evoke_value", 0),
-    }
-
-
-def _translate_osty(
-    pets: list[dict[str, Any]], character_id: str | None = None
-) -> dict[str, Any] | None:
-    """Necrobinder's Osty companion from the bridge ``pets`` list, if any.
-
-    ``PlayerCombatState.Pets`` is a LIST (PlayerCombatState.cs:17,27) and Osty
-    is only one of the things that push onto it: the **Byrdpip** relic (Event
-    rarity, ANY character -- Byrdpip.cs:71) and **PaelsLegion** (Ancient, any
-    character -- PaelsLegion.cs:223) both ``AddPet`` too. The game's own
-    accessor is ``Player.Osty => PlayerCombatState.GetPet<Osty>()``
-    (Player.cs:134 -> PlayerCombatState.cs:263, filtering ``p.Monster is Osty``)
-    and that is what the headless twin serializes (RunSimulator.cs:3976), so we
-    select by the creature's canonical id rather than taking ``pets[0]``.
-
-    Taking ``pets[0]`` blindly invented an Osty on non-Necrobinder runs -- an
-    Ironclad holding PaelsLegion reconstructed a 9999/9999-HP "Osty" whose
-    DieForYou power soaks every unblocked attack (observed verbatim in
-    ``logs/realgame/20260802T221831Z_9884_4.jsonl``) -- and on a Necrobinder
-    holding one of those relics whichever pet happened to be first won.
-
-    Args:
-        pets: The bridge's ``state["pets"]`` list (may be empty/absent).
-        character_id: The bridge's ``run_state.character`` (SCREAMING_CASE).
-            Only used to decide whether an Osty-less board should emit the
-            headless's explicit "no Osty" sentinel.
-
-    Returns:
-        A headless ``osty`` dict, or ``None`` when the key should be omitted.
-    """
-    osty = next((p for p in pets if str(p.get("id") or "").upper() == _OSTY_PET_ID), None)
-    if osty is None:
-        # The headless twin emits an explicit sentinel rather than omitting the
-        # key when a Necrobinder simply has no Osty out (RunSimulator.cs:3988-3990);
-        # the bridge omits it, which left the two dialects disagreeing.
-        if (character_id or "").upper() == _NECROBINDER_CHARACTER_ID:
-            return {"alive": False, "hp": 0, "max_hp": 0, "block": 0}
-        return None
-    return {
-        "alive": bool(osty.get("is_alive", False)),
-        "hp": osty.get("hp", 0),
-        "max_hp": osty.get("max_hp", 0),
-        "block": osty.get("block", 0),
-    }
-
-
 def to_headless_combat_play(state: dict[str, Any]) -> dict[str, Any]:
     """Translate a v2 bridge ``combat_action`` snapshot to a headless ``combat_play`` dict.
 
@@ -687,267 +305,58 @@ def to_headless_combat_play(state: dict[str, Any]) -> dict[str, Any]:
         ...}``), ready for :func:`sts2_hint.adapter.translate` (called
         downstream by :func:`sts2_hint.recommender.recommend`/``recommend_all``).
 
+    In Rust (``sts2_rs.to_headless_combat_play``, GH #1426). The engine no
+    longer reads this dialect (:func:`combat_wire` builds the fight in one
+    pass); the advisor still does, to label its regret rows and recognize a
+    combat card select.
+
     Raises:
-        KeyError, TypeError: On a structurally malformed ``state`` (e.g.
-            missing ``"player"``). Callers should catch broadly and fall
-            back to a non-MCTS policy -- this function does not itself
-            guard against a malformed bridge payload beyond what plain
-            dict access raises.
+        ValueError: Not a ``combat_action`` board.
+        UnsupportedGameVersionError: A build outside the supported set.
     """
-    if state.get("type") != "combat_action":
-        raise ValueError(
-            f"to_headless_combat_play: expected state['type'] == 'combat_action', "
-            f"got {state.get('type')!r}"
-        )
+    import sts2_rs
 
-    player = state.get("player") or {}
-    run_state = state.get("run_state") or {}
+    if state.get("type") == "combat_action":
+        # The build's refusal as its own error type, and the hotfix log line.
+        envelope_game_version(state)
+    return sts2_rs.to_headless_combat_play(state)
 
-    hand_raw = state.get("hand") or []
-    draw_raw = (state.get("draw_pile") or {}).get("cards") or []
-    discard_raw = (state.get("discard_pile") or {}).get("cards") or []
-    exhaust_raw = (state.get("exhaust_pile") or {}).get("cards") or []
-    # The card mid-play — see the note on the bridge's `play_pile` emitter. Only
-    # a board serialized during a card's own selection screen has anything here.
-    play_raw = (state.get("play_pile") or {}).get("cards") or []
-    master_deck_raw = run_state.get("master_deck") or []
 
-    hand, next_idx = _translate_pile(hand_raw, 0, hand=True)
-    draw, next_idx = _translate_pile(draw_raw, next_idx)
-    discard, next_idx = _translate_pile(discard_raw, next_idx)
-    exhaust, next_idx = _translate_pile(exhaust_raw, next_idx)
-    play, next_idx = _translate_pile(play_raw, next_idx)
-    master_deck, next_idx = _translate_pile(master_deck_raw, next_idx)
+def combat_wire(
+    state: dict[str, Any],
+    *,
+    character: str | None,
+    ascension: int,
+    combat_id: int = 0,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """A bridge ``combat_action`` board -> the engine wire dict, in Rust.
 
-    enemies = [_translate_enemy(e, i) for i, e in enumerate(state.get("enemies") or [])]
+    ``sts2_rs.combat_wire_from_bridge`` (``sts2-workbench``'s
+    ``combat_import``, which the browser workbench runs too) does in one pass
+    what :func:`to_headless_combat_play` followed by
+    ``sts2_hint.adapter.translate`` does in two. The two are kept identical by
+    ``tests/test_board_import_parity.py``. GH #1426 step 1.
 
-    # Elite/boss signal for the engine's ``is_elite`` flag (an eval-net
-    # feature -- eval_wide index 77). The bridge emits the live
-    # ``RunState.CurrentRoom.RoomType`` since the 2026-08-02 dialect audit
-    # (deploy-pending); absent keeps the historical "Combat" default.
-    room_type = state.get("room_type")
-    if not isinstance(room_type, str) or not room_type:
-        room_type = "Combat"
+    ``character`` is the display name (``"Ironclad"``). ``None`` infers it
+    from the card ids, as ``translate`` does (a lane whose run state names no
+    character: the mirrored card select).
 
-    out: dict[str, Any] = {
-        "type": "decision",
-        "decision": "combat_play",
-        "context": {"room_type": room_type},
-        "round": state.get("round", 1),
-        "energy": player.get("energy", 0),
-        "max_energy": player.get("max_energy", player.get("energy", 0)),
-        "hand": hand,
-        "enemies": enemies,
-        "player": {
-            "hp": player.get("hp"),
-            "max_hp": player.get("max_hp"),
-            "block": player.get("block", 0),
-            "relics": [_translate_relic(r) for r in (run_state.get("relics") or [])],
-            "potions": state.get("potions") or [],
-            # Per-turn play counters (5 buckets, Rust CardType order) --
-            # feeds the Ringing/Normality/Sloth ShouldPlay gates so the
-            # rebuilt search state stops offering plays the live game
-            # silently refuses mid-turn. Absent on pre-field mod builds.
-            "cards_played_this_turn": player.get("cards_played_this_turn"),
-            # ChainsOfBinding's once-per-turn Bound gate (Queen fight) --
-            # same rationale as the buckets above. Absent on older mods.
-            "bound_card_played_this_turn": player.get("bound_card_played_this_turn"),
-            # Spite's "lost HP this turn" (a History scan a rebuilt board
-            # cannot redo). Absent on older mods.
-            "hp_lost_this_turn": player.get("hp_lost_this_turn"),
-            # Tear Asunder's and a teammate's Gang Up's History counts
-            # (GH #989). Absent on older mods.
-            "unblocked_hits_this_combat": player.get("unblocked_hits_this_combat"),
-            "powered_hits_this_turn": player.get("powered_hits_this_turn"),
-            # Our exhausts this combat: Midnight counts every player's.
-            # Absent on older mods.
-            "cards_exhausted_this_combat": player.get("cards_exhausted_this_combat"),
-            # This turn's exhausts (Evil Eye) and card block gains
-            # (Unmovable) (GH #989). Absent on older mods.
-            "cards_exhausted_this_turn": player.get("cards_exhausted_this_turn"),
-            "card_block_gains_this_turn": player.get("card_block_gains_this_turn"),
-            # Extra turns taken this combat (PaelsEye, Ambergris): the
-            # turn-number gates read round + this (GH #812). Absent on older
-            # mods.
-            "extra_turns_taken_this_combat": player.get("extra_turns_taken_this_combat"),
-            # Run gold, from the bridge envelope's ``run_state`` -- gates the
-            # in-combat gold-spending relic hooks (SealOfGold's 5-gold
-            # turn-start energy buy). ``sts2_hint.adapter`` only forwards an
-            # int, so a pre-field/absent value degrades to the engine default
-            # exactly as before. This was the v27wr sweep's dominant
-            # ``$.player.energy`` class on the DLL arm; the live arm dropped
-            # the field here and kept the bug after the DLL fix.
-            "gold": run_state.get("gold"),
-        },
-        "player_powers": [_translate_power(p) for p in (player.get("powers") or [])],
-        "draw_pile": draw,
-        "discard_pile": discard,
-        "exhaust_pile": exhaust,
-        # Read by `sts2_hint.adapter.translate()` into `wire["deck"]["play_pile"]`.
-        "play_pile": play,
-        # Consumed by sts2_hint.adapter.translate() (see module docstring's
-        # "master_deck" note) -- threaded into wire["deck"]["master_deck"].
-        "master_deck": master_deck,
-    }
-    # Belt CAPACITY (C# ``Player.MaxPotionCount``; 2 under A4 Tight Belt) from
-    # the bridge's run block. ``sts2_hint.adapter.translate`` forwards it as
-    # the wire's ``player.potion_slots``; without it a rebuilt board's
-    # slot-filling potions fill as if the belt had 5 slots (GH #893).
-    slot_count = run_state.get("potion_slot_count")
-    if isinstance(slot_count, int) and not isinstance(slot_count, bool):
-        out["player"]["potion_slots"] = slot_count
-    # The act, 1-based (the bridge's top-level ``act``): ``translate``
-    # forwards it as the wire's ``act_index`` (GH #989).
-    act = state.get("act")
-    if isinstance(act, int) and not isinstance(act, bool):
-        out["act"] = act
-    # The run-wide floor (the bridge's top-level ``floor``, C#
-    # ``RunState.TotalFloor``): ``translate`` forwards it as the wire's
-    # ``total_floor``, which v0.113.0's TheTower scales with (GH #1337).
-    floor = state.get("floor")
-    if isinstance(floor, int) and not isinstance(floor, bool):
-        out["context"]["total_floor"] = floor
+    Raises:
+        UnsupportedGameVersionError: a build the engine has no rules for,
+            checked first so the advisor answers it with its refusal.
+        ValueError: a board the engine cannot model
+            (``sts2_rs.UnsupportedStateError``), or no character to build it for.
+    """
+    import sts2_rs
 
-    # Co-op teammates (PROTOCOL.md ``allies``), in the mod's order: an
-    # ``AnyAlly`` card lands on the first living one, in the engine and in
-    # the mod's autoplay alike. With their hand they are a whole seat whose
-    # remaining plays the engine simulates; their cards are numbered after
-    # ours so no ``stable_idx`` collides.
-    allies = []
-    for a in state.get("allies") or []:
-        if not isinstance(a, dict):
-            continue
-        ally: dict[str, Any] = {
-            "hp": int(a.get("hp") or 0),
-            "max_hp": int(a.get("max_hp") or 0),
-            "block": int(a.get("block") or 0),
-        }
-        if isinstance(a.get("hand"), list):
-            ally_hand, next_idx = _translate_pile(a["hand"], next_idx, hand=True)
-            ally.update(
-                character=character_display_name(a.get("character")),
-                energy=int(a.get("energy") or 0),
-                max_energy=int(a.get("max_energy") or 0),
-                powers=[_translate_power(p) for p in (a.get("powers") or [])],
-                hand=ally_hand,
-                ended_turn=bool(a.get("ended_turn")),
-            )
-            # The rest of the seat (newer mods), for replaying a recorded fight
-            # as a whole co-op fight: piles numbered after the hand, relics,
-            # stars. Absent on older mods, which leaves the advisor's board as
-            # it was.
-            for key in ("draw_pile", "discard_pile", "exhaust_pile", "play_pile"):
-                cards = (a.get(key) or {}).get("cards")
-                if isinstance(cards, list):
-                    ally[key], next_idx = _translate_pile(cards, next_idx)
-            if isinstance(a.get("relics"), list):
-                ally["relics"] = [_translate_relic(r) for r in a["relics"]]
-            if isinstance(a.get("stars"), int):
-                ally["stars"] = a["stars"]
-            if isinstance(a.get("potions"), list):
-                ally["potions"] = a["potions"]
-            if a.get("hp_lost_this_turn") is True:
-                ally["hp_lost_this_turn"] = True
-            for key in (
-                "unblocked_hits_this_combat",
-                "powered_hits_this_turn",
-                "cards_played_this_turn",
-                "cards_exhausted_this_combat",
-                "cards_exhausted_this_turn",
-                "card_block_gains_this_turn",
-                "extra_turns_taken_this_combat",
-            ):
-                if a.get(key):
-                    ally[key] = a[key]
-            # Their orb belt (newer mods), as ours: a teammate's Frost orbs
-            # block at their turn end (GH #989).
-            if isinstance(a.get("orbs"), list):
-                ally["orbs"] = [_translate_orb(o) for o in a["orbs"]]
-                ally["orb_slots"] = a.get("orb_capacity", len(a["orbs"]))
-            # Their Osty (newer mods, GH #1017), as ours: a Necrobinder
-            # teammate's pet soaks their hits. Older mods sent no ``pets``;
-            # their teammates stay Osty-less rather than given a guessed one.
-            if isinstance(a.get("pets"), list):
-                ally_osty = _translate_osty(a["pets"], a.get("character"))
-                if ally_osty is not None:
-                    ally["osty"] = ally_osty
-        if a.get("net_id") is not None:
-            ally["net_id"] = str(a["net_id"])
-        allies.append(ally)
-    if allies:
-        out["allies"] = allies
-        # Who we are on the combat log's card-play rows (``owner``): the key a
-        # recorded fight is replayed seat by seat with (``coop_replay``).
-        if player.get("net_id") is not None:
-            out["net_id"] = str(player["net_id"])
-        if isinstance(player.get("seat_index"), int):
-            out["seat_index"] = player["seat_index"]
-
-    # The run's RNG position, from the bridge envelope
-    # (``SimStateExtractor.ApplyEnvelope``): the once-hashed master seed every
-    # per-stream salt mixes into, plus each stream's read count.
-    # ``sts2_hint.adapter._rng_block`` threads it into the wire, and
-    # ``CombatMirror.reconcile`` reads the presence of ``run_seed`` as "the
-    # world owns the dice" -- dropping it here meant no live-arm wire ever
-    # carried ``run_seed`` and every shuffle/intent the mirror predicted was a
-    # seedless guess. Forwarded ALL-OR-NOTHING (both keys or neither),
-    # honouring the same pair contract the producer and consumer enforce: a
-    # seed without counters rebuilds every stream at count 0, which is worse
-    # than no lineage at all.
-    rng = state.get("rng")
-    if (
-        isinstance(rng, dict)
-        and isinstance(rng.get("run_seed"), int)
-        and not isinstance(rng.get("run_seed"), bool)
-        and isinstance(rng.get("counters"), dict)
-        and rng["counters"]
-    ):
-        out["rng"] = {"run_seed": rng["run_seed"], "counters": rng["counters"]}
-    # Co-op: the same block under its own key (never ``rng``: live, the
-    # teammates draw from the shared streams between our decisions), for a
-    # replay that starts at this board (``coop_replay``).
-    coop_rng = state.get("coop_rng")
-    if (
-        isinstance(coop_rng, dict)
-        and isinstance(coop_rng.get("run_seed"), int)
-        and isinstance(coop_rng.get("counters"), dict)
-        and coop_rng["counters"]
-    ):
-        out["coop_rng"] = {"run_seed": coop_rng["run_seed"], "counters": coop_rng["counters"]}
-
-    # Regent stars (headless emits a top-level ``stars``; the bridge carries
-    # it on ``player`` since the 2026-08-02 dialect audit, deploy-pending).
-    stars = player.get("stars")
-    if isinstance(stars, int) and not isinstance(stars, bool):
-        out["stars"] = stars
-
-    # An EMPTY belt is still a belt. The headless twin deliberately emits the
-    # ``orbs``/``orb_slots`` pair whenever ``OrbQueue.Capacity > 0`` -- empty
-    # list included (RunSimulator.cs:3955-3967) -- and the bridge does the same
-    # (``"orbs": [], "orb_capacity": 3`` on every turn-1/belt-cleared Defect
-    # decision). Gating on truthiness dropped BOTH keys for those boards, so the
-    # engine kept ``OrbSlots::default()`` (capacity 0): the search root had no
-    # belt at all, and the first channel inside a rollout snapped a Defect back
-    # to the hardcoded 3 (``orbs.rs``), overwriting any belt grown past 3 by
-    # Capacitor / Signal Boost / Potion of Capacity.
-    orbs_raw = state.get("orbs")
-    if orbs_raw is not None:
-        out["orbs"] = [_translate_orb(o) for o in orbs_raw]
-        out["orb_slots"] = state.get("orb_capacity", len(orbs_raw))
-
-    osty = _translate_osty(state.get("pets") or [], run_state.get("character"))
-    if osty is not None:
-        out["osty"] = osty
-
-    # The game build the board comes from (GH #800). `sts2_hint.adapter.translate`
-    # forwards it to the wire, where `state_from_dict` builds the engine for that
-    # build. Emitted only for a non-default build, so a v0.107.1 board (and any
-    # board from a mod predating the field) yields the dict it always did.
-    game_version = envelope_game_version(state)
-    if game_version != LEGACY_GAME_VERSION:
-        out["game_version"] = game_version
-
-    return out
+    envelope_game_version(state)
+    wire, warnings = sts2_rs.combat_wire_from_bridge(
+        state, character, ascension, combat_id=combat_id, seed=seed
+    )
+    for warning in warnings:
+        logger.info("adapter: %s", warning)
+    return wire
 
 
 #: Epochs the LIVE save appears not to have revealed yet (GH #367).

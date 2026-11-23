@@ -1,0 +1,28 @@
+# One pass of scripts/idle-gate-full.sh (GH #1465): `just gate-full` on
+# origin/main when the box is idle. idle-gate-full.timer starts it.
+#
+# Idle priority: it takes only CPU and IO nobody else wants, so a run that
+# starts on a quiet box and meets a busy one slows down instead of competing.
+# MemoryMax keeps it from pushing other work into the OOM killer; a run that
+# hits it fails and files an issue, which says so.
+#
+# Install:  ln -sf <repo>/scripts/systemd/idle-gate-full.{service,timer} ~/.config/systemd/user/
+#           systemctl --user daemon-reload
+#           systemctl --user enable --now idle-gate-full.timer
+# Logs:     ~/runs/idle-gate/logs/, journalctl --user -u idle-gate-full
+[Unit]
+Description=gate-full on origin/main when the box is idle (one pass)
+
+[Service]
+Type=oneshot
+# The main checkout's copy of the script; it fetches and tests origin/main in
+# its own checkout (~/runs/idle-gate/checkout).
+ExecStart=%h/projects/sts2/sts2-mono/scripts/idle-gate-full.sh
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:%h/.dotnet:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DOTNET_ROOT=%h/.dotnet
+Nice=19
+CPUWeight=idle
+IOSchedulingClass=idle
+MemoryHigh=96G
+MemoryMax=128G
+TimeoutStartSec=6h

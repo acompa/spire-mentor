@@ -135,8 +135,13 @@ fn seedcheck_routes_check_character_version_and_ascension() {
     // No double boss below A10.
     assert_eq!(p["bosses"][2].as_array().unwrap().len(), 1);
     assert_eq!(pv(&mut wb, json!({})).unwrap()["ascension"], 10);
+    // GH #1197: the all-character net plays the other four too.
+    for c in ["Silent", "Defect", "Regent", "Necrobinder"] {
+        let p = pv(&mut wb, json!({"character": c})).unwrap();
+        assert_eq!(p["character"], c);
+    }
     for (extra, needle) in [
-        (json!({"character": "Silent"}), "Silent"),
+        (json!({"character": "Fool"}), "Fool"),
         (json!({"game_version": "v0.107.1"}), "v0.107.1"),
         (json!({"ascension": 11}), "0-10"),
         (json!({"ascension": "ten"}), "0-10"),

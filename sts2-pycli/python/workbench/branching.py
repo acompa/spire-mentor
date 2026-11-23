@@ -41,6 +41,7 @@ from workbench import (
     reasoning,
     regret_review,
     render,
+    saves,
     wpa_review,
 )
 from workbench.backends import GameBackend, adapt_backend, make_backend
@@ -82,12 +83,16 @@ ALLOWED_ACTIONS = frozenset(
         "discard_potion",
         "leave_room",
         "proceed",
+        # GH #1347, Blitz: a merchant ware, and the chest's take / skip.
+        "blitz_choice",
+        "take_reward",
+        "skip_reward",
     }
 )
 
 # Sentinel verb for a node produced by the NATIVE run agent (run-mode autoplay).
 # Its ``args`` are a raw Rust ``RunAction`` dict, not workbench-verb args, so it
-# is replayed through ``rm.take_action`` rather than the verb layer. It is
+# is replayed through ``GameBackend.take_native`` rather than the verb layer. It is
 # deliberately NOT in ``ALLOWED_ACTIONS``: the UI may never send one.
 #
 # Defined in ``workbench.render`` (which this module imports, not the other way
@@ -250,6 +255,7 @@ class BranchingLiveSession:
         backend: str = "csharp",
         loc: dict[str, str] | None = None,
         game_version: str | None = None,
+        game_mode: str | None = None,
     ) -> None:
         self.logs_dir = logs_dir
         self.backend = backend
@@ -277,6 +283,13 @@ class BranchingLiveSession:
                 f"whose oracle in this process is {process_build})"
             )
         self.game_version = version
+        # The run's game mode (GH #1346, #1347), fixed like the build:
+        # ``"standard"``, ``"dread"`` or ``"blitz"``. Only the interactive
+        # :meth:`start` builds a Dread run (ascension forced to 10) or a Blitz
+        # one (ascension is the Blitz level 0..5); both need the Rust engine
+        # on v0.113.0, and anything else raises here, before an engine is
+        # spawned.
+        self.game_mode = saves.check_game_mode(game_mode, backend, version)
         # Loc map for display-time name resolution of the log labels/diffs. The
         # Rust backend stores loc keys (``STRIKE_IRONCLAD.title``) in state; the
         # C# backend already ships display names, so this is a no-op there.
@@ -663,13 +676,27 @@ class BranchingLiveSession:
         other act would replay the line against a completely different game,
         the same failure mode the ``run_mode`` field exists to prevent.
         """
+        # GH #1347: a Blitz level off its 0..5 ladder is refused by name,
+        # before an engine is spawned.
+        saves.check_mode_ascension(self.game_mode, ascension)
         game = self._spawn_game()
         seed = canonicalize_seed(seed)
         self._run_mode = False
+        if self.game_mode == saves.DREAD_GAME_MODE:
+            # A Dread run is an ascension-10 run (GH #1346), whatever the
+            # request said; recorded as such so its save and log say what
+            # was played.
+            ascension = 10
         self.character, self.seed, self.ascension = character, seed, ascension
         self.act1 = act1
         state = self._map_state(
-            game.start(character=character, seed=seed, ascension=ascension, act1=act1)
+            game.start(
+                character=character,
+                seed=seed,
+                ascension=ascension,
+                act1=act1,
+                **self._game_mode_kwargs(),
+            )
         )
         root = self._add_node(
             None, state, label=f"Started {character} (seed {seed}, A{ascension}, act1 {act1})"
@@ -682,6 +709,24 @@ class BranchingLiveSession:
         self._slog = SessionLog(self.logs_dir, character, seed, ascension, self.backend)
         self._slog.line("ROOT", f"node {root.id}  {snapshot(state)}")
         return state
+
+    def _game_mode_kwargs(self) -> dict[str, Any]:
+        """``game_mode`` for the engine's ``start``, only off standard: a
+        standard run is built exactly as before, and a duck-typed engine
+        without the keyword keeps working."""
+        if self.game_mode == saves.STANDARD_GAME_MODE:
+            return {}
+        return {"game_mode": self.game_mode}
+
+    def _require_standard_mode(self, what: str) -> None:
+        """Refuse a Dread or Blitz session on a constructor that builds
+        standard runs only (GH #1346, #1347): the run would silently not be
+        the one asked for."""
+        if self.game_mode != saves.STANDARD_GAME_MODE:
+            raise ValueError(
+                f"{saves.game_mode_name(self.game_mode)} mode is not available for {what}: "
+                "start it from the run launcher"
+            )
 
     def start_imported(self, imported: Any) -> dict[str, Any]:
         """Start a run rebuilt from a state copied out of the live game.
@@ -704,6 +749,7 @@ class BranchingLiveSession:
             UnsupportedOperation: When the backend has no native run to graft
                 onto (the C# oracle, the test fakes).
         """
+        self._require_standard_mode("an imported run")
         game = self._spawn_game()
         self._run_mode = False
         self._imported = imported
@@ -757,6 +803,7 @@ class BranchingLiveSession:
         HeuristicRunAgent MCTS at (``combat_sims`` / ``combat_boss_sims``)."""
         if self.backend != "rust":
             raise ValueError("run-mode play-to-end requires the rust backend")
+        self._require_standard_mode("a run-mode run")
         self.set_run_mode(
             off_combat_brain=off_combat_brain,
             ppo_impl=ppo_impl,
@@ -771,11 +818,12 @@ class BranchingLiveSession:
         game = self._spawn_game()
         self._run_mode = True
         self.character, self.seed, self.ascension = character, str(seed_int), ascension
-        # Run-mode goes through `start_faithful`, which is pinned to Overgrowth
-        # because it mirrors the PPO training env exactly (see its docstring).
-        self.act1 = "overgrowth"
+        # Act 1 rolls from the seed, as in the PPO training env and the game.
+        self.act1 = "roll"
         state = self._map_state(
-            game.start_faithful(character=character, seed=seed_int, ascension=ascension)
+            game.start_faithful(
+                character=character, seed=seed_int, ascension=ascension, act1=self.act1
+            )
         )
         root = self._add_node(
             None,
@@ -845,6 +893,10 @@ class BranchingLiveSession:
         # an autoplayed step has to record the same per-action tape a
         # hand-played one does or the history sidebar renders it bare.
         marks = self._mark_display_logs()
+        # The agent moves ``rm`` itself, past the backend's ``take_native``
+        # funnel, so note the pre-move state for the chest reveal first
+        # (GH #1438): a chest the AI walks into must show what it held.
+        self.game.mark_pre_action()
         rec = self._faithful_agent.step(rm)
         if rec is None:
             # Policy sees no legal actions — run is finished.
@@ -913,7 +965,7 @@ class BranchingLiveSession:
                 "enemies": parent_named.get("enemies") or [],
             }
         # Store the native Rust action dict in the node under the sentinel key
-        # ``"__agent_native__"`` so seek() can replay it via rm.take_action()
+        # ``"__agent_native__"`` so seek() can replay it via game.take_native()
         # directly rather than going through the workbench verb translation layer.
         node = self._add_node(
             self._active_id,
@@ -1457,7 +1509,10 @@ class BranchingLiveSession:
             game.start_imported(self._imported)
         elif faithful:
             game.start_faithful(
-                character=self.character, seed=int(self.seed), ascension=self.ascension
+                character=self.character,
+                seed=int(self.seed),
+                ascension=self.ascension,
+                act1=self.act1,
             )
         else:
             game.start(
@@ -1465,19 +1520,21 @@ class BranchingLiveSession:
                 seed=self.seed,
                 ascension=self.ascension,
                 act1=self.act1,
+                **self._game_mode_kwargs(),
             )
         # Re-apply each node's producing action (skip the root).  Two cases:
         # • ``action == "__agent_native__"``: a native-agent step stored the
-        #   raw Rust RunAction dict in ``node.args``; replay via take_action
+        #   raw Rust RunAction dict in ``node.args``; replay via take_native
         #   directly to avoid the workbench verb translation layer.
         # • any other action: a user-interactive or legacy node; replay via
         #   game.act() as before.
         last_resp: dict[str, Any] | None = None
         for node in path[1:]:
             if node.action == NATIVE_ACTION:
-                result = self._require_native("replaying a native agent action").take_action(
-                    node.args
-                )
+                self._require_native("replaying a native agent action")
+                # Through the backend, not ``rm.take_action``: it snapshots the
+                # pre-move state, so a replayed chest still reveals (GH #1438).
+                result = self.game.take_native(node.args)
                 if result not in ("advanced", "run_over"):
                     _log.error(
                         "replay diverged at node %d (native=%s): %s",
@@ -2110,6 +2167,10 @@ class BranchingLiveSession:
         rec = self._combat_choice_recommend()
         if rec is not None:
             return rec
+        # GH #1347: a Blitz run has no run-level policy (none knows its
+        # merchant, chest or map); only the in-fight choice above is answered.
+        if self.game_mode == saves.BLITZ_GAME_MODE:
+            return None
         if self.off_combat_brain == "ppo":
             rec = self._ppo_recommend()
             if rec is not None:
@@ -2344,6 +2405,13 @@ class BranchingLiveSession:
         """What an imported position could not reproduce; empty otherwise."""
         return self.game.import_notes() if self.game is not None else []
 
+    def in_fight(self) -> bool:
+        """Whether the run stands in a fight: a card play, or a choice a card
+        or potion opened inside one. Twin of the Rust port's
+        ``Session::in_fight``."""
+        rm = self._native()
+        return rm is not None and rm.phase() == "combat"
+
     def _native_combat_state(self) -> Any:
         """The backend's native combat state if it has one, else ``None``
         (hints then fall back to the display-name adapter)."""
@@ -2401,7 +2469,7 @@ class BranchingLiveSession:
 
         The ``apply()`` counterpart for :data:`NATIVE_ACTION` nodes: their
         ``args`` are a raw Rust ``RunAction`` dict that the workbench verb layer
-        cannot express, so they go straight to ``rm.take_action`` (the same
+        cannot express, so they go straight to ``GameBackend.take_native`` (the same
         escape hatch :meth:`seek` uses). Returns ``apply()``'s result shape.
         """
         rm = self._require_native("replaying a native agent action")
@@ -2415,7 +2483,8 @@ class BranchingLiveSession:
         except Exception:
             label = str(args.get("action", "?"))
         marks = self._mark_display_logs()
-        result = rm.take_action(dict(args))
+        # Through the backend so the chest reveal sees the pre-move state.
+        result = self.game.take_native(dict(args))
         if result not in ("advanced", "run_over"):
             return {
                 "state": self._map_state(self.game.get_state()),
@@ -2574,6 +2643,9 @@ class BranchingLiveSession:
                     # written, so a log names its build; a reader treats the
                     # missing key (an older v0.107.1 log) as v0.107.1.
                     "game_version": self.game_version,
+                    # GH #1346: named only off standard; a reader treats the
+                    # missing key as a standard run.
+                    **self._game_mode_kwargs(),
                 },
             )
             path = self._path_to(self._active_id)

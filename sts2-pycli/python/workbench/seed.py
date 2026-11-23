@@ -129,7 +129,7 @@ def xxh64(data: bytes, seed: int = 0) -> int:
 _U64_SEED_BUILDS = frozenset({"v0.111.0", "v0.113.0"})
 
 
-def seed_hash(text: str, game_version: str = "v0.107.1") -> int:
+def seed_hash(text: str, game_version: str) -> int:
     """``StringHelper.GetDeterministicHashCode(text)`` as the unsigned value
     every seed site mixes in: ``(uint)`` of the 32-bit hash in v0.107.1,
     ``XxHash64(utf8, 0)`` in v0.111.0 (``StringHelper.cs:140``).
@@ -141,7 +141,7 @@ def seed_hash(text: str, game_version: str = "v0.107.1") -> int:
     return deterministic_hash_code_old(text) & _M32
 
 
-def run_seed_hash(seed: str, game_version: str = "v0.107.1") -> int:
+def run_seed_hash(seed: str, game_version: str) -> int:
     """``RunRngSet.Seed`` for an (already canonical) seed string.
 
     v0.111.0 keeps the old 32-bit hash for a save-migrated ``"old"``-prefixed

@@ -46,9 +46,10 @@ from .env import (
     EnvConfig,
     NoActions,
     Segment,
+    _build_run,
     check_campaign_run,
     ends_segment,
-    make_run_manager,
+    run_characters,
     run_fingerprint,
 )
 from .invariants import InvariantChecker
@@ -185,10 +186,11 @@ class RsE2EEnv:
             )
         self.seed = int(seed)
         self.segment = segment
-        if rm is None:
-            rm = make_run_manager(self.seed)
+        rm, self.forced_card = _build_run(self.seed, rm, cfg)
+        self.human_start = cfg.human_start if segment.kind == "run" else None
         if not cfg.allow_any_run:
-            check_campaign_run(rm)
+            check_campaign_run(rm, characters=run_characters(cfg))
+        self.character = str(rm.character)  # the run's own (a mix lane's runs differ)
         f9_seed = (self.seed << 32) ^ (int(segment.reseed or 0) & 0xFFFFFFFF)
         self._on_capture = cfg.on_capture if segment.kind == "run" else None
         self._env = sts2_rs.E2eTrainEnv(

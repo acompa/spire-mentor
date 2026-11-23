@@ -311,19 +311,19 @@ fn the_e2e_advisor_follows_a_hand_played_run() {
 }
 
 #[test]
-fn the_e2e_advisor_is_ironclad_v0111_only_and_asks_for_its_net() {
+fn the_e2e_advisor_is_v0111_only_and_asks_for_its_net() {
     let mut wb = new_wb();
     call(
         &mut wb,
         "POST",
         "/api/live/start",
-        json!({"character": "Silent", "seed": "X", "game_version": "v0.111.0"}),
+        json!({"character": "Silent", "seed": "X", "game_version": "v0.107.1"}),
     );
     let err = wb
         .call("POST", "/api/live/run-mode", &json!({"advisor": "e2e"}))
-        .expect_err("silent");
+        .expect_err("v0.107.1");
     assert_eq!(err.status, 400);
-    assert!(err.detail.contains("Ironclad"), "{}", err.detail);
+    assert!(err.detail.contains("v0.111.0"), "{}", err.detail);
 
     call(
         &mut wb,
@@ -442,12 +442,12 @@ fn the_hosts_advisor_preference_follows_every_run_it_can_advise() {
     assert_eq!(out, json!({"advisor": "e2e", "live": null}));
     start(&mut wb, "PREF");
     assert_eq!(wb.session().unwrap().advisor, "e2e");
-    // A run the student cannot read keeps the search.
+    // A run the student cannot read (another build) keeps the search.
     call(
         &mut wb,
         "POST",
         "/api/live/start",
-        json!({"character": "Defect", "seed": "PREF", "game_version": "v0.111.0"}),
+        json!({"character": "Defect", "seed": "PREF", "game_version": "v0.107.1"}),
     );
     assert_eq!(wb.session().unwrap().advisor, "search");
     start(&mut wb, "PREF2");

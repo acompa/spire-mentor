@@ -292,6 +292,8 @@
     "name": "Flyconid",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/flying_mushrooms/flying_mushrooms",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -128.0,
     "rig_bounds_h": 309.0,
     "rig_bounds_w": 228.0,
     "rig_scale": 0.4,
@@ -688,6 +690,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/silent/silent",
+   "rig_arrow_x": 0.0,
+   "rig_arrow_y": -146.0,
    "rig_bounds_h": 244.0,
    "rig_bounds_w": 244.0,
    "rig_scale": 0.29

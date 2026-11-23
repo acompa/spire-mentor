@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { WorkerClient, getWorkerClient, type WorkerLike } from "../workerClient";
 import type { WorkerInbound, WorkerOutbound } from "../protocol";
+import { setLang } from "../../i18n";
 
 /** A Worker double: records what the page posts, lets the test answer. */
 class FakeWorker implements WorkerLike {
@@ -42,6 +43,17 @@ function setup() {
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("WorkerClient", () => {
+  it("tells the engine the page's language when it is Chinese", () => {
+    setLang("zh", false);
+    try {
+      const { client, workers } = setup();
+      void client.request("GET", "/api/capabilities").catch(() => {});
+      expect(workers[0].posted[0]).toEqual({ init: { assets_base: "https://cdn.example/art", lang: "zh" } });
+    } finally {
+      setLang("en", false);
+    }
+  });
+
   it("spawns lazily, sends init first, then the {id, method, route, body} envelope", async () => {
     const { client, workers } = setup();
     expect(workers).toHaveLength(0);

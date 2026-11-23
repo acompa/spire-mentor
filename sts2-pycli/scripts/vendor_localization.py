@@ -32,6 +32,16 @@ can stand in for the pck::
         ../sts2-wiki/extracted/v0.111.0/localization/eng --extracted \\
         --version v0.111.0 --out localization_eng_v0.111.0
 
+**Simplified Chinese (``--lang zhs``).** ``localization_zhs/`` is the game's
+Chinese text, DISPLAY only (the browser workbench in Chinese; see
+``bundle_workbench_data.py``). One set for every build: vendor the builds
+oldest first into the same ``--out localization_zhs`` and the newest wins
+(``import_game.py`` does exactly that)::
+
+    uv run python scripts/vendor_localization.py \\
+        ../sts2_binaries/v0.113.0/SlayTheSpire2.pck --version v0.113.0 \\
+        --lang zhs --out localization_zhs
+
 Re-run it when the engine pin moves, and move ``_ENGINE_WIKI_VERSION`` in the
 same commit.
 """
@@ -50,8 +60,8 @@ _DEFAULT_OUT = _REPO_ROOT / "localization_eng"
 _WIKI = _REPO_ROOT.parent / "sts2-wiki"
 
 
-def _extract(pck: Path, dest: Path) -> Path:
-    """Unpack the pck's ``localization/eng`` tree with the wiki's extractor."""
+def _extract(pck: Path, dest: Path, lang: str = "eng") -> Path:
+    """Unpack the pck's ``localization/<lang>`` tree with the wiki's extractor."""
     subprocess.run(
         [
             sys.executable,
@@ -60,18 +70,20 @@ def _extract(pck: Path, dest: Path) -> Path:
             str(pck),
             str(dest),
             "--prefix",
-            "localization/eng",
+            f"localization/{lang}",
         ],
         cwd=_WIKI,
         check=True,
     )
-    eng = dest / "localization" / "eng"
+    eng = dest / "localization" / lang
     if not eng.is_dir():
-        raise SystemExit(f"no localization/eng under {dest} — is {pck} a game pck?")
+        raise SystemExit(f"no localization/{lang} under {dest} — is {pck} a game pck?")
     return eng
 
 
-def vendor(pck: Path, out_dir: Path, *, version: str, extracted: bool = False) -> dict[str, int]:
+def vendor(
+    pck: Path, out_dir: Path, *, version: str, extracted: bool = False, lang: str = "eng"
+) -> dict[str, int]:
     """Merge the pck's tables over ``out_dir`` in place. Returns a per-kind tally.
 
     With ``extracted``, ``pck`` is an already-unpacked ``localization/eng``
@@ -80,7 +92,7 @@ def vendor(pck: Path, out_dir: Path, *, version: str, extracted: bool = False) -
     stats = {"tables": 0, "new_tables": 0, "changed_keys": 0, "added_keys": 0, "retained_keys": 0}
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="sts2loc") as tmp:
-        eng = pck if extracted else _extract(pck, Path(tmp))
+        eng = pck if extracted else _extract(pck, Path(tmp), lang)
         for src in sorted(eng.iterdir()):
             # The pck also carries ``patch_notes/`` — 100+ markdown files of
             # release notes. Nothing here reads them and they are bulky game
@@ -127,8 +139,15 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--version", required=True, help='Build tag to record, e.g. "v0.107.1"')
     parser.add_argument("--out", type=Path, default=_DEFAULT_OUT, help="localization_eng/ dir")
+    parser.add_argument(
+        "--lang",
+        default="eng",
+        help='The pck language to vendor: "eng" (default) or "zhs" (into localization_zhs/)',
+    )
     args = parser.parse_args(argv)
-    stats = vendor(args.pck, args.out, version=args.version, extracted=args.extracted)
+    stats = vendor(
+        args.pck, args.out, version=args.version, extracted=args.extracted, lang=args.lang
+    )
     print(
         f"{args.version}: {stats['tables']} tables ({stats['new_tables']} new), "
         f"{stats['changed_keys']} keys changed, {stats['added_keys']} added, "

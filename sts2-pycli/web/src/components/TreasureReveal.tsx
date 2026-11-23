@@ -3,6 +3,7 @@ import { assetUrl } from "../api";
 import SpineSprite from "./SpineSprite";
 import RichText from "./RichText";
 import "../skins/event.css";
+import { t } from "../i18n";
 
 /** Chest height in px — a constant, not a measurement, for the same reason
  *  EventScreen's is: `fallbackHeight` sits in SpineSprite's load-effect deps,
@@ -34,12 +35,12 @@ export default function TreasureReveal({ reveal, onDismiss }: {
     <div
       className="gs-scene gs-treasure gs-treasure-reveal"
       role="dialog"
-      aria-label="What's inside the chest"
+      aria-label={t("What's inside the chest")}
       onClick={onDismiss}
     >
       <div className="gs-treasure-banner">
         <img src={assetUrl("ui/reward_screen/reward_banner.png")} alt="" aria-hidden="true" />
-        <h2 className="gs-treasure-title">What's Inside?</h2>
+        <h2 className="gs-treasure-title">{t("What's Inside?")}</h2>
       </div>
       <div className="gs-treasure-rig" data-act={act}>
         <SpineSprite
@@ -69,13 +70,13 @@ export default function TreasureReveal({ reveal, onDismiss }: {
         ) : (
           // Silver Crucible vetoes the first chest outright. An empty chest is
           // a real outcome, and saying so beats a panel with a hole in it.
-          <div className="gs-treasure-plaque gs-treasure-empty">The chest was empty.</div>
+          <div className="gs-treasure-plaque gs-treasure-empty">{t("The chest was empty.")}</div>
         )}
-        {reveal.gold > 0 && <div className="gs-treasure-gold">+{reveal.gold} gold</div>}
+        {reveal.gold > 0 && <div className="gs-treasure-gold">{t("+{n} gold", { n: reveal.gold })}</div>}
       </div>
       {/* The whole panel is the dismiss target; this is the affordance that
           says so, not a second control. */}
-      <button className="gs-treasure-dismiss" onClick={onDismiss}>Continue</button>
+      <button className="gs-treasure-dismiss" onClick={onDismiss}>{t("Continue")}</button>
     </div>
   );
 }

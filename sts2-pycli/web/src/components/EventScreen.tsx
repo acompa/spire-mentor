@@ -9,6 +9,7 @@ import RichText from "./RichText";
 import { DecisionAnalyzeButton, DecisionAnalyzeStatus, DecisionWinChip } from "./DecisionAdvisor";
 import { useDecisionAdvisor } from "./useDecisionAdvisor";
 import "../skins/event.css";
+import { t } from "../i18n";
 
 // Title words that carry no subject: never the emphasis noun.
 const TITLE_STOP = new Set([
@@ -62,14 +63,17 @@ export default function EventScreen({ step, onChoose }: { step: Step; onChoose?:
   const options: EventOption[] = s.event_options ?? [];
   const chosen = step.chosen_action as { args?: { option_index?: number } } | null;
   const chosenIdx = chosen?.args?.option_index;
-  const title = s.event_name ?? "Event";
-  const isNeow = (s.event_name ?? "").trim().toLowerCase() === "neow";
+  const title = s.event_name ?? t("Event");
+  // `event_name` is the SHOWN name (Chinese in Chinese display mode); the
+  // room is keyed on the English one, which the backend then sends beside it.
+  const eventKey = s.event_name_en ?? s.event_name ?? "";
+  const isNeow = eventKey.trim().toLowerCase() === "neow";
   // A treasure room is a place, not a question. The game gives it a whole
   // scene with a chest you walk up to and open; ours arrived as a bare "Open"
   // bar on an empty background, which is why opening one felt like nothing
   // happened at all. The backend names the room (`_fill_generic`) so we can
   // tell it from every other one-button screen.
-  const isTreasure = (s.event_name ?? "").trim().toLowerCase() === "treasure";
+  const isTreasure = eventKey.trim().toLowerCase() === "treasure";
   // The chest room ships as a Spine rig per act (one clip, `animation`), the
   // same shape the rest-site hero and every monster use.
   const chestAct = Math.min(3, Math.max(1, step.meta?.act ?? 1));
@@ -109,7 +113,7 @@ export default function EventScreen({ step, onChoose }: { step: Step; onChoose?:
   if (isTreasure) {
     const opened = chosenIdx != null || openNonce > 0;
     return (
-      <div className="gs-scene gs-event gs-treasure" role="group" aria-label="Treasure room">
+      <div className="gs-scene gs-event gs-treasure" role="group" aria-label={t("Treasure room")}>
         <div className="gs-treasure-rig" data-act={chestAct}>
           {/* The rig's one clip IS the opening, so it sits on its setup pose
               (closed) and plays once when you open it, holding the last frame.
@@ -136,10 +140,10 @@ export default function EventScreen({ step, onChoose }: { step: Step; onChoose?:
             setOpenNonce((n) => n + 1);
             onChoose?.("choose_option", { option_index: openOption.index });
           }}
-          aria-label={opened ? "Chest opened" : "Open the chest"}
+          aria-label={opened ? t("Chest opened") : t("Open the chest")}
         >
           <span className="gs-treasure-prompt">
-            {opened ? "opened" : onChoose ? "Open" : "not opened in this run"}
+            {opened ? t("opened") : onChoose ? t("Open") : t("not opened in this run")}
           </span>
         </button>
       </div>
@@ -165,7 +169,7 @@ export default function EventScreen({ step, onChoose }: { step: Step; onChoose?:
       {isNeow && (
         <div className="gs-neow-lockup">
           <h2 className="gs-neow-name">{title}</h2>
-          <div className="gs-neow-epithet">Mother of Resurrection (Exiled)</div>
+          <div className="gs-neow-epithet">{s.event_epithet ?? t("Mother of Resurrection (Exiled)")}</div>
         </div>
       )}
       <div className={`gs-event-col${solo ? " is-solo" : ""}`}>
@@ -210,7 +214,7 @@ export default function EventScreen({ step, onChoose }: { step: Step; onChoose?:
                       <span className="gs-event-option-desc"><RichText text={o.description} /></span>
                     )}
                   </span>
-                  {taken && <span className="gs-event-medallion" role="img" aria-label="chosen" />}
+                  {taken && <span className="gs-event-medallion" role="img" aria-label={t("chosen")} />}
                 </button>
                 {cand && <DecisionWinChip c={cand} adv={adv} />}
               </div>

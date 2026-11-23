@@ -257,8 +257,15 @@
   color: #f6ead0;
 }
 
+/* ---- top band: the sign column beside the class-card rack ----------------
+   The sign used to have a row of its own above the rack, a tenth of the
+   screen's height for one signboard. It wraps above the rack again only where
+   the two do not fit side by side (a portrait phone). */
+.gs-shop-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 18px; }
+
 /* ---- header: painted merchant sign + purse + workbench tooling ----------- */
-.gs-shop-header { display: flex; align-items: flex-start; gap: 18px; }
+.gs-shop-header { display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+  flex: 0 0 auto; }
 /* hanging parchment sign — panel art squashed to a signboard, slight tilt */
 .gs-shop-sign {
   position: relative; display: inline-flex; flex-direction: column;
@@ -294,14 +301,13 @@
 
 /* workbench tooling voice (advisor button/status): quiet chips on a scrim,
    deliberately NOT fused onto the game surfaces */
-.gs-shop-tools { margin-left: auto; display: flex; flex-direction: column;
-  align-items: flex-end; gap: 6px; }
+.gs-shop-tools { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .gs-shop-toolscrim {
   background: rgba(6, 8, 10, 0.55); border-radius: 8px; padding: 4px 8px;
   box-shadow: inset 0 0 0 1px rgba(255, 246, 226, 0.10);
 }
 .gs-shop-toolstatus:empty { display: none; }
-.gs-shop-toolstatus { max-width: 420px; }
+.gs-shop-toolstatus { max-width: 240px; }
 
 /* ---- the card display row ------------------------------------------------ */
 /* The right inset is the merchant's standing room: without it the row centres
@@ -311,6 +317,9 @@
   gap: 16px 14px;
   padding: clamp(6px, 1.4vh, 16px) clamp(64px, 9vw, 150px) 6px 8px;
 }
+.gs-shop-top > .gs-shop-cardrow { flex: 1 1 0; }
+/* the colorless shelf: down on the floor, left of the wares, as in the game */
+.gs-shop-cardrow.is-bin { flex: 0 0 auto; flex-wrap: nowrap; padding: 0; }
 /* one card stand: the framed card, its ground-contact shadow, the price tag.
    The rack arc + hash-seeded scatter (Shop.tsx) ride the transform rather than
    the flex gap, so the rack LOOKS hand-arranged while layout and hit targets
@@ -436,7 +445,7 @@ button.gs-shop-pricetag:disabled { cursor: default; }
 
 /* ---- the shop floor: rug with wares, services column on the right -------- */
 .gs-shop-floor {
-  display: flex; align-items: flex-end; justify-content: space-between;
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
   gap: clamp(16px, 3vw, 44px);
   margin-top: auto; padding-top: 8px;
 }
@@ -485,6 +494,8 @@ button.gs-shop-pricetag:disabled { opacity: 1; }
   justify-content: center; gap: 6px 18px;
   padding: 26px 34px 14px 42px;
 }
+/* relics on one line, potions on the next */
+.gs-shop-warebreak { flex-basis: 100%; height: 0; }
 /* hash-seeded scatter, same idea as the card row: wares were set down by hand */
 .gs-shop-itemwrap {
   display: flex; flex-direction: column; align-items: center;
@@ -850,3 +861,55 @@ button.gs-shop-pricetag:disabled { opacity: 1; }
 .gs-shop-sheetbuy { flex: 1 1 auto; background: oklch(62% 0.13 85); color: #1c1407; border: 1px solid oklch(80% 0.12 88); }
 .gs-shop-sheetbuy:disabled { background: oklch(32% 0.02 60); color: oklch(70% 0.02 60); border-color: transparent; cursor: default; }
 .gs-shop-sheetclose { flex: none; background: oklch(28% 0.03 70); color: #f6e6c4; border: 1px solid #6b552c; }
+
+/* ---- the Blitz merchant (GH #1347) ----------------------------------------
+   Same tent, different trade: six wares on the rug, three of them free for
+   the taking (the rug itself is below, GH #1597). */
+.gs-blitz-picks {
+  margin: 6px 0 0; padding: 7px 14px; align-self: center;
+  font-family: var(--game-font); font-size: clamp(15px, 1.5vw, 19px);
+  color: #f6ead0; background: rgba(8, 6, 4, 0.62); border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255, 246, 226, 0.12);
+}
+/* Leave sits under the wares, on the player's side of the tent. */
+.gs-blitz-service { align-self: flex-start; margin: 6px 0 0; padding-right: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .gs-blitz-slot { transition: none; }
+}
+
+/* GH #1597: the Blitz inventory as the game draws it — the merchant's rug
+   (1747 x 978 in merchant_inventory.tscn) with six 240 px ware icons. */
+.gs-blitz-rug {
+  position: relative; width: min(100%, 980px, calc((100dvh - 430px) * 1747 / 978)); aspect-ratio: 1747 / 978;
+  margin: 4px auto 0; background-size: 100% 100%; background-repeat: no-repeat;
+  filter: drop-shadow(0 18px 24px rgba(0, 0, 0, .55));
+}
+/* min-width: a tap target stays 44 px when the rug is phone-narrow (~293 px on
+   a 375 px phone gives 40 px slots; GH #1613). */
+.gs-blitz-slotwrap {
+  position: absolute; width: calc(240 / 1747 * 100%); min-width: 44px; aspect-ratio: 1;
+  transform: translate(-50%, -50%); display: block;
+}
+.gs-blitz-slot {
+  all: unset; box-sizing: border-box; position: relative; display: block; width: 100%; height: 100%;
+  cursor: pointer; transition: transform .12s ease-out, filter .12s ease-out;
+}
+.gs-blitz-icon {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+  /* the game's Shadow node: the icon again, dark, offset (20, 16) on 240 */
+  filter: drop-shadow(calc(20 / 240 * 100cqw) 6px 0 rgba(0, 0, 0, .35));
+}
+.gs-blitz-slotwrap { container-type: inline-size; }
+.gs-blitz-slot:not(:disabled):hover, .gs-blitz-slot:not(:disabled):focus-visible { transform: scale(1.1); }
+.gs-blitz-slot:focus-visible { outline: 3px solid #ffe6ad; outline-offset: 2px; border-radius: 12px; }
+.gs-blitz-slot:disabled { cursor: default; }
+/* RareVfx (card sparkles) / CursedVfx (purple motes): a glow in their colour */
+.gs-blitz-slot.is-rare .gs-blitz-icon { filter: drop-shadow(0 0 10px rgba(255, 214, 102, .85)) drop-shadow(0 0 3px rgba(255, 240, 190, .9)); }
+.gs-blitz-slot.is-cursed .gs-blitz-icon { filter: drop-shadow(0 0 12px rgba(170, 80, 220, .9)) drop-shadow(0 0 3px rgba(220, 160, 255, .8)); }
+/* Used: the icon is gone. Disabled: Modulate = DarkGray. */
+.gs-blitz-slot.is-used .gs-blitz-icon { visibility: hidden; }
+.gs-blitz-slot.is-disabled { filter: brightness(.66) saturate(.7); }
+.gs-blitz-chosen {
+  position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); white-space: nowrap;
+  font-family: var(--game-font); font-size: 14px; color: #ffd98a; text-shadow: 0 2px 3px #000;
+}

@@ -192,28 +192,11 @@ public sealed class SpireMentorModConfig : SimpleModConfig
     /// with a small ✓ (default off: silence on good play).</summary>
     public static bool CoachShowGoodTurns { get; set; } = false;
 
-    /// <summary>
-    /// Which brain answers the advice: <c>"search"</c> (MCTS for the fights,
-    /// the PPO run policy for the screens; the default) or <c>"instinct"</c>
-    /// (the end-to-end net, no search). Sent as <c>brain</c> on every
-    /// advice_request, the AI partners' too (PROTOCOL.md section 5, v5.2);
-    /// the advisor answers with Instinct where it can play the run (today
-    /// Ironclad on v0.111.0) and with the search, saying why, elsewhere. Read
-    /// through <see cref="AdvisorBrainRules.Normalize"/>: anything else is Search.
-    /// </summary>
-    public static string AdvisorBrain { get; set; } = AdvisorBrainRules.Instinct;
-
-    /// <summary>The settings pages' tickbox for <see cref="AdvisorBrain"/>
-    /// (the control kind these pages build); setting it switches the brain
-    /// live, exactly like the toolbar button (SimAdvisor.SetBrain).</summary>
-    [ConfigIgnore]
-    public static bool AdvisorBrainInstinct
-    {
-        // The brain in effect, so a conf override (SimConfig.AdvisorBrain)
-        // shows as what it is.
-        get => AdvisorBrainRules.IsInstinct(SimAdvisor.CurrentBrain);
-        set => SimAdvisor.Instance.SetBrain(value ? AdvisorBrainRules.Instinct : AdvisorBrainRules.Search, "Settings");
-    }
+    // No advisor-brain setting: Instinct is the only brain a player gets, with
+    // the search as its fallback (AdvisorBrainRules). 0.11.7 and older saved
+    // the Search / Instinct switch here as `AdvisorBrain`; BaseLib skips a
+    // saved key no property claims and drops it on the next save, so an old
+    // "search" is never read.
 
     // AI partners (co-op, experimental; docs/plans/2026-11-05-ai-coop-partners.md).
     // Read live by SimAiPartnerBrain, so a change applies from the next decision.
@@ -307,70 +290,47 @@ public sealed class SpireMentorModConfig : SimpleModConfig
 
     public override void SetupConfigUI(Control optionContainer)
     {
-        optionContainer.AddChild(CreateSectionHeader("Spire Mentor AI", alignToTop: true));
+        optionContainer.AddChild(CreateSectionHeader(L10n.T("Spire Mentor AI"), alignToTop: true));
         // The page opens on a mod that, by design, is doing nothing yet. Say
         // what turning it on gets you before offering the switch.
         AddNote(optionContainer,
-            "The AI coach has two styles. Hints shows its opinion while you decide: a score on\n" +
-            "each card, a ranked list of moves, a win-chance bar and the route it likes on the\n" +
-            "map. Coach shows nothing before you act -- press F5 to peek at its next pick -- and\n" +
-            "afterwards a small note says where your turn or choice differed from its own.\n" +
-            "F8 turns it on / off; the Spire Mentor badge's Mode switch picks the style.\n" +
-            "It switches on when the game starts (untick\n" +
-            "that below if you would rather press F8), and it never plays for you unless you\n" +
-            "ask it to (F7).");
-        AddRow(optionContainer, "Advisor mode (AI coach)", nameof(AdvisorMode), CreateRawTickboxControl);
-        AddRow(optionContainer, "Turn the coach on when the game starts", nameof(CoachOnAtLaunch), CreateRawTickboxControl);
-        AddRow(optionContainer, "Start in Coach style (untick: Hints)", nameof(StartInCoachStyle), CreateRawTickboxControl);
-        AddRow(optionContainer, "Coach: also mark good turns with ✓", nameof(CoachShowGoodTurns), CreateRawTickboxControl);
-        AddRow(optionContainer, "Advisor brain: Instinct (untick: Search)", nameof(AdvisorBrainInstinct), CreateRawTickboxControl);
-        AddNote(optionContainer, BrainNote);
-        AddRow(optionContainer, "Game speed", nameof(GameSpeed), CreateRawSliderControl);
+            L10n.T("The AI coach has two styles. Hints shows its opinion while you decide: a score on\neach card, a ranked list of moves, a win-chance bar and the route it likes on the\nmap. Coach shows nothing before you act -- press F5 to peek at its next pick -- and\nafterwards a small note says where your turn or choice differed from its own.\nF8 turns it on / off; the Spire Mentor badge's Mode switch picks the style.\nIt switches on when the game starts (untick\nthat below if you would rather press F8), and it never plays for you unless you\nask it to (F7)."));
+        AddRow(optionContainer, L10n.T("Advisor mode (AI coach)"), nameof(AdvisorMode), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Turn the coach on when the game starts"), nameof(CoachOnAtLaunch), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Start in Coach style (untick: Hints)"), nameof(StartInCoachStyle), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Coach: also mark good turns with ✓"), nameof(CoachShowGoodTurns), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Game speed"), nameof(GameSpeed), CreateRawSliderControl);
 
-        optionContainer.AddChild(CreateSectionHeader("HUD"));
-        AddRow(optionContainer, "Show HUD", nameof(ShowHud), CreateRawTickboxControl);
-        AddRow(optionContainer, "Show ranked moves", nameof(ShowRankedList), CreateRawTickboxControl);
-        AddRow(optionContainer, "Highlight the moves to make", nameof(ShowCardLabels), CreateRawTickboxControl);
-        AddRow(optionContainer, "Show engine numbers (scores, eval)", nameof(ShowNumbers), CreateRawTickboxControl);
-        AddRow(optionContainer, "Show map markers + route", nameof(ShowMapMarkers), CreateRawTickboxControl);
-        AddRow(optionContainer, "Show win chance bar", nameof(ShowWinBar), CreateRawTickboxControl);
-        AddRow(optionContainer, "Reduce combat effects", nameof(ReduceEffects), CreateRawTickboxControl);
-        AddRow(optionContainer, "Panels in their own window, around the game", nameof(PanelsInOwnWindowLive), CreateRawTickboxControl);
+        optionContainer.AddChild(CreateSectionHeader(L10n.T("HUD")));
+        AddRow(optionContainer, L10n.T("Show HUD"), nameof(ShowHud), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Show ranked moves"), nameof(ShowRankedList), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Highlight the moves to make"), nameof(ShowCardLabels), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Show engine numbers (scores, eval)"), nameof(ShowNumbers), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Show map markers + route"), nameof(ShowMapMarkers), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Show win chance bar"), nameof(ShowWinBar), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Reduce combat effects"), nameof(ReduceEffects), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Panels in their own window, around the game"), nameof(PanelsInOwnWindowLive), CreateRawTickboxControl);
 
         if (AiPartnersShown)
         {
-            optionContainer.AddChild(CreateSectionHeader("Co-op AI partners (experimental)"));
+            optionContainer.AddChild(CreateSectionHeader(L10n.T("Co-op AI partners (experimental)")));
             AddNote(optionContainer,
-                "An AI teammate plays its own seat during the same turn as you. By default it\n" +
-                "starts as soon as its board is ready; these make it let you go first. When its\n" +
-                "best move needs your setup (Vulnerable, block), it holds it for you up to the\n" +
-                "time below. Shift+F6 or the Partner go button makes it play now.\n" +
-                "Click an AI partner in the lobby to change its character.");
-            AddRow(optionContainer, "AI partner waits for your first play", nameof(AiPartnerWaitForFirstPlay), CreateRawTickboxControl);
-            AddRow(optionContainer, "AI partner waits until you end your turn", nameof(AiPartnerWaitForEndTurn), CreateRawTickboxControl);
-            AddRow(optionContainer, "AI partner holds for your setup play", nameof(AiPartnerSetupHoldSeconds), CreateRawSliderControl);
+                L10n.T("An AI teammate plays its own seat during the same turn as you. By default it\nstarts as soon as its board is ready; these make it let you go first. When its\nbest move needs your setup (Vulnerable, block), it holds it for you up to the\ntime below. Shift+F6 or the Partner go button makes it play now.\nClick an AI partner in the lobby to change its character."));
+            AddRow(optionContainer, L10n.T("AI partner waits for your first play"), nameof(AiPartnerWaitForFirstPlay), CreateRawTickboxControl);
+            AddRow(optionContainer, L10n.T("AI partner waits until you end your turn"), nameof(AiPartnerWaitForEndTurn), CreateRawTickboxControl);
+            AddRow(optionContainer, L10n.T("AI partner holds for your setup play"), nameof(AiPartnerSetupHoldSeconds), CreateRawSliderControl);
         }
 
-        optionContainer.AddChild(CreateSectionHeader("Advisor backend"));
-        AddRow(optionContainer, "Auto-launch Python advisor", nameof(AdvisorAutoLaunch), CreateRawTickboxControl);
-        AddRow(optionContainer, "Advisor command (blank = default)", nameof(AdvisorCommand), CreateRawLineEditControl);
+        optionContainer.AddChild(CreateSectionHeader(L10n.T("Advisor backend")));
+        AddRow(optionContainer, L10n.T("Auto-launch Python advisor"), nameof(AdvisorAutoLaunch), CreateRawTickboxControl);
+        AddRow(optionContainer, L10n.T("Advisor command (blank = default)"), nameof(AdvisorCommand), CreateRawLineEditControl);
 
         // BaseLib disables this whole page during a run, so the keys are the
         // only mid-run control there is -- and they were documented nowhere a
         // player would look. F1 shows the same list in-game.
-        optionContainer.AddChild(CreateSectionHeader("Keys (press F1 in game for this list)"));
+        optionContainer.AddChild(CreateSectionHeader(L10n.T("Keys (press F1 in game for this list)")));
         AddNote(optionContainer,
-            "F8   AI on / off (from autopilot: take the controls back)\n" +
-            "F5   Coach style: peek at the AI's next pick\n" +
-            "F6   let the AI take just this one decision\n" +
-            "Shift+F6   co-op: a waiting AI partner plays its turn now\n" +
-            "F7   let the AI keep playing until you stop it\n" +
-            "Shift+F7   autobattle: the AI fights, you make the run's decisions\n" +
-            "Shift+F8   advisor brain: Search / Instinct\n" +
-            "F4   show / hide the HUD          Ctrl+L action log\n" +
-            "F9 / F10   game speed down / up (1x-8x)   F1   help\n" +
-            "Ctrl+H   hide / show all the mod's panels\n" +
-            "Ctrl+Shift+B   report a bug (asks for a note, sends only on Send)");
+            L10n.T("F8   AI on / off (from autopilot: take the controls back)\nF5   Coach style: peek at the AI's next pick\nF6   let the AI take just this one decision\nShift+F6   co-op: a waiting AI partner plays its turn now\nF7   let the AI keep playing until you stop it\nShift+F7   autobattle: the AI fights, you make the run's decisions\nF4   show / hide the HUD          Ctrl+L action log\nF9 / F10   game speed down / up (1x-8x)   F1   help\nCtrl+H   hide / show all the mod's panels\nCtrl+Shift+B   report a bug (asks for a note, sends only on Send)"));
 
         AddRestoreDefaultsButton(optionContainer);
         SetupFocusNeighbors(optionContainer);
@@ -398,32 +358,30 @@ public sealed class SpireMentorModConfig : SimpleModConfig
         }
         try
         {
-            cfg.AddLiveRow(container, "AI coach (advisor mode)", nameof(AdvisorMode), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Coach on when the game starts", nameof(CoachOnAtLaunch), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Start in Coach style (untick: Hints)", nameof(StartInCoachStyle), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Coach: also mark good turns with ✓", nameof(CoachShowGoodTurns), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Advisor brain: Instinct (untick: Search)", nameof(AdvisorBrainInstinct), cfg.CreateRawTickboxControl);
-            cfg.AddLiveNote(container, BrainNote);
-            cfg.AddLiveRow(container, "Game speed", nameof(GameSpeed), cfg.CreateRawSliderControl);
-            cfg.AddLiveRow(container, "Show HUD", nameof(ShowHud), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Show ranked moves", nameof(ShowRankedList), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Highlight the moves to make", nameof(ShowCardLabels), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Show engine numbers (scores, eval)", nameof(ShowNumbers), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Show map markers + route", nameof(ShowMapMarkers), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Show win chance bar", nameof(ShowWinBar), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Reduce combat effects", nameof(ReduceEffects), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(container, "Panels in their own window, around the game", nameof(PanelsInOwnWindowLive), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("AI coach (advisor mode)"), nameof(AdvisorMode), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Coach on when the game starts"), nameof(CoachOnAtLaunch), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Start in Coach style (untick: Hints)"), nameof(StartInCoachStyle), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Coach: also mark good turns with ✓"), nameof(CoachShowGoodTurns), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Game speed"), nameof(GameSpeed), cfg.CreateRawSliderControl);
+            cfg.AddLiveRow(container, L10n.T("Show HUD"), nameof(ShowHud), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Show ranked moves"), nameof(ShowRankedList), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Highlight the moves to make"), nameof(ShowCardLabels), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Show engine numbers (scores, eval)"), nameof(ShowNumbers), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Show map markers + route"), nameof(ShowMapMarkers), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Show win chance bar"), nameof(ShowWinBar), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Reduce combat effects"), nameof(ReduceEffects), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(container, L10n.T("Panels in their own window, around the game"), nameof(PanelsInOwnWindowLive), cfg.CreateRawTickboxControl);
             if (AiPartnersShown)
             {
-                cfg.AddLiveRow(container, "AI partner waits for your first play", nameof(AiPartnerWaitForFirstPlay), cfg.CreateRawTickboxControl);
-                cfg.AddLiveRow(container, "AI partner waits until you end your turn", nameof(AiPartnerWaitForEndTurn), cfg.CreateRawTickboxControl);
-                cfg.AddLiveRow(container, "AI partner holds for your setup play", nameof(AiPartnerSetupHoldSeconds), cfg.CreateRawSliderControl);
+                cfg.AddLiveRow(container, L10n.T("AI partner waits for your first play"), nameof(AiPartnerWaitForFirstPlay), cfg.CreateRawTickboxControl);
+                cfg.AddLiveRow(container, L10n.T("AI partner waits until you end your turn"), nameof(AiPartnerWaitForEndTurn), cfg.CreateRawTickboxControl);
+                cfg.AddLiveRow(container, L10n.T("AI partner holds for your setup play"), nameof(AiPartnerSetupHoldSeconds), cfg.CreateRawSliderControl);
             }
-            cfg.AddLiveRow(advanced, "Auto-launch Python advisor", nameof(AdvisorAutoLaunch), cfg.CreateRawTickboxControl);
-            cfg.AddLiveRow(advanced, "Advisor command (blank = default)", nameof(AdvisorCommand), cfg.CreateRawLineEditControl);
-            cfg.AddLiveRow(advanced, "Workbench URL (blank = default)", nameof(WorkbenchUrl), cfg.CreateRawLineEditControl);
-            cfg.AddLiveRow(advanced, "Browser workbench origin (blank = off)", nameof(BrowserWorkbenchOrigin), cfg.CreateRawLineEditControl);
-            cfg.AddLiveRow(advanced, "Bug report site (blank = default)", nameof(BugReportSite), cfg.CreateRawLineEditControl);
+            cfg.AddLiveRow(advanced, L10n.T("Auto-launch Python advisor"), nameof(AdvisorAutoLaunch), cfg.CreateRawTickboxControl);
+            cfg.AddLiveRow(advanced, L10n.T("Advisor command (blank = default)"), nameof(AdvisorCommand), cfg.CreateRawLineEditControl);
+            cfg.AddLiveRow(advanced, L10n.T("Workbench URL (blank = default)"), nameof(WorkbenchUrl), cfg.CreateRawLineEditControl);
+            cfg.AddLiveRow(advanced, L10n.T("Browser workbench origin (blank = off)"), nameof(BrowserWorkbenchOrigin), cfg.CreateRawLineEditControl);
+            cfg.AddLiveRow(advanced, L10n.T("Bug report site (blank = default)"), nameof(BugReportSite), cfg.CreateRawLineEditControl);
             return true;
         }
         catch (Exception ex)
@@ -432,14 +390,6 @@ public sealed class SpireMentorModConfig : SimpleModConfig
             return false;
         }
     }
-
-    /// <summary>What the brain tickbox means, on both settings pages (no .pck,
-    /// so no tooltips: the page carries its own words).</summary>
-    private const string BrainNote =
-        "Search thinks ahead: a search over the fight, the run net for the screens. Instinct is\n" +
-        "the end-to-end net with no search: it plays every decision on gut feel. Instinct plays\n" +
-        "Ironclad on v0.111.0 only for now; anywhere else the search answers and says why.\n" +
-        "The Spire Mentor badge's Brain switch and Shift+F8 switch it too.";
 
     /// <summary>A line of explanation under a mid-run row.</summary>
     private void AddLiveNote(Control container, string text)

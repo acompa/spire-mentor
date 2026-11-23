@@ -1,5 +1,6 @@
 {
  "coverage": [
+  "card_select:enchant",
   "card_select:none",
   "decision:card_reward",
   "decision:card_select",
@@ -44,7 +45,7 @@
   "status:409"
  ],
  "engine": {
-  "src_hash": "60cab7da25b2ee48",
+  "src_hash": "6effe22e5a79f136",
   "version": "0.0.1"
  },
  "final_act": 1,
@@ -58,7 +59,7 @@
  },
  "python": "3.13",
  "reached_game_over": true,
- "requests": 136,
+ "requests": 131,
  "scenario": {
   "act1": "underdocks",
   "ascension": 10,
@@ -221,5 +222,5 @@
   ],
   "seed": "G0LDEN0001"
  },
- "steps_played": 85
+ "steps_played": 81
 }

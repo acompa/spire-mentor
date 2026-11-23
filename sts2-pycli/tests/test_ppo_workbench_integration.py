@@ -41,6 +41,7 @@ def test_faithful_construction_obs_parity():
     from workbench.backends.rust_game import RustGame
 
     for seed in (0, 3, 11):
+        # Act 1 rolled on both (the env's default since 7320dbe99).
         env = PpoRunEnv(seed=seed)
         game = RustGame()
         game.start_faithful(character="Ironclad", seed=seed)

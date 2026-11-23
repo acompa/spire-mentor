@@ -101,7 +101,7 @@ import hashlib
 import pathlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache, lru_cache
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -257,9 +257,21 @@ def _layout(filled: tuple[str, ...]) -> Layout:
         n_section=C.N_SECTION,
         n_dtype=C.N_DTYPE,
         n_kind=C.N_ACTION_KIND,
-        live_kinds=tuple(sorted(k.id for k in C.ACTION_KINDS if k.id and _live(k.status, filled))),
+        # A fill event may also name the spare kinds and reserved types it plays
+        # (`FILL_SLOTS`, "#1069": the reward screen's).
+        live_kinds=tuple(
+            sorted(
+                k.id
+                for k in C.ACTION_KINDS
+                if k.id and (_live(k.status, filled) or k.id in _fill_slots("kinds", filled))
+            )
+        ),
         live_dtypes=tuple(
-            sorted(d.id for d in C.DECISION_TYPES if d.id and _live(d.status, filled))
+            sorted(
+                d.id
+                for d in C.DECISION_TYPES
+                if d.id and (_live(d.status, filled) or d.id in _fill_slots("dtypes", filled))
+            )
         ),
         cat_absent=tuple(int(x) for x in C.SCTX_PAD) + (0,) * len(C.X_CAT),
         id_cols=tuple(C.XC[n] for n in _ID_NAMES),
@@ -481,6 +493,93 @@ def _pool_slots(
     return slot, np.stack([urow, rank, u], 1), j
 
 
+@lru_cache(maxsize=8)
+def _compact_tables(dev: str) -> tuple[torch.Tensor, ...]:
+    """`contracts`' compact-layout tables on device `dev`: the sections' live widths
+    and columns (cat, then cont) and the absent categorical row."""
+    d = torch.device(dev)
+    arrs = (
+        np.asarray(C.COMPACT_AXES["ccat"][2], np.int64),
+        C.LIVE_CAT_TABLE,
+        np.asarray(C.COMPACT_AXES["ccont"][2], np.int64),
+        C.LIVE_CONT_TABLE,
+    )
+    absent = np.asarray(layout().cat_absent, np.int16)
+    return (
+        *(torch.from_numpy(np.ascontiguousarray(x)).to(d) for x in arrs),
+        torch.from_numpy(absent).to(d),
+    )
+
+
+def _dense_on(
+    vals: torch.Tensor,
+    sec: torch.Tensor,
+    width: torch.Tensor,
+    live: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """Scatter compact `vals` (token by token, each token's live columns in order)
+    into the dense `[T, columns]` tensor `out`, on the device."""
+    w = width[sec]
+    tok = torch.repeat_interleave(w)
+    if tok.shape[0] != vals.shape[0]:
+        raise ValueError("compact arrays do not match the sections' live widths")
+    j = torch.arange(tok.shape[0], device=sec.device) - (torch.cumsum(w, 0) - w)[tok]
+    out.view(-1)[tok * out.shape[1] + live[sec[tok], j]] = vals
+    return out
+
+
+def dense_tokens(
+    rb: Mapping[str, Any], device: str | torch.device, *, pin: bool = False
+) -> Mapping[str, Any]:
+    """A compact row batch (`contracts.COMPACT_ROW_FIELDS`) with its `cat`, `cont`,
+    `pcat` and `pcont` as dense tensors on `device`, built there from the uploaded
+    compact arrays (a tenth of the dense upload); the same values as
+    `contracts.dense_rows`. A dense batch comes back as it is. `to_batch` and
+    `to_packed` call it, and skip their host-side id check for such tensors."""
+    if not C.is_compact(rb):
+        return rb
+    L = layout()
+    dev = torch.device(device)
+    pinned = pin and dev.type == "cuda"
+
+    def up(x: np.ndarray) -> torch.Tensor:
+        h = torch.from_numpy(np.ascontiguousarray(x))
+        return (h.pin_memory() if pinned else h).to(dev, non_blocking=True)
+
+    w_cat, live_cat, w_cont, live_cont, absent = _compact_tables(str(dev))
+    out = dict(rb)
+    # Two uploads (the sections, and the four compact arrays as one 16-bit block)
+    # and one scatter per matrix over the tokens and the PRIV tokens together: a
+    # serving round's host time is in the count of small device calls, not in bytes.
+    n_tok, n_cat, n_pcat = len(rb["sec"]), len(rb["ccat"]), len(rb["pccat"])
+    secs = up(np.concatenate([rb["sec"], rb["psec"]]))
+    vals = up(
+        np.concatenate(
+            [
+                np.asarray(rb["ccat"], np.int16),
+                np.asarray(rb["pccat"], np.int16),
+                np.ascontiguousarray(rb["ccont"], np.float16).view(np.int16),
+                np.ascontiguousarray(rb["pccont"], np.float16).view(np.int16),
+            ]
+        )
+    )
+    s = secs.to(torch.int64)
+    n = int(s.shape[0])
+    cat = _dense_on(vals[: n_cat + n_pcat], s, w_cat, live_cat, absent.expand(n, L.n_cat).clone())
+    cont = _dense_on(
+        vals[n_cat + n_pcat :].view(torch.float16),
+        s,
+        w_cont,
+        live_cont,
+        torch.zeros((n, L.n_cont), dtype=torch.float16, device=dev),
+    )
+    out["cat"], out["pcat"] = cat[:n_tok], cat[n_tok:]
+    out["cont"], out["pcont"] = cont[:n_tok], cont[n_tok:]
+    out["sec"], out["psec"] = secs[:n_tok], secs[n_tok:]
+    return out
+
+
 @lru_cache(maxsize=1)
 def _read_cols() -> tuple[np.ndarray, np.ndarray]:
     """The `cat` columns the net looks up, and each one's table size."""
@@ -647,6 +746,7 @@ def to_batch(
         C.validate_row_batch(rb)
     L = layout()
     dev = torch.device(device)
+    rb = dense_tokens(rb, dev, pin=pin)
     ix = _index(rb)
     b0, vis, newpos = ix.b0, ix.vis, ix.newpos
     row_of_tok, row_of_cls, col_of_cls = ix.row_of_tok, ix.row_of_cls, ix.col_of_cls
@@ -836,6 +936,7 @@ def to_packed(
     torch tensors on `device`; `pin` as in `to_batch`."""
     L = layout()
     dev = torch.device(device)
+    rb = dense_tokens(rb, dev, pin=pin)
     ix = _index(rb)
     b, vis, cv = ix.b0, ix.vis, ix.cv
     a = bucket(int(ix.nc.max()), opt_buckets)
@@ -854,10 +955,16 @@ def to_packed(
     cu = _offsets(n_vis)
     vcu = _offsets(n_vis + npv)
     # Small index arrays go up as one int64 block.
-    pool_u, pool_cnt = _pooled(ix.g_pt, rb["pool_vid"], rb["pool_w"], L.vocab_rows, up, dev)
-    ppool_u, ppool_cnt = _pooled(ix.g_ppt, rb["ppool_vid"], rb["ppool_w"], L.vocab_rows, up, dev)
+    # The two pools' entries go up with that block (their weights as one more):
+    # six uploads fewer a batch than `_pooled`'s.
+    pool_u, pool_inv = np.unique(ix.g_pt, return_inverse=True)
+    ppool_u, ppool_inv = np.unique(ix.g_ppt, return_inverse=True)
     vis_row = ix.row_of_tok[vis]
     parts = {
+        "pool_inv": pool_inv,
+        "pool_vid": rb["pool_vid"],
+        "ppool_inv": ppool_inv,
+        "ppool_vid": rb["ppool_vid"],
         "cu": cu,
         "vcu": vcu,
         "pool_tok": cv[pool_u] - 1,
@@ -874,6 +981,18 @@ def to_packed(
     sizes = [len(v) for v in parts.values()]
     blk = up(np.concatenate([np.asarray(v, np.int64) for v in parts.values()]))
     got = dict(zip(parts, torch.split(blk, sizes), strict=True))
+    n_pool = len(pool_inv)
+    pool_w = up(
+        np.concatenate(
+            [np.asarray(rb["pool_w"], np.float32), np.asarray(rb["ppool_w"], np.float32)]
+        )
+    )
+    pool_cnt = torch.zeros((len(pool_u), L.vocab_rows), dtype=torch.float32, device=dev)
+    if n_pool:
+        pool_cnt.index_put_((got["pool_inv"], got["pool_vid"]), pool_w[:n_pool], accumulate=True)
+    ppool_cnt = torch.zeros((len(ppool_u), L.vocab_rows), dtype=torch.float32, device=dev)
+    if len(ppool_inv):
+        ppool_cnt.index_put_((got["ppool_inv"], got["ppool_vid"]), pool_w[n_pool:], accumulate=True)
 
     src = slice(None) if bool(vis.all()) else up(np.flatnonzero(vis))
     has_priv = bool(len(ix.row_of_pv))
@@ -909,15 +1028,32 @@ def to_packed(
     )
 
 
+@cache
+def _cuda_capability(index: int) -> tuple[int, int]:
+    return torch.cuda.get_device_capability(index)
+
+
+def flash_attn_ok(device: torch.device) -> bool:
+    """`varlen_attn` (FlashAttention) can run on `device`: a CUDA GPU of compute
+    capability 8.0 or newer (Ampere on). Older cards (a Pascal TITAN Xp, a
+    Turing RTX 20xx) raise "FlashAttention only supports Ampere GPUs or newer",
+    so the `"auto"` attention modes take the padded SDPA path there."""
+    if device.type != "cuda":
+        return False
+    index = device.index if device.index is not None else torch.cuda.current_device()
+    return _cuda_capability(index) >= (8, 0)
+
+
 class Varlen:
     """Attention over rows packed back to back (`cu_q`, `cu_k`: int32 row
     offsets of the queries and the keys, `max_q`, `max_k`: the longest rows).
 
     `mode="varlen"` runs `torch.nn.attention.varlen.varlen_attn` (flash
-    attention: CUDA, bf16/fp16 only); `"pad"` scatters q, k and v into a
-    padded batch for `scaled_dot_product_attention` with a key mask and
-    gathers the outputs back (any device and dtype, the fp32 path); `"auto"`
-    picks varlen whenever it can run on the inputs. No host sync either way.
+    attention: CUDA on Ampere or newer, bf16/fp16 only); `"pad"` scatters q, k
+    and v into a padded batch for `scaled_dot_product_attention` with a key
+    mask and gathers the outputs back (any device and dtype, the fp32 path);
+    `"auto"` picks varlen whenever it can run on the inputs and the GPU
+    (`flash_attn_ok`). No host sync either way.
     """
 
     def __init__(
@@ -951,7 +1087,7 @@ class Varlen:
         """`q` `[n_q, H, d]`, `k` and `v` `[n_k, H, d]` -> `[n_q, H, d]`."""
         mode = self.mode
         if mode == "auto":
-            ok = q.is_cuda and q.dtype in (torch.bfloat16, torch.float16)
+            ok = q.dtype in (torch.bfloat16, torch.float16) and flash_attn_ok(q.device)
             mode = "varlen" if ok else "pad"
         if mode == "varlen":
             from torch.nn.attention.varlen import varlen_attn
@@ -1252,8 +1388,7 @@ class Block(nn.Module):
             q.transpose(1, 2), kv[0].transpose(1, 2), kv[1].transpose(1, 2), attn_mask=keep
         )
         y = x[:, 0] + self.out(a.reshape(b, d))
-        h0 = self.n2(y)
-        return y + self.w2(F.silu(self.w1(h0)) * self.v(h0))
+        return self._mlp_query(y)
 
     def forward_query(self, x: torch.Tensor, at: torch.Tensor, attn: Varlen) -> torch.Tensor:
         """`forward_packed`'s outputs at the tokens `at` only, `[len(at), D]`:
@@ -1262,6 +1397,19 @@ class Block(nn.Module):
         n, d = x.shape
         q, k, v = self.qkv(self.n1(x)).view(n, 3, self.heads, d // self.heads).unbind(1)
         y = x[at] + self.out(attn(q[at], k, v).reshape(len(at), d))
+        return self._mlp_query(y)
+
+    def _mlp_query(self, y: torch.Tensor) -> torch.Tensor:
+        """The MLP half on the query tokens `y` alone. Under fp16 autocast it runs
+        in fp32: the value head's MLP output at RUNCTX passes fp16's 65504 on a
+        trained net (8.1e4 on the 1.150B all-character net, GH #1535), while the
+        trunk stays in the hundreds. One token per row, so fp32 costs little."""
+        dev = y.device.type
+        if torch.is_autocast_enabled(dev) and torch.get_autocast_dtype(dev) == torch.float16:
+            with torch.autocast(dev, enabled=False):
+                y = y.float()
+                h = self.n2(y)
+                return y + self.w2(F.silu(self.w1(h)) * self.v(h))
         h = self.n2(y)
         return y + self.w2(F.silu(self.w1(h)) * self.v(h))
 
@@ -1361,6 +1509,31 @@ class ValueModule(nn.Module):
         return vc, vr
 
 
+def small_bag(idx: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """`F.embedding_bag(idx, weight, mode="sum", padding_idx=0)` `[N, D]` of
+    `idx` `[N, K]`.
+
+    On CUDA it runs as a count matrix times the table (`C @ weight`, `C`
+    `[N, rows]` with row 0 zeroed): the same sum up to float summation order.
+    Its backward is one GEMM (`C^T @ grad`) instead of embedding_bag's sort and
+    segment reduce, which cost ~5 ms of a 343-row update stratum's ~32 ms
+    forward + backward on a 3090 (GH #1550). The CPU keeps `embedding_bag`, so
+    the fp32 evaluation path and the exported fixtures stay bit-identical.
+    Call with autocast off: the GEMM must run in fp32.
+
+    A `torch.compile` trace keeps `embedding_bag` too. The GEMM's win is in the
+    eager backward, and Inductor's kernel choice for it varies from run to run:
+    the compiled bf16 policy's p99 |dlogp| against eager fp32 spread from at most
+    0.039 to as much as 0.13, past X-B's 0.05 (`test_compiled_policy_matches_eager`).
+    """
+    if not idx.is_cuda or torch.compiler.is_compiling():
+        return F.embedding_bag(idx, weight, mode="sum", padding_idx=0)
+    c = torch.zeros(idx.shape[0], weight.shape[0], device=idx.device, dtype=weight.dtype)
+    c.scatter_add_(1, idx, torch.ones_like(idx, dtype=weight.dtype))
+    c[:, 0] = 0  # padding_idx=0: absent columns add nothing and train nothing
+    return c @ weight
+
+
 class NetOut(NamedTuple):
     """`E2ENet.forward`'s outputs, all fp32."""
 
@@ -1369,6 +1542,25 @@ class NetOut(NamedTuple):
     v_combat: torch.Tensor  # [B]
     v_run: torch.Tensor  # [B]
     value: torch.Tensor  # [B]: v_combat on combat rows, v_run on OOC rows
+
+
+#: Top-level parameter names of `E2ENet` that turn tokens into the trunk's input:
+#: the ID table and its gains, the small-column and section tables (X_CHAR, the
+#: ALLY/ORB token types), the numeric stem (every continuous column). The optimizer's
+#: "input" group when `ScheduleCfg.lr_input` is set (GH #1197's adapt phase).
+INPUT_ROOTS: tuple[str, ...] = (
+    "id_gain",
+    "priv_id_gain",
+    "pool_gain",
+    "ids",
+    "small",
+    "sec",
+    "num",
+)
+#: The rest of the trunk side: the blocks, the final norm and the policy side (the
+#: action-kind embedding only the heads read, both heads). With `INPUT_ROOTS` and
+#: "value" this covers every parameter (`test_net` pins it).
+TRUNK_ROOTS: tuple[str, ...] = ("blocks", "norm", "kind", "head_combat", "head_ooc")
 
 
 class E2ENet(nn.Module):
@@ -1521,7 +1713,7 @@ class E2ENet(nn.Module):
             x = x + self.ids(cat[:, col]) * gain[k]
         v = cat[:, self.small_cols]
         idx = torch.where(v == self.small_absent, 0, v + self.small_off)
-        x = x + F.embedding_bag(idx, self.small.weight, mode="sum", padding_idx=0)
+        x = x + small_bag(idx, self.small.weight)
         return x, self.prior[cat[:, self.layout.main_col]]
 
     def embed_packed(
@@ -1662,14 +1854,24 @@ class E2ENet(nn.Module):
         """Argmax merged class per real row, `[n_real]` int64."""
         return self.policy(b, bf16=bf16)[: b.n_real].argmax(-1)
 
-    def param_groups(self) -> dict[str, list[nn.Parameter]]:
+    def param_groups(self, *, split_input: bool = False) -> dict[str, list[nn.Parameter]]:
         """`{"trunk": ..., "value": ...}`: the two optimizer groups of plan §6
         (trunk side 1e-4, value module 3e-4). "trunk" is everything outside
         the value module: ID table, stems, trunk and policy heads. Equals
-        `ppo.e2e.algo.param_groups(net, ("value.",))`'s split."""
+        `ppo.e2e.algo.param_groups(net, ("value.",))`'s split. `split_input`
+        puts the `INPUT_ROOTS` parameters first, in their own "input" group
+        (`algo.param_groups` with `lr_input` set)."""
         value = list(self.value.parameters())
         ids = {id(p) for p in value}
-        return {"trunk": [p for p in self.parameters() if id(p) not in ids], "value": value}
+        rest = [(n, p) for n, p in self.named_parameters() if id(p) not in ids]
+        if not split_input:
+            return {"trunk": [p for _, p in rest], "value": value}
+        is_in = [n.split(".", 1)[0] in INPUT_ROOTS for n, _ in rest]
+        return {
+            "input": [p for (_, p), i in zip(rest, is_in, strict=True) if i],
+            "trunk": [p for (_, p), i in zip(rest, is_in, strict=True) if not i],
+            "value": value,
+        }
 
 
 # ── parameter accounting ──────────────────────────────────────────────────
@@ -1827,7 +2029,8 @@ def check_serving(stamps: Mapping[str, Any], where: str = "checkpoint") -> None:
     """Refuse to serve a checkpoint on inputs it was not trained on (SCHEMA.md 10, review
     finding LRN-2): stamps of another game version, or a wheel-filled event
     (`fillcheck.WHEEL_EVENTS`) that this process's wheel leaves at zero, such as a
-    WP-ENG-1 net on a wheel without the getters. The content prior travels in the
+    WP-ENG-1 net on a wheel without the getters, or the "chars" event in a process
+    that leaves it unfilled (`factory.fill_chars`). The content prior travels in the
     checkpoint (`check_prior`); D9 and #1069 have no wheel probe."""
     from . import fillcheck as FC
 
@@ -1837,6 +2040,15 @@ def check_serving(stamps: Mapping[str, Any], where: str = "checkpoint") -> None:
     read = set(stamps.get("filled") or ()) & set(FC.WHEEL_EVENTS)
     if missing := sorted(read - set(FC.wheel_filled())):
         raise SchemaMismatch(f"{where}: it read {missing}, which this wheel does not fill")
+    from . import factory
+
+    # GH #1197: a net that read the "chars" columns (X_CHAR, orbs, Doom) would see an
+    # Ironclad row of a process without the event with them at zero.
+    if C.FILL_CHARS in set(stamps.get("filled") or ()) and not factory.fill_chars():
+        raise SchemaMismatch(
+            f'{where}: it read "{C.FILL_CHARS}", which this {factory.CHARACTER} process does'
+            f" not fill: set {factory.CHARS_ENV}=1"
+        )
 
 
 def check_prior(net: E2ENet, where: str = "checkpoint") -> None:

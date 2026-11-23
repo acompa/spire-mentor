@@ -54,6 +54,8 @@ function allEvents(map: SfxMap): string[] {
     // every amendment above: an unswept table is an unverified one.
     ...Object.values(map.orbs ?? {}).flatMap((o) => [o.passive, o.evoke, o.channel]),
     ...Object.values(map.treasure ?? {}),
+    ...Object.values(map.cardMelodies ?? {}).flat(),
+    ...Object.values(map.powerSpent ?? {}),
     ...Object.values(map.monsters).flatMap((m) => [
       ...m.moves.map((mv) => mv.event),
       m.defaultAttack,
@@ -153,23 +155,48 @@ function readNonTestSources(dir: string): string {
   return chunks.join("\n");
 }
 
-// Both inputs are extracted from a game install (`just import-game`) and are
-// not published: without them the suite skips instead of failing.
-const SFX_MAP_PATH = resolve(WEB_ROOT, "public/sfx_map.json");
-const GAME_ASSETS_PRESENT = existsSync(SFX_MAP_PATH) && existsSync(AUDIO_ROOT);
+// Every sound map the workbench serves: the default build's at the root, and
+// one per non-default build (`gameVersion.ts`'s `versionedPublicPath`). All
+// of them name files in ONE shared audio tree — a non-default build's sound
+// tier copies in only the events that tree lacks (`added_audio.json`).
+const SFX_MAPS: { version: string; path: string }[] = [
+  { version: "v0.107.1", path: resolve(WEB_ROOT, "public/sfx_map.json") },
+  { version: "v0.111.0", path: resolve(WEB_ROOT, "public/v0.111.0/sfx_map.json") },
+  { version: "v0.113.0", path: resolve(WEB_ROOT, "public/v0.113.0/sfx_map.json") },
+];
+
+// The maps and the audio are extracted from a game install (`just
+// import-game`) and are not published: without them the suite skips instead
+// of failing.
+const GAME_ASSETS_PRESENT =
+  SFX_MAPS.every((m) => existsSync(m.path)) && existsSync(AUDIO_ROOT);
 
 describe.skipIf(!GAME_ASSETS_PRESENT)("sfx_map.json coverage", () => {
-  const map = (GAME_ASSETS_PRESENT
-    ? JSON.parse(readFileSync(SFX_MAP_PATH, "utf8"))
-    : {}) as SfxMap;
+  const maps = SFX_MAPS.map((m) => ({
+    ...m,
+    map: (GAME_ASSETS_PRESENT ? JSON.parse(readFileSync(m.path, "utf8")) : {}) as SfxMap,
+  }));
 
-  it("is generated from the version we ship", () => {
-    expect(map.version).toBe("v0.107.1");
+  it("covers every build that ships a sound map", () => {
+    // A new build's map (`public/v0.114.0/sfx_map.json`) must join SFX_MAPS,
+    // or its events go unchecked and the orphan count below reads its new
+    // audio as unreachable.
+    const versioned = readdirSync(resolve(WEB_ROOT, "public"), { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(resolve(WEB_ROOT, "public", d.name, "sfx_map.json")))
+      .map((d) => resolve(WEB_ROOT, "public", d.name, "sfx_map.json"));
+    expect(SFX_MAPS.map((m) => m.path)).toEqual(
+      expect.arrayContaining(versioned),
+    );
   });
 
-  it("is not empty", () => {
+  it.each(SFX_MAPS)("$version: is generated from its build", ({ version }) => {
+    expect(maps.find((m) => m.version === version)!.map.version).toBe(version);
+  });
+
+  it.each(SFX_MAPS)("$version: is not empty", ({ version }) => {
     // A regex that stops matching after a game update fails here rather than
     // shipping a silently mute workbench.
+    const { map } = maps.find((m) => m.version === version)!;
     expect(Object.keys(map.generic).length).toBeGreaterThan(5);
     expect(Object.keys(map.monsters).length).toBeGreaterThan(20);
   });
@@ -179,7 +206,8 @@ describe.skipIf(!GAME_ASSETS_PRESENT)("sfx_map.json coverage", () => {
   // task-11-report.md), and a strict size floor catches the empty/near-empty
   // case for free. The smallest shipped file today is 1299 bytes, so a floor
   // of 1000 has real headroom without decoding audio in a unit test.
-  it("names only events whose audio file is present and non-trivial", () => {
+  it.each(SFX_MAPS)("$version: names only events whose audio file is present and non-trivial", ({ version }) => {
+    const { map } = maps.find((m) => m.version === version)!;
     const bad = [...new Set(allEvents(map))]
       .map((e) => resolve(AUDIO_ROOT, `${soundAssetRelPath(e)}.webm`))
       .filter((p) => !existsSync(p) || statSync(p).size < 1000);
@@ -262,9 +290,42 @@ describe.skipIf(!GAME_ASSETS_PRESENT)("sfx_map.json coverage", () => {
   //  4. it fires on a specific event OPTION's outcome (`hey` in Jungle Maze,
   //     `hiss` in Dense Vegetation, `doll_room_amb`), and the wire exposes
   //     only the resulting state, not which branch ran.
+  //
+  // Raised 279 -> 309 (2026-11-15): the tree is shared by every build, and
+  // v0.113.0 added 46 files (`sts2-wiki/data/v0.113.0/added_audio.json`)
+  // that only that build's map can reach. The count used to be taken against
+  // the v0.107.1 map alone, so it read all 46 as orphans (325, failing); it
+  // is now taken against the UNION of every map in SFX_MAPS. 15 of the 46
+  // are reached; the other 31, by group:
+  //  1. never played: `debug_audio/fool/{wah,cho,ki}_*` (TmpSfx constants
+  //     with no caller — the melody nodes play the FMOD syllables),
+  //     `chain_break`, `chain_break_windup`, `chain_get` (only the debug vfx
+  //     spawner), `aeonglass_die` (a private constant nothing reads),
+  //     `fugitive_hum`, `fugitive_shock` (unused `Fool` constants),
+  //     `fugitive_arrow_shoot`, `slithering_strangler_lash`,
+  //     `card_transform_hand`, `card_transform_pile` (named nowhere).
+  //  3. no workbench surface: `fool_select_A`/`_B` (character select).
+  //  4. event dialogue: Welcome to Wongos' `event_vo_wongos_*`, Tezcatara's
+  //     four lines.
+  //  and four the game DOES play that the map did not reach yet:
+  //  `byrd_2_attack` (`GodByrdPower`, a power's trigger), `byrdlett_evolution`
+  //  (`NByrdEvolutionVfx`), `fool_dislodge` (`NImpaledArrowVfx`, via
+  //  `ArrowCmd`) and `snapping_jaxfruit_energy_orb` (its move method is
+  //  `public`, and the move parser read `private async Task` only).
+  //
+  // Lowered 309 -> 303 (same day), by wiring those four: `powerSpent` (a
+  // power that sounds as it removes itself, played when it leaves its owner —
+  // God Byrd, and with it Asleep's `lagavulin_matriarch_awaken`), the
+  // `restEvolve` and `arrowDislodge` generic keys, and a move parser that
+  // reads any access level (which also gave Flail Knight's `public`
+  // FLAIL_MOVE its `flail_knight_flail`). One file became an orphan in the
+  // same change, correctly: `waterfall_giant_knockout` was named only because
+  // the private-only parser ran Explode's body on into the `public`
+  // `TriggerAboutToBlowState` below it. Explode plays `DeathSfx`; the
+  // knockout plays when the giant first drops to 0 HP, which is no move.
   it("does not ship a large body of audio nothing can reach", () => {
-    const CEILING = 279;
-    const named = new Set(allEvents(map).map(soundAssetRelPath));
+    const CEILING = 303;
+    const named = new Set(maps.flatMap(({ map }) => allEvents(map)).map(soundAssetRelPath));
     const shipped = listWebmRelPaths(AUDIO_ROOT);
     const orphans = shipped.filter((f) => !named.has(f)).sort();
     // Pinned at the exact measured value (not padded) so a single map/asset

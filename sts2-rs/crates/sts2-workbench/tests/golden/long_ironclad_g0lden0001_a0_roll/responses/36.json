@@ -265,6 +265,8 @@
      "name": "Nibbit",
      "powers": [],
      "rig": "https://assets.test/monster_rigs/nibbit/nibbit",
+     "rig_arrow_x": 0.0,
+     "rig_arrow_y": -72.0,
      "rig_bounds_h": 146.0,
      "rig_bounds_w": 270.0,
      "rig_scale": 0.28,
@@ -515,6 +517,8 @@
      }
     ],
     "rig": "https://assets.test/character_rigs/ironclad/ironclad",
+    "rig_arrow_x": 4.0,
+    "rig_arrow_y": -168.0,
     "rig_bounds_h": 278.0,
     "rig_bounds_w": 242.0,
     "rig_scale": 0.28

@@ -53,15 +53,20 @@ use sts2_core::{CombatState, CreatureUid};
 /// target's Vulnerable folded in — and why the shared `preview_*` formulas must
 /// NOT apply them: the play path folds the same hooks itself inside
 /// `deal_damage_*` / `gain_block_player`, so doing it twice would double-count.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ValueKind {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ValueKind {
     /// `CalculatedDamage` dealt by the player.
     Damage,
     /// `CalculatedDamage` dealt by the Osty (C# `CalculatedDamageVar.FromOsty`).
     OstyDamage,
     /// `CalculatedBlock`.
     Block,
-    /// A plain count — hits, cards, Doom, Energy, Focus, Forge, Shivs, Channels.
+    /// `CalculatedHits`: an attack's hit count. Displayed exactly like
+    /// [`Self::Count`]; kept apart so `cards::live` can tell a hit count from
+    /// any other count.
+    Hits,
+    /// Any other plain count — cards, Doom, Energy, Focus, Forge, Shivs,
+    /// Channels.
     Count,
 }
 
@@ -100,8 +105,57 @@ pub fn calculated_value(
     card: &Card,
     target: Option<CreatureUid>,
 ) -> Option<i32> {
+    let (f, kind) = preview_of(card.card_id, state.game_version)?;
+    let raw = f(state, card, target);
+    Some(match kind {
+        ValueKind::Damage => modified_damage(state, raw, CreatureRef::Player, target),
+        // No living Osty means no hit at all, so the face shows nothing to fold.
+        ValueKind::OstyDamage => match sts2_core::card_effects::osty_dealer_ref(state) {
+            Some(dealer) => modified_damage(state, raw, dealer, target),
+            None => raw.max(0),
+        },
+        ValueKind::Block => sts2_core::hooks::modify_block(
+            // A face preview has no `cardPlay`: Stretch answers it unspent.
+            sts2_core::fool::stretch_preview_state(state, card.uid)
+                .as_ref()
+                .unwrap_or(state),
+            raw,
+            &sts2_core::hooks::BlockCtx {
+                target: CreatureRef::Player,
+                props: sts2_core::hooks::ValueProps::MOVE,
+                card_source: Some(card.uid),
+            },
+        ),
+        ValueKind::Hits | ValueKind::Count => raw,
+    })
+}
+
+/// [`calculated_value`] for a card whose `{Calculated*}` placeholder is a
+/// `CalculatedBlockVar` (Demonic Shield, Mirage, Sacrifice, Stack, Expect a
+/// Fight on v0.111.0), `None` for every other card. The block those cards
+/// would grant if played now, with the block hooks folded in.
+#[must_use]
+pub fn calculated_block(
+    state: &CombatState,
+    card: &Card,
+    target: Option<CreatureUid>,
+) -> Option<i32> {
+    match preview_of(card.card_id, state.game_version) {
+        Some((_, ValueKind::Block)) => calculated_value(state, card, target),
+        _ => None,
+    }
+}
+
+/// The shared `preview_*` behind `card_id`'s `{Calculated*}` placeholder and
+/// what kind of number it is, or `None` for a card without one. The single
+/// `CardId` → preview table: [`calculated_value`] and `cards::live` both read
+/// it, so a card added here reaches both.
+pub(crate) fn preview_of(
+    card_id: CardId,
+    version: sts2_core::GameVersion,
+) -> Option<(PreviewFn, ValueKind)> {
     // Cards whose placeholder is `CalculatedDamage` (see `ValueKind`).
-    let (f, kind): (PreviewFn, ValueKind) = match card.card_id {
+    Some(match card_id {
         CardId::AshenStrike => (
             crate::cards::ironclad::ashen_strike::preview_ashen_strike,
             ValueKind::Damage,
@@ -178,10 +232,10 @@ pub fn calculated_value(
             crate::cards::necrobinder::unleash::preview_unleash,
             ValueKind::OstyDamage,
         ),
-        // `CalculatedBlock` and the plain counts.
+        // `CalculatedBlock`, `CalculatedHits` and the plain counts.
         CardId::Barrage => (
             crate::cards::defect::barrage::preview_barrage,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::BeatIntoShape => (
             crate::cards::regent::beat_into_shape::preview_beat_into_shape,
@@ -199,7 +253,7 @@ pub fn calculated_value(
             crate::cards::ironclad::expect_a_fight::preview_expect_a_fight,
             // v0.111.0: the placeholder became a `CalculatedBlockVar`
             // (decomp ExpectAFight.cs:23); v0.107.1 counted Energy.
-            if state.game_version >= sts2_core::GameVersion::V0_111_0 {
+            if version >= sts2_core::GameVersion::V0_111_0 {
                 ValueKind::Block
             } else {
                 ValueKind::Count
@@ -207,19 +261,19 @@ pub fn calculated_value(
         ),
         CardId::Finisher => (
             crate::cards::silent::finisher::preview_finisher,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::FlakCannon => (
             crate::cards::defect::flak_cannon::preview_flak_cannon,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::Flechettes => (
             crate::cards::silent::flechettes::preview_flechettes,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::HelixDrill => (
             crate::cards::defect::helix_drill::preview_helix_drill,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::MyShinies => (
             crate::cards::colorless::my_shinies::preview_my_shinies,
@@ -231,7 +285,7 @@ pub fn calculated_value(
         ),
         CardId::LunarBlast => (
             crate::cards::regent::lunar_blast::preview_lunar_blast,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::Mirage => (
             crate::cards::silent::mirage::preview_mirage,
@@ -243,15 +297,15 @@ pub fn calculated_value(
         ),
         CardId::PullFromBelow => (
             crate::cards::necrobinder::pull_from_below::preview_pull_from_below,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::Radiate => (
             crate::cards::regent::radiate::preview_radiate,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::Rattle => (
             crate::cards::necrobinder::rattle::preview_rattle,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::Sacrifice => (
             crate::cards::necrobinder::sacrifice::preview_sacrifice,
@@ -267,7 +321,7 @@ pub fn calculated_value(
         ),
         CardId::TearAsunder => (
             crate::cards::ironclad::tear_asunder::preview_tear_asunder,
-            ValueKind::Count,
+            ValueKind::Hits,
         ),
         CardId::Voltaic => (
             crate::cards::defect::voltaic::preview_voltaic,
@@ -278,28 +332,6 @@ pub fn calculated_value(
         // plays still allowed. Same on both builds.
         CardId::Normality => (preview_normality, ValueKind::Count),
         _ => return None,
-    };
-    let raw = f(state, card, target);
-    Some(match kind {
-        ValueKind::Damage => modified_damage(state, raw, CreatureRef::Player, target),
-        // No living Osty means no hit at all, so the face shows nothing to fold.
-        ValueKind::OstyDamage => match sts2_core::card_effects::osty_dealer_ref(state) {
-            Some(dealer) => modified_damage(state, raw, dealer, target),
-            None => raw.max(0),
-        },
-        ValueKind::Block => sts2_core::hooks::modify_block(
-            // A face preview has no `cardPlay`: Stretch answers it unspent.
-            sts2_core::fool::stretch_preview_state(state, card.uid)
-                .as_ref()
-                .unwrap_or(state),
-            raw,
-            &sts2_core::hooks::BlockCtx {
-                target: CreatureRef::Player,
-                props: sts2_core::hooks::ValueProps::MOVE,
-                card_source: Some(card.uid),
-            },
-        ),
-        ValueKind::Count => raw,
     })
 }
 /// Fold a damage number through the outgoing/incoming modifier hooks the game

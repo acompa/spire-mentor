@@ -23,6 +23,22 @@ pub(crate) fn on_after_side_turn_start_blood_vial(
     EffectResult::Resolved
 }
 
+/// Whether [`dispatch_after_player_turn_start_late`] has a relic to walk: a
+/// BloodVial, FakeBloodVial or BathTowel anywhere in the store (melted ones
+/// included, the dispatcher's own filter). Without one it does nothing.
+#[inline]
+#[must_use]
+pub fn has_after_player_turn_start_late_listener(state: &CombatState) -> bool {
+    state.relics.iter().any(|r| {
+        matches!(
+            r.kind,
+            crate::RelicKind::BloodVial
+                | crate::RelicKind::FakeBloodVial
+                | crate::RelicKind::BathTowel
+        )
+    })
+}
+
 /// C# `Hook.AfterPlayerTurnStart`'s Late pass (`AfterPlayerTurnStartLate`),
 /// which only BloodVial and FakeBloodVial override (v0.111.0 and v0.107.1);
 /// v0.113.0 adds BathTowel (`BathTowel.cs`).
@@ -35,6 +51,11 @@ pub(crate) fn on_after_side_turn_start_blood_vial(
 /// the side walk during the pause, but the Late pass still waits for the pick.
 /// Walked in equip order.
 pub fn dispatch_after_player_turn_start_late(state: &mut CombatState) {
+    // Perf: the collect below keeps exactly these kinds, so with none in the
+    // store the loop runs zero times. Same filter (melted relics included).
+    if !has_after_player_turn_start_late_listener(state) {
+        return;
+    }
     let kinds: smallvec::SmallVec<[crate::RelicKind; 2]> = state
         .relics
         .iter()

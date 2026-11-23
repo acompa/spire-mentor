@@ -70,6 +70,9 @@ pub const MONSTER_ALIASES: &[(&str, &str)] = &[
     ("battle_friend_v2_0", "battleworn_dummy"),
     ("battle_friend_v3_0", "battleworn_dummy"),
     ("big_dummy", "battleworn_dummy"),
+    // The Dense Vegetation event's fight is ordinary Wrigglers in the game;
+    // `DenseVegetationWriggler` is an engine-only variant (its slot AI).
+    ("dense_vegetation_wriggler", "wriggler"),
 ];
 
 /// Monsters that are TWO (or more) targetable combatants sharing ONE big
@@ -776,6 +779,25 @@ mod tests {
         assert_eq!(
             r.monster("Flyconid").as_deref(),
             Some("monsters/flying_mushrooms.png")
+        );
+    }
+
+    #[test]
+    fn dense_vegetation_wriggler_uses_wriggler_art() {
+        // Bug report wb-051e996f0beacb35: the event's four wrigglers drew as
+        // empty boxes.
+        let r = resolver(&[
+            "monsters/wriggler.png",
+            "monster_rigs/wriggler/wriggler.skel",
+        ]);
+        assert_eq!(
+            r.monster("Dense Vegetation Wriggler").as_deref(),
+            Some("monsters/wriggler.png")
+        );
+        assert_eq!(
+            r.monster_rig("Dense Vegetation Wriggler", Some("DenseVegetationWriggler"))
+                .as_deref(),
+            Some("monster_rigs/wriggler/wriggler")
         );
     }
 

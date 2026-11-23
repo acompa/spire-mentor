@@ -102,10 +102,10 @@ internal static class AutoplayPause
         }
         if (!string.IsNullOrWhiteSpace(handBack) && pauseOn.Contains(Unsupported))
         {
-            return $"not covered by the AI ({handBack.Trim()})";
+            return L10n.F("not covered by the AI ({0})", handBack.Trim());
         }
         string? hit = ids.Select(Normalize).FirstOrDefault(id => id.Length > 0 && id != Unsupported && pauseOn.Contains(id));
-        return hit == null ? null : "you asked to play this yourself (pause_on)";
+        return hit == null ? null : L10n.T("you asked to play this yourself (pause_on)");
     }
 
     /// <summary>"CRYSTAL_SPHERE" / "card_bundle" -> "Crystal Sphere" / "Card Bundle".</summary>
@@ -113,11 +113,11 @@ internal static class AutoplayPause
     {
         string[] words = (id ?? "").Split(new[] { '_', ' ', '-' }, StringSplitOptions.RemoveEmptyEntries);
         return words.Length == 0
-            ? "This decision"
+            ? L10n.T("This decision")
             : string.Join(" ", words.Select(w => char.ToUpperInvariant(w[0]) + w.Substring(1).ToLowerInvariant()));
     }
 
     /// <summary>The line the player sees when autoplay hands back.</summary>
     public static string Toast(string what, string reason) =>
-        $"{what}: {reason} — your call. F7 to resume.";
+        L10n.F("{0}: {1} — your call. F7 to resume.", what, reason);
 }

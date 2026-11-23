@@ -13,7 +13,8 @@
 //! correctness-critical construction (`build_scenario_state`) is shared through
 //! [`sts2_wire::scenario`], so the sandbox stays byte-parallel with the oracle.
 
-use crate::localization::Loc;
+use crate::i18n::{game_name, tr};
+use crate::localization::{display_zh, Loc};
 use crate::simlab::{camel_to_upper_snake, title_case, ORB_BASE};
 use serde_json::{json, Map, Value};
 use sts2_content::monster_dispatch::{build_ai_with_ascension, MonsterSpawnArgs, SpawnPosition};
@@ -160,11 +161,11 @@ pub fn list_encounters() -> Value {
     };
     fn tier_name(t: EncounterTier) -> &'static str {
         match t {
-            EncounterTier::Weak => "Weak",
-            EncounterTier::Normal => "Normal",
-            EncounterTier::Elite => "Elite",
-            EncounterTier::Boss => "Boss",
-            _ => "Unknown",
+            EncounterTier::Weak => tr("Weak"),
+            EncounterTier::Normal => tr("Normal"),
+            EncounterTier::Elite => tr("Elite"),
+            EncounterTier::Boss => tr("Boss"),
+            _ => tr("Unknown"),
         }
     }
     let tables: [(&[EncounterDef], u8, &str); 4] = [
@@ -181,12 +182,27 @@ pub fn list_encounters() -> Value {
                 .iter()
                 .map(|(k, _)| k.python_name().to_string())
                 .collect();
+            // Chinese: the game's own encounter / act names by id.
+            let display = if display_zh() {
+                crate::data::zh_tables()
+                    .encounters
+                    .get(&format!("{}.title", def.id))
+                    .filter(|t| !t.is_empty())
+                    .map_or_else(|| def.display.to_string(), Clone::clone)
+            } else {
+                def.display.to_string()
+            };
+            let act_title = game_name(
+                "acts",
+                &format!("{}.title", act_name.to_ascii_uppercase()),
+                act_name,
+            );
             out.push(json!({
                 "id": def.id,
-                "display": def.display,
+                "display": display,
                 "tier": tier_name(def.tier),
                 "act": act,
-                "act_name": act_name,
+                "act_name": act_title,
                 "monsters": monsters,
             }));
         }
@@ -205,6 +221,16 @@ fn loc(version: GameVersion) -> &'static Loc {
 }
 
 fn loc_or_title(l: &Loc, key: &str, ident: &str) -> String {
+    if display_zh() {
+        // Monsters, powers and their moves are not in the display loc's
+        // Chinese overlay: read the game's own tables by the same key.
+        let zh = crate::data::zh_tables();
+        for table in ["monsters", "powers"] {
+            if let Some(t) = zh.get(table, key) {
+                return t.to_string();
+            }
+        }
+    }
     l.get(key).map_or_else(|| title_case(ident), str::to_string)
 }
 
@@ -227,11 +253,23 @@ fn card_rows(l: &Loc) -> Vec<Value> {
     ids.into_iter()
         .map(|id| {
             let (ty, rarity, cost) = match sts2_content::names::resolve_card_name(&id, None) {
-                Ok(spec) => (
-                    sts2_wire::emit::names::card_type_python_name(spec.card_type).to_string(),
-                    format!("{:?}", spec.rarity),
-                    Value::from(i64::from(spec.cost)),
-                ),
+                Ok(spec) => {
+                    let ty = sts2_wire::emit::names::card_type_python_name(spec.card_type);
+                    let rarity = format!("{:?}", spec.rarity);
+                    (
+                        game_name(
+                            "gameplay_ui",
+                            &format!("CARD_TYPE.{}", ty.to_ascii_uppercase()),
+                            ty,
+                        ),
+                        game_name(
+                            "gameplay_ui",
+                            &format!("CARD_RARITY.{}", rarity.to_ascii_uppercase()),
+                            &rarity,
+                        ),
+                        Value::from(i64::from(spec.cost)),
+                    )
+                }
                 Err(_) => (String::new(), String::new(), Value::Null),
             };
             let name = card_display_name(l, &id);
@@ -266,8 +304,15 @@ fn monster_rows(l: &Loc) -> Vec<Value> {
                         .map(|mv| {
                             let mid = mv.get("id").and_then(Value::as_str).unwrap_or("");
                             let bare = mid.strip_suffix("_MOVE").unwrap_or(mid);
-                            let title = l
-                                .get(&format!("{snake}.moves.{mid}.title"))
+                            let zh = crate::data::zh_tables();
+                            let zh_title = display_zh()
+                                .then(|| {
+                                    zh.get("monsters", &format!("{snake}.moves.{mid}.title"))
+                                        .or_else(|| zh.get("monsters", &format!("{snake}.moves.{bare}.title")))
+                                })
+                                .flatten();
+                            let title = zh_title
+                                .or_else(|| l.get(&format!("{snake}.moves.{mid}.title")))
                                 .or_else(|| l.get(&format!("{snake}.moves.{bare}.title"))).map_or_else(|| title_case(bare), str::to_string);
                             json!({
                                 "id": mid,
@@ -289,13 +334,22 @@ fn character_rows() -> Vec<Value> {
         .iter()
         .map(|&c| {
             let (hp, deck, relic, orb_slots) = starter_for(c);
-            let display = match c {
+            let english = match c {
                 "Ironclad" => "The Ironclad",
                 "Silent" => "The Silent",
                 "Defect" => "The Defect",
                 "Regent" => "The Regent",
                 "Necrobinder" => "The Necrobinder",
                 other => other,
+            };
+            let display = if display_zh() {
+                crate::data::zh_tables()
+                    .characters
+                    .get(&format!("{}.title", c.to_ascii_uppercase()))
+                    .filter(|t| !t.is_empty())
+                    .map_or_else(|| english.to_string(), Clone::clone)
+            } else {
+                english.to_string()
             };
             json!({"id": c, "name": display, "hp": hp, "relic": relic, "deck": deck, "orbSlots": orb_slots})
         })
@@ -305,7 +359,10 @@ fn character_rows() -> Vec<Value> {
 fn orb_rows() -> Vec<Value> {
     ORB_BASE
         .iter()
-        .map(|(k, p, e)| json!({"id": k, "name": k, "passive": p, "evoke": e}))
+        .map(|(k, p, e)| {
+            let name = game_name("orbs", &format!("{}_ORB.title", k.to_ascii_uppercase()), k);
+            json!({"id": k, "name": name, "passive": p, "evoke": e})
+        })
         .collect()
 }
 
@@ -438,5 +495,113 @@ mod tests {
         assert_eq!(starter_for("Defect").3, 3); // orb slots
                                                 // Unknown → Ironclad default.
         assert_eq!(starter_for("Nobody").2, "BURNING_BLOOD");
+    }
+
+    /// English words left in a Chinese string (acronyms the glossary keeps).
+    fn english_words(s: &str) -> Vec<&str> {
+        // Wire identifiers (`advice_request`) and the product name are not words.
+        s.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter(|w| w.len() >= 2 && w.chars().any(|c| c.is_ascii_alphabetic()))
+            .filter(|w| !w.contains('_'))
+            .filter(|w| !["AI", "MCTS", "JSON", "JSONL", "SpireMentor"].contains(w))
+            .collect()
+    }
+
+    #[test]
+    fn chinese_mode_catalog_and_sandbox_text_has_no_english() {
+        if !crate::data::zh_tables().is_present() {
+            return;
+        }
+        assert!(crate::localization::set_display_language("zh"));
+        let cat = catalog();
+        let find = |list: &str, id: &str| -> Value {
+            cat[list]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["id"] == json!(id))
+                .cloned()
+                .unwrap_or_else(|| panic!("{list} has {id}"))
+        };
+        let mut texts: Vec<String> = Vec::new();
+        let enc = cat["encounters"].as_array().unwrap()[0].clone();
+        for k in ["display", "tier", "act_name"] {
+            texts.push(enc[k].as_str().unwrap().to_string());
+        }
+        let bash = find("cards", "BASH");
+        texts.push(bash["name"].as_str().unwrap().to_string());
+        texts.push(bash["type"].as_str().unwrap().to_string());
+        texts.push(bash["rarity"].as_str().unwrap().to_string());
+        let ch = find("characters", "Ironclad");
+        texts.push(ch["name"].as_str().unwrap().to_string());
+        texts.push(
+            find("orbs", "Lightning")["name"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+        texts.push(
+            find("powers", "STRENGTH")["name"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+        let cultist = find("monsters", "CalcifiedCultist");
+        texts.push(cultist["name"].as_str().unwrap().to_string());
+        for mv in cultist["moves"].as_array().unwrap() {
+            texts.push(mv["title"].as_str().unwrap().to_string());
+        }
+        texts.push(name_of("monster", "CalcifiedCultist"));
+
+        // The sandbox's move labels and its paste / position errors.
+        let (hp, deck, relic, _) = starter_for("Ironclad");
+        let built = crate::simlab::new_position(
+            GameVersion::default(),
+            "Ironclad",
+            Some("MAWLER_NORMAL"),
+            None,
+            0,
+            1,
+            None,
+            None,
+            None,
+            &[],
+            None,
+            hp,
+            &deck,
+            Some(relic),
+        )
+        .expect("new_position builds");
+        let moves = crate::simlab::first_moves(&built.wire, &name_of).expect("moves");
+        for m in &moves {
+            texts.push(m["label"].as_str().unwrap().to_string());
+        }
+        for paste in ["", "{\"not\": \"a fight\"}"] {
+            texts.push(crate::simlab::position_from_paste(paste).unwrap_err().0);
+        }
+        texts.push(
+            crate::simlab::wire_from_position(&crate::simlab::empty_position("Ironclad", 0))
+                .unwrap_err()
+                .0,
+        );
+
+        crate::localization::set_display_language("en");
+        // Ids and values the page matches on stay as they were.
+        assert_eq!(enc["id"].as_str().map(str::is_ascii), Some(true));
+        assert_eq!(ch["id"], json!("Ironclad"));
+        for t in &texts {
+            assert!(!t.is_empty());
+            assert!(english_words(t).is_empty(), "English left in {t:?}");
+        }
+        assert!(texts.iter().any(|t| t == "痛击"), "{texts:?}");
+        assert!(texts.iter().any(|t| t == "结束回合"), "{texts:?}");
+        // English mode is the English catalog again.
+        let en = catalog();
+        assert_eq!(en["characters"][0]["name"], json!("The Ironclad"));
+        assert!(en["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == json!("BASH") && c["name"] == json!("Bash")));
     }
 }

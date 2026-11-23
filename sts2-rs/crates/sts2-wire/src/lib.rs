@@ -32,6 +32,7 @@ pub mod emit;
 pub mod error;
 pub mod fool_state;
 pub mod graft;
+pub mod run_builder;
 pub mod scenario;
 pub mod state_dict;
 pub mod value;

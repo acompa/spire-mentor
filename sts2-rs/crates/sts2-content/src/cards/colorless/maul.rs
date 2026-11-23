@@ -17,7 +17,7 @@ use super::prelude::*;
 pub(crate) fn play_maul(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
     let t = target.expect("Maul: Enemy-targeted");
     let dmg = current_damage(state);
-    for _ in 0..2 {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
         let alive = state
             .creatures
             .iter()

@@ -182,6 +182,11 @@ def output_for(source: str) -> str | None:
     m = re.fullmatch(r"images/monsters/(\w+)\.png", source)
     if m:
         return f"monsters/{m.group(1)}.png"
+    # The Fool's arrow stuck in an impaled enemy (`impaled_arrow_vfx.tscn`):
+    # the shaft drawn in front of the body and the head drawn behind it.
+    m = re.fullmatch(r"images/vfx/(arrow_(?:fg|bg))\.png", source)
+    if m:
+        return f"ui/fool/{m.group(1)}.png"
     # Screen-chrome families: the game's drawn HUD/panel/button art. Flat
     # textures; served under ui/<family>/ for the workbench's game-skin
     # components (top HUD band, energy orb layers, reward banner, rest-site
@@ -197,6 +202,8 @@ def output_for(source: str) -> str | None:
         ("images/packed/common_ui/", "common_ui"),
         ("images/packed/map/", "map"),
         ("images/packed/sprite_fonts/", "sprite_fonts"),
+        # The Fool's combat UI (v0.113.0+): bow, quiver arrows, melody symbols.
+        ("images/packed/fool/", "fool"),
     ):
         if source.startswith(prefix):
             return f"ui/{family}/" + source[len(prefix) :]

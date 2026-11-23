@@ -37,26 +37,33 @@ internal static class PotionSwapAdvice
     /// `advice` (where the advisor sends it), else `advice.capabilities`; 0
     /// when absent or not a non-negative integer -- an older advisor.
     /// </summary>
-    public static int CapabilityOf(JsonElement root)
+    public static int CapabilityOf(JsonElement root) => CapabilityOf(root, AdviceFor);
+
+    /// <summary>
+    /// `capabilities.&lt;name&gt;` of an advice reply, by the same rule as
+    /// the potion swap's (CrystalSphereWire.Capability reads
+    /// `crystal_sphere` with it).
+    /// </summary>
+    public static int CapabilityOf(JsonElement root, string name)
     {
         if (root.ValueKind != JsonValueKind.Object)
         {
             return 0;
         }
-        if (TryLevel(root, out int level))
+        if (TryLevel(root, name, out int level))
         {
             return level;
         }
-        return root.TryGetProperty("advice", out JsonElement advice) && TryLevel(advice, out level) ? level : 0;
+        return root.TryGetProperty("advice", out JsonElement advice) && TryLevel(advice, name, out level) ? level : 0;
     }
 
-    private static bool TryLevel(JsonElement owner, out int level)
+    private static bool TryLevel(JsonElement owner, string name, out int level)
     {
         level = 0;
         if (owner.ValueKind == JsonValueKind.Object &&
             owner.TryGetProperty("capabilities", out JsonElement caps) &&
             caps.ValueKind == JsonValueKind.Object &&
-            caps.TryGetProperty(AdviceFor, out JsonElement v) &&
+            caps.TryGetProperty(name, out JsonElement v) &&
             v.ValueKind == JsonValueKind.Number &&
             v.TryGetInt32(out int n))
         {

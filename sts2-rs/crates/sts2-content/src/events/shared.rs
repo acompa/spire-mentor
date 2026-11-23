@@ -80,7 +80,8 @@ fn lost_wisp_claim(state: &mut RunState) -> EventOutcome {
     {
         state.add_card_to_deck_with_hooks(curse, sts2_core::relic_effects::AddSource::EventGain);
     }
-    state.offer_relic_rewards(RelicId::LostWisp, 1);
+    // `RelicCmd.Obtain<LostWisp>` (`LostWisp.cs:50`): obtained, not offered.
+    state.grant_event_relic(RelicId::LostWisp);
     EventOutcome::finished("Gained Lost Wisp relic (Decay curse add deferred to 6ynt.4.deck-add).")
 }
 
@@ -253,25 +254,79 @@ pub const TRASH_HEAP: EventSpec = EventSpec {
 // ════════════════════════════════════════════════════════════════════
 
 // ── AbyssalBaths ─────────────────────────────────────────────────────
+//
+// C# `AbyssalBaths` (identical in v0.107.1, v0.111.0, v0.113.1 save a
+// `CreatureCmd.Damage` signature change) is a loop: Immerse opens a page of
+// [Linger, Exit Baths] via `SetEventState`, and every Linger re-presents the
+// same two options until the player exits or dies. Each immersion
+// (`OnImmerse`) is `GainMaxHp(2)`, then unblockable/unpowered damage of the
+// `Damage` var, then `Damage.BaseValue += 1` — so the hits go 3, 4, 5, ….
+// `event_state.page` counts immersions, which makes the next hit
+// `3 + page`. The DEATH_WARNING page (shown when the next Linger would kill)
+// and the LINGER1..9 pages differ only in their description text; the
+// options are the same, so neither needs state of its own (GH #1492).
 
 pub const ABYSSAL_BATHS_MAX_HP_GAIN: i32 = 2;
 pub const ABYSSAL_BATHS_INITIAL_DAMAGE: i32 = 3;
 pub const ABYSSAL_BATHS_ABSTAIN_HEAL: i32 = 10;
 
+/// The `Damage` var at the current page: the hit the NEXT Immerse/Linger
+/// deals (C# bumps `Damage.BaseValue` by 1 after each one).
+fn abyssal_baths_damage(state: &RunState) -> i32 {
+    ABYSSAL_BATHS_INITIAL_DAMAGE + i32::from(state.event_state.page)
+}
+
+/// C# `AbyssalBaths.OnImmerse`, shared by Immerse and every Linger. Never
+/// finishes the event: both callers go to another [Linger, Exit Baths] page
+/// (the run manager ends the run if the hit was lethal).
 fn abyssal_baths_immerse(state: &mut RunState) -> EventOutcome {
+    let damage = abyssal_baths_damage(state);
     state.gain_max_hp(ABYSSAL_BATHS_MAX_HP_GAIN);
-    let dmg = state.lose_hp(ABYSSAL_BATHS_INITIAL_DAMAGE);
-    // Python returns finished=False with linger/exit_baths next_options;
-    // single-page framework collapses to finished. Linger loop lands
-    // in `6ynt.4.multi-page`.
-    EventOutcome::finished(format!(
-        "+{ABYSSAL_BATHS_MAX_HP_GAIN} Max HP, took {dmg} damage."
-    ))
+    let dmg = state.lose_hp(damage);
+    state.event_state.page = state.event_state.page.saturating_add(1);
+    EventOutcome {
+        finished: false,
+        description: format!("+{ABYSSAL_BATHS_MAX_HP_GAIN} Max HP, took {dmg} damage."),
+        effects: Vec::new(),
+    }
 }
 
 fn abyssal_baths_abstain(state: &mut RunState) -> EventOutcome {
     let healed = state.heal(ABYSSAL_BATHS_ABSTAIN_HEAL);
     EventOutcome::finished(format!("Healed {healed} HP."))
+}
+
+/// C# `AbyssalBaths.ExitBaths`: leave with what you have.
+fn abyssal_baths_exit(_state: &mut RunState) -> EventOutcome {
+    EventOutcome::finished("Left the baths.")
+}
+
+/// Page 0 is C# `GenerateInitialOptions` ([Immerse, Abstain]); every later
+/// page is `SetEventState`'s [Linger, Exit Baths]. Immerse/Linger show the
+/// current `Damage` var.
+fn abyssal_baths_options(state: &RunState, spec: &EventSpec) -> Vec<EventOptionInfo> {
+    let page = if state.event_state.page == 0 {
+        ["immerse", "abstain"]
+    } else {
+        ["linger", "exit_baths"]
+    };
+    let damage = abyssal_baths_damage(state);
+    default_option_info_from_spec(state, spec)
+        .into_iter()
+        .filter(|o| page.contains(&o.option_id))
+        .map(|mut info| {
+            if matches!(info.option_id, "immerse" | "linger") {
+                info.description =
+                    format!("+{ABYSSAL_BATHS_MAX_HP_GAIN} Max HP, take {damage} damage");
+            }
+            info
+        })
+        .collect()
+}
+
+/// `Damage` var for Immerse/Linger (see [`abyssal_baths_damage`]).
+fn abyssal_baths_damage_vars(state: &RunState) -> Vec<(&'static str, sts2_core::EventVar)> {
+    vec![("Damage", abyssal_baths_damage(state).into())]
 }
 
 const ABYSSAL_BATHS_OPTIONS: &[EventOptionSpec] = &[
@@ -280,14 +335,8 @@ const ABYSSAL_BATHS_OPTIONS: &[EventOptionSpec] = &[
         loc_key: "ABYSSAL_BATHS.pages.INITIAL.options.IMMERSE",
         default_label: "Immerse",
         default_description: "+2 Max HP, take 3 damage",
-        default_vars: &[
-            ("MaxHp", EventVarSpec::Int(ABYSSAL_BATHS_MAX_HP_GAIN as i64)),
-            (
-                "Damage",
-                EventVarSpec::Int(ABYSSAL_BATHS_INITIAL_DAMAGE as i64),
-            ),
-        ],
-        vars_fn: None,
+        default_vars: &[("MaxHp", EventVarSpec::Int(ABYSSAL_BATHS_MAX_HP_GAIN as i64))],
+        vars_fn: Some(abyssal_baths_damage_vars),
         title_vars_fn: None,
         handler: abyssal_baths_immerse,
     },
@@ -301,14 +350,34 @@ const ABYSSAL_BATHS_OPTIONS: &[EventOptionSpec] = &[
         title_vars_fn: None,
         handler: abyssal_baths_abstain,
     },
+    EventOptionSpec {
+        option_id: "linger",
+        loc_key: "ABYSSAL_BATHS.pages.ALL.options.LINGER",
+        default_label: "Linger",
+        default_description: "+2 Max HP, take more damage",
+        default_vars: &[("MaxHp", EventVarSpec::Int(ABYSSAL_BATHS_MAX_HP_GAIN as i64))],
+        vars_fn: Some(abyssal_baths_damage_vars),
+        title_vars_fn: None,
+        handler: abyssal_baths_immerse,
+    },
+    EventOptionSpec {
+        option_id: "exit_baths",
+        loc_key: "ABYSSAL_BATHS.pages.ALL.options.EXIT_BATHS",
+        default_label: "Exit Baths",
+        default_description: "Leave.",
+        default_vars: &[],
+        vars_fn: None,
+        title_vars_fn: None,
+        handler: abyssal_baths_exit,
+    },
 ];
 
-/// `AbyssalBaths` spec. Pin: `shared.py:298`.
+/// `AbyssalBaths` spec.
 pub const ABYSSAL_BATHS: EventSpec = EventSpec {
     id: EventId::AbyssalBaths,
     python_name: "AbyssalBaths",
     is_allowed: always_allowed,
-    generate_options: default_option_info_from_spec,
+    generate_options: abyssal_baths_options,
     options: ABYSSAL_BATHS_OPTIONS,
 };
 
@@ -676,7 +745,7 @@ fn battleworn_dummy_hp(state: &RunState, setting: BattlewornDummySetting) -> i32
         BattlewornDummySetting::Setting2 => MonsterKind::BattleFriendV2,
         BattlewornDummySetting::Setting3 => MonsterKind::BattleFriendV3,
     };
-    kind.min_initial_hp(state.ascension_level)
+    kind.min_initial_hp(state.combat_ascension())
 }
 
 const BATTLEWORN_OPTIONS: &[EventOptionSpec] = &[
@@ -1623,7 +1692,8 @@ fn grave_confront(state: &mut RunState) -> EventOutcome {
 }
 
 fn grave_accept(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(RelicId::ForgottenSoul, 1);
+    // `RelicCmd.Obtain<ForgottenSoul>` (`GraveOfTheForgotten.cs:69`).
+    state.grant_event_relic(RelicId::ForgottenSoul);
     EventOutcome::finished("Gained Forgotten Soul relic.")
 }
 
@@ -1987,33 +2057,84 @@ fn punchoff_nab(state: &mut RunState) -> EventOutcome {
     // specific Injury curse added directly to the deck) THEN a `RelicReward`.
     // The old `Reward::Card(empty)` surfaced a random 3-card ADD choice instead
     // of forcing the Injury curse. Add it directly; keep the relic reward.
-    // Bead `sts2-rs-RP27`. (The placeholder `Astrolabe` relic id predates this
-    // and is a separate stand-in, out of scope here.)
+    // Bead `sts2-rs-RP27`.
+    //
+    // The relic is C#'s `new RelicReward(Owner)`: no fixed relic, so its
+    // `Populate` pulls one (`RelicFactory.PullNextRelicFromFront(Player)`
+    // through v0.111.0, `PullNextRelicForRewardFromFront` from v0.113.0; both
+    // roll the rarity on the Rewards stream and take the front of that grab-bag
+    // bucket). Same roll as the elite relic and the Fight path's extra relic.
     if let Some(card) =
         crate::cards::spec_index::card_pod_from_id(sts2_core::cards::CardId::Injury, false)
     {
         state.add_card_to_deck_with_hooks(card, sts2_core::relic_effects::AddSource::EventGain);
     }
-    state
-        .pending_rewards
-        .push(Reward::Relic(RelicReward::new(RelicId::Astrolabe)));
+    //
+    // It goes on `relic_rewards` (the PickRelicReward surface the event exit
+    // drains), not `pending_rewards`: `drain_pending_rewards` has no relic arm,
+    // so a `Reward::Relic` there was silently dropped and Nab gave no relic
+    // (GH #1500's event effect sweep, seed EVTPAR).
+    state.offer_random_relic_rewards(1, &[]);
     EventOutcome::finished("Added Injury to the deck and gained a relic.")
 }
 
+/// `I Can Take Them` (page 0): C# `PunchOff.TakeThem` (`PunchOff.cs:121-125`)
+/// stops the constructs' sparring and opens a page whose only option is
+/// [`punchoff_fight`]. The event is not finished.
 fn punchoff_take_them(state: &mut RunState) -> EventOutcome {
-    // C# `PunchOff.TakeThem`/`Fight` (`PunchOff.cs:121-137`): enters a combat
-    // whose rewards are `RelicReward` + `PotionReward` — there is NO card
-    // reward. The old `Reward::Card(empty)` fabricated a 3-card choice the game
-    // never offers AND omitted the potion. Grant relic + potion; the combat
-    // sub-page itself stays deferred (`6ynt.4.combat-setup`). Bead
-    // `sts2-rs-RP27`. (Placeholder `Astrolabe` relic id is a separate stand-in.)
-    state
-        .pending_rewards
-        .push(Reward::Relic(RelicReward::new(RelicId::Astrolabe)));
-    state
-        .pending_rewards
-        .push(Reward::Potion(PotionReward::empty()));
-    EventOutcome::finished("Fought constructs and earned a relic + potion (combat deferred).")
+    state.event_state.page = 1;
+    EventOutcome {
+        finished: false,
+        description: "The constructs turn to face you.".to_string(),
+        effects: Vec::new(),
+    }
+}
+
+/// `Fight` (page 1): C# `PunchOff.Fight` (`PunchOff.cs:127-137`) —
+/// `EnterCombatWithoutExitingEvent<PunchOffEventEncounter>` with extra rewards
+/// `[RelicReward, PotionReward]` and `shouldResumeAfterCombat: false`. Two
+/// Punch Constructs ([`crate::run_bridge::build_event_combat`]); a won fight
+/// grants the Monster-room rewards plus a rolled relic
+/// (`EventEncounter::extra_random_relics`) and the potion. Before this the
+/// sim skipped the fight and handed out a fixed placeholder relic.
+fn punchoff_fight(state: &mut RunState) -> EventOutcome {
+    state.event_combat = Some(EventCombatRequest::no_resume(
+        EventEncounter::PunchOff,
+        EventId::PunchOff,
+        vec![Reward::Potion(PotionReward::empty())],
+    ));
+    EventOutcome {
+        finished: false,
+        description: "You square up to the constructs. Fight!".to_string(),
+        effects: Vec::new(),
+    }
+}
+
+/// Number of page-0 options (`Nab`, `I Can Take Them`). The static list also
+/// carries the page-1 `Fight` handler, which C#'s `GenerateInitialOptions`
+/// does not offer.
+const PUNCHOFF_PAGE0_OPTIONS: usize = 2;
+
+/// Page 0 = the two initial options; page 1 = the single `Fight` follow-up
+/// opened by [`punchoff_take_them`].
+fn punchoff_generate_options(state: &RunState, spec: &EventSpec) -> Vec<EventOptionInfo> {
+    let options = if state.event_state.page == 1 {
+        &spec.options[PUNCHOFF_PAGE0_OPTIONS..]
+    } else {
+        &spec.options[..PUNCHOFF_PAGE0_OPTIONS]
+    };
+    options
+        .iter()
+        .map(|opt| EventOptionInfo {
+            option_id: opt.option_id,
+            loc_key: opt.loc_key,
+            vars: Vec::new(),
+            title_vars: Vec::new(),
+            label: opt.default_label.to_string(),
+            description: opt.default_description.to_string(),
+            enabled: true,
+        })
+        .collect()
 }
 
 const PUNCHOFF_OPTIONS: &[EventOptionSpec] = &[
@@ -2037,6 +2158,17 @@ const PUNCHOFF_OPTIONS: &[EventOptionSpec] = &[
         title_vars_fn: None,
         handler: punchoff_take_them,
     },
+    // ── page 1: the Fight follow-up ──
+    EventOptionSpec {
+        option_id: "fight",
+        loc_key: "PUNCH_OFF.pages.I_CAN_TAKE_THEM.options.FIGHT",
+        default_label: "Fight",
+        default_description: "Fight two Punch Constructs for a relic + potion.",
+        default_vars: &[],
+        vars_fn: None,
+        title_vars_fn: None,
+        handler: punchoff_fight,
+    },
 ];
 
 /// `PunchOff` spec. Pin: `shared.py:1268`. `is_allowed` is C#
@@ -2045,7 +2177,7 @@ pub const PUNCH_OFF: EventSpec = EventSpec {
     id: EventId::PunchOff,
     python_name: "PunchOff",
     is_allowed: punch_off_allowed,
-    generate_options: default_option_info_from_spec,
+    generate_options: punchoff_generate_options,
     options: PUNCHOFF_OPTIONS,
 };
 
@@ -2742,7 +2874,7 @@ mod tests {
                 &ABYSSAL_BATHS,
                 EventId::AbyssalBaths,
                 "AbyssalBaths",
-                &["immerse", "abstain"],
+                &["immerse", "abstain", "linger", "exit_baths"],
             ),
             (
                 &AMALGAMATOR,
@@ -2861,7 +2993,7 @@ mod tests {
                 &PUNCH_OFF,
                 EventId::PunchOff,
                 "PunchOff",
-                &["nab", "take_them"],
+                &["nab", "take_them", "fight"],
             ),
         ];
         assert_eq!(cases.len(), 19, "wave A is 19 events");
@@ -2905,6 +3037,30 @@ mod tests {
                         "{name}/{}: only FIGHT stages event_combat",
                         opt.option_id
                     );
+                } else if *id == EventId::AbyssalBaths
+                    && matches!(opt.option_id, "immerse" | "linger")
+                {
+                    // C# `AbyssalBaths.Immerse` / `Linger` loop on a
+                    // [Linger, Exit Baths] page (GH #1492).
+                    assert!(
+                        !outcome.finished,
+                        "{name}/{}: presents the Linger page",
+                        opt.option_id
+                    );
+                } else if *id == EventId::PunchOff && opt.option_id != "nab" {
+                    // C# `PunchOff.TakeThem` opens the FIGHT page and `Fight`
+                    // stages the constructs' combat; neither finishes the event.
+                    assert!(
+                        !outcome.finished,
+                        "{name}/{}: leads on to the fight",
+                        opt.option_id
+                    );
+                    assert_eq!(
+                        rs.event_combat.is_some(),
+                        opt.option_id == "fight",
+                        "{name}/{}: only FIGHT stages event_combat",
+                        opt.option_id
+                    );
                 } else if *id == EventId::ColossalFlower && opt.option_id == "reach_deeper" {
                     // Multi-page dig chain (C# `ColossalFlower.ReachDeeper`):
                     // the first call presents page 2, not a finished event.
@@ -2929,16 +3085,91 @@ mod tests {
         }
     }
 
+    fn ids(rs: &RunState) -> Vec<&'static str> {
+        (ABYSSAL_BATHS.generate_options)(rs, &ABYSSAL_BATHS)
+            .iter()
+            .map(|o| o.option_id)
+            .collect()
+    }
+
+    /// C# `AbyssalBaths.Immerse`: +2 Max HP, 3 unblockable damage, then
+    /// `SetEventState` — the event does NOT end; it offers Linger / Exit Baths
+    /// (GH #1492).
     #[test]
-    fn abyssal_baths_immerse_gains_2_max_hp_and_loses_3_hp() {
+    fn abyssal_baths_immerse_continues_to_linger_page() {
         let mut rs = RunState::new();
+        rs.enter_event_room(EventId::AbyssalBaths);
+        assert_eq!(ids(&rs), ["immerse", "abstain"]);
         let (max_hp_before, hp_before) = (rs.max_hp, rs.current_hp);
-        let outcome = (ABYSSAL_BATHS.options[0].handler)(&mut rs);
-        assert!(outcome.finished);
+        let outcome = crate::events::dispatch::resolve_by_index(&mut rs, 0).unwrap();
+        assert!(!outcome.finished, "Immerse opens the Linger loop");
+        assert_eq!(rs.current_event, Some(EventId::AbyssalBaths));
         assert_eq!(rs.max_hp, max_hp_before + ABYSSAL_BATHS_MAX_HP_GAIN);
-        // gain_max_hp bumps current_hp too (+2), then lose_hp removes 3:
-        // net current_hp delta = +2 - 3 = -1.
+        // gain_max_hp bumps current_hp too (+2), then 3 damage: net -1.
         assert_eq!(rs.current_hp, hp_before - 1);
+        assert_eq!(ids(&rs), ["linger", "exit_baths"]);
+        let opts = (ABYSSAL_BATHS.generate_options)(&rs, &ABYSSAL_BATHS);
+        assert_eq!(opts[0].loc_key, "ABYSSAL_BATHS.pages.ALL.options.LINGER");
+        assert_eq!(
+            opts[1].loc_key,
+            "ABYSSAL_BATHS.pages.ALL.options.EXIT_BATHS"
+        );
+    }
+
+    /// Each Linger is +2 Max HP and `Damage` unblockable damage, where
+    /// `OnImmerse` bumps `Damage.BaseValue += 1` after every hit: 3 on
+    /// Immerse, then 4, 5, 6, … The option shows the NEXT hit's damage.
+    #[test]
+    fn abyssal_baths_linger_escalates_damage_each_page() {
+        let mut rs = RunState::new();
+        rs.max_hp = 200;
+        rs.current_hp = 150;
+        rs.enter_event_room(EventId::AbyssalBaths);
+        let _ = crate::events::dispatch::resolve_by_index(&mut rs, 0).unwrap();
+        for expected_dmg in 4..=13 {
+            let opts = (ABYSSAL_BATHS.generate_options)(&rs, &ABYSSAL_BATHS);
+            assert!(
+                opts[0]
+                    .vars
+                    .contains(&("Damage", sts2_core::EventVar::Int(expected_dmg.into()))),
+                "Linger shows {expected_dmg} damage: {:?}",
+                opts[0].vars
+            );
+            let (max_hp, hp) = (rs.max_hp, rs.current_hp);
+            let outcome = crate::events::dispatch::resolve_by_index(&mut rs, 0).unwrap();
+            assert!(!outcome.finished);
+            assert_eq!(rs.max_hp, max_hp + 2);
+            assert_eq!(rs.current_hp, hp + 2 - expected_dmg);
+        }
+        // Exit Baths ends the event with no further effect.
+        let (max_hp, hp) = (rs.max_hp, rs.current_hp);
+        let outcome = crate::events::dispatch::resolve_by_index(&mut rs, 1).unwrap();
+        assert!(outcome.finished);
+        assert_eq!(rs.current_event, None);
+        assert_eq!((rs.max_hp, rs.current_hp), (max_hp, hp));
+    }
+
+    /// Lingering until the damage is lethal kills the player inside the event,
+    /// and the run manager ends the run there instead of re-presenting the
+    /// page (C# `CreatureCmd.Damage` ends the run at 0 HP).
+    #[test]
+    fn abyssal_baths_lethal_linger_ends_the_run() {
+        use sts2_core::run_manager::{Phase, RunAction, RunManager};
+        let mut rm = RunManager::new(0, sts2_core::CharacterId::Ironclad)
+            .with_content_callbacks(crate::run_callbacks::ironclad_content_callbacks())
+            .with_neow_start();
+        assert_eq!(rm.phase(), Phase::Event);
+        crate::events::dispatch::begin_event(&mut rm.run_state, EventId::AbyssalBaths);
+        rm.run_state.current_hp = 10;
+        // Immerse: 10 + 2 - 3 = 9; Linger 4 -> 7; Linger 5 -> 4; Linger 6 -> 0.
+        for expected_hp in [9, 7, 4] {
+            let _ = rm.take_action(RunAction::EventChoice { idx: 0 });
+            assert_eq!(rm.phase(), Phase::Event);
+            assert_eq!(rm.run_state.current_hp, expected_hp);
+        }
+        let _ = rm.take_action(RunAction::EventChoice { idx: 0 });
+        assert_eq!(rm.run_state.current_hp, 0);
+        assert_eq!(rm.phase(), Phase::RunOver);
     }
 
     #[test]
@@ -3142,7 +3373,18 @@ mod tests {
 
     #[test]
     fn punchoff_nab_adds_injury_directly_plus_relic() {
+        use sts2_core::runstate::RelicRarity;
         let mut rs = RunState::new();
+        // One front relic per rarity: whichever rarity the Rewards stream
+        // rolls, the reward is that bucket's front, not a fixed stand-in.
+        let fronts = [
+            (RelicRarity::Common, RelicId::BlackStar),
+            (RelicRarity::Uncommon, RelicId::CallingBell),
+            (RelicRarity::Rare, RelicId::EmptyCage),
+        ];
+        for (rarity, id) in fronts {
+            rs.relic_grab_bag_by_rarity.insert(rarity, vec![id]);
+        }
         let before = rs.master_deck.len();
         (PUNCH_OFF.options[0].handler)(&mut rs);
         assert_eq!(rs.master_deck.len(), before + 1);
@@ -3156,35 +3398,45 @@ mod tests {
                 .all(|r| !matches!(r, Reward::Card(_))),
             "no card reward; only the relic reward",
         );
-        assert!(rs
-            .pending_rewards
-            .iter()
-            .any(|r| matches!(r, Reward::Relic(_))));
+        assert!(
+            rs.pending_rewards
+                .iter()
+                .all(|r| !matches!(r, Reward::Relic(_))),
+            "the relic rides relic_rewards; the pending drain would drop it",
+        );
+        let relics: Vec<RelicId> = rs.relic_rewards.iter().map(|r| r.relic_id).collect();
+        assert_eq!(relics.len(), 1, "one relic reward: {relics:?}");
+        assert!(
+            fronts.iter().any(|&(_, id)| id == relics[0]),
+            "the rolled bucket's front relic, got {relics:?}",
+        );
+        let left: usize = rs.relic_grab_bag_by_rarity.values().map(Vec::len).sum();
+        assert_eq!(left, 2, "the pulled relic leaves the grab bag");
     }
 
     #[test]
-    fn punchoff_take_them_grants_relic_and_potion_not_a_card() {
+    fn punchoff_fight_stages_relic_and_potion_not_a_card() {
+        // C# `PunchOff.Fight` extras: `[RelicReward, PotionReward]`, no card.
+        // The relic is rolled at reward time
+        // (`EventEncounter::extra_random_relics`); the potion rides the request.
         let mut rs = RunState::new();
         let before = rs.master_deck.len();
         (PUNCH_OFF.options[1].handler)(&mut rs);
-        assert_eq!(rs.master_deck.len(), before, "take_them adds no card");
         assert!(
-            rs.pending_rewards
-                .iter()
-                .any(|r| matches!(r, Reward::Relic(_))),
-            "relic reward present"
+            rs.event_combat.is_none(),
+            "take_them only opens the FIGHT page"
+        );
+        (PUNCH_OFF.options[2].handler)(&mut rs);
+        assert_eq!(rs.master_deck.len(), before, "no card");
+        let req = rs.event_combat.as_ref().expect("fight staged");
+        assert_eq!(req.encounter.extra_random_relics(), 1, "one relic reward");
+        assert!(
+            matches!(req.victory_rewards.as_slice(), [Reward::Potion(_)]),
+            "a potion reward and no phantom card reward"
         );
         assert!(
-            rs.pending_rewards
-                .iter()
-                .any(|r| matches!(r, Reward::Potion(_))),
-            "potion reward present (not a card)"
-        );
-        assert!(
-            rs.pending_rewards
-                .iter()
-                .all(|r| !matches!(r, Reward::Card(_))),
-            "no phantom card reward"
+            rs.pending_rewards.is_empty(),
+            "nothing granted before the fight"
         );
     }
 
@@ -3262,7 +3514,11 @@ mod tests {
             // BattlewornDummy's first option STAGES an event→combat fight
             // (bead `sts2-rs-ck9z6`, GH #166): a NOT-finished outcome that
             // leaves the event open across the nested combat.
-            if id == EventId::BattlewornDummy {
+            if id == EventId::AbyssalBaths {
+                // Immerse opens the Linger loop (GH #1492).
+                assert!(!outcome.finished, "{id:?}: Immerse continues");
+                assert_eq!(rs.current_event, Some(id), "{id:?}: event stays open");
+            } else if id == EventId::BattlewornDummy {
                 assert!(!outcome.finished, "{id:?}: stages a fight");
                 assert!(rs.event_combat.is_some(), "{id:?}: staged event_combat");
                 assert_eq!(rs.current_event, Some(id), "{id:?}: event stays open");

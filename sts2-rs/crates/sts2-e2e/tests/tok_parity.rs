@@ -6,7 +6,7 @@
 //! decision line carries Python's policy row (`rowb`: `cat`, `cont` as
 //! float16 bits, `sec`, `tok_flags`, `cls_tok`, `cls_kind`, `pool_*`,
 //! `mem_*`) and its `row_scalars`. The directory is `$E2E_FIXTURES` or
-//! `~/runs/e2e-wb/fixtures` (skipped with a message when absent;
+//! `~/runs/e2e-wb/fixtures-allchar-d2500` (skipped with a message when absent;
 //! `E2E_SEED=<substring>` narrows it). Each seed is replayed through the
 //! Rust env with the recorded `chosen` class; every decision's row must
 //! equal Python's array for array, bit for bit. The first divergence of a
@@ -25,7 +25,7 @@ fn fixture_dir() -> Option<PathBuf> {
     let dir = std::env::var_os("E2E_FIXTURES").map_or_else(
         || {
             std::env::var_os("HOME")
-                .map(|h| PathBuf::from(h).join("runs/e2e-wb/fixtures"))
+                .map(|h| PathBuf::from(h).join("runs/e2e-wb/fixtures-allchar-d2500"))
                 .unwrap_or_default()
         },
         PathBuf::from,
@@ -159,8 +159,16 @@ struct SeedResult {
 fn replay(path: &Path) -> Result<SeedResult, String> {
     let lines = read_lines(path);
     let seed = lines[0]["seed"].as_i64().ok_or("header without seed")?;
-    let mut env = E2eEnv::new(seed);
+    // An all-character fixture (GH #1197) names its run's character; older
+    // ones are Ironclad's.
+    let character = sts2_e2e::env::parse_character_for(
+        lines[0]["character"].as_str().unwrap_or("Ironclad"),
+        sts2_e2e::build::current(),
+    )?;
+    let mut env = E2eEnv::new_for(seed, character);
     let mut cache = TokCache::new();
+    // The "chars" fill event on Ironclad rows (a net whose launch declared it).
+    cache.set_chars(lines[0]["chars"].as_bool().unwrap_or(false));
     let mut s = env.reset();
     let mut tok_time = Duration::ZERO;
     for (n, rec) in lines[1..].iter().enumerate() {
@@ -197,7 +205,9 @@ fn replay(path: &Path) -> Result<SeedResult, String> {
 #[test]
 fn tokens_match_python_fixtures() {
     let Some(dir) = fixture_dir() else {
-        eprintln!("SKIP: no e2e fixtures (set E2E_FIXTURES or create ~/runs/e2e-wb/fixtures)");
+        eprintln!(
+            "SKIP: no e2e fixtures (set E2E_FIXTURES or create ~/runs/e2e-wb/fixtures-allchar-d2500)"
+        );
         return;
     };
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)

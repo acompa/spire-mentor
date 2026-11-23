@@ -133,8 +133,8 @@ internal sealed class SimAiPartnerChoices
         }
         state["type"] = "advice_request";
         state["advice_for"] = adviceFor;
-        // Same brain as the player's advice (SimAiPartnerBrain's combat asks).
-        state["brain"] = SimAdvisor.CurrentBrain;
+        // The partners' brain, as SimAiPartnerBrain's combat asks.
+        state["brain"] = SimAdvisor.PartnerBrain;
         _inflightKey = key;
         _inflightAt = DateTime.UtcNow;
         if (!advisor.Request(state, root => OnReply(key, root)))
@@ -213,8 +213,10 @@ internal sealed class SimAiPartnerChoices
 
     /// <summary>A one-card deck screen (upgrade / transform / remove) as the
     /// host's card_select (SimCardSelector): the prompt key says what it
-    /// does, which is what both brains read.</summary>
-    internal static Dictionary<string, object> DeckSelectState(Player me, IReadOnlyList<CardModel> cards, CardSelectorPrefs? prefs, string kind)
+    /// does, which is what both brains read. <paramref name="pendingEnchantment"/>
+    /// names the enchantment an enchant prompt stamps (GH #574).</summary>
+    internal static Dictionary<string, object> DeckSelectState(Player me, IReadOnlyList<CardModel> cards, CardSelectorPrefs? prefs, string kind,
+        string? pendingEnchantment = null)
     {
         var rows = new List<Dictionary<string, object?>>();
         for (int i = 0; i < cards.Count; i++)
@@ -235,6 +237,7 @@ internal sealed class SimAiPartnerChoices
             ["cancelable"] = prefs?.Cancelable ?? false,
             ["prompt_key"] = (object?)prefs?.Prompt.LocEntryKey!,
             ["source"] = method,
+            ["pending_enchantment"] = (object?)pendingEnchantment!,
             ["combat"] = (object?)SimCombatHandler.BuildEmbeddedCombatState(me)!,
         };
         SimStateExtractor.ApplyEnvelope(state, me.RunState as RunState, me);
@@ -347,7 +350,8 @@ internal sealed class SimAiPartnerChoices
                 // card_select. The partner played these by the hand-written
                 // order below until 0.10.0-beta.7.
                 (SimAskState asked, int? index) = Ask(me, $"deck:{id}", NonCombatBridgeProtocol.CardSelectState,
-                    () => DeckSelectState(me, pool, prefs, kind));
+                    () => DeckSelectState(me, pool, prefs, kind,
+                        SimCardSelectContext.PendingEnchantmentFrom(args)));
                 if (asked == SimAskState.Pending)
                 {
                     return null;

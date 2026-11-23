@@ -63,20 +63,6 @@ config-settings-package = { sts2-rs = { "build-args" = "--profile pyext" } }
 sts2-rs = { path = "../sts2-rs/crates/sts2-py", editable = true }
 
 [dependency-groups]
-# The packaged advisor exe's build env (GH #380): synced with
-# `uv sync --only-group advisor-exe` into .venv-advisor, so the PROJECT deps
-# (torch, wandb, fastapi, ...) are structurally absent and cannot leak into
-# the PyInstaller bundle. Lists the advisor's true runtime closure only.
-advisor-exe = [
-  # No numpy / onnxruntime: the run policy scores through `sts2_rs`
-  # (`ppo.rust_policy`, tract + the Rust encoder), so the ~54 MB pair the
-  # advisor used to carry for `ppo.onnx_policy` is not in its closure at all.
-  # `tests/test_advisor_closure_is_numpy_free.py` is the gate -- absence from
-  # this group is what makes a re-introduction fail the build rather than
-  # silently re-inflate the bundle.
-  "pyinstaller>=6.11",
-  "sts2-rs",
-]
 dev = [
   "coverage[toml]>=7.13.5",
   "deptry>=0.25.1",
@@ -115,11 +101,15 @@ pythonpath = ["python"]
 # walks of 10-28 s among ~3400 sub-second tests). The default `load` hands
 # each worker its share up front, so a long test drawn late ran on past the
 # rest; worksteal rebalances as workers drain (~65 s -> ~57 s, 32 cores).
-addopts = "-ra -n auto --dist worksteal -m 'not slow'"
+#
+# `training`: tests that run a training loop (tests/conftest.py `_TRAINING`).
+# Deselected by default; `just test-training` / `just gate-full` run them.
+addopts = "-ra -n auto --dist worksteal -m 'not slow and not training'"
 # Tests spawn the C# headless game process via subprocess; cap runaway tests.
 timeout = 600
 markers = [
   "slow: tests that take significant time (run on demand, not in `just test`)",
+  "training: runs a training loop (optimizer step, learner/trainer iteration, the training lane's supervisor); deselected by default, `just test-training` runs them",
   "soak: the longest slow tests; the per-PR gate (`just test-slow-pr`) skips them, `just test-slow` runs them",
   "oracle: needs the C# oracle, i.e. the player's own game assembly in lib/ (skipped when absent; `-m 'not oracle'` is the game-free subset)",
   "pending_run_level: strict xfail on builds whose run level is not ported yet (tests/conftest.py PENDING_BUILDS)",
@@ -229,7 +219,12 @@ exclude_lines = [
 # path — nothing outside the package imports it. Its onnx/networkx uses
 # are lazy function-level imports, so the modules load fine without them
 # and the deps stay dev-only rather than bloating the deployed image.
-DEP004 = ["networkx", "onnx"]
+#
+# `realgame_advisor_replay.py --trace` (GH #1426) imports `coverage` inside the
+# function that traces; the replay itself needs no dev dependency.
+# `scripts/harvest_adapter_boards.py` (GH #1426) runs the test suite to collect
+# its boards, so it needs `pytest` by design.
+DEP004 = ["networkx", "onnx", "coverage", "pytest"]
 # `ppo/e2e/actionlog.py` imports `zstandard` inside try/except ImportError and
 # falls back to stdlib LZMA (the codec byte records which), so it is optional:
 # the campaign venv has no zstd binding and must not need one.
@@ -242,6 +237,11 @@ DEP001 = ["zstandard"]
 # modules never got registered here.
 known_first_party = [
   "card_inventory",
+  "host_replay",
+  "host_replay_profile",
+  "host_replay_sphere",
+  "spire_bench",
+  "bench_agents",
   "display_names",
   "headless_eval",
   "realgame_instinct",
@@ -272,6 +272,8 @@ known_first_party = [
   "parity_fuzz",
   "parity_fuzz_scenario",
   "parity_fuzz_state",
+  "content_universe",
+  "id_partitions",
   "play",
   "replay",
   "simlab",

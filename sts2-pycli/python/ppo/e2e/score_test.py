@@ -202,8 +202,12 @@ class Arm:
         return None if self.wheel is None else dict(zip(WHEEL_KEYS, self.wheel))
 
 
-def load_arm(evals: Path, panel: P.Panel, name: str, *, sealed_rules: bool) -> Arm:
-    """Load and check one arm (step 2 of the module docstring); raise ReadStopped."""
+def load_arm(
+    evals: Path, panel: P.Panel, name: str, *, sealed_rules: bool, character: str = CHARACTER
+) -> Arm:
+    """Load and check one arm (step 2 of the module docstring); raise ReadStopped.
+    Every scored row must be `character`'s (an all-character lane's DEV eval of
+    another character, GH #1197; the sealed read is Ironclad's)."""
     d = evals / panel.name / name
     if not (d / "shards").is_dir():
         raise ReadStopped(f"{d}: no shards/ directory")
@@ -315,10 +319,10 @@ def load_arm(evals: Path, panel: P.Panel, name: str, *, sealed_rules: bool) -> A
     for seed, r in rows.items():
         if is_missing(r):
             continue
-        if r.get("character") != CHARACTER or r.get("ascension") != ASCENSION:
+        if r.get("character") != character or r.get("ascension") != ASCENSION:
             raise ReadStopped(
                 f"{d}: seed {seed} is {r.get('character')} A{r.get('ascension')}, "
-                f"not {CHARACTER} A{ASCENSION}"
+                f"not {character} A{ASCENSION}"
             )
         if not isinstance(r.get("won"), bool):
             raise ReadStopped(f"{d}: seed {seed} has no boolean `won`")

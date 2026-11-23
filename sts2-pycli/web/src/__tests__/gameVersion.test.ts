@@ -8,6 +8,7 @@ import {
   gameVersionBody,
   gameVersionLabel,
   payloadGameVersion,
+  pickerVersions,
   runLogGameVersion,
   versionedPublicPath,
 } from "../gameVersion";
@@ -55,9 +56,15 @@ describe("game version helpers (GH #801)", () => {
   });
 
   it("labels the known builds", () => {
-    expect(gameVersionLabel("v0.107.1")).toBe("game v0.107.1 (stable)");
-    expect(gameVersionLabel("v0.111.0")).toBe("v0.111.0 (beta)");
+    expect(gameVersionLabel("v0.107.1")).toBe("v0.107.1 (previous stable)");
+    expect(gameVersionLabel("v0.111.0")).toBe("v0.111 (stable)");
     expect(gameVersionLabel("v9")).toBe("v9");
+  });
+
+  it("pickers leave out v0.107.1 unless it is the build in use (GH #1572)", () => {
+    const all = ["v0.107.1", "v0.111.0", "v0.113.0"];
+    expect(pickerVersions(all, "v0.111.0")).toEqual(["v0.111.0", "v0.113.0"]);
+    expect(pickerVersions(all, "v0.107.1")).toEqual(all);
   });
 });
 

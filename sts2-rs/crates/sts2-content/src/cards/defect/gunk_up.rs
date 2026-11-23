@@ -7,7 +7,7 @@ use super::prelude::*;
 pub(crate) fn play_gunk_up(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
     let t = target.expect("GunkUp: Enemy-targeted");
     let base = current_card_damage(state);
-    for _ in 0..3 {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 3) {
         let _ = deal_damage_player_to_enemy(state, t, base);
     }
     let _ = spawn_slimed(state, PileKind::Discard);

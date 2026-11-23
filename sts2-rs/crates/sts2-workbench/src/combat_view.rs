@@ -191,6 +191,9 @@ pub fn combat_card(index: i64, wire: &Value, can_play: bool, target_type: &str) 
     out.insert("name".into(), json!(format!("{cid}.title")));
     out.insert("description".into(), json!(format!("{cid}.description")));
     out.insert("stats".into(), Value::Object(stats));
+    if let Some(level) = wire.get("upgrade_level").filter(|v| !v.is_null()) {
+        out.insert("upgrade_level".into(), level.clone());
+    }
     out.insert(
         "cost".into(),
         wire.get("cost_override").cloned().unwrap_or(json!(0)),
@@ -309,6 +312,34 @@ pub fn truthy(v: &Value) -> bool {
     }
 }
 
+/// The Fool's quiver (`NFoolCombatUi`): one status per arrow slot in gain
+/// order, `None` when the player has no slot. Read off the live state rather
+/// than the wire: the Fool's starting slot (and a Shoot card's first one) is
+/// granted lazily by the engine (`fool::shoot_slot_pending`), so until the
+/// first shot it exists only virtually and `$.fool_state` is absent.
+#[must_use]
+pub fn quiver(cs: &sts2_core::CombatState) -> Option<Value> {
+    use sts2_core::fool::{self, ArrowStatus};
+    let mut out: Vec<Value> = fool::fool(cs)
+        .map(|f| {
+            f.arrows
+                .iter()
+                .map(|a| {
+                    json!(match a.status {
+                        ArrowStatus::Retrieved => "retrieved",
+                        ArrowStatus::Away => "away",
+                        ArrowStatus::Destroyed => "destroyed",
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if fool::shoot_slot_pending(cs) {
+        out.push(json!("retrieved"));
+    }
+    (!out.is_empty()).then_some(Value::Array(out))
+}
+
 /// `build_combat_view`: the canonical `combat_play` state dict from a wire
 /// combat state (`emit::combat_state_to_value`), the legal-action list and
 /// the per-hand previews.
@@ -401,6 +432,13 @@ pub fn build_combat_view(
         hand.push(card);
     }
 
+    // The Fool's arrows (`$.fool_state`, absent until a Fool mechanic runs).
+    let arrow_view = wire
+        .get("fool_state")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().map(Value::as_i64).collect::<Option<Vec<_>>>())
+        .and_then(|w| sts2_wire::fool_state::arrow_view(&w));
+
     let mut enemies = Vec::new();
     for (pos, c) in wire
         .get("encounter")
@@ -459,6 +497,15 @@ pub fn build_combat_view(
             .collect();
         if !stolen.is_empty() {
             e.insert("stolen_cards".into(), Value::Array(stolen));
+        }
+        // Arrows stuck in this enemy (`ImpaledPower.Arrows.Count`).
+        if let Some(n) = arrow_view.as_ref().and_then(|v| {
+            v.impaled
+                .iter()
+                .find(|(i, _)| *i == pos as i64)
+                .map(|(_, n)| *n)
+        }) {
+            e.insert("impaled_arrows".into(), json!(n));
         }
         enemies.push(Value::Object(e));
     }
@@ -637,6 +684,51 @@ mod tests {
         assert_eq!(title_case("pick card reward"), "Pick Card Reward");
         assert_eq!(title_case("rest option"), "Rest Option");
         assert_eq!(title_case("x2 hello"), "X2 Hello");
+    }
+
+    #[test]
+    fn quiver_counts_the_fools_lazy_starting_slot() {
+        use sts2_core::fool::{ArrowSlot, ArrowStatus, FoolState};
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../sts2-wire/tests/fixtures/combat_action_ironclad.json"),
+        )
+        .expect("fixture");
+        let mut cs = sts2_wire::state_from_json(&serde_json::from_str(&text).expect("json"))
+            .expect("builds");
+        assert_eq!(quiver(&cs), None, "an Ironclad has no quiver");
+
+        cs.game_version = sts2_core::GameVersion::V0_113_0;
+        cs.player.character = Some(sts2_core::potions::CharacterId::Fool);
+        assert!(cs.player.fool.is_none(), "the slot is still virtual");
+        assert_eq!(quiver(&cs), Some(json!(["retrieved"])));
+
+        cs.player.fool = Some(Box::new(FoolState {
+            arrows: smallvec::smallvec![ArrowSlot {
+                status: ArrowStatus::Away,
+                destroy_after_impaled: false,
+            }],
+            ..FoolState::default()
+        }));
+        assert_eq!(quiver(&cs), Some(json!(["away"])));
+    }
+
+    #[test]
+    fn impaled_arrow_counts_reach_the_view() {
+        // Format 1; three slots (Away, Retrieved, Destroyed); enemy 1 holds
+        // one arrow (slot 0). The melody tail is irrelevant to the view.
+        let wire = json!({
+            "player": {"energy": 3},
+            "deck": {"hand": []},
+            "encounter": [
+                {"kind": "NIBBIT", "hp": 10, "max_hp": 10, "powers": []},
+                {"kind": "NIBBIT", "hp": 10, "max_hp": 10, "powers": []},
+            ],
+            "fool_state": [1, 3, 1, 0, 0, 0, 2, 0, 1, 1, 1, 0],
+        });
+        let v = build_combat_view(&wire, "Fool", &[], &[], &[]);
+        assert!(v["enemies"][0].get("impaled_arrows").is_none());
+        assert_eq!(v["enemies"][1]["impaled_arrows"], json!(1));
     }
 
     #[test]

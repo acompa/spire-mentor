@@ -1,6 +1,12 @@
 // Dev-only visual harness (not shipped). ?attack=<ms> fires the attack anim,
 // ?enemies=<n> puts n of them on the board so targeting can be aimed.
-import { StrictMode, useEffect, useState } from "react";
+//
+// Every timed step (`?attack`, `?debuff`, `?buff`, `?die`, `?hit`, `?summon`)
+// also takes `manual` instead of a delay: no timer, the step runs when
+// `window.__preview.fire("<step>")` is called (`previewSteps.ts`). e2e tests
+// use that, so a step never lands before or after the test is ready for it.
+import { StrictMode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
 import "./game-skin.css";
@@ -10,6 +16,7 @@ import { HintsFixture } from "./hints/HintsContext";
 import { AdviceMarksCtx } from "./advice/useAdviceMarks";
 import { cardKey, type Mark } from "./advice/marks";
 import type { Step } from "./api";
+import { ManualSteps, PREVIEW_STEPS, parseStepParam, type PreviewApi, type PreviewStep } from "./previewSteps";
 import "./phone.css";
 
 const P = "/preview";
@@ -22,7 +29,15 @@ const card = (index: number, name: string, cost: number, type: string, descripti
 
 // Switchable preview enemy (?enemy=<key>) so any rig's idle/attack/hurt framing
 // can be eyeballed. Keep rigs copied under public/preview-rig/<key>/.
-const ENEMIES: Record<string, { name: string; rig: string; rig_scale: number; rig_bounds_h: number }> = {
+const ENEMIES: Record<string, { name: string; rig: string; rig_scale: number; rig_bounds_h: number; rig_arrow_x?: number; rig_arrow_y?: number }> = {
+  // The Fool's impaled arrows (`?char=fool&impaled=<n>`), served from the art
+  // tree's `/assets` mount: Nibbit and the Fuzzy Wurm Crawler carry the
+  // v0.113.0 rigs' ARROW_HIT slots; the Sludge Spinner has none, so its arrow
+  // sticks at its scene's %CenterPos.
+  aeonglass: { name: "Aeonglass", rig: "/assets/v0.113.0/monster_rigs/aeonglass/aeonglass", rig_scale: 0.2, rig_bounds_h: 527 },
+  nibbit_v113: { name: "Nibbit", rig: "/assets/v0.113.0/monster_rigs/nibbit/nibbit", rig_scale: 0.28, rig_bounds_h: 146, rig_arrow_x: 0, rig_arrow_y: -72 },
+  fuzzy_wurm_crawler_v113: { name: "Fuzzy Wurm Crawler", rig: "/assets/v0.113.0/monster_rigs/fuzzy_wurm_crawler/fuzzy_wurm_crawler", rig_scale: 0.35, rig_bounds_h: 166, rig_arrow_x: 0, rig_arrow_y: -80 },
+  sludge_spinner: { name: "Sludge Spinner", rig: "/assets/monster_rigs/sludge_spinner/sludge_spinner", rig_scale: 0.25, rig_bounds_h: 246, rig_arrow_x: 0, rig_arrow_y: -175 },
   nibbit: { name: "Nibbit", rig: "/preview-rig/nibbit/nibbit", rig_scale: 0.28, rig_bounds_h: 146 },
   shrinker_beetle: { name: "Shrinker Beetle", rig: "/preview-rig/shrinker_beetle/shrinker_beetle", rig_scale: 0.25, rig_bounds_h: 161 },
   cultists: { name: "Cultist", rig: "/preview-rig/cultists/cultists", rig_scale: 0.28, rig_bounds_h: 305 },
@@ -154,11 +169,15 @@ function sceneEnemies(): Record<string, unknown>[] {
       ...(new URLSearchParams(location.search).get("mods") ? { base_damage: 15, modifiers: [
         { name: "STRENGTH", kind: "power", side: "enemy", title: "Strength", image: `${P}/pow_vuln.png`, add: 6 }] } : {}) }],
     rig: E.rig, rig_scale: E.rig_scale, rig_bounds_h: E.rig_bounds_h,
+    rig_arrow_x: E.rig_arrow_x, rig_arrow_y: E.rig_arrow_y,
     powers: nPowers ? previewPowers
       : [{ name: "Vulnerable", amount: 2, image: `${P}/pow_vuln.png` }],
     // `?boss=` rides on `image`, which is where pickScene reads the art slug.
     image: bossSlug ? `/assets/monsters/${bossSlug}.png` : `${P}/enemy.png`,
-    ...(stolen.length ? { stolen_cards: stolen } : {}) }));
+    ...(stolen.length ? { stolen_cards: stolen } : {}),
+    // `?impaled=<n>` sticks n of the Fool's arrows in the FIRST enemy.
+    ...(index === 0 && Number(new URLSearchParams(location.search).get("impaled")) > 0
+      ? { impaled_arrows: Number(new URLSearchParams(location.search).get("impaled")) | 0 } : {}) }));
 }
 
 /** `?act=<Overgrowth|Hive|Glory|Underdocks>` picks the arena backdrop, the same
@@ -212,6 +231,8 @@ const step = {
     ...previewOrbs(),
     player_powers: previewPlayerPowers(),
     ...previewOsty(),
+    // `?arrows=retrieved,away,…` gives the player the Fool's quiver.
+    ...(params.get("arrows") ? { arrows: params.get("arrows")!.split(",") } : {}),
     enemies: sceneEnemies(),
     hand: previewHand(),
   },
@@ -234,7 +255,7 @@ function previewPlayerPowers() {
   }));
 }
 
-/** `?char=necrobinder|defect|silent|regent` swaps the player's rig (default the Ironclad).
+/** `?char=necrobinder|defect|silent|regent|fool` swaps the player's rig (default the Ironclad).
  *  The rigs live in the wiki, symlinked under public/preview-rig/ like the
  *  enemy rigs above. */
 function previewCharacter() {
@@ -245,6 +266,7 @@ function previewCharacter() {
   if (c === "defect") return { name: "The Defect", rig: "/preview-rig/defect/defect", rig_scale: 0.125, rig_bounds_h: 260 };
   if (c === "silent") return { name: "The Silent", rig: "/preview-rig/silent/silent", rig_scale: 0.29, rig_bounds_h: 244 };
   if (c === "regent") return { name: "The Regent", rig: "/preview-rig/regent/regent", rig_scale: 0.29, rig_bounds_h: 335 };
+  if (c === "fool") return { name: "The Fool", rig: "/assets/v0.113.0/character_rigs/fool/fool", rig_scale: 0.34, rig_bounds_h: 327 };
   return {};
 }
 
@@ -311,10 +333,16 @@ function previewHand() {
   if (raw == null) return mark(faces);
   const n = Number(raw) | 0;
   if (n < 1) return [];
-  return mark(Array.from({ length: n }, (_, i) => ({ ...faces[i % faces.length], index: i })));
+  // `?hand=<n>` upgrades every cycled repeat, so no two cards are copies and
+  // a crowded phone fan does not fold them into stacks (Hand.tsx): ten cards
+  // stay ten slots, the fan's tightest case. `?copies=1` keeps the repeats as
+  // plain copies, to see them stack; `?cards=` always does.
+  const distinct = handN != null && q.get("copies") == null;
+  return mark(Array.from({ length: n }, (_, i) => ({ ...faces[i % faces.length], index: i,
+    ...(distinct && i >= faces.length ? { upgraded: true } : {}) })));
 }
 
-/** `?debuff=<ms>` / `?buff=<ms>` — the second step of a two-step preview, so the
+/** `?debuff=<ms>` / `?buff=<ms>` (or `manual`) — the second step of a two-step preview, so the
  *  power surfaces that only exist ON A TRANSITION can be eyeballed headlessly.
  *  `Board` derives `powerAdd` by diffing consecutive steps (`combatDiff.ts`), so
  *  a single static step can never show the applied panel, its burst, or
@@ -322,7 +350,8 @@ function previewHand() {
  *
  *  Every timed transition here (`?die`, `?hit`, `?summon`, `?buff`,
  *  `?debuff`) is applied to the CURRENT step, so they compose: a summon then a
- *  buff keeps the summoned enemy, and a play keeps its card out of the hand. */
+ *  buff keeps the summoned enemy, and a play keeps its card out of the hand.
+ *  Each is scheduled on its own, so `?debuff=` and `?buff=` can both run. */
 function stepWithPower(cur: Step, name: string, amount: number): Step {
   const st = cur.state as unknown as { player_powers: unknown[] };
   return {
@@ -344,7 +373,7 @@ function stepWithNoEnemies(cur: Step): Step {
   return { ...cur, idx: cur.idx + 1, state: { ...cur.state, enemies } } as unknown as Step;
 }
 
-/** `?hit=<ms>`: the player takes a 20-damage hit — the block (12 by default)
+/** `?hit=<ms>` (or `manual`): the player takes a 20-damage hit — the block (12 by default)
  *  breaks and the rest comes off HP — so the hurt flash, the damage number and
  *  the block-break play on the player. */
 function stepWithPlayerHit(cur: Step): Step {
@@ -354,7 +383,7 @@ function stepWithPlayerHit(cur: Step): Step {
     player: { ...cur.state.player, block: 0, hp: Math.max(1, pl.hp - through) } } } as unknown as Step;
 }
 
-/** `?summon=<ms>`: one never-seen enemy (uid and index 99) joins the fight. */
+/** `?summon=<ms>` (or `manual`): one never-seen enemy (uid and index 99) joins the fight. */
 function stepWithSummon(cur: Step): Step {
   const es = cur.state.enemies;
   const base = es[es.length - 1];
@@ -362,57 +391,62 @@ function stepWithSummon(cur: Step): Step {
     enemies: [...es, { ...base, uid: 99, index: 99, name: "Summoned", hp: 12, max_hp: 12, block: 0 }] } } as unknown as Step;
 }
 
+/** When each scripted step runs: a delay in ms, `manual`, or never. The query
+ *  never changes while the page is up. */
+const schedules = Object.fromEntries(PREVIEW_STEPS.map((s) => [s, parseStepParam(params.get(s))])) as
+  Record<PreviewStep, ReturnType<typeof parseStepParam>>;
+
+/** The page's manual steps, fired from a test with `window.__preview.fire`. */
+const manualSteps = new ManualSteps();
+(window as unknown as { __preview: PreviewApi }).__preview = {
+  fire: (s) => manualSteps.fire(s),
+  armed: () => manualSteps.armed(),
+};
+
 function Demo() {
   const params = new URLSearchParams(location.search);
-  const delay = Number(params.get("attack"));
-  const debuffDelay = Number(params.get("debuff"));
-  const buffDelay = Number(params.get("buff"));
-  const dieDelay = Number(params.get("die"));
-  const hitDelay = Number(params.get("hit"));
-  const summonDelay = Number(params.get("summon"));
   const enemyAnim = params.get("anim") ?? undefined;  // loop e.g. "hurt" to check framing
   const [attack, setAttack] = useState<{ target: number; nonce: number } | undefined>(undefined);
   const [shown, setShown] = useState<Step>(step);
+  // The rendered step, for what `fire` returns: a manual step renders inside
+  // `flushSync`, whose layout effects have run by the time it returns.
+  const shownRef = useRef(shown);
+  useLayoutEffect(() => { shownRef.current = shown; }, [shown]);
   useEffect(() => {
-    if (!delay) return;
-    const t = setTimeout(() => setAttack({ target: 0, nonce: 1 }), delay);
-    return () => clearTimeout(t);
-  }, [delay]);
-  useEffect(() => {
-    // `?die=<ms>` — the enemies leave the board, which is exactly what the
-    // engine does with a dead creature (`rust_game.py` drops it), so `Board`
-    // mounts the corpse from its own snapshot and runs the whole death path:
-    // die clip, chrome fade, dissolve (or not) and the removal timer. `?kind=`
-    // sets the enemy's MonsterKind, which is what `deathFade` joins on — so
-    // `?die=1600&kind=SoulNexus` is the "should not dissolve" case and the same
-    // URL without `kind` is the control.
-    if (!dieDelay) return;
-    const t = setTimeout(() => setShown(stepWithNoEnemies), dieDelay);
-    return () => clearTimeout(t);
-  }, [dieDelay]);
-  useEffect(() => {
-    if (!hitDelay) return;
-    const t = setTimeout(() => setShown(stepWithPlayerHit), hitDelay);
-    return () => clearTimeout(t);
-  }, [hitDelay]);
-  useEffect(() => {
-    if (!summonDelay) return;
-    const t = setTimeout(() => setShown(stepWithSummon), summonDelay);
-    return () => clearTimeout(t);
-  }, [summonDelay]);
-  useEffect(() => {
-    // "Vulnerable" is typed Debuff and "Strength" Buff in the real
-    // `sfx_map.json`, so these take the two branches of `GetTypeForAmount`
-    // without the preview needing a valence override.
-    if (debuffDelay) {
-      const t = setTimeout(() => setShown((cur) => stepWithPower(cur, "Vulnerable", 2)), debuffDelay);
-      return () => clearTimeout(t);
-    }
-    if (buffDelay) {
-      const t = setTimeout(() => setShown((cur) => stepWithPower(cur, "Strength", 2)), buffDelay);
-      return () => clearTimeout(t);
-    }
-  }, [debuffDelay, buffDelay]);
+    const runs: Record<PreviewStep, () => void> = {
+      attack: () => setAttack({ target: 0, nonce: 1 }),
+      // `?die=<ms>` — the enemies leave the board, which is exactly what the
+      // engine does with a dead creature (`rust_game.py` drops it), so `Board`
+      // mounts the corpse from its own snapshot and runs the whole death path:
+      // die clip, chrome fade, dissolve (or not) and the removal timer. `?kind=`
+      // sets the enemy's MonsterKind, which is what `deathFade` joins on — so
+      // `?die=1600&kind=SoulNexus` is the "should not dissolve" case and the same
+      // URL without `kind` is the control.
+      die: () => setShown(stepWithNoEnemies),
+      hit: () => setShown(stepWithPlayerHit),
+      summon: () => setShown(stepWithSummon),
+      // "Vulnerable" is typed Debuff and "Strength" Buff in the real
+      // `sfx_map.json`, so these take the two branches of `GetTypeForAmount`
+      // without the preview needing a valence override.
+      debuff: () => setShown((cur) => stepWithPower(cur, "Vulnerable", 2)),
+      buff: () => setShown((cur) => stepWithPower(cur, "Strength", 2)),
+    };
+    const cleanups = PREVIEW_STEPS.map((s) => {
+      const when = schedules[s];
+      if (when.kind === "timer") {
+        const t = setTimeout(runs[s], when.ms);
+        return () => clearTimeout(t);
+      }
+      if (when.kind === "manual") {
+        return manualSteps.arm(s, () => {
+          flushSync(runs[s]);
+          return shownRef.current.idx;
+        });
+      }
+      return () => {};
+    });
+    return () => cleanups.forEach((off) => off());
+  }, []);
   // `?panel=1` shows the old right inspector column; default is a full-width board
   // so the arena matches the real (full-width) workbench layout for screenshots.
   const showPanel = params.get("panel") === "1";

@@ -5,6 +5,11 @@ use super::prelude::*;
 /// `FranticEscape.OnPlay`
 /// (../sts2-wiki/decompiled/v0.103.2/MegaCrit.Sts2.Core.Models.Cards/FranticEscape.cs):
 /// [decompiled C# omitted — see the cited path]
+/// (v0.113.0 `FranticEscape.cs:34-43`.) In co-op the boss carries one Sandpit
+/// per player, each bound to its player's seat
+/// ([`sts2_core::coop::seat_of_power`]), and the card raises only its owner's:
+/// raising the first one bought the teammate a turn while our own countdown
+/// ran out on a fixed schedule, whatever we played (GH #1813).
 /// The player struggles out of TheInsatiable's pit: each play buys back
 /// +1 on the Sandpit countdown (delaying the expiry kill — see the
 /// `dispatch_after_side_turn_start` Sandpit arm in `sts2_core::hooks`) and
@@ -20,21 +25,31 @@ pub(crate) fn play_frantic_escape(
 ) -> EffectResult {
     use sts2_core::powers::PowerKind;
 
-    // +1 the first alive Sandpit-carrying enemy's countdown.
-    let sandpit_pid = state.enemy_uids.iter().find_map(|uid| {
+    // The first alive Sandpit-carrying enemy, then, of its Sandpits, the one
+    // targeting the seated player (solo: the only one, seat 0).
+    let is_sandpit = |pu: &sts2_core::PowerUid| {
         state
-            .creatures
-            .iter()
-            .find(|c| c.id == uid.0 && c.current_hp > 0)
-            .and_then(|c| {
-                c.powers.iter().copied().find(|pu| {
-                    state
-                        .powers
-                        .iter()
-                        .any(|p| p.id == pu.0 && p.kind == PowerKind::Sandpit)
-                })
-            })
-    });
+            .powers
+            .get_by_id(pu.0)
+            .is_some_and(|p| p.kind == PowerKind::Sandpit)
+    };
+    let me = state.coop.seated;
+    let sandpit_pid = state
+        .enemy_uids
+        .iter()
+        .find_map(|uid| {
+            state
+                .creatures
+                .iter()
+                .find(|c| c.id == uid.0 && c.current_hp > 0)
+                .filter(|c| c.powers.iter().any(is_sandpit))
+        })
+        .and_then(|c| {
+            c.powers
+                .iter()
+                .copied()
+                .find(|pu| is_sandpit(pu) && sts2_core::coop::seat_of_power(state, pu.0) == me)
+        });
     if let Some(pu) = sandpit_pid {
         if let Some(p) = state.powers.get_mut_by_id(pu.0) {
             p.amount = p.amount.saturating_add(1);

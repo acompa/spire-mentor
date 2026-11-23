@@ -509,6 +509,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/tough_egg/tough_egg",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -59.0,
     "rig_bounds_h": 131.0,
     "rig_bounds_w": 114.0,
     "rig_scale": 0.275,
@@ -531,6 +533,8 @@
     "name": "Ovicopter",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/ovicopter/ovicopter",
+    "rig_arrow_x": -6.0,
+    "rig_arrow_y": -269.0,
     "rig_bounds_h": 476.0,
     "rig_bounds_w": 403.0,
     "rig_scale": 0.3,
@@ -997,6 +1001,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/defect/defect",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -179.0,
    "rig_bounds_h": 260.0,
    "rig_bounds_w": 250.0,
    "rig_scale": 0.125

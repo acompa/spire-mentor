@@ -29,7 +29,8 @@ non-combat surface the PPO obs builders below don't (yet) cover --
 ``card_select``, ``card_bundle``, ``reward_screen``, ``treasure``,
 ``run_config`` -- falls through to :func:`realgame_random.choose_action`, same
 as an outright PPO failure. ``crystal_sphere`` has no net either but is played
-by :mod:`crystal_sphere_policy`'s geometric rule (GH #872).
+by :mod:`crystal_sphere_policy`: the digger, or the GH #872 geometric rule for
+an older mod's message.
 Never-crash-the-session contract is identical to :mod:`realgame_mcts`: any
 exception building the observation or running inference is caught, logged
 loudly, and that one decision falls back to the random-legal policy with
@@ -228,6 +229,34 @@ def _vocab_enchantment_id(raw: str) -> str:
         if _alnum_upper(name) == key:
             return name
     return raw
+
+
+def _wire_pending_enchantment(state: dict[str, Any]) -> str | None:
+    """The enchantment a ``card_select`` enchant pick stamps, or ``None`` (GH #574).
+
+    The mod's ``pending_enchantment`` field (PROTOCOL.md ``card_select``) is
+    the ``Id.Entry`` of ``FromDeckForEnchantment``'s ``enchantment`` argument
+    -- the value the training lanes read from ``rm.pending_enchantment``. Not
+    a card's own ``enchantment`` field, which names one it already carries.
+
+    A mod from before the field still names the enchantment in
+    ``source_model``: it is the entry point's first model argument. That
+    fallback is taken only when ``source_kind`` is absent (the autoplay lane
+    never sends it) or ``"enchantment"``, so a screen the mod attributes to a
+    card or relic never reads as one. A present field is final, even as
+    ``null``: the mod knows the screen stamps nothing it can name, and a
+    ``source_model`` beside it may be an earlier selection's. Anything else is
+    ``None``, the encoder's unknown row. The Rust ports are
+    ``sts2-runai`` ``ppo::wire::wire_pending_enchantment`` and, for the
+    Instinct screens, ``sts2-advisor`` ``instinct_screens::screen_enchantment``.
+    """
+    if "pending_enchantment" in state:
+        raw = state.get("pending_enchantment")
+    elif str(state.get("source_kind") or "enchantment").lower() == "enchantment":
+        raw = state.get("source_model")
+    else:
+        raw = None
+    return _vocab_enchantment_id(str(raw)) if raw else None
 
 
 def _card_enchantment(c: dict[str, Any]) -> tuple[str, int] | None:
@@ -1392,15 +1421,12 @@ def _build_card_select(state: dict[str, Any], prev_msg_type: str | None) -> PpoD
             kind = "transform_deck_card"
         else:
             obs["enchant_select_deck_indices"] = idxs
-            # GH #545: unlike ppo/env.py, this driver has no live `rm` --
-            # everything here is rebuilt from the bridge's wire JSON (see
-            # module docstring), and PROTOCOL.md's card_select message never
-            # names WHICH enchantment a TO_ENCHANT pick would stamp (the
-            # per-card `enchantment` field on `cards` describes an ALREADY
-            # enchanted card, not the pending one). Ship the key anyway so
-            # the encoder reads a consistent "unknown" pad row over the
-            # bridge rather than a missing dict key.
-            obs["pending_enchantment"] = None
+            # GH #545 / #574: the training lanes read WHICH enchantment the
+            # pick stamps off `rm.pending_enchantment`; this driver has no
+            # live `rm`, so it comes off the wire (`_wire_pending_enchantment`).
+            # The key is always shipped, None when unknown, so the encoder
+            # reads the "unknown" pad row rather than a missing dict key.
+            obs["pending_enchantment"] = _wire_pending_enchantment(state)
             kind = "enchant_deck_card"
     else:  # grant
         # obs.card_grant_options = [(card_id, upgraded), ...].
@@ -1496,7 +1522,8 @@ def plan_optional_picks(
 #: ``reward_screen`` and ``crystal_sphere`` are special-cased in
 #: :func:`pick_noncombat_action_ppo`: the first needs the session's
 #: ``prev_msg_type`` context, the second the shared multi-claim collector, the
-#: third is answered by :mod:`crystal_sphere_policy`'s rule, GH #872.)
+#: third is answered by :mod:`crystal_sphere_policy`'s digger, falling back
+#: to its GH #872 rule.)
 _PPO_NONCOMBAT_BUILDERS: dict[str, Callable[[dict[str, Any]], PpoDecision | None]] = {
     "map_select": _build_map_select,
     "card_reward": _build_card_reward,
@@ -1505,6 +1532,53 @@ _PPO_NONCOMBAT_BUILDERS: dict[str, Callable[[dict[str, Any]], PpoDecision | None
     "event": _build_event,
     "boss_relic": _build_boss_relic,
 }
+
+
+#: The surfaces :func:`build_wire_decision` builds in Rust: the builder table's,
+#: plus the three the advisor reaches by its own dispatch.
+WIRE_SURFACES = frozenset({*_PPO_NONCOMBAT_BUILDERS, "card_select", "potion_swap", "card_bundle"})
+
+
+def build_wire_decision(
+    state: dict[str, Any], surface: str, prev_msg_type: str | None = None
+) -> PpoDecision | None:
+    """One of :data:`WIRE_SURFACES`, built in Rust: a
+    :data:`_PPO_NONCOMBAT_BUILDERS` surface, ``card_select``
+    (:func:`_build_card_select`, with its ``prev_msg_type``), ``potion_swap``
+    (:func:`_build_potion_swap`) or ``card_bundle``
+    (``realgame_advisor._build_card_bundle``).
+
+    ``sts2_rs.ppo_wire_obs`` (``sts2-runai::ppo::wire``, GH #1426 step 2) is
+    the port of those builders the native advisor runs, held to them row by
+    row by ``diag_ppo_wire_parity.py`` and the builder tests. Its observation
+    is one dict carrying ``_base_metrics``' scalars too, which is the shape
+    the Rust net (:class:`ppo.rust_policy.RustPolicy`) reads, so ``metrics``
+    is empty: hand this decision to that backend only.
+
+    The Python builders' :data:`EVENT_VETOES` tally is not kept on this path;
+    it counts for the driver's sweeps, not for an advice.
+
+    Returns:
+        ``None`` where the Python builder would (nothing to decide), and for
+        a surface the port does not cover.
+    """
+    import sts2_rs
+
+    if surface not in WIRE_SURFACES:
+        return None
+    built = sts2_rs.ppo_wire_obs(state, surface, prev_msg_type)
+    if built is None:
+        return None
+    return PpoDecision(
+        built["obs"],
+        built["actions"],
+        {},
+        built["responses"],
+        built["labels"],
+        source_note=built["source_note"],
+        pick_count=built["pick_count"],
+        optional_room=built["optional_room"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1867,78 +1941,16 @@ def apply_session_context(state: dict[str, Any], session: dict[str, Any] | None)
         `state`, or a shallow copy with `map` patched in from the cache.
         MUTATES `session`.
     """
-    msg_type = state.get("type")
+    import sts2_rs
 
-    # ~15% of live map_select messages arrive with an EMPTY map graph
-    # (2026-07-12 audit), collapsing every forward-cone routing feature to
-    # defaults. The act's graph is immutable, so cache the last good one per
-    # act and patch it in when the bridge omits it.
-    if msg_type == "map_select" and session is not None:
-        m = state.get("map") or {}
-        act = state.get("act")
-        if m.get("nodes"):
-            session["last_map"] = (act, m)
-        else:
-            cached = session.get("last_map")
-            if cached and cached[0] == act:
-                state = {**state, "map": cached[1]}
-    elif session is not None:
-        m = state.get("map") or {}
-        if m.get("nodes"):
-            # New-dialect bridge (2026-08-02 run-level audit): SpireMentor
-            # attaches the act graph to every run-level message's envelope,
-            # not just map_select -- the live twin of headless_eval's
-            # get_map() seeding (headless_eval.py:1510-1519). The wire's own
-            # map (with the authoritative `current`) is used as-is by
-            # `_base_obs`; here just refresh the cache + position tracker so
-            # any message that still arrives bare (older mod build, mixed
-            # deploys) keeps the same view. The pre-act row-0 `current` is
-            # NOT a position -- leaving map_pos unset keeps the act-start
-            # encoding `_base_obs`/`_base_metrics` expect.
-            prev = session.get("last_map")
-            session["last_map"] = (state.get("act"), m)
-            if prev is not None and prev[0] != state.get("act"):
-                # Fresh act: the old position belongs to the old graph
-                # (headless_eval pops it the same way when reseeding).
-                session.pop("map_pos", None)
-            cur = m.get("current")
-            try:
-                if isinstance(cur, dict) and int(cur.get("row", -1)) > 0:
-                    session["map_pos"] = (int(cur["col"]), int(cur["row"]))
-                elif isinstance(cur, dict) and int(cur.get("row", -1)) == 0:
-                    # The pre-act row-0 node is not a position -- act start.
-                    session.pop("map_pos", None)
-            except (KeyError, TypeError, ValueError):
-                pass
-        else:
-            # The training obs carry the act map on EVERY decision (ppo.env.
-            # observe); pre-audit bridges only send it on map_select, so 76%
-            # of live net decisions had zero map-node tokens (2026-07-12
-            # obs-parity audit). Patch the cached act graph in, with
-            # `current` moved to the last chosen node (recorded below) --
-            # that coord also drives the engine-faithful act_floor
-            # (= row + 1) in _base_metrics.
-            cached = session.get("last_map")
-            if cached and cached[0] == state.get("act"):
-                m = dict(cached[1])
-                pos = session.get("map_pos")
-                if pos is not None:
-                    m["current"] = {"col": int(pos[0]), "row": int(pos[1])}
-                state = {**state, "map": m}
-
-    # The card-skip flag only bridges a card_reward -> the reward_screen that
-    # immediately re-appears. Any other decision (map_select, shop, ...) means
-    # we've left that reward context, so drop a stale flag before it can make a
-    # later, unrelated reward_screen skip its card.
-    if session is not None and msg_type not in ("reward_screen", "card_reward"):
-        session.pop("card_reward_skipped", None)
-    # The shop-removal target only bridges a shop answer -> the card_select
-    # that immediately follows it. Any other decision means the removal never
-    # opened (rejected purchase, re-presented shop, ...) -- drop it. (A shop
-    # message re-stashes AFTER this clear if removal is chosen again.)
-    if session is not None and msg_type != "card_select":
-        session.pop("shop_remove_target", None)
-    return state
+    if session is None:
+        return state
+    # Rust: `sts2_advisor::session::apply_session_context`, the one copy the
+    # driver and the advisor share. It updates `session` in place: the act
+    # graph cache, the position tracker, and the card-skip flag and
+    # shop-removal target, each dropped once its decision has passed.
+    patched = sts2_rs.session_apply(state, session)
+    return state if patched is None else {**state, "map": patched}
 
 
 def stash_shop_removal_target(
@@ -1954,16 +1966,11 @@ def stash_shop_removal_target(
     prevent, and it fired ZERO times across `logs/f7-mirror-check18` and
     `check19` because the advisor never calls `pick_noncombat_action_ppo`.
     """
-    if session is None or picked.get("action") != "shop_remove_card":
+    import sts2_rs
+
+    if session is None:
         return
-    deck_l = run_state.get("master_deck") or []
-    di = int(picked.get("deck_idx", -1))
-    if 0 <= di < len(deck_l):
-        c = deck_l[di]
-        session["shop_remove_target"] = (
-            _card_id(c),
-            bool(c.get("upgrade_level") or c.get("upgraded")),
-        )
+    sts2_rs.session_stash_shop_removal(session, run_state, picked)
 
 
 def shop_removal_carry_index(
@@ -2000,38 +2007,14 @@ def shop_removal_carry_index(
     guess -- the one artifact that could have settled it was the one not
     written down.
     """
-    target = (session or {}).pop("shop_remove_target", None)
-    if target is None:
+    import sts2_rs
+
+    if session is None:
         return None
-    offered = state.get("cards") or []
-    for i, c in enumerate(offered):
-        key = (_card_id(c), bool(c.get("upgrade_level") or c.get("upgraded")))
-        if key == target and i < len(decision.responses):
-            return i
-
-    def _tag(c: dict[str, Any]) -> str:
-        name = str(_card_id(c))
-        if c.get("upgrade_level") or c.get("upgraded"):
-            name += "+"
-        flag = c.get("is_removable")
-        if flag is False:
-            name += "(fixed)"
-        elif flag is None:
-            name += "(?)"
-        return name
-
-    deck = ((state.get("run_state") or {}).get("master_deck")) or []
-    logger.warning(
-        "shop removal target %s%s is not on the removal screen (%d offered: %s); "
-        "the deck behind it was (%d: %s); the screen will re-decide",
-        target[0],
-        "+" if target[1] else "",
-        len(offered),
-        ", ".join(_tag(c) for c in offered),
-        len(deck),
-        ", ".join(_tag(c) for c in deck),
-    )
-    return None
+    index, warning = sts2_rs.session_shop_removal_carry(state, session, len(decision.responses))
+    if warning is not None:
+        logger.warning("%s", warning)
+    return index
 
 
 def pick_noncombat_action_ppo(
@@ -2139,9 +2122,11 @@ def pick_noncombat_action_ppo(
         if _CARD_SELECT_SURFACES.get(card_select_prev or "") is None:
             return _fallback(), None
     elif msg_type == "crystal_sphere":
-        # No net was trained on the minigame; a geometric rule beats the
-        # random-legal fallback by ~2x EV (GH #872, `crystal_sphere_policy`).
-        # Its `annotations.policy` names it in the JSONL step record.
+        # No net was trained on the minigame; `crystal_sphere_policy` plays
+        # it with the digger (the wheel's `crystal_sphere_pick`), or, for an
+        # older mod's message or a digger failure, the GH #872 geometric rule
+        # (~2x the random-legal fallback's EV). Its `annotations.policy`
+        # names which one in the JSONL step record.
         import crystal_sphere_policy
 
         rule_action = crystal_sphere_policy.choose(state)

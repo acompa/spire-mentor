@@ -10,7 +10,6 @@
 //
 // Clicking it opens a popover, grouped by job, every entry with its hotkey:
 //   Mode           Off · Coach · Hints · AI plays   (MentorModes, CoachStyle.cs)
-//   Brain          Search · Instinct                (only where it is offered)
 //   This decision  Peek (F5) · Let AI pick (F6)
 //   Autoplay       Autobattle (Shift+F7) · AI plays until stopped (F7)
 //   Speed          - Nx +  (F9 / F10)
@@ -80,7 +79,6 @@ internal sealed class SimToolbar
     private static readonly Color CoachColor = new(0.50f, 0.83f, 0.91f);
     private static readonly Color HintsColor = new(0.55f, 0.85f, 0.45f);
     private static readonly Color AiColor = new(1.00f, 0.62f, 0.36f);
-    private static readonly Color BrainColor = new(0.72f, 0.62f, 0.95f);
 
     /// <summary>Right screen edge to the docked badge.</summary>
     private const float EdgeMargin = 16f;
@@ -109,10 +107,6 @@ internal sealed class SimToolbar
     private Label? _footerInfo;
     private Label? _popHint;
     private readonly Dictionary<MentorMode, Button> _modeButtons = new();
-    private Label? _brainCaption;
-    private HBoxContainer? _brainControls;
-    private Button? _brainSearch;
-    private Button? _brainInstinct;
     private Button? _peek;
     private Button? _aiOnce;
     private Button? _autobattle;
@@ -395,29 +389,27 @@ internal sealed class SimToolbar
         row.AddThemeConstantOverride("separation", 6);
 
         // Co-op with AI partners, in combat only (RefreshPartnerGo).
-        _partnerGo = SimUiKit.MakeButton("Partner go",
-            "Your AI partner waits for you (your first play, your end turn, or a setup play " +
-            "of yours it wants first): let it play the rest of its turn now (Shift+F6)",
+        _partnerGo = SimUiKit.MakeButton(L10n.T("Partner go"),
+            L10n.T("Your AI partner waits for you (your first play, your end turn, or a setup play of yours it wants first): let it play the rest of its turn now (Shift+F6)"),
             () => SimActions.PartnersGo("The Partner go button"), SetHint);
         _partnerGo.Visible = false;
         row.AddChild(_partnerGo);
 
-        _stop = SimUiKit.MakeButton("AI is playing — Stop (F7)",
-            "The AI is playing: stop it and take the controls back (F7 stops F7 and autobattle, " +
-            "Shift+F7 autobattle; F8 takes over from Autopilot)",
+        _stop = SimUiKit.MakeButton(L10n.T("AI is playing — Stop (F7)"),
+            L10n.T("The AI is playing: stop it and take the controls back (F7 stops F7 and autobattle, Shift+F7 autobattle; F8 takes over from Autopilot)"),
             () => SimActions.StopAi("The Stop button"), SetHint);
         SimUiKit.SetLit(_stop, AiColor);
         _stop.Visible = false;
         row.AddChild(_stop);
 
-        // Framed fullscreen (the panels in the game): the way back to the
-        // panels around the game, beside the badge like the frame's own
-        // Fullscreen button -- in the badge's menu, players went hunting
-        // through Panels for it.
-        _exitFullscreen = SimUiKit.MakeButton("⛶ Exit fullscreen",
-            "Back to the window with the panels around the game: advice, coach and log beside it " +
-            "(the game's Fullscreen setting and Alt+Enter switch it too)",
-            () => SimFrameLauncher.SetWanted(true, "Exit fullscreen"), SetHint);
+        // The way back to the panels around the game, beside the badge like
+        // the frame's own Fullscreen button -- in the badge's menu, players
+        // went hunting through Panels for it. Framed fullscreen it reads
+        // "Exit fullscreen"; with the frame closed (the panels in a plain
+        // game window) "Panels beside the game" (RefreshPanelsButton).
+        _exitFullscreen = SimUiKit.MakeButton(L10n.T(FrameLaunchRules.ExitFullscreenLabel),
+            L10n.T("Back to the window with the panels around the game: advice, coach and log beside it (Panels ▾ → Panels in their own window does the same)"),
+            () => SimFrameLauncher.SetWanted(true, _exitFullscreen?.Text ?? "Panels button"), SetHint);
         _exitFullscreen.Visible = false;
         row.AddChild(_exitFullscreen);
 
@@ -429,12 +421,12 @@ internal sealed class SimToolbar
         grip.VerticalAlignment = VerticalAlignment.Center;
         grip.Connect(Control.SignalName.GuiInput, Callable.From<InputEvent>(OnGripGuiInput));
         grip.Connect(Control.SignalName.MouseEntered, Callable.From(() =>
-            SetHint("Drag to move the badge · double-click to put it back")));
+            SetHint(L10n.T("Drag to move the badge · double-click to put it back"))));
         grip.Connect(Control.SignalName.MouseExited, Callable.From(() => SetHint(null)));
         row.AddChild(grip);
 
         _badge = SimUiKit.MakeButton(MentorBadge.Name,
-            "Spire Mentor: click for the controls (mode, brain, autoplay, speed, rewind, panels)",
+            L10n.T("Spire Mentor: click for the controls (mode, autoplay, speed, rewind, panels)"),
             OnBadgePressed, SetHint);
         _badge.AddThemeFontSizeOverride("font_size", 15);
         row.AddChild(_badge);
@@ -499,60 +491,44 @@ internal sealed class SimToolbar
             _modeButtons[m] = segment;
             mode.AddChild(segment);
         }
-        AddSection(grid, "Mode  F8", mode);
-
-        // Brain: only where it is offered today (RefreshBrain).
-        _brainControls = Cell(2);
-        _brainSearch = SimUiKit.MakeButton("Search",
-            "Search thinks ahead: a search over the fight, the run net for the screens (Shift+F8 switches)",
-            () => SetBrain(AdvisorBrainRules.Search), SetHint);
-        _brainInstinct = SimUiKit.MakeButton("Instinct",
-            "Instinct is the end-to-end net, no search: every decision on gut feel (Ironclad on v0.111.0 and the v0.113.0 beta " +
-            "for now). Hints, Let AI pick, autoplay and Autobattle all follow it (Shift+F8 switches)",
-            () => SetBrain(AdvisorBrainRules.Instinct), SetHint);
-        _brainControls.AddChild(_brainSearch);
-        _brainControls.AddChild(_brainInstinct);
-        _brainCaption = AddSection(grid, "Brain  Shift+F8", _brainControls);
-        _brainCaption.Visible = false;
-        _brainControls.Visible = false;
+        AddSection(grid, L10n.T("Mode  F8"), mode);
 
         HBoxContainer decision = Cell(4);
-        _peek = SimUiKit.MakeButton("Peek  F5",
-            "Coach: show the AI's pick for just this decision; it hides again once you act (F5)",
+        _peek = SimUiKit.MakeButton(L10n.T("Peek  F5"),
+            L10n.T("Coach: show the AI's pick for just this decision; it hides again once you act (F5)"),
             SimActions.Peek, SetHint);
-        _aiOnce = SimUiKit.MakeButton("Let AI pick  F6",
-            "Let the AI take just this one decision (F6) -- needs Coach or Hints",
+        _aiOnce = SimUiKit.MakeButton(L10n.T("Let AI pick  F6"),
+            L10n.T("Let the AI take just this one decision (F6) -- needs Coach or Hints"),
             () => SimActions.AiOnce("The Let AI pick button"), SetHint);
         decision.AddChild(_peek);
         decision.AddChild(_aiOnce);
-        AddSection(grid, "This decision", decision);
+        AddSection(grid, L10n.T("This decision"), decision);
 
         HBoxContainer autoplay = Cell(4);
-        _autobattle = SimUiKit.MakeButton("Autobattle  Shift+F7",
-            "The AI plays the fights, you make every run-level decision -- card rewards, map, shops, " +
-            "rest sites, events -- with a note on what changed since your last one (Shift+F7)",
+        _autobattle = SimUiKit.MakeButton(L10n.T("Autobattle  Shift+F7"),
+            L10n.T("The AI plays the fights, you make every run-level decision -- card rewards, map, shops, rest sites, events -- with a note on what changed since your last one (Shift+F7)"),
             () => SimActions.ToggleAutobattle("The Autobattle button"), SetHint);
-        _aiAuto = SimUiKit.MakeButton("AI plays until stopped  F7",
-            "Let the AI keep playing until you stop it (F7) -- needs Coach or Hints",
+        _aiAuto = SimUiKit.MakeButton(L10n.T("AI plays until stopped  F7"),
+            L10n.T("Let the AI keep playing until you stop it (F7) -- needs Coach or Hints"),
             () => SimActions.ToggleAutoplay("The AI plays button"), SetHint);
         autoplay.AddChild(_autobattle);
         autoplay.AddChild(_aiAuto);
-        AddSection(grid, "Autoplay", autoplay);
+        AddSection(grid, L10n.T("Autoplay"), autoplay);
 
         HBoxContainer speed = Cell(4);
-        speed.AddChild(SimUiKit.MakeButton("−", "Game speed down: 8x, 6x, 4x, 3x, 2x, 1x (F9)",
+        speed.AddChild(SimUiKit.MakeButton("−", L10n.T("Game speed down: 8x, 6x, 4x, 3x, 2x, 1x (F9)"),
             () => SimActions.StepSpeed(-1), SetHint));
         _speedLabel = SimUiKit.SmallLabel("1x", Colors.White, 15);
         _speedLabel.VerticalAlignment = VerticalAlignment.Center;
         _speedLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _speedLabel.CustomMinimumSize = new Vector2(34f, 0f);
         speed.AddChild(_speedLabel);
-        speed.AddChild(SimUiKit.MakeButton("+", "Game speed up: 1x, 2x, 3x, 4x, 6x, 8x (F10)",
+        speed.AddChild(SimUiKit.MakeButton("+", L10n.T("Game speed up: 1x, 2x, 3x, 4x, 6x, 8x (F10)"),
             () => SimActions.StepSpeed(1), SetHint));
         Label speedKeys = SimUiKit.Caption("F9 / F10");
         speedKeys.VerticalAlignment = VerticalAlignment.Center;
         speed.AddChild(speedKeys);
-        AddSection(grid, "Speed", speed);
+        AddSection(grid, L10n.T("Speed"), speed);
 
         // The one-shot verbs, grouped by job into three dropdowns (the
         // workbench's top bar shape). Rewind: the game saves at room entry
@@ -560,40 +536,40 @@ internal sealed class SimToolbar
         // the turn undo replays the game's own combat tape on top of the
         // room-entry save (SimCombatUndo).
         _moreRow = Cell(4);
-        AddMenu(SimUiKit.MakeMenuButton("Rewind",
-            "⟲ Turn (Ctrl+Z): undo to the start of this combat turn · ⟲ Room (Ctrl+Shift+Z): restart this room (same seed) · ⟲⟲ Back: one room further back",
+        AddMenu(SimUiKit.MakeMenuButton(L10n.T("Rewind"),
+            L10n.T("⟲ Turn (Ctrl+Z): undo to the start of this combat turn · ⟲ Room (Ctrl+Shift+Z): restart this room (same seed) · ⟲⟲ Back: one room further back"),
             new SimUiKit.MenuEntry[]
             {
-                new("⟲ Turn  (Ctrl+Z)", "Undo to the start of the current combat turn (replays the game's combat tape)", SimActions.UndoTurn),
-                new("⟲ Room  (Ctrl+Shift+Z)", "Rewind to the start of the current room (same seed, exact state)", SimActions.RestartRoom),
-                new("⟲⟲ Back one room", "Rewind one room further back", SimActions.BackOneRoom),
+                new(L10n.T("⟲ Turn  (Ctrl+Z)"), L10n.T("Undo to the start of the current combat turn (replays the game's combat tape)"), SimActions.UndoTurn),
+                new(L10n.T("⟲ Room  (Ctrl+Shift+Z)"), L10n.T("Rewind to the start of the current room (same seed, exact state)"), SimActions.RestartRoom),
+                new(L10n.T("⟲⟲ Back one room"), L10n.T("Rewind one room further back"), SimActions.BackOneRoom),
             }, SetHint));
-        AddMenu(SimUiKit.MakeMenuButton("Panels",
-            "Hide all (Ctrl+H) · Log (Ctrl+L) · HUD (F4) · Help (F1) · Settings (works mid-run) · Report a bug (Ctrl+Shift+B)",
+        AddMenu(SimUiKit.MakeMenuButton(L10n.T("Panels"),
+            L10n.T("Hide all (Ctrl+H) · Log (Ctrl+L) · HUD (F4) · Help (F1) · Settings (works mid-run) · Report a bug (Ctrl+Shift+B)"),
             (SimUiKit.MenuEntry[])
             [
-                new("Hide all  (Ctrl+H)", "Hide everything but the badge for a quick look -- click the badge or Ctrl+H to bring it back", SimActions.ToggleHideAll),
-                new("Log  (Ctrl+L)", "Show / hide the action log (Ctrl+L)", SimActions.ToggleLog),
-                new("HUD  (F4)", "Show / hide the advice HUD (F4)", SimActions.ToggleHud),
-                new("Help  (F1)", "What everything does (F1)", SimActions.ToggleHelp),
-                new("Settings", "Mod settings -- works mid-run (the main-menu page is run-locked)", SimSettingsPanel.Instance.Toggle),
-                new("Report a bug  (Ctrl+Shift+B)", "Send this position and the logs to the developers, with a note on what went wrong", SimActions.ReportBug),
+                new(L10n.T("Hide all  (Ctrl+H)"), L10n.T("Hide everything but the badge for a quick look -- click the badge or Ctrl+H to bring it back"), SimActions.ToggleHideAll),
+                new(L10n.T("Log  (Ctrl+L)"), L10n.T("Show / hide the action log (Ctrl+L)"), SimActions.ToggleLog),
+                new(L10n.T("HUD  (F4)"), L10n.T("Show / hide the advice HUD (F4)"), SimActions.ToggleHud),
+                new(L10n.T("Help  (F1)"), L10n.T("What everything does (F1)"), SimActions.ToggleHelp),
+                new(L10n.T("Settings"), L10n.T("Mod settings -- works mid-run (the main-menu page is run-locked)"), SimSettingsPanel.Instance.Toggle),
+                new(L10n.T("Report a bug  (Ctrl+Shift+B)"), L10n.T("Send this position and the logs to the developers, with a note on what went wrong"), SimActions.ReportBug),
                 // The panels in their own window around the game (the
                 // Spire Mentor frame; SimFrameLauncher): starts it, or,
                 // framed with the panels moved inside, moves them back out
                 // (this toolbar hides while they are outside, so the way
                 // back in is the frame's own Panels menu or closing it).
-                new("Panels in their own window", "Move these panels out of the game into a window around it (closing that window brings them back)",
+                new(L10n.T("Panels in their own window"), L10n.T("Move these panels out of the game into a window around it (closing that window brings them back)"),
                     () => SimFrameLauncher.SetWanted(true, "Toolbar")),
             ], SetHint));
-        AddMenu(SimUiKit.MakeMenuButton("Workbench",
-            "Open the workbench in your browser · Copy state (Ctrl+Shift+C) to paste a position into it",
+        AddMenu(SimUiKit.MakeMenuButton(L10n.T("Workbench"),
+            L10n.T("Open the workbench in your browser · Copy state (Ctrl+Shift+C) to paste a position into it"),
             new SimUiKit.MenuEntry[]
             {
-                new("Open workbench", "Open the workbench in your browser: logs, search tree, run tree", () => SimWorkbenchLink.Open()),
-                new("Copy state  (Ctrl+Shift+C)", "Copy this position to the clipboard -- paste it into the workbench to replay it, branch it, or sweep it in SimLab", SimActions.CopyState),
+                new(L10n.T("Open workbench"), L10n.T("Open the workbench in your browser: logs, search tree, run tree"), () => SimWorkbenchLink.Open()),
+                new(L10n.T("Copy state  (Ctrl+Shift+C)"), L10n.T("Copy this position to the clipboard -- paste it into the workbench to replay it, branch it, or sweep it in SimLab"), SimActions.CopyState),
             }, SetHint));
-        AddSection(grid, "More", _moreRow);
+        AddSection(grid, L10n.T("More"), _moreRow);
 
         body.AddChild(grid);
 
@@ -671,13 +647,10 @@ internal sealed class SimToolbar
     private static string ModeHint(MentorMode mode) =>
         mode switch
         {
-            MentorMode.Off => "Turn the AI off: the game plays exactly as without the mod (F8 toggles)",
-            MentorMode.Coach => "Coach: nothing shows before you act; Peek (F5) shows the next pick, and a note " +
-                                "afterwards says where you differed from the AI",
-            MentorMode.Hints => "Hints: the AI's opinion shows while you decide -- card scores, ranked moves, " +
-                                "win chance, the route it likes",
-            _ => "AI plays: the AI plays this run until you stop it, handing back what it cannot play " +
-                 "(same as F7; a config-armed Autopilot shows here too)",
+            MentorMode.Off => L10n.T("Turn the AI off: the game plays exactly as without the mod (F8 toggles)"),
+            MentorMode.Coach => L10n.T("Coach: nothing shows before you act; Peek (F5) shows the next pick, and a note afterwards says where you differed from the AI"),
+            MentorMode.Hints => L10n.T("Hints: the AI's opinion shows while you decide -- card scores, ranked moves, win chance, the route it likes"),
+            _ => L10n.T("AI plays: the AI plays this run until you stop it, handing back what it cannot play (same as F7; a config-armed Autopilot shows here too)"),
         };
 
     // ------------------------------------------------------------------
@@ -709,14 +682,6 @@ internal sealed class SimToolbar
             SetHint(null);
         }
         Refresh();
-    }
-
-    private void SetBrain(string brain)
-    {
-        if (AdvisorBrainRules.Normalize(brain) != SimAdvisor.CurrentBrain)
-        {
-            SimActions.ToggleBrain("The Brain switch");
-        }
     }
 
     /// <summary>
@@ -925,7 +890,13 @@ internal sealed class SimToolbar
         }
         if (Valid(_exitFullscreen))
         {
-            SetVisible(_exitFullscreen!, FrameLink.Framed && !FrameLink.UiOutside);
+            string? label = FrameLaunchRules.PanelsButtonLabel(FrameLink.Framed, FrameLink.UiOutside,
+                SimFrameLauncher.Supported, SimFrameLauncher.Shipped, SimFrameLauncher.Harness);
+            SetVisible(_exitFullscreen!, label != null);
+            if (label != null)
+            {
+                SetText(_exitFullscreen!, L10n.T(label));
+            }
         }
         if (Valid(_partnerGo))
         {
@@ -968,25 +939,15 @@ internal sealed class SimToolbar
             Lit(button, m == s.Mode ? ModeColor(m) : null);
         }
 
-        (bool brainShow, _) = BrainState();
-        SetVisible(_brainCaption, brainShow);
-        SetVisible(_brainControls, brainShow);
-        if (brainShow)
-        {
-            bool instinct = AdvisorBrainRules.IsInstinct(SimAdvisor.CurrentBrain);
-            Lit(_brainSearch, instinct ? null : BrainColor);
-            Lit(_brainInstinct, instinct ? BrainColor : null);
-        }
-
         bool advisor = mode == SimMode.Advisor;
         SetDisabled(_peek, !SimRuntime.CoachStyleActive);
         SetDisabled(_aiOnce, !advisor);
         SetDisabled(_autobattle, !advisor);
         SetDisabled(_aiAuto, !advisor);
         bool plainAuto = advisor && SimRuntime.AdvisorAutoplayArmed && !s.Autobattle;
-        SetText(_autobattle, s.Autobattle ? "Stop autobattle  Shift+F7" : "Autobattle  Shift+F7");
+        SetText(_autobattle, s.Autobattle ? L10n.T("Stop autobattle  Shift+F7") : L10n.T("Autobattle  Shift+F7"));
         Lit(_autobattle, s.Autobattle ? AiColor : null);
-        SetText(_aiAuto, plainAuto ? "Stop the AI  F7" : "AI plays until stopped  F7");
+        SetText(_aiAuto, plainAuto ? L10n.T("Stop the AI  F7") : L10n.T("AI plays until stopped  F7"));
         Lit(_aiAuto, plainAuto ? AiColor : null);
         SetText(_speedLabel, SpeedSteps.Label(SimSpeed.Desired));
     }
@@ -1005,11 +966,11 @@ internal sealed class SimToolbar
         // (2026-10-17, a v0.5.0 player with ShowHud saved off).
         if (!SpireMentorModConfig.ShowHud)
         {
-            lines.Add("The advice display is hidden: More › Panels › HUD (F4) shows it.");
+            lines.Add(L10n.T("The advice display is hidden: More › Panels › HUD (F4) shows it."));
         }
         if (!string.IsNullOrEmpty(_lastActionSummary))
         {
-            lines.Add($"Last advice: {_lastActionSummary}");
+            lines.Add(L10n.F("Last advice: {0}", _lastActionSummary));
         }
         return string.Join("\n", lines);
     }
@@ -1146,14 +1107,6 @@ internal sealed class SimToolbar
     private string BuildElapsed() =>
         _buildStartedUtc is { } started ? MentorBadge.Elapsed(DateTime.UtcNow - started) : "0:00";
 
-    /// <summary>The brain switch is shown (only in a run Instinct plays:
-    /// elsewhere the search answers whatever is chosen,
-    /// AdvisorBrainRules.Requested), and what it says. Polled: the advisor's
-    /// capability and the run's character raise no event.</summary>
-    private static (bool Show, string Label) BrainState() =>
-        (SimRuntime.Mode == SimMode.Advisor && SimAdvisor.InstinctPlaysThisRun(),
-         AdvisorBrainRules.Label(SimAdvisor.CurrentBrain));
-
     /// <summary>"Partner go": shown in a combat with AI partners, live while
     /// one waits for you ("▶ Partner go", with the setup hold's seconds).</summary>
     private static void RefreshPartnerGo(Button button)
@@ -1167,7 +1120,7 @@ internal sealed class SimToolbar
         }
         SimAiPartner? waiting = partners.FirstOrDefault(p => p.Brain.Waiting != PartnerWait.None);
         int seconds = waiting?.Brain.HoldSecondsLeft ?? 0;
-        SetText(button, waiting == null ? "Partner go" : seconds > 0 ? $"▶ Partner go {seconds}s" : "▶ Partner go");
+        SetText(button, waiting == null ? L10n.T("Partner go") : seconds > 0 ? L10n.F("▶ Partner go {0}s", seconds) : L10n.T("▶ Partner go"));
         SetDisabled(button, waiting == null);
     }
 
@@ -1240,7 +1193,6 @@ internal sealed class SimToolbar
         SimAiPartner? waiting = partnerShow
             ? partners.FirstOrDefault(p => p.Brain.Waiting != PartnerWait.None)
             : null;
-        (bool brainShow, string brainLabel) = BrainState();
         // The badge's words first (dots still: the frame dedups snapshots and
         // moving dots would resend one every half second), then the sentence,
         // the footer and the note.
@@ -1258,7 +1210,7 @@ internal sealed class SimToolbar
         return new
         {
             mode = mode.ToString().ToLowerInvariant(),
-            mode_name = mode == SimMode.Off ? "AI off" : CoachStyle.ModeName((SimModeLite)(int)mode, SimRuntime.Style),
+            mode_name = mode == SimMode.Off ? L10n.T("AI off") : CoachStyle.ModeName((SimModeLite)(int)mode, SimRuntime.Style),
             // The badge's Mode switch: off / coach / hints / aiplays.
             mentor_mode = s.Mode.ToString().ToLowerInvariant(),
             power_label = CoachStyle.PowerLabel((SimModeLite)(int)mode),
@@ -1268,13 +1220,6 @@ internal sealed class SimToolbar
             autoplay_armed = SimRuntime.AdvisorAutoplayArmed,
             autobattle_on = SimAdvisor.Instance.AutobattleOn,
             speed = SpeedSteps.Label(SimSpeed.Desired),
-            // The brain switch; the frame's button sends `toggle_brain`.
-            brain = new
-            {
-                show = brainShow,
-                value = SimAdvisor.CurrentBrain,
-                label = brainLabel,
-            },
             partner_go = new
             {
                 show = partnerShow,

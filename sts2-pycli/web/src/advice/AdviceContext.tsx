@@ -4,6 +4,7 @@
 import { useMemo, type ReactNode } from "react";
 import type { Mark } from "./marks";
 import { AdviceMarksCtx, type AdviceMarksValue } from "./useAdviceMarks";
+import { t } from "../i18n";
 
 export function AdviceMarksProvider({ value, children }: { value: AdviceMarksValue; children: ReactNode }) {
   return <AdviceMarksCtx.Provider value={value}>{children}</AdviceMarksCtx.Provider>;
@@ -22,7 +23,7 @@ export function MarksFixture({ marks, showNumbers = false, children }: {
 export function MarkBadge({ mark, className = "" }: { mark: Mark | null; className?: string }) {
   if (!mark || mark.order == null) return null;
   return (
-    <span className={`wb-mark-badge wb-mark-badge--${mark.tier} ${className}`} aria-label={`step ${mark.order}`}>
+    <span className={`wb-mark-badge wb-mark-badge--${mark.tier} ${className}`} aria-label={t("step {n}", { n: mark.order })}>
       {mark.order}
     </span>
   );

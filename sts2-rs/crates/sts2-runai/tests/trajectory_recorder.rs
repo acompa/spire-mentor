@@ -45,7 +45,9 @@ const COMBAT_ROOM_TYPES: [&str; 3] = ["Monster", "Elite", "Boss"];
 /// Seed whose coverage-mode run wins and walks all three acts (shops,
 /// rest sites, boss relics, upgraded card rewards).
 const DEEP_SEED: i32 = 1;
-/// Seed whose coverage-mode run dies to the act-2 boss.
+/// Seed whose plain (non-invincible) random run dies in combat. Coverage
+/// mode can no longer lose at all: it used to die to the act-2 boss's
+/// Sandpit, which `apply_invincible_buffs` now holds off (GH #1471).
 const DEATH_SEED: i32 = 2;
 
 /// The arena's run construction (Neow start + deck-mutation surfaces +
@@ -307,7 +309,7 @@ fn killed_by_encounter_is_none_on_a_win_and_the_last_lead_on_a_loss() {
     assert_eq!(won.file.killed_by_encounter, "NONE.NONE");
     assert_eq!(won.file.killed_by_event, "NONE.NONE");
 
-    let lost = record_run(DEATH_SEED, Detail::Full, true);
+    let lost = record_run(DEATH_SEED, Detail::Full, false);
     assert!(!lost.file.win);
     assert!(
         lost.file.killed_by_encounter.starts_with("MONSTER."),

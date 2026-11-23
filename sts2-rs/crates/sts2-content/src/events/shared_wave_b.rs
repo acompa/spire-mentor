@@ -180,9 +180,11 @@ pub const REFLECTIONS: EventSpec = EventSpec {
 pub const ROUND_TEA_PARTY_FIGHT_DAMAGE: i32 = 11;
 
 fn round_tea_party_enjoy_tea(state: &mut RunState) -> EventOutcome {
+    // `RoundTeaParty.EnjoyTea` (`RoundTeaParty.cs:40-45`): `RelicCmd.Obtain`
+    // first (no take/skip step), then the full heal.
+    state.grant_event_relic(RelicId::RoyalPoison);
     let missing = state.max_hp - state.current_hp;
     state.heal(missing);
-    state.offer_relic_rewards(RelicId::RoyalPoison, 1);
     EventOutcome::finished("Gained Royal Poison relic, healed to full.")
 }
 
@@ -781,28 +783,59 @@ pub const SUNKEN_STATUE: EventSpec = EventSpec {
 
 // ── SunkenTreasury ───────────────────────────────────────────────────
 
-/// `SunkenTreasury.first_chest` gold (`shared.py:1658`, 60 ±8).
+/// `SunkenTreasury` small-chest base gold (C# `DynamicVar("SmallChestGold", 60)`).
 pub const SUNKEN_TREASURY_SMALL_GOLD: i32 = 60;
-/// `SunkenTreasury.second_chest` gold (`shared.py:1659`, 333 ±30).
+/// `SunkenTreasury` large-chest base gold (C# `DynamicVar("LargeChestGold", 333)`).
 pub const SUNKEN_TREASURY_LARGE_GOLD: i32 = 333;
+/// `Id.Entry` for the event's own RNG stream. NON-shared event, so the C#
+/// event-Rng seed is `Seed + slot(0) + hash(Entry)` (`EventModel.BeginEvent`),
+/// i.e. `state.rng.named(Entry)` — same as Sunken Statue.
+pub const SUNKEN_TREASURY_STREAM: &str = "SUNKEN_TREASURY";
+
+/// C# `SunkenTreasury.CalculateVars` (identical in v0.107.1, v0.111.0 and
+/// v0.113.1), run at event entry right after the event Rng is seeded:
+///
+/// ```text
+/// SmallChestGold += Rng.NextInt(16) - 8;   // read #1 -> 60 + [-8, 7]
+/// LargeChestGold += Rng.NextInt(61) - 30;  // read #2 -> 333 + [-30, 30]
+/// ```
+///
+/// Returns `(small, large)`. Both reads come off the private stream at
+/// counter 0 every call — nothing else draws from it — so re-deriving here
+/// reproduces C#'s values for every caller (handlers and option text). The
+/// large chest MUST consume the small roll first (GH #1494: the old port
+/// pinned both to the base, granting 60/333 instead of the rolled amounts).
+#[must_use]
+pub fn sunken_treasury_rolled_gold(state: &RunState) -> (i32, i32) {
+    sunken_treasury_gold_for(&state.rng)
+}
+
+/// [`sunken_treasury_rolled_gold`] off a run's RNG set alone: the golds
+/// depend only on the master seed (a seedless rebuild searches placeholder
+/// seeds with it).
+#[must_use]
+pub fn sunken_treasury_gold_for(rng: &sts2_core::run_rng_set::RunRngSet) -> (i32, i32) {
+    let mut rng = rng.named(SUNKEN_TREASURY_STREAM);
+    let small = SUNKEN_TREASURY_SMALL_GOLD + rng.next_int_exclusive(0, 16) - 8;
+    let large = SUNKEN_TREASURY_LARGE_GOLD + rng.next_int_exclusive(0, 61) - 30;
+    (small, large)
+}
 
 fn sunken_treasury_first_chest(state: &mut RunState) -> EventOutcome {
-    state.gain_gold(SUNKEN_TREASURY_SMALL_GOLD);
-    EventOutcome::finished(format!("Gained {SUNKEN_TREASURY_SMALL_GOLD} gold."))
+    let (gold, _) = sunken_treasury_rolled_gold(state);
+    state.gain_gold(gold);
+    EventOutcome::finished(format!("Gained {gold} gold."))
 }
 
 fn sunken_treasury_second_chest(state: &mut RunState) -> EventOutcome {
-    // C# `SunkenTreasury.SecondChest`: gain gold, then
-    // `AddCurseToDeck<Greed>` — an unconditional deck append. (The ±30 gold
-    // variance off the event Rng is a separate roll still pinned flat to the
-    // base — `6ynt.4.rng`.)
-    state.gain_gold(SUNKEN_TREASURY_LARGE_GOLD);
+    // C# `SunkenTreasury.SecondChest`: gain the rolled gold, then
+    // `AddCurseToDeck<Greed>` — an unconditional deck append.
+    let (_, gold) = sunken_treasury_rolled_gold(state);
+    state.gain_gold(gold);
     if let Some(curse) = card_pod_from_id(CardId::Greed, false) {
         state.add_card_to_deck_with_hooks(curse, sts2_core::relic_effects::AddSource::EventGain);
     }
-    EventOutcome::finished(format!(
-        "Gained {SUNKEN_TREASURY_LARGE_GOLD} gold, gained a Greed curse."
-    ))
+    EventOutcome::finished(format!("Gained {gold} gold, gained a Greed curse."))
 }
 
 const SUNKEN_TREASURY_OPTIONS: &[EventOptionSpec] = &[
@@ -811,11 +844,8 @@ const SUNKEN_TREASURY_OPTIONS: &[EventOptionSpec] = &[
         loc_key: "SUNKEN_TREASURY.pages.INITIAL.options.FIRST_CHEST",
         default_label: "Small Chest",
         default_description: "Gain ~60 gold.",
-        default_vars: &[(
-            "SmallChestGold",
-            EventVarSpec::Int(SUNKEN_TREASURY_SMALL_GOLD as i64),
-        )],
-        vars_fn: None,
+        default_vars: &[],
+        vars_fn: Some(|s| vec![("SmallChestGold", sunken_treasury_rolled_gold(s).0.into())]),
         title_vars_fn: None,
         handler: sunken_treasury_first_chest,
     },
@@ -824,21 +854,34 @@ const SUNKEN_TREASURY_OPTIONS: &[EventOptionSpec] = &[
         loc_key: "SUNKEN_TREASURY.pages.INITIAL.options.SECOND_CHEST",
         default_label: "Large Chest",
         default_description: "Gain ~333 gold + Greed curse.",
-        default_vars: &[(
-            "LargeChestGold",
-            EventVarSpec::Int(SUNKEN_TREASURY_LARGE_GOLD as i64),
-        )],
-        vars_fn: None,
+        default_vars: &[],
+        vars_fn: Some(|s| vec![("LargeChestGold", sunken_treasury_rolled_gold(s).1.into())]),
         title_vars_fn: None,
         handler: sunken_treasury_second_chest,
     },
 ];
 
+/// Present both chests with the gold C# rolled at entry, so the fallback
+/// description carries the real number, not the base.
+fn sunken_treasury_options(state: &RunState, spec: &EventSpec) -> Vec<EventOptionInfo> {
+    let (small, large) = sunken_treasury_rolled_gold(state);
+    default_option_info_from_spec(state, spec)
+        .into_iter()
+        .map(|mut info| {
+            info.description = match info.option_id {
+                "first_chest" => format!("Gain {small} gold."),
+                _ => format!("Gain {large} gold + Greed curse."),
+            };
+            info
+        })
+        .collect()
+}
+
 pub const SUNKEN_TREASURY: EventSpec = EventSpec {
     id: EventId::SunkenTreasury,
     python_name: "SunkenTreasury",
     is_allowed: always_allowed,
-    generate_options: default_option_info_from_spec,
+    generate_options: sunken_treasury_options,
     options: SUNKEN_TREASURY_OPTIONS,
 };
 
@@ -1078,17 +1121,17 @@ pub const TANX_WEAPON_2: RelicId = RelicId::Crossbow;
 pub const TANX_WEAPON_3: RelicId = RelicId::IronClub;
 
 fn tanx_weapon_1(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(TANX_WEAPON_1, 1);
+    state.grant_event_relic(TANX_WEAPON_1);
     EventOutcome::finished("Obtained a weapon relic from Tanx.")
 }
 
 fn tanx_weapon_2(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(TANX_WEAPON_2, 1);
+    state.grant_event_relic(TANX_WEAPON_2);
     EventOutcome::finished("Obtained a weapon relic from Tanx.")
 }
 
 fn tanx_weapon_3(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(TANX_WEAPON_3, 1);
+    state.grant_event_relic(TANX_WEAPON_3);
     EventOutcome::finished("Obtained a weapon relic from Tanx.")
 }
 
@@ -1217,17 +1260,17 @@ fn tezcatara_comfort_1(state: &mut RunState) -> EventOutcome {
     } else {
         TEZCATARA_COMFORT_1_NO_SOUP
     };
-    state.offer_relic_rewards(relic, 1);
+    state.grant_event_relic(relic);
     EventOutcome::finished("Obtained a relic from Tezcatara.")
 }
 
 fn tezcatara_comfort_2(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(TEZCATARA_COMFORT_2, 1);
+    state.grant_event_relic(TEZCATARA_COMFORT_2);
     EventOutcome::finished("Obtained a relic from Tezcatara.")
 }
 
 fn tezcatara_comfort_3(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(TEZCATARA_COMFORT_3, 1);
+    state.grant_event_relic(TEZCATARA_COMFORT_3);
     EventOutcome::finished("Obtained a relic from Tezcatara.")
 }
 
@@ -2030,7 +2073,8 @@ fn trial_double_down(_state: &mut RunState) -> EventOutcome {
     // abandon path, and staying put would let a fixed policy loop forever, so
     // this finishes the event with no effect — the same outcome the C#
     // headless oracle produces (it no-ops the popup, sees the event did not
-    // advance, and force-finishes to the map).
+    // advance, and force-finishes to the map). Parity mode only: agent mode
+    // does not offer the option (`withhold_abandon_run_options`, GH #1605).
     EventOutcome::finished("Doubled down; the trial is abandoned.")
 }
 
@@ -2140,6 +2184,10 @@ fn trial_generate_options(state: &RunState, spec: &EventSpec) -> Vec<EventOption
     super::default_option_info_from_spec(state, spec)
         .into_iter()
         .filter(|o| ids.contains(&o.option_id))
+        // Agent mode (GH #1605): Double Down is `ThatWillKillPlayerIf(_ =>
+        // true)` and every live chooser withholds it while Accept survives,
+        // so it is not offered. Parity mode keeps it, as the C# oracle does.
+        .filter(|o| !(state.withhold_abandon_run_options && o.option_id == "double_down"))
         .collect()
 }
 
@@ -2337,17 +2385,17 @@ pub const VAKUU_RELIC_2: RelicId = RelicId::PreservedFog;
 pub const VAKUU_RELIC_3: RelicId = RelicId::ChoicesParadox;
 
 fn vakuu_relic_1(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(VAKUU_RELIC_1, 1);
+    state.grant_event_relic(VAKUU_RELIC_1);
     EventOutcome::finished("Obtained a relic from Vakuu.")
 }
 
 fn vakuu_relic_2(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(VAKUU_RELIC_2, 1);
+    state.grant_event_relic(VAKUU_RELIC_2);
     EventOutcome::finished("Obtained a relic from Vakuu.")
 }
 
 fn vakuu_relic_3(state: &mut RunState) -> EventOutcome {
-    state.offer_relic_rewards(VAKUU_RELIC_3, 1);
+    state.grant_event_relic(VAKUU_RELIC_3);
     EventOutcome::finished("Obtained a relic from Vakuu.")
 }
 
@@ -3381,22 +3429,83 @@ mod tests {
         assert_eq!(rs.current_hp, hp_before - SUNKEN_STATUE_DIVE_DAMAGE);
     }
 
-    #[test]
-    fn sunken_treasury_first_chest_gains_60() {
+    /// Seed `EVTPAR` (Ironclad, v0.111.0) rolls an Underdocks act 1; the C#
+    /// oracle grants 63 / 350 gold off its 99 starting gold (GH #1494). Pins
+    /// the stream (`SUNKEN_TREASURY`) AND the order: the large chest's
+    /// `NextInt(61)` is the SECOND read, after the small chest's `NextInt(16)`.
+    fn evtpar_v0111_state() -> RunState {
+        let v = sts2_core::GameVersion::V0_111_0;
         let mut rs = fresh_state();
-        let gold_before = rs.gold;
-        let outcome = (SUNKEN_TREASURY.options[0].handler)(&mut rs);
-        assert!(outcome.finished);
-        assert_eq!(rs.gold, gold_before + SUNKEN_TREASURY_SMALL_GOLD);
+        rs.game_version = v;
+        rs.rng = sts2_core::run_rng_set::RunRngSet::new_for(v, v.run_seed_hash("EVTPAR"));
+        rs
     }
 
     #[test]
-    fn sunken_treasury_second_chest_gains_333() {
-        let mut rs = fresh_state();
+    fn sunken_treasury_rolls_match_csharp_on_evtpar() {
+        assert_eq!(
+            sunken_treasury_rolled_gold(&evtpar_v0111_state()),
+            (63, 350)
+        );
+    }
+
+    #[test]
+    fn sunken_treasury_first_chest_gains_rolled_small_gold() {
+        let mut rs = evtpar_v0111_state();
         let gold_before = rs.gold;
+        let outcome = (SUNKEN_TREASURY.options[0].handler)(&mut rs);
+        assert!(outcome.finished);
+        assert_eq!(rs.gold, gold_before + 63);
+    }
+
+    #[test]
+    fn sunken_treasury_second_chest_gains_rolled_large_gold_and_greed() {
+        let mut rs = evtpar_v0111_state();
+        let gold_before = rs.gold;
+        let deck_before = rs.master_deck.len();
         let outcome = (SUNKEN_TREASURY.options[1].handler)(&mut rs);
         assert!(outcome.finished);
-        assert_eq!(rs.gold, gold_before + SUNKEN_TREASURY_LARGE_GOLD);
+        assert_eq!(rs.gold, gold_before + 350);
+        assert_eq!(rs.master_deck.len(), deck_before + 1);
+        assert_eq!(rs.master_deck.last().unwrap().card_id, CardId::Greed);
+    }
+
+    /// The option text shows the rolled amounts, once each (C# binds the
+    /// rolled DynamicVar into the description).
+    #[test]
+    fn sunken_treasury_options_show_rolled_gold() {
+        let rs = evtpar_v0111_state();
+        let opts = (SUNKEN_TREASURY.generate_options)(&rs, &SUNKEN_TREASURY);
+        assert_eq!(
+            opts[0].vars,
+            vec![("SmallChestGold", sts2_core::EventVar::Int(63))]
+        );
+        assert_eq!(
+            opts[1].vars,
+            vec![("LargeChestGold", sts2_core::EventVar::Int(350))]
+        );
+        assert!(
+            opts[0].description.contains("63"),
+            "{}",
+            opts[0].description
+        );
+        assert!(
+            opts[1].description.contains("350"),
+            "{}",
+            opts[1].description
+        );
+    }
+
+    /// Every seed lands in C#'s bands: `60 + [-8, 7]` and `333 + [-30, 30]`.
+    #[test]
+    fn sunken_treasury_rolls_stay_in_csharp_bands() {
+        for seed in 0..200 {
+            let mut rs = fresh_state();
+            rs.rng = sts2_core::run_rng_set::RunRngSet::new(seed);
+            let (small, large) = sunken_treasury_rolled_gold(&rs);
+            assert!((52..=67).contains(&small), "seed {seed}: small {small}");
+            assert!((303..=363).contains(&large), "seed {seed}: large {large}");
+        }
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import NumberInput from "./NumberInput";
+import { t } from "../i18n";
 
 /** Combat search preset: a named pair of (monster sims, boss sims). */
 export type CombatPreset = "quick" | "benchmark";
@@ -46,8 +47,8 @@ export default function CombatBudget({
 }) {
   return (
     <>
-      <label title="Combat search budget. Benchmark = the offline win-rate sweep's budget (1000 monster / 4000 boss) — the default, so a run here is comparable to a benchmarked number. Quick = cheap sims for fast iteration (200 monster / 800 boss).">
-        combat{" "}
+      <label title={t("Combat search budget. Benchmark = the offline win-rate sweep's budget (1000 monster / 4000 boss) — the default, so a run here is comparable to a benchmarked number. Quick = cheap sims for fast iteration (200 monster / 800 boss).")}>
+        {t("combat")}{" "}
         <select
           value={preset}
           disabled={disabled}
@@ -58,39 +59,39 @@ export default function CombatBudget({
             onBossSims(PRESET_SIMS[v].boss);
           }}
         >
-          <option value="quick">Quick</option>
-          <option value="benchmark">Benchmark</option>
+          <option value="quick">{t("Quick")}</option>
+          <option value="benchmark">{t("Benchmark")}</option>
         </select>
       </label>
-      <label title="MCTS iterations per move in regular (non-boss) combat — the benchmark's --sims">
-        monster sims{" "}
+      <label title={t("MCTS iterations per move in regular (non-boss) combat — the benchmark's --sims")}>
+        {t("monster sims")}{" "}
         <NumberInput min={1} max={20000} step={250} value={monsterSims} onChange={onMonsterSims}
-          width={72} disabled={disabled} ariaLabel="monster combat sims" />
+          width={72} disabled={disabled} ariaLabel={t("monster combat sims")} />
       </label>
-      <label title="MCTS iterations per move in boss combat — the benchmark's --boss-sims (boss fights search deeper)">
-        boss sims{" "}
+      <label title={t("MCTS iterations per move in boss combat — the benchmark's --boss-sims (boss fights search deeper)")}>
+        {t("boss sims")}{" "}
         <NumberInput min={1} max={50000} step={1000} value={bossSims} onChange={onBossSims}
-          width={72} disabled={disabled} ariaLabel="boss combat sims" />
+          width={72} disabled={disabled} ariaLabel={t("boss combat sims")} />
       </label>
       {/* Shown, disabled, and labelled as inert rather than removed. The server
           hands this to `sts2_rs.HeuristicRunAgent`, whose constructor discards
           it — play-to-end combat search is single-threaded whatever this says.
           Deleting the box would leave older screenshots and notes claiming a
           setting with nothing to contradict them. */}
-      <label title="NOT WIRED on this path — HeuristicRunAgent ignores it, so play-to-end combat search is always single-threaded. (The recommend panel's threads knob is a different code path and does work.) Root-parallel search also SPLITS the sim budget across workers, so turning it on is not free: ~5.8pp of deep-oracle agreement at 1000 sims / 8 workers. See docs/experiments/2026-08-10-root-parallel-decision-quality.md.">
+      <label title={t("NOT WIRED on this path — HeuristicRunAgent ignores it, so play-to-end combat search is always single-threaded. (The recommend panel's threads knob is a different code path and does work.) Root-parallel search also SPLITS the sim budget across workers, so turning it on is not free: ~5.8pp of deep-oracle agreement at 1000 sims / 8 workers. See docs/experiments/2026-08-10-root-parallel-decision-quality.md.")}>
         <span style={{ opacity: 0.5 }}>
-          threads{" "}
+          {t("threads")}{" "}
           <NumberInput min={1} max={16} step={1} value={threads} onChange={() => {}}
-            width={48} disabled ariaLabel="root-parallel MCTS workers (not wired)" />
-          {" "}<span style={{ fontSize: 10 }}>(n/a)</span>
+            width={48} disabled ariaLabel={t("root-parallel MCTS workers (not wired)")} />
+          {" "}<span style={{ fontSize: 10 }}>{t("(n/a)")}</span>
         </span>
       </label>
       {pending && onApply && (
         <button type="button" onClick={onApply}
-          title="apply this budget to the running search — takes effect from the next decision"
+          title={t("apply this budget to the running search — takes effect from the next decision")}
           style={{ border: "1px solid var(--accent)", borderRadius: 4, background: "var(--bg)",
             color: "var(--accent)", cursor: "pointer", font: "inherit", padding: "1px 8px" }}>
-          ↻ apply {pending.monster}/{pending.boss}
+          {t("↻ apply {monster}/{boss}", { monster: pending.monster, boss: pending.boss })}
         </button>
       )}
     </>

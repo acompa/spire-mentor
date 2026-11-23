@@ -384,6 +384,25 @@ fn install_listeners() {
         RelicId::Byrdine,
         listener_byrdine_transform_swoops as AfterObtainedRunFn,
     );
+    // v0.113.0 Wuppy (GH #1496). `AfterObtained` fills the saved
+    // `MaxHp` / `CurrentHp` defaults; `BeforeCombatStart` summons the pet with
+    // `WuppysLoyaltyPower` at those HPs; `AfterCurrentHpChanged` (the pet's HP
+    // into the relic counter) lives in the damage pipeline
+    // (`combat_loop::sync_wuppy_relic_counter`), and the combat exit flushes
+    // the counter back into `relic_counters[Wuppy]`;
+    // `TryModifyRestSiteOptions` offers Restore.
+    register_after_obtained(
+        RelicId::Wuppy,
+        listener_wuppy_obtained as AfterObtainedRunFn,
+    );
+    register_before_combat_start(
+        RelicId::Wuppy,
+        listener_wuppy_summon_pet as BeforeCombatStartFn,
+    );
+    sts2_core::run_effects::register_modify_rest_site_options(
+        RelicId::Wuppy,
+        listener_wuppy_rest_site_options as sts2_core::run_effects::ModifyRestSiteOptionsRunFn,
+    );
 
     // HistoryCourse (sts2-rs-ummci) — at the start of each play phase
     // after round 1, auto-play a free dupe of the last Attack/Skill the
@@ -1048,6 +1067,73 @@ fn listener_byrdine_summon_pet(state: &mut CombatState) -> EffectResult {
         return EffectResult::NotImplemented;
     }
     let _ = state.summon_pet(sts2_core::MonsterKind::Byrdpip, BYRDPIP_PET_HP);
+    EffectResult::Resolved
+}
+
+/// v0.113.0 `Wuppy.AfterObtained` (`Relics/Wuppy.cs`): `MaxHp` 0 becomes 60,
+/// and an unset `CurrentHp` becomes `MaxHp`. WuppyInTrouble sets `MaxHp`
+/// before obtaining, so this only fills in for a Wuppy obtained another way
+/// (a grafted or debug-added one). The mid-combat re-summon (`CurrentRoom is
+/// CombatRoom`) is not modelled: `after_obtained` is a run-side hook, and
+/// relics are obtained out of combat.
+fn listener_wuppy_obtained(rs: &mut RunState) -> EffectResult {
+    if rs.last_obtained_relic != Some(RelicId::Wuppy) {
+        return EffectResult::NotImplemented;
+    }
+    if rs.wuppy_max_hp <= 0 {
+        rs.wuppy_max_hp = sts2_core::relics::WUPPY_DEFAULT_MAX_HP;
+    }
+    let max_hp = rs.wuppy_max_hp;
+    rs.relic_counters.entry(RelicId::Wuppy).or_insert(max_hp);
+    EffectResult::Resolved
+}
+
+/// v0.113.0 `Wuppy.BeforeCombatStart` → `SummonPet`: the Wuppy pet joins the
+/// player's side with `WuppysLoyaltyPower(1)`, max HP `MaxHp` and current HP
+/// `CurrentHp` ([`CombatState::summon_wuppy`]). `CurrentHp` is the relic's
+/// combat counter, seeded from `relic_counters[Wuppy]`. `MaxHp` is run state
+/// (`RunState::wuppy_max_hp`) that `CombatState` does not carry — its size is
+/// budgeted — so the summon uses the larger of 60 (C#'s default) and the
+/// counter here, and `run_bridge::enter_combat` sets the run's real `MaxHp`
+/// right after `start_combat`. Nothing between the two reads the pet's max.
+fn listener_wuppy_summon_pet(state: &mut CombatState) -> EffectResult {
+    if state.game_version < sts2_core::GameVersion::V0_113_0 {
+        return EffectResult::NotImplemented;
+    }
+    let Some(current_hp) = state
+        .relics
+        .iter()
+        .find(|r| !r.is_melted && r.kind == RelicKind::Wuppy)
+        .map(|r| r.counter)
+    else {
+        return EffectResult::NotImplemented;
+    };
+    let max_hp = sts2_core::relics::WUPPY_DEFAULT_MAX_HP.max(current_hp);
+    let _ = state.summon_wuppy(max_hp, current_hp);
+    EffectResult::Resolved
+}
+
+/// v0.113.0 `Wuppy.TryModifyRestSiteOptions`: add one
+/// `RestoreRestSiteOption` unless one is already there. It is enabled while
+/// the relic's `CurrentHp < MaxHp` (`RestoreRestSiteOption.IsEnabled`); a
+/// disabled one is still offered, like a disabled Smith.
+fn listener_wuppy_rest_site_options(
+    rs: &RunState,
+    options: &mut Vec<sts2_core::runstate::RestSiteOption>,
+) -> EffectResult {
+    use sts2_core::runstate::RestSiteOption;
+    if rs.game_version < sts2_core::GameVersion::V0_113_0 || !rs.owns_active_relic(RelicId::Wuppy) {
+        return EffectResult::NotImplemented;
+    }
+    if options
+        .iter()
+        .any(|o| matches!(o, RestSiteOption::Restore { .. }))
+    {
+        return EffectResult::NotImplemented;
+    }
+    options.push(RestSiteOption::Restore {
+        enabled: rs.wuppy_current_hp() < rs.wuppy_max_hp(),
+    });
     EffectResult::Resolved
 }
 
@@ -2619,6 +2705,7 @@ mod tests {
             card_type: sts2_core::cards::CardType::Attack,
             target_type: sts2_core::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: sts2_core::cards::CombatVars::new(),
@@ -2647,6 +2734,7 @@ mod tests {
             card_type: sts2_core::cards::CardType::Skill,
             target_type: sts2_core::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 5,
             combat_vars: sts2_core::cards::CombatVars::new(),
@@ -4070,6 +4158,7 @@ mod tests {
             card_type: sts2_core::cards::CardType::Power,
             target_type: sts2_core::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: sts2_core::cards::CombatVars::new(),

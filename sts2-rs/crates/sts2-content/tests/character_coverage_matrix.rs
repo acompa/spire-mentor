@@ -45,6 +45,7 @@ fn push_play_card(state: &mut CombatState, card_id: CardId) -> CardUid {
         card_type: CardType::Attack,
         target_type: TargetType::Enemy,
         upgraded: false,
+        extra_upgrades: 0,
         base_damage: 6,
         base_block: 5,
         combat_vars: sts2_core::cards::CombatVars::new(),

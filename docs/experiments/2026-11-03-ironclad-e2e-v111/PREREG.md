@@ -167,3 +167,130 @@ Decision (user, 2026-11-07, option 1 of two offered), made at ~2.09B decisions, 
 - **Gates at the switch.** F1 (sha256 of the pin on each host), F3 and the F9 soak on W4, W3 ≡ W4 SMOKE identity (descriptive; differences expected). Then the hot-swap path: F7 `--packed` from the W4 deploy on the `hot_swap` pin, the learning re-check (P6), `init-lane --hot-swap --pin <W4>`.
 - **When.** At the first planned restart after the 2.25B DEV-1000 read is booked, and only once the W4 DEV baselines and the bridge are in. If R-DDR fires at that read, its remedy deploys in the same restart, and its +300M revert read pairs the post-switch state against the pre-switch pinned state, both evaluated on W4, so the engine is constant in the contrast. Anneal, stop and TEST dates are unchanged.
 - No bar, K gate or P5 rule changes. Training sees W3 before the switch and W4 after it: a recorded deviation from §8 "one binary" for the training data only.
+
+## Amendment 7 (2026-11-10 ~18:30 CET): no calendar end; the anneal starts on a plateau (recorded deviation)
+
+Decision (user, 2026-11-10): "our goal is to get the model as good as possible, rather than adhere to a fixed calendar"; target ≥ 80% (AlphaDefect's level; Defect, so a target, not a like-for-like bar). Made at ~3.77B decisions, after the 3.75B DEV-1000 read (63.6%), with TEST sealed and unread.
+
+- **Why.** The dates in Amendment 5 were set by wall clock. DEV-1000 (EMA0.996) still climbs: 54.5% at 2.25B to 63.6% at 3.75B, and R-DDR never fired. A cooldown's gain does not depend on when it starts, so the anneal belongs at the end of whatever budget is spent, and the budget is now set by progress.
+- **Schedule.** `--sched` `anneal_start` = `kl_freeze_at` move from 2026-11-11 06:00 CET to a placeholder (2027-01-01 06:00 CET) at an args-only hot-swap before 2026-11-11 06:00. The lr factor is 1.0 before both dates, so training is unchanged until then.
+- **Reads.** Unchanged: DEV-1000 EMA0.996 every 250M; DEV-2000 raw, EMA0.996, EMA0.999 every 1B. The EMA0.999 read is reported as a preview of the anneal's gain (descriptive).
+- **R-DDR.** Stays armed with Amendment 3's trigger, remedy, smoke and +300M revert; it still fires at most once.
+- **Anneal start (the stop rule).** The 24-h anneal (0.7 drop, KL-factor freeze, unchanged) starts at the next planned restart after any of: (a) R-DDR has fired, its +300M read is in, and two consecutive DEV-1000 EMA0.996 milestone reads after that each gain < +1.0pp over the read before; (b) two consecutive DEV-2000 EMA0.999 reads (1B apart) gain < +1.0pp each; (c) the user calls it. The anneal start is set by another args-only hot-swap of `--sched`.
+- **End.** The lane stops when the anneal ends (24 h after its start). P5 picks Final on DEV-2000 as before; the single TEST read follows (`panels.UNSEAL_AT` already permits it). No bar, K gate, P5 or TEST rule changes.
+- **Source note on Amendment 3.** The only recorded statement from AlphaDefect's author in our logs is the user's relay (2026-11-06) that the author said the Beukman et al. paper "helped a lot". The remedy's specifics (more samples per update at fixed lr and minibatch) come from the paper, not from the author.
+
+## Amendment 8 (2026-11-11 ~00:30 CET): learning rates halved after the 4.0B reads (recorded deviation)
+
+Decision (user, 2026-11-11 ~00:15): "yes prepare lr swap after 4.0B". Written at ~3.93B decisions, before the 4.0B DEV-2000 reads, with TEST sealed and unread.
+
+- **Why.** The KL controller raised its factor m from 1.5 to 2.0 at 1.6485B decisions (trunk lr 1.5e-4 → 2.0e-4), with no restart within 400M. The training-run win rate (raw weights, sampled actions, A10 full runs, `win` × `runs` in `stats.jsonl`) fell from 37.5% (1.60–1.65B) to 34.5% (1.75–1.80B), and its slope was ~12pp/B before and after. So the higher lr bought no speed and cost ~3pp of level. Combat KL sits at ~0.004, below `kl_low` 0.005, so m is pinned at its cap 2.0. Raw weights play ~10pp below EMA0.999 at 3.0B (51.0% vs 61.6%, different action rules, so an upper bound on the weight-noise share).
+- **Change.** `--sched` gains `"lr_trunk": 5e-05, "lr_value": 0.00015` (were 1e-4 and 3e-4). m, its bounds [0.3, 2.0], the KL band, minibatch 8192, `epochs` 1, `iter_decisions`, clip and λ are unchanged. Applied lrs at m = 2.0: trunk 2e-4 → 1e-4, value 6e-4 → 3e-4. Lowering `kl_m_max` to 1.0 would give the same lrs but trips the `LR_CLOSED_FORM` guard on the first row, because the saved state resumes m = 2.0.
+- **When.** At an args-only hot-swap once the three 4.0B DEV-2000 reads are booked. Same worktree, pin and `--lc-verdict`: no F7 and no new learning check. Smoke: 20 min of live rows with `lr` = `lr_closed_form` = (1e-4, 3e-4), KL ≤ 0.03, clipfrac ≤ 0.3 and no alarm. Script: `~/runs/e2e-lrhalf/lr_swap.sh`. The change point c is the last `decisions` value before the stop.
+- **Instrument.** Training-run win rate in 50M-decision bins (~70k runs per bin, SE ~0.2pp), least-squares slope in pp per 1B (`~/runs/e2e-lrhalf/winslope.py`). Before the change: slope 5.85pp/B over [2.9, 3.9)B; 0.5B-window slopes since 2.0B range 4.0–14.0pp/B. The pre-change slope s0 is re-fitted over [c − 1.0B, c).
+- **Expected (descriptive, no gate).** Training win rate +5 to +9pp above the pre-change trend within ~200M; DEV-1000 EMA0.996 +3 to +6pp above the pre-change trend by 4.5B.
+- **Revert rule (slope).** Fit the slope over [c + 0.2B, c + 0.7B). If it is < 3.0pp/B (half of s0, and below every 0.5B window since 2.0B), set the base lrs to 7.5e-5 and 2.25e-4 (applied 1.5e-4 and 4.5e-4) at the next planned restart. No rollback of weights: the level gain is kept.
+- **Revert rule (DEV guard).** If the DEV-1000 EMA0.996 milestone read nearest c + 300M is ≥ 3.0pp below the 4.0B read on the paired seeds with exact McNemar p < 0.05, restore the 1e-4 and 3e-4 bases at the next restart and continue from the current state.
+- **R-DDR and anneal.** R-DDR stays armed but cannot deploy within 300M of c. A slow read inside that window still counts toward its trigger. Amendment 7's anneal rules are unchanged; the anneal multiplies whatever lrs are then in force.
+- **Not changed, and why.** λ_run stays 0.97: the 0.8 screen lost (−3.70pp, CI [−6.38, −1.02], p = 0.0077, DEV-2000 paired, EMA0.996); a 0.99 screen runs on the laptop (GH #1225) and can only produce an option for the user (bar: Δ ≥ +1.5pp and p < 0.01). Minibatch 32,768 moves the same lr/√B lever but has no measurement behind it; it is the candidate for a second step at ~c + 0.6B if the slope held.
+
+## Amendment 9 (2026-11-11 ~02:25 CET): an F9 hit in a fight hung at the step cap no longer stops the lane (recorded deviation)
+
+Decision (user, 2026-11-11 ~02:15): "so why do we stop then at all if it's only a single hang? we could continue right? and if we e.g. metrics go to shit, we still have snapshots...", then "yes" to the rule below. Written at ~3.98B decisions, before the 4.0B DEV-2000 reads, with TEST sealed and unread.
+
+- **Why.** At 01:47 the lane stopped on `F9_INVARIANT` (plan §3.5 and §8: any hit stops). All 1,971 hits came from one practice elite fight that spun 199,981 forced steps to the 200,000-step cap and ended `capped`. The stop cost 19 min and left nothing to replay, because the end record carried neither the violation text nor a usable pointer to the seed. It was the 10th step-cap segment of the campaign and the first with hits.
+- **What the stop is for.** F9 is the tripwire for a simulator exploit: a broken state the policy is paid for. An exploit raises training and DEV win rates alike (same engine), so snapshots do not say when to roll back. A segment that ends at the step cap scores no win and returns no rows after the hang, so it cannot be that.
+- **New rule.** A segment with F9 hits that ends `capped` with cap `steps` is a hang: it is written to `ops/f9_hits.jsonl` (seed, cell, kind, the first 8 violation texts, counters), its pending rows are dropped like an error segment's, it counts as no run and no practice segment, and the lane goes on. The stats row reports it as `f9.hung_hits` and `f9.hung_segments`; `f9.hits` counts every other hit.
+- **Unchanged.** A hit in a segment that ends any other way (won, lost, bootstrap, error, or capped at `turns`, `fight_decisions` or `run_decisions`) stops the lane as before, from the learner and from the driver (`f9.hits` > 0). `--f9-tolerate` stays `[]`. The pre-flight counts hung hits as violations.
+- **Also in the deploy.** Every end record carries its env's first F9 violation texts, and the `F9_INVARIANT` alarm carries seed, cell, outcome, cap and those texts. The wandb mirror re-reads a truncated `stats.jsonl` from a 64 MiB tail window and reads at most 64 MiB per call (it ran out of its 4 GB limit on the 2.1 GB file after the resume).
+- **When.** With the Amendment 8 restart, after the 4.0B reads: branch `exp/e2e-f9-capped` on top of cee4cdc5a, F7 `--packed` on `state.pt` and a learning check from the new worktree, deploy iff both pass (else the args-only Amendment 8 swap on the old worktree). No change to rows, rewards, the net or the update.
+- **Stop conditions for this rule (to the user).** More than 3 hung segments in any 250M decisions, or any hung segment whose violation text names something other than `combat.engine`. Each hung segment gets a GH issue with its seed.
+
+## Amendment 10 (2026-11-11 ~09:15 CET): the 250M DEV-1000 reads use EMA0.999 from 4.25B (recorded deviation)
+
+Decision (user, 2026-11-11 ~09:05): "We are currently measuring ema 0.996 every 250M. I would like to measure EMA 0.999 instead from now on since that is higher". Written at ~4.16B decisions, before the 4.25B milestone, with TEST sealed and unread.
+
+- **Why.** At 4.0B on DEV-2000, EMA0.999 read 66.30% against EMA0.996 62.25%: +4.05pp paired, p = 0.002. P5 already lists EMA0.999 as a candidate, so the 250M reads now track the model P5 is most likely to pick.
+- **Change.** The driver queues DEV-1000 EMA0.999 (was EMA0.996) on every 250M milestone pin from 4.25B on, and on any K-gate pin from 4.25B on. Milestones before 4.25B keep their EMA0.996 requests. Without that cut-off the driver, which walks every milestone, would have queued EMA0.999 on all 12 old 250M pins. The 1B DEV-2000 reads stay raw, EMA0.996 and EMA0.999. The driver runs from `~/projects/sts2-sim-e2e-driver` (branch `exp/e2e-driver-ema0999`, a13baf75c, on the lane's 15eb8b200); `driver.env` points there. The lane, its worktree and the learner are untouched; the learner runs whatever variant a request names.
+- **Rules that read DEV-1000 EMA0.996 now read DEV-1000 EMA0.999,** paired on the shared seeds against the EMA0.999 read of the reference state. DEV-1000 is the first 1000 seeds of DEV-2000, so a 1B DEV-2000 EMA0.999 read serves as the reference:
+  - Amendment 8's DEV guard: the DEV-1000 EMA0.999 read nearest c + 300M (the 4.5B milestone) against the 4.0B DEV-2000 EMA0.999 read on the shared 1000 seeds, same threshold (≥ 3.0pp below, exact McNemar p < 0.05).
+  - R-DDR (Amendment 3): its chain restarts. The 4.0B DEV-2000 EMA0.999 read (shared 1000 seeds) is read 0; 4.25B is the first read that can count. The EMA0.996 reads up to 4.0B no longer count toward its trigger. Its +300M revert read is EMA0.999.
+  - The driver's `DEV_JUMP` audit (> +5pp over the previous read) compares within one (panel, variant), so the first EMA0.999 DEV-1000 read has no predecessor and cannot fire it; 4.5B is compared with 4.25B.
+- **Unchanged.** P5 (candidates and default), the stall floors (DEV-2000 EMA0.996, both past), Amendment 8's slope rule (training win rate), TEST.
+
+## Amendment 11 (2026-11-11 ~16:15 CET): update speedup, no algorithm change (recorded deviation)
+
+Decision (user, 2026-11-11, in the "optimize" session): deploy the e2e update speedup, then resume the lane paused at 13:38. Written at 4.2866B decisions (the paused state), with TEST sealed and unread.
+
+- **Change.** Code `perf/e2e-update-speed` 5980aba7a (on top of the lane's 15eb8b200), deployed from worktree `~/projects/sts2-sim-e2e-speed`. Python only, same W4 wheel pin and python. The value block's last layer computes its query and MLP at the RUNCTX position only (same math: fp32 values within 4.8e-7, logits identical). Update uploads are pinned and non-blocking. New timers `assembly.update_wall_s` and `assembly.poll_wait_s` are added to the stats rows. Args: `--pack-threads` 4 → 8, `--lc-verdict` → the new check. No change to rows, rewards, the net's parameters, the update rule, lrs, minibatch, epochs, clip or λ.
+- **Gates (passed, optimize session, `~/runs/e2e-speed/deploy/`).** F7 `--packed` on `state.pt`: 12 runs, 1,936 rows, 0 mismatches. Learning check (W40, E=1, pack 8): pass, gain 11.08, fresh_max 1, 11,798 decisions/s (lc1 on 15eb8b200: 11,977/s; the check is collection-bound).
+- **Expected.** About +7% decisions per second (bench on a resumed copy of `state.pt`: 8,660 → 9,277/s). No change to the training win rate or KL beyond noise.
+- **Smoke.** 20 min of live rows: `lr` = `lr_closed_form` = (1e-4, 3e-4), KL ≤ 0.03, clipfrac ≤ 0.3, no alarm, no F9 hit.
+- **Reads.** Amendment 8's slope window [4.279B, 4.779B) and the 4.5B DEV guard are decision-indexed and unchanged. The window now spans this restart; a step in the training win rate at 4.2866B would point at this change, not at Amendment 8. The 1.25 h pause shifts no read.
+
+## Amendment 12 (2026-11-11 ~20:05 CET): the rollout env in Rust, no algorithm change (recorded deviation)
+
+Decision (user, 2026-11-11, in the "optimize" session: "yes deploy"). Written at 4.3055B decisions (the paused state), with TEST sealed and unread.
+
+- **Change.** Code `perf/e2e-tokenizer` 2379012d8 (the lane's 5980aba7a tree plus four commits), deployed from worktree `~/projects/sts2-sim-e2e-rsenv` with a new PGO wheel (pin `~/runs/e2e-pin/6581343d9d8c8f90`, python in that worktree's `.venv-h/67f8f08b03aee9e7`). The rollout workers play the training env in Rust (`sts2_e2e::train::TrainEnv`, a port of `E2EEnv` and its run stepper, with the tokenizer, PRIV tokens and the combat teacher's RareMap). Python keeps the F9 check bodies, the capture callback and the fingerprint. Args: `--rust-env true` (new) and `--lc-verdict` → the new check. No change to rows, rewards, the net, the update rule, lrs, minibatch, epochs, clip or λ. With `--rust-env`, a worker asked for the run teacher's features raises; the run teacher is off in the lane (`teacher_rows` 0).
+- **Equality (rows bit-identical, `docs/experiments/2026-11-11-e2e-rust-env.md` on the code branch).** Lockstep against `E2EEnv` with the same choices: 920 lane action-log runs and 200 random runs, about 250k rows, 0 mismatches in fields, rewards, tokens, ends, counters, captures and F9 states. Worker loop A/B: byte-identical messages.
+- **Gates (passed, `~/runs/e2e-rsenv/`).** Lockstep on the deploy wheel, newest 200 records of `actions-029` with PRIV + the lane's RareMap: 64,583 rows, 0 mismatches. F7 `--packed` on `state.pt`: 12 runs, 1,936 rows, 0 mismatches. Learning check (W40, E=1, pack 8, `--rust-env true`): pass, gain 11.81, fresh_max 1, 13,703 decisions/s (Python env, Amendment 11: 11,798/s; collect 10.39 → 7.75 s).
+- **Expected.** Faster collection (worker bench 2.45–4.33× per row). The live lane is partly update-bound, so the gain in decisions per second is smaller than the learning check's +16%. No change to the training win rate or KL beyond noise.
+- **Smoke.** 20 min of live rows: `lr` = `lr_closed_form`, KL ≤ 0.03, clipfrac ≤ 0.3, no alarm, no F9 hit, no `error/*` counter growth beyond the Python env's rate; the `stats.jsonl` outcome and row mix within noise of the pre-pause hour.
+- **Reads.** Amendment 8's slope window and the 4.5B DEV guard are decision-indexed and unchanged. A step in the training win rate at 4.3055B would point at this change.
+
+## Amendment 14 (2026-11-13 ~03:15 CET): R-DDR's remedy deployed on the user's call (recorded deviation)
+
+Decision (user, 2026-11-13, after the 5.25B read: "ok double data now"). Written at ~5.28B decisions, with TEST sealed and unread. (Amendment 13, the pipe-reader hot-swap at ~4.45B, is recorded on its own branch, PR #1290.)
+
+- **Why.** DEV-1000 EMA0.999 is flat at ~70.7% over three reads: 4.75B 70.8%, 5.0B 70.7% (−0.3pp vs 4.75B), 5.25B 70.6% (+0.1pp vs 5.0B, p 1.0). R-DDR's first condition holds (two consecutive reads each < +1.0pp), but its probe_kl condition fails by 3% (last 25M 0.003303 vs 0.003415 over [4.725, 4.75)B), so by the letter it does not fire. The user calls it. The raw−EMA0.999 gap shrank from 12.75pp (4.0B) to 4.80pp (5.0B, p 0.0001) after Amendment 8: lower update noise bought level, and doubling the samples per update lowers it further without ending the run.
+- **Change (R-DDR's remedy, unchanged).** `--iter-decisions 262144` (was 131,072) in an args-only `init-lane --hot-swap`, same worktree, pin and python. Minibatch 8192, epochs 1, base lrs (5e-5 / 1.5e-4), clip and dual_clip unchanged, so each update runs twice the minibatches. Learning re-check (P6) with the new value; new `--lc-verdict`.
+- **Smoke.** 20 min of live rows: KL ≤ 0.03, clipfrac ≤ 0.3, `lr` = `lr_closed_form`, no alarm, no F9 hit.
+- **Revert read.** R-DDR's +300M read lands between milestones; it is taken at the 5.75B DEV-1000 EMA0.999 milestone (≈ +470M), paired on the shared 1000 seeds against the 5.25B read (the last pre-switch read). Revert to 131,072 at the next restart iff it is ≥ 3.0pp below with exact McNemar p < 0.05. 5.5B is read too (information).
+- **Then.** If 5.75B gains < +1.0pp over 5.25B, the operator proposes the anneal to the user (Amendment 7 (c)). R-DDR has now fired; it does not fire again.
+
+## Amendment 15 (2026-11-14 ~01:30 CET): double the data again, `--iter-decisions 524288` (recorded deviation)
+
+Decision (user, 2026-11-14, after the 6.0B read, choosing "double again first" over the proposed anneal). Written at ~6.06B decisions, with TEST sealed and unread.
+
+- **Why.** After Amendment 14 DEV EMA0.999 stepped from ~70.7% to ~74.3% (5.5B, +3.70pp vs 5.25B, p 0.027) and then held flat: 5.75B 74.10% (−0.20pp), 6.0B 74.50% DEV-2000 (−0.10pp on the shared 1000 seeds vs 5.75B). The plateau rule for the anneal proposal is met. EMA0.999 − EMA0.996 at 6.0B is +0.50pp (p 0.69), a small preview of the anneal's gain. The last doubling of samples per update bought a level step, so a second doubling is tried before the anneal.
+- **Change.** `--iter-decisions 524288` (was 262,144) in an args-only `init-lane --hot-swap`, same worktree, pin and python. Minibatch 8192, epochs 1, base lrs, clip and dual_clip unchanged, so each update runs twice the minibatches again. Learning re-check (P6) with the new value (wall cap 1800 s, since each iteration takes twice as long); new `--lc-verdict`. Deployed after the 6.0B raw eval drains.
+- **Smoke.** 20 min of live rows: KL ≤ 0.03, clipfrac ≤ 0.3, `lr` = `lr_closed_form`, no alarm, no F9 hit.
+- **Reads.** DEV-1000 EMA0.999 at 6.25B (information; EMA0.999 still mixes pre-switch weights) and 6.5B (the revert read), each paired on the shared 1000 seeds against the 6.0B read. Revert to 262,144 at the next restart iff 6.5B is ≥ 3.0pp below 6.0B with exact McNemar p < 0.05.
+- **Then.** If 6.5B gains < +1.0pp over 6.0B, the operator proposes the anneal to the user again (Amendment 7 (c)). Otherwise the plateau watch restarts from the read where the step lands.
+
+## Amendment 16 (2026-11-15 ~12:10 CET): double the data a third time, `--iter-decisions 1048576` (recorded deviation)
+
+Decision (user, 2026-11-15, after the 7.25B read, choosing "double again" over the proposed anneal). Written at ~7.27B decisions, with TEST sealed and unread.
+
+- **Why.** After Amendment 15 DEV EMA0.999 stepped from ~74.5% (6.0B) to 77.9% (6.5B, +3.90pp, p 0.019), then held at ~78%: 6.75B 79.10%, 7.0B 78.15% (DEV-2000; −0.90pp vs 6.75B on the shared seeds), 7.25B 77.40% (−0.80pp vs 7.0B). The plateau rule for the anneal proposal is met. Both doublings so far bought a level step of +3.5–4pp within ~400M decisions.
+- **Change.** `--iter-decisions 1048576` (was 524,288) in an args-only `init-lane --hot-swap`, same worktree (`sts2-sim-e2e-evprocs`), pin and python. Minibatch 8192, epochs 1, base lrs, clip and dual_clip unchanged. Learning re-check (P6) with the new value (wall cap 3600 s); new `--lc-verdict`.
+- **Smoke.** 20 min of live rows: KL ≤ 0.03, clipfrac ≤ 0.3, `lr` = `lr_closed_form`, no alarm, no F9 hit.
+- **Reads.** DEV-1000 EMA0.999 at 7.5B (information) and 7.75B (the revert read, ≈ +470M), each paired on the shared 1000 seeds against the 7.0B read. Revert to 524,288 at the next restart iff 7.75B is ≥ 3.0pp below 7.0B with exact McNemar p < 0.05.
+- **Then.** If 7.75B gains < +1.0pp over 7.0B, the operator proposes the anneal to the user again (Amendment 7 (c)). Otherwise the plateau watch restarts from the read where the step lands.
+
+## Amendment 17 (2026-11-16 ~03:30 CET): start the anneal (Amendment 7 (c), user call)
+
+Decision (user, 2026-11-16, after the 7.75B read: "start anneal now", then "ok let's do that" after asking whether smaller updates were the answer). Written at ~7.78B decisions, with TEST sealed and unread.
+
+- **Why.** Amendment 16 bought no level step: DEV-1000 EMA0.999 7.5B 78.50%, 7.75B 78.50% (+0.30pp vs 7.0B, p 0.89; KEEP, no revert). EMA0.999 has held ~78–79% since 6.75B.
+- **Change.** Args-only `init-lane --hot-swap` setting `--sched` `anneal_start` = `kl_freeze_at` = the swap time T (Unix seconds, recorded in the log); `anneal_hours` 24 and `anneal_drop` 0.7 unchanged (lr factor linear 1.0 → 0.3 over 24 h; KL factor m frozen from T). Base lrs (5e-5 / 1.5e-4), `--iter-decisions 1048576` and everything else unchanged; same worktree, pin, python and `--lc-verdict`. The lr factor is 1.0 at T, so no learning check.
+- **Check.** First live rows: `lr` = `lr_closed_form`, `anneal` field < 1 and falling, no alarm.
+- **End.** Per Amendment 7: the lane stops at T + 24 h. Milestone evals during the anneal run as usual. P5 picks Final on DEV-2000; the single TEST read follows; then `~/runs/e2e/LANE_STOPPED`.
+
+## Amendment 18 (2026-11-17 ~01:10 CET): extend the anneal to lr 0 (user call)
+
+Decision (user, 2026-11-17, after the 8.5B read: "shouldn't we let it train a bit longer?", then choosing "decay to 0, +10 h"). Written at ~8.55B decisions, with TEST sealed and unread.
+
+- **Why.** DEV-1000 EMA0.999 rose during the anneal: 8.25B 76.80%, 8.5B 81.30% (+4.50pp, p 0.0012; +3.10pp vs 7.0B, p 0.048). The gain tracks the falling lr; Amendment 17's anneal would hold the factor at 0.3 from T + 24 h.
+- **Change.** `--sched` `anneal_drop` 1.0 and `anneal_hours` 24/0.7 (= 34.2857 h), same `anneal_start` = `kl_freeze_at` = T = 1794795201. The factor is identical to Amendment 17's up to T + 24 h and then continues at the same slope to 0 at T + 34.29 h (2026-11-17 13:30:29 CET). Args-only `init-lane --hot-swap`; everything else unchanged; no learning check.
+- **End.** The lane stops at 13:30:00 (factor ≈ 0.0002), ~9.0B decisions. Milestone reads as usual (8.75B DEV-1000 EMA0.999). P5 as before with M3 = this stop checkpoint, M2 = 8.0B, M1 = 7.0B; then the single TEST read; then `LANE_STOPPED`.
+
+## Amendment 19 (2026-11-17 ~18:20 CET): Final plays TEST on W4; DEVBOSS not run
+
+Written after the P5 pick (CAMPAIGN_LOG 2026-11-17), with TEST sealed and unread (Final_W4 rows exist; only row/error counts and the manifest sha seen).
+
+- **Why.** Final was trained and evaluated on the Amendment 12 build (pin `6581343d9d8c8f90`); R1/R2/R3_W4 and C*_W4 (= R3_W4) are on W4 (pin `87de4d1a0bbffeeb`). Amendment 6 requires one binary per comparison. Since W4 the Rust changes are only in the e2e training/tokenizer crates; Final played DEV seeds 160,000,000–249 identically on both builds (250/250 rows equal in outcome, steps, decisions, end).
+- **Change.** Final plays TEST on the W4 pin from a detached worktree at the W4 deploy commit 05759fc34 (`sts2-sim-e2e-w4play`), `ppo.e2e.evaluate run Final_W4 TEST 4000 161000000 --sealed`, checkpoint `evals/out/main_d0009000178404_DEV-2000_ema0999_milestone/ema0999.pt` (sha256 b991cb9a…5220). Manifest `sha256/TEST/Final_W4.sha256`. The W4 baseline arms were copied from the laptop and verify against their committed manifests.
+- **DEVBOSS** was not run. Per `score_test`, its family member counts as p = 1. Bars and the rest of the read are unchanged.
+- **Read.** `ppo.e2e.score_test --final Final_W4 --cstar R3_W4 --r1 R1_W4 --r2 R2_W4 --r3 R3_W4`, once, from the W4 worktree.

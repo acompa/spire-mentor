@@ -21,6 +21,7 @@ from typing import Any
 
 import realgame_advisor as ra
 import realgame_ppo as rp
+from wire_parity import build_card_select_both
 
 
 def _card(cid: str, index: int, ctype: str, rarity: str, **kw: Any) -> dict[str, Any]:
@@ -101,7 +102,7 @@ def test_a_deck_mutation_prompt_is_now_a_genuine_net_ranking() -> None:
     the front of the deck. It now ranks every offered card and reads as what it
     is — the net's own decision.
     """
-    decision = rp._build_card_select(_card_select_state("TO_REMOVE"), None)
+    decision = build_card_select_both(_card_select_state("TO_REMOVE"), None)
 
     assert decision is not None
     assert len(decision.actions) == 3, "the net ranks every offer, it does not pick one"
@@ -257,7 +258,7 @@ def test_driver_annotations_do_not_archive_a_forced_pick_as_a_net_pick() -> None
     """
     state = _card_select_state("TO_TRANSFORM")
     state["cards"] = [_card("CLUMSY", 0, "Curse", "Curse")]
-    decision = rp._build_card_select(state, None)
+    decision = build_card_select_both(state, None)
     assert decision is not None and len(decision.actions) == 1
 
     ann = rp.build_ppo_annotations(decision, [1.0], 0, None)

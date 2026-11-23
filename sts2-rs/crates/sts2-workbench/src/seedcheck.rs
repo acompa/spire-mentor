@@ -11,12 +11,14 @@ use serde_json::{json, Value};
 use sts2_core::map::MapCoord;
 use sts2_core::run_manager::RunManager;
 use sts2_core::GameVersion;
-use sts2_e2e::env::{new_run_from_game_seed, E2eEnv, Step};
+use sts2_e2e::env::{new_run_from_game_seed_for, CharacterId, E2eEnv, Step};
+use sts2_wire::emit::names::character_str as character_name;
 use sts2_wire::emit::run_manager as emit_rm;
 
 use crate::display_maps::loc_id;
 use crate::e2e::{attempt_temp, Seq};
 use crate::game::ModeSeed;
+use crate::i18n::{tr, trf};
 use crate::runlog::{write_run_log, RunLog};
 use crate::session::{Session, SessionError};
 use crate::simlab_catalog::name_of_for;
@@ -49,9 +51,9 @@ fn neow_ids(rm: &RunManager) -> Vec<String> {
 /// # Errors
 ///
 /// A bad seed.
-pub fn preview(seed: &str, ascension: u8) -> Result<Value, String> {
+pub fn preview(character: CharacterId, seed: &str, ascension: u8) -> Result<Value, String> {
     let canonical = sts2_e2e::env::canonical_game_seed(seed)?;
-    let rm = new_run_from_game_seed(&canonical, ascension)?;
+    let rm = new_run_from_game_seed_for(&canonical, character, ascension)?;
     let bosses: Vec<Vec<String>> = emit_rm::generated_rooms(&rm)
         .as_array()
         .map(|acts| {
@@ -66,13 +68,19 @@ pub fn preview(seed: &str, ascension: u8) -> Result<Value, String> {
                 .collect()
         })
         .unwrap_or_default();
+    let act1 = emit_rm::act1(&rm);
+    let act1 = crate::i18n::game_name(
+        "acts",
+        &format!("{}.title", crate::simlab::camel_to_upper_snake(act1)),
+        &crate::simlab::title_case(act1),
+    );
     Ok(json!({
         "seed": canonical,
         "length_ok": canonical.chars().count() == GAME_SEED_LENGTH,
         "neow": neow_ids(&rm).iter().map(|id| nm("relic", id)).collect::<Vec<_>>(),
-        "act1": crate::simlab::title_case(emit_rm::act1(&rm)),
+        "act1": act1,
         "bosses": bosses,
-        "character": crate::e2e::CHARACTER,
+        "character": character_name(character),
         "ascension": ascension,
         "game_version": crate::e2e::GAME_VERSION,
     }))
@@ -85,11 +93,12 @@ pub fn preview(seed: &str, ascension: u8) -> Result<Value, String> {
 ///
 /// A bad seed, an index no class contains, or a log that outlives the run.
 pub fn classes_from_actions(
+    character: CharacterId,
     seed: &str,
     ascension: u8,
     log_idx: &[usize],
 ) -> Result<Vec<usize>, String> {
-    let mut env = E2eEnv::over_run(new_run_from_game_seed(seed, ascension)?, 0);
+    let mut env = E2eEnv::over_run(new_run_from_game_seed_for(seed, character, ascension)?, 0);
     let mut step = env.reset();
     let mut out = Vec::with_capacity(log_idx.len());
     for (n, &ai) in log_idx.iter().enumerate() {
@@ -232,7 +241,7 @@ fn sync_route(
                     .iter()
                     .any(|n| n.as_str().is_some_and(|t| t.contains(&name)))
                 {
-                    notes.push(json!(format!("got {name}")));
+                    notes.push(json!(trf("got {name}", &[("name", &name)])));
                 }
             }
         }
@@ -249,8 +258,13 @@ fn sync_route(
 ///
 /// A bad seed, or classes that do not fit the run.
 #[allow(clippy::too_many_lines)]
-pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Value, String> {
-    let mut env = E2eEnv::over_run(new_run_from_game_seed(seed, ascension)?, 0);
+pub fn line_summary(
+    character: CharacterId,
+    seed: &str,
+    ascension: u8,
+    classes: &[usize],
+) -> Result<Value, String> {
+    let mut env = E2eEnv::over_run(new_run_from_game_seed_for(seed, character, ascension)?, 0);
     let mut step = env.reset();
     let (mut neow_pick, mut boss_relics, mut events) = (Value::Null, Vec::new(), Vec::new());
     let (mut cards, mut shop, mut rests) = (Vec::new(), Vec::new(), Vec::new());
@@ -304,7 +318,7 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
                         .unwrap_or_default();
                     let option = emit_rm::event_options(rm)
                         .and_then(|o| o.get(i).map(|(_, t)| t.clone()))
-                        .unwrap_or_else(|| format!("option {i}"));
+                        .unwrap_or_else(|| trf("option {n}", &[("n", &i)]));
                     if event == "Neow" {
                         if let Some(id) = neow_ids(rm).get(i) {
                             neow_pick = json!(nm("relic", id));
@@ -325,26 +339,26 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
                     if let Some(i) = idx_of(a, "idx") {
                         if let Some(id) = emit_rm::card_reward_option_ids(rm).get(i) {
                             let card = nm("card", id);
-                            note(&mut route, format!("took {card}"));
+                            note(&mut route, trf("took {name}", &[("name", &card)]));
                             cards.push(json!({"floor": floor, "card": card}));
                         }
                     } else {
-                        note(&mut route, "skipped the card".to_string());
+                        note(&mut route, tr("skipped the card").to_string());
                     }
                 }
                 "pick_relic_reward" => {
                     if let Some(r) = rm.run_state.relic_rewards.last() {
                         let relic = nm("relic", &format!("RELIC.{}", r.relic_id.to_python_name()));
-                        note(&mut route, format!("took {relic}"));
+                        note(&mut route, trf("took {name}", &[("name", &relic)]));
                     }
                 }
-                "skip_relic" => note(&mut route, "skipped the relic".to_string()),
-                "collect_treasure" => note(&mut route, "opened the chest".to_string()),
+                "skip_relic" => note(&mut route, tr("skipped the relic").to_string()),
+                "collect_treasure" => note(&mut route, tr("opened the chest").to_string()),
                 "pick_boss_relic" => {
                     let i = idx_of(a, "idx").unwrap_or(0);
                     if let Some(id) = emit_rm::boss_relic_options(rm).get(i) {
                         let relic = nm("relic", id);
-                        note(&mut route, format!("boss relic: {relic}"));
+                        note(&mut route, trf("boss relic: {name}", &[("name", &relic)]));
                         boss_relics.push(json!(relic));
                     }
                 }
@@ -356,7 +370,7 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
                     };
                     if let Some(id) = idx_of(a, "idx").and_then(|i| shop_item(rm, list, i)) {
                         let item = nm(kind, &id);
-                        note(&mut route, format!("bought {item}"));
+                        note(&mut route, trf("bought {name}", &[("name", &item)]));
                         shop.push(json!({"floor": floor, "bought": item}));
                     }
                 }
@@ -365,7 +379,7 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
                         idx_of(a, "deck_idx").and_then(|i| emit_rm::master_deck(rm).get(i).cloned())
                     {
                         let card = nm("card", &id);
-                        note(&mut route, format!("removed {card}"));
+                        note(&mut route, trf("removed {name}", &[("name", &card)]));
                         shop.push(json!({"floor": floor, "removed": card}));
                     }
                 }
@@ -375,11 +389,12 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
                         .and_then(|i| emit_rm::master_deck(rm).get(i).cloned())
                     {
                         let what = match verb {
-                            "remove_deck_card" => "removed",
-                            "upgrade_deck_card" => "upgraded",
-                            _ => "transformed",
+                            "remove_deck_card" => tr("removed {name}"),
+                            "upgrade_deck_card" => tr("upgraded {name}"),
+                            _ => tr("transformed {name}"),
                         };
-                        note(&mut route, format!("{what} {}", nm("card", &id)));
+                        let card = nm("card", &id);
+                        note(&mut route, crate::i18n::fill(what, &[("name", &card)]));
                     }
                 }
                 "rest_option" => {
@@ -388,8 +403,20 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
                         // A smith is named by the card it upgrades (`smith_card`).
                         match opt.as_str() {
                             "SMITH" => {}
-                            "HEAL" => note(&mut route, "rested".to_string()),
-                            other => note(&mut route, crate::simlab::title_case(other)),
+                            "HEAL" => note(&mut route, tr("rested").to_string()),
+                            other => note(
+                                &mut route,
+                                crate::localization::display_zh()
+                                    .then(|| {
+                                        crate::data::zh_tables()
+                                            .rest_site_ui
+                                            .get(&format!("OPTION_{other}.name"))
+                                            .filter(|t| !t.is_empty())
+                                            .cloned()
+                                    })
+                                    .flatten()
+                                    .unwrap_or_else(|| crate::simlab::title_case(other)),
+                            ),
                         }
                         rests.push(json!({"floor": floor, "choice": opt}));
                     }
@@ -399,7 +426,7 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
                         idx_of(a, "idx").and_then(|i| emit_rm::smith_options(rm).get(i).cloned())
                     {
                         let card = nm("card", &id);
-                        note(&mut route, format!("smithed {card}"));
+                        note(&mut route, trf("smithed {name}", &[("name", &card)]));
                         if let Some(last) = rests.last_mut() {
                             last["card"] = json!(card);
                         }
@@ -467,8 +494,10 @@ pub fn line_summary(seed: &str, ascension: u8, classes: &[usize]) -> Result<Valu
 ///
 /// A bad seed, no net (424), a class the run refuses, or classes that do not
 /// end the run.
+#[allow(clippy::too_many_arguments)]
 pub fn run_log(
     sess: &mut Session,
+    character: CharacterId,
     seed: &str,
     ascension: u8,
     classes: &[usize],
@@ -480,7 +509,7 @@ pub fn run_log(
         sts2_e2e::env::canonical_game_seed(seed).map_err(|e| SessionError::new(400, e))?;
     sess.set_e2e_setup(true);
     sess.start_run_mode_seed(
-        crate::e2e::CHARACTER,
+        character_name(character),
         &ModeSeed::Game(canonical),
         ascension,
         "e2e",
@@ -563,11 +592,12 @@ mod tests {
     fn run_log_of_proof_parses_and_wins() {
         let Some(net) = shipped_net() else { return };
         let (seed, log) = proof();
-        let classes = classes_from_actions(&seed, 10, &log).unwrap();
+        let classes = classes_from_actions(CharacterId::Ironclad, &seed, 10, &log).unwrap();
         let mut sess = Session::new_for(GameVersion::V0_111_0);
         sess.set_e2e(Some(net.clone()), None);
         let out = run_log(
             &mut sess,
+            CharacterId::Ironclad,
             &seed,
             10,
             &classes,
@@ -603,7 +633,7 @@ mod tests {
     #[test]
     #[cfg(workbench_game_data_v0_111_0)] // asserts on real v0.111.0 names (see build.rs)
     fn preview_reddit_seed() {
-        let p = preview("1snvtcexkr0q", 10).unwrap();
+        let p = preview(CharacterId::Ironclad, "1snvtcexkr0q", 10).unwrap();
         assert_eq!(p["seed"], "1SNVTCEXKR0Q");
         assert_eq!(p["length_ok"], true);
         let neow: Vec<&str> = p["neow"]
@@ -618,11 +648,14 @@ mod tests {
         );
         assert_eq!(p["bosses"][0], json!(["Vantom"]));
         assert_eq!(p["bosses"][2].as_array().unwrap().len(), 2);
-        assert_eq!(preview("ABC", 10).unwrap()["length_ok"], false);
-        assert!(preview("AB-C", 10).is_err());
+        assert_eq!(
+            preview(CharacterId::Ironclad, "ABC", 10).unwrap()["length_ok"],
+            false
+        );
+        assert!(preview(CharacterId::Ironclad, "AB-C", 10).is_err());
         // Below A10 the act 3 boss is single.
         assert_eq!(
-            preview("1SNVTCEXKR0Q", 0).unwrap()["bosses"][2]
+            preview(CharacterId::Ironclad, "1SNVTCEXKR0Q", 0).unwrap()["bosses"][2]
                 .as_array()
                 .unwrap()
                 .len(),
@@ -633,11 +666,11 @@ mod tests {
     #[test]
     fn summary_of_proof_wins() {
         let (seed, log) = proof();
-        let classes = classes_from_actions(&seed, 10, &log).unwrap();
-        let s = line_summary(&seed, 10, &classes).unwrap();
+        let classes = classes_from_actions(CharacterId::Ironclad, &seed, 10, &log).unwrap();
+        let s = line_summary(CharacterId::Ironclad, &seed, 10, &classes).unwrap();
         assert_eq!(s["won"], true, "{s}");
         assert!(s["death"].is_null());
-        let neow = preview(&seed, 10).unwrap()["neow"].clone();
+        let neow = preview(CharacterId::Ironclad, &seed, 10).unwrap()["neow"].clone();
         assert!(neow.as_array().unwrap().contains(&s["neow_pick"]), "{s}");
         assert_eq!(s["boss_relics"].as_array().unwrap().len(), 2, "{s}");
         assert!(!s["deck"].as_array().unwrap().is_empty());

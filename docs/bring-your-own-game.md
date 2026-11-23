@@ -23,8 +23,9 @@ source the extractors and the mechanics work read plus real art
 ## Prerequisites
 
 - **Slay the Spire 2** installed through Steam. The engine supports builds
-  **v0.107.1** (stable, the default), **v0.111.0** and **v0.113.0** (betas;
-  v0.113.0 adds the Fool); `import-game`
+  **v0.107.1** (the previous stable, the default), **v0.111.0** (stable
+  since v0.111.1, which it imports as) and **v0.113.0** (beta; adds the Fool),
+  plus hotfixes of them (v0.111.1, v0.113.1); `import-game`
   refuses any other build unless you pass `--allow-version-mismatch` (the
   oracle and the extracted data would then describe a different game). A
   v0.111.0 install gets only its version-keyed outputs — its oracle
@@ -138,15 +139,22 @@ directly (no bash, so the same on every platform):
    kept: new cards, relics, potions and powers (with the sketch art
    v0.113.0 ships only as `packed/card_portraits/<pool>/beta/`), card-frame
    tints and energy icons (the Fool's yellow frame), rooms, events and HUD
-   art, and the rigs that build ADDED (`extract_rig --new-since <default
-   pck>`: the Fool, Aeonglass, Byrdine, Wuppy) with the portraits rendered
-   from them. `images/<version>/creature_scales.json` holds the new
+   art, and the rigs that build ADDED or REDREW (`extract_rig --new-since
+   <default pck>`, which compares each rig's skeleton, atlas and texture
+   pages: v0.111.1 added Aeonglass, redrew four characters and gave Silent
+   and eight monsters new skeletons; v0.113.0 added the Fool, Byrdine and
+   Wuppy and gave 31 monsters the Fool's arrow slots) with the portraits
+   rendered from them. `images/<version>/creature_scales.json` holds the new
    creatures' scale rows; the bundle and the Python resolver merge it. A file
-   the shared tree has stays shared, even where the build redrew it. It does
+   the shared tree has stays shared, even where the build redrew it, except
+   those rigs. It does
    get its own `build_sfx_map` (into
    `sts2-pycli/web/public/<version>/sfx_map.json`), and its `sound` tier
    renders its banks and copies only the events the shared audio tree lacks
-   (the Fool's voice) before rebuilding that map.
+   (the Fool's voice, the new monsters and NPCs) before rebuilding that map
+   and that build's workbench bundle. It lists those events in
+   `sts2-wiki/data/<version>/added_audio.json`, so the default build's asset
+   manifest leaves them out.
 4. `sts2-pycli`: `synergy.gen_card_text`, `workbench.build_card_db`,
    `scripts/build_asset_manifest.py`, `scripts/bundle_workbench_data.py`
    (= `just workbench-data`, the bundle the browser workbench embeds). A
@@ -156,7 +164,10 @@ directly (no bash, so the same on every platform):
    manifest.
 5. `sound`: `extract_sfx` (renders the ~570 sound-effect events of the
    game's FMOD banks to WAV — music and ambience are not extracted) +
-   `encode_sfx` (trims and encodes them to Opus/WebM).
+   `encode_sfx` (trims and encodes them to Opus/WebM). On Windows the
+   render uses the `fmod.dll` / `fmodstudio.dll` of the build being imported
+   (staged next to its pck), so a v0.113.0 import renders with v0.113.0's
+   FMOD.
 
 Every step is idempotent — a re-run skips outputs that exist — and
 everything is logged to `logs/import-game.log`. To redo one step, delete its

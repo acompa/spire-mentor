@@ -17,7 +17,10 @@ pub(crate) fn preview_barrage(
 pub(crate) fn play_barrage(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
     let t = target.expect("Barrage: Enemy-targeted");
     let base = current_card_damage(state);
-    let hits = resolving_preview(state, preview_barrage, target);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_barrage, target),
+    );
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, base);
     }

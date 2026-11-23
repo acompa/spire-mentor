@@ -160,6 +160,8 @@ def world_decision(st: Any, d: Any, seed: int) -> tuple[Any, Any]:
 
     w = st.cs.sample_world(seed)
     bvw = w.belief_view(0)
+    d_bvw = sts2_rs.state_to_dict(bvw)
+    # The env's row snapshot (`E._snapshot`); the tokenizer adds a "chars" row's live keys.
     snapw = honest_snapshot(bvw, st.room)
     snapw["ehist"] = st.snap["ehist"]
     cc = E.merged_classes(w, room=st.room)
@@ -167,7 +169,7 @@ def world_decision(st: Any, d: Any, seed: int) -> tuple[Any, Any]:
         d,
         cs=w,
         bv=bvw,
-        d_bv=sts2_rs.state_to_dict(bvw),
+        d_bv=d_bvw,
         snap=snapw,
         kinds=cc.kinds,
         obs_actions=cc.obs_actions,
@@ -325,7 +327,10 @@ def launch_net(net_json: dict[str, Any] | None = None, seed: int = 0) -> Any:
 def load_net(path: str | Path) -> tuple[Any, dict[str, Any]]:
     """The student of `path`: a learner state (state.pt, a full, pinned or slim
     state: the net under ``"net"``) or a student checkpoint (``net_state``'s
-    format). Refuses another schema or vocab (``net_from_state``)."""
+    format). Refuses another schema or vocab (``net_from_state``), and a net this
+    process would not serve (``net.check_serving``: another game version, or a fill
+    event its rows leave at zero, e.g. a "chars" net on Ironclad rows without
+    ``STS2_E2E_CHARS=1``), as a ``UsageError``."""
     import torch
 
     from . import net as N
@@ -335,6 +340,10 @@ def load_net(path: str | Path) -> tuple[Any, dict[str, Any]]:
         ck = ck["net"]
     if not isinstance(ck, dict) or ck.get("format") != N.FORMAT:
         raise UsageError(f"{path}: neither a learner state nor an {N.FORMAT} checkpoint")
+    try:
+        N.check_serving(ck["cfg"].get("stamps") or {}, where=str(path))
+    except N.SchemaMismatch as e:
+        raise UsageError(str(e)) from None
     net = N.net_from_state(ck)
     return net.eval(), dict(ck["cfg"])
 

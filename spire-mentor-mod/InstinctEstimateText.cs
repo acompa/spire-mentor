@@ -29,7 +29,7 @@ public sealed record InstinctEstimate(double PRun, double? PFight, double? HpQ10
 internal static class InstinctEstimateText
 {
     /// <summary>The dim line under the headline: what the numbers mean.</summary>
-    public const string Caption = "if Instinct plays every move from here";
+    public static string Caption => L10n.T("if Instinct plays every move from here");
 
     /// <summary>`advice.estimate`, or null when absent or malformed (older
     /// advisors, weights without a probe, a forced step).</summary>
@@ -68,14 +68,14 @@ internal static class InstinctEstimateText
 
     /// <summary>"Run 71% · Fight 100%"; the fight only in a fight.</summary>
     public static string Headline(InstinctEstimate e) =>
-        e.PFight is double f ? $"Run {Pct(e.PRun)} · Fight {Pct(f)}" : $"Run {Pct(e.PRun)}";
+        e.PFight is double f ? L10n.F("Run {0} · Fight {1}", Pct(e.PRun), Pct(f)) : L10n.F("Run {0}", Pct(e.PRun));
 
     /// <summary>"−9 HP", "+3 HP" (a heal), "±0 HP": the fight's HP change,
     /// signed from the player's side.</summary>
     public static string HpDelta(double loss)
     {
         int v = (int)Math.Round(loss, MidpointRounding.AwayFromZero);
-        return v == 0 ? "±0 HP" : v > 0 ? $"−{v} HP" : $"+{-v} HP";
+        return v == 0 ? L10n.T("±0 HP") : v > 0 ? L10n.F("−{0} HP", v) : L10n.F("+{0} HP", -v);
     }
 
     /// <summary>"This fight: −9 HP (−2 HP to −20 HP)", or null outside a fight.
@@ -87,10 +87,10 @@ internal static class InstinctEstimateText
         {
             return null;
         }
-        string text = $"This fight: {HpDelta(mid)}";
+        string text = L10n.F("This fight: {0}", HpDelta(mid));
         if (e.HpQ10 is double lo && e.HpQ90 is double hi && HpDelta(lo) != HpDelta(hi))
         {
-            text += $" ({HpDelta(lo)} to {HpDelta(hi)})";
+            text += L10n.F(" ({0} to {1})", HpDelta(lo), HpDelta(hi));
         }
         return text;
     }

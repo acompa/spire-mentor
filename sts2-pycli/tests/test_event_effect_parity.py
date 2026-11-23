@@ -106,3 +106,99 @@ def test_follow_options_counts_and_tolerates_missing() -> None:
     assert _follow_options({"options": [{"index": 0}, {"index": 1}]}) == 2
     assert _follow_options({}) == 0
     assert _follow_options({"options": None}) == 0
+
+
+# ─── the gated sweep's page walk (GH #1500) ─────────────────────────────────
+
+import event_parity as ep  # noqa: E402
+
+
+def _page(n: int, locked: tuple[int, ...] = ()) -> dict:
+    return {"options": [{"text_key": f"O{i}", "is_locked": i in locked} for i in range(n)]}
+
+
+def _fake_engines(monkeypatch, pages: dict, *, rs_override: dict | None = None) -> None:
+    """``pages[path] = (phase, view)`` for both engines; ``rs_override`` swaps
+    the Rust result of some paths."""
+    rs_override = rs_override or {}
+    monkeypatch.setattr(ep, "_rust_options", lambda *a: ep._view_options(pages[()][1]))
+    monkeypatch.setattr(ep, "_cs_options", lambda *a: ep._view_options(pages[()][1]))
+
+    def effect(side: str):
+        def run(character, seed, asc, name, path):
+            phase, view = (rs_override if side == "rs" else {}).get(path, pages[path])
+            return _snap(phase=phase), view
+
+        return run
+
+    monkeypatch.setattr(ep, "_rust_effect", effect("rs"))
+    monkeypatch.setattr(ep, "_cs_effect", effect("cs"))
+
+
+def test_walk_descends_into_follow_up_pages(monkeypatch) -> None:
+    pages = {
+        (): ("event", _page(2)),
+        (0,): ("event", _page(2, locked=(1,))),
+        (1,): ("map", _view()),
+        (0, 0): ("map", _view()),
+    }
+    _fake_engines(monkeypatch, pages)
+    rows = ep.walk_event("Ironclad", "S", 0, "Ev", "EV")
+    by = {r.key: r.status for r in rows}
+    assert by == {"Ev[0]": "match", "Ev[1]": "match", "Ev[0/0]": "match", "Ev[0/1]": "skip:locked"}
+
+
+def test_walk_reports_a_diff_and_does_not_descend_past_it(monkeypatch) -> None:
+    pages = {(): ("event", _page(1)), (0,): ("event", _page(1)), (0, 0): ("map", _view())}
+    _fake_engines(monkeypatch, pages, rs_override={(0,): ("map", _view())})
+    rows = ep.walk_event("Ironclad", "S", 0, "Ev", "EV")
+    assert [(r.key, r.status) for r in rows] == [("Ev[0]", "diff")]
+    assert rows[0].failed
+
+
+def test_walk_caps_depth_and_reports_it(monkeypatch) -> None:
+    loop = ("event", _page(1))
+    pages = {(): loop, (0,): loop, (0, 0): loop, (0, 0, 0): loop}
+    _fake_engines(monkeypatch, pages)
+    rows = ep.walk_event("Ironclad", "S", 0, "Ev", "EV", max_depth=3)
+    assert [r.status for r in rows] == ["match", "match", "match", "truncated"]
+
+
+def test_walk_fails_a_menu_mismatch(monkeypatch) -> None:
+    monkeypatch.setattr(ep, "_rust_options", lambda *a: [("A", True)])
+    monkeypatch.setattr(ep, "_cs_options", lambda *a: [("A", True), ("B", True)])
+    rows = ep.walk_event("Ironclad", "S", 0, "Ev", "EV")
+    assert [(r.status, r.failed) for r in rows] == [("menu", True)]
+
+
+def test_known_diffs_are_allowlisted_not_failed(monkeypatch) -> None:
+    pages = {(): ("event", _page(1)), (0,): ("map", _view())}
+    _fake_engines(monkeypatch, pages, rs_override={(0,): ("event", _view())})
+    monkeypatch.setitem(ep.KNOWN_EFFECT_DIFFS, ("Ev", (0,)), "oracle artifact")
+    rows = ep.walk_event("Ironclad", "S", 0, "Ev", "EV")
+    assert rows[0].status == "allowlisted"
+    assert not rows[0].failed
+
+
+def test_floor_fails_on_a_lost_path() -> None:
+    rows = [ep.EffectRow("Ironclad", "S", "Ev", (0,), "A", "match")]
+    assert ep.floor_problems(rows, ["Ev[0]"], "Ironclad") == []
+    assert ep.floor_problems(rows, ["Ev[0]", "Ev[1]"], "Ironclad")
+
+
+def test_the_fool_joins_the_roster_on_v0113() -> None:
+    assert "Fool" not in ep.characters_for("v0.111.0")
+    assert "Fool" in ep.characters_for("v0.113.0")
+
+
+def test_an_event_no_path_exercised_fails_coverage(monkeypatch) -> None:
+    import content_universe
+
+    monkeypatch.setattr(content_universe, "events", lambda _v: ("A", "B", "C", "Neow"))
+    rows = [
+        ep.EffectRow("Ironclad", "S", "A", (0,), "X", "match"),
+        ep.EffectRow("Ironclad", "S", "B", (), "<entry>", "skip:context"),
+        ep.EffectRow("Ironclad", "S", "C", (0,), "X", "diff"),
+    ]
+    problems = ep.event_coverage_problems(rows, ["Ironclad"], "v0.111.0")
+    assert problems == ["Ironclad: no path of ['C'] matched on both engines"]

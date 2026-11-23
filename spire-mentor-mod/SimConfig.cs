@@ -39,6 +39,13 @@ public sealed class SimConfig
     public bool SpeedPatches { get; init; } = true;
 
     /// <summary>
+    /// The mod's UI language: "auto" (default) follows the game's language
+    /// (Simplified Chinese when the game runs in it, else English); "en" /
+    /// "zh" force one (L10n.cs).
+    /// </summary>
+    public string Language { get; init; } = "auto";
+
+    /// <summary>
     /// Per-request wait for an agent decision, in seconds. 0 means wait
     /// indefinitely. Per the real-game-bridge plan, this NEVER triggers a
     /// random/default fallback action -- on expiry we just log and keep
@@ -245,17 +252,19 @@ public sealed class SimConfig
     public int RunTimeoutMinutes { get; init; } = 360;
 
     /// <summary>
-    /// The advisor brain for this session, <c>"search"</c> or
-    /// <c>"instinct"</c> (PROTOCOL.md section 5, v5.2); null = absent, the
-    /// player's own setting applies. Precedence: when present it overrides
-    /// the BaseLib preference (SpireMentorModConfig.AdvisorBrain) for the
-    /// whole session WITHOUT being saved over it, until a player switches
-    /// brain in game (toolbar, Shift+F8, settings) -- that explicit choice
-    /// then wins and persists as usual. This is how an unattended climb picks
-    /// Instinct (tools/ascension_climb.py --advisor-brain). Any other value is
-    /// ignored with a log line (AdvisorBrainRules.ParseConf), never guessed.
+    /// TEST TOOLING ONLY: the advisor brain for this session, <c>"search"</c>
+    /// or <c>"instinct"</c> (PROTOCOL.md section 5, v5.2), for the player's
+    /// seat and the AI partners alike; null = absent, Instinct with the
+    /// search as its fallback, as for every player (AdvisorBrainRules).
+    /// From the conf's <c>advisor_brain</c> (tools/ascension_climb.py
+    /// --advisor-brain writes it), with this launch's
+    /// <c>--spire-mentor-brain</c> over it (ApplyCommandLine; two instances
+    /// share this conf). Nothing in game reads or changes it: the in-game
+    /// switch is gone, and what an older version's switch saved lives in
+    /// BaseLib's file, never here. Any other value is ignored with a log line
+    /// (AdvisorBrainRules.ParseConf), never guessed.
     /// </summary>
-    public string? AdvisorBrain { get; init; } = null;
+    public string? AdvisorBrain { get; set; } = null;
 
     public static readonly SimConfig Instance = ApplyCommandLine(Load());
 
@@ -283,6 +292,20 @@ public sealed class SimConfig
         {
             GD.Print("[SpireMentor] --spire-mentor-autoplay: hands-free advisor autoplay");
             config.AdvisorAutoplay = true;
+        }
+        if (SimMp.BrainOverride is string rawBrain)
+        {
+            // Over the conf's advisor_brain: the instances of a co-op test
+            // share one conf.
+            config.AdvisorBrain = AdvisorBrainRules.ToolingOverride(rawBrain, config.AdvisorBrain);
+            if (AdvisorBrainRules.ParseConf(rawBrain) is string brain)
+            {
+                GD.Print($"[SpireMentor] --spire-mentor-brain {brain}: every seat asks for {brain} this launch (test tooling)");
+            }
+            else
+            {
+                GD.PrintErr($"[SpireMentor] --spire-mentor-brain \"{rawBrain}\" is not \"search\" or \"instinct\"; ignored.");
+            }
         }
         return config;
     }
@@ -354,6 +377,7 @@ public sealed class SimConfig
                 Seed = ReadNullableString(root, "seed", defaults.Seed),
                 NumRuns = ReadInt(root, "num_runs", defaults.NumRuns),
                 SpeedPatches = ReadBool(root, "speed_patches", defaults.SpeedPatches),
+                Language = ReadString(root, "language", defaults.Language),
                 AgentTimeoutSeconds = ReadInt(root, "agent_timeout_seconds", defaults.AgentTimeoutSeconds),
                 AutoStart = ReadBool(root, "auto_start", defaults.AutoStart),
                 AdvisorAutoplay = ReadBool(root, "advisor_autoplay", defaults.AdvisorAutoplay),
@@ -413,11 +437,11 @@ public sealed class SimConfig
         string? brain = AdvisorBrainRules.ParseConf(raw);
         if (brain == null && !string.IsNullOrWhiteSpace(raw))
         {
-            GD.PrintErr($"[SpireMentor] advisor_brain \"{raw}\" is not \"search\" or \"instinct\"; ignored (the player's setting applies).");
+            GD.PrintErr($"[SpireMentor] advisor_brain \"{raw}\" is not \"search\" or \"instinct\"; ignored (Instinct, the search as its fallback).");
         }
         else if (brain != null)
         {
-            GD.Print($"[SpireMentor] advisor_brain \"{brain}\" from the conf overrides the player's setting for this session.");
+            GD.Print($"[SpireMentor] advisor_brain \"{brain}\" from the conf (test tooling): every seat asks for {brain} this session.");
         }
         return brain;
     }

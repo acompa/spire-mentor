@@ -148,8 +148,17 @@ fn drive_run(seed: i32) -> RunSummary {
         // must keep the real action — substituting `LeaveShop` there is an
         // `InvalidForPhase`. (A trajectory shift from an unrelated RNG-stream
         // fix surfaced this when a CardReward action repeated.)
+        // Event loop guard, same shape: a page that offers its own option
+        // again (AbyssalBaths' Linger, GH #1492) would be re-picked until the
+        // HP cost kills the run. When the same event action repeats, take the
+        // page's last option instead (the way out).
         let action = if rm.phase() == Phase::Shop && prev_action == Some(action) {
             RunAction::LeaveShop
+        } else if rm.phase() == Phase::Event && prev_action == Some(action) {
+            rm.get_available_actions()
+                .into_iter()
+                .last()
+                .unwrap_or(action)
         } else {
             action
         };

@@ -38,6 +38,7 @@ internal static class RefereeView
         // current move. The player sees intents, not move ids.
         "enemies[].ai", "enemies[].move_state",
         "dead_enemies[].ai", "dead_enemies[].move_state",
+        "removed_enemies[].ai", "removed_enemies[].move_state",
         // Position in the draw pile. The pile itself is sent sorted.
         "draw_pile[].index",
         // Duplicates of top-level fields inside the attached map.
@@ -77,7 +78,6 @@ internal static class RefereeView
             var projected = (JsonObject?)Project(reply, "") ?? new JsonObject();
             SortDrawPile(projected);
             if (projected["combat"] is JsonObject combat) SortDrawPile(combat);
-            HideSecondBoss(projected);
             var legal = LegalActions(projected, combatLegal);
             AddPotionBelt(legal, belt);
             if (record) lock (Gate) _lastLegal = (JsonArray)legal.DeepClone();
@@ -194,34 +194,6 @@ internal static class RefereeView
     }
 
     /// <summary>
-    /// The second boss is drawn for the player only once it is the next node.
-    /// Until then neither its identity nor its node is sent.
-    /// </summary>
-    private static void HideSecondBoss(JsonObject view)
-    {
-        if (view["map"] is not JsonObject map || map["second_boss"] is not JsonObject second) return;
-        int? col = second["col"]?.GetValue<int>(), row = second["row"]?.GetValue<int>();
-        bool reachable = (view["choices"] as JsonArray ?? new JsonArray()).Any(c =>
-            c?["col"]?.GetValue<int>() == col && c?["row"]?.GetValue<int>() == row);
-        bool there = map["current_coord"] is JsonObject at
-            && at["col"]?.GetValue<int>() == col && at["row"]?.GetValue<int>() == row;
-        if (reachable || there) return;
-        map.Remove("second_boss");
-        if (map["rows"] is not JsonArray rows) return;
-        foreach (var line in rows.OfType<JsonArray>())
-        {
-            for (int i = line.Count - 1; i >= 0; i--)
-            {
-                var node = line[i];
-                if (node?["col"]?.GetValue<int>() == col && node?["row"]?.GetValue<int>() == row)
-                    line.RemoveAt(i);
-            }
-        }
-        for (int i = rows.Count - 1; i >= 0; i--)
-            if (rows[i] is JsonArray { Count: 0 }) rows.RemoveAt(i);
-    }
-
-    /// <summary>
     /// Every action the client may send for this observation, in the exact
     /// shape it sends it. Built from the view (plus the host's combat
     /// legality), so it cannot say more than the view does.
@@ -257,7 +229,6 @@ internal static class RefereeView
 
             case "combat_play":
             {
-                int alive = Int(combatLegal?["alive_enemy_count"]);
                 var potionTargets = ((view["player"]?["potions"]) as JsonArray ?? new JsonArray())
                     .OfType<JsonObject>()
                     .ToDictionary(p => Int(p["index"]), p => p["target_type"]?.GetValue<string>());
@@ -275,16 +246,15 @@ internal static class RefereeView
                         case "end_turn":
                             Add("end_turn");
                             break;
-                        case "use_potion":
-                        {
-                            int slot = Int(entry["potion_index"]);
-                            if (potionTargets.GetValueOrDefault(slot) == "AnyEnemy")
-                                for (int t = 0; t < alive; t++)
-                                    Add("use_potion", ("potion_index", slot), ("target_index", t));
-                            else
-                                Add("use_potion", ("potion_index", slot));
+                        // LegalActions fans an AnyEnemy potion out per living
+                        // enemy itself (GH #1604), as it does a targeted card.
+                        case "use_potion" when entry["target_index"] is null:
+                            Add("use_potion", ("potion_index", Int(entry["potion_index"])));
                             break;
-                        }
+                        case "use_potion":
+                            Add("use_potion", ("potion_index", Int(entry["potion_index"])),
+                                ("target_index", Int(entry["target_index"])));
+                            break;
                     }
                 }
                 foreach (int slot in potionTargets.Keys.OrderBy(k => k))
@@ -351,6 +321,9 @@ internal static class RefereeView
                 // order; proceed leaves whatever is still on the screen.
                 foreach (var reward in Items("rewards"))
                     Add("take_reward", ("reward_index", Int(reward["index"])));
+                // A set built WithSkippingDisallowed (NeowsBones) is taken
+                // whole: no skip, no proceed (GH #1641).
+                if (!Flag(view["can_skip"], true)) break;
                 foreach (var reward in Items("rewards"))
                     Add("skip_reward", ("reward_index", Int(reward["index"])));
                 Add("proceed");
@@ -452,10 +425,52 @@ internal static class RefereeView
     private static void SortDrawPile(JsonObject state)
     {
         if (state["draw_pile"] is not JsonArray pile) return;
-        var sorted = pile.Select(card => card?.ToJsonString() ?? "").OrderBy(s => s, StringComparer.Ordinal).ToList();
+        // Known positions (GH #1710) are sent where the player believes they
+        // are: draw_pile_top's cards first, draw_pile_bottom's last, the
+        // unknown middle sorted. The known cards are found in the pile by
+        // content, not position: after a random insert (GH #1797) they need
+        // not sit physically at the ends, and their indices are rewritten to
+        // the believed places, so the view never tells where the insert went.
+        var cards = pile.Select(card => card?.ToJsonString() ?? "").ToList();
+        var topCards = KnownCards(state["draw_pile_top"] as JsonArray);
+        var bottomCards = KnownCards(state["draw_pile_bottom"] as JsonArray);
+        var rest = new List<string>(cards);
+        bool TakeAll(List<string> known) => known.All(rest.Remove);
+        if (!TakeAll(topCards) || !TakeAll(bottomCards))
+        {
+            rest = cards;
+            topCards = new List<string>();
+            bottomCards = new List<string>();
+            state.Remove("draw_pile_top");
+            state.Remove("draw_pile_bottom");
+        }
+        var bottomUp = Enumerable.Reverse(bottomCards);
+        var sorted = topCards.Concat(rest.OrderBy(x => x, StringComparer.Ordinal)).Concat(bottomUp).ToList();
         var replacement = new JsonArray();
         foreach (var card in sorted) replacement.Add(JsonNode.Parse(card));
         state["draw_pile"] = replacement;
+        Reindex(state["draw_pile_top"] as JsonArray, i => i);
+        Reindex(state["draw_pile_bottom"] as JsonArray, i => sorted.Count - 1 - i);
+    }
+
+    /// <summary>A known-end list's cards as the pile holds them (no index).</summary>
+    private static List<string> KnownCards(JsonArray? known)
+    {
+        var list = new List<string>();
+        foreach (var card in known ?? new JsonArray())
+        {
+            if (card?.DeepClone() is not JsonObject c) continue;
+            c.Remove("index");
+            list.Add(c.ToJsonString());
+        }
+        return list;
+    }
+
+    private static void Reindex(JsonArray? known, Func<int, int> place)
+    {
+        if (known == null) return;
+        for (var i = 0; i < known.Count; i++)
+            if (known[i] is JsonObject c) c["index"] = place(i);
     }
 
     private static HashSet<string> BuildAllow()
@@ -471,7 +486,7 @@ internal static class RefereeView
         const string card =
             "id name type rarity cost base_cost card_cost star_cost description keywords keywords[] " +
             "upgraded index can_play target_type affliction affliction_amount will_retain " +
-            "enchantment enchantment_amount " +
+            "enchantment enchantment_amount base_replay_count " +
             "persistent_cost persistent_star_cost played_cost stable_cost sly_this_turn " +
             "tinker_time_rider is_stocked on_sale stats stats.* " +
             "after_upgrade.cost after_upgrade.description after_upgrade.stats after_upgrade.stats.* " +
@@ -480,6 +495,8 @@ internal static class RefereeView
         foreach (var pile in new[]
                  {
                      "hand[]", "draw_pile[]", "discard_pile[]", "exhaust_pile[]", "play_pile[]",
+                     // Known positions (GH #1710): top first, bottom first.
+                     "draw_pile_top[]", "draw_pile_bottom[]",
                      "cards[]", "player.deck[]", "bundles[].cards[]",
                  })
             Add(pile, card);
@@ -492,15 +509,26 @@ internal static class RefereeView
         Add("", "type decision act act_name ascension floor victory abandoned round energy max_energy stars " +
                 "orb_slots draw_pile_count discard_pile_count exhaust_pile_count " +
                 "can_leave can_skip cancelable from_event gold_earned card_removal_cost " +
-                "min_select max_select prompt_key source source_model description event_name potion");
+                "min_select max_select prompt_key source source_model enchantment_amount description event_name potion");
         Add("context", "act act_name floor total_floor room_type boss.id boss.name");
         Add("player", "name hp max_hp block gold deck_size potion_slots cards_played_this_turn[]");
-        Add("player.potions[]", "entry name description index target_type vars vars.*");
+        // Combat history a player watched happen (GH #1712, the mod's #989 keys).
+        Add("player", "bound_card_played_this_turn hp_lost_this_turn unblocked_hits_this_combat"
+            + " cards_exhausted_this_combat cards_exhausted_this_turn card_block_gains_this_turn"
+            + " extra_turns_taken_this_combat");
+        Add("player.powered_hits_this_turn[]", "enemy hits");
+        Add("player.potions[]", "entry name description index slot target_type vars vars.*");
         Add("player.relics[]", "id name description counter is_wax is_melted vars vars.*");
-        Add("enemies[]", "name index hp max_hp block intends_attack");
-        Add("enemies[].intents[]", "type damage hits");
-        Add("dead_enemies[]", "name hp max_hp block is_dead");
-        Add("dead_enemies[].intents[]", "type damage hits");
+        Add("enemies[]", "id name index combat_id slot hp max_hp block intends_attack");
+        // The card a thief holds, shown on it in the game (GH #1693).
+        Add("enemies[].stolen_cards[]", "id upgraded");
+        Add("enemies[].intents[]", "type damage hits base_damage");
+        Add("dead_enemies[]", "id name combat_id slot hp max_hp block is_dead");
+        Add("dead_enemies[].intents[]", "type damage hits base_damage");
+        // Enemies a player watched die and leave the board (GH #1716).
+        Add("removed_enemies[]", "id name combat_id slot hp max_hp block is_dead");
+        Add("removed_enemies[].intents[]", "type damage hits base_damage");
+        Add("removed_enemies[].powers[]", power);
         Add("orbs[]", "name type index passive evoke");
         Add("osty", "name alive hp max_hp block");
         Add("choices[]", "col row type");
@@ -510,20 +538,21 @@ internal static class RefereeView
         Add("relics[]", "id name description index cost is_stocked vars vars.*");
         Add("potions[]", "id name description index cost is_stocked vars vars.*");
         // The reward screen (GH #1282): what each reward button shows.
-        Add("rewards[]", "index type amount id name description");
+        Add("rewards[]", "index type amount id name description extra");
         // A card reward's extra buttons (GH #1296, #1315): Reroll, Sacrifice.
         Add("alternatives[]", "index id name");
 
-        // The act map as the map screen shows it (attached to map decisions).
+        // The act map as the map screen shows it (attached to every decision).
         Add("map.rows[][]", "col row type visited current");
         Add("map.rows[][].children[]", "col row");
         Add("map.boss", "col row type id name");
-        // Present only once the second boss is the next node (HideSecondBoss).
+        // The game shows the second boss from act entry (top bar and map,
+        // NTopBarBossIcon.RefreshBossIcon / NBossMapPoint._Ready; GH #1662).
         Add("map.second_boss", "col row type id name");
         Add("map.current_coord", "col row");
 
         // The Crystal Sphere grid. The host fills `item` only for cleared cells.
-        Add("", "divinations_left");
+        Add("", "divinations_left divinations_total");
         Add("grid", "width height");
         Add("cells[]", "x y hidden");
         Add("cells[].item", "kind part_x part_y width height");

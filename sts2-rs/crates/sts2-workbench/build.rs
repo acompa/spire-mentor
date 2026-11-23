@@ -56,12 +56,32 @@ const GAME_FILES: &[(&str, &str)] = &[
 ///   `data.rs` (an entry replaces the default's; `null` drops a card).
 const VERSIONED_ONLY_FILES: &[(&str, &str)] = &[("card_tags.json", "{}")];
 
+/// The game's Simplified Chinese display tables, one set for every build
+/// (`data/game/localization_zhs/`, from `bundle_workbench_data.py`). They do
+/// not count toward any bundle being complete: absent, the page simply shows
+/// game text in English (`localization::zh_overlay`).
+const ZH_FILES: &[(&str, &str)] = &[
+    ("localization_zhs/BUILD.txt", ""),
+    ("localization_zhs/afflictions.json", "{}"),
+    ("localization_zhs/card_keywords.json", "{}"),
+    ("localization_zhs/cards.json", "{}"),
+    ("localization_zhs/characters.json", "{}"),
+    ("localization_zhs/encounters.json", "{}"),
+    ("localization_zhs/events.json", "{}"),
+    ("localization_zhs/potions.json", "{}"),
+    ("localization_zhs/relics.json", "{}"),
+    ("localization_zhs/rest_site_ui.json", "{}"),
+    ("localization_zhs/owned_vars.json", "{}"),
+    ("localization_zhs/extra.json", "{}"),
+];
+
 /// The non-default game builds with a sibling bundle under `data/game/<ver>/`.
 /// Keep in step with `sts2_core::GameVersion::ALL` (a `data.rs` test
 /// checks) and `bundle_workbench_data.py`'s `_VERSIONS`.
 const VERSIONED: &[&str] = &["v0.111.0", "v0.113.0"];
 
 fn main() {
+    sts2_srchash::emit_build_stamp("sts2-workbench", "STS2_WORKBENCH_SRC_HASH");
     println!("cargo::rustc-check-cfg=cfg(workbench_game_data)");
     for ver in VERSIONED {
         println!("cargo::rustc-check-cfg=cfg({})", version_cfg(ver));
@@ -83,6 +103,31 @@ fn main() {
             "cargo:warning=sts2-workbench: data/game/ is incomplete — the workbench renders \
              loc keys instead of game text. Run `just import-game` (see docs/bring-your-own-game.md)."
         );
+    }
+    // The shared Chinese set, then each non-default build's own (from that
+    // build's pck, when vendored; stubbed empty otherwise).
+    let zh_sets = std::iter::once((src_root.clone(), dst_root.clone())).chain(
+        VERSIONED
+            .iter()
+            .map(|v| (src_root.join(v), dst_root.join(v))),
+    );
+    for (i, (zh_src, zh_dst)) in zh_sets.enumerate() {
+        for (rel, stub) in ZH_FILES {
+            let (from, to) = (zh_src.join(rel), zh_dst.join(rel));
+            println!("cargo:rerun-if-changed={}", from.display());
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent).expect("create OUT_DIR/game/localization_zhs");
+            }
+            if from.is_file() {
+                fs::copy(&from, &to)
+                    .unwrap_or_else(|e| panic!("copy {} -> {}: {e}", from.display(), to.display()));
+            } else if i == 0 {
+                write_stub(&to, stub);
+            } else {
+                // A build without its own set: empty, read as "none".
+                fs::write(&to, "").unwrap_or_else(|e| panic!("write {}: {e}", to.display()));
+            }
+        }
     }
     // `data::embedded_versions` reads which non-default bundles are complete
     // (the `/api/capabilities` version picker offers only those), and a test

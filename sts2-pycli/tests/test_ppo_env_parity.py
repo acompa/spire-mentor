@@ -21,7 +21,7 @@ import subprocess
 import sys
 
 import pytest
-from sts2_client import LEGACY_GAME_VERSION
+import sts2_client
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ARENA = os.path.join(ROOT, "sts2-rs", "target", "release", "run_arena")
@@ -35,13 +35,19 @@ def _env(monkeypatch):
     monkeypatch.syspath_prepend(PY)
 
 
+def _game_version() -> str:
+    """The build both sides simulate: the session's selection (`--game-version`).
+
+    The env and the arena MUST run the same build, or every cell compares two
+    different games (GH #1359: 13 of 18 cells failed on skew alone).
+    """
+    return sts2_client.GAME_VERSION
+
+
 def _env_expert_outcome(seed: int, act1: str = "overgrowth") -> dict:
     from ppo.env import PpoRunEnv, Terminal
 
-    # `run_arena` has no build switch: it simulates the engine's own default,
-    # which is the legacy build. Pin the env to it, or the selected build
-    # (v0.111.0 by default) turns every cell into version skew.
-    env = PpoRunEnv(seed=seed, expert=True, act1=act1, game_version=LEGACY_GAME_VERSION)
+    env = PpoRunEnv(seed=seed, expert=True, act1=act1, game_version=_game_version())
     terminal = None
     for out in env.expert_run():
         if isinstance(out, Terminal):
@@ -78,17 +84,18 @@ def _env_expert_outcome(seed: int, act1: str = "overgrowth") -> dict:
 # Cross-worker arena cache: the first xdist worker to take the flock runs
 # the (deterministic) sweep; the rest block on the lock then read the cache.
 # The cache path is keyed on a content hash of everything that determines the
-# sweep output — the run_arena binary, the seed count and the act1 token
+# sweep output — the run_arena binary, the seed count, the act1 token
 # (GH #545: overgrowth/underdocks/roll walk different content, so each token
-# needs its own cache row) — so a rebuilt engine / different N / different
-# act1 invalidates it automatically instead of a stale /tmp file producing
-# false parity failures.
-def _arena_cache_path(act1: str) -> str:
+# needs its own cache row) and the game build (GH #1359) — so a rebuilt
+# engine / different N / different act1 / different build invalidates it
+# automatically instead of a stale /tmp file producing false parity failures.
+def _arena_cache_path(act1: str, game_version: str) -> str:
     h = hashlib.sha256()
     with open(ARENA, "rb") as fh:
         h.update(fh.read())
     h.update(str(N).encode())
     h.update(act1.encode())
+    h.update(game_version.encode())
     return f"/tmp/ppo-parity-arena.{h.hexdigest()[:16]}.jsonl"
 
 
@@ -159,7 +166,8 @@ def _require_current_arena() -> None:
 def _arena_rows(act1: str) -> dict:
     import fcntl
 
-    cache = _arena_cache_path(act1)
+    game_version = _game_version()
+    cache = _arena_cache_path(act1, game_version)
     with open(f"{cache}.lock", "w", encoding="utf-8") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if not os.path.exists(cache):
@@ -179,6 +187,8 @@ def _arena_rows(act1: str) -> dict:
                 "0",
                 "--act1",
                 act1,
+                "--game-version",
+                game_version,
                 "--out",
                 tmp,
             ]

@@ -7,6 +7,7 @@ import { DEFAULT_POWER_BOX, POWER_GAP, powerColumns, powerFit } from "../powerRo
 import { splitPowers } from "../powerOverflow";
 import { COLUMN_MIN, COLUMN_WANT, bestColumnPlace, columnBottom, columnRoom, type Rect } from "../powerColumn";
 import { inspectTrigger } from "../inspect/trigger";
+import { t } from "../i18n";
 
 /** Every landscape column re-places itself when the stage's DOM changes. A
  *  single change notifies every column's observer at once, so they queue here
@@ -268,21 +269,21 @@ export default function Powers({
     // `.gs-powers`, which now sizes to its content).
     <div ref={ref} style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, ${cell}px)`,
       gap: POWER_GAP, justifyContent: "center", justifyItems: "center" }}>
-      {shown.map((p) => (
+      {shown.map((p) => { const shownName = p.display_name ?? p.name; return (
         <div key={p.name} className="gs-power"
           // Phone: a tap explains the power in the inspect sheet (`title` is
           // hover-only); a named button for the keyboard and screen readers.
-          {...inspectTrigger(inspect.enabled, `${p.name} ${p.display_amount ?? p.amount ?? ""}`.trim(),
+          {...inspectTrigger(inspect.enabled, `${shownName} ${p.display_amount ?? p.amount ?? ""}`.trim(),
             () => inspect.open(powerItem(p, inspectScope)))}
-          title={`${p.name}${p.description ? ` — ${p.description}` : ""}`}
+          title={`${shownName}${p.description ? ` — ${p.description}` : ""}`}
           style={{ position: "relative", display: "flex", alignItems: "center",
             ...(hitSize ? { justifyContent: "center", width: cell, height: cell } : {}) }}>
           {p.image ? (
-            <img src={p.image} alt={p.name} style={{ width: size, height: size, display: "block" }} />
+            <img src={p.image} alt={shownName} style={{ width: size, height: size, display: "block" }} />
           ) : (
             <span className="gs-power-name" style={{ fontFamily: "var(--game-font)", fontSize: 10, padding: "1px 6px", borderRadius: 10,
               border: "1px solid var(--border)", background: "var(--panel)" }}>
-              {p.name}
+              {shownName}
             </span>
           )}
           {p.image && (
@@ -296,10 +297,10 @@ export default function Powers({
             </span>
           )}
         </div>
-      ))}
+      ); })}
       {hidden.length > 0 && (
         <button type="button" className="gs-power-more"
-          aria-label={`${hidden.length} more powers`}
+          aria-label={t("{n} more powers", { n: hidden.length })}
           // Phone only, and only while inspecting: with a card armed the tap
           // must bubble to the creature (it is the target), not be swallowed.
           onClick={inspect.enabled ? (e) => { e.stopPropagation(); onOverflow?.(hidden); } : undefined}

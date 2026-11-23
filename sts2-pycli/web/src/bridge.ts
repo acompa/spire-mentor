@@ -28,6 +28,8 @@
  * sets `VITE_BRIDGE_SAME_ORIGIN=1` (spire-mentor-mod/package.ps1).
  */
 
+import { t } from "./i18n";
+
 const KEY = "sts2.bridgeUrl";
 /** Stored when the user disconnects a same-origin build (see setBridgeBase). */
 const OFF = "off";
@@ -82,7 +84,7 @@ export function setBridgeBase(url: string | null): void {
 /** A request straight to the control plane (base must be configured). */
 export function bridgeFetch(path: string, init?: RequestInit): Promise<Response> {
   const base = bridgeBase();
-  if (!base) return Promise.reject(new Error("no live-game bridge configured"));
+  if (!base) return Promise.reject(new Error(t("no live-game bridge configured")));
   // `targetAddressSpace` is Chrome's Local Network Access hint, for a
   // cross-origin target only; unknown RequestInit keys are ignored elsewhere.
   if (base === window.location.origin) return fetch(`${base}${path}`, init);

@@ -332,6 +332,38 @@ def extract_beta_card_portraits(pck_index, read_pck_file, output_dir: str) -> in
     return count
 
 
+# Standalone (unpacked) image folders the workbench draws, as
+# ``(pck prefix, output subdir)``: each ``<name>.png.import`` under the prefix
+# points at its ``.ctex``. GH #1597 (the Blitz merchant's ware icons and the
+# small tokens on its table), #1600 (the enchantment icons on a card's tab).
+STANDALONE_DIRS = (
+    ("images/enchantments/", "enchantments"),
+    ("images/packed/blitz/", "blitz"),
+)
+
+
+def extract_standalone_dirs(pck_index, read_pck_file, output_dir: str) -> int:
+    """Decode every ``.png.import`` under each :data:`STANDALONE_DIRS` prefix
+    to ``<output_dir>/<subdir>/<relative path>.png``; -> the number written."""
+    count = 0
+    for prefix, subdir in STANDALONE_DIRS:
+        for pck_file_path in pck_index:
+            if not (pck_file_path.startswith(prefix) and pck_file_path.endswith(".png.import")):
+                continue
+            import_data = read_pck_file(pck_file_path)
+            ctex_path = _ctex_path(import_data) if import_data else None
+            ctex_data = read_pck_file(ctex_path) if ctex_path else None
+            img = decode_ctex(ctex_data) if ctex_data else None
+            if not img:
+                continue
+            rel = pck_file_path[len(prefix):].removesuffix(".import")
+            out = Path(output_dir) / subdir / rel
+            out.parent.mkdir(parents=True, exist_ok=True)
+            img.save(out, "PNG")
+            count += 1
+    return count
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract images from Godot PCK")
     parser.add_argument("pck_path", help="Path to the .pck file")
@@ -515,6 +547,12 @@ def main() -> None:
     if sf_count:
         print(f"  Extracted {sf_count} sprite font icons")
         total += sf_count
+
+    standalone = extract_standalone_dirs(pck_index, read_pck_file, output_dir)
+    if standalone:
+        dirs = ", ".join(d for _, d in STANDALONE_DIRS)
+        print(f"  Extracted {standalone} standalone icons ({dirs})")
+        total += standalone
 
     # Also extract individual card portrait images if available
     card_portrait_dir = os.path.join(output_dir, "card_portraits")

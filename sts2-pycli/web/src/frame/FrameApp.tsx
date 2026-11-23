@@ -34,6 +34,7 @@ import {
 } from "./layout";
 import { AdvicePanel, CoachPanel, LogPanel, ToolbarPanel } from "./panels";
 import { INITIAL_STATE, reduce, type Incoming } from "./store";
+import { t } from "../i18n";
 
 const DRAG_MIME = "application/x-spirementor-panel";
 const EMPTY_DROP_ZONE = 28;
@@ -221,7 +222,7 @@ export default function FrameApp() {
           <ToolbarPanel
             state={state}
             framePanels={PANELS.filter((q) => q !== "toolbar").map((q) => ({
-              label: PANEL_TITLES[q],
+              label: t(PANEL_TITLES[q]),
               shown: !layout.hidden.includes(q),
               toggle: () => togglePanel(q),
             }))}
@@ -291,8 +292,8 @@ export default function FrameApp() {
         >
           <div className="fr-game-placeholder">
             {inHost()
-              ? `game: ${state.host.game}`
-              : "Not running inside the Spire Mentor frame — the game would sit here (spire-mentor-frame/)."}
+              ? t("game: {game}", { game: state.host.game })
+              : t("Not running inside the Spire Mentor frame — the game would sit here (spire-mentor-frame/).")}
           </div>
         </div>
       </div>
@@ -392,7 +393,7 @@ function Panel(props: {
 }) {
   const drag = {
     draggable: true,
-    title: "Drag to another dock or position",
+    title: t("Drag to another dock or position"),
     onDragStart: (e: React.DragEvent) => {
       e.dataTransfer.setData(DRAG_MIME, props.id);
       e.dataTransfer.effectAllowed = "move";
@@ -417,8 +418,8 @@ function Panel(props: {
     <section className={`fr-panel fr-panel-${props.id}`}>
       <header className="fr-panel-head" {...drag}>
         <span className="fr-grip">⠿</span>
-        <span className="fr-panel-title">{PANEL_TITLES[props.id]}</span>
-        <button type="button" className="fr-icon" title="Hide (Panels menu brings it back)" onClick={props.onClose}>
+        <span className="fr-panel-title">{t(PANEL_TITLES[props.id])}</span>
+        <button type="button" className="fr-icon" title={t("Hide (Panels menu brings it back)")} onClick={props.onClose}>
           ×
         </button>
       </header>

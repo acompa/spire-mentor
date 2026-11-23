@@ -763,7 +763,7 @@ internal sealed class SimHud
         // The peek names its brain too, when it is the net.
         if (AdvisorBrainRules.IsInstinct(advice.Brain))
         {
-            label += "  (Instinct)";
+            label = L10n.F("{0}  (Instinct)", label);
         }
         // No "no advice" to the frame first: the peek replaces it.
         ClearPreActionSurfaces(publish: false);
@@ -773,7 +773,7 @@ internal sealed class SimHud
             if (best?.Col != null && best.Row != null && PeekMapMarker(best))
             {
                 // In game the marker is the peek; the frame gets the line.
-                FrameLink.PublishAdvice(null, "AI would: " + label);
+                FrameLink.PublishAdvice(null, L10n.F("AI would: {0}", label));
                 return true;
             }
             // The pick's ring (card, potion, End Turn, reward card, shop
@@ -784,7 +784,7 @@ internal sealed class SimHud
         {
             Logger.Log($"[SimHud] Peek anchor failed: {ex.Message}");
         }
-        ShowPeekLine("AI would: " + label, new Color(1f, 0.85f, 0.3f));
+        ShowPeekLine(L10n.F("AI would: {0}", label), new Color(1f, 0.85f, 0.3f));
         return true;
     }
 
@@ -799,7 +799,7 @@ internal sealed class SimHud
             }
             ClearPreActionSurfaces(publish: false);
             _peekShowing = true;
-            ShowPeekLine("AI is thinking…", new Color(0.7f, 0.7f, 0.75f));
+            ShowPeekLine(L10n.T("AI is thinking…"), new Color(0.7f, 0.7f, 0.75f));
         });
     }
 
@@ -832,7 +832,7 @@ internal sealed class SimHud
         {
             return;
         }
-        Label row = SmallLabel(text + "   (F5 peek)", color);
+        Label row = SmallLabel(L10n.F("{0}   (F5 peek)", text), color);
         row.CustomMinimumSize = new Vector2(320, 0);
         row.ClipText = true;
         _adviceRows.AddChildSafely(row);
@@ -1012,9 +1012,9 @@ internal sealed class SimHud
         string? planLine = advice.Plan.Count > 0
             // No-break spaces inside a step: the line wraps BETWEEN steps,
             // never between "3." and its card (live, 2026-11-07).
-            ? "Plan: " + string.Join("    ", advice.Plan.Select((s, i) => $"{i + 1}. {Words(s.Label)}".Replace(' ', ' ')))
+            ? L10n.F("Plan: {0}", string.Join("    ", advice.Plan.Select((s, i) => $"{i + 1}. {Words(s.Label)}".Replace(' ', ' '))))
             : advice.Pv.Count > 0 && SpireMentorModConfig.ShowNumbers
-                ? "Line: " + string.Join(" · ", advice.Pv.Select(Words))
+                ? L10n.F("Line: {0}", string.Join(" · ", advice.Pv.Select(Words)))
                 : null;
         if (planLine != null)
         {
@@ -1028,7 +1028,7 @@ internal sealed class SimHud
 
         if (advice.LowConfidence)
         {
-            _adviceRows.AddChildSafely(SmallLabel("low confidence", new Color(0.95f, 0.75f, 0.3f)));
+            _adviceRows.AddChildSafely(SmallLabel(L10n.T("low confidence"), new Color(0.95f, 0.75f, 0.3f)));
         }
 
         ShrinkAdvicePanelToFit();
@@ -1050,11 +1050,11 @@ internal sealed class SimHud
         var row = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         row.AddThemeConstantOverride("separation", 2);
         string text = pWin != null
-            ? $"Win chance {pWin.Value.ToString("0%", CultureInfo.InvariantCulture)}"
-            : "Win chance ?";
+            ? L10n.F("Win chance {0}", pWin.Value.ToString("0%", CultureInfo.InvariantCulture))
+            : L10n.T("Win chance ?");
         if (SpireMentorModConfig.ShowNumbers && q != null)
         {
-            text += $"   eval {(q.Value >= 0 ? "+" : "")}{q.Value.ToString("0.00", CultureInfo.InvariantCulture)}";
+            text += L10n.F("   eval {0}", (q.Value >= 0 ? "+" : "") + q.Value.ToString("0.00", CultureInfo.InvariantCulture));
             if (lowConfidence)
             {
                 text += " (~)";
@@ -1107,11 +1107,11 @@ internal sealed class SimHud
             l.AddThemeFontSizeOverride("font_size", 16);
             head.AddChild(l);
         }
-        Part("Run ", Colors.White);
+        Part(L10n.T("Run "), Colors.White);
         Part(InstinctEstimateText.Pct(e.PRun), ToneColor(InstinctEstimateText.RunTone(e.PRun)));
         if (e.PFight is double fight)
         {
-            Part("   ·   Fight ", Colors.White);
+            Part(L10n.T("   ·   Fight "), Colors.White);
             Part(InstinctEstimateText.Pct(fight), ToneColor(InstinctEstimateText.FightTone(fight)));
         }
         row.AddChild(head);
@@ -1332,7 +1332,7 @@ internal sealed class SimHud
 
         MarkOption mark = o.ToMark();
         string verdict = AdviceMarks.RowVerdict(mark, bestQ, step);
-        Label v = SmallLabel(verdict, VerdictColor(verdict));
+        Label v = SmallLabel(AdviceMarks.VerdictText(verdict), VerdictColor(verdict));
         v.CustomMinimumSize = new Vector2(72, 0);
         v.HorizontalAlignment = HorizontalAlignment.Right;
         row.AddChild(v);
@@ -1417,7 +1417,7 @@ internal sealed class SimHud
     /// </summary>
     private Control BuildRankedToggle(int hidden)
     {
-        string text = _rankedExpanded ? "▴ show fewer" : $"… {hidden} more ▾";
+        string text = _rankedExpanded ? L10n.T("▴ show fewer") : L10n.F("… {0} more ▾", hidden);
         Button toggle = SimUiKit.MakeButton(text, "", () =>
         {
             _rankedExpanded = !_rankedExpanded;
@@ -1891,7 +1891,7 @@ internal sealed class SimHud
         if (lastDrawn?.Hp != null && lastDrawn.Hop > RouteNumberedHops && lastPoint != null)
         {
             AddMapMarker(lastPoint,
-                lastDrawn.Hp.Value.ToString(CultureInfo.InvariantCulture) + " HP",
+                L10n.F("{0} HP", lastDrawn.Hp.Value.ToString(CultureInfo.InvariantCulture)),
                 routeColor, 4, dy: 34f);
         }
 

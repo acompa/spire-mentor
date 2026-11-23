@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fanLayout, handFloors, handInsets } from "./handFan";
+import {
+  COUNT_BADGE_W, SPINE_TOP_F, SPINE_W_F, STEP_BADGE_W, badgeBesideSpine, fanIsTight, fanLayout, handFloors, handInsets, handStacks, spineFontPx, spineLength,
+} from "./handFan";
 import { floorPx } from "./phone";
 
 describe("fanLayout flat", () => {
@@ -55,4 +57,57 @@ describe("ten cards on a phone", () => {
       expect((cw + slots.slice(1).reduce((a, s) => a + cw - s.overlap, 0)) * k).toBeLessThanOrEqual(availW * k + 1);
     });
   }
+});
+
+describe("a crowded fan on a phone", () => {
+  // Portrait on a 390px phone at k = 1: 124px cards in 358px of room.
+  const cw = 124, room = 358;
+  it("four cards are not tight, five are", () => {
+    // Five cards step 58px: the centred name banner is already half covered.
+    expect(fanIsTight(4, cw, room)).toBe(false);
+    expect(fanIsTight(5, cw, room)).toBe(true);
+    expect(fanIsTight(10, cw, room)).toBe(true);
+  });
+  it("one card is never tight", () => {
+    expect(fanIsTight(1, cw, 10)).toBe(false);
+  });
+  it("the spine fits inside the narrowest step the fan allows", () => {
+    // fanLayout floors the step at 0.18 of the card, so the next card never
+    // covers the name.
+    const slots = fanLayout(30, cw, 200, -1, { flat: true });
+    expect(cw - slots[1].overlap).toBeGreaterThanOrEqual(cw * SPINE_W_F);
+  });
+  it("a badge stands beside the spine only where the step has room", () => {
+    // 5 and 6 slots on a 358px fan step 58 and 47px; 7 steps 39.
+    const stepOf = (n: number) => cw - fanLayout(n, cw, room, -1, { flat: true })[1].overlap;
+    expect(badgeBesideSpine(stepOf(5), cw, 1, COUNT_BADGE_W)).toBe(true);
+    expect(badgeBesideSpine(stepOf(6), cw, 1, COUNT_BADGE_W)).toBe(false);
+    expect(badgeBesideSpine(stepOf(5), cw, 1, STEP_BADGE_W)).toBe(true);
+    expect(badgeBesideSpine(stepOf(7), cw, 1, COUNT_BADGE_W)).toBe(false);
+  });
+  it("the spine runs from under the orb to the strip's bottom", () => {
+    expect(spineLength(124, 96, 4)).toBeCloseTo(96 - 124 * SPINE_TOP_F - 4);
+    expect(spineLength(124, 20, 4)).toBe(0);
+  });
+  it("short names get the full size, long ones shrink to the floor", () => {
+    expect(spineFontPx("Bash", 68, 124)).toBeCloseTo(124 * 0.105);
+    const mid = spineFontPx("Twin Strike", 68, 124);
+    expect(mid).toBeLessThan(124 * 0.105);
+    expect(mid).toBeGreaterThan(124 * 0.08);
+    expect(spineFontPx("A Very Long Card Name Indeed", 68, 124)).toBeCloseTo(124 * 0.08);
+    // The small phone's 108px card: the real-px floor wins over 0.08.
+    expect(spineFontPx("A Very Long Card Name Indeed", 68, 108, 10)).toBe(10);
+  });
+});
+
+describe("handStacks", () => {
+  const key = (s: string) => (s.startsWith("!") ? null : s);
+  it("folds copies into the first copy's slot, in hand order", () => {
+    const st = handStacks(["Strike", "Defend", "Bash", "Strike", "Defend", "Strike"], key);
+    expect(st.map((s) => [s.card, s.cards.length])).toEqual([["Strike", 3], ["Defend", 2], ["Bash", 1]]);
+  });
+  it("a null key never stacks", () => {
+    const st = handStacks(["!a", "!a", "b"], key);
+    expect(st.map((s) => s.cards.length)).toEqual([1, 1, 1]);
+  });
 });

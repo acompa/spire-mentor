@@ -10,7 +10,7 @@ from pathlib import Path
 from workbench.assets import AssetResolver
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from build_asset_manifest import build_manifest, overlay_versions
+from build_asset_manifest import added_audio_of, build_manifest, overlay_versions
 
 
 def _tree(root: Path) -> Path:
@@ -79,3 +79,27 @@ def test_a_rig_only_the_overlay_has_resolves_to_the_overlay(tmp_path: Path) -> N
     assert new.character_rig_scale("Fool") == {"scale": 0.34}
     assert new.monster_rig_scale("Nibbit") == {"scale": 0.2}
     assert base.character_rig_scale("Fool") is None
+
+
+def test_a_later_builds_sound_stays_out_of_the_default_manifest(tmp_path: Path) -> None:
+    """The Fool's voice lives in the shared audio tree (there is no audio
+    overlay), so the default build's manifest leaves out what the v0.113.0
+    import recorded as its own; that build's manifest lists it.
+
+    Mutation caught: ``exclude_audio`` ignored, so importing v0.113.0's sound
+    moved the default bundle and a default-only import read as incomplete.
+    """
+    images, audio, wiki = tmp_path / "images", tmp_path / "audio", tmp_path / "data"
+    images.mkdir()
+    for rel in ("sfx/block_gain.webm", "sfx/characters/fool/fool_shot.webm"):
+        (audio / rel).parent.mkdir(parents=True, exist_ok=True)
+        (audio / rel).write_bytes(b"webm")
+    (wiki / "v0.113.0").mkdir(parents=True)
+    (wiki / "v0.113.0/added_audio.json").write_text(
+        '["sfx/characters/fool/fool_shot.webm"]', encoding="utf-8"
+    )
+
+    added = added_audio_of(wiki, ["v0.111.0", "v0.113.0"])
+    assert added == {"sfx/characters/fool/fool_shot.webm"}
+    assert build_manifest(images, audio, exclude_audio=added) == ["audio/sfx/block_gain.webm"]
+    assert "audio/sfx/characters/fool/fool_shot.webm" in build_manifest(images, audio)

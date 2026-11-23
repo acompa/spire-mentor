@@ -15,11 +15,9 @@ use super::prelude::*;
 // `Amount` `SweepingGaze` cards into the hand at the start of each turn's
 // draw (`combatState.CreateCard<SweepingGaze>` +
 // `CardPileCmd.AddGeneratedCardToCombat(..., Hand, addedByPlayer: true)`).
-// That listener is NOT yet implemented (Necrobinder powers bead
-// `sts2-rs-bt9`), and `SweepingGaze` is a generated card not yet ported —
-// see the structured result's powers_required / generated_cards_required.
-// This handler faithfully applies the power stack; the per-turn draw rider
-// fires once `SentryModePower` + `SweepingGaze` land.
+// That rider lives in sts2-core's before-hand-draw power dispatch
+// (`hooks.rs`, `PowerKind::SentryMode`); `SweepingGaze` is in
+// `cards/status/sweeping_gaze.rs`. This handler only applies the stack.
 //
 // `OnUpgrade` does `EnergyCost.UpgradeBy(-1)` (cost 2 → 1); that delta
 // already lives in the central `card_upgrades_generated.rs` table

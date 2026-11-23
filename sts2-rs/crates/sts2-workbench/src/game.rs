@@ -16,7 +16,7 @@
 use serde_json::{json, Map, Value};
 use sts2_core::potions::CharacterId;
 use sts2_core::run_manager::{RunAction, RunManager};
-use sts2_core::{CombatState, GameVersion};
+use sts2_core::{CombatState, GameMode, GameVersion};
 
 use crate::combat_view::{
     self, action_label, deck_card, offer_card, owned_entry, treasure_reveal, RoomSnapshot,
@@ -115,6 +115,14 @@ fn parse_indices(raw: Option<&Value>) -> Result<Vec<i64>, GameError> {
     Ok(out)
 }
 
+/// `args.get("keep_open")`: a `select_cards` that is ONE pick of several on
+/// an "up to N" screen, so the backend must not confirm after it (GH #1361).
+fn keep_open(args: &Value) -> bool {
+    args.get("keep_open")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 /// `sorted(set(idxs))` (ascending) or `reverse=True`.
 fn sorted_unique(mut idxs: Vec<i64>, descending: bool) -> Vec<i64> {
     idxs.sort_unstable();
@@ -156,6 +164,10 @@ pub struct Game {
     /// The game build every `start*` constructs its run in (GH #801). Set
     /// before `start`; defaults to v0.107.1.
     pub game_version: GameVersion,
+    /// The game mode [`Self::start`] builds its run in (GH #1346). Set
+    /// before `start`; the other constructors (faithful, e2e, imported)
+    /// build standard runs only.
+    pub game_mode: GameMode,
     record_card_plays: bool,
     record_combat_log: bool,
     /// Engine actions backing the option indices of the CURRENT state, for
@@ -186,6 +198,7 @@ impl Game {
             character: String::new(),
             act1: "overgrowth".to_string(),
             game_version: GameVersion::default(),
+            game_mode: GameMode::default(),
             record_card_plays: false,
             record_combat_log: false,
             option_actions: Vec::new(),
@@ -233,7 +246,9 @@ impl Game {
     /// `RustGame.start`: build the run the way the interactive workbench
     /// does (Neow start, every C#-faithful interactive deck-mutation flag,
     /// direct Neow relic grant, the requested Act-1 model) and return the
-    /// opening state.
+    /// opening state. A Dread run ([`Self::game_mode`]) is built at
+    /// ascension 10 whatever `ascension` says, as the game's Dread screen
+    /// does (`NDreadScreen.cs:584`).
     pub fn start(
         &mut self,
         character: &str,
@@ -246,6 +261,7 @@ impl Game {
         self.act1 = act1.to_string();
         self.rm = Some(build_run_manager(
             self.game_version,
+            self.game_mode,
             cid,
             seed,
             ascension,
@@ -268,23 +284,22 @@ impl Game {
     /// `RustGame.start_faithful`: a run constructed IDENTICALLY to the PPO
     /// training env (`PpoRunEnv.__post_init__` / the arena's
     /// `new_arena_run_manager`): integer seed, Neow start, the deck-mutation
-    /// flags on, potion swap off, the direct Neow relic grant, and — on
-    /// purpose — Overgrowth, the act the deployed nets trained on.
+    /// flags on, potion swap off, and the direct Neow relic grant. `act1` is
+    /// `"roll"` for a new run (the seed picks Overgrowth or Underdocks, as in
+    /// the game and the training env); a rebuild passes the act its save
+    /// recorded, and saves from before the roll carry `"overgrowth"`.
     pub fn start_faithful(
         &mut self,
         character: &str,
         seed: i32,
         ascension: u8,
+        act1: &str,
     ) -> Result<Value, GameError> {
         let cid = rmx::character_from_str(character).map_err(GameError)?;
+        let rm = build_faithful_run_manager(self.game_version, cid, seed, ascension, act1)?;
         self.character = character.to_string();
-        self.act1 = "overgrowth".to_string();
-        self.rm = Some(build_faithful_run_manager(
-            self.game_version,
-            cid,
-            seed,
-            ascension,
-        ));
+        self.act1 = act1.to_string();
+        self.rm = Some(rm);
         self.option_actions.clear();
         self.shop_removal_pick = false;
         self.pre_action = None;
@@ -297,37 +312,57 @@ impl Game {
         Ok(self.serialize())
     }
 
-    /// The e2e student's training run (`sts2_e2e::env::new_run_at`, the
-    /// campaign's `factory.new_run`): Ironclad, v0.111.0, Neow start, the
+    /// The e2e student's training run (`sts2_e2e::env::new_run_for`, the
+    /// campaign's `factory.new_run`): `character` (one of
+    /// [`crate::e2e::CHARACTERS`]), v0.111.0, Neow start, the
     /// agent-decision flags, interactive potion swap ON and a ROLLED Act 1 —
-    /// unlike [`Self::start_faithful`], which pins swap off and Overgrowth.
-    /// The game build is forced to v0.111.0 whatever [`Self::game_version`]
-    /// says (the caller's session must be built in it).
+    /// unlike [`Self::start_faithful`], which pins swap off.
+    /// The game build is forced to the student's (v0.111.0; v0.113.0 for
+    /// the Fool's net) whatever [`Self::game_version`] says (the caller's
+    /// session must be built in it).
     #[cfg(feature = "e2e")]
-    pub fn start_e2e(&mut self, seed: i32, ascension: u8) -> Result<Value, GameError> {
-        self.start_e2e_seed(&ModeSeed::Int(seed), ascension)
+    pub fn start_e2e(
+        &mut self,
+        character: &str,
+        seed: i32,
+        ascension: u8,
+    ) -> Result<Value, GameError> {
+        self.start_e2e_seed(character, &ModeSeed::Int(seed), ascension)
     }
 
     /// [`Self::start_e2e`] for either kind of run-mode seed: an integer run
     /// seed, or a game seed string (the seed checker), hashed the way the
     /// v0.111.0 game hashes it.
     #[cfg(feature = "e2e")]
-    pub fn start_e2e_seed(&mut self, seed: &ModeSeed, ascension: u8) -> Result<Value, GameError> {
+    pub fn start_e2e_seed(
+        &mut self,
+        character: &str,
+        seed: &ModeSeed,
+        ascension: u8,
+    ) -> Result<Value, GameError> {
+        let who = match crate::e2e::character(character) {
+            Ok(c) => c,
+            Err(e) => return err(e),
+        };
+        // The student's build: v0.113.0 for the Fool's net (its run and its
+        // tables), else v0.111.0.
+        let _tables = sts2_e2e::build::Scope::enter(crate::e2e::build_for(who));
         let rm = match seed {
             ModeSeed::Int(seed) => {
                 let seed = i64::from(*seed);
                 if !(0..1_i64 << 31).contains(&seed) {
                     return err(format!("e2e seed {seed} outside [0, 2**31)"));
                 }
-                sts2_e2e::env::new_run_at(seed, ascension)
+                sts2_e2e::env::new_run_for(seed, who, ascension)
             }
-            ModeSeed::Game(s) => match sts2_e2e::env::new_run_from_game_seed(s, ascension) {
+            ModeSeed::Game(s) => match sts2_e2e::env::new_run_from_game_seed_for(s, who, ascension)
+            {
                 Ok(rm) => rm,
                 Err(e) => return err(e),
             },
         };
         ensure_content_installed();
-        self.character = crate::e2e::CHARACTER.to_string();
+        self.character = sts2_wire::emit::names::character_str(who).to_string();
         self.act1 = "roll".to_string();
         self.rm = Some(rm);
         self.option_actions.clear();
@@ -471,15 +506,27 @@ impl Game {
         Ok(self.serialize())
     }
 
+    /// Snapshot what the next action may change, for the treasure reveal.
+    /// For callers that drive the run manager directly (the Instinct brain's
+    /// step) rather than through `act` / `take_native`, which do it
+    /// themselves. A no-op without a run.
+    pub fn mark_pre_action(&mut self) {
+        if self.rm.is_some() {
+            self.pre_action = Some(self.room_snapshot());
+        }
+    }
+
     /// Apply a raw engine action (a native-agent step or its replay),
     /// honouring the play-log flags exactly as `act` does. Returns the
     /// engine's result; the caller decides what a rejection means.
     pub fn take_native(&mut self, action: RunAction) -> sts2_core::run_manager::ActionResult {
         let (rcp, rcl) = (self.record_card_plays, self.record_combat_log);
+        // Snapshot for the treasure reveal, as `act` does. Every AI move (Let
+        // AI pick, AI plays, autobattle) comes through here, and without the
+        // snapshot a chest the AI walked into never showed what it held: the
+        // reveal compared against a stale or absent `pre_action`.
+        self.pre_action = Some(self.room_snapshot());
         let rm = self.rm.as_mut().expect("take_native needs a run");
-        // Deliberately NOT re-snapshotting `pre_action`: the Python session
-        // drives these through `rm.take_action` directly, so `room_reveal`
-        // keeps comparing against the last hand-played action's snapshot.
         rmx::ensure_play_log_flag(rm, rcp, rcl);
         rm.take_action(action)
     }
@@ -493,6 +540,11 @@ impl Game {
     /// No run, or a dict neither parser accepts.
     pub fn take_native_value(&mut self, action: &Value) -> Result<&'static str, String> {
         let (rcp, rcl) = (self.record_card_plays, self.record_combat_log);
+        if self.rm.is_none() {
+            return Err("no live run".into());
+        }
+        // See `take_native`: the treasure reveal needs the pre-action snapshot.
+        self.pre_action = Some(self.room_snapshot());
         let rm = self.rm.as_mut().ok_or("no live run")?;
         rmx::take_native_value(rm, action, rcp, rcl)
     }
@@ -569,6 +621,7 @@ impl Game {
                     .map_or_else(|| monster_title(&kind), str::to_string);
                 boss.insert("name".into(), json!(name));
             }
+            zh_boss_name(boss);
         }
         if let Some(second) = full_map
             .get_mut("second_boss")
@@ -583,6 +636,7 @@ impl Game {
             if let (Some(id), false) = (id, has_name) {
                 second.insert("name".into(), json!(combat_view::boss_encounter_title(&id)));
             }
+            zh_boss_name(second);
         }
         let plan = rmx::path_plan(rm, first_col);
         if plan.is_object() {
@@ -603,6 +657,8 @@ impl Game {
             return err("card removal is not available here");
         }
         let deck = rmx::master_deck_detailed(rm);
+        let levels = rmx::master_deck_levels(rm);
+        let enchants = rmx::master_deck_enchantments(rm);
         let mut cards = Vec::new();
         for a in &offers {
             let i = rmx::action_int(a, "deck_idx").unwrap_or(-1);
@@ -610,7 +666,10 @@ impl Game {
                 continue;
             }
             let (cid, upgraded) = &deck[usize_of(i)];
-            cards.push(deck_card(i, cid, *upgraded));
+            let mut card = deck_card(i, cid, *upgraded);
+            stamp_upgrade_level(&mut card, levels.get(usize_of(i)).copied());
+            stamp_enchantment(&mut card, &enchants, usize_of(i));
+            cards.push(card);
         }
         self.shop_removal_pick = true;
         let mut state = self.serialize();
@@ -774,7 +833,9 @@ impl Game {
                     .map(|i| RunAction::EnchantDeckCard { idx: usize_of(i) })
                     .collect();
                 let out = self.take_all(action, acts)?;
-                if optional {
+                // `keep_open`: one pick of several, played like the run env;
+                // a later `skip_select` confirms (GH #1361).
+                if optional && !keep_open(args) {
                     if let Some(rm) = self.rm.as_mut() {
                         if rmx::pending_enchant_optional(rm) {
                             rm.decline_optional_deck_enchants();
@@ -802,7 +863,9 @@ impl Game {
                     .collect();
                 // Optional grid (SeaGlass, min 0): confirm the picks made, unless
                 // every card was taken (the grid then closes by itself).
-                if optional && picked < total {
+                // `keep_open` (one pick of several, as the run env plays the
+                // grid) leaves the confirm to a later `skip_select` (GH #1361).
+                if optional && picked < total && !keep_open(args) {
                     acts.push(RunAction::GrantDeckCard {
                         idx: total - picked,
                     });
@@ -945,6 +1008,11 @@ impl Game {
                 if rmx::pending_claws_select(rm) {
                     return Ok(RunAction::ConfirmDeckSelection);
                 }
+                // GH #1347: a Blitz ware's deck pick is cancelable; the
+                // cancel leaves the ware available.
+                if rm.blitz_pick_open() {
+                    return Ok(RunAction::ConfirmDeckSelection);
+                }
                 err("skip_select not valid here")
             }
             "select_card_reward" => Ok(RunAction::PickCardReward {
@@ -954,6 +1022,32 @@ impl Game {
             "select_bundle" => Ok(RunAction::PickCardReward {
                 idx: Some(usize_of(arg_i64(args, "bundle_index")?)),
             }),
+            // GH #1347: the oracle numbers the Blitz merchant's wares 1..6
+            // (option 0 leaves); the engine indexes them from 0.
+            "blitz_choice" => {
+                let index = arg_i64(args, "index")?;
+                if index < 1 {
+                    return err(format!("blitz_choice: no ware {index}"));
+                }
+                Ok(RunAction::BlitzChoice {
+                    idx: usize_of(index - 1),
+                })
+            }
+            // GH #1347: a Blitz chest is the oracle's `rewards` screen: take
+            // a relic (by the index it was first listed at), or close the
+            // chest with one skip (`skip_reward`, or `proceed`).
+            "take_reward" | "skip_reward" => {
+                if rm.blitz_chest().is_none() {
+                    return err(format!("{action} is only valid at a Blitz chest"));
+                }
+                if action == "take_reward" {
+                    return Ok(RunAction::TakeChestRelic {
+                        idx: usize_of(arg_i64(args, "reward_index")?),
+                    });
+                }
+                Ok(RunAction::SkipRelic)
+            }
+            "proceed" if rm.blitz_chest().is_some() => Ok(RunAction::SkipRelic),
             "buy_card" => Ok(RunAction::ShopBuyCard {
                 idx: usize_of(arg_i64(args, "card_index")?),
             }),
@@ -1025,25 +1119,51 @@ impl Game {
         let m = state.as_object_mut().expect("state dict");
         let rm = self.rm.as_ref().expect("serialize needs a run");
         let act = rm.run_state.act_index;
-        if let Some(reveal) = treasure_reveal(self.pre_action.as_ref(), &self.room_snapshot(), act)
-        {
-            m.insert("room_reveal".into(), reveal);
+        let mode = rm.run_state.game_mode;
+        // A Blitz chest is a decision (GH #1347: two relics over two
+        // rounds), not a room the engine resolves, so it has no reveal.
+        if !mode.is_blitz() {
+            if let Some(reveal) =
+                treasure_reveal(self.pre_action.as_ref(), &self.room_snapshot(), act)
+            {
+                m.insert("room_reveal".into(), reveal);
+            }
         }
         let act1 = rmx::act1_str(rm);
         m.insert("act1".into(), json!(act1));
+        let act_name = combat_view::act_name(act, act1);
         m.insert(
             "act_name".into(),
-            match combat_view::act_name(act, act1) {
+            match act_name {
                 Some(n) => json!(n),
                 None => Value::Null,
             },
         );
+        // Chinese display mode: the act's name to SHOW (`act_name` stays the
+        // English key the page picks its painted region by).
+        if let Some(n) = act_name.filter(|_| crate::localization::display_zh()) {
+            let key = format!("{}.title", n.to_uppercase());
+            m.insert(
+                "act_display_name".into(),
+                json!(crate::i18n::game_name("acts", &key, n)),
+            );
+        }
         m.insert("bg_seed".into(), seed_json(rmx::run_seed(rm)));
         // GH #801: only a non-default build is named, so every v0.107.1
         // state (and golden) keeps its bytes. Readers treat absence as
         // v0.107.1.
         if !rm.game_version.is_default() {
             m.insert("game_version".into(), json!(rm.game_version.as_str()));
+        }
+        // GH #1346: a Dread run names its mode and the dominion in force
+        // (`null` in a boss room); a Blitz run (GH #1347) names its mode
+        // only. A standard run carries neither key, so its states (and the
+        // goldens) keep their bytes.
+        if !mode.is_default() {
+            m.insert("game_mode".into(), json!(mode.as_str()));
+        }
+        if mode.is_dread() {
+            m.insert("dominion".into(), json!(rmx::current_dominion(rm)));
         }
         if let Some((col, row)) = rmx::map_coord(rm) {
             m.insert("bg_col".into(), json!(col));
@@ -1055,6 +1175,28 @@ impl Game {
     /// `_serialize_state`: dispatch on the phase (or a pending deck
     /// mutation preempting it) into one `fill_*`.
     fn serialize_state(&mut self) -> Value {
+        let mut state = self.serialize_phase();
+        // GH #1347: a Blitz ware's deck pick is cancelable (C# `Cancelable =
+        // true`); `skip_select` backs out of it and the ware stays available.
+        let rm = self.rm.as_ref().expect("serialize needs a run");
+        if rm.blitz_pick_open() && state.get("decision") == Some(&json!("card_select")) {
+            state
+                .as_object_mut()
+                .expect("state dict")
+                .insert("can_skip".into(), json!(true));
+        }
+        state
+    }
+
+    /// [`Self::serialize_state`] before the Blitz pick's cancel is marked.
+    fn serialize_phase(&mut self) -> Value {
+        // Binding is idempotent and RNG-free; the Fake Merchant's page then
+        // opens as its shop (GH #1607), so render that.
+        if let Some(rm) = self.rm.as_mut() {
+            if rmx::phase_str(rm) == "event" {
+                rmx::materialize_event(rm);
+            }
+        }
         let rm = self.rm.as_ref().expect("serialize needs a run");
         let phase = rmx::phase_str(rm);
         let decision = phase_to_decision(phase);
@@ -1114,6 +1256,8 @@ impl Game {
                 .insert("victory".into(), json!(won));
         } else if phase == "boss_relic" {
             self.fill_boss_relic(&mut state);
+        } else if phase == "treasure" && rm_has_blitz_chest(self.rm.as_ref()) {
+            self.fill_blitz_chest(&mut state);
         } else {
             // treasure / combat-relic reward → generic option list.
             self.fill_generic(&mut state, phase);
@@ -1140,10 +1284,17 @@ impl Game {
         let rm = self.rm.as_ref().expect("run");
         let relics: Vec<Value> = rmx::relics(rm).iter().map(|r| owned_entry(r)).collect();
         let potions: Vec<Value> = rmx::potions(rm).iter().map(|p| owned_entry(p)).collect();
+        let levels = rmx::master_deck_levels(rm);
+        let enchants = rmx::master_deck_enchantments(rm);
         let deck: Vec<Value> = rmx::master_deck_detailed(rm)
             .iter()
             .enumerate()
-            .map(|(i, (cid, up))| deck_card(i as i64, cid, *up))
+            .map(|(i, (cid, up))| {
+                let mut card = deck_card(i as i64, cid, *up);
+                stamp_upgrade_level(&mut card, levels.get(i).copied());
+                stamp_enchantment(&mut card, &enchants, i);
+                card
+            })
             .collect();
         json!({
             "name": self.character,
@@ -1197,6 +1348,10 @@ impl Game {
                 .cloned()
                 .unwrap_or_else(|| json!([])),
         );
+        // The Fool's quiver, likewise kept up on a choice screen.
+        if let Some(arrows) = combat_view::quiver(cs) {
+            m.insert("arrows".into(), arrows);
+        }
         if let Some(orbs) = view.get("orbs") {
             m.insert("orbs".into(), orbs.clone());
             m.insert(
@@ -1315,10 +1470,15 @@ impl Game {
     /// engine's removal offer order.
     fn fill_card_removal(&self, state: &mut Value) {
         let rm = self.rm.as_ref().expect("run");
+        let enchants = rmx::card_removal_option_enchantments(rm);
         let cards: Vec<Value> = rmx::card_removal_options(rm)
             .iter()
             .enumerate()
-            .map(|(i, (cid, up))| deck_card(i as i64, cid, *up))
+            .map(|(i, (cid, up))| {
+                let mut card = deck_card(i as i64, cid, *up);
+                stamp_enchantment(&mut card, &enchants, i);
+                card
+            })
             .collect();
         let count = Self::clamp_count(rmx::pending_deck_removals(rm), cards.len());
         Self::set_select(state, cards, count, count, false, "remove");
@@ -1376,12 +1536,18 @@ impl Game {
     fn deck_subset_cards(&self, deck_indices: &[usize]) -> Vec<Value> {
         let rm = self.rm.as_ref().expect("run");
         let deck = rmx::master_deck_detailed(rm);
+        let levels = rmx::master_deck_levels(rm);
+        let enchants = rmx::master_deck_enchantments(rm);
         deck_indices
             .iter()
             .enumerate()
             .filter_map(|(subset_idx, &deck_idx)| {
-                deck.get(deck_idx)
-                    .map(|(cid, up)| deck_card(subset_idx as i64, cid, *up))
+                deck.get(deck_idx).map(|(cid, up)| {
+                    let mut card = deck_card(subset_idx as i64, cid, *up);
+                    stamp_upgrade_level(&mut card, levels.get(deck_idx).copied());
+                    stamp_enchantment(&mut card, &enchants, deck_idx);
+                    card
+                })
             })
             .collect()
     }
@@ -1392,13 +1558,18 @@ impl Game {
         let rm = self.rm.as_ref().expect("run");
         let deck = rmx::master_deck_detailed(rm);
         let eligible = rmx::upgrade_select_deck_indices(rm);
+        let enchants = rmx::master_deck_enchantments(rm);
         let mut cards = Vec::new();
         let mut subset_idx = 0_i64;
+        let levels = rmx::master_deck_levels(rm);
         for (deck_idx, (cid, _up)) in deck.iter().enumerate() {
             if !eligible.contains(&deck_idx) {
                 continue;
             }
-            cards.push(deck_card(subset_idx, cid, false));
+            let mut card = deck_card(subset_idx, cid, false);
+            stamp_upgrade_level(&mut card, levels.get(deck_idx).copied());
+            stamp_enchantment(&mut card, &enchants, deck_idx);
+            cards.push(card);
             subset_idx += 1;
         }
         Self::set_select(state, cards, 1, 1, false, "upgrade");
@@ -1424,10 +1595,22 @@ impl Game {
             self.fill_relic_reward(state);
             return;
         }
+        // An offer the engine pre-upgraded (a Blitz "Upgraded Card Reward"
+        // ware, Silver Crucible, Molten Egg) is granted upgraded, so it must
+        // also be SHOWN upgraded (bug report wb-b32d2b48efda19c7).
+        let upgraded = rmx::card_reward_option_upgraded(rm);
         let cards: Vec<Value> = rmx::card_reward_option_ids(rm)
             .iter()
             .enumerate()
-            .map(|(i, raw)| offer_card(Some(i as i64), raw))
+            .map(|(i, raw)| {
+                let mut card = offer_card(Some(i as i64), raw);
+                if upgraded.get(i).copied().unwrap_or(false) {
+                    card.as_object_mut()
+                        .expect("card dict")
+                        .insert("upgraded".into(), json!(true));
+                }
+                card
+            })
             .collect();
         let can_skip = actions.iter().any(|a| {
             rmx::action_kind(a) == "pick_card_reward"
@@ -1492,6 +1675,11 @@ impl Game {
     /// now) and `is_available` (still holds an item).
     fn fill_shop(&self, state: &mut Value) {
         let rm = self.rm.as_ref().expect("run");
+        let blitz = rmx::blitz_shop(rm);
+        if !blitz.is_null() {
+            Self::fill_blitz_shop(state, &blitz);
+            return;
+        }
         let inv = rmx::shop_inventory(rm);
         let gold = state
             .get("player")
@@ -1580,6 +1768,98 @@ impl Game {
             let cost = inv.get("removal_cost").and_then(Value::as_i64).unwrap_or(0);
             m.insert("card_removal_cost".into(), json!(cost));
         }
+        // The Fake Merchant's shopfront (GH #1607), named as the C# host
+        // names it (`RunSimulator.FakeMerchantShopState`).
+        if inv.get("fake_merchant").and_then(Value::as_bool) == Some(true) {
+            m.insert("event_name".into(), json!("FAKE_MERCHANT"));
+        }
+    }
+
+    /// `_fill_blitz_shop`: the Blitz merchant (GH #1347) in the oracle's
+    /// shape: the standard shop keys, empty; `blitz_choices_remaining`; and
+    /// `options` with option 0 leaving and options 1..6 the wares in
+    /// inventory order (a taken or disabled ware stays listed with
+    /// `enabled: false`).
+    fn fill_blitz_shop(state: &mut Value, shop: &Value) {
+        let mut options = vec![json!({
+            "index": 0,
+            "id": "leave_shop",
+            "action": "leave_shop",
+            "label": "leave_shop",
+            "enabled": true,
+        })];
+        let empty = Vec::new();
+        let entries = shop
+            .get("entries")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty);
+        for (i, entry) in entries.iter().enumerate() {
+            let get = |k: &str| entry.get(k).cloned().unwrap_or(Value::Null);
+            let kind = entry.get("kind").and_then(Value::as_str).unwrap_or("");
+            let status = entry.get("status").and_then(Value::as_str).unwrap_or("");
+            let mut item = Map::new();
+            item.insert("blitz_kind".into(), json!(kind));
+            item.insert("cursed".into(), get("cursed"));
+            item.insert("rare".into(), get("rare"));
+            item.insert("title".into(), get("title"));
+            item.insert("description".into(), get("description"));
+            if combat_view::truthy(&get("enchantment")) {
+                item.insert("enchantment".into(), get("enchantment"));
+                item.insert("enchantment_amount".into(), get("enchantment_amount"));
+            }
+            if combat_view::truthy(&get("character")) {
+                item.insert("character".into(), get("character"));
+            }
+            options.push(json!({
+                "index": i + 1,
+                "id": "blitz_choice",
+                "action": "blitz_choice",
+                "label": format!("blitz:{kind}"),
+                "description": "Cost: 0",
+                "enabled": status == "Available",
+                "price": 0,
+                "status": status,
+                "item": item,
+            }));
+        }
+        let m = state.as_object_mut().expect("state dict");
+        m.insert("cards".into(), json!([]));
+        m.insert("relics".into(), json!([]));
+        m.insert("potions".into(), json!([]));
+        m.insert("card_removal_cost".into(), Value::Null);
+        m.insert(
+            "blitz_choices_remaining".into(),
+            shop.get("choices_remaining").cloned().unwrap_or(json!(0)),
+        );
+        m.insert("options".into(), Value::Array(options));
+    }
+
+    /// `_fill_blitz_chest`: a Blitz chest (GH #1347) as the oracle's
+    /// `rewards` screen: the relics still in it, each under the index it was
+    /// first listed at, and `chest_picks_left` (2, then 1).
+    fn fill_blitz_chest(&self, state: &mut Value) {
+        let rm = self.rm.as_ref().expect("run");
+        let chest = rmx::blitz_chest(rm);
+        let empty = Vec::new();
+        let rewards: Vec<Value> = chest
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .map(|entry| {
+                let loc = loc_id(entry.get("id").and_then(Value::as_str).unwrap_or(""));
+                json!({
+                    "index": entry.get("index").cloned().unwrap_or(Value::Null),
+                    "type": "relic",
+                    "id": loc,
+                    "name": format!("{loc}.title"),
+                    "description": format!("{loc}.description"),
+                })
+            })
+            .collect();
+        let m = state.as_object_mut().expect("state dict");
+        m.insert("decision".into(), json!("rewards"));
+        m.insert("chest_picks_left".into(), json!(rewards.len()));
+        m.insert("rewards".into(), Value::Array(rewards));
     }
 
     /// `_fill_rest`: rest-site options by engine `option_id`, or the Smith
@@ -1599,7 +1879,8 @@ impl Game {
             .collect();
         let smith_ids = rmx::smith_options(rm);
         if !smith_acts.is_empty() && !smith_ids.is_empty() {
-            Self::fill_smith(state, &smith_acts, &smith_ids);
+            let levels = rmx::smith_option_levels(rm);
+            Self::fill_smith(state, &smith_acts, &smith_ids, &levels);
             return;
         }
         // The engine does not offer a DISABLED option (Smith with nothing to
@@ -1658,7 +1939,12 @@ impl Game {
     }
 
     /// `_fill_smith`: the Smith upgrade sub-state as a deck card_select.
-    fn fill_smith(state: &mut Value, smith_acts: &[RunAction], smith_ids: &[String]) {
+    fn fill_smith(
+        state: &mut Value,
+        smith_acts: &[RunAction],
+        smith_ids: &[String],
+        levels: &[u8],
+    ) {
         let mut cards = Vec::new();
         for a in smith_acts {
             let Some(idx) = rmx::action_int(a, "idx") else {
@@ -1667,7 +1953,9 @@ impl Game {
             if idx < 0 || usize_of(idx) >= smith_ids.len() {
                 continue;
             }
-            cards.push(deck_card(idx, &smith_ids[usize_of(idx)], false));
+            let mut card = deck_card(idx, &smith_ids[usize_of(idx)], false);
+            stamp_upgrade_level(&mut card, levels.get(usize_of(idx)).copied());
+            cards.push(card);
         }
         state
             .as_object_mut()
@@ -1711,6 +1999,11 @@ impl Game {
             let looks_like_id = py_isupper(&label) && label.contains('_');
             let (mut title, text_key) = if looks_like_id {
                 (format!("{}.title", loc_id(&label)), label.clone())
+            } else if crate::localization::display_zh() {
+                // An engine-authored option (no loc key): its label is often a
+                // relic's English title — show the game's own name for it by
+                // id — else the engine's words in the display language.
+                (zh_event_label(&label), String::new())
             } else {
                 (label.clone(), String::new())
             };
@@ -1720,6 +2013,8 @@ impl Game {
                 format!("{loc_key}.description")
             } else if looks_like_id {
                 String::new()
+            } else if crate::localization::display_zh() {
+                crate::i18n::tr_dyn(&str_of("description"))
             } else {
                 str_of("description")
             };
@@ -1817,6 +2112,11 @@ impl Game {
     }
 }
 
+/// Whether a Blitz chest is open on `rm` (GH #1347).
+fn rm_has_blitz_chest(rm: Option<&RunManager>) -> bool {
+    rm.is_some_and(|rm| rm.blitz_chest().is_some())
+}
+
 /// `fill_combat_choice`: render an in-combat pending choice (Headbutt,
 /// Warcry, …) as a `card_select` on `state`.
 pub fn fill_combat_choice(state: &mut Value, pc: &Value) {
@@ -1881,8 +2181,13 @@ pub fn ensure_content_installed() {
 /// (`sts2-py/src/run_manager.rs::PyRunManager::new` with `string_seed`,
 /// `neow_start=True`, every interactive deck-mutation flag,
 /// `direct_event_relic_grant=True`, `act1`).
+///
+/// `mode` is the run's game mode (GH #1346). A Dread run is refused on a
+/// build older than v0.113.0 and is built at ascension 10 whatever
+/// `ascension` says ([`GameMode::forced_ascension`]).
 pub fn build_run_manager(
     version: GameVersion,
+    mode: GameMode,
     cid: CharacterId,
     seed: &str,
     ascension: u8,
@@ -1890,7 +2195,11 @@ pub fn build_run_manager(
 ) -> Result<RunManager, GameError> {
     use sts2_content::run_callbacks::initialize_run_setup;
     use sts2_core::act_selection::ActVariant;
-    let rm = new_string_seed_run(version, cid, seed, ascension);
+    check_game_mode(mode, version).map_err(GameError)?;
+    let ascension = mode.forced_ascension().unwrap_or(ascension);
+    check_mode_ascension(mode, ascension).map_err(GameError)?;
+    // The mode is set before anything (Neow, act 1, run setup) rolls.
+    let rm = new_string_seed_run(version, cid, seed, ascension).with_game_mode(mode);
     let mut rm = rm.with_neow_start();
     // Present on-obtain card removals / upgrades / transforms as player
     // card_selects, matching C#; grant the chosen Neow relic directly.
@@ -1910,6 +2219,35 @@ pub fn build_run_manager(
     };
     initialize_run_setup(&mut rm);
     Ok(rm)
+}
+
+/// Whether the engine can build a `mode` run in game build `version`: Dread
+/// and Blitz exist from v0.113.0 (`RunManager::with_game_mode` panics
+/// otherwise).
+pub fn check_game_mode(mode: GameMode, version: GameVersion) -> Result<(), String> {
+    let min = mode.min_game_version();
+    if !mode.is_default() && version < min {
+        return Err(format!(
+            "{} mode needs game build {min} (this run is {version})",
+            mode.name()
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `ascension` is a level `mode` has. Blitz (GH #1347) has its own
+/// ladder of 0..=5 (`AscensionManager.maxAscensionAllowedBlitz`); the oracle
+/// and the engine refuse a higher one, and so does the workbench, by name,
+/// before `RunManager::with_game_mode` can panic. The other modes are not
+/// checked here (Dread forces its 10; a standard start never was).
+pub fn check_mode_ascension(mode: GameMode, ascension: u8) -> Result<(), String> {
+    if mode.is_blitz() && ascension > mode.max_ascension() {
+        return Err(format!(
+            "game_mode \"blitz\": ascension is the Blitz level 0..={} (got {ascension})",
+            mode.max_ascension()
+        ));
+    }
+    Ok(())
 }
 
 /// The PPO env's run constructor — `sts2_rs.RunManager(seed=int, …)` with
@@ -2092,7 +2430,10 @@ fn graft_rng(rm: &mut RunManager, rng: &crate::state_import::RngBlock) -> Vec<St
 /// `(seed, act)`, so on a correct import these agree node for node; a
 /// disagreement means every path explored from here is one the real run does
 /// not have. Best-effort and non-fatal.
-fn map_disagreements(rm: &RunManager, snapshot: &crate::state_import::RunSnapshot) -> Vec<String> {
+pub fn map_disagreements(
+    rm: &RunManager,
+    snapshot: &crate::state_import::RunSnapshot,
+) -> Vec<String> {
     let Some(world_nodes) = snapshot
         .map
         .as_ref()
@@ -2165,12 +2506,60 @@ fn map_disagreements(rm: &RunManager, snapshot: &crate::state_import::RunSnapsho
     )]
 }
 
+/// Chinese display mode: name a map boss node by its encounter's Chinese
+/// title (`encounters.json` `<ID>.title`). The map's boss `name` is display
+/// only (the icon keys off `id`).
+pub(crate) fn zh_boss_name(boss: &mut Map<String, Value>) {
+    if !crate::localization::display_zh() {
+        return;
+    }
+    let Some(id) = boss.get("id").and_then(Value::as_str) else {
+        return;
+    };
+    if let Some(name) = crate::data::zh_tables()
+        .encounters
+        .get(&format!("{id}.title"))
+        .filter(|n| !n.is_empty())
+    {
+        boss.insert("name".into(), json!(name));
+    }
+}
+
+/// Copy a deck card's enchantment onto `card` (`_stamp_enchantment`, GH
+/// #1600): `enchants` is an engine `*_enchantments()` list index-aligned with
+/// the deck view `idx` points into. An unenchanted card gets no keys.
+fn stamp_enchantment(card: &mut Value, enchants: &[Option<(String, i64)>], idx: usize) {
+    if let Some(Some((id, amount))) = enchants.get(idx) {
+        let m = card.as_object_mut().expect("card dict");
+        m.insert("enchantment".into(), json!(id));
+        m.insert("enchantment_amount".into(), json!(amount));
+    }
+}
+
+/// Carry a deck card's upgrade level onto its card dict when the card can
+/// upgrade more than once (v0.113.0's Dingy Dagger, GH #1391): `upgraded`
+/// and `upgrade_level` from the level, so the enrichment names it (Dingy /
+/// Fine / Pristine), prints its damage and previews the NEXT level. Every
+/// other card is left exactly as before.
+fn stamp_upgrade_level(card: &mut Value, level: Option<u8>) {
+    let Some(level) = level.filter(|&l| l > 0) else {
+        return;
+    };
+    if card.get("id").and_then(Value::as_str) != Some("DINGY_DAGGER") {
+        return;
+    }
+    let m = card.as_object_mut().expect("card dict");
+    m.insert("upgraded".into(), json!(true));
+    m.insert("upgrade_level".into(), json!(level));
+}
+
 pub fn build_faithful_run_manager(
     version: GameVersion,
     cid: CharacterId,
     seed: i32,
     ascension: u8,
-) -> RunManager {
+    act1: &str,
+) -> Result<RunManager, GameError> {
     use sts2_content::run_callbacks::{
         initialize_run_setup, new_run_manager_for_character,
         new_run_manager_for_character_with_ascension,
@@ -2190,9 +2579,18 @@ pub fn build_faithful_run_manager(
     let mut rm = rm.with_neow_start();
     rm.run_state.set_agent_decisions();
     rm.run_state.interactive_potion_swap = false;
-    let mut rm = rm.with_act1(ActVariant::Overgrowth);
+    let mut rm = match act1 {
+        "overgrowth" => rm.with_act1(ActVariant::Overgrowth),
+        "underdocks" => rm.with_act1(ActVariant::Underdocks),
+        "roll" => rm.with_rolled_act1(),
+        other => {
+            return err(format!(
+                "unknown act1 {other:?} (expected \"overgrowth\", \"underdocks\" or \"roll\")"
+            ))
+        }
+    };
     initialize_run_setup(&mut rm);
-    rm
+    Ok(rm)
 }
 
 /// A run seed as the browser can read it back exactly (GH #878).
@@ -2251,6 +2649,20 @@ impl ModeSeed {
             ModeSeed::Game(g) => crate::runmode::hash_seed(g),
         }
     }
+}
+
+/// The display title of an engine-authored event option (Chinese mode): the
+/// `<RELIC>.title` loc key when `label` is a relic's English title (so the
+/// display map resolves the game's Chinese name), else `label` translated.
+fn zh_event_label(label: &str) -> String {
+    for version in sts2_core::GameVersion::ALL {
+        for (key, title) in &crate::data::data_for(version).loc_relics {
+            if title == label && key.rsplit_once('.').is_some_and(|(_, f)| f == "title") {
+                return key.clone();
+            }
+        }
+    }
+    crate::i18n::tr_dyn(label)
 }
 
 #[cfg(test)]
@@ -2319,6 +2731,25 @@ mod tests {
                 "potions": [{"slot": 0, "id": "FIRE_POTION"}, {"slot": 1, "empty": true}],
             },
         })
+    }
+
+    /// A card offer the engine pre-upgraded shows its cards upgraded (bug
+    /// report wb-b32d2b48efda19c7: the Blitz "Upgraded Card Reward" ware's
+    /// three cards rendered as their base versions, though the pick is
+    /// granted upgraded). A plain offer keeps its key set.
+    #[test]
+    fn card_reward_shows_the_engines_upgrade_flags() {
+        let mut game = Game::new();
+        game.start("Ironclad", "UPGRADEDOFFER", 0, "overgrowth")
+            .expect("start");
+        let rm = game.native_run_mut().expect("run");
+        sts2_wire::graft::open_card_offer(rm, &json!(["BLUDGEON+1", "HAVOC"]), true, false, None)
+            .expect("graft");
+        let state = game.get_state().expect("state");
+        assert_eq!(state["decision"], json!("card_reward"));
+        let cards = state["cards"].as_array().expect("cards");
+        assert_eq!(cards[0]["upgraded"], json!(true));
+        assert!(cards[1].get("upgraded").is_none(), "{}", cards[1]);
     }
 
     #[test]
@@ -2455,17 +2886,101 @@ mod tests {
         assert!(err.0.contains("place the run on the map"), "{}", err.0);
     }
 
+    /// GH #1346: the state's `dominion` is the game's `RunState.Dominion`:
+    /// the act's everywhere but in a boss room (`DreadRunModel.
+    /// RemoveDominionIfRoomIsBoss`), and the NEXT act's on that act's
+    /// Ancient screen, which the Rust run shows from the old boss room.
+    #[cfg(workbench_game_data_v0_113_0)]
+    #[test]
+    fn dread_state_dominion_follows_the_room() {
+        use sts2_core::{Dominion, RoomType};
+        let mut game = Game::new();
+        game.game_version = GameVersion::V0_113_0;
+        game.game_mode = GameMode::Dread;
+        // The requested ascension is ignored: Dread is always 10.
+        let state = game.start("Ironclad", "DREAD", 0, "roll").expect("start");
+        let rm = game.native_run_mut().expect("run");
+        assert_eq!(rm.ascension_level, 10);
+        let of_act = |rm: &RunManager, act: usize| {
+            let rooms = &rm.run_state.generated_rooms[act - 1];
+            Dominion::for_boss(rooms.second_boss_id.unwrap_or(rooms.boss_id))
+                .expect("every boss has a dominion")
+                .entry()
+        };
+        let act1 = of_act(rm, 1);
+        assert_eq!(state["game_mode"], json!("dread"));
+        assert_eq!(state["dominion"], json!(act1));
+        assert_eq!(rmx::current_dominion(rm), Some(act1));
+
+        rm.debug_set_room_type(RoomType::Monster);
+        assert_eq!(rmx::current_dominion(rm), Some(act1));
+        rm.debug_set_room_type(RoomType::Boss);
+        assert_eq!(rmx::current_dominion(rm), None);
+        let state = game.get_state().expect("state");
+        assert_eq!(state["game_mode"], json!("dread"));
+        assert!(state["dominion"].is_null(), "{}", state["dominion"]);
+        assert!(state.as_object().unwrap().contains_key("dominion"));
+
+        let rm = game.native_run_mut().expect("run");
+        rm.run_state.in_ancient_room = true;
+        assert_eq!(rmx::current_dominion(rm), Some(of_act(rm, 2)));
+    }
+
+    /// A Dread run on a build without Dread is an error, not the engine's
+    /// panic; a standard run names neither key.
+    #[test]
+    fn dread_needs_v0113_and_a_standard_run_is_unmarked() {
+        let mut game = Game::new();
+        game.game_mode = GameMode::Dread;
+        let err = game.start("Ironclad", "DREAD", 10, "roll").unwrap_err();
+        assert!(err.0.contains("v0.113.0"), "{}", err.0);
+        assert!(game.native_run().is_none());
+
+        let mut game = Game::new();
+        let state = game.start("Ironclad", "DREAD", 10, "roll").expect("start");
+        let state = state.as_object().expect("state");
+        assert!(!state.contains_key("game_mode"));
+        assert!(!state.contains_key("dominion"));
+        assert_eq!(rmx::current_dominion(game.native_run().unwrap()), None);
+    }
+
     #[test]
     fn faithful_run_starts_on_neow_with_an_integer_seed() {
         let mut game = Game::new();
-        let state = game.start_faithful("Silent", 7, 0).expect("start");
+        let state = game
+            .start_faithful("Silent", 7, 0, "overgrowth")
+            .expect("start");
         assert_eq!(state["decision"], json!("event_choice"));
         assert_eq!(state["event_name"], json!("NEOW.title"));
         assert_eq!(state["act1"], json!("overgrowth"));
-        let again = Game::new().start_faithful("Silent", 7, 0).expect("start");
+        let again = Game::new()
+            .start_faithful("Silent", 7, 0, "overgrowth")
+            .expect("start");
         assert_eq!(state["bg_seed"], again["bg_seed"]);
-        let asc = Game::new().start_faithful("Silent", 7, 10).expect("start");
+        let asc = Game::new()
+            .start_faithful("Silent", 7, 10, "roll")
+            .expect("start");
         assert_eq!(asc["decision"], json!("event_choice"));
+        assert!(Game::new().start_faithful("Silent", 7, 0, "hive").is_err());
+    }
+
+    /// A new faithful run rolls Act 1 from its seed (both acts occur), and
+    /// pinning the act it rolled rebuilds the same run.
+    #[test]
+    fn faithful_run_rolls_act1_and_a_pinned_rebuild_matches() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..24 {
+            let rolled = Game::new()
+                .start_faithful("Ironclad", seed, 0, "roll")
+                .expect("start");
+            let act1 = rolled["act1"].as_str().expect("act1").to_string();
+            let pinned = Game::new()
+                .start_faithful("Ironclad", seed, 0, &act1)
+                .expect("start");
+            assert_eq!(rolled, pinned, "seed {seed}");
+            seen.insert(act1);
+        }
+        assert_eq!(seen.len(), 2, "{seen:?}");
     }
 
     #[test]
@@ -2559,6 +3074,83 @@ mod tests {
         let rm = game.rm.as_ref().unwrap();
         assert_eq!(rmx::pending_deck_enchants(rm), 0);
         assert_eq!(format!("{:?}", rm.run_state.master_deck), deck_before);
+    }
+
+    fn with_relic(game: &mut Game, relic: sts2_core::RelicId) {
+        let rs = &mut game.rm.as_mut().unwrap().run_state;
+        rs.relics.push(relic);
+        rs.last_obtained_relic = Some(relic);
+        let _ = sts2_core::run_effects::dispatch_after_obtained(rs);
+        rs.last_obtained_relic = None;
+    }
+
+    /// Sea Glass played pick by pick like the run env: `keep_open` picks
+    /// leave the grid open, `skip_select` confirms (GH #1361; twin of the
+    /// Python `test_keep_open_picks_take_several_cards_from_the_sea_glass_grid`).
+    #[test]
+    fn keep_open_picks_take_several_cards_from_the_sea_glass_grid() {
+        let mut game = Game::new();
+        game.start("Ironclad", "4023", 0, "roll").expect("start");
+        with_relic(&mut game, sts2_core::RelicId::SeaGlass);
+        let deck_len = game.rm.as_ref().unwrap().run_state.master_deck.len();
+        let total = rmx::card_grant_options(game.rm.as_ref().unwrap()).len();
+        for _ in 0..2 {
+            game.act("select_cards", &json!({"indices": "0", "keep_open": true}))
+                .expect("pick accepted");
+            assert!(rmx::pending_card_grants(game.rm.as_ref().unwrap()) > 0);
+        }
+        let rm = game.rm.as_ref().unwrap();
+        assert_eq!(rmx::card_grant_options(rm).len(), total - 2);
+        game.act("skip_select", &Value::Null)
+            .expect("confirm accepted");
+        let rm = game.rm.as_ref().unwrap();
+        assert_eq!(rmx::pending_card_grants(rm), 0);
+        assert_eq!(rm.run_state.master_deck.len(), deck_len + 2);
+    }
+
+    /// Kifuda's "up to 3" enchant played pick by pick (GH #1361).
+    #[test]
+    fn keep_open_picks_enchant_several_cards_on_an_up_to_n_screen() {
+        let mut game = Game::new();
+        game.start("Defect", "1001", 0, "roll").expect("start");
+        with_relic(&mut game, sts2_core::RelicId::Kifuda);
+        let batch = rmx::pending_deck_enchants(game.rm.as_ref().unwrap());
+        assert!(batch >= 2);
+        game.act("select_cards", &json!({"indices": "0", "keep_open": true}))
+            .expect("pick accepted");
+        let rm = game.rm.as_ref().unwrap();
+        assert_eq!(rmx::pending_deck_enchants(rm), batch - 1);
+        assert!(rmx::pending_enchant_optional(rm));
+        game.act("select_cards", &json!({"indices": "0", "keep_open": true}))
+            .expect("pick accepted");
+        game.act("skip_select", &Value::Null)
+            .expect("confirm accepted");
+        assert_eq!(rmx::pending_deck_enchants(game.rm.as_ref().unwrap()), 0);
+    }
+
+    /// The run-mode translator (`to_workbench_verb`) on Sea Glass: the
+    /// decline index is a skip, not a card (the Python fix of #1357), and a
+    /// pick keeps the grid open (GH #1361).
+    #[test]
+    fn sea_glass_translates_like_the_run_env_plays_it() {
+        let mut game = Game::new();
+        game.start("Ironclad", "4023", 0, "roll").expect("start");
+        with_relic(&mut game, sts2_core::RelicId::SeaGlass);
+        let rm = game.rm.as_ref().unwrap();
+        let total = rmx::card_grant_options(rm).len();
+        let decline = json!({"action": "grant_deck_card", "idx": total});
+        assert_eq!(
+            crate::runmode::to_workbench_verb(rm, &decline),
+            ("skip_select".to_string(), json!({}))
+        );
+        let pick = json!({"action": "grant_deck_card", "idx": 0});
+        assert_eq!(
+            crate::runmode::to_workbench_verb(rm, &pick),
+            (
+                "select_cards".to_string(),
+                json!({"indices": "0", "keep_open": true})
+            )
+        );
     }
 
     /// Claws (GH #1353) renders "up to 6" and one `select_cards` transforms

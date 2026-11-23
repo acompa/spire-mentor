@@ -14,6 +14,7 @@ processes on the real v0.111.0 engine (G-skeleton).
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import json
 import math
@@ -306,11 +307,13 @@ def spy_shipped(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, np.ndarray]]:
     out: list[dict[str, np.ndarray]] = []
     real = L.pack_rows
 
-    def spy(src: Any, table: Any, threads: int = 1) -> Any:
-        shm, layout, secs = real(src, table, threads)
-        rb = rowstore.batch_from_shm(shm, layout)
-        out.append({k: np.array(v, copy=True) for k, v in rb.items()})
-        del rb
+    def spy(src: Any, table: Any, *a: Any) -> Any:
+        shm, layout, secs = real(src, table, *a)
+        # The table's rows, in its order: a placed block (`Cfg.place_rows`) holds
+        # them chunk by chunk, and its chunk reads them through the block's row map.
+        blk = rowstore.Chunk(rowstore.batch_from_shm(shm, layout))
+        out.append(dict(rowstore.take(blk, np.arange(blk.n))))
+        del blk
         return shm, layout, secs
 
     monkeypatch.setattr(L, "pack_rows", spy)
@@ -401,6 +404,9 @@ def make_cfg(save_dir: Path, **kw: Any) -> L.Cfg:
         # Scripted rows are not real rows: the fill check (FILL_MISMATCH) would refuse
         # them. The real-worker tests and the fill-check tests turn it on.
         "fill_check": False,
+        # The block-lifetime tests check that an update's block goes with its rows;
+        # `test_the_landed_updates_block_takes_the_next_cut` turns the pool on.
+        "recycle_blocks": False,
     }
     return L.Cfg(**(base | kw))
 
@@ -468,15 +474,13 @@ def _serve_round(
     src = FakeSource(lr.worker_cfg(), workers=2, slots=48, error_p=0.0, start_error_p=0.0)
     src.want_feats = True
     msgs = [src.recv(w) for w in range(2)]
-    from ppo.e2e.rowstore import Chunk
-
-    ch = Chunk(concat([m[4] for m in msgs]))
     metas = np.concatenate([m[2] for m in msgs])
+    ch = L.Round(concat([m[4] for m in msgs]), metas, 0, lr.version, 0)
     feats = [f for m in msgs for f in m[5]["feats"]]
-    rows = [lr._store(ch, i, m, 0.0, 0) for i, m in enumerate(metas)]
+    assert lr._store(ch, [0.0] * len(metas)) == len(metas)
     st = lr._new_stats()
     lr.gen.manual_seed(11)
-    acts = lr._serve(rows, ch, metas, feats, st)
+    acts = lr._serve(ch, metas, feats, st)
     assert np.array_equal(acts, ch.rb["action"])
     lr.stop()
     return {k: ch.rb[k].copy() for k in (*ACTING, "tprob")}, st
@@ -546,9 +550,15 @@ def test_cut_ships_ended_open_and_practice_rows_and_drops_errors(tmp_path: Path)
             ch.rb["run_uid"][j] = 0
         st = lr._new_stats()
 
-        def store(uid: int, t: int, r_prev: float, j: int, **kw: Any) -> L.Row:
+        def store(uid: int, t: int, r_prev: float, j: int, **kw: Any) -> None:
+            """Row `j` of `ch` as a round of its own, stored."""
+            from ppo.e2e.rowstore import take
+
             ch.rb["run_uid"][j], ch.rb["t"][j] = uid, t
-            return lr._store(ch, j, _meta(uid, t, **kw), r_prev, lr.n_dispatched)
+            meta = _meta(uid, t, **kw)[None]
+            one = L.Round(take(ch, [j]), meta, lr.n_dispatched, lr.version, lr.n_rounds)
+            lr.n_rounds += 1
+            assert lr._store(one, [r_prev]) == 1
 
         def end(uid: int, t_last: int, outcome: str, r_last: float = 0.0, **kw: Any) -> None:
             rec = {"uid": uid, "t_last": t_last, "outcome": outcome, "r_last": r_last}
@@ -585,7 +595,8 @@ def test_cut_ships_ended_open_and_practice_rows_and_drops_errors(tmp_path: Path)
         assert flags(2, 1) == (False, True, 0.0)  # the cut's bootstrap row: value only
         assert flags(3, 0)[:2] == (False, False)
         assert flags(3, 1) == (True, True, 0.0)  # a practice end: bootstrap with done set
-        assert list(lr.segs) == [2] and [r.t for r in lr.segs[2].pending] == [1]
+        assert list(lr.segs) == [2] and len(lr.segs[2].refs) == 1 and lr.segs[2].next_t == 2
+        assert len(lr.rounds) == 1  # only the round of the open run's newest row is kept
 
         # Next iteration: the open run's bootstrap row ships again as an ordinary row
         # once its reward arrives; a segment with no new row stays dormant.
@@ -608,7 +619,7 @@ def test_cut_ships_ended_open_and_practice_rows_and_drops_errors(tmp_path: Path)
         lr.n_dispatched += 1
         store(6, 0, 0.0, 11)
         store(6, 1, 0.1, 12)
-        lr.segs[6].pending[0].reward = None
+        lr.segs[6].ended = True  # an end that brought its last row no reward
         with pytest.raises(RuntimeError, match="no reward"):
             lr.cut()
     finally:
@@ -860,8 +871,267 @@ def test_gather_to_shm_allocates_no_large_array(monkeypatch: pytest.MonkeyPatch)
     assert peak - before < 4 * COPY_BLOCK_BYTES, (peak - before, data)
 
 
+def test_a_round_slot_carries_a_row_batch_to_the_learners_map() -> None:
+    """`roundshm`: a batch written by `RoundSlot` reads back equal through
+    `RoundMaps`, the slot reuses its block and replaces it when a round does not
+    fit, and nothing is left in /dev/shm after both sides close."""
+    from ppo.e2e import roundshm as RS
+    from ppo.e2e.rowstore import PREFIX, SHM_DIR
+
+    assert RS.PREFIX == PREFIX  # `rowstore.sweep` finds a dead learner's round blocks
+    owner = 4_000_000 + os.getpid() % 100_000  # no live pid: this test's blocks only
+    slot, maps = RS.RoundSlot(owner), RS.RoundMaps()
+    small, big = _chunk(3, 1).rb, _chunk(400, 2).rb
+    names = []
+    for rb in (small, small, big, small):
+        ref = slot.write(rb)
+        assert RS.is_ref(ref) and not RS.is_ref(rb)
+        names.append(ref[1])
+        got = maps.rows(0, ref)
+        for f in C.ROW_FIELDS:
+            nan = np.issubdtype(rb[f.name].dtype, np.floating)
+            assert np.array_equal(got[f.name], rb[f.name], equal_nan=nan), f.name
+            assert got[f.name].dtype == rb[f.name].dtype
+        del got
+    assert names[0] == names[1] != names[2] == names[3]  # reused, grown, reused
+    slot.close()
+    maps.close()
+    assert not list(SHM_DIR.glob(f"{PREFIX}{owner}_*"))
+
+
+def _same_rows(a: Any, b: Any) -> None:
+    assert set(a) == set(b)
+    for k in a:
+        nan = np.issubdtype(a[k].dtype, np.floating)
+        assert a[k].dtype == b[k].dtype and a[k].shape == b[k].shape, k
+        assert np.array_equal(a[k], b[k], equal_nan=nan), k
+
+
+def test_compact_rows_are_the_dense_rows() -> None:
+    """`contracts.compact_rows` keeps each token's live columns only: about a tenth
+    of the bytes of combat rows, the dense rows come back bit for bit
+    (`dense_rows`), a value outside a section's live columns is refused, and a
+    compact batch validates and gives the same characters."""
+    from ppo.e2e.rowstore import row_chars
+
+    rng = np.random.default_rng(5)
+    rows = [synthetic_row(rng, combat=bool(i % 2), t=i, body=(2, 6)) for i in range(24)]
+    rb = concat(rows)
+    crb = C.compact_rows(rb)
+    assert C.is_compact(crb) and not C.is_compact(rb)
+    assert [f.name for f in C.row_fields(crb)] == list(crb)
+    assert not set(C.DENSE_TOKEN_FIELDS) & set(crb)
+    dense4 = sum(rb[k].nbytes for k in C.DENSE_TOKEN_FIELDS)
+    assert sum(crb[k].nbytes for k in ("ccat", "ccont", "pccat", "pccont")) * 4 < dense4
+    _same_rows(dict(rb), C.dense_rows(crb))
+    _same_rows(C.compact_rows(crb), crb)  # already compact: as it is
+    counts = C.compact_counts(crb)
+    assert {a: int(n.sum()) for a, n in counts.items()} == {a: len(crb[a]) for a in counts}
+    C.validate_row_batch(crb)
+    assert np.array_equal(row_chars(crb), row_chars(rb))
+    dead = np.setdiff1d(np.arange(C.N_CONT), C.SECTION_LIVE[int(rb["sec"][0])][1])
+    bad = dict(rb) | {"cont": rb["cont"].copy()}
+    bad["cont"][0, int(dead[0])] = 1.0
+    with pytest.raises(C.SchemaError, match="outside its section's live columns"):
+        C.compact_rows(bad)
+
+
+@pytest.mark.parametrize("threads", [1, 3])
+def test_the_row_store_keeps_compact_rows_compact(threads: int) -> None:
+    """Every row-store call takes compact chunks and gives compact rows whose dense
+    rows are those of the same call on the dense chunks; a compact chunk's batch
+    still answers a read of a dense matrix; the two layouts do not mix."""
+    from ppo.e2e import roundshm as RS
+    from ppo.e2e.rowstore import Chunk, batch_from_shm, gather, gather_to_shm, take, take_to_shm
+
+    dense = [_chunk(n, seed) for n, seed in ((40, 1), (7, 2), (90, 3))]
+    comp = [Chunk(C.compact_rows(ch.rb)) for ch in dense]
+    for d, c in zip(dense, comp, strict=True):
+        assert np.array_equal(c.rb["cont"], d.rb["cont"]) and "cont" not in c.rb
+    rng = np.random.default_rng(threads)
+    picks = [
+        (int(k), int(i)) for k in rng.integers(0, 3, 150) for i in [rng.integers(0, dense[k].n)]
+    ]
+    idx = rng.permutation(40)[:17]
+    _same_rows(dict(take(dense[0], idx)), C.dense_rows(take(comp[0], idx)))
+    want = gather([(dense[k], i) for k, i in picks])
+    refs = [(comp[k], i) for k, i in picks]
+    got = gather(refs)
+    assert C.is_compact(got)
+    _same_rows(dict(want), C.dense_rows(got))
+    shm, layout = gather_to_shm(refs, threads=threads)
+    try:
+        blk = Chunk(batch_from_shm(shm, layout))
+        _same_rows(dict(blk.rb), dict(got))
+        shm2, layout2 = take_to_shm(blk, np.arange(3, 60))
+        try:
+            held = batch_from_shm(shm2, layout2)
+            _same_rows(dict(held), dict(take(blk, np.arange(3, 60))))
+            del held
+        finally:
+            shm2.close()
+            shm2.unlink()
+        del blk
+    finally:
+        shm.close()
+        shm.unlink()
+    with pytest.raises(ValueError, match="dense and the compact"):
+        gather_to_shm([(dense[0], 0), (comp[1], 0)])
+    owner = 4_100_000 + os.getpid() % 100_000
+    slot, maps = RS.RoundSlot(owner), RS.RoundMaps()
+    try:
+        back = maps.rows(0, slot.write(comp[1].rb))
+        _same_rows(dict(back), dict(comp[1].rb))
+        del back
+    finally:
+        slot.close()
+        maps.close()
+
+
+@pytest.mark.parametrize("builder", ["to_batch", "to_packed"])
+def test_the_batch_builders_build_a_compact_batchs_dense_tokens(builder: str) -> None:
+    """`to_batch` and `to_packed` of a compact row batch are those of its dense rows:
+    the dense token matrices are built on the device (`net.dense_tokens`)."""
+    import dataclasses
+
+    from ppo.e2e import net as N
+
+    rng = np.random.default_rng(11)
+    rb = concat([synthetic_row(rng, combat=bool(i % 3), t=i, body=(2, 6)) for i in range(20)])
+    fn = getattr(N, builder)
+    a, b = fn(rb, "cpu"), fn(C.compact_rows(rb), "cpu")
+    for f in dataclasses.fields(a):
+        x, y = getattr(a, f.name), getattr(b, f.name)
+        if isinstance(x, torch.Tensor):
+            assert x.dtype == y.dtype and torch.equal(x, y), f.name
+        else:
+            assert x == y, f.name
+
+
+def test_compact_rows_train_as_dense_rows(tmp_path: Path) -> None:
+    """`compact_rows` changes how the rows are stored and shipped, not their values:
+    three updates give the same losses and the same nets as the dense rows."""
+    rows, nets = {}, {}
+    for compact in (True, False):
+        cfg = make_cfg(tmp_path / str(compact), max_iters=3, compact_rows=compact)
+        lr = make_learner(cfg)
+        lr.train()
+        rows[compact] = [r["update"] for r in lr.stats_rows]
+        nets[compact] = {k: v.detach().clone() for k, v in lr.net_inf.state_dict().items()}
+    assert len(rows[True]) == len(rows[False]) == 3
+    for a, b in zip(rows[True], rows[False], strict=True):
+        assert a["steps"] == b["steps"] > 0 and a["rows_trained"] == b["rows_trained"]
+        for k in ("vloss", "ploss", "ent"):
+            assert a[k] == b[k], k
+    for k, v in nets[False].items():
+        assert torch.equal(nets[True][k], v), k
+
+
+@pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize("threads", [1, 3])
+def test_a_placed_block_reads_as_the_table(
+    compact: bool, threads: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`place_to_shm` copies the chunks one after another (a chunk the table hardly
+    uses: only its used rows) and maps the table's rows into the block: the block's
+    chunk gives the same rows as `gather_to_shm`'s to every reader (`take`,
+    `axis_rows`, `take_to_shm`, `row_chars`, a later copy), and so does
+    `gather_to_shm`'s chunk-by-chunk path."""
+    from ppo.e2e import rowstore as RS
+
+    chunks = [_chunk(n, seed) for n, seed in ((40, 1), (7, 2), (90, 3), (30, 4))]
+    if compact:
+        chunks = [RS.Chunk(C.compact_rows(ch.rb)) for ch in chunks]
+    rng = np.random.default_rng(threads)
+    # Chunks 0-2 whole, in a scattered order; chunk 3 only three of its rows.
+    refs = [(chunks[k], i) for k in range(3) for i in range(chunks[k].n)]
+    refs = [refs[j] for j in rng.permutation(len(refs))] + [(chunks[3], i) for i in (17, 2, 9)]
+    n = len(refs)
+    want_shm, want_layout = RS.gather_to_shm(refs, threads=threads)
+    shm, layout = RS.place_to_shm(refs, threads=threads)
+    blocks = [want_shm, shm]
+    try:
+        want = RS.Chunk(RS.batch_from_shm(want_shm, want_layout))
+        got = RS.Chunk(RS.batch_from_shm(shm, layout))
+        assert got.n == want.n == n and got.row_of is not None and want.row_of is None
+        assert len(got.rb["n_tok"]) == n  # chunk 3's unused rows are not in the block
+        every = np.arange(n)
+        _same_rows(dict(RS.take(got, every)), dict(RS.take(want, every)))
+        idx = rng.permutation(n)[:25]
+        _same_rows(dict(RS.take(got, idx)), dict(RS.take(want, idx)))
+        assert np.array_equal(
+            RS.axis_rows(got, "mem_class", idx), RS.axis_rows(want, "mem_class", idx)
+        )
+        assert np.array_equal(RS.row_chars(got.rb), RS.row_chars(want.rb))
+        assert np.array_equal(got.classes(5), want.classes(5))
+        held, held_layout = RS.take_to_shm(got, idx)
+        blocks.append(held)
+        _same_rows(dict(RS.batch_from_shm(held, held_layout)), dict(RS.take(want, idx)))
+        # The next cut reads rows out of a placed block (rows the hold-back kept).
+        again = [(got, int(i)) for i in idx[:9]] + [(chunks[3], 4)]
+        ref_again = [(want, int(i)) for i in idx[:9]] + [(chunks[3], 4)]
+        for fn in (RS.gather_to_shm, RS.place_to_shm):
+            s2, l2 = fn(again, threads=threads)
+            blocks.append(s2)
+            c2 = RS.Chunk(RS.batch_from_shm(s2, l2))
+            _same_rows(dict(RS.take(c2, np.arange(10))), dict(RS.gather(ref_again)))
+            del c2
+        monkeypatch.setattr(RS, "JOIN_AXIS_BYTES", -1)  # every axis chunk by chunk
+        s3, l3 = RS.gather_to_shm(refs, threads=threads)
+        blocks.append(s3)
+        _same_rows(dict(RS.batch_from_shm(s3, l3)), dict(want.rb))
+        del want, got
+    finally:
+        for b in blocks:
+            with contextlib.suppress(BufferError):
+                b.close()
+            b.unlink()
+
+
+def test_a_queued_round_serves_as_a_waited_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`serve_overlap` queues a teacherless round's forward before the round's
+    bookkeeping and writes its fields after the workers are answered: the same
+    actions, the same shipped rows and the same nets as without it."""
+    shipped, nets, acts = {}, {}, {}
+    for overlap in (True, False):
+        with monkeypatch.context() as mp:
+            got = shipped[overlap] = spy_shipped(mp)
+            cfg = make_cfg(tmp_path / str(overlap), max_iters=3, serve_overlap=overlap)
+            lr = make_learner(cfg, teachers=False)
+            lr.train()
+            assert len(got) == 3
+        nets[overlap] = {k: v.detach().clone() for k, v in lr.net_inf.state_dict().items()}
+        acts[overlap] = [r["update"]["rows_trained"] for r in lr.stats_rows]
+    assert acts[True] == acts[False]
+    for a, b in zip(shipped[True], shipped[False], strict=True):
+        _same_rows(a, b)
+    for k, v in nets[False].items():
+        assert torch.equal(nets[True][k], v), k
+
+
+def test_placed_rows_train_as_ordered_rows(tmp_path: Path) -> None:
+    """`place_rows` changes where the rows lie in the update's block, not what the
+    ranks read: three updates give the same losses and the same nets."""
+    rows, nets = {}, {}
+    for place in (True, False):
+        cfg = make_cfg(tmp_path / str(place), max_iters=3, place_rows=place)
+        lr = make_learner(cfg)
+        lr.train()
+        rows[place] = [r["update"] for r in lr.stats_rows]
+        nets[place] = {k: v.detach().clone() for k, v in lr.net_inf.state_dict().items()}
+    assert len(rows[True]) == len(rows[False]) == 3
+    for a, b in zip(rows[True], rows[False], strict=True):
+        assert a["steps"] == b["steps"] > 0 and a["rows_trained"] == b["rows_trained"]
+        for k in ("vloss", "ploss", "ent"):
+            assert a[k] == b[k], k
+    for k, v in nets[False].items():
+        assert torch.equal(nets[True][k], v), k
+
+
 def test_a_shm_chunk_reads_its_block_and_closes_it_when_it_goes() -> None:
-    from ppo.e2e.rowstore import ShmChunk, batch_to_shm, gather
+    from ppo.e2e.rowstore import ShmChunk, batch_to_shm, drain_closes, gather
 
     src = _chunk(6, 4)
     shm, layout = batch_to_shm(src.rb)
@@ -875,6 +1145,7 @@ def test_a_shm_chunk_reads_its_block_and_closes_it_when_it_goes() -> None:
     ch.unlink()  # a second unlink is a no-op
     assert shm.buf is not None  # the name is gone; the mapping stays with the chunk
     del ch
+    assert drain_closes(timeout=10)  # the unmap runs in the closer's thread
     assert shm.buf is None
 
 
@@ -891,22 +1162,31 @@ def _dead_pid() -> int:
 
 
 def test_row_blocks_carry_their_owners_pid() -> None:
-    from ppo.e2e.rowstore import PREFIX, batch_to_shm, gather_to_shm, take_to_shm
+    import subprocess
+
+    from ppo.e2e.rowstore import PREFIX, batch_to_shm, gather_to_shm, sweep, take_to_shm
 
     src = _chunk(6, 4)
+    # Owners that are alive: a learner starting in a parallel test sweeps the
+    # blocks of dead owners, and made-up pids (4242) are dead ones.
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    a, b = os.getppid(), child.pid
     made = [
         (batch_to_shm(src.rb)[0], os.getpid()),
-        (take_to_shm(src, [1, 3], owner=4242)[0], 4242),
-        (gather_to_shm([(src, 2), (src, 0)], owner=4343)[0], 4343),
-        (gather_to_shm([], owner=4444)[0], 4444),  # the empty table's path
+        (take_to_shm(src, [1, 3], owner=a)[0], a),
+        (gather_to_shm([(src, 2), (src, 0)], owner=b)[0], b),
+        (gather_to_shm([], owner=b)[0], b),  # the empty table's path
     ]
     try:
+        sweep()  # what a concurrent learner's start does
         for shm, owner in made:
             assert shm.name.lstrip("/").startswith(f"{PREFIX}{owner}_"), shm.name
     finally:
         for shm, _ in made:
             shm.close()
             shm.unlink()
+        child.kill()
+        child.wait()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shared memory names; no sweep on Windows")
@@ -1002,8 +1282,8 @@ class ChunkProbe(TeacherLearner):
     def _poll(self, block: bool) -> bool:
         moved = super()._poll(block)
         if moved:
-            chunks = {id(r.chunk): r.chunk.n for r in self.held.values()}
-            self.seen.append((len(self.held), sum(chunks.values())))
+            alive = self.held.chunk.n if self.held.chunk is not None else 0
+            self.seen.append((len(self.held), alive))
         return moved
 
 
@@ -1014,14 +1294,13 @@ def test_held_rows_keep_only_their_own_rows_alive(tmp_path: Path, sync_updates: 
     lr.seen = []
     lr.train()
     assert len(lr.seen) == 7 and all(held > 0 for held, _ in lr.seen)
-    # Before rank 0's copy the held rows point into the update's row block (the
-    # whole table); without any copy, into the rounds of the last HOLD_ITERS
-    # iterations, about three times their own rows.
+    # The held rows are in rank 0's copy of them alone: not in the update's row
+    # block (the whole table), nor in the rounds of the last HOLD_ITERS iterations.
     assert all(alive == held for held, alive in lr.seen), lr.seen
 
 
 class CutProbe(TeacherLearner):
-    """Records, after every cut, where the rows the learner keeps point."""
+    """Records, after every cut, what the learner still keeps of its rows."""
 
     seen: list[dict[str, Any]]
 
@@ -1029,40 +1308,37 @@ class CutProbe(TeacherLearner):
         if not super()._pack_done(block=block):
             return False
         assert self.inflight is not None
-        self._probe(self.inflight["block"], self.inflight["rows"])
-        return True
-
-    def _probe(self, block: Any, shipped: list[L.Row]) -> None:
-        pending = [r for s in self.segs.values() for r in s.pending]
-        pend = {id(r) for r in pending}
+        table = np.asarray(self.inflight["job"]["refs"], np.int64)
+        pending = np.asarray([x for s in self.segs.values() for x in s.refs], np.int64)
+        k, _i = self._locate(pending)  # every stored row is in a kept round
         self.seen.append(
             {
-                "shipped": len(shipped),
-                "in_block": sum(r.chunk is block for r in shipped),
-                "pending_shipped": sum(id(r) in pend for r in shipped),
+                "shipped": len(table),
+                "pending": len(pending),
+                "pending_shipped": int(np.isin(pending, table).sum()),
+                "pending_rounds": len(set(k.tolist())),
+                "rounds": len(self.rounds),
                 "held": len(self.held),
-                "held_in_block": sum(r.chunk is block for r in self.held.values()),
-                "pending_in_block": sum(r.chunk is block for r in pending),
-                "pending_chunks": len({id(r.chunk) for r in pending}),
+                "held_shipped": int(np.isin(self.held.refs, table).sum()),
             }
         )
+        return True
 
 
-def test_the_cut_points_the_shipped_rows_into_the_row_block(tmp_path: Path) -> None:
-    """After a cut every shipped row reads the update's row block, so no serving
-    round and no older held chunk stays alive through them; only an open
-    segment's newest row (shipped as the bootstrap row, stored again next
-    iteration) stays in its round, the last one."""
+def test_the_cut_keeps_only_the_open_segments_rounds(tmp_path: Path) -> None:
+    """After a cut the learner keeps no serving round but the last one, where the
+    open segments' newest rows are (each shipped as a bootstrap row and stored
+    again next iteration), and the held rows it has are all in the table it
+    shipped (their inputs: the last update's copy of them)."""
     lr = make_learner(make_cfg(tmp_path, max_iters=5), cls=CutProbe)
     assert isinstance(lr, CutProbe)
     lr.seen = []
     lr.train()
     assert len(lr.seen) == 5
     for s in lr.seen:
-        assert s["in_block"] + s["pending_shipped"] == s["shipped"], s
-        assert s["pending_shipped"] > 0 and s["pending_in_block"] == 0, s
-        assert s["held_in_block"] == s["held"], s
-        assert s["pending_chunks"] == 1, s
+        assert s["pending"] > 0 and s["pending_shipped"] == s["pending"], s
+        assert s["rounds"] == s["pending_rounds"] == 1, s
+        assert s["held_shipped"] == s["held"], s
     assert all(s["held"] > 0 for s in lr.seen[1:])
 
 
@@ -1076,12 +1352,13 @@ class SentProbe(TeacherLearner):
 
     sent: dict[tuple[int, int], dict[str, np.ndarray]]
 
-    def _store(self, ch: Any, i: int, m: np.ndarray, r_prev: float, c: int) -> L.Row:
+    def _store(self, ch: Any, r_prev: list[float]) -> int:
         from ppo.e2e.rowstore import take
 
-        row = super()._store(ch, i, m, r_prev, c)
-        self.sent[row.uid, row.t] = take(ch, [i])
-        return row
+        n = super()._store(ch, r_prev)
+        for i, (uid, t) in enumerate(ch.meta[:, [L.MC["uid"], L.MC["t"]]].tolist()):
+            self.sent[uid, t] = take(ch, [i])
+        return n
 
 
 def test_every_shipped_row_carries_the_inputs_its_worker_sent(
@@ -1111,6 +1388,153 @@ def test_every_shipped_row_carries_the_inputs_its_worker_sent(
     assert len(shipped) == 7 and max(times.values()) >= 3
 
 
+def test_ahead_keeps_order_hands_over_errors_and_ends_its_thread() -> None:
+    """`update.ahead`: the results in the items' order, an error of `make` where its
+    result would have come, and no thread left after the iterator is closed."""
+    import threading
+
+    from ppo.e2e.update import ahead
+
+    def alive() -> int:
+        return sum(t.name == "e2e-batch-ahead" for t in threading.enumerate())
+
+    assert list(ahead(lambda x: x * x, range(50), depth=3)) == [x * x for x in range(50)]
+    assert list(ahead(lambda x: x, [])) == []
+
+    def make(x: int) -> int:
+        if x == 3:
+            raise ValueError("item 3")
+        return x
+
+    it = ahead(make, range(10))
+    assert [next(it) for _ in range(3)] == [0, 1, 2]
+    with pytest.raises(ValueError, match="item 3"):
+        next(it)
+    it = ahead(lambda x: x, range(1000), depth=2)  # dropped early: the thread ends
+    assert next(it) == 0
+    it.close()
+    assert alive() == 0
+
+
+def test_the_packed_update_trains_as_the_padded_one(tmp_path: Path) -> None:
+    """`packed_update` merges a step's strata into one packed forward: the first
+    update's losses agree with the padded steps' up to float rounding, the nets
+    stay close over three updates, and as many steps are taken."""
+    rows, nets = {}, {}
+    for packed in (True, False):
+        cfg = make_cfg(tmp_path / str(packed), max_iters=3, packed_update=packed)
+        lr = make_learner(cfg)
+        lr.train()
+        rows[packed] = [r["update"] for r in lr.stats_rows]
+        nets[packed] = {k: v.detach().clone() for k, v in lr.net_inf.state_dict().items()}
+    a, b = rows[True][0], rows[False][0]
+    assert a["steps"] == b["steps"] > 0 and a["rows_trained"] == b["rows_trained"]
+    for k in ("vloss", "ploss", "ent"):
+        assert a[k] == pytest.approx(b[k], rel=1e-3, abs=1e-5), k
+    for k, v in nets[False].items():
+        if v.is_floating_point():
+            assert torch.allclose(nets[True][k], v, rtol=5e-2, atol=5e-3), k
+
+
+def test_a_split_packed_update_step_trains_as_the_whole_one(tmp_path: Path) -> None:
+    """`update_chunk` splits a rank's part of a step into several packed forwards
+    (a rank with the whole step on a small device): the same steps, the same
+    losses and the same nets up to float rounding."""
+    rows, nets = {}, {}
+    for chunk in (7, 1 << 20):
+        cfg = make_cfg(tmp_path / str(chunk), max_iters=3, update_chunk=chunk)
+        lr = make_learner(cfg)
+        lr.train()
+        rows[chunk] = [r["update"] for r in lr.stats_rows]
+        nets[chunk] = {k: v.detach().clone() for k, v in lr.net_inf.state_dict().items()}
+    a, b = rows[7][0], rows[1 << 20][0]
+    assert a["steps"] == b["steps"] > 0 and a["rows_trained"] == b["rows_trained"]
+    for k in ("vloss", "ploss", "ent"):
+        assert a[k] == pytest.approx(b[k], rel=1e-3, abs=1e-5), k
+    for k, v in nets[1 << 20].items():
+        if v.is_floating_point():
+            assert torch.allclose(nets[7][k], v, rtol=5e-2, atol=5e-3), k
+
+
+def test_the_packed_prepass_gives_the_padded_prepass_statistics(tmp_path: Path) -> None:
+    """`packed_prepass` changes how the pre-pass batches its rows, not what it
+    computes: the update's losses and entropies agree with the padded pre-pass's
+    up to float rounding."""
+    rows = {}
+    for packed in (True, False):
+        cfg = make_cfg(
+            tmp_path / str(packed), max_iters=2, sync_updates=True, packed_prepass=packed
+        )
+        lr = make_learner(cfg)
+        lr.train()
+        rows[packed] = [r["update"] for r in lr.stats_rows]
+    assert len(rows[True]) == len(rows[False]) == 2
+    for a, b in zip(rows[True], rows[False], strict=True):
+        assert a["rows_trained"] == b["rows_trained"] > 0
+        for k in ("vloss", "ploss", "ent", "ent_n", "kl"):
+            assert a[k] == pytest.approx(b[k], rel=1e-3, abs=1e-5), k
+        for t, v in b["ent_t"].items():
+            assert a["ent_t"][t] == pytest.approx(v, rel=1e-3, abs=1e-5, nan_ok=True), t
+
+
+def test_the_landed_updates_block_takes_the_next_cut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`recycle_blocks`: the cuts reuse row blocks instead of making one each (the
+    first cut's block has room for the later ones), the run trains as without it,
+    and no block is left after the stop."""
+    from ppo.e2e.rowstore import PREFIX, SHM_DIR
+
+    names: list[str] = []
+    real = L.pack_rows
+
+    def spy(src: Any, table: Any, *a: Any) -> Any:
+        shm, layout, secs = real(src, table, *a)
+        names.append(shm.name)
+        return shm, layout, secs
+
+    monkeypatch.setattr(L, "pack_rows", spy)
+    stats = {}
+    for on in (True, False):
+        names.clear()
+        lr = make_learner(make_cfg(tmp_path / str(on), max_iters=5, recycle_blocks=on))
+        assert lr.train() == "max_iters"
+        stats[on] = [(r["update"]["vloss"], r["update"]["rows_trained"]) for r in lr.stats_rows]
+        assert len(names) == 5
+        assert (len(set(names)) < 5) == on, names
+        mine = [p.name for p in SHM_DIR.glob(f"{PREFIX}{os.getpid()}_*")]
+        assert not mine, mine
+    assert stats[True] == stats[False]
+
+
+def test_manual_gc_collects_every_gc_every_iterations_and_restores_the_collector(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`manual_gc`: no automatic collection while training, one timed collection
+    every `gc_every` iterations (in the stats), and the collector is back on after
+    `train`."""
+    import gc
+
+    seen: list[bool] = []
+    full: list[int] = []
+    real_collect = gc.collect
+    monkeypatch.setattr(L.gc, "collect", lambda *a: full.append(1) or real_collect(*a))
+
+    class Probe(TeacherLearner):
+        def collect(self):
+            seen.append(gc.isenabled())
+            return super().collect()
+
+    assert gc.isenabled()
+    lr = make_learner(make_cfg(tmp_path, max_iters=5, gc_every=2), cls=Probe)
+    lr.train()
+    assert seen and not any(seen)
+    assert gc.isenabled()
+    assert len(full) == 2  # after iterations 2 and 4
+    rows = lr.stats_rows
+    assert rows and all(r["assembly"]["gc_s"] >= 0 and r["assembly"]["gc_found"] >= 0 for r in rows)
+
+
 @pytest.mark.parametrize("sync_updates", [True, False])
 def test_row_blocks_are_unlinked_after_the_update_and_closed_with_their_last_row(
     tmp_path: Path, sync_updates: bool
@@ -1121,6 +1545,8 @@ def test_row_blocks_are_unlinked_after_the_update_and_closed_with_their_last_row
     other shipped rows go. So after every update the held rows read one block,
     and no row block is left."""
     from multiprocessing import shared_memory
+
+    from ppo.e2e.rowstore import drain_closes
 
     row_blocks: list[Any] = []
     held_blocks: list[Any] = []
@@ -1137,9 +1563,10 @@ def test_row_blocks_are_unlinked_after_the_update_and_closed_with_their_last_row
         def _poll(self, block: bool) -> bool:
             moved = super()._poll(block)
             if moved:
-                chunks = {id(r.chunk): r.chunk for r in self.held.values()}
+                chunks = {id(c): c for c in [self.held.chunk] if c is not None}
                 assert all(isinstance(c, L.ShmChunk) for c in chunks.values())
                 held_blocks.extend(c.shm for c in chunks.values())
+                assert drain_closes(timeout=10)  # the unmaps run in the closer's thread
                 mapped_rows = sum(s.buf is not None for s in row_blocks)
                 mapped_held = sum(s.buf is not None for s in held_blocks)
                 after.append((mapped_rows, len(chunks), mapped_held))
@@ -1226,7 +1653,7 @@ def test_async_and_inline_cuts_ship_the_same_rows(
         y = _cut_run(tmp_path, mp, False)
     assert len(x["shipped"]) == len(y["shipped"]) == 11 == len(x["jobs"]) == len(y["jobs"])
     for bx, by in zip(x["shipped"], y["shipped"], strict=True):
-        for f in C.ROW_FIELDS:
+        for f in C.row_fields(bx):
             assert np.array_equal(bx[f.name].view(np.uint8), by[f.name].view(np.uint8)), f.name
     for jx, jy in zip(x["jobs"], y["jobs"], strict=True):
         assert set(jx) == set(jy)
@@ -1250,11 +1677,12 @@ class PackProbe(TeacherLearner):
     stored: dict[tuple[int, int], tuple[int, bool]]
     during: list[int]
 
-    def _store(self, ch: Any, i: int, m: np.ndarray, r_prev: float, c: int) -> L.Row:
-        row = super()._store(ch, i, m, r_prev, c)
+    def _store(self, ch: Any, r_prev: list[float]) -> int:
+        n = super()._store(ch, r_prev)
         assert not (self.packing is not None and self.inflight is not None)
-        self.stored[row.uid, row.t] = (row.it, self.packing is not None)
-        return row
+        for uid, t in ch.meta[:, [L.MC["uid"], L.MC["t"]]].tolist():
+            self.stored[uid, t] = (ch.it, self.packing is not None)
+        return n
 
 
 def test_serving_goes_on_while_the_cut_is_copied(
@@ -1269,11 +1697,11 @@ def test_serving_goes_on_while_the_cut_is_copied(
     real = L.pack_rows
     box: dict[str, L.Learner] = {}
 
-    def slow(src: Any, table: Any, threads: int = 1) -> Any:
+    def slow(src: Any, table: Any, *a: Any) -> Any:
         if box["lr"].n_dispatched < 6:  # the last cut has no collection after it
             assert gate.wait(30)
         gate.clear()
-        return real(src, table, threads)
+        return real(src, table, *a)
 
     monkeypatch.setattr(L, "pack_rows", slow)
     shipped = spy_shipped(monkeypatch)  # wraps `slow`
@@ -1315,20 +1743,24 @@ def test_a_cut_still_copying_at_a_stop_leaves_no_block(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A stop (here an error) while a cut's block is being copied removes the block."""
+    import threading
     from multiprocessing import shared_memory
 
     names: list[str] = []
     real = L.pack_rows
+    seen = threading.Event()  # a round has seen the cut being copied
 
-    def spy(src: Any, table: Any, threads: int = 1) -> Any:
-        shm, layout, secs = real(src, table, threads)
+    def spy(src: Any, table: Any, *a: Any) -> Any:
+        shm, layout, secs = real(src, table, *a)
         names.append(shm.name)
+        seen.wait(timeout=30)  # or the serving loop may take a finished copy first
         return shm, layout, secs
 
     monkeypatch.setattr(L, "pack_rows", spy)
 
     def on_round(lr: L.Learner, _src: FakeSource) -> None:
         if lr.packing is not None:
+            seen.set()
             lr.packing["fut"].result()  # the copy is done, the update not yet submitted
             raise RuntimeError("stop with a cut being copied")
 
@@ -1358,6 +1790,9 @@ _VOLATILE = {
 _VOLATILE_UPDATE = {"prepass_s", "update_s", "rank_s", "held_pack_s"}
 _VOLATILE_ASSEMBLY = {
     "cut_s",
+    "cut_early_s",
+    "gc_found",
+    "gc_s",
     "held_land_s",
     "pack_s",
     "pack_wait_s",
@@ -1531,6 +1966,53 @@ def test_stats_rows_split_the_fresh_rows_staleness_from_the_held_rows(tmp_path: 
     assert any(s["max"] > s["fresh_max"] + 1 for s in st)
 
 
+class CharSource(FakeSource):
+    """`FakeSource` whose odd segments play Regent: their rows carry X_CHAR (RUNCTX's
+    first token) and their end records the character."""
+
+    def recv(self, w: int) -> Any:
+        msg = super().recv(w)
+        rb, ends = msg[4], msg[6]
+        first = np.concatenate([[0], np.cumsum(rb["n_tok"].astype(np.int64))])[:-1]
+        regent = (rb["run_uid"] % 2).astype(bool)
+        rb["cat"][first, C.XC["X_CHAR"]] = np.where(regent, C.CHAR_ID["Regent"], 0)
+        for e in ends:
+            e["character"] = "Regent" if e["uid"] % 2 else "Ironclad"
+        return msg
+
+
+def test_stats_rows_split_by_character(tmp_path: Path) -> None:
+    """GH #1197: each stats row has a per-character split of the run results, the
+    collected rows' share, and the update's entropy, KL and value loss by type."""
+    lr = TeacherLearner(
+        make_cfg(tmp_path, max_iters=5),
+        source=lambda wcfg: CharSource(wcfg),
+        updater="local",
+        clock=Clock(),
+    )
+    assert lr.train() == "max_iters"
+    rows = lr.stats_rows
+    assert all(set(r["by_char"]) == {"Ironclad", "Regent"} for r in rows)
+    assert all("mix_share" not in r for r in rows)  # a lane without --mix
+    for r in rows:
+        bc = r["by_char"]
+        assert sum(c["runs"] for c in bc.values()) == r["runs"]
+        assert sum(c["share"] for c in bc.values()) == pytest.approx(1.0)
+        assert all(math.isfinite(c["vloss"]) for c in bc.values())
+        assert set(bc["Ironclad"]["entropy"]) | set(bc["Regent"]["entropy"]) == set(r["entropy"])
+        assert not {"ent_norm_ct", "kl_ct", "vloss_c"} & set(r["update"])
+    u0 = rows[-1]  # U0: the policy trains, so the KL is there
+    assert u0["by_char"]["Regent"]["kl"] and set(u0["by_char"]["Regent"]["kl"]) <= set(u0["kl"])
+    # The pooled per-type entropy is the row-weighted mean of the characters'.
+    ic, rg = u0["by_char"]["Ironclad"]["entropy"], u0["by_char"]["Regent"]["entropy"]
+    for t, pooled in u0["entropy"].items():
+        lo, hi = (
+            min(ic.get(t, pooled), rg.get(t, pooled)),
+            max(ic.get(t, pooled), rg.get(t, pooled)),
+        )
+        assert lo - 1e-9 <= pooled <= hi + 1e-9
+
+
 def test_a_resume_takes_the_new_lr_and_weight_decay(tmp_path: Path) -> None:
     """Review finding LRN-4: the optimizer state a resume loads keeps its moments, but
     the groups' base lr and weight decay follow the resumed cfg. They used to be the
@@ -1550,6 +2032,63 @@ def test_a_resume_takes_the_new_lr_and_weight_decay(tmp_path: Path) -> None:
     assert groups["value"]["base_lr"] == sched["lr_value"]
     assert {g["weight_decay"] for g in groups.values()} == {0.0}
     assert [r["it"] for r in lr2.stats_rows] == [3, 4]
+
+
+def _state_weights(path: Path) -> dict[str, torch.Tensor]:
+    st = torch.load(path, map_location="cpu", weights_only=True)
+    return {k: v.clone() for k, v in st["net"]["state_dict"].items()}
+
+
+def test_adapt_phase_trains_only_the_input_layers_and_the_value(tmp_path: Path) -> None:
+    """GH #1197: `lr_trunk` 0 with `lr_input` > 0 (LP-FT style). A 2-group state resumes
+    into 3 groups; through V-warm and U0 (policy loss on) the blocks, final norm and
+    policy heads stay bit-identical while every input-layer and value tensor moves;
+    the watchdog sees the input lr; dropping `lr_input` again resumes into 2 groups and
+    the trunk trains."""
+    from ppo.e2e.net import INPUT_ROOTS, TRUNK_ROOTS
+
+    lr = make_learner(make_cfg(tmp_path, max_iters=2))
+    assert lr.train() == "max_iters"
+    (tmp_path / OC.DONE).unlink()
+    state = tmp_path / "state.pt"
+    before = _state_weights(state)
+    sched = dict(SCHED, lr_trunk=0.0, lr_input=S.DEFAULT.lr_trunk)
+    lr2 = make_learner(make_cfg(tmp_path, max_iters=6, resume=str(state), sched=sched))
+    assert lr2.train() == "max_iters"
+    rows = lr2.stats_rows
+    assert [r["it"] for r in rows] == [3, 4, 5, 6]
+    assert any(r["losses"]["policy"] is not None for r in rows)  # U0: the policy trains
+    for r in rows:
+        assert set(r["lr"]) == {"input", "trunk", "value"} == set(r["lr_closed_form"])
+        assert abs(r["lr"]["trunk"]) <= 0.0 < r["lr"]["input"]
+        assert r["lr"]["input"] == pytest.approx(r["lr_closed_form"]["input"], rel=1e-9)
+        assert r["update"]["lr_input"] == r["lr"]["input"]
+    cfg_json = json.loads((tmp_path / "cfg.json").read_text(encoding="utf-8"))
+    assert cfg_json["sched"]["lr_input"] == S.DEFAULT.lr_trunk
+    opt = lr2.updater.rank.opt
+    assert [g["name"] for g in opt.param_groups] == ["input", "trunk", "value"]
+    trunk_g = opt.param_groups[1]
+    # The frozen side still gets gradients (its moments are not vacuously zero).
+    assert all(float(opt.state[p]["exp_avg"].abs().sum()) > 0 for p in trunk_g["params"])
+    after = _state_weights(state)
+    assert set(after) == set(before)
+    for k in before:
+        root = k.split(".")[0]
+        if root in TRUNK_ROOTS:
+            assert torch.equal(before[k], after[k]), k
+        elif root in INPUT_ROOTS or root == "value":
+            if before[k].any():  # an all-zero tensor without gradient stays zero
+                assert not torch.equal(before[k], after[k]), k
+        else:  # buffers (the content prior)
+            assert torch.equal(before[k], after[k]), k
+    # The adapt phase ends: a resume without lr_input regroups into 2 and trains all.
+    (tmp_path / OC.DONE).unlink()
+    lr3 = make_learner(make_cfg(tmp_path, max_iters=7, resume=str(state), sched=dict(SCHED)))
+    assert lr3.train() == "max_iters"
+    assert [g["name"] for g in lr3.updater.rank.opt.param_groups] == ["trunk", "value"]
+    assert set(lr3.stats_rows[-1]["lr"]) == {"trunk", "value"}
+    final = _state_weights(state)
+    assert not torch.equal(final["blocks.0.qkv.weight"], after["blocks.0.qkv.weight"])
 
 
 def test_refusals_exit_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2404,6 +2943,75 @@ def test_eval_runner_plays_the_exported_variant_on_its_dev_slice(
     assert student.stat().st_mtime_ns == mtime and calls[1][0] == argv
 
 
+def test_eval_runner_plays_a_requests_character(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GH #1197: a request with a `character` runs `evaluate` as that character with
+    the "chars" event declared (its clean env keeps only `--set-env` pairs), and
+    reads the arm as that character's."""
+    from ppo.e2e import eval_runner as R
+    from ppo.e2e import score_test
+    from ppo.e2e.evaluate import CLEAN_MARKER
+
+    monkeypatch.setenv(CLEAN_MARKER, "1")
+    calls: list[list[str]] = []
+    seen: list[str] = []
+
+    def run(argv: list[str], env: dict[str, str]) -> SimpleNamespace:
+        calls.append(argv)
+        return SimpleNamespace(returncode=0)
+
+    def load_arm(evals: Path, panel: Any, arm: str, *, sealed_rules: bool, character: str) -> Any:
+        seen.append(character)
+        raise score_test.ReadStopped("stop here")
+
+    monkeypatch.setattr(score_test, "load_arm", load_arm)
+    req = _request(
+        tmp_path, panel="DEV-500", n=500, character="Regent", id="lane_d1_Regent_DEV-500"
+    )
+    with pytest.raises(R.RunnerError, match="stop here"):
+        R.run_request(req, tmp_path / "out", evals=tmp_path / "evals", pin=None, run=run)
+    argv = calls[0]
+    assert argv[5:8] == ["DEV", "500", str(OC.DEV_START)]
+    pairs = [argv[i + 1] for i, a in enumerate(argv) if a == "--set-env"]
+    assert pairs == ["STS2_E2E_CHARACTER=Regent", "STS2_E2E_CHARS=1"]
+    assert seen == ["Regent"]
+
+
+def test_eval_runner_plays_the_held_out_human_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A request with `"env": "human"` runs `evaluate` on `ppo.e2e.human.eval_env`, and
+    hands its bank path on through the clean env; an unknown env is refused."""
+    from ppo.e2e import eval_runner as R
+    from ppo.e2e import human, score_test
+    from ppo.e2e.evaluate import CLEAN_MARKER
+
+    monkeypatch.setenv(CLEAN_MARKER, "1")
+    monkeypatch.setenv(human.BANK_ENV, "/the/bank.jsonl.gz")
+    calls: list[list[str]] = []
+
+    def run(argv: list[str], env: dict[str, str]) -> SimpleNamespace:
+        calls.append(argv)
+        return SimpleNamespace(returncode=0)
+
+    def load_arm(*_a: Any, **_k: Any) -> Any:
+        raise score_test.ReadStopped("stop here")
+
+    monkeypatch.setattr(score_test, "load_arm", load_arm)
+    req = _request(tmp_path, panel="DEV-500", n=500, character="Silent", env="human")
+    with pytest.raises(R.RunnerError, match="stop here"):
+        R.run_request(req, tmp_path / "out", evals=tmp_path / "evals", pin=None, run=run)
+    argv = calls[0]
+    assert argv[argv.index("--env") + 1] == human.EVAL_ENV
+    pairs = [argv[i + 1] for i, a in enumerate(argv) if a == "--set-env"]
+    assert "STS2_E2E_HUMAN_BANK=/the/bank.jsonl.gz" in pairs
+    assert "STS2_E2E_CHARACTER=Silent" in pairs
+    bad = _request(tmp_path, panel="DEV-500", n=500, env="other")
+    with pytest.raises(R.RunnerError, match="unknown env"):
+        R.run_request(bad, tmp_path / "out2", evals=tmp_path / "evals", pin=None, run=run)
+
+
 def test_eval_runner_refusals(tmp_path: Path) -> None:
     from ppo.e2e import eval_runner as R
 
@@ -2419,11 +3027,13 @@ def test_eval_runner_refusals(tmp_path: Path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("character", [None, "Regent"])
 def test_builtin_eval_runner_on_the_real_engine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, character: str | None
 ) -> None:
     """The learner claims a SMOKE request and its builtin runner plays two real runs
-    with `ppo.e2e.evaluate` and `make_student`; evals/done/<id>.json gets wins and runs."""
+    with `ppo.e2e.evaluate` and `make_student`; evals/done/<id>.json gets wins and runs.
+    A request with a `character` (GH #1197) plays and reads that character's runs."""
     pytest.importorskip("sts2_rs")
     pycli = Path(__file__).resolve().parents[2]
     if not (pycli.parent / "release").is_dir():  # an export (`release/` is never exported)
@@ -2442,7 +3052,8 @@ def test_builtin_eval_runner_on_the_real_engine(
     args = f"--evals {tmp_path / 'evals'} --allow-unpinned --allow-dirty --allow-plain-wheel"
     lr = make_learner(make_cfg(tmp_path / "lane", eval_args=args))
     try:
-        req = _request(tmp_path, panel="SMOKE", n=2, seed_start=162_000_000, max_procs=2)
+        more = {"character": character} if character else {}
+        req = _request(tmp_path, panel="SMOKE", n=2, seed_start=162_000_000, max_procs=2, **more)
         q = tmp_path / "lane" / OC.EVAL_QUEUE
         q.mkdir(parents=True)
         shutil.copy(req, q / "r1.json")
@@ -2455,6 +3066,15 @@ def test_builtin_eval_runner_on_the_real_engine(
         done = OC.read_json(tmp_path / "lane" / OC.EVAL_DONE / f"{rid}.json")
         assert done["rc"] == 0 and done["runs"] == done["n"] == 2 and 0 <= done["wins"] <= 2
         assert Path(done["arm_dir"]).is_dir() and done["complete"] is True
+        assert done.get("character") == character
+        rows = [
+            json.loads(x)
+            for f in sorted((Path(done["arm_dir"]) / "shards").glob("*.jsonl"))
+            for x in f.read_text(encoding="utf-8").splitlines()
+            if x.strip()
+        ]
+        assert len(rows) == 2
+        assert {r["character"] for r in rows} == {character or "Ironclad"}
     finally:
         lr.stop()
 

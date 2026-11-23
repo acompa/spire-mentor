@@ -13,6 +13,14 @@ use super::prelude::*;
 const LAST_TURN: i32 = 0b01;
 const THIS_TURN: i32 = 0b10;
 
+/// Whether the chip will pulse at a coming player turn start: a hit is
+/// recorded for this turn or for the last one (not yet consumed). Read by
+/// [`super::relic_armed`].
+#[must_use]
+pub const fn pulse_pending(counter: i32) -> bool {
+    counter & (LAST_TURN | THIS_TURN) != 0
+}
+
 fn arm_this_turn(state: &mut CombatState) {
     if let Some(r) = state
         .relics

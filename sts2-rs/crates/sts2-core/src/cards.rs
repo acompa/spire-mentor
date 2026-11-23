@@ -900,6 +900,12 @@ pub struct Card {
     pub card_type: CardType,
     pub target_type: TargetType,
     pub upgraded: bool,
+    /// Upgrades past the first: C# `CurrentUpgradeLevel` is
+    /// `upgraded as u8 + extra_upgrades` (saturating: 256 upgrades of one card is not a reachable game). Only a card whose
+    /// `MaxUpgradeLevel` exceeds 1 reaches it — in every tracked build that
+    /// is v0.113.0's Dingy Dagger alone (`MaxUpgradeLevel => 999999999`,
+    /// GH #1391). Always 0 for every other card.
+    pub extra_upgrades: u8,
     pub base_damage: i32,
     pub base_block: i32,
     /// Per-combat persistent scratch state (cleared at end-of-combat).
@@ -981,6 +987,19 @@ const _: () = assert!(
     "size_of::<Card>() changed — see the comment above this assert"
 );
 
+/// The damage `OnUpgrade` adds when a card that can be upgraded more than
+/// once reaches `level` (2 or more; level 1 is the factory's upgrade delta).
+/// v0.113.0 `DingyDagger.OnUpgrade`: `Damage.UpgradeValueBy(3 +
+/// CurrentUpgradeLevel)`, after `UpgradeInternal` bumped the level. 0 for
+/// any other card (none can reach level 2).
+#[must_use]
+pub fn repeat_upgrade_damage(card_id: CardId, level: u8) -> i32 {
+    match card_id {
+        CardId::DingyDagger => 3 + i32::from(level),
+        _ => 0,
+    }
+}
+
 impl Card {
     /// Returns a `Card` POD with placeholder identity (uid=1, StrikeIronclad,
     /// Attack/Enemy/cost=1) and zero-default scratch fields. Intended for
@@ -1000,6 +1019,7 @@ impl Card {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: CombatVars::new(),
@@ -1241,9 +1261,29 @@ impl Card {
         // they were typed `Skill` and slipped into `WarPaint`'s Skill
         // candidate set (A9P1: SpoilsMap counted as a 7th candidate); the
         // guard stays because an upgrade path need not filter by type.
-        !self.upgraded
-            && !matches!(self.card_type, CardType::Curse | CardType::Status)
-            && !self.is_quest()
+        self.upgrade_level() < self.max_upgrade_level()
+    }
+
+    /// C# `CurrentUpgradeLevel`: 0 for an un-upgraded card, 1 once
+    /// upgraded, higher only for a card that can be upgraded again
+    /// ([`Self::extra_upgrades`]).
+    #[must_use]
+    pub fn upgrade_level(&self) -> u8 {
+        u8::from(self.upgraded).saturating_add(self.extra_upgrades)
+    }
+
+    /// C# `MaxUpgradeLevel`: 1 by default, 0 for curses, statuses and the
+    /// Quest cards, and unbounded (`999999999`, capped here at `u8::MAX`)
+    /// for v0.113.0's Dingy Dagger — the only card above 1 (GH #1391).
+    #[must_use]
+    pub fn max_upgrade_level(&self) -> u8 {
+        if matches!(self.card_type, CardType::Curse | CardType::Status) || self.is_quest() {
+            0
+        } else if self.card_id == CardId::DingyDagger {
+            u8::MAX
+        } else {
+            1
+        }
     }
 
     /// C# `Type == CardType.Quest`: the four Quest cards (`ByrdonisEgg`,
@@ -1424,6 +1464,16 @@ impl Card {
         if !self.is_upgradable() {
             return false;
         }
+        if self.upgraded {
+            // A second or later upgrade (only a card whose MaxUpgradeLevel
+            // exceeds 1). `UpgradeInternal` bumps the level, then runs
+            // `OnUpgrade` against the new level.
+            self.extra_upgrades += 1;
+            self.base_damage = self
+                .base_damage
+                .saturating_add(repeat_upgrade_damage(self.card_id, self.upgrade_level()));
+            return true;
+        }
         self.upgraded = true;
         // Apply the upgrade as an additive *delta* on top of the current
         // POD stats, rather than overwriting them with the freshly built
@@ -1521,9 +1571,9 @@ impl Card {
     /// Instance state (uid, combat_vars, enchantments, …) is preserved.
     ///
     /// Used by the `Reflections` event (`downgrade 2, upgrade 4`),
-    /// which is the only deck-mutation surface that downgrades. STS2
-    /// cards carry a single `upgraded` flag (no multi-level upgrades),
-    /// so a downgrade is always a full revert. Returns `true` iff this
+    /// which is the only deck-mutation surface that downgrades. A
+    /// downgrade is always a full revert to level 0, as C#'s
+    /// `DowngradeInternal`, however many levels the card had. Returns `true` iff this
     /// call flipped the flag (no-op + `false` for an already-base card).
     ///
     /// If no factory is registered (core-only unit tests) or the id is
@@ -1539,6 +1589,16 @@ impl Card {
     ) -> bool {
         if !self.upgraded {
             return false;
+        }
+        // C# `DowngradeInternal` sets `CurrentUpgradeLevel = 0` and rebuilds
+        // the dynamic vars from the canonical model: undo every level past the
+        // first, then the first below.
+        while self.extra_upgrades > 0 {
+            let level = self.upgrade_level();
+            self.base_damage = self
+                .base_damage
+                .saturating_sub(repeat_upgrade_damage(self.card_id, level));
+            self.extra_upgrades -= 1;
         }
         self.upgraded = false;
         {
@@ -1737,10 +1797,43 @@ fn card_gate_bits_of(cards: &[Card]) -> u8 {
 /// [`PartialEq`] and [`Debug`](std::fmt::Debug) look at the cards only (the
 /// bits are derived), so equality and the printed form are those of the old
 /// `Vec<Card>`.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct CardStore {
     cards: Vec<Card>,
     gate_bits: u8,
+    /// Memo for the frozen late-effect sweep
+    /// (`card_effects::fire_late_effects`): the first `late_free` rows are
+    /// known to hold no card with a late effect in the frozen table. That
+    /// table never changes once published (a `OnceLock`, readable only while
+    /// it matches the registry), and the arena is append-only with rows never
+    /// re-keyed, so a row once checked stays clean; only a shrink or a
+    /// rebuild resets the memo.
+    late_free: u32,
+}
+
+/// Headroom a cloned card arena keeps past its length. A derived `Vec`
+/// clone has `capacity == len`, so the first card generated in a cloned
+/// state (a status card, a Shiv, a copy) reallocated the whole arena,
+/// copying every 176-byte card again; the clone allocates once either way.
+const CARD_CLONE_HEADROOM: usize = 8;
+
+/// Hand-written only to reserve [`CARD_CLONE_HEADROOM`]; the contents are
+/// the same as a derived clone's (capacity is not observable).
+impl Clone for CardStore {
+    fn clone(&self) -> Self {
+        let Self {
+            cards,
+            gate_bits,
+            late_free,
+        } = self;
+        let mut out = Vec::with_capacity(cards.len() + CARD_CLONE_HEADROOM);
+        out.extend_from_slice(cards);
+        Self {
+            cards: out,
+            gate_bits: *gate_bits,
+            late_free: *late_free,
+        }
+    }
 }
 
 impl PartialEq for CardStore {
@@ -1782,6 +1875,7 @@ impl CardStore {
         Self {
             cards: Vec::new(),
             gate_bits: 0,
+            late_free: 0,
         }
     }
 
@@ -1792,6 +1886,7 @@ impl CardStore {
         Self {
             cards: Vec::with_capacity(cap),
             gate_bits: 0,
+            late_free: 0,
         }
     }
 
@@ -1807,12 +1902,30 @@ impl CardStore {
     pub fn clear(&mut self) {
         self.cards.clear();
         self.gate_bits = 0;
+        self.late_free = 0;
     }
 
     /// Shorten the arena to `len` cards (no-op if it is not longer).
     pub fn truncate(&mut self, len: usize) {
         self.cards.truncate(len);
         self.gate_bits = card_gate_bits_of(&self.cards);
+        self.late_free = self
+            .late_free
+            .min(u32::try_from(self.cards.len()).unwrap_or(u32::MAX));
+    }
+
+    /// How many leading rows are known to hold no frozen late-effect card
+    /// (see the `late_free` field).
+    #[inline]
+    #[must_use]
+    pub(crate) fn late_free_prefix(&self) -> usize {
+        (self.late_free as usize).min(self.cards.len())
+    }
+
+    /// Record that the first `n` rows hold no frozen late-effect card.
+    #[inline]
+    pub(crate) fn set_late_free_prefix(&mut self, n: usize) {
+        self.late_free = u32::try_from(n.min(self.cards.len())).unwrap_or(u32::MAX);
     }
 
     /// True iff some card in the arena has `card_id == id`, answered by one
@@ -1890,7 +2003,11 @@ impl From<Vec<Card>> for CardStore {
     #[inline]
     fn from(cards: Vec<Card>) -> Self {
         let gate_bits = card_gate_bits_of(&cards);
-        Self { cards, gate_bits }
+        Self {
+            cards,
+            gate_bits,
+            late_free: 0,
+        }
     }
 }
 
@@ -2025,6 +2142,42 @@ pub fn move_card(
     debug_assert_eq!(removed, uid);
     push_pile(player, to, uid);
     Ok(())
+}
+
+/// Move every hand card not in `keep` to the back of the discard pile, in
+/// hand order; the hand keeps the rest, in order. The same piles as calling
+/// [`move_card`]`(Hand -> Discard)` for each such card in hand order (each
+/// removes its card's first hand slot and pushes it), done as one pass
+/// without the per-card search and shift.
+pub fn discard_hand_except(player: &mut PlayerCombatState, keep: &[CardUid]) {
+    #[cfg(debug_assertions)]
+    let expected = {
+        let mut p = player.clone();
+        let moved: SmallVec<[CardUid; 16]> = p
+            .hand
+            .iter()
+            .copied()
+            .filter(|u| !keep.contains(u))
+            .collect();
+        for uid in moved {
+            move_card(&mut p, uid, PileKind::Hand, PileKind::Discard)
+                .expect("uid was just observed in hand pile");
+        }
+        p
+    };
+    let PlayerCombatState { hand, discard, .. } = player;
+    if keep.is_empty() {
+        discard.extend_from_slice(hand);
+        hand.clear();
+    } else {
+        discard.extend(hand.iter().copied().filter(|u| !keep.contains(u)));
+        hand.retain(|u| keep.contains(u));
+    }
+    #[cfg(debug_assertions)]
+    debug_assert_eq!(
+        *player, expected,
+        "discard_hand_except diverged from move_card"
+    );
 }
 
 /// Whether the player's hand is at or above [`HAND_LIMIT`].
@@ -2768,6 +2921,8 @@ fn reshuffle_rank(card_id: CardId) -> u16 {
         let all = CardId::all_for(crate::GameVersion::V0_113_0);
         let mut by_name: Vec<CardId> = all.clone();
         by_name.sort_by(|a, b| card_model_entry(*a).cmp(card_model_entry(*b)));
+        // `presort_small_stable` packs a rank into 10 bits, below 1023.
+        assert!(all.len() <= 1022, "reshuffle ranks must stay below 1023");
         let mut table = vec![0u16; all.len()];
         for (rank, cid) in by_name.iter().enumerate() {
             // `cid as usize` is the declaration-order discriminant, which is
@@ -3031,10 +3186,12 @@ pub fn compare_vars_v0113(c: &Card) -> [VarBaseValue; 2] {
                 den,
             }
         }
-        CardId::Wither => VarBaseValue::int(
-            c.base_damage
-                .saturating_add(3 * c.combat_var(VarKey::WitherFakeUpgradeLevel).max(0)),
-        ),
+        // The level alone, as the turn-end damage reads it: two Withers at
+        // one level are the same card whatever `base_damage` they were built
+        // with.
+        CardId::Wither => {
+            VarBaseValue::int(3 + 3 * c.combat_var(VarKey::WitherFakeUpgradeLevel).max(0))
+        }
         CardId::Guilty => {
             return [
                 VarBaseValue::int(5 - c.combat_var(VarKey::Generic)),
@@ -3277,16 +3434,116 @@ fn presort_draw_for_reshuffle_for(
         }
         return;
     }
-    let mut keyed: SmallVec<[(u16, u8, CardUid); 32]> = player
-        .draw
-        .iter()
-        .map(|&uid| (card_rank(cards, uid), card_upgrade_rank(cards, uid), uid))
-        .collect();
-    let cmp =
-        |a: (u16, u8, CardUid), b: (u16, u8, CardUid)| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1));
-    dotnet_list_sort(keyed.as_mut_slice(), &cmp);
-    for (slot, k) in player.draw.iter_mut().zip(keyed.iter()) {
-        *slot = k.2;
+    let n = player.draw.len();
+    if n <= 16 && n != 3 {
+        presort_small_stable(player, cards);
+        return;
+    }
+    // Perf: the `(rank, upgrade)` key packed into one `u32` (`rank << 8 |
+    // upgrade`; the upgrade rank is 0 or 1), held in the high half of a
+    // `u64` whose low half is the card's position in the unsorted pile. The
+    // comparator reads the high half only. Numeric order on the packed key is
+    // exactly the lexicographic `(rank, upgrade)` order, and the position is
+    // never compared, so every comparison returns the `Ordering` the
+    // two-field comparator did and the introsort takes the same steps: the
+    // same permutation, gathered back from the unsorted pile.
+    const STACK: usize = 48;
+    let mut stack_buf = [0u64; STACK];
+    let mut heap_buf: Vec<u64>;
+    let keyed: &mut [u64] = if n <= STACK {
+        &mut stack_buf[..n]
+    } else {
+        heap_buf = vec![0; n];
+        &mut heap_buf
+    };
+    for (slot, (pos, &uid)) in keyed.iter_mut().zip(player.draw.iter().enumerate()) {
+        let key =
+            (u32::from(card_rank(cards, uid)) << 8) | u32::from(card_upgrade_rank(cards, uid));
+        *slot = (u64::from(key) << 32) | pos as u64;
+    }
+    let cmp = |a: u64, b: u64| (a >> 32).cmp(&(b >> 32));
+    dotnet_list_sort(keyed, &cmp);
+    let unsorted: SmallVec<[CardUid; 32]> = SmallVec::from_slice(player.draw.as_slice());
+    for (slot, &k) in player.draw.iter_mut().zip(keyed.iter()) {
+        *slot = unsorted[(k & u64::from(u32::MAX)) as usize];
+    }
+    #[cfg(debug_assertions)]
+    {
+        // Shadow: the two-field comparator over `(rank, upgrade, uid)`
+        // tuples lands on the same order.
+        let mut two: SmallVec<[(u16, u8, CardUid); 32]> = unsorted
+            .iter()
+            .map(|&uid| (card_rank(cards, uid), card_upgrade_rank(cards, uid), uid))
+            .collect();
+        let cmp2 = |a: (u16, u8, CardUid), b: (u16, u8, CardUid)| {
+            a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1))
+        };
+        dotnet_list_sort(two.as_mut_slice(), &cmp2);
+        debug_assert!(two.iter().map(|k| k.2).eq(player.draw.iter().copied()));
+    }
+}
+
+/// The v0.107.1 pre-sort of a draw pile of at most 16 cards (other than 3),
+/// as a stable rank count over the `(rank, upgrade)` keys.
+///
+/// Perf: for `n <= 16` [`dotnet_list_sort`] never partitions. It runs its
+/// size-2 compare-swap (swaps only on `Greater`) or its insertion sort
+/// (shifts only on `Less`), and both keep equal keys in input order: the
+/// result is THE stable sort by key, a unique permutation. Ranking each
+/// uid by the count of `(key, position)` pairs below its own lands on that
+/// same permutation with vector compares and no per-card search. Size 3 is
+/// excluded: .NET uses a three-compare network there that can swap equal
+/// keys past each other.
+fn presort_small_stable(player: &mut PlayerCombatState, cards: &CardStore) {
+    let draw = player.draw.as_mut_slice();
+    let n = draw.len();
+    debug_assert!(n <= 16 && n != 3);
+    if n < 2 {
+        return;
+    }
+    let mut unsorted = [draw[0]; 16];
+    unsorted[..n].copy_from_slice(draw);
+    // `packed[i]`: uid `i`'s `(rank, upgrade)` key above its input position
+    // (4 bits), so every packed value is distinct and their numeric order is
+    // the stable order by key. A rank is at most the card count, at most 1022
+    // (asserted where the rank table is built), so a real value is at most
+    // `(1022 * 2 + 1) * 16 + 15 = 32_735`: it fits an `i16` lane (eight to a
+    // vector register) and stays strictly below the `i16::MAX` that fills the
+    // unused lanes. A uid's output slot is the count of packed values below
+    // its own. `below` accumulates that count for all 16 lanes at once per
+    // real value (padding lanes collect junk that is never read); the walk
+    // stops at the first padding lane, an early exit that also keeps the
+    // compiler vectorizing across the lanes rather than across the walk.
+    let mut packed = [i16::MAX; 16];
+    for (i, (slot, &uid)) in packed.iter_mut().zip(&unsorted[..n]).enumerate() {
+        let key = (card_rank(cards, uid) << 1) | u16::from(card_upgrade_rank(cards, uid));
+        *slot = ((key << 4) | i as u16) as i16;
+    }
+    let mut below = [0i16; 16];
+    for &other in &packed {
+        if other == i16::MAX {
+            break;
+        }
+        for (b, &v) in below.iter_mut().zip(&packed) {
+            *b += i16::from(other < v);
+        }
+    }
+    for (&uid, &b) in unsorted[..n].iter().zip(&below) {
+        draw[b as usize & 15] = uid;
+    }
+    #[cfg(debug_assertions)]
+    {
+        // Shadow: the .NET introsort replica over the two-field key lands on
+        // the same order.
+        let mut two: SmallVec<[(u16, u8, CardUid); 16]> = unsorted[..n]
+            .iter()
+            .map(|&uid| (card_rank(cards, uid), card_upgrade_rank(cards, uid), uid))
+            .collect();
+        let cmp2 = |a: (u16, u8, CardUid), b: (u16, u8, CardUid)| {
+            a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1))
+        };
+        dotnet_list_sort(two.as_mut_slice(), &cmp2);
+        debug_assert!(two.iter().map(|k| k.2).eq(draw.iter().copied()));
     }
 }
 
@@ -3329,7 +3586,10 @@ pub fn discard_pile_into_draw_pile_signaling_for(
     // pins were referring to the now-empty pre-reshuffle draw pile).
     player.pinned_top.clear();
     player.pinned_bottom.clear();
-    player.draw.extend(player.discard.drain(..));
+    // Perf: one block copy of the `Copy` uids, then the clear; the same
+    // cards in the same order as `extend(discard.drain(..))`.
+    player.draw.extend_from_slice(player.discard.as_slice());
+    player.discard.clear();
     // C# parity: the combat reshuffle uses `StableShuffle`
     // (`MegaCrit.Sts2.Core.Commands/CardPileCmd.cs:820` →
     // `ListExtensions.StableShuffle`), which `Sort()`s the list by
@@ -3451,7 +3711,7 @@ pub fn draw_signaling_for(
     let target = usize::try_from(n).unwrap_or(0);
     let mut moved = 0;
     let mut shuffles: u32 = 0;
-    for _ in 0..target {
+    while moved < target {
         if is_hand_full(player) {
             break;
         }
@@ -3463,15 +3723,34 @@ pub fn draw_signaling_for(
         if player.draw.is_empty() {
             break;
         }
-        // Bead `sts2-rs-09x5n` (F2): `pop_next_card` defers the random
-        // choice of which card is drawn to here when
-        // `deferred_draw_order` is set — byte-identical `draw.remove(0)`
-        // otherwise.
-        let uid = pop_next_card(player, rng);
-        // Bead `sts2-rs-o6xw`: drawing a pinned card consumes its pin.
-        unpin(player, uid);
-        player.hand.push(uid);
-        moved += 1;
+        if player.deferred_draw_order
+            || !player.pinned_top.is_empty()
+            || !player.pinned_bottom.is_empty()
+        {
+            // Bead `sts2-rs-09x5n` (F2): `pop_next_card` defers the random
+            // choice of which card is drawn to here when
+            // `deferred_draw_order` is set — byte-identical `draw.remove(0)`
+            // otherwise.
+            let uid = pop_next_card(player, rng);
+            // Bead `sts2-rs-o6xw`: drawing a pinned card consumes its pin.
+            unpin(player, uid);
+            player.hand.push(uid);
+            moved += 1;
+            continue;
+        }
+        // Perf: with no deferred order and no pins, each per-card step above
+        // is `draw.remove(0)` + a no-op `unpin` + `hand.push`, and none of it
+        // changes those three conditions. So the run of steps until the
+        // count, the hand cap or the draw pile runs out moves the first `k`
+        // draw cards to the hand in order: one block move. An emptied pile
+        // loops back to the reshuffle check exactly as the per-card loop
+        // did.
+        let k = (target - moved)
+            .min(HAND_LIMIT - player.hand.len())
+            .min(player.draw.len());
+        player.hand.extend_from_slice(&player.draw[..k]);
+        player.draw.drain(..k);
+        moved += k;
     }
     (moved, shuffles)
 }
@@ -3930,6 +4209,11 @@ mod tests {
         let mut faked = wither;
         faked.set_combat_var(VarKey::WitherFakeUpgradeLevel, 1);
         assert_eq!(card_model_compare_for(&wither, &faked, v113), Less);
+        // Blitz Ironclad 1007: the Withering Presence Wither was built with
+        // `base_damage` 0, sorted before its siblings in the Stratagem grid,
+        // and the same index took another copy out of the draw pile.
+        let bare = mk(CardId::Wither, 0);
+        assert_eq!(card_model_compare_for(&wither, &bare, v113), Equal);
 
         let guilty = mk(CardId::Guilty, 0);
         let mut seen = guilty;
@@ -4196,6 +4480,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: CombatVars::new(),
@@ -4718,6 +5003,63 @@ mod tests {
         assert_eq!(p.draw.as_slice(), expected.draw.as_slice());
     }
 
+    /// The v0.107.1 small-pile pre-sort (n <= 16, n != 3) lands on exactly
+    /// the .NET introsort replica's order over the `(rank, upgrade)` key, for
+    /// random piles heavy in identical copies (ties are where an inexact sort
+    /// would diverge), including the largest card rank.
+    #[test]
+    fn presort_small_pile_matches_dotnet_list_sort() {
+        let ids = CardId::all();
+        let pool = [
+            ids[0],
+            ids[1],
+            ids[ids.len() / 2],
+            ids[ids.len() - 2],
+            ids[ids.len() - 1],
+            CardId::TrueGrit,
+            *ids.iter()
+                .max_by_key(|&&c| reshuffle_rank(c))
+                .expect("cards exist"),
+        ];
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |m: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % m
+        };
+        for _ in 0..2_000 {
+            let n = next(17) as u32;
+            let store: CardStore = (1..=n)
+                .map(|i| Card {
+                    uid: uid(i),
+                    card_id: pool[next(pool.len() as u64) as usize],
+                    upgraded: next(3) == 0,
+                    ..Card::pod_defaults()
+                })
+                .collect();
+            let mut p = PlayerCombatState::default();
+            let mut order: Vec<u32> = (1..=n).collect();
+            for i in (1..order.len()).rev() {
+                order.swap(i, next(i as u64 + 1) as usize);
+            }
+            p.draw.extend(order.iter().map(|&i| uid(i)));
+            let mut want: Vec<(u16, u8, CardUid)> = p
+                .draw
+                .iter()
+                .map(|&u| (card_rank(&store, u), card_upgrade_rank(&store, u), u))
+                .collect();
+            dotnet_list_sort(
+                want.as_mut_slice(),
+                &|a: (u16, u8, CardUid), b: (u16, u8, CardUid)| {
+                    a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1))
+                },
+            );
+            presort_draw_for_reshuffle(&mut p, &store);
+            assert!(want.iter().map(|k| k.2).eq(p.draw.iter().copied()));
+        }
+    }
+
     #[test]
     fn try_add_to_hand_redirects_when_full() {
         let mut p = PlayerCombatState::default();
@@ -4744,6 +5086,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),

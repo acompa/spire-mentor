@@ -11,6 +11,7 @@ answer with an executable ``best``.
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import pytest
@@ -38,13 +39,18 @@ SCREENS = {
 SEEDS = ["INSTINCTSEED7", "INSTINCTSEED8", "INSTINCTSEED9", "INSTINCTSEED10"]
 
 
-@pytest.fixture(scope="module")
-def positions() -> dict[str, dict[str, Any]]:
-    """The first position of each screen type over a few campaign runs."""
+@functools.cache
+def _first_position(dt: str, character: str) -> dict[str, Any] | None:
+    """The first position of screen type ``dt`` over the campaign runs in ``SEEDS``,
+    for one character Instinct plays (GH #1197).
+
+    Plays only until that screen turns up, so an early screen (NEOW, the first
+    card reward) costs seconds, not the minute it takes to reach every screen.
+    Each xdist worker that draws a parametrization pays for its own walk.
+    """
     student = sts2_rs.E2eStudent(str(WEIGHTS))
-    found: dict[str, dict[str, Any]] = {}
     for seed in SEEDS:
-        rm = _campaign_run(seed)
+        rm = _campaign_run(seed, character=character)
         driver = sts2_rs.E2eDriver(rm.seed)
         room = None
         for _ in range(4000):
@@ -55,22 +61,27 @@ def positions() -> dict[str, dict[str, Any]]:
                 f = peek.forced
                 driver.apply(rm, f["action"], f["kind"], strict=False)
                 continue
-            dt = peek.decision["decision_type"]
-            if dt == "COMBAT_TURN":
+            if peek.decision["decision_type"] == "COMBAT_TURN":
                 room = (rm.current_room() or {}).get("room_type") or room
-            if dt in SCREENS and dt not in found:
-                found[dt] = {
+            if peek.decision["decision_type"] == dt:
+                return {
                     "seed": seed,
                     "rm": rm.clone(),
                     "native": student.decide(driver.copy(), peek, rm),
+                    # The advisor's driver starts fresh on the rebuilt run;
+                    # a fresh driver on the native run has the same history.
+                    "fresh": _fresh_decide(student, rm),
                     "room": room,
                 }
             out = student.decide(driver, peek, rm)
             ca = peek.class_action(out["class"])
             driver.apply(rm, ca["action"], ca["kind"])
-        if len(found) == len(SCREENS):
-            break
-    return found
+    return None
+
+
+def _fresh_decide(student: Any, rm: Any) -> dict[str, Any]:
+    fresh = sts2_rs.E2eDriver(rm.seed)
+    return student.decide(fresh, fresh.peek(rm), rm)
 
 
 def _wire_card(i: int, card_id: str, upgraded: Any, ench: Any = None) -> dict[str, Any]:
@@ -179,7 +190,7 @@ def _payload(dt: str, pos: dict[str, Any]) -> dict[str, Any]:
             cards=cards,
             prompt_key="TO_OBTAIN",
             min_select=rm.pending_card_grant_min,
-            max_select=1,
+            max_select=rm.pending_card_grants,
         )
     elif dt == "EVENT":
         msg["options"] = _event_options(rm)
@@ -224,11 +235,12 @@ def _payload(dt: str, pos: dict[str, Any]) -> dict[str, Any]:
     return msg
 
 
+@pytest.mark.parametrize("character", ri.INSTINCT_CHARACTERS)
 @pytest.mark.parametrize("dt", list(SCREENS))
 def test_screen_advice_sees_what_the_native_student_sees(
-    dt: str, positions: dict[str, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    dt: str, character: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pos = positions.get(dt)
+    pos = _first_position(dt, character)
     if pos is None:
         pytest.skip(f"no {dt} position in {len(SEEDS)} campaign runs")
     advisor = ri.InstinctAdvisor(WEIGHTS)
@@ -247,10 +259,16 @@ def test_screen_advice_sees_what_the_native_student_sees(
     assert advice["brain"] == "instinct"
     assert advice.get("best"), advice
     native = pos["native"]
-    pick = picks[-1]
+    # A screen handled in Rust (GH #1426) evaluates there: its last pick.
+    pick = picks[-1] if picks else advisor.last_pick
+    assert pick is not None
     assert pick.decision["decision_type"] == dt
     assert pick.best == native["class"], (pick.probs, native["probs"])
     # Probabilities only to 2e-2: the advisor's driver starts fresh on the rebuilt run, so the
     # history the native driver carries differs (d1250 drifted 1-4e-3 here, d2500 avg5 up to
     # 1.8e-2 on STEADY / 9e-3 on CARD_GRANT). The pick itself must match exactly (above).
+    # Graft fidelity, apart from history: the advisor reads what a fresh
+    # driver reads on the native run.
+    fresh = pos["fresh"]
+    assert pick.probs == pytest.approx(fresh["probs"], abs=2e-3), (pick.probs, fresh["probs"])
     assert pick.probs == pytest.approx(native["probs"], abs=2e-2)

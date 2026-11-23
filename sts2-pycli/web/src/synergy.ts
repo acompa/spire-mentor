@@ -1,3 +1,5 @@
+import { getLang } from "./i18n";
+import { localizedPublicPath } from "./gameVersion";
 // Synergy lookup for the card-choice helper.
 //
 // Loads the per-character synergy catalog (`/catalog_<char>.json`, the same data
@@ -66,6 +68,20 @@ export function labelFor(token: string): string {
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
+}
+
+let zhTitles: Promise<Record<string, string>> | null = null;
+
+/** The game's Chinese card titles by card id (`public/zh/card_text.json`),
+ *  loaded once; empty when missing. */
+function loadZhTitles(): Promise<Record<string, string>> {
+  zhTitles ??= fetch(localizedPublicPath("card_text.json", null, "zh"))
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((d: Record<string, { title?: string }>) =>
+      Object.fromEntries(Object.entries(d).flatMap(([k, v]) => (v?.title ? [[k, v.title]] : []))),
+    )
+    .catch(() => ({}));
+  return zhTitles;
 }
 
 /** Detect the run's character from its deck tokens via the `STRIKE_<X>` /
@@ -145,6 +161,8 @@ export async function synergyFor(
     counts.set(bt, (counts.get(bt) ?? 0) + 1);
   }
 
+  // In Chinese the partner reads by its game name, looked up by card id.
+  const zh = getLang() === "zh" ? await loadZhTitles() : null;
   const hints: PartnerHint[] = [];
   for (const [partner, count] of counts) {
     if (partner === offered) continue;
@@ -152,7 +170,8 @@ export async function synergyFor(
     if (!e) continue;
     if (e.quadrant !== "confirmed" && e.quadrant !== "undiscovered") continue;
     const { score, metric } = edgeScore(e);
-    hints.push({ partner, label: labelFor(partner), count, quadrant: e.quadrant, score, metric });
+    const label = zh?.[partner] ?? labelFor(partner);
+    hints.push({ partner, label, count, quadrant: e.quadrant, score, metric });
   }
 
   hints.sort((a, b) => {

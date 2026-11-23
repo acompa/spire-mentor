@@ -80,9 +80,8 @@ exported `.cs` file that shares more than a handful of lines (single API
 calls, interface signatures) with the game's decompilation. The mod links
 the game's assemblies at build time (Harmony); none of them ships.
 Every region derived from zhiyue/sts2-rl-agent (which has no license) was
-rewritten clean-room as well; the exporter also compares every exported `.cs`
-file against the pinned donor source (`just fetch-donors`), and
-`spire-mentor-mod/LICENSE` is plain MIT with a credit line.
+rewritten clean-room as well (2026-10-11), and `spire-mentor-mod/LICENSE` is
+plain MIT with a credit line.
 
 ## 2. Excluded for other reasons
 

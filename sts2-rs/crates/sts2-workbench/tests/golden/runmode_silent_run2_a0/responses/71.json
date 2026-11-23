@@ -1,4 +1,11 @@
 {
- "available": false,
- "reason": "no graded decision pending"
+ "agreed": false,
+ "available": true,
+ "band": "differed",
+ "brain": "ppo",
+ "champion_label": "Take Dodge and Roll",
+ "champion_prob": 0.9622,
+ "margin": 0.9621,
+ "your_label": "Take Reflex",
+ "your_prob": 0.0001
 }

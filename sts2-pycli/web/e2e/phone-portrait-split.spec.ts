@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { splitIntentReal, splitZoomRise } from "../src/portraitSplit";
 import {
-  PHONES, SHORT_PORTRAIT, drawnHeight, fontPx, openPreview, phoneContext, realBox, realStageContext, settledDrawnHeight,
+  PHONES, SHORT_PORTRAIT, drawnHeight, fireStep, fontPx, openPreview, phoneContext, realBox, realStageContext, settledDrawnHeight,
   shortPortraitContext, tapSlot, type PhoneSize, type ShortPortrait,
 } from "./phoneHarness";
 
@@ -627,7 +627,7 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
       test(`a part's death leaves the survivors' chrome in place (${scene})`, async ({ page }) => {
         const res = await page.request.get(`/preview-rig/${rig}`);
         test.skip(!res.ok() || (await res.text()).startsWith("<"), `${rig} is not linked into public/preview-rig`);
-        await openPreview(page, `scene=${scene}&powers=3&die=6000&dying=${dying}`);
+        await openPreview(page, `scene=${scene}&powers=3&die=manual&dying=${dying}`);
         await rigsLoaded(page);
         const survivors = (): Promise<{ id: string; boxes: Box[]; cells: number; slot: string | null }[]> =>
           page.evaluate((dead) => Array.from(document.querySelectorAll("[data-enemy-index]"))
@@ -644,9 +644,9 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
                 slot: e.closest("[data-split-slot]")?.getAttribute("data-split-slot") ?? null };
             }), dying);
         const before = await survivors();
-        expect(await page.evaluate(() => performance.now()), "recorded before the death").toBeLessThan(6000);
         const n0 = await page.locator("[data-enemy-index]").count();
-        await expect(page.locator("[data-enemy-index]")).toHaveCount(n0 - 1, { timeout: 20_000 });
+        await fireStep(page, "die");
+        await expect(page.locator("[data-enemy-index]")).toHaveCount(n0 - 1);
         await page.waitForTimeout(500);
         const after = await survivors();
         console.log(`[part death] ${size} ${scene}: slots ${before.map((x) => x.slot).join(",")} -> ${after.map((x) => x.slot).join(",")}`);
@@ -846,14 +846,17 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
     // The player's damage number, hurt flash and block-break play on the band,
     // never up among the enemies' chrome: the figure stands right under them.
     test("a hit plays on the figure and stays in the band", async ({ page }) => {
-      await openPreview(page, "enemies=2&hit=4000");
+      await openPreview(page, "enemies=2&hit=manual");
       await rigsLoaded(page);
       const band = (await chromeBoxes(page)).band;
       const fig = await figureBox(page);
       const badge = page.locator('[data-block-badge-for="player"]');
       await expect(badge).toHaveCSS("opacity", "1");
-      // The number's box on every frame of its flight.
+      // The number's box on every frame of its flight. The hit lands here,
+      // in the same evaluate as the sampling, so no frame of it is missed
+      // (GH #1442; see `fireStep`).
       const samples: Box[] = await page.evaluate(() => new Promise<Box[]>((resolve) => {
+        (window as unknown as { __preview: { fire(step: string): unknown } }).__preview.fire("hit");
         const out: Box[] = [];
         const t0 = performance.now();
         const tick = () => {
@@ -863,7 +866,7 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
             const r = el.getBoundingClientRect();
             out.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
           }
-          if ((out.length && !els.length) || performance.now() - t0 > 12_000) resolve(out);
+          if ((out.length && !els.length) || performance.now() - t0 > 6000) resolve(out);
           else requestAnimationFrame(tick);
         };
         tick();
@@ -891,21 +894,20 @@ test.describe("large phone, portrait: effects and a pinned split", () => {
   const controlBoxes = (page: Page, energy = true) => page.evaluate((sel) => Array.from(document.querySelectorAll(sel))
     .map((e) => { const b = e.getBoundingClientRect(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; }),
   energy ? ".gs-endturn, .gs-energy, .gs-pilebtn" : ".gs-endturn, .gs-pilebtn");
-  /** The page's clock, ms since navigation: the preview's timed steps count
-   *  from the board's mount, which is later. */
-  const pageNow = (page: Page) => page.evaluate(() => performance.now());
 
   // Solved once per fight: arming a card, a power landing and the zoom
   // closing move no enemy and no control. (The band's status block steps
   // right of the zoom while it is open, by design; it is not checked here.)
   test("nothing moves while you play", async ({ page }) => {
-    await openPreview(page, "enemies=3&enemy=cultists&powers=3&buff=6000");
+    // The buff lands when the test fires it, after the second arm below. On
+    // a timer it raced the arming on a loaded box (GH #1442): landing first,
+    // no new state came to close the zoom.
+    await openPreview(page, "enemies=3&enemy=cultists&powers=3&buff=manual");
     await rigsLoaded(page);
     const split0 = await page.locator(".gs-board").getAttribute("data-split");
     const enemies0 = await enemyBoxes(page);
     const controls0 = await controlBoxes(page);
     const fixed0 = await controlBoxes(page, false);
-    expect(await pageNow(page), "recorded before the buff").toBeLessThan(6000);
     expect(enemies0).toHaveLength(3);
     expect(controls0).toHaveLength(5);
     const zoom = page.locator(".gs-zoomcard");
@@ -923,7 +925,8 @@ test.describe("large phone, portrait: effects and a pinned split", () => {
     await expect(zoom).toHaveAttribute("data-zoom-index", "2");
     const powers = page.locator(".gs-playerband .gs-power, .gs-playerband .gs-power-more");
     const n0 = await powers.count();
-    await expect.poll(async () => (await page.locator(".gs-playerband").innerHTML()).includes("Strength"), { timeout: 10_000 }).toBe(true);
+    await fireStep(page, "buff");
+    await expect.poll(async () => (await page.locator(".gs-playerband").innerHTML()).includes("Strength")).toBe(true);
     await page.waitForTimeout(2000);
     console.log(`[pinned] ${split0}; power cells ${n0} -> ${await powers.count()}`);
     await expect(zoom).toHaveCount(0);
@@ -935,23 +938,23 @@ test.describe("large phone, portrait: effects and a pinned split", () => {
   // A death keeps its slot empty: nobody slides over. A never-seen enemy (a
   // summon) re-solves once, then holds.
   test("a death keeps the slot empty; a summon re-solves once", async ({ page }) => {
-    await openPreview(page, "enemies=3&enemy=cultists&powers=3&die=5000&dying=1");
+    await openPreview(page, "enemies=3&enemy=cultists&powers=3&die=manual&dying=1");
     await rigsLoaded(page);
     const before = await enemyBoxes(page);
     const split0 = await page.locator(".gs-board").getAttribute("data-split");
-    expect(await pageNow(page), "recorded before the death").toBeLessThan(5000);
     expect(before).toHaveLength(3);
     // The corpse plays out and leaves.
-    await expect(page.locator("[data-enemy-index]")).toHaveCount(2, { timeout: 15_000 });
+    await fireStep(page, "die");
+    await expect(page.locator("[data-enemy-index]")).toHaveCount(2);
     await page.waitForTimeout(500);
     expectSameBoxes(await enemyBoxes(page), [before[0], before[2]], "survivors");
     expect(await page.locator(".gs-board").getAttribute("data-split")).toBe(split0);
 
-    await openPreview(page, "enemies=3&enemy=cultists&powers=3&summon=5000&buff=9000");
+    await openPreview(page, "enemies=3&enemy=cultists&powers=3&summon=manual&buff=manual");
     await rigsLoaded(page);
     const s0 = await page.locator(".gs-board").getAttribute("data-split");
-    expect(await pageNow(page), "recorded before the summon").toBeLessThan(5000);
-    await expect(page.locator("[data-enemy-index]")).toHaveCount(4, { timeout: 15_000 });
+    await fireStep(page, "summon");
+    await expect(page.locator("[data-enemy-index]")).toHaveCount(4);
     await settledDrawnHeight(page);
     await page.waitForTimeout(800);
     const s1 = await page.locator(".gs-board").getAttribute("data-split");
@@ -968,7 +971,8 @@ test.describe("large phone, portrait: effects and a pinned split", () => {
     expect(bad, bad.join("\n")).toEqual([]);
     const placed = await enemyBoxes(page);
     // Then it holds: the buff re-solves nothing.
-    await expect.poll(async () => (await page.locator(".gs-playerband").innerHTML()).includes("Strength"), { timeout: 15_000 }).toBe(true);
+    await fireStep(page, "buff");
+    await expect.poll(async () => (await page.locator(".gs-playerband").innerHTML()).includes("Strength")).toBe(true);
     await page.waitForTimeout(1000);
     expect(await page.locator(".gs-board").getAttribute("data-split")).toBe(s1);
     expectSameBoxes(await enemyBoxes(page), placed, "after the buff");
@@ -1029,7 +1033,8 @@ test.describe("large phone, portrait: the Kaiser Crab", () => {
   // public/preview-rig (see boardpreview.tsx's `?scene=` note).
   test("the crab is one split creature and both arms take an attack", async ({ page }) => {
     const res = await page.request.get("/preview-rig/kaiser_crab/kaiser_crab.atlas");
-    test.skip(!res.ok(), "the kaiser_crab rig is not linked into public/preview-rig");
+    // A missing static file falls through to the SPA's index.html (200).
+    test.skip(!res.ok() || (await res.text()).startsWith("<"), "the kaiser_crab rig is not linked into public/preview-rig");
     for (const idx of [0, 1]) {
       await openPreview(page, "scene=kaiser_crab");
       await expect(page.locator(".gs-split")).toHaveCount(1);

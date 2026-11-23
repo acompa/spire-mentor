@@ -70,6 +70,10 @@ internal static class CoachChipText
     /// <summary>1st, 2nd, 3rd, 4th ... 11th-13th, 21st (plan 2's rule).</summary>
     public static string Ordinal(int n)
     {
+        if (L10n.IsZh)
+        {
+            return "第" + n.ToString(CultureInfo.InvariantCulture);
+        }
         int mod100 = Math.Abs(n) % 100;
         string suffix = mod100 is >= 11 and <= 13
             ? "th"
@@ -99,7 +103,7 @@ internal static class CoachChipText
         string verdict = Str(rec, "verdict");
         int turn = (int)(Num(rec, "turn") ?? 0);
         bool peeked = Bool(rec, "peeked");
-        string peekedSuffix = peeked ? " (peeked)" : "";
+        string peekedSuffix = peeked ? L10n.T(" (peeked)") : "";
         var chip = new ChipText { Id = Str(rec, "id"), Kind = "turn" };
 
         if (verdict is "best" or "tie")
@@ -109,7 +113,7 @@ internal static class CoachChipText
                 return null;
             }
             chip.Tone = ChipTone.Good;
-            chip.Title = verdict == "tie" ? $"✓ Turn {turn} · toss-up" : $"✓ Turn {turn}";
+            chip.Title = verdict == "tie" ? L10n.F("✓ Turn {0} · toss-up", turn) : L10n.F("✓ Turn {0}", turn);
             return chip;
         }
         if (verdict is not ("slip" or "blunder"))
@@ -118,20 +122,21 @@ internal static class CoachChipText
         }
 
         chip.Tone = verdict == "blunder" ? ChipTone.Blunder : ChipTone.Slip;
-        chip.Title = verdict == "blunder" ? "⚠ blunder" : "▽ suboptimal";
-        chip.Lines.Add($"Turn {turn} · you: {string.Join(" → ", StrList(rec, "you"))}");
-        chip.Lines.Add($"AI:  {string.Join(" → ", StrList(rec, "ai"))}");
+        chip.Title = verdict == "blunder" ? L10n.T("⚠ blunder") : L10n.T("▽ suboptimal");
+        chip.Lines.Add(L10n.F("Turn {0} · you: {1}", turn, string.Join(" → ", StrList(rec, "you"))));
+        chip.Lines.Add(L10n.F("AI:  {0}", string.Join(" → ", StrList(rec, "ai"))));
 
-        string hp = "";
+        string win = L10n.F("win {0} → {1}", Pct(Num(rec, "win_before")), Pct(Num(rec, "win_after")));
         if (Num(rec, "hp_drop") is double drop)
         {
             long rounded = (long)Math.Round(drop, MidpointRounding.AwayFromZero);
             if (rounded >= 1)
             {
-                hp = $"≈ {rounded.ToString(CultureInfo.InvariantCulture)} HP more lost · ";
+                win = L10n.F("≈ {0} HP more lost · win {1} → {2}", rounded,
+                    Pct(Num(rec, "win_before")), Pct(Num(rec, "win_after")));
             }
         }
-        chip.Lines.Add($"{hp}win {Pct(Num(rec, "win_before"))} → {Pct(Num(rec, "win_after"))}{peekedSuffix}");
+        chip.Lines.Add(win + peekedSuffix);
         string why = Str(rec, "why");
         if (why.Length > 0)
         {
@@ -151,7 +156,7 @@ internal static class CoachChipText
                 return null;
             }
             chip.Tone = ChipTone.Good;
-            chip.Title = verdict == "agree" ? "✓ AI agrees" : "✓ toss-up";
+            chip.Title = verdict == "agree" ? L10n.T("✓ AI agrees") : L10n.T("✓ toss-up");
             return chip;
         }
         if (verdict != "flag")
@@ -167,17 +172,17 @@ internal static class CoachChipText
         }
         string playedLabel = Str(played, "label");
         int rank = (int)(Num(played, "rank") ?? 0);
-        string peekedSuffix = Bool(rec, "peeked") ? " (peeked)" : "";
+        string peekedSuffix = Bool(rec, "peeked") ? L10n.T(" (peeked)") : "";
 
         chip.Tone = ChipTone.Info;
-        chip.Title = $"{Str(rec, "label_kind")} · you: {playedLabel}";
-        string rankText = rank > 0 ? $" · {playedLabel} was its {Ordinal(rank)} choice" : "";
-        chip.Lines.Add($"AI would take: {Str(top, "label")} ({Str(rec, "strength")}){rankText}{peekedSuffix}");
+        chip.Title = L10n.F("{0} · you: {1}", Str(rec, "label_kind"), playedLabel);
+        string rankText = rank > 0 ? L10n.F(" · {0} was its {1} choice", playedLabel, Ordinal(rank)) : "";
+        chip.Lines.Add(L10n.F("AI would take: {0} ({1})", Str(top, "label"), Str(rec, "strength")) + rankText + peekedSuffix);
 
         if (rec["path"] is JsonObject path &&
             RouteHp(path["you"]) is double youHp && RouteHp(path["ai"]) is double aiHp)
         {
-            chip.Lines.Add($"route HP: you ≈{Whole(youHp)} · AI ≈{Whole(aiHp)}");
+            chip.Lines.Add(L10n.F("route HP: you ≈{0} · AI ≈{1}", Whole(youHp), Whole(aiHp)));
         }
         return chip;
     }

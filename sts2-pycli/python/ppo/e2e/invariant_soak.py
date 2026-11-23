@@ -66,6 +66,7 @@ def random_run(
         phase = rm.phase()
         if phase == "event":
             rm.materialize_event()
+            phase = rm.phase()  # the Fake Merchant opens as a shop (GH #1607)
         if pin_hp and phase != "combat":
             rm.set_player(hp=PINNED_HP, max_hp=PINNED_HP)
         yield rm

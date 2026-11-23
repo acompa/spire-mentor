@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SaveMeta } from "../api";
+import { t } from "../i18n";
 
 type SortKey = "name" | "saved_at" | "character" | "seed" | "step_count";
 
@@ -14,9 +15,9 @@ function fmtDate(iso: string): string {
 
 function fmtProgress(p: SaveMeta["progress"]): string {
   const bits: string[] = [];
-  if (p.act != null) bits.push(`Act ${p.act}`);
-  if (p.floor != null) bits.push(`Floor ${p.floor}`);
-  if (p.hp != null) bits.push(`${p.hp}${p.max_hp != null ? `/${p.max_hp}` : ""} HP`);
+  if (p.act != null) bits.push(t("Act {n}", { n: p.act }));
+  if (p.floor != null) bits.push(t("Floor {n}", { n: p.floor }));
+  if (p.hp != null) bits.push(t("{hp} HP", { hp: `${p.hp}${p.max_hp != null ? `/${p.max_hp}` : ""}` }));
   return bits.join(", ") || "—";
 }
 
@@ -90,7 +91,7 @@ export default function SaveLoadDialog({
   ];
 
   return (
-    <div role="dialog" aria-label="Load save" onClick={close}
+    <div role="dialog" aria-label={t("Load save")} onClick={close}
       style={{ position: "fixed", inset: 0, zIndex: 50, background: "oklch(20% 0.02 255 / .55)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()}
@@ -104,18 +105,18 @@ export default function SaveLoadDialog({
             // Name the mechanism, not just "loading": the wait is proportional
             // to the run's length because restoring replays it move by move,
             // and knowing that is what stops the reflex to click again.
-            <b aria-live="polite">restoring “{loading}” — replaying the run…</b>
+            <b aria-live="polite">{t("restoring “{name}” — replaying the run…", { name: loading ?? "" })}</b>
           ) : (
-            <b>Load save ({saves.length})</b>
+            <b>{t("Load save ({n})", { n: saves.length })}</b>
           )}
-          <button onClick={close} aria-label="Close" disabled={busy}
+          <button onClick={close} aria-label={t("Close")} disabled={busy}
             style={{ padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 4,
               cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}>
-            close (Esc)
+            {t("close (Esc)")}
           </button>
         </div>
         {saves.length === 0 ? (
-          <div className="mono" style={{ padding: 24, color: "var(--muted)" }}>no saves yet</div>
+          <div className="mono" style={{ padding: 24, color: "var(--muted)" }}>{t("no saves yet")}</div>
         ) : (
           <table className="mono" style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
             <thead>
@@ -124,16 +125,17 @@ export default function SaveLoadDialog({
                   <th key={c.key} onClick={() => sortBy(c.key)}
                     style={{ padding: "8px 12px", cursor: "pointer", userSelect: "none",
                       borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>
-                    {c.label}{sortKey === c.key ? (asc ? " ▲" : " ▼") : ""}
+                    {/* Runtime key: one of the `cols` labels (listed in i18n/zh/screens.ts). */}
+                    {t(c.label)}{sortKey === c.key ? (asc ? " ▲" : " ▼") : ""}
                   </th>
                 ))}
-                <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>Progress</th>
+                <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>{t("Progress")}</th>
               </tr>
             </thead>
             <tbody>
               {sorted.map((s) => (
                 <tr key={s.name} onClick={busy ? undefined : () => onLoad(s.name)}
-                  title={busy ? "a restore is already running" : "click to load"}
+                  title={busy ? t("a restore is already running") : t("click to load")}
                   style={{ cursor: busy ? "default" : "pointer",
                     borderBottom: "1px solid var(--border)",
                     // Dim everything except the row being restored, so the

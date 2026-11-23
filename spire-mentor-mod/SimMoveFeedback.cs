@@ -123,8 +123,9 @@ internal sealed class SimMoveFeedback
             if (_graded >= 3 && SpireMentorModConfig.ShowCardLabels)
             {
                 int pct = (int)Math.Round(100.0 * _onLine / _graded);
-                string text = $"Fight accuracy {pct}%  ·  {_onLine} of {_graded} moves on the AI's line" +
-                              (_mistakes > 0 ? $"  ·  {_mistakes} mistake{(_mistakes == 1 ? "" : "s")}" : "");
+                string text = L10n.F("Fight accuracy {0}%  ·  {1} of {2} moves on the AI's line", pct, _onLine, _graded) +
+                              (_mistakes == 1 ? L10n.F("  ·  {0} mistake", _mistakes)
+                                  : _mistakes > 1 ? L10n.F("  ·  {0} mistakes", _mistakes) : "");
                 Color color = pct >= 80 ? new Color(1f, 0.84f, 0.35f)
                     : pct >= 55 ? new Color(0.85f, 0.88f, 0.95f)
                     : new Color(0.98f, 0.62f, 0.4f);
@@ -138,12 +139,12 @@ internal sealed class SimMoveFeedback
 
     private static (string Text, Color Color) Badge(string verdict) => verdict switch
     {
-        "Best" => ("✓ Best", new Color(1f, 0.84f, 0.3f)),
-        "Also good" => ("✓ Good", new Color(0.55f, 0.92f, 0.6f)),
-        "Okay" => ("Okay", new Color(0.88f, 0.88f, 0.8f)),
-        "Weak" => ("?! Weak", new Color(0.98f, 0.66f, 0.3f)),
-        "Mistake" => ("?? Mistake", new Color(0.98f, 0.4f, 0.34f)),
-        _ => ("?! Unusual", new Color(0.8f, 0.8f, 0.85f)),
+        "Best" => (L10n.T("✓ Best"), new Color(1f, 0.84f, 0.3f)),
+        "Also good" => (L10n.T("✓ Good"), new Color(0.55f, 0.92f, 0.6f)),
+        "Okay" => (L10n.T("Okay"), new Color(0.88f, 0.88f, 0.8f)),
+        "Weak" => (L10n.T("?! Weak"), new Color(0.98f, 0.66f, 0.3f)),
+        "Mistake" => (L10n.T("?? Mistake"), new Color(0.98f, 0.4f, 0.34f)),
+        _ => (L10n.T("?! Unusual"), new Color(0.8f, 0.8f, 0.85f)),
     };
 
     private void Float(string text, Color color, int size, double seconds, float yShare)

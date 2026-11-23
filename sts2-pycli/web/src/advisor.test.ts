@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ADVISOR_KEY, e2eAdvisable, isE2eScores, readAdvisorPref } from "./advisor";
+import { ADVISOR_KEY, e2eAdvisable, e2eGameVersion, isE2eCharacter, isE2eScores, readAdvisorPref } from "./advisor";
 import { bestAction } from "./hint";
 import { reasoningView } from "./searchPanel";
 import type { Score } from "./api";
@@ -16,10 +16,18 @@ function e2eRow(over: Partial<Score>): Score {
 afterEach(() => localStorage.clear());
 
 describe("the e2e advisor", () => {
-  it("is offered only on a Rust Ironclad v0.111.0 run of a build that has the student", () => {
-    expect(e2eAdvisable(true, "Ironclad", "v0.111.0")).toBe(true);
+  it("is offered only on a Rust v0.111.0 run of its characters, in a build that has the student", () => {
+    for (const c of ["Ironclad", "Silent", "Defect", "Regent", "Necrobinder"]) {
+      expect(e2eAdvisable(true, c, "v0.111.0")).toBe(true);
+    }
     expect(e2eAdvisable(false, "Ironclad", "v0.111.0")).toBe(false);
-    expect(e2eAdvisable(true, "Silent", "v0.111.0")).toBe(false);
+    // The Fool has its own student, on v0.113.0 (GH #1535).
+    expect(e2eAdvisable(true, "Fool", "v0.113.0")).toBe(true);
+    expect(e2eAdvisable(true, "Fool", "v0.111.0")).toBe(false);
+    expect(e2eAdvisable(true, "Ironclad", "v0.113.0")).toBe(false);
+    expect(isE2eCharacter("Fool")).toBe(true);
+    expect(e2eGameVersion("Fool")).toBe("v0.113.0");
+    expect(e2eGameVersion("Silent")).toBe("v0.111.0");
     expect(e2eAdvisable(true, "Ironclad", "v0.107.1")).toBe(false);
     expect(e2eAdvisable(true, "Ironclad", null)).toBe(false);
     expect(e2eAdvisable(true, "Ironclad", "v0.111.0", "csharp")).toBe(false);

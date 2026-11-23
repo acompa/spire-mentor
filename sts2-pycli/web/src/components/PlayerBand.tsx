@@ -7,6 +7,7 @@ import Orbs from "./Orbs";
 import Powers from "./Powers";
 import type { CombatantEffects, PlayerLike } from "./Combatant";
 import { BAND_CELL, BAND_ICON, BAND_SHIELD_HIT, bandOrbRow, bandPowerCells, bandPowerCellsBesideEnergy } from "./playerBandMetrics";
+import { t } from "../i18n";
 
 /** The phone-portrait player's status block, drawn beside the player figure:
  *  line 1 is the HP bar (with its block shield on the left end), line 2 the
@@ -47,7 +48,7 @@ export default function PlayerBand({ player, powers, widthPx, orbs, orbSlots, ef
         <div className="gs-powers">
           <Powers powers={powers} size={BAND_ICON} hitSize={BAND_CELL} cells={cells} maxShown={cells} minShown={1}
             inspectScope={inspectId}
-            onOverflow={(hidden) => inspect.open({ key: `powers:${inspectId}`, name: "More powers",
+            onOverflow={(hidden) => inspect.open({ key: `powers:${inspectId}`, name: t("More powers"),
               list: hidden.map((p) => powerItem(p, inspectId)) })} />
         </div>
       )}

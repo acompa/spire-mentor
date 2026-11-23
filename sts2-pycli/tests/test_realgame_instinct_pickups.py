@@ -114,20 +114,12 @@ def test_an_enchant_screen_gets_the_native_students_answer(
 
     assert advice["brain"] == "instinct", advice
     assert advice.get("best"), advice
-    pick = picks[-1]
+    # A screen handled in Rust (GH #1426) evaluates there: its last pick.
+    pick = picks[-1] if picks else advisor.last_pick
+    assert pick is not None
     assert pick.decision["decision_type"] == "CARD_ENCHANT"
     assert pick.best == native["class"], (pick.probs, native["probs"])
     # Probabilities only to 2e-2: the advisor's driver starts fresh on the rebuilt run, so the
     # history the native driver carries differs (d1250 drifted 1-4e-3 here, d2500 avg5 up to
     # 1.8e-2 on STEADY / 9e-3 on CARD_GRANT). The pick itself must match exactly (above).
     assert pick.probs == pytest.approx(native["probs"], abs=2e-2)
-
-
-def test_an_enchant_screen_without_its_enchantment_still_declines() -> None:
-    import realgame_instinct_screens as screens
-
-    assert screens._screen_enchantment({"source_kind": "enchantment"}) is None
-    assert screens._screen_enchantment({"source_model": "NIMBLE"}) == "NIMBLE"
-    assert screens._screen_enchantment({"source_model": "X", "source_kind": "relic"}) is None
-    assert screens._shared_card_type([{"type": "Skill"}, {"type": "Skill"}]) == "skill"
-    assert screens._shared_card_type([{"type": "Skill"}, {"type": "Attack"}]) is None

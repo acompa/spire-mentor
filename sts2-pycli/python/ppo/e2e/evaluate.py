@@ -20,7 +20,7 @@ What it guarantees, matching ``e2e_arm.sh`` (plan section 2, P2, P4):
   worker thread caps (``ops_contract.WORKER_THREAD_ENV``: ``OMP_NUM_THREADS``,
   ``OPENBLAS_NUM_THREADS`` and ``MKL_NUM_THREADS`` at 1),
   ``PYTHONPATH=<pin>:<this checkout's python/>``, ``STS2_WHEEL_PIN``,
-  ``STS2_GAME_VERSION=v0.111.0`` and the arm's own ``--set-env`` pairs, so no
+  ``STS2_GAME_VERSION`` (the lane build) and the arm's own ``--set-env`` pairs, so no
   ``STS2_RUNAI_/ROLLOUT_/MCTS_`` knob leaks in. Its workers start under the
   caps whoever runs the pool, and set torch to one thread.
 - It refuses an ``sts2_rs`` import that does not come from the pin, a wheel
@@ -82,10 +82,11 @@ from multiprocessing.connection import wait as conn_wait
 from pathlib import Path
 from typing import Any, ClassVar, Protocol
 
+from ppo.e2e import build as _build
 from ppo.e2e import ops_contract as OC
 from ppo.e2e import panels as P
 
-GAME_VERSION = "v0.111.0"
+GAME_VERSION = _build.GAME_VERSION  # the lane build (GH #1535)
 # The process's campaign character (`ppo.e2e.factory.CHARACTER_ENV`; Ironclad
 # when unset). `factory` reads the same variable and checks its spelling.
 CHARACTER = os.environ.get("STS2_E2E_CHARACTER", "").strip().capitalize() or "Ironclad"
@@ -177,11 +178,11 @@ def make_env_factory(spec: str) -> Callable[[int], Any]:
 
 
 def require_campaign_build() -> None:
-    """Refuse unless this process selects v0.111.0 (``sts2_client.GAME_VERSION``).
+    """Refuse unless this process selects the lane build (``sts2_client.GAME_VERSION``).
 
     Rust ignores the selection, but the Python side reads it (WP1's version-keyed
     combat-context tables, ``PpoRunEnv``'s default build), so a process on another
-    selection would encode v0.111.0 runs with another build's tables. WP1's factory
+    selection would encode the lane build's runs with another build's tables. WP1's factory
     refuses the same way (``factory.require_selection``).
     """
     import sts2_client
@@ -194,7 +195,7 @@ def require_campaign_build() -> None:
 
 
 def select_campaign_build() -> None:
-    """Select v0.111.0 here and in every worker spawned from now on; refuse another
+    """Select the lane build here and in every worker spawned from now on; refuse another
     explicit selection."""
     import sts2_client
 
@@ -205,7 +206,7 @@ def select_campaign_build() -> None:
 
 
 def construct_run(seed: int) -> Any:
-    """The campaign run for `seed`: `CHARACTER` A10, v0.111.0, agent mode, Neow, act 1 rolled,
+    """The campaign run for `seed`: `CHARACTER` A10, the lane build, agent mode, Neow, act 1 rolled,
     potion swap on (the student's setting, D4).
 
     Uses WP1's ``ppo.e2e.factory.new_run`` when that module is present (the merged
@@ -337,6 +338,7 @@ class RawEnv:
             phase = rm.phase()
             if phase == "event":
                 rm.materialize_event()
+                phase = rm.phase()  # the Fake Merchant opens as a shop (GH #1607)
             actions = rm.available_actions()
             if not actions:
                 return self._end("no_actions")
@@ -456,17 +458,19 @@ def eval_stamps() -> dict[str, Any]:
     each call returns a fresh copy.
 
     Raises:
-        sts2_client.GameVersionMismatch: The process selects another build than v0.111.0.
+        sts2_client.GameVersionMismatch: The process selects another build than the lane build.
     """
     return copy.deepcopy(_process_stamps())
 
 
 def error_row(seed: int, policy: str, error: str) -> dict[str, Any]:
     """What ``ppo.workers.play_batch`` books for a failed run, plus the stamps of the
-    process that books it (:func:`eval_stamps`)."""
+    process that books it (:func:`eval_stamps`) and its ``character`` (GH #1197: an
+    all-character lane evaluates each character in its own process)."""
     return {
         "seed": seed,
         "policy": policy,
+        "character": CHARACTER,
         "outcome": "error",
         "won": False,
         "error": error,
@@ -798,6 +802,7 @@ def _clean_env(pin: Path | None, set_env: Sequence[str]) -> dict[str, str]:
         **OC.WORKER_THREAD_ENV,
         "PYTHONPATH": os.pathsep.join([*([str(pin)] if pin else []), str(_PY_DIR)]),
         "STS2_GAME_VERSION": GAME_VERSION,
+        _build.BUILD_ENV: GAME_VERSION,
         CLEAN_MARKER: "1",
     }
     if pin is not None:

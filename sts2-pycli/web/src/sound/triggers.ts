@@ -65,6 +65,15 @@ function rhythmCues(ctx: Pick<CombatCueContext, "map" | "prev" | "next" | "rand"
   if ((next.exhaust_pile_count ?? 0) > (prev.exhaust_pile_count ?? 0)) {
     cues.push(cueForUi(map, "cardExhaust", ctx.rand));
   }
+  // The Fool's arrow coming back out of an enemy: a slot that was `away`
+  // (stuck in it) is `retrieved` again (`NImpaledArrowVfx.RetrieveAndFree`,
+  // on `ArrowSlot.ArrowStatusUpdated`). Compared slot by slot — slots are in
+  // gain order and never reorder — so a NEW slot arriving `retrieved` is not
+  // a retrieve, and an arrow `destroyed` instead plays nothing, as in the game.
+  const before = prev.arrows ?? [];
+  if ((next.arrows ?? []).some((s, i) => s === "retrieved" && before[i] === "away")) {
+    cues.push(cueForUi(map, "arrowDislodge", ctx.rand));
+  }
   // Necrobinder's Osty arriving (`OstyCmd.cs:47`). `osty` stays on the wire
   // once he exists — with `alive: false` when slain — so this keys on the
   // field APPEARING, not on him being alive, and a resurrect after a death
@@ -244,6 +253,10 @@ export function cuesForEvent(e: EffectEvent, ctx: CombatEventCueContext): SoundC
       // `power_removed_vfx`), so `chatter` would now make sound quieter than
       // what is on screen.
       add(ctx.map.generic[powerCueKey(e.kind, powerValenceLookup(ctx.map)(e.power, e.amount))]);
+      // A power that sounds as it is spent and removes itself (God Byrd's
+      // strike, Asleep's waking, Curl Up's curl): the wire shows only it
+      // going away.
+      if (e.kind === "powerRemove") add(ctx.map.powerSpent?.[e.power]);
       break;
     case "fullyBlocked":
       // `CreatureCmd.cs:400-406`: creature-agnostic, on `WasFullyBlocked`

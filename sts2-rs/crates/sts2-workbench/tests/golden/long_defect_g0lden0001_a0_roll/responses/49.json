@@ -88,7 +88,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Ultimate Strike"
+   ],
    "error": false,
    "floor": 1,
    "id": 2,
@@ -756,7 +758,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Boost Away"
+   ],
    "error": false,
    "floor": 2,
    "id": 15,
@@ -1356,7 +1360,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card TURBO"
+   ],
    "error": false,
    "floor": 3,
    "id": 27,
@@ -1989,7 +1995,9 @@
    "child_ids": [],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Sweeping Beam"
+   ],
    "error": false,
    "floor": 5,
    "id": 41,

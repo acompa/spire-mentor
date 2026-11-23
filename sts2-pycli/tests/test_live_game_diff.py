@@ -343,3 +343,156 @@ def test_compare_matches_an_enchantment_name_to_its_id() -> None:
 
     assert compare(pile("Perfect Fit"), pile("PERFECT_FIT"))[0] == []
     assert compare(pile("Perfect Fit"), pile("SWIFT"))[0] != []
+
+
+def test_compare_leaves_the_player_out_of_a_selection_asked_mid_combat() -> None:
+    """Foregone Conclusion's pick pauses the turn setup, not the turn start:
+    the mod reports the run at the pause, the host after AfterSideTurnStart."""
+
+    def select(counter: int, card: str, combat: bool) -> dict[str, Any]:
+        decision: dict[str, Any] = {
+            "type": "decision",
+            "decision": "card_select",
+            "cards": [{"index": 0, "id": card}],
+            "player": {"relics": [{"id": "FAKE_HAPPY_FLOWER", "counter": counter}]},
+        }
+        if combat:
+            decision["combat"] = {"round": 8}
+        return decision
+
+    assert compare(select(4, "BASH", True), select(3, "BASH", False))[0] == []
+    assert compare(select(4, "BASH", True), select(4, "STRIKE", False))[0] != []
+    # Outside combat the player is compared as usual.
+    assert compare(select(4, "BASH", False), select(3, "BASH", False))[0] != []
+
+
+def test_compare_ignores_the_order_of_the_players_powers() -> None:
+    def fight(powers: list[tuple[str, int]]) -> dict[str, Any]:
+        return {
+            "type": "decision",
+            "decision": "combat_play",
+            "player_powers": [{"id": i, "amount": a} for i, a in powers],
+        }
+
+    blur, strength = ("BLUR_POWER", 1), ("STRENGTH_POWER", 1)
+    assert compare(fight([blur, strength]), fight([strength, blur]))[0] == []
+    assert compare(fight([blur, strength]), fight([strength, ("BLUR_POWER", 2)]))[0] != []
+
+
+def test_compare_ignores_the_test_subjects_profile_kill_count() -> None:
+    """``Test Subject #C<n>`` counts the profile's kills, not the run's (#1287)."""
+
+    def fight(n: int, hp: int = 100) -> dict[str, Any]:
+        name = f"Test Subject #C{n}"
+        return {
+            "type": "decision",
+            "decision": "combat_play",
+            "enemies": [
+                {
+                    "name": name,
+                    "hp": hp,
+                    "powers": [{"id": "ADAPTABLE_POWER", "description": f"When {name} dies"}],
+                }
+            ],
+        }
+
+    assert compare(fight(8), fight(67))[0] == []
+    assert compare(fight(8), fight(67, hp=99))[0] != []
+
+
+def _architect(title: str, key: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The Architect's screen as RealGame translates it, and the mod's raw message."""
+    decision = {
+        "type": "decision",
+        "decision": "event_choice",
+        "options": [{"index": 0, "title": title, "description": ""}],
+    }
+    return decision, {"type": "event", "options": [{"index": 0, "label": title, "text_key": key}]}
+
+
+class _FakeRealGame(_Fake):
+    """A `_Fake` that keeps the mod's raw message, as RealGame does."""
+
+    def __init__(self, replies: list[tuple[dict[str, Any], dict[str, Any]]]) -> None:
+        super().__init__([d for d, _ in replies])
+        self.raws = [raw for _, raw in replies]
+        self.last_raw: dict[str, Any] | None = None
+
+    def start(self, *_: Any, **__: Any) -> dict[str, Any]:
+        self.last_raw = self.raws.pop(0)
+        return super().start()
+
+    def send(self, cmd: dict[str, Any]) -> dict[str, Any]:
+        self.last_raw = self.raws.pop(0)
+        return super().send(cmd)
+
+
+def test_lockstep_walks_each_side_through_its_own_architect_dialogue() -> None:
+    """The conversation is picked from the profile's wins (#1287, seed 1007):
+    the host ran one line, the game two. Only the Proceed is compared."""
+
+    def host_line(title: str, key: str) -> dict[str, Any]:
+        decision, _ = _architect(title, key)
+        decision["options"][0]["text_key"] = key
+        return decision
+
+    start = _map([(0, 15)])
+    host = _Fake(
+        [start, host_line("Threaten", "THE_ARCHITECT.dialogue.0"), host_line("Proceed", "PROCEED")]
+    )
+    real = _FakeRealGame(
+        [
+            (start, {}),
+            _architect("Threaten", "THE_ARCHITECT.dialogue.0"),
+            _architect("Continue", "THE_ARCHITECT.dialogue.1"),
+            _architect("Proceed", "PROCEED"),
+        ]
+    )
+    game = LockstepGame(host, real, io.StringIO())  # type: ignore[arg-type]
+    game.start("Ironclad", seed="5")
+    assert game.act("end_turn")["options"][0]["title"] == "Proceed"
+    assert game.divergence is None
+    assert len(real.sent) == 4 and len(host.sent) == 3
+
+
+def test_lockstep_leaves_out_an_x_cards_cost_in_a_pick() -> None:
+    """Cascade picked from the discard pile: the host says the X last paid,
+    the mod 0 (#1287, A10 seed 1009). Other cards' costs are still compared."""
+
+    def pick(cascade: int, strike: int = 1) -> dict[str, Any]:
+        return {
+            "type": "decision",
+            "decision": "card_select",
+            "cards": [{"id": "CASCADE", "cost": cascade}, {"id": "STRIKE", "cost": strike}],
+        }
+
+    raw = {"type": "card_select", "cards": [{"costs_x": True}, {"costs_x": False}]}
+    start = _map([(0, 1)])
+    game = LockstepGame(
+        _Fake([start, pick(6), pick(6)]),
+        _FakeRealGame([(start, {}), (pick(0), raw), (pick(0, strike=2), raw)]),
+        io.StringIO(),
+    )  # type: ignore[arg-type]
+    game.start("Ironclad", seed="5")
+    game.act("play_card", card_index=0)
+    assert game.divergence is None
+    with pytest.raises(LockstepDivergence):
+        game.act("play_card", card_index=0)
+    assert game.divergence is not None
+    assert [d["path"] for d in game.divergence["diffs"]] == ["cards[1].cost"]
+
+
+def test_compare_leaves_out_realgames_gold_earned_estimate() -> None:
+    """RealGame's ``gold_earned`` is an estimate (#1287, Regent seed 1009);
+    the gold itself is compared."""
+
+    def reward(earned: int, gold: int = 47) -> dict[str, Any]:
+        return {
+            "type": "decision",
+            "decision": "card_reward",
+            "gold_earned": earned,
+            "player": {"gold": gold},
+        }
+
+    assert compare(reward(39), reward(36))[0] == []
+    assert compare(reward(39), reward(36, gold=44))[0] != []

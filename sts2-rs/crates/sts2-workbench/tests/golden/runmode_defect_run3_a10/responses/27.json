@@ -11,10 +11,10 @@
   "from_floor": null,
   "gold": 124,
   "gold_delta": null,
-  "hp": 37,
+  "hp": 35,
   "hp_delta": null,
   "lines": [
-   "HP 37/75",
+   "HP 35/75",
    "Gold 124",
    "1 decision auto-played"
   ],
@@ -35,7 +35,7 @@
   "idx": 0,
   "meta": {
    "act": 1,
-   "act_name": "Overgrowth",
+   "act_name": "Underdocks",
    "bg_col": 0,
    "bg_row": 2,
    "bg_seed": 3,
@@ -48,8 +48,8 @@
   "source": "live",
   "state": {
    "act": 1,
-   "act1": "overgrowth",
-   "act_name": "Overgrowth",
+   "act1": "underdocks",
+   "act_name": "Underdocks",
    "ascension": 10,
    "bg_col": 0,
    "bg_row": 2,
@@ -109,15 +109,15 @@
       "is_best": false,
       "losses": 0,
       "low_confidence": false,
-      "mean_final_hp": 37.0,
+      "mean_final_hp": 35.0,
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.132,
+      "q": 1.1249,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
-      "value_sum": 2.264,
+      "value_sum": 2.2497,
       "visits": 2,
       "wins": 2
      },
@@ -125,7 +125,7 @@
       "action": {
        "action": "play",
        "card_index": 4,
-       "target_index": 0
+       "target_index": 1
       },
       "bucket": "likely-win",
       "hp_n": 2,
@@ -133,15 +133,15 @@
       "is_best": true,
       "losses": 0,
       "low_confidence": false,
-      "mean_final_hp": 37.0,
+      "mean_final_hp": 35.0,
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.132,
+      "q": 1.1249,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
-      "value_sum": 2.264,
+      "value_sum": 2.2497,
       "visits": 2,
       "wins": 2
      },
@@ -149,23 +149,23 @@
       "action": {
        "action": "play",
        "card_index": 2,
-       "target_index": 0
+       "target_index": 1
       },
       "bucket": "likely-win",
       "hp_n": 2,
-      "hp_sd": 0.0,
+      "hp_sd": 5.0,
       "is_best": false,
       "losses": 0,
       "low_confidence": false,
-      "mean_final_hp": 37.0,
+      "mean_final_hp": 30.0,
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.132,
+      "q": 1.107,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
-      "value_sum": 2.264,
+      "value_sum": 2.214,
       "visits": 2,
       "wins": 2
      },
@@ -181,15 +181,15 @@
       "is_best": false,
       "losses": 0,
       "low_confidence": false,
-      "mean_final_hp": 37.0,
+      "mean_final_hp": 25.0,
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.132,
+      "q": 1.0891,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
-      "value_sum": 1.132,
+      "value_sum": 1.0891,
       "visits": 1,
       "wins": 1
      },
@@ -203,15 +203,15 @@
       "is_best": false,
       "losses": 0,
       "low_confidence": false,
-      "mean_final_hp": 29.0,
+      "mean_final_hp": 19.0,
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.1034,
+      "q": 1.0677,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
-      "value_sum": 1.1034,
+      "value_sum": 1.0677,
       "visits": 1,
       "wins": 1
      }
@@ -219,7 +219,7 @@
     "recommended": {
      "action": "play",
      "card_index": 4,
-     "target_index": 0
+     "target_index": 1
     }
    },
    "options": [
@@ -415,7 +415,7 @@
      }
     ],
     "gold": 124,
-    "hp": 37,
+    "hp": 35,
     "max_hp": 75,
     "name": "Defect",
     "potion_slots": 2,

@@ -15,6 +15,7 @@
 // Never throws into the game: every entry point swallows and logs.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -34,6 +35,44 @@ internal static class SimFrameLauncher
     /// <summary>The frame the mod started is running.</summary>
     public static bool Running => _frame is { HasExited: false };
 
+    /// <summary>A test lane: the advisor_autoplay harness,
+    /// --spire-mentor-autoplay / -port and --fastmp (two games on one
+    /// desktop). The frame stays shut there.</summary>
+    public static bool Harness =>
+        SimConfig.Instance.AdvisorAutoplay || SimMp.AutoplayOverride ||
+        SimMp.PortOverride != null || SimMp.FastMpLaunch;
+
+    private static bool? _shipped;
+
+    /// <summary>The frame is in the mod folder (checked once).</summary>
+    public static bool Shipped => _shipped ??= File.Exists(ExePath());
+
+    /// <summary>The frame for this OS: the Windows exe, or the Linux host's
+    /// script (FrameLaunchRules).</summary>
+    private static string ExePath()
+    {
+        string? modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        if (modDir == null)
+        {
+            return "";
+        }
+        return OperatingSystem.IsWindows()
+            ? FrameLaunchRules.ExePath(modDir)
+            : FrameLaunchRules.LinuxScriptPath(modDir);
+    }
+
+    private static bool? _supported;
+
+    /// <summary>A frame can adopt this game's window (checked once, on the
+    /// main thread): Windows, or Linux with the game on X11 / XWayland.</summary>
+    public static bool Supported => _supported ??= FrameLaunchRules.Supported(
+        OperatingSystem.IsWindows(), OperatingSystem.IsLinux(), DisplayServer.GetName());
+
+    /// <summary>The frame's log, for the notes that point at it.</summary>
+    private static string FrameLogHint => OperatingSystem.IsWindows()
+        ? "%LOCALAPPDATA%\\SpireMentor\\frame\\frame.log"
+        : "~/.local/share/SpireMentor/frame/frame.log";
+
     /// <summary>At startup: open the frame when the player wants it, once
     /// the game window has settled (the game re-applies its display settings
     /// during the first frames).</summary>
@@ -43,10 +82,8 @@ internal static class SimFrameLauncher
         // Windows (no note at every start), and in the test lanes -- the
         // advisor_autoplay harness, --spire-mentor-autoplay / -port and
         // --fastmp (two games on one desktop).
-        bool harness = SimConfig.Instance.AdvisorAutoplay || SimMp.AutoplayOverride ||
-                       SimMp.PortOverride != null || SimMp.FastMpLaunch;
         if (!FrameLaunchRules.OpenAtStartup(SpireMentorModConfig.PanelsInOwnWindow, FrameLink.Framed,
-                OperatingSystem.IsWindows(), harness))
+                Supported, Harness))
         {
             return;
         }
@@ -91,22 +128,24 @@ internal static class SimFrameLauncher
             FrameLink.SetUiOutside(true);
             return;
         }
-        if (!OperatingSystem.IsWindows())
+        if (!Supported)
         {
-            SimActionLog.Note("Panels in their own window: Windows only.");
+            SimActionLog.Note(OperatingSystem.IsLinux()
+                ? L10n.T("Panels in their own window: on Linux the game must run on X11 or XWayland.")
+                : L10n.T("Panels in their own window: Windows and Linux only."));
             return;
         }
-        string? modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-        string exe = modDir != null ? FrameLaunchRules.ExePath(modDir) : "";
+        string exe = ExePath();
         if (!File.Exists(exe))
         {
             Logger.Log($"[SimFrameLauncher] no frame at {exe}");
-            SimActionLog.Note("Panels in their own window: the frame is missing from the mod folder (reinstall the mod).");
+            SimActionLog.Note(L10n.T("Panels in their own window: the frame is missing from the mod folder (reinstall the mod)."));
             return;
         }
         int port = FreeLoopbackPort();
         int controlPort = SimAdvisorProcess.ControlPort(BridgeServer.Instance.Port);
-        string url = FrameLaunchRules.PageUrl(SpireMentorModConfig.FrameUrl, controlPort);
+        // The panel page speaks the mod's language (?lang=zh; nothing in English).
+        string url = WorkbenchUrl.WithLang(FrameLaunchRules.PageUrl(SpireMentorModConfig.FrameUrl, controlPort), L10n.Tag);
         // A fullscreen window fights being made a child; the frame is a
         // window, so the game is too while it sits inside.
         DisplayServer.WindowMode mode = DisplayServer.WindowGetMode();
@@ -116,14 +155,30 @@ internal static class SimFrameLauncher
         }
         long hwnd = DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
         string? gameDir = Path.GetDirectoryName(OS.GetExecutablePath());
-        var psi = new ProcessStartInfo(exe)
+        IReadOnlyList<string> frameArgs = FrameLaunchRules.Args(System.Environment.ProcessId, hwnd, port, url, gameDir);
+        string file = exe;
+        if (!OperatingSystem.IsWindows())
+        {
+            bool inSteamRuntime = FrameLaunchRules.InSteamRuntime(
+                System.Environment.GetEnvironmentVariable("container"),
+                System.Environment.GetEnvironmentVariable("SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM"));
+            (file, frameArgs) = FrameLaunchRules.LinuxCommand(inSteamRuntime, exe, frameArgs);
+        }
+        var psi = new ProcessStartInfo(file)
         {
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(exe),
         };
-        foreach (string a in FrameLaunchRules.Args(System.Environment.ProcessId, hwnd, port, url, gameDir))
+        foreach (string a in frameArgs)
         {
             psi.ArgumentList.Add(a);
+        }
+        if (!OperatingSystem.IsWindows())
+        {
+            // The game's own library overrides (Steam's overlay, its bundled
+            // FMOD) are not for the host's python.
+            psi.Environment.Remove("LD_PRELOAD");
+            psi.Environment.Remove("LD_LIBRARY_PATH");
         }
         Process frame = Process.Start(psi) ?? throw new InvalidOperationException($"could not start {exe}");
         frame.EnableRaisingEvents = true;
@@ -195,7 +250,9 @@ internal static class SimFrameLauncher
         }
         if (code != 0)
         {
-            SimActionLog.Note($"The panels' window closed unexpectedly (code {code}); they are back in the game. %LOCALAPPDATA%\\SpireMentor\\frame\\frame.log says why.");
+            SimActionLog.Note(code == FrameLaunchRules.LinuxExitNoToolkit && !OperatingSystem.IsWindows()
+                ? L10n.T("Panels in their own window needs python3 with PyGObject, GTK 3 and WebKitGTK (webkit2gtk-4.1) installed; the panels are back in the game.")
+                : L10n.F("The panels' window closed unexpectedly (code {0}); they are back in the game. {1} says why.", code, FrameLogHint));
         }
     }
 

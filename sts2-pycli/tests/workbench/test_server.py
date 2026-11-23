@@ -67,6 +67,32 @@ def test_load_then_step_enriches_images(tmp_path, fixture_log):
     assert step["state"]["hand"][0]["image"] is None
 
 
+def test_load_refuses_paths_outside_logs_dir(tmp_path, fixture_log):
+    """`/api/load` reads only run logs under `logs_dir`: a path elsewhere, a
+    `..` walk out of it and a symlink inside it pointing out are all 400s, and
+    nothing is loaded."""
+    logs = fixture_log.parent / "logs"
+    logs.mkdir()
+    c = TestClient(create_app(images_root=tmp_path / "images", logs_dir=logs))
+    escapes = [fixture_log, logs / ".." / fixture_log.name]
+    link = logs / "escape.jsonl"
+    try:
+        link.symlink_to(fixture_log)
+        escapes.append(link)
+    except OSError:  # Windows without the symlink privilege
+        pass
+
+    for path in escapes:
+        r = c.post("/api/load", json={"path": str(path)})
+        assert r.status_code == 400, path
+        assert "outside logs dir" in r.json()["detail"]
+    assert c.get("/api/timeline").status_code == 400  # still no run loaded
+
+    inside = logs / "run.jsonl"
+    inside.write_bytes(fixture_log.read_bytes())
+    assert c.post("/api/load", json={"path": str(inside)}).json()["count"] == 2
+
+
 def _combat_state_with_enemies(enemies):
     """Minimal combat_play state carrying the given ``enemies`` list."""
     return {

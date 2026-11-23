@@ -16,7 +16,9 @@ import { PHONES, phoneContext, type Orientation, type PhoneSize } from "./phoneH
  * the selector, so none exist to exclude).
  */
 const FLOOR = 44;
-const COMBAT = /^(Combat|Defect orb belt|Test Subject|Kaiser Crab)/;
+// Also skipped: screens the gallery frames at a tablet's stage (the shop at
+// 1024x466, zoomed to fit it), which a phone never shows at that size.
+const COMBAT = /^(Combat|Defect orb belt|Test Subject|Kaiser Crab)|tablet/;
 
 type Offender = { screen: string; what: string; w: number; h: number; hit: boolean };
 type Overflow = { screen: string; what: string; px: number };
@@ -119,6 +121,53 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
       });
     });
   }
+}
+
+// #1443: in live play the map is the picker, so the Proceed banner is always
+// disabled, and on a phone held upright it covered the bottom rows of rooms,
+// the ones you are choosing between. It is left out there now, and the sheet
+// keeps no deep bottom padding for it: the rooms you can take park in sight.
+for (const size of Object.keys(PHONES) as PhoneSize[]) {
+  test.describe(`${size} phone, portrait: live act map`, () => {
+    test.use(phoneContext(size, "portrait"));
+
+    test("every room you can take is in sight and tappable, no banner over it", async ({ page }) => {
+      await page.goto("/gallery.html");
+      const section = page.locator("section", { has: page.locator("h2", { hasText: "Map (live run" }) });
+      await section.locator(".gsm-parch-body").waitFor({ state: "visible" });
+      await page.waitForTimeout(800); // art and the column fit settle
+      const r = await section.evaluate((sec) => {
+        // Frame the sheet at the phone's height (the gallery frames it 820 px
+        // tall), put it on screen, and park it the way MapView does when
+        // nothing is marked current: at the bottom, where row 0 is.
+        const surface = sec.querySelector<HTMLElement>(":scope > .surface")!;
+        surface.style.height = `${window.innerHeight}px`;
+        surface.scrollIntoView({ block: "start" });
+        const body = sec.querySelector<HTMLElement>(".gsm-parch-body")!;
+        body.scrollTop = body.scrollHeight;
+        const view = body.getBoundingClientRect();
+        // the torn bottom deckle is drawn over the sheet's last ~50 px
+        const deckle = sec.querySelector(".gsm-parch-bot")!.getBoundingClientRect();
+        const visibleBottom = Math.min(view.bottom, deckle.top, window.innerHeight);
+        const rooms = Array.from(sec.querySelectorAll<SVGGElement>("g[data-can]")).map((g) => {
+          const d = (g.querySelector("circle[data-hit]") ?? g).getBoundingClientRect();
+          const cx = d.left + d.width / 2, cy = d.top + d.height / 2;
+          const top = document.elementFromPoint(cx, cy);
+          return {
+            cy: Math.round(cy),
+            inSight: cy > view.top && cy < visibleBottom,
+            tappable: !!top && (g === top || g.contains(top)),
+          };
+        });
+        return { banners: sec.querySelectorAll(".gsm-proceed").length, rooms, visibleBottom: Math.round(visibleBottom) };
+      });
+      expect(r.banners, "Proceed banners on the live phone map").toBe(0);
+      expect(r.rooms.length, "rooms you can take").toBe(4);
+      for (const room of r.rooms) {
+        expect(room, `room at y ${room.cy} (sheet visible to y ${r.visibleBottom})`).toMatchObject({ inSight: true, tappable: true });
+      }
+    });
+  });
 }
 
 // Owner feedback (2026-11-13): no hover on a phone, so a shop ware's effect

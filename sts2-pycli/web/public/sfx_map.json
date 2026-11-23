@@ -1,5 +1,5 @@
 {
- "audioRev": "206a08b7a1aea574",
+ "audioRev": "ed2b9f80d296b3ea",
  "cardAnims": {
   "Abrasive": {
    "kind": "cast"
@@ -1275,6 +1275,7 @@
   "Unrelenting": "res://debug_audio/heavy_attack.mp3",
   "Uppercut": "res://debug_audio/heavy_attack.mp3"
  },
+ "cardMelodies": {},
  "cards": {
   "Blood Wall": "event:/sfx/characters/ironclad/ironclad_bloodwall",
   "Brand": "event:/sfx/characters/attack_fire",
@@ -1856,13 +1857,20 @@
    ]
   },
   "Flail Knight": {
-   "defaultAttack": "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_ram",
+   "defaultAttack": "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_flail",
    "impact": "event:/sfx/enemy/enemy_impact_enemy_size/enemy_impact_armor",
    "moves": [
     {
      "event": "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_war_chant",
      "intent": "Buff",
      "name": "WAR_CHANT"
+    },
+    {
+     "damage": 9,
+     "event": "event:/sfx/enemy/enemy_attacks/flail_knight/flail_knight_flail",
+     "hits": 2,
+     "intent": "Attack",
+     "name": "FLAIL_MOVE"
     },
     {
      "damage": 15,
@@ -3619,7 +3627,7 @@
      "name": "PRESSURE_UP_MOVE"
     },
     {
-     "event": "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_knockout",
+     "event": "event:/sfx/enemy/enemy_attacks/waterfall_giant/waterfall_giant_die",
      "hits": 1,
      "intent": "DeathBlow",
      "name": "EXPLODE_MOVE"
@@ -3667,6 +3675,10 @@
    "channel": "event:/sfx/characters/defect/defect_plasma_channel",
    "evoke": "res://debug_audio/plasma_orb_evoke.mp3"
   }
+ },
+ "powerSpent": {
+  "Asleep": "event:/sfx/enemy/enemy_attacks/lagavulin_matriarch/lagavulin_matriarch_awaken",
+  "Curl Up": "event:/sfx/enemy/enemy_attacks/giant_louse/giant_louse_curl"
  },
  "powers": {
   "Accelerant": "Buff",

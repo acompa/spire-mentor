@@ -54,7 +54,23 @@ impl Loc {
     /// The map `create_app` builds over build `version`'s embedded bundle
     /// ([`data::data_for`]), built once per build. Python twin:
     /// `workbench.localization.build_workbench_loc(..., version=...)`.
+    ///
+    /// With the display language set to Chinese ([`set_display_language`])
+    /// and a zh bundle present, the map is the Chinese one ([`zh_overlay`]).
     pub fn embedded_for(version: GameVersion) -> &'static Loc {
+        static ZH_CELLS: data::PerVersion<Loc> = data::PerVersion::new();
+        if display_zh() {
+            return ZH_CELLS.get_or_init(version, || {
+                zh_overlay(data::data_for(version), data::zh_tables_for(version))
+            });
+        }
+        Self::english_for(version)
+    }
+
+    /// The English map of build `version` whatever the display language: what
+    /// art lookups keyed by a display NAME (relic / potion / event art) must
+    /// read, since the Chinese map would hand them a Chinese name.
+    pub fn english_for(version: GameVersion) -> &'static Loc {
         static CELLS: data::PerVersion<Loc> = data::PerVersion::new();
         CELLS.get_or_init(version, || build_loc(data::data_for(version)))
     }
@@ -497,9 +513,11 @@ pub fn load_affliction_localization(entries: &LocMap) -> Loc {
     out
 }
 
-/// The nine `RestSiteOption` subclasses' `OptionId`s.
-pub const REST_SITE_OPTION_IDS: [&str; 9] = [
-    "HEAL", "SMITH", "DIG", "LIFT", "COOK", "CLONE", "HATCH", "KINDLE", "MEND",
+/// The `RestSiteOption` subclasses' `OptionId`s: v0.111.0's nine, then
+/// v0.113.0's `EVOLVE` (Byrdpip) and `RESTORE` (Wuppy). An id a build's
+/// dump lacks falls back to its title-cased id.
+pub const REST_SITE_OPTION_IDS: [&str; 11] = [
+    "HEAL", "SMITH", "DIG", "LIFT", "COOK", "CLONE", "HATCH", "KINDLE", "MEND", "EVOLVE", "RESTORE",
 ];
 
 /// Build a `rest_site.OPTION_<ID>.name -> display title` map from the
@@ -765,7 +783,8 @@ pub fn resolve_state_names_in_place(state: &mut Value, loc: &Loc) {
         return;
     };
     // `relics`/`potions` at the top level are the shop / treasure offerings
-    // (the persistent player trays are handled below under `player`).
+    // (the persistent player trays are handled below under `player`);
+    // `rewards` is the Blitz chest's relics (GH #1347).
     for key in [
         "hand",
         "cards",
@@ -775,6 +794,7 @@ pub fn resolve_state_names_in_place(state: &mut Value, loc: &Loc) {
         "enemies",
         "relics",
         "potions",
+        "rewards",
     ] {
         resolve_names_in_list(out.get_mut(key), loc);
     }
@@ -941,6 +961,518 @@ pub fn build_loc(d: &Data) -> Loc {
     card_loc
 }
 
+// ── Display language ────────────────────────────────────────────────────
+
+static DISPLAY_ZH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set the language game text is DISPLAYED in: `"zh"` (any `zh*` tag)
+/// switches [`Loc::embedded_for`] to the Chinese map when the bundle carries
+/// one; anything else is English. Returns whether Chinese is now on.
+///
+/// Call it once, before the first request: the maps are built lazily and
+/// cached, and every cache derived from them keeps whatever it saw first
+/// (the browser engine sets it from its init config, `Workbench::new`).
+/// Only display text changes: everything that maps a NAME back to an id
+/// (`combat_import`, `display_maps::power_title_to_id`) reads the raw
+/// English tables in [`crate::data`], never this map.
+pub fn set_display_language(lang: &str) -> bool {
+    let zh = lang.trim().to_ascii_lowercase().starts_with("zh") && data::zh_tables().is_present();
+    DISPLAY_ZH.store(zh, std::sync::atomic::Ordering::Relaxed);
+    zh
+}
+
+/// The game's Chinese name for an item given by its ENGLISH title (a relic,
+/// potion, card or monster an engine message names in English, e.g. an
+/// event's `{Potion}` var): the title mapped back to its id, then the
+/// Chinese table read by id. `None` when it is not a known title.
+#[must_use]
+pub fn zh_name_for_english(english: &str) -> Option<&'static str> {
+    static MAP: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
+    let map = MAP.get_or_init(|| {
+        let zh = data::zh_tables();
+        let mut out = BTreeMap::new();
+        for v in GameVersion::ALL {
+            let d = data::data_for(v);
+            for (eng, zh_table) in [
+                (&d.loc_relics, &zh.relics),
+                (&d.loc_potions, &zh.potions),
+                (&d.loc_cards, &zh.cards),
+                (
+                    &d.loc_monsters,
+                    zh.extra.get("monsters").unwrap_or(&zh.cards),
+                ),
+            ] {
+                for (key, title) in eng {
+                    let is_name = key
+                        .rsplit_once('.')
+                        .is_some_and(|(_, f)| f == "title" || f == "name");
+                    if let (true, Some(z)) = (is_name, zh_table.get(key)) {
+                        if !z.is_empty() {
+                            out.entry(title.clone()).or_insert_with(|| z.clone());
+                        }
+                    }
+                }
+            }
+        }
+        // Card rarities and types (an event's `{Rarity}` / `{Type}` var reads
+        // `Common` / `Skill`): the game's `CARD_RARITY.*` / `CARD_TYPE.*`.
+        if let Some(rows) = zh.extra.get("gameplay_ui") {
+            for (key, z) in rows {
+                let word = key
+                    .strip_prefix("CARD_RARITY.")
+                    .or_else(|| key.strip_prefix("CARD_TYPE."));
+                if let (Some(w), false) = (word, z.is_empty()) {
+                    out.entry(py_title(&w.to_lowercase()))
+                        .or_insert_with(|| z.clone());
+                }
+            }
+        }
+        // Enchantments: no English table is bundled; their English title is
+        // the id title-cased (`SHARP` -> `Sharp`, `SOULS_POWER` -> `Souls Power`).
+        if let Some(rows) = zh.extra.get("enchantments") {
+            for (key, z) in rows {
+                if let Some(stem) = key.strip_suffix(".title") {
+                    let eng = py_title(&stem.replace('_', " ").to_lowercase());
+                    if !z.is_empty() {
+                        out.entry(eng).or_insert_with(|| z.clone());
+                    }
+                }
+            }
+        }
+        out
+    });
+    map.get(english).map(String::as_str)
+}
+
+/// True when game text displays in Chinese ([`set_display_language`]).
+#[must_use]
+pub fn display_zh() -> bool {
+    DISPLAY_ZH.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Overwrite `dst`'s entries with `zh`'s where both have the key: a key the
+/// Chinese tables lack stays English, and the overlay adds nothing a build
+/// does not have (the zh set comes from the newest build).
+fn overlay_existing(dst: &mut LocMap, zh: &LocMap) {
+    for (k, v) in zh {
+        if let Some(slot) = dst.get_mut(k) {
+            if !v.is_empty() {
+                v.clone_into(slot);
+            }
+        }
+    }
+}
+
+/// `true` when `text` still holds an unfilled `{Var}` placeholder.
+fn has_placeholder(text: &str) -> bool {
+    text.contains('{')
+}
+
+/// Render `template` with `stats` the way a card face out of combat does
+/// (markup kept, as the wiki's `description_plain` carries it).
+fn render_plain(template: &str, stats: &serde_json::Map<String, Value>, upgraded: bool) -> String {
+    crate::render::resolve_card_text(
+        Some(template),
+        Some(&Value::Object(stats.clone())),
+        crate::render::CardTextFlags {
+            in_combat: false,
+            upgraded,
+            extra_flags: None,
+            keep_markup: true,
+        },
+    )
+}
+
+/// Spell the `[energy]N[/energy]` / `[star]N[/star]` glyph runs out the way
+/// the game's Chinese text writes them ("获得2点能量"), for a relic / potion
+/// text the page draws without the card frame's glyphs. A template that
+/// already writes the count ("1点{Energy:energyIcons()}") keeps one count.
+fn spell_icons_zh(text: &str) -> String {
+    let mut out = text.to_string();
+    for (tag, noun) in [("energy", "能量"), ("star", "辉星")] {
+        let open = format!("[{tag}]");
+        let close = format!("[/{tag}]");
+        let mut done = String::with_capacity(out.len());
+        let mut rest = out.as_str();
+        while let Some(i) = rest.find(&open) {
+            let after = &rest[i + open.len()..];
+            let Some(j) = after.find(&close) else {
+                break;
+            };
+            let before = &rest[..i];
+            done.push_str(before);
+            if before.ends_with('点') {
+                done.push_str(noun);
+            } else {
+                done.push_str(&after[..j]);
+                done.push('点');
+                done.push_str(noun);
+            }
+            rest = &after[j + close.len()..];
+        }
+        done.push_str(rest);
+        out = done;
+    }
+    out
+}
+
+/// The vars an icon directive counts by (`{Energy:energyIcons()}` ->
+/// `energy`), which `required_stat_vars` leaves out.
+fn icon_vars(template: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for piece in template.split('{').skip(1) {
+        let Some((inner, _)) = piece.split_once('}') else {
+            continue;
+        };
+        if let Some((name, fmt)) = inner.split_once(':') {
+            if matches!(fmt, "energyIcons()" | "starIcons()") && !name.is_empty() {
+                out.push(name.to_lowercase());
+            }
+        }
+    }
+    out
+}
+
+/// `{var_lowercase: value}` read off an English card text: `template`'s
+/// simple placeholders (`{HitCount}`, `{HitCount:diff()}`) matched by
+/// position against the resolved `plain` (markup stripped on both). Empty
+/// when the template has anything else in braces or the shapes disagree.
+fn infer_vars(template: &str, plain: &str) -> BTreeMap<String, String> {
+    fn strip(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(i) = rest.find('[') {
+            out.push_str(&rest[..i]);
+            if let Some(j) = rest[i..].find(']') {
+                rest = &rest[i + j + 1..];
+            } else {
+                out.push_str(&rest[i..]);
+                rest = "";
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+    // One template slot: the literal before it, then the var it prints,
+    // with a `choose(N):word|{Var…}unit` directive's N, word and unit.
+    struct Slot<'a> {
+        lit: &'a str,
+        var: Option<String>,
+        choose: Option<(String, String, String)>,
+        /// `{HitCount:plural:time|times}`: a word, no value; either matches.
+        plural: Option<(String, String)>,
+    }
+    let (t, p) = (strip(template), strip(plain));
+    let mut slots: Vec<Slot<'_>> = Vec::new();
+    let mut rest = t.as_str();
+    while let Some(i) = rest.find('{') {
+        // The directive up to its matching brace (choose nests one level).
+        let mut depth = 0;
+        let mut end = None;
+        for (k, c) in rest[i..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i + k);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else {
+            return BTreeMap::new();
+        };
+        let inner = &rest[i + 1..end];
+        let (name, fmt) = match inner.split_once(':') {
+            Some((n, f)) => (n, Some(f)),
+            None => (inner, None),
+        };
+        if name.is_empty() || !name.chars().all(char::is_alphanumeric) {
+            return BTreeMap::new();
+        }
+        if let Some((one, many)) = fmt
+            .and_then(|f| f.strip_prefix("plural:"))
+            .filter(|f| !f.contains('{'))
+            .and_then(|f| f.split_once('|'))
+        {
+            slots.push(Slot {
+                lit: &rest[..i],
+                var: None,
+                choose: None,
+                plural: Some((one.to_string(), many.to_string())),
+            });
+            rest = &rest[end + 1..];
+            continue;
+        }
+        let choose = match fmt {
+            None | Some("diff()") => None,
+            Some(f) => {
+                // `choose(2):twice|{HitCount:diff()} times`
+                let Some((n, branches)) =
+                    f.strip_prefix("choose(").and_then(|f| f.split_once("):"))
+                else {
+                    return BTreeMap::new();
+                };
+                let Some((word, other)) = branches.split_once('|') else {
+                    return BTreeMap::new();
+                };
+                let unit = other.rsplit_once('}').map_or("", |(_, u)| u);
+                if word.contains('{') || !other.starts_with('{') {
+                    return BTreeMap::new();
+                }
+                Some((n.to_string(), word.to_string(), unit.to_string()))
+            }
+        };
+        slots.push(Slot {
+            lit: &rest[..i],
+            var: Some(name.to_lowercase()),
+            choose,
+            plural: None,
+        });
+        rest = &rest[end + 1..];
+    }
+    slots.push(Slot {
+        lit: rest,
+        var: None,
+        choose: None,
+        plural: None,
+    });
+    let mut out = BTreeMap::new();
+    let mut at = p.as_str();
+    for slot in slots {
+        let Some(tail) = at.strip_prefix(slot.lit) else {
+            return BTreeMap::new();
+        };
+        at = tail;
+        if let Some((one, many)) = &slot.plural {
+            // The longer form first: "times" before "time".
+            let (a, b) = if many.len() >= one.len() {
+                (many, one)
+            } else {
+                (one, many)
+            };
+            let Some(tail) = at
+                .strip_prefix(a.as_str())
+                .or_else(|| at.strip_prefix(b.as_str()))
+            else {
+                return BTreeMap::new();
+            };
+            at = tail;
+            continue;
+        }
+        let Some(var) = slot.var else {
+            continue;
+        };
+        if let Some((n, word, _)) = &slot.choose {
+            if let Some(tail) = at.strip_prefix(word.as_str()) {
+                at = tail;
+                out.insert(var, n.clone());
+                continue;
+            }
+        }
+        let mut n: String = at
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '-')
+            .collect();
+        // The wiki prints a count it cannot know as a literal `X`.
+        if n.is_empty() && at.starts_with('X') {
+            n = "X".to_string();
+        }
+        if n.is_empty() {
+            return BTreeMap::new();
+        }
+        at = &at[n.len()..];
+        if let Some((_, _, unit)) = &slot.choose {
+            let Some(tail) = at.strip_prefix(unit.as_str()) else {
+                return BTreeMap::new();
+            };
+            at = tail;
+        }
+        out.insert(var, n);
+    }
+    out
+}
+
+/// The display map of `d` in Simplified Chinese: [`build_loc`] over `d`
+/// with the Chinese tables laid over the English ones key by key, then the
+/// manifest-sourced card titles / templates replaced and every
+/// pre-resolved `.description_plain` (English, from the wiki) re-rendered
+/// from the Chinese template with the item's base values. A text whose
+/// values are not all known keeps its English plain form rather than show a
+/// raw `{Var}`. Without a zh bundle this is exactly [`build_loc`].
+#[must_use]
+pub fn zh_overlay(d: &Data, zh: &data::ZhTables) -> Loc {
+    if !zh.is_present() {
+        return build_loc(d);
+    }
+    // The English map, to read values the wiki only gives resolved.
+    let eng = build_loc(d);
+    let mut dz = d.clone();
+    overlay_existing(&mut dz.loc_cards, &zh.cards);
+    overlay_existing(&mut dz.loc_card_keywords, &zh.card_keywords);
+    overlay_existing(&mut dz.loc_afflictions, &zh.afflictions);
+    overlay_existing(&mut dz.loc_rest_site_ui, &zh.rest_site_ui);
+    overlay_existing(&mut dz.loc_relics, &zh.relics);
+    overlay_existing(&mut dz.loc_potions, &zh.potions);
+    overlay_existing(&mut dz.loc_characters, &zh.characters);
+    overlay_existing(&mut dz.loc_encounters, &zh.encounters);
+    overlay_existing(&mut dz.loc_events, &zh.events);
+    let mut loc = build_loc(&dz);
+    // An ancient's room name (`NEOW.title`, the event's `event_name` key):
+    // the English bundle has no row (the page prettifies the key to "Neow"),
+    // the game's Chinese `ancients.json` has.
+    if let Some(ancients) = zh.extra.get("ancients") {
+        for (key, value) in ancients {
+            if key.strip_suffix(".title").is_some() && !value.is_empty() {
+                loc.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    // Cards: the wiki manifest's English title / template win in
+    // `load_card_localization`; the game's own Chinese wins here.
+    for (key, value) in &zh.cards {
+        let field = key.rsplit_once('.').map(|(_, f)| f);
+        if matches!(field, Some("title" | "description"))
+            && loc.contains_key(key)
+            && !value.is_empty()
+        {
+            loc.insert(key.clone(), value.clone());
+        }
+    }
+    for (key, template) in &zh.cards {
+        let Some(card) = key.strip_suffix(".description") else {
+            continue;
+        };
+        if template.is_empty() || !loc.contains_key(&format!("{card}.description_plain")) {
+            continue;
+        }
+        for (field, upgraded) in [
+            ("description_plain", false),
+            ("upgraded_description_plain", true),
+        ] {
+            let plain_key = format!("{card}.{field}");
+            if !loc.contains_key(&plain_key) {
+                continue;
+            }
+            let flags = crate::render::CardTextFlags {
+                in_combat: false,
+                upgraded,
+                extra_flags: None,
+                keep_markup: true,
+            };
+            let mut stats = serde_json::Map::new();
+            let mut complete = true;
+            for var in crate::render::required_stat_vars(Some(template), flags) {
+                match card_var_value(Some(card), &var, upgraded, &loc) {
+                    Some(v) => {
+                        stats.insert(var.clone(), crate::enrich::int_or_str(v));
+                    }
+                    None => complete = false,
+                }
+            }
+            // An icon run's count, when known; without one the renderer spells
+            // just the resource ("能量"), as the English plain text does.
+            for var in icon_vars(template) {
+                if let Some(v) = card_var_value(Some(card), &var, upgraded, &loc) {
+                    stats.insert(var, crate::enrich::int_or_str(v));
+                }
+            }
+            if !complete {
+                // The wiki lists no base value for some vars (`HitCount`), but
+                // its English plain text has them resolved: read them back off
+                // the English template and plain text, by position.
+                let (Some(t_en), Some(p_en)) =
+                    (eng.get(&format!("{card}.description")), eng.get(&plain_key))
+                else {
+                    continue;
+                };
+                let found = infer_vars(t_en, p_en);
+                let mut filled = true;
+                for var in crate::render::required_stat_vars(Some(template), flags) {
+                    if stats.contains_key(&var) {
+                        continue;
+                    }
+                    match found.get(&var) {
+                        Some(v) => {
+                            stats.insert(var.clone(), crate::enrich::int_or_str(v));
+                        }
+                        None => filled = false,
+                    }
+                }
+                if !filled {
+                    continue;
+                }
+            }
+            let text = render_plain(template, &stats, upgraded);
+            if !text.is_empty() && !has_placeholder(&text) {
+                loc.insert(plain_key, text);
+            }
+        }
+    }
+
+    // Relics / potions: the plain text is the wiki's English; render the
+    // Chinese template with the item's base values.
+    for table in [&zh.relics, &zh.potions] {
+        for (key, template) in table {
+            let Some(item) = key.strip_suffix(".description") else {
+                continue;
+            };
+            let plain_key = format!("{item}.description_plain");
+            if template.is_empty() || !loc.contains_key(&plain_key) {
+                continue;
+            }
+            let mut stats = serde_json::Map::new();
+            if let Some(vars) = zh.owned_vars.get(item) {
+                for (name, value) in vars {
+                    stats.insert(name.clone(), value.clone());
+                    // `{VigorPower}` names the var the wiki types as `Vigor`.
+                    stats.insert(format!("{name}power"), value.clone());
+                }
+            }
+            // Values the wiki types under another name: read them back off
+            // the English template and its resolved plain text.
+            if let (Some(t_en), Some(p_en)) =
+                (eng.get(&format!("{item}.description")), eng.get(&plain_key))
+            {
+                for (k, v) in infer_vars(t_en, p_en) {
+                    stats
+                        .entry(k)
+                        .or_insert_with(|| crate::enrich::int_or_str(&v));
+                }
+            }
+            // Every value the template prints must be known, or the renderer
+            // would print the var's name; keep the English text then.
+            let flags = crate::render::CardTextFlags {
+                in_combat: false,
+                upgraded: false,
+                extra_flags: None,
+                keep_markup: true,
+            };
+            let complete = crate::render::required_stat_vars(Some(template), flags)
+                .into_iter()
+                .all(|v| stats.contains_key(&v));
+            if !complete {
+                // The wiki left its English unresolved too (`{SelfStrength}`):
+                // drop the plain text, so the item renders its template from
+                // the run's own values like any item without one.
+                if eng.get(&plain_key).is_some_and(|p| p.contains('{')) {
+                    loc.insert(plain_key, String::new());
+                }
+                continue;
+            }
+            let text = spell_icons_zh(&render_plain(template, &stats, false));
+            if !text.is_empty() && !has_placeholder(&text) {
+                loc.insert(plain_key, text);
+            }
+        }
+    }
+    loc
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -962,6 +1494,110 @@ mod tests {
             ("NEOWS_TALISMAN.title", "Neow's Talisman"),
             ("rest_site.OPTION_SMITH.name", "Smith"),
         ])
+    }
+
+    // ── zh overlay ──────────────────────────────────────────────────
+
+    #[test]
+    fn zh_overlay_shows_chinese_names_and_rendered_text() {
+        let zh = data::zh_tables();
+        if !zh.is_present() || !cfg!(workbench_game_data) {
+            return; // a checkout without the game's tables (see build.rs)
+        }
+        let d = data::data_for(GameVersion::V0_111_0);
+        let eng = build_loc(d);
+        let loc = zh_overlay(d, zh);
+        assert_eq!(loc.get("BASH.title"), Some("痛击"));
+        let plain = loc.get("BASH.description_plain").unwrap();
+        assert!(plain.contains("造成") && plain.contains('8'), "{plain}");
+        assert!(!plain.contains('{'), "{plain}");
+        let up = loc.get("BASH.upgraded_description_plain").unwrap();
+        assert!(up.contains("10"), "{up}");
+        let relic = loc.get("AKABEKO.description_plain").unwrap();
+        assert!(relic.contains('8') && !relic.contains('{'), "{relic}");
+        // Every key the English map has survives; ids never change.
+        for (k, _) in eng.iter() {
+            assert!(loc.contains_key(k), "{k} lost");
+        }
+        // No pre-rendered text is left with a raw placeholder.
+        for (k, v) in loc.iter() {
+            if k.ends_with("description_plain") {
+                assert!(!v.contains('{'), "{k}: {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn spell_icons_zh_writes_one_count() {
+        assert_eq!(spell_icons_zh("获得[energy]2[/energy]。"), "获得2点能量。");
+        assert_eq!(
+            spell_icons_zh("额外获得1点[energy]1[/energy]。"),
+            "额外获得1点能量。"
+        );
+        assert_eq!(spell_icons_zh("获得[star]3[/star]。"), "获得3点辉星。");
+        assert_eq!(spell_icons_zh("[gold]格挡[/gold]"), "[gold]格挡[/gold]");
+    }
+
+    #[test]
+    fn infer_vars_reads_values_back_off_the_english_text() {
+        let v = infer_vars(
+            "Deal {Damage:diff()} damage to a random enemy {HitCount:diff()} times.",
+            "Deal 3 damage to a random enemy 3 times.",
+        );
+        assert_eq!(v.get("hitcount").map(String::as_str), Some("3"));
+        assert_eq!(v.get("damage").map(String::as_str), Some("3"));
+        let tmpl = "Deal {Damage:diff()} damage to ALL enemies {HitCount:choose(2):twice|{HitCount:diff()} times}.";
+        let twice = infer_vars(tmpl, "Deal 4 damage to ALL enemies twice.");
+        assert_eq!(twice.get("hitcount").map(String::as_str), Some("2"));
+        let three = infer_vars(tmpl, "Deal 4 damage to ALL enemies 3 times.");
+        assert_eq!(three.get("hitcount").map(String::as_str), Some("3"));
+        let x = infer_vars(
+            "Deal {Damage:diff()} damage {HitCount:diff()} times.",
+            "Deal 6 damage X times.",
+        );
+        assert_eq!(x.get("hitcount").map(String::as_str), Some("X"));
+        let plural = infer_vars(
+            "Deal {Damage:diff()} damage {HitCount:diff()} {HitCount:plural:time|times}.",
+            "Deal 6 damage X times.",
+        );
+        assert_eq!(plural.get("hitcount").map(String::as_str), Some("X"));
+        assert!(infer_vars("Deal {Damage} damage.", "Gain 3 Block.").is_empty());
+    }
+
+    #[test]
+    fn a_text_reworked_between_builds_keeps_its_english_in_the_older_build() {
+        let zh = data::zh_tables();
+        if !zh.is_present() || data::zh_source_version() != Some(GameVersion::V0_113_0) {
+            return;
+        }
+        let (old, new) = (
+            data::data_for(GameVersion::V0_111_0),
+            data::data_for(GameVersion::V0_113_0),
+        );
+        // A card whose English differs between the builds (if any).
+        let Some(key) = old
+            .loc_cards
+            .iter()
+            .find(|(k, v)| {
+                k.ends_with(".description") && new.loc_cards.get(*k).is_some_and(|n| n != *v)
+            })
+            .map(|(k, _)| k.clone())
+        else {
+            return;
+        };
+        let own = data::zh_tables_for(GameVersion::V0_111_0);
+        let shared = data::zh_tables_for(GameVersion::V0_113_0);
+        assert!(shared.cards.contains_key(&key));
+        // Dropped from the older build unless it has its own Chinese set.
+        if !data::zh_has_own(GameVersion::V0_111_0) {
+            assert_eq!(own.cards.get(&key), None, "{key}");
+        }
+    }
+
+    #[test]
+    fn zh_overlay_without_tables_is_build_loc() {
+        let d = data::data_for(GameVersion::V0_111_0);
+        assert_eq!(zh_overlay(d, &data::ZhTables::default()), build_loc(d));
     }
 
     // ── test_localization.py ────────────────────────────────────────

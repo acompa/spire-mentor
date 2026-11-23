@@ -237,6 +237,8 @@
     "name": "Sludge Spinner",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/sludge_spinner/sludge_spinner",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -175.0,
     "rig_bounds_h": 246.0,
     "rig_bounds_w": 192.0,
     "rig_scale": 0.25,
@@ -532,6 +534,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/defect/defect",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -179.0,
    "rig_bounds_h": 260.0,
    "rig_bounds_w": 250.0,
    "rig_scale": 0.125

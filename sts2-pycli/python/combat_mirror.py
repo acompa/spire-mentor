@@ -81,9 +81,8 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -272,97 +271,13 @@ class MirrorDivergence(RuntimeError):
 # Both sides of a diff pass through `sts2_rs.state_to_dict`, so normalization
 # is identical by construction and a difference is a real difference — never
 # an emitter artifact.
-
-
-def _powers(raw: Iterable[dict[str, Any]] | None) -> list[tuple[str, int]]:
-    """Powers as a sorted ``(name, amount)`` list.
-
-    Sorted because the arena's power order is an implementation detail: two
-    states with the same powers applied in a different order are the same
-    board, and flagging that as a DESYNC would bury the real ones.
-    """
-    return sorted((str(p.get("name")), int(p.get("amount", 0))) for p in raw or [])
-
-
-def _osty(raw: dict[str, Any] | None) -> tuple[Any, ...] | None:
-    """The Necrobinder pet's identity, or ``None`` when there is no pet.
-
-    ``max_hp`` is included deliberately: the Osty GROWS across a combat, and a
-    mirror holding a freshly re-summoned 1-HP pet against a grown one is the
-    exact failure this key exists to catch.
-    """
-    if not raw:
-        return None
-    return (raw.get("alive"), raw.get("hp"), raw.get("max_hp"), raw.get("block"))
-
-
-def _card_key(c: dict[str, Any]) -> tuple[Any, ...]:
-    """A card's identity for diff purposes.
-
-    Includes ``cost_override`` and the ``enchantment`` (name *and* stack — a
-    Nimble 2 and a Nimble 4 Defend block differently) — a Snecko'd hand and a
-    clean one are genuinely different boards — but not the per-instance
-    ``combat_vars`` blob, which is opaque on both sides.
-    """
-    return (
-        c.get("id"),
-        bool(c.get("upgraded")),
-        c.get("cost_override"),
-        c.get("enchantment"),
-        c.get("enchantment_amount"),
-        tuple(sorted(c.get("flags") or [])),
-    )
-
-
-def _intent_key(it: dict[str, Any]) -> tuple[Any, ...]:
-    """An enemy intent's identity — everything the wire actually carries.
-
-    ``kind`` (not ``type``) is what ``state_to_dict`` emits; both sides of a
-    diff pass through that emitter, so reading the adapter's spelling would
-    silently compare ``None`` to ``None`` and mask every intent divergence —
-    one of the highest-signal fields there is.
-
-    ``amount``/``times`` are compared for **Attack only**. A telegraph is an
-    icon plus, for attacks, the damage: the engine's ``Intent::Buff`` carries
-    a ``PowerKind`` and stack count that no wire dialect transmits, so
-    ``parse_intent`` rebuilds every Buff as ``{Strength, 0}``. Diffing those
-    would flag every reconstruction ever made while telling us nothing —
-    the real buff comes from the AI's move when it performs, not from the
-    telegraph.
-
-    The damage compared is the **baked** one — what the icon actually paints.
-    A real wire reports C# ``AttackIntent.GetSingleDamage``, which has already
-    run the dealer's Strength/Weak/Shrink and the player's Vulnerable through
-    ``ModifyDamage``; the engine's ``Intent::Attack`` stores the raw base from
-    the move table, because that is what ``unbake_wire_intent`` reconstructs on
-    the way back in. Comparing those two directly diffs raw against baked and
-    flags every modified board as a divergence — measured on the v17 corpus,
-    161 of 213 unequal attack telegraphs were exactly that, with Strength the
-    dominant driver. ``state_to_dict`` therefore emits ``effective_amount``
-    alongside ``amount``; prefer it when present so both sides are compared in
-    the same units. The world wire has no such key and falls back to
-    ``amount``, which is already baked.
-
-    ``times`` is normalised to 1 when absent. The two producers disagree on
-    whether a single-hit attack carries the key at all: ``state_to_dict``
-    (``sts2-rs/crates/sts2-py/src/state_dict.rs``) emits ``times`` ONLY for
-    ``Intent::MultiAttack``, while the bridge always emits ``times: 1``. Left
-    raw, that compares ``None`` against ``1`` and flags EVERY single-hit attack
-    telegraph as a divergence when a stored wire pair is re-diffed. A missing
-    ``times`` means one hit on both sides — C# ``AttackIntent.Repeats``
-    defaults to 0 and ``SingleAttackIntent`` paints one icon — so fold the two
-    spellings together.
-    """
-    kind = it.get("kind")
-    if kind == "Attack":
-        baked = it.get("effective_amount")
-        times = it.get("times")
-        return (
-            kind,
-            it.get("amount") if baked is None else baked,
-            1 if times is None else times,
-        )
-    return (kind,)
+#
+# The comparisons themselves run in Rust (`sts2-rs/crates/sts2-advisor`,
+# `mirror.rs`, behind `sts2_rs.mirror_*`; GH #1426 step 1), which the native
+# advisor will link. The functions below keep their names and contracts, and
+# their docstrings say why each rule is what it is; the tests in
+# `tests/test_combat_mirror.py` hold the Rust side to them. Values that were
+# tuples (a card key, a power pair) are lists now.
 
 
 def enemy_slot_key(enemy: dict[str, Any], index: int, encounter: list[dict[str, Any]]) -> str:
@@ -400,14 +315,9 @@ def enemy_slot_key(enemy: dict[str, Any], index: int, encounter: list[dict[str, 
     :func:`_enemy_alignment` refuses to carry hidden state across a shift for
     exactly this reason — see :func:`_unalignable_kinds`.
     """
-    kind = str(enemy.get("kind"))
-    dead = bool(enemy.get("is_dead"))
-    nth = sum(
-        1
-        for e in encounter[:index]
-        if str(e.get("kind")) == kind and bool(e.get("is_dead")) == dead
-    )
-    return f"{kind}#dead{nth}" if dead else f"{kind}#{nth}"
+    import sts2_rs
+
+    return sts2_rs.mirror_enemy_slot_key(enemy, index, encounter)
 
 
 def observables(wire: dict[str, Any]) -> dict[str, Any]:
@@ -418,76 +328,9 @@ def observables(wire: dict[str, Any]) -> dict[str, Any]:
     to roll independently (the RNG cursors themselves, ``combat_id``, the
     unresolved seed) is deliberately absent.
     """
-    player = wire.get("player") or {}
-    deck = wire.get("deck") or {}
-    out: dict[str, Any] = {
-        "$.phase": wire.get("phase"),
-        "$.round": wire.get("round"),
-        "$.side": wire.get("side"),
-        "$.player.hp": player.get("hp"),
-        "$.player.block": player.get("block"),
-        "$.player.energy": player.get("energy"),
-        "$.player.powers": _powers(player.get("powers")),
-        "$.player.potions": list(player.get("potions") or []),
-        "$.player.orbs": [
-            (o.get("type"), o.get("passive"), o.get("evoke")) for o in player.get("orbs") or []
-        ],
-        # The Necrobinder's pet. It is a creature that absorbs damage aimed at
-        # the player (`DieForYouPower`), so a mirror whose Osty disagrees with
-        # the game plans against a different amount of soak — as deterministic
-        # an observable as player block, and it was not being compared at all.
-        # That blindness is why the reconstruction dropping the pet entirely
-        # could only ever surface indirectly, as `$.player.hp`.
-        "$.player.osty": _osty(player.get("osty")),
-    }
-    # `play_pile` is here because the wire round-trips it and a mid-combat
-    # `card_select` is opened BY a card that is sitting in it. Leave it out
-    # and a mirror holding a card in flight against a world reporting none
-    # diffs clean — the divergence would be structurally unreportable.
-    for pile in ("hand", "draw_pile", "discard_pile", "exhaust_pile", "play_pile"):
-        out[f"$.deck.{pile}"] = [_card_key(c) for c in deck.get(pile) or []]
+    import sts2_rs
 
-    # Enemies are keyed by IDENTITY, not by slot — see `enemy_slot_key`.
-    # The roster list is POSITIONAL, not sorted: C# keeps `_enemies` in
-    # encounter-slot order and every random-target effect indexes it
-    # (`HittableEnemies`), so order IS an observable. Sorting here made a
-    # re-ordered board structurally invisible — 18 v28wr enemy-hp events sat
-    # on silently re-ordered rosters where Juggernaut's random target hit
-    # the wrong creature (a clean ±8 damage swap between two enemies).
-    #
-    # What is NOT an observable is where a CORPSE sits in that list. C# keeps
-    # dead-but-reviving creatures in their `Enemies` slots, but the headless
-    # producer serializes alive and dead into separate lists (`enemies` +
-    # `dead_enemies`, RunSimulator.cs:3710) that the adapter re-concatenates
-    # dead-last, while the engine wire and the live bridge ship corpses
-    # inline at their spawn slots. Comparing those interleavings verbatim
-    # flagged every post-death Decimillipede/Parafright board as a roster
-    # divergence (44/158 of the d1 corpus). Partition each side alive-first
-    # (stable, so the targetable order stays load-bearing) with corpses
-    # appended, and the dialects agree again; `enemy_slot_key` numbers the
-    # living and the dead in separate namespaces, so the keys themselves are
-    # unchanged by the re-ordering.
-    encounter = wire.get("encounter") or []
-    canon = sorted(range(len(encounter)), key=lambda i: bool(encounter[i].get("is_dead")))
-    out["$.encounter.roster"] = [enemy_slot_key(encounter[i], i, encounter) for i in canon]
-    for i, e in enumerate(encounter):
-        key = enemy_slot_key(e, i, encounter)
-        out[f"$.encounter[{key}].hp"] = e.get("hp")
-        out[f"$.encounter[{key}].block"] = e.get("block")
-        out[f"$.encounter[{key}].is_dead"] = e.get("is_dead")
-        out[f"$.encounter[{key}].powers"] = _powers(e.get("powers"))
-        out[f"$.encounter[{key}].intents"] = [_intent_key(it) for it in e.get("intents") or []]
-    return out
-
-
-def _teammate_reachable(path: str) -> bool:
-    """Is ``path`` a field a co-op teammate's moves can change under us?
-
-    The enemy side (``$.encounter[X].hp``, ``.powers``, ``.intents``, the
-    roster) and the teammate's own creature (``$.allies``: they block, take
-    hits and heal on their own). Everything of ours is still ours to predict.
-    """
-    return path.startswith(("$.encounter", "$.allies"))
+    return sts2_rs.mirror_observables(wire)
 
 
 def unreported_paths(raw_world_wire: dict[str, Any]) -> frozenset[str]:
@@ -507,8 +350,9 @@ def unreported_paths(raw_world_wire: dict[str, Any]) -> frozenset[str]:
     report a divergence whose fault is the producer's, not the mirror's.
     Absent means UNKNOWN-or-empty, not comparable.
     """
-    deck = raw_world_wire.get("deck") or {}
-    return frozenset() if "play_pile" in deck else frozenset({"$.deck.play_pile"})
+    import sts2_rs
+
+    return frozenset(sts2_rs.mirror_unreported_paths(raw_world_wire))
 
 
 def _choice_effect_in_flight(desyncs: list[Desync], picked: list[dict[str, Any]]) -> bool:
@@ -550,39 +394,10 @@ def _choice_effect_in_flight(desyncs: list[Desync], picked: list[dict[str, Any]]
     Returns:
         True when the diff is fully explained by the pending grant.
     """
-    if not desyncs or not picked:
-        return False
-    if len(desyncs) != 1 or desyncs[0].path != "$.deck.hand":
-        return False
+    import sts2_rs
 
-    # `_card_key` tuples, re-frozen: a live diff already hands us tuples, but
-    # the same check has to run over a JSON-loaded forensic record (the
-    # offline corpus replay), where the key's `flags` element is a list.
-    def _key(card: Any) -> tuple[Any, ...]:
-        return tuple(tuple(v) if isinstance(v, list) else v for v in card)
-
-    mine = Counter(_key(c) for c in desyncs[0].mirror or [])
-    theirs = Counter(_key(c) for c in desyncs[0].world or [])
-    extra = list((mine - theirs).elements())  # cards only the MIRROR has
-    missing = list((theirs - mine).elements())  # cards only the WORLD has
-    if not extra or len(missing) > len(extra):
-        return False
-    named = {(str(o.get("id")), bool(o.get("upgraded"))) for o in picked}
-    if any((c[0], c[1]) not in named for c in extra + missing):
-        return False
-    # A world-only copy is only explainable as the SAME card still at its
-    # pre-grant cost — i.e. the mirror already zeroed what the world has yet
-    # to. Anything else is a genuine hand disagreement.
-    return all(
-        any(
-            e[0] == c[0]
-            and e[1] == c[1]
-            and isinstance(e[2], int)
-            and isinstance(c[2], int)
-            and e[2] < c[2]
-            for e in extra
-        )
-        for c in missing
+    return sts2_rs.mirror_choice_effect_in_flight(
+        [(d.path, d.mirror, d.world) for d in desyncs], picked
     )
 
 
@@ -604,55 +419,14 @@ def diff_observables(
             :meth:`CombatMirror.reconcile`.
         skip_paths: Drop these exact paths. See :func:`unreported_paths`.
     """
-    mine, theirs = observables(mirror_wire), observables(world_wire)
-    # An enemy the mirror still has and the world does not is a corpse the
-    # game REAPED — the engine deliberately keeps it so its revive machinery
-    # can find it, which is a documented modelling difference, not a
-    # misprediction. Drop those keys from both sides; a mirror-only enemy
-    # that is still ALIVE, or a world-only enemy, survives into the roster
-    # comparison below and is reported.
-    reaped = {
-        key
-        for key in _enemy_keys(mirror_wire) - _enemy_keys(world_wire)
-        if _enemy_is_dead(mirror_wire, key)
-    }
-    if reaped:
-        drop = {f"$.encounter[{k}].{f}" for k in reaped for f in _ENEMY_FIELDS}
-        mine = {k: v for k, v in mine.items() if k not in drop}
-        # Filter, don't re-sort: `observables` emits the roster in canonical
-        # alive-first order on BOTH sides, and sorting only the mirror's half
-        # alphabetically flagged every post-reap board whose survivors aren't
-        # coincidentally in lexical order (FlailKnight reaped out of a
-        # SpectralKnight/MagiKnight fight kept the roster diverged for the
-        # rest of the combat).
-        mine["$.encounter.roster"] = [k for k in mine["$.encounter.roster"] if k not in reaped]
+    import sts2_rs
+
     return [
-        Desync(path=path, mirror=mine.get(path), world=theirs.get(path))
-        for path in sorted(mine.keys() | theirs.keys())
-        if mine.get(path) != theirs.get(path)
-        and path not in skip_paths
-        and not (skip_prefix is not None and path.startswith(skip_prefix))
+        Desync(path, mine, theirs)
+        for path, mine, theirs in sts2_rs.mirror_diff_observables(
+            mirror_wire, world_wire, skip_prefix, sorted(skip_paths)
+        )
     ]
-
-
-#: The per-enemy observable suffixes :func:`observables` emits.
-_ENEMY_FIELDS = ("hp", "block", "is_dead", "powers", "intents")
-
-
-#: Streams whose read count a combat decision can actually move. The wire
-#: carries the run-scoped ones too (rewards / shops / transformations), but
-#: those only advance between fights, so diffing them mid-combat would report
-#: the map layer's business as a combat divergence.
-_COMBAT_RNG_STREAMS = (
-    "shuffle",
-    "monster_ai",
-    "combat_card_generation",
-    "combat_potion_generation",
-    "combat_card_selection",
-    "combat_energy_costs",
-    "combat_targets",
-    "combat_orbs",
-)
 
 
 def _cursor_drift(mirror_wire: dict[str, Any], world_wire: dict[str, Any]) -> list[Desync]:
@@ -668,15 +442,9 @@ def _cursor_drift(mirror_wire: dict[str, Any], world_wire: dict[str, Any]) -> li
     mirror's streams are seeded from something unrelated to the game's, so the
     read counts are not comparable at all.
     """
-    mine = (mirror_wire.get("rng_counters") or {}) if isinstance(mirror_wire, dict) else {}
-    theirs = (world_wire.get("rng") or {}).get("counters") or {}
-    out: list[Desync] = []
-    for name in _COMBAT_RNG_STREAMS:
-        a, b = mine.get(name), theirs.get(name)
-        if a is None or b is None or a == b:
-            continue
-        out.append(Desync(f"$.rng.counters.{name}", a, b))
-    return out
+    import sts2_rs
+
+    return [Desync(*d) for d in sts2_rs.mirror_cursor_drift(mirror_wire, world_wire)]
 
 
 def _turn_history_disclosed(wire: dict[str, Any]) -> bool:
@@ -700,12 +468,9 @@ def _undisclosed_relic_counters(wire: dict[str, Any]) -> list[str]:
     keep the carried mirror's value; the ones reality DID report keep
     reality's.
     """
-    relics = ((wire.get("player") or {}).get("relics")) or []
-    return [
-        str(r["id"])
-        for r in relics
-        if isinstance(r, dict) and r.get("id") and r.get("counter") is None
-    ]
+    import sts2_rs
+
+    return sts2_rs.mirror_undisclosed_relic_counters(wire)
 
 
 def _undisclosed_power_counters(wire: dict[str, Any]) -> list[str]:
@@ -719,51 +484,9 @@ def _undisclosed_power_counters(wire: dict[str, Any]) -> list[str]:
     mirror's accumulation; a counter reality DID report keeps reality's.
     (Juggling's is now derived from the wire instead, see ``derived``.)
     """
-    #: Powers whose counter `state_from_dict` DERIVES from the wire
-    #: (`display` for the countdown family) — the wire does disclose those,
-    #: just not under the `counter` key, so the carry must not override them.
-    #:
-    #: ORBIT joined on GH #363: C# publishes only ``4 - energySpent % 4`` as
-    #: ``DisplayAmount``, and that residue is all the trigger arithmetic needs.
-    #: This entry and the ``PowerKind::Orbit`` arm in ``state_dict.rs`` are one
-    #: fix in two halves — either alone is a no-op (the carry would overwrite
-    #: the derivation) or a regression (the derivation would be dropped for a
-    #: mirror counter that has no wire backing).
-    #:
-    #: JUGGLING joined on GH #989: ``state_dict.rs`` seeds its attacks this turn
-    #: from the wire's ``cards_played_this_turn``, as C# ``AfterApplied`` does
-    #: from History. HARDENED_SHELL joined with it: its ``DisplayAmount`` is the
-    #: HP it still lets through this turn.
-    derived = {
-        "SLOW",
-        "WITHERING_PRESENCE",
-        "AUTOMATION",
-        "PANACHE",
-        "ORBIT",
-        "JUGGLING",
-        "HARDENED_SHELL",
-    }
-    out: set[str] = set()
-    sides = [((wire.get("player") or {}).get("powers")) or []]
-    for e in wire.get("encounter") or []:
-        sides.append(e.get("powers") or [])
-    for powers in sides:
-        for p in powers:
-            if isinstance(p, dict) and p.get("name") and p.get("counter") is None:
-                name = str(p["name"])
-                if name not in derived:
-                    out.add(name)
-    return sorted(out)
+    import sts2_rs
 
-
-#: Wire deck-pile key → the engine locator pile name
-#: (`locate_card` / `parse_injected_option` dialect).
-_WIRE_PILE_TO_LOCATOR = {
-    "hand": "hand",
-    "draw_pile": "draw",
-    "discard_pile": "discard",
-    "exhaust_pile": "exhaust",
-}
+    return sts2_rs.mirror_undisclosed_power_counters(wire)
 
 
 def _relocate_parked(parked: dict[str, Any], seeded: dict[str, Any]) -> dict[str, Any] | None:
@@ -792,49 +515,9 @@ def _relocate_parked(parked: dict[str, Any], seeded: dict[str, Any]) -> dict[str
     itself offers unplayable cards for discard, exactly as C# does; nothing
     was ever filtering them.
     """
-    deck = seeded.get("deck") or {}
-    piles = {loc: list(deck.get(key) or []) for key, loc in _WIRE_PILE_TO_LOCATOR.items()}
-    used: set[tuple[str, int]] = set()
-    cards: list[dict[str, Any]] = []
-    for opt in parked.get("cards") or []:
-        key = (opt.get("id"), bool(opt.get("upgraded")))
-        found: tuple[str, int] | None = None
-        for pile_name, pile_cards in piles.items():
-            for idx, wc in enumerate(pile_cards):
-                if (pile_name, idx) in used or not isinstance(wc, dict):
-                    continue
-                if (wc.get("id"), bool(wc.get("upgraded"))) == key:
-                    found = (pile_name, idx)
-                    break
-            if found is not None:
-                break
-        if found is None:
-            continue
-        used.add(found)
-        cards.append({**opt, "pile": found[0], "index": found[1]})
-    if not cards:
-        return None
-    return {**parked, "cards": cards}
+    import sts2_rs
 
-
-def _enemy_keys(wire: dict[str, Any]) -> set[str]:
-    enc = wire.get("encounter") or []
-    return {enemy_slot_key(e, i, enc) for i, e in enumerate(enc)}
-
-
-def _enemy_is_dead(wire: dict[str, Any], key: str) -> bool:
-    enc = wire.get("encounter") or []
-    for i, e in enumerate(enc):
-        if enemy_slot_key(e, i, enc) == key:
-            return bool(e.get("is_dead"))
-    return False
-
-
-def _living_by_kind(wire: dict[str, Any]) -> Counter[str]:
-    """How many LIVING enemies of each kind a wire reports."""
-    return Counter(
-        str(e.get("kind")) for e in wire.get("encounter") or [] if not bool(e.get("is_dead"))
-    )
+    return sts2_rs.mirror_relocate_parked(parked, seeded)
 
 
 def _unalignable_kinds(world_wire: dict[str, Any], mirror_wire: dict[str, Any]) -> set[str]:
@@ -860,8 +543,9 @@ def _unalignable_kinds(world_wire: dict[str, Any], mirror_wire: dict[str, Any]) 
     telegraph prediction; the cost of guessing wrong is that history landing on
     a different creature, which is worse and silent.
     """
-    world, mirror = _living_by_kind(world_wire), _living_by_kind(mirror_wire)
-    return {k for k in world.keys() | mirror.keys() if world[k] != mirror[k]}
+    import sts2_rs
+
+    return set(sts2_rs.mirror_unalignable_kinds(world_wire, mirror_wire))
 
 
 def _enemy_alignment(world_wire: dict[str, Any], mirror_wire: dict[str, Any]) -> list[int | None]:
@@ -873,19 +557,16 @@ def _enemy_alignment(world_wire: dict[str, Any], mirror_wire: dict[str, Any]) ->
     Matching is otherwise by :func:`enemy_slot_key`, because the two worlds do
     not agree on slot numbering the moment one of them reaps a corpse.
     """
-    carried = wire_enemy_index(mirror_wire)
-    enc = world_wire.get("encounter") or []
-    blocked = _unalignable_kinds(world_wire, mirror_wire)
-    return [
-        None if str(e.get("kind")) in blocked else carried.get(enemy_slot_key(e, i, enc))
-        for i, e in enumerate(enc)
-    ]
+    import sts2_rs
+
+    return sts2_rs.mirror_enemy_alignment(world_wire, mirror_wire)
 
 
 def wire_enemy_index(wire: dict[str, Any]) -> dict[str, int]:
     """``{identity key -> slot}`` for a wire dict's encounter."""
-    enc = wire.get("encounter") or []
-    return {enemy_slot_key(e, i, enc): i for i, e in enumerate(enc)}
+    import sts2_rs
+
+    return sts2_rs.mirror_wire_enemy_index(wire)
 
 
 def _default_log_path() -> Path:
@@ -899,11 +580,9 @@ def _default_log_path() -> Path:
 # The mirror
 # ---------------------------------------------------------------------------
 
+
 #: Search profiles that would let the mirror leak its own ground truth into
 #: the search root. Refused by :meth:`CombatMirror.search`.
-_CLAIRVOYANT_PROFILES = frozenset({"clairvoyant"})
-
-
 class CombatMirror:
     """One live engine state per fight, re-synchronized from reality.
 
@@ -921,6 +600,12 @@ class CombatMirror:
         mirror.inject_choice(kind, options, min_select, max_select)
         result = mirror.search()
         mirror.advance_through_choice(picks)
+
+    The per-fight state machine (seed, reconcile, advance, the choice path,
+    the forensic report) runs in Rust (``sts2_rs.CombatMirrorCore``,
+    ``sts2-advisor/src/combat_mirror.rs``, GH #1426), which documents each
+    rule where it is applied. This class keeps the API, the search, the
+    divergence log and :attr:`on_divergence`.
 
     Args:
         cfg: The search profile :meth:`search` uses by default. Must be
@@ -940,93 +625,143 @@ class CombatMirror:
         policy: MirrorPolicy | None = None,
         label: str = "",
         log_path: str | Path | None = None,
+        _core: Any | None = None,
     ) -> None:
+        import sts2_rs
+
         self.cfg = cfg or RecommendConfig(hidden_info="beliefdraw", c_puct=2.5, draw_widening_c=2.0)
         self.policy = policy if policy is not None else policy_from_env()
-        self.label = label
         self.log_path = Path(log_path) if log_path is not None else _default_log_path()
-        self.stats = MirrorStats()
-        #: Set once the mirror has recorded a divergence under OBSERVE. A run
-        #: with this set must never be reported as a clean measurement.
-        self.tainted = False
-        #: Why the mirror was last dropped (``""`` for a clean end-of-combat
-        #: drop). Surfaced so an OBSERVE sweep can report *what* went wrong
-        #: without reopening the divergence log.
-        self.drop_reason = ""
         #: Optional ``(paths: list[str]) -> None`` hook, called once per
         #: divergence with the field paths that diverged, BEFORE the policy
-        #: decides to raise. Lets a sweep classify divergences live instead of
+        #: raises. Lets a sweep classify divergences live instead of
         #: re-parsing the forensic log. Never swallows the divergence.
         self.on_divergence: Callable[[list[str]], None] | None = None
-        #: How many other players share this fight (co-op). Non-zero lets a
-        #: reconcile adopt an enemy-side diff instead of reporting it; see
-        #: :class:`MirrorPolicy`. The driver sets it from the board.
-        self.teammates = 0
-        #: The diff the last reconcile adopted under :attr:`teammates`, so a
-        #: caller can tally what the teammate changed. Empty otherwise.
-        self.last_adopted: list[Desync] = []
-
-        self._state: Any | None = None
-        # The state the last `drop()` discarded, kept one divergence long so
-        # `_reseed_after_observe` can salvage the undisclosed hidden state
-        # (relic latches, history counters, per-card vars) into the reseed.
-        self._last_dropped_state: Any | None = None
-        self._last_dropped_parked: dict[str, Any] | None = None
-        # The choice the ENGINE derived on its own, captured the moment an
-        # advance parked on it. `reconcile` rebuilds the state from the wire
-        # and so wipes the live choice; this survives, because grading the
-        # engine's derivation against the world's option list is the whole
-        # point of the injected path.
-        self._parked: dict[str, Any] | None = None
-        # Forensics for the last screen the engine had NOT opened itself — see
-        # `MirrorStats.unparked_injections`. Attached to any divergence report
-        # written afterwards, because a no-op `card_select` resolution is the
-        # likeliest explanation for a deck path that then diverges.
-        self._last_unparked: dict[str, Any] | None = None
-        # Did any advance since the last reconcile consume the shuffle stream?
-        self._crossed_shuffle = False
-        # Kept only for forensics — the last wire the world handed us and the
-        # last action we committed.
+        # GH #368.1: the damage trace is latched from the env at construction
+        # so a sweep cannot half-arm itself mid-run.
+        self._core = _core or sts2_rs.CombatMirrorCore(
+            self.policy.value, label, os.environ.get(DAMAGE_TRACE_ENV) == "1"
+        )
+        # The world's own wire object, for :attr:`wire`; the core keeps a
+        # JSON copy for its reports. `_wire_generation` says which call's
+        # wire the core last adopted.
         self._last_wire: dict[str, Any] | None = None
-        self._last_action: dict[str, Any] | None = None
-        self._last_result: str | None = None
-        self._last_drift: list[Desync] = []
-        self._last_injection: dict[str, Any] | None = None
-        # The injected screen that has been opened but not yet answered.
-        # Distinct from `_last_injection`, which is kept for forensics long
-        # after its pick landed: this one is CONSUMED by the answer, so a
-        # choice the driver resolved without injecting can never inherit a
-        # previous screen's options.
-        self._open_injection: dict[str, Any] | None = None
-        # The option dicts a just-answered choice picked, armed for exactly
-        # one graded reconcile — see `_choice_effect_in_flight`.
-        self._choice_in_flight: list[dict[str, Any]] | None = None
-        # GH #368.1 forensics. `_damage_trace_on` is latched from the env at
-        # construction so a sweep cannot half-arm itself mid-run;
-        # `_last_damage_trace` holds the rows produced since the last
-        # reconcile, which is exactly the window a desync report needs.
-        self._damage_trace_on = os.environ.get(DAMAGE_TRACE_ENV) == "1"
-        self._last_damage_trace: list[dict[str, Any]] = []
-        self._damage_trace_dropped = 0
+        self._wire_generation = self._core.wire_generation
+
+    # -- core plumbing -----------------------------------------------------
+
+    def _call(self, method: str, *args: Any, wire: dict[str, Any] | None = None) -> Any:
+        """Run one core method: log and report its divergences, track the wire.
+
+        Every divergence the call recorded is appended to the forensic log and
+        handed to :attr:`on_divergence`, oldest first; then a STRICT one
+        raises as :class:`MirrorDivergence`.
+        """
+        import sts2_rs
+
+        try:
+            out = getattr(self._core, method)(*args)
+        except sts2_rs.MirrorDivergedError as exc:
+            self._flush_divergences()
+            message, report = exc.args
+            raise MirrorDivergence(f"[mirror {self.label}] {message}", report) from None
+        finally:
+            if wire is not None and self._core.wire_generation != self._wire_generation:
+                self._last_wire = wire
+            self._wire_generation = self._core.wire_generation
+        self._flush_divergences()
+        return out
+
+    def _flush_divergences(self) -> None:
+        for paths, report in self._core.take_divergences():
+            _append_jsonl(self.log_path, {"ts": time.time(), **report})
+            if self.on_divergence is not None:
+                self.on_divergence(paths)
+
+    def take_enemy_remap(self) -> list[tuple[int, int]] | None:
+        """The enemy uid renames the rebuilds made since the last call
+        (``[(uid then, uid now)]``), or None (GH #1651). A rebuild numbers
+        enemies by wire position and the wire drops corpses, so a kill shifts
+        the survivors' uids; a log keyed by uid follows them through this."""
+        return self._core.take_enemy_remap()
+
+    @property
+    def label(self) -> str:
+        return self._core.label
+
+    @property
+    def stats(self) -> MirrorStats:
+        """A snapshot of the counters."""
+        counts = self._core.stats
+        return MirrorStats(
+            **{f: counts[f] for f in MirrorStats.__dataclass_fields__}  # type: ignore[arg-type]
+        )
+
+    @property
+    def tainted(self) -> bool:
+        """Set once the mirror recorded a divergence under OBSERVE. A run with
+        this set must never be reported as a clean measurement."""
+        return self._core.tainted
+
+    @tainted.setter
+    def tainted(self, value: bool) -> None:
+        self._core.tainted = value
+
+    @property
+    def drop_reason(self) -> str:
+        """Why the mirror was last dropped (``""`` for a clean end-of-combat drop)."""
+        return self._core.drop_reason
+
+    @property
+    def teammates(self) -> int:
+        """How many other players share this fight (co-op). Non-zero lets a
+        reconcile adopt an enemy-side diff instead of reporting it; see
+        :class:`MirrorPolicy`. The driver sets it from the board."""
+        return self._core.teammates
+
+    @teammates.setter
+    def teammates(self, value: int) -> None:
+        self._core.teammates = value
+
+    @property
+    def last_adopted(self) -> list[Desync]:
+        """The diff the last reconcile adopted under :attr:`teammates`."""
+        return [Desync(p, m, w) for p, m, w in self._core.last_adopted]
+
+    @property
+    def _crossed_shuffle(self) -> bool:
+        return self._core.crossed_shuffle
+
+    @_crossed_shuffle.setter
+    def _crossed_shuffle(self, value: bool) -> None:
+        self._core.crossed_shuffle = value
+
+    @property
+    def _choice_in_flight(self) -> list[dict[str, Any]] | None:
+        return self._core.choice_in_flight
 
     # -- lifecycle ---------------------------------------------------------
 
     @property
     def alive(self) -> bool:
         """Is a state currently mirrored? False before :meth:`seed` / after :meth:`drop`."""
-        return self._state is not None
+        return self._core.alive
 
     @property
     def state(self) -> Any:
         """The live ``sts2_rs.CombatState``. Read it; do not advance it directly.
 
+        A copy of the mirror's state, re-made only when the state changed, so
+        two reads of an unchanged mirror are the same object.
+
         Raises:
             MirrorDivergence: When no fight is mirrored — asking for the state
                 of a dropped mirror is a driver bug, not a game state.
         """
-        if self._state is None:
+        state = self._core.state
+        if state is None:
             raise MirrorDivergence("mirror has no state: seed() a fight first")
-        return self._state
+        return state
 
     @property
     def wire(self) -> dict[str, Any] | None:
@@ -1047,27 +782,7 @@ class CombatMirror:
                 ``sts2_hint.adapter.translate`` on the DLL / live path, or
                 straight from the engine in the oracle test.
         """
-        import sts2_rs
-
-        self._state = sts2_rs.state_from_dict(wire)
-        self._parked = None
-        self._crossed_shuffle = False
-        self._last_wire = wire
-        self._last_action = None
-        self._last_result = None
-        self._last_drift = []
-        self._last_injection = None
-        self._open_injection = None
-        self._choice_in_flight = None
-        self._take_damage_trace()
-        self.stats.seeds += 1
-        # The producer's FIRST wire of a fight lists enemies in spawn order
-        # and later wires in C#'s slot-sorted order (the sort happens after
-        # combat start). A mirror seeded from wire #1 cannot predict a
-        # re-sort it never saw, so the first reconcile's roster-order diff is
-        # noise by construction — 271 of the 582 v30wr desyncs, ~one per
-        # fight. Graded from the second reconcile on.
-        self._just_seeded = True
+        self._call("seed", wire, wire=wire)
 
     def fork(self, label: str = "") -> CombatMirror | None:
         """A DETACHED copy of this fight, for work that must not touch it.
@@ -1088,37 +803,20 @@ class CombatMirror:
         re-asked. A screen nobody could answer cost the fight its mirror.
 
         Carries the engine state and the small amount of bookkeeping an answer
-        reads: the engine's own derived choice (``_parked``, which is what
-        lets an injection resolve locators at all), the reshuffle blind spot,
-        and the last wire. Stats are NOT shared -- the fork's work is not the
+        reads: the engine's own derived choice, the reshuffle blind spot, and
+        the last wire. Stats are NOT shared -- the fork's work is not the
         fight's history, and counting a throwaway's reconciles as the live
         mirror's would corrupt every rate computed from them.
 
         Returns:
-            The fork, or ``None`` when there is nothing to fork or the clone
-            fails. Never raises: a fork is an optimisation over declining.
+            The fork, or ``None`` when there is nothing to fork. Never raises:
+            a fork is an optimisation over declining.
         """
-        if self._state is None:
+        core = self._core.fork(label)
+        if core is None:
             return None
-        try:
-            twin = CombatMirror(
-                self.cfg,
-                policy=self.policy,
-                label=label or f"{self.label}-fork",
-                log_path=self.log_path,
-            )
-            twin._state = self._state.clone()
-        except Exception:
-            # A fork is an optimisation over declining, so a failure to make
-            # one is not an event: the caller falls back exactly as it does
-            # for a screen it cannot answer. This module has no logger by
-            # design -- it reports through the divergence log, and a fork that
-            # never existed has nothing to report.
-            return None
-        twin._parked = dict(self._parked) if self._parked is not None else None
-        twin._crossed_shuffle = self._crossed_shuffle
+        twin = CombatMirror(self.cfg, policy=self.policy, log_path=self.log_path, _core=core)
         twin._last_wire = self._last_wire
-        twin.tainted = self.tainted
         return twin
 
     def drop(self, reason: str = "") -> None:
@@ -1126,28 +824,13 @@ class CombatMirror:
 
         Called at combat end, and by OBSERVE after a divergence (a mirror that
         has already been proven wrong must not keep answering). The dropped
-        state is stashed for :meth:`_reseed_after_observe`, whose reseed can
-        salvage the UNDISCLOSED hidden state (relic latches, history
-        counters, per-card vars) the wire structurally cannot restore — the
-        divergence proved the state's *prediction* wrong, not those.
+        state and its parked choice are kept for the reseed after an OBSERVE
+        divergence, which salvages the UNDISCLOSED hidden state (relic
+        latches, history counters, per-card vars) the wire structurally cannot
+        restore — the divergence proved the state's *prediction* wrong, not
+        those.
         """
-        if self._state is not None:
-            self.stats.drops += 1
-            self._last_dropped_state = self._state
-            # The engine's own derived choice is hidden state too: it is set
-            # only by `advance()` and no wire can re-derive it, so a reseed
-            # that wipes it leaves the NEXT `inject_choice` with nothing to
-            # resolve locators against — 25 of the 32 v34wr
-            # `unlocatable_injection` records were a parked choice discarded
-            # microseconds before it was needed. Stashed for
-            # `_reseed_after_observe`'s salvage, same contract as the state.
-            self._last_dropped_parked = self._parked
-        self._state = None
-        self._parked = None
-        self._crossed_shuffle = False
-        self._open_injection = None
-        self._choice_in_flight = None
-        self.drop_reason = reason
+        self._core.drop(reason)
 
     # -- reconcile ---------------------------------------------------------
 
@@ -1156,6 +839,16 @@ class CombatMirror:
 
         Seeds the fight when nothing is mirrored yet, so a driver can call
         this unconditionally at every combat decision.
+
+        A state suspended where no wire can describe it (a card mid-play, an
+        enemy turn parked on a curse screen, a turn-transition walk, a drink
+        on its own card-select) is verified and KEPT rather than rebuilt. A
+        world snapshotted mid-resolution (a card still in its ``play_pile``,
+        a choice's grant still in transit) is skipped and graded at the next
+        wire. Otherwise the state is rebuilt from the wire, the hidden state
+        is carried over, and the carried prediction is diffed against it;
+        under OBSERVE a divergence re-seeds from the wire, salvaging what the
+        wire cannot say.
 
         Args:
             wire: The world's current combat state, wire-schema.
@@ -1171,450 +864,7 @@ class CombatMirror:
                 transplant the shapes refuse (draw pile or enemy roster
                 disagreeing on length).
         """
-        import sts2_rs
-
-        self.stats.decisions += 1
-        if self._state is None:
-            self.seed(wire)
-            return []
-
-        self.stats.reconciles += 1
-        self.last_adopted = []
-        carried = self._state
-
-        # A card whose OnPlay opened a screen has the REST of itself suspended
-        # in `pending_play` — AfterCardPlayed, replays, disposal. No wire
-        # dialect expresses that (the parser refuses a dict that even claims
-        # to), so REPLACING the state here silently deletes the tail and the
-        # pick resolves into nothing.
-        #
-        # The plan's choice handling already says the mirror "is already
-        # sitting at pending_choice() when the live game opens its screen" —
-        # i.e. mid-play is precisely when a rebuild is the wrong move. So
-        # verify against the parked mirror and keep it. Reality still wins on
-        # every observable, because a mismatch is reported exactly as it would
-        # be otherwise; what it does not do is throw away the half-executed
-        # card in order to say so.
-        #
-        # Oracle Silent-16, traced: play -> [reconcile rebuilds, tail gone] ->
-        # inject -> choose -> Nibbit block mirror 5 / world 1, with
-        # `combat_targets` mirror 0 / world 1 (the world ran a tail that
-        # targeted; the mirror ran nothing).
-        # A mid-ENEMY-turn suspension (KnowledgeDemon's CURSE_OF_KNOWLEDGE
-        # screen) must be kept for the same reason a mid-play card must: a
-        # rebuild cannot represent the parked enemy-turn walk (the wire
-        # schema has no `pending_*_resume`), so re-seeding here would delete
-        # the rest of the enemy turn — the mirror would then sit one whole
-        # turn behind after the choice resolves, which was the entire
-        # `$.round`/`$.phase` divergence family on the v27wr sweep.
-        curse_parked = (
-            not carried.has_pending_play()
-            and (cpc := carried.pending_choice()) is not None
-            and str(cpc.get("kind")) == "monster_curse_select"
-        )
-        # Any OTHER suspended turn-transition walk (Well-Laid Plans' retain
-        # select inside the end-of-turn flush, a Stampede auto-play screen,
-        # suspended turn setup / draw) is unreconstructable for the same
-        # reason: no `pending_*_resume` marker rides the wire, so a rebuild
-        # deletes the rest of the transition and the mirror lands a full
-        # round behind (55 of the 230 player-side v28wr events: mirror round
-        # N-1, energy 0 vs the world's refilled 3 — plus run 1058's entire
-        # 40-event one-turn-lag fight).
-        walk_parked = not curse_parked and carried.has_suspended_walk()
-        # A DRINK suspended on its own card-select. Same unexpressible-on-the-
-        # wire class, and it was in neither predicate: C#
-        # `PotionModel.OnUseWrapper` awaits `OnUse` — the Attack/Skill/Power/
-        # Colorless choose-a-card screen included — before firing
-        # `Hook.AfterPotionUsed`, so the engine parks the deferred dispatch on
-        # `pending_potion_hook_resume`. Rebuilding here deleted BOTH the
-        # deferred hook (ReptileTrinket's +3 temporary Strength, BeltBuckle)
-        # and the parked choice itself, which is why a potion screen could not
-        # be searched at all: the replay landed and the very next reconcile
-        # threw the park away.
-        #
-        # Deliberately NOT folded into `walk_parked` below: a drink happens
-        # inside the player's own play phase, which both sides agree on, so
-        # `$.phase` / `$.side` stay compared. A turn-transition walk is the
-        # only thing that earns that excusal.
-        potion_parked = not curse_parked and not walk_parked and carried.has_pending_potion_hook()
-        if carried.has_pending_play() or curse_parked or walk_parked or potion_parked:
-            self.stats.parked_verifies += 1
-            predicted = sts2_rs.state_to_dict(carried)
-            # Round-trip the wire before diffing, exactly as the rebuild path
-            # does. Comparing against the RAW wire diffs the engine dialect
-            # against the producer's: `CLUMSY` vs `curse:Clumsy`, an intent's
-            # `times` as None vs 1, a `cost_override` of None vs 'Slither'.
-            # None of those are divergences, and every one of them fired as a
-            # false STRICT crash the first time this ran against the DLL — the
-            # oracle could never show it, because there both sides are already
-            # `state_to_dict` output and share a dialect by construction.
-            #
-            # The reshuffle blind spot and the unreported-field skip apply here
-            # for exactly the reasons they apply to the rebuild path below —
-            # more so, in fact. A card that reshuffles the draw pile and THEN
-            # opens a screen (draw-through-the-deck into a select) lands right
-            # here, and the world rolled its own order for what was reshuffled,
-            # so `$.deck.*` is unverifiable rather than wrong. Diffing it anyway
-            # is a false STRICT crash on the one path that cannot recover by
-            # re-seeding, because re-seeding is what would delete the suspended
-            # card.
-            #
-            # `_crossed_shuffle` is deliberately NOT cleared on this path.
-            # Clearing it is the rebuild path's privilege: it earns the right by
-            # ADOPTING the world's piles. A parked verify keeps the mirror's
-            # own, so if the two rolled different orders they are still
-            # different afterwards, and the blind spot has to survive until a
-            # rebuild actually resolves it.
-            if self._crossed_shuffle:
-                self.stats.reshuffle_skips += 1
-            unreported = unreported_paths(wire)
-            if unreported:
-                self.stats.unreported_fields += len(unreported)
-            if curse_parked or walk_parked:
-                # Representation, not divergence: C# reports a blocking
-                # mid-transition screen as a player-side play phase, while
-                # the engine reports the suspended walk it actually is
-                # (EnemyPhase / a parked turn boundary, same round). Both
-                # name the same instant. `$.round` stays compared — the walk
-                # must not lag a whole turn.
-                unreported = unreported | {"$.phase", "$.side"}
-            parked_desyncs = diff_observables(
-                predicted,
-                sts2_rs.state_to_dict(sts2_rs.state_from_dict(wire)),
-                skip_prefix="$.deck." if self._crossed_shuffle else None,
-                skip_paths=unreported,
-            )
-            # Same accounting as the rebuild path: the cursor is hidden state,
-            # so a drift is recorded and attached to whatever report this
-            # decision produces, never raised. Skipping it here would have made
-            # the drift series silently under-count every mid-play decision.
-            if isinstance(wire.get("rng"), dict) and "run_seed" in wire["rng"]:
-                self._last_drift = _cursor_drift(predicted, wire)
-                self.stats.cursor_drifts += len(self._last_drift)
-            else:
-                self._last_drift = []
-            if parked_desyncs:
-                self.stats.desyncs += 1
-                self.stats.desync_fields += len(parked_desyncs)
-                suspended_what = (
-                    "the enemy turn was suspended on a curse screen"
-                    if curse_parked
-                    else "a card was suspended mid-play"
-                )
-                self._diverge(
-                    f"{len(parked_desyncs)} deterministic observable(s) diverged "
-                    f"while {suspended_what}: " + "; ".join(str(d) for d in parked_desyncs[:6]),
-                    kind="desync",
-                    wire=wire,
-                    paths=[d.path for d in parked_desyncs],
-                    mirror_wire=predicted,
-                    extra={
-                        "mid_play": not curse_parked,
-                        "curse_parked": curse_parked,
-                        "desyncs": [
-                            {"path": d.path, "mirror": d.mirror, "world": d.world}
-                            for d in parked_desyncs
-                        ],
-                    },
-                )
-                # Reseed, then report — the same two steps, in the same order,
-                # as the rebuild path below. This used to be
-                # `return self._reseed_after_observe(wire)`, which returned
-                # that helper's `None` from a method annotated
-                # `-> list[Desync]` AND threw the report away: every
-                # divergence found while a card was suspended mid-play was
-                # invisible to any caller that reads the return. Nothing did
-                # until the advisor's mirror started counting desyncs per
-                # decision, and then it crashed on `len(None)` instead
-                # (live run 001-ironclad-a8-0824-2138, floor 5).
-                self._reseed_after_observe(wire)
-                return parked_desyncs
-            self._last_wire = wire
-            return []
-
-        # -- world-in-flight skip -------------------------------------------
-        # The LIVE producer can snapshot MID-CARD-RESOLUTION: SimCombatHandler.
-        # PlayCardAndWaitAsync returns as soon as energy or hand size moves,
-        # which is when the play STARTS (card leaves the hand for the
-        # PlayPile, cost paid), not when it finishes — so the next serialized
-        # board can show the played card still sitting in `play_pile` with
-        # its effects (power gained, block added, the move to discard) not
-        # yet landed. The mirror resolved the same play atomically, so at
-        # this instant nothing on that board is gradable: every field the
-        # in-flight card touches is transiently stale on the world's side,
-        # not mispredicted (the play_pile+powers / discard+play_pile(+block)
-        # family, 59 of the 296 live2 records, was exactly this — always one
-        # `play` behind, world play_pile holding the card the mirror had
-        # already discarded). Rebuilding from such a wire is worse than
-        # skipping: it adopts a state whose play_pile card can never resume
-        # (no `pending_play` rides the wire), which is how stuck play-pile
-        # cards ended up haunting later reconciles after an OBSERVE reseed.
-        # Defer instead: keep the carried mirror, count the skip, and grade
-        # at the next stable wire — a real misprediction is still caught one
-        # decision later.
-        #
-        # This cannot swallow a legitimately suspended play: when the mirror
-        # itself holds the card in flight (a select screen it also opened),
-        # `has_pending_play()` routed it to the parked verify above. The
-        # oracle arm only emits a non-empty play_pile when genuinely parked
-        # (same routing), and the DLL producer only at select decisions —
-        # so rebuild-path reconciles there keep diffing exactly as before.
-        if (wire.get("deck") or {}).get("play_pile"):
-            self.stats.in_flight_skips += 1
-            # `_crossed_shuffle` deliberately survives, same as the parked
-            # path: only a rebuild that ADOPTS the world's piles may clear it.
-            self._last_wire = wire
-            self._last_drift = []
-            return []
-
-        fresh = sts2_rs.state_from_dict(wire)
-
-        # Diff BEFORE transplanting. The transplant only moves hidden state,
-        # which the diff ignores — and when it refuses (mismatched pile or
-        # roster lengths) the field list is what actually explains why, so it
-        # has to be in hand before the refusal is reported.
-        predicted = sts2_rs.state_to_dict(carried)
-        # The advance since the last reconcile may have consumed the shuffle
-        # stream, in which case the world rolled its own order for whatever
-        # was reshuffled and the PILE paths are UNVERIFIABLE, not wrong.
-        # Nothing else is: a reshuffle does not make HP, block, energy,
-        # powers, potions, orbs, phase or intents unknowable, and
-        # skipping the whole diff (as this did originally) dropped 13.5% of
-        # reconciles — 167/1235 on the 5-char x seeds-1-5 oracle sweep —
-        # out of the DESYNC denominator for no reason. Scope the blind spot
-        # to `$.deck.*` and keep measuring everything else.
-        skip_prefix = "$.deck." if self._crossed_shuffle else None
-        if self._crossed_shuffle:
-            self.stats.reshuffle_skips += 1
-        unreported = unreported_paths(wire)
-        if unreported:
-            self.stats.unreported_fields += len(unreported)
-        if getattr(self, "_just_seeded", False):
-            # See `seed`: wire #1 lists enemies in spawn order, later wires
-            # in C#'s slot-sorted order — the first reconcile cannot grade a
-            # re-sort the mirror never saw.
-            unreported = unreported | {"$.encounter.roster"}
-            self._just_seeded = False
-        desyncs = diff_observables(
-            predicted,
-            sts2_rs.state_to_dict(fresh),
-            skip_prefix=skip_prefix,
-            skip_paths=unreported,
-        )
-
-        # -- choice-effect in-flight skip -----------------------------------
-        # The play channel's mid-resolution snapshot has a twin on the CHOICE
-        # channel. `SimCardSelector.GetSelectedCards` returns the moment the
-        # pick arrives and nothing waits for the `CardSelectCmd` that awaited
-        # it to finish, so the very next serialized board can show the screen
-        # closed and its grant still in transit — the mirror holding the
-        # picked card in hand (or at cost 0) against a world that has neither
-        # yet. Nothing there is mispredicted; the world is one action-queue
-        # tick behind on exactly that card.
-        #
-        # Deferring is not merely tidier than reporting it: under OBSERVE the
-        # report RESEEDS from the half-applied board, which deletes the grant
-        # from the mirror for good and manufactures the mirror-BEHIND echo one
-        # decision later (16 of the 49 pure `$.deck.hand` records in
-        # `mirror_live3` were that echo, never an independent fault). Keep the
-        # carried mirror, count the skip, and grade at the next wire — where
-        # the world has caught up, and a grant the world never actually made
-        # still diverges, because nothing re-arms the flag.
-        #
-        # `_crossed_shuffle` deliberately survives, same as the play-pile
-        # path: only a rebuild that ADOPTS the world's piles may clear it.
-        pending_grant, self._choice_in_flight = self._choice_in_flight, None
-        if _choice_effect_in_flight(desyncs, pending_grant or []):
-            self.stats.choice_in_flight_skips += 1
-            self._last_wire = wire
-            self._last_drift = []
-            return []
-
-        # Who owns the RNG cursors. When the producer carries the run's own
-        # dice, `fresh` already holds the WORLD's streams, and carrying the
-        # mirror's over them would replace known truth with the mirror's own
-        # drift — the very thing that makes an enemy intent unpredictable.
-        world_rng = isinstance(wire.get("rng"), dict) and "run_seed" in wire["rng"]
-        drift: list[Desync] = []
-        if world_rng:
-            # Recorded, not raised. The RNG cursor is hidden state, not one of
-            # the deterministic observables STRICT is defined over, and the
-            # honest reading of a drift is "the two engines consumed different
-            # amounts of randomness" — which is a lead, not yet a proven
-            # board-level divergence. It is attached to whatever report this
-            # decision produces and counted separately so its size is
-            # measurable before it is promoted to a crash.
-            drift = _cursor_drift(predicted, wire)
-            self.stats.cursor_drifts += len(drift)
-
-        try:
-            fresh.transplant_hidden(
-                carried,
-                _enemy_alignment(wire, predicted),
-                carry_rng=not world_rng,
-                carry_relic_counters=_undisclosed_relic_counters(wire),
-                carry_power_counters=_undisclosed_power_counters(wire),
-                carry_turn_history=not _turn_history_disclosed(wire),
-            )
-        except Exception as exc:  # re-raised as a divergence below
-            self._diverge(
-                f"transplant refused the reconstruction: {exc}"
-                + (f" — diverged on: {'; '.join(str(d) for d in desyncs[:6])}" if desyncs else ""),
-                kind="transplant",
-                wire=wire,
-                paths=[d.path for d in desyncs] or ["$.transplant"],
-                mirror_wire=predicted,
-                extra={
-                    "error": str(exc),
-                    "desyncs": [
-                        {"path": d.path, "mirror": d.mirror, "world": d.world} for d in desyncs
-                    ],
-                },
-            )
-            self._reseed_after_observe(wire)
-            return desyncs or [Desync(path="$.transplant", mirror=None, world=str(exc))]
-
-        self._state = fresh
-        self._crossed_shuffle = False
-        self._last_wire = wire
-        self._last_drift = drift
-
-        if desyncs and self.teammates and all(_teammate_reachable(d.path) for d in desyncs):
-            # Co-op: every diff is on the enemies, which a teammate moves
-            # between our decisions. `fresh` already holds the world's board
-            # plus our carried hidden state, so keep it rather than drop it.
-            self.stats.teammate_adoptions += 1
-            self.last_adopted, desyncs = desyncs, []
-
-        if desyncs:
-            self.stats.desyncs += 1
-            self.stats.desync_fields += len(desyncs)
-            self._diverge(
-                f"{len(desyncs)} deterministic observable(s) diverged: "
-                + "; ".join(str(d) for d in desyncs[:6]),
-                kind="desync",
-                wire=wire,
-                paths=[d.path for d in desyncs],
-                mirror_wire=predicted,
-                extra={
-                    "desyncs": [
-                        {"path": d.path, "mirror": d.mirror, "world": d.world} for d in desyncs
-                    ]
-                },
-            )
-            self._reseed_after_observe(wire)
-        # Close the window whether or not it was reported: a clean decision's
-        # rows must not leak into the next decision's evidence.
-        self._take_damage_trace()
-        return desyncs
-
-    # -- damage-source forensics (GH #368.1) -------------------------------
-
-    def _arm_damage_trace(self) -> None:
-        """Arm the engine trace for the step that is about to run.
-
-        Arming clears the engine-side buffer, so this must be paired with
-        :meth:`_accumulate_damage_trace` — arming twice without a drain
-        discards the first step's rows.
-        """
-        if not self._damage_trace_on:
-            return
-        import sts2_rs
-
-        sts2_rs.set_damage_trace(True)
-
-    def _accumulate_damage_trace(self) -> None:
-        """Drain the engine buffer into this decision's window, then disarm.
-
-        Disarming is the load-bearing half: everything that happens between
-        two mirror steps — above all the driver's own MCTS search — runs on
-        this thread and would otherwise pour rollout damage into the window.
-        """
-        if not self._damage_trace_on:
-            return
-        import sts2_rs
-
-        self._last_damage_trace.extend(sts2_rs.take_damage_trace())
-        self._damage_trace_dropped += int(sts2_rs.damage_trace_dropped())
-        sts2_rs.set_damage_trace(False)
-
-    def _take_damage_trace(self) -> tuple[list[dict[str, Any]], int]:
-        """Hand over this decision's rows + overflow count, and reset the window."""
-        rows, dropped = self._last_damage_trace, self._damage_trace_dropped
-        self._last_damage_trace = []
-        self._damage_trace_dropped = 0
-        return rows, dropped
-
-    def _reseed_after_observe(self, wire: dict[str, Any]) -> None:
-        """Restart the mirror from reality after an OBSERVE-mode divergence.
-
-        OBSERVE drops the mirror — a state proven wrong must not keep
-        answering — but the fight is still going, and leaving the driver
-        without one for the rest of it would turn a single divergence into a
-        blind fight. Reality is right here in ``wire``, so seed from it and
-        carry on; the run stays tagged via :attr:`tainted`.
-
-        The bare reseed used to lose ALL carried hidden state, including the
-        parts the wire structurally cannot disclose: undisclosed relic
-        latches (ArtOfWar's attacks-played bit re-armed and over-granted +1
-        energy on the v27wr sweep), the history counters (Spite /
-        TearAsunder hit counts), and per-card vars. Those were not what the
-        divergence proved wrong, and re-zeroing them manufactures the NEXT
-        divergence — so salvage them from the dropped state. Enemy-side
-        carries (intent history, AI instance state) stay dropped: a
-        mispredicted board most often means the enemy model was the wrong
-        part. A refused salvage leaves the bare reseed.
-
-        No-op under STRICT, which raised instead of returning.
-        """
-        if self.alive:
-            return
-
-        import sts2_rs
-
-        stale, self._last_dropped_state = self._last_dropped_state, None
-        stale_parked, self._last_dropped_parked = self._last_dropped_parked, None
-        self.seed(wire)
-        if stale is None or self._state is None:
-            return
-        try:
-            n_enemies = len(wire.get("encounter") or [])
-            world_rng = isinstance(wire.get("rng"), dict) and "run_seed" in wire["rng"]
-            self._state.transplant_hidden(
-                stale,
-                [None] * n_enemies,
-                carry_rng=not world_rng,
-                carry_relic_counters=_undisclosed_relic_counters(wire),
-                carry_power_counters=_undisclosed_power_counters(wire),
-                carry_turn_history=not _turn_history_disclosed(wire),
-            )
-        except Exception:
-            # The salvage is best-effort by definition; the reseed stands.
-            pass
-        # The parked choice belongs to the same salvage class: the divergence
-        # proved the state's PREDICTION wrong, not the choice's kind/arity —
-        # and only the kind lets the next `inject_choice` resolve locators
-        # for a deterministic screen at all. The stale locators indexed the
-        # dropped state, so re-locate each option against the freshly seeded
-        # (i.e. the world's) piles by identity; an option that cannot be
-        # found is dropped so `_resolve_locators` reports a genuine
-        # `unlocatable_option` instead of a blanket refusal. The suspended
-        # `pending_play` tail is still lost to the reseed — the pick applies
-        # its primary effect but not the card's post-effect — which is
-        # strictly better than applying nothing.
-        if stale_parked is not None:
-            # Against the mirror's OWN piles, not `wire`: the locators have to
-            # index the state that will resolve them, and the two speak
-            # different dialects (`DECAY` vs `curse:Decay`). Reading the state
-            # also picks up whatever `transplant_hidden` just carried, which
-            # the wire by definition does not describe.
-            try:
-                seeded = sts2_rs.state_to_dict(self._state)
-            except Exception:
-                # Forensics-grade fallback only: a wire-dialect match still
-                # relocates every unprefixed card, which is most of them.
-                seeded = wire
-            self._parked = _relocate_parked(stale_parked, seeded)
+        return [Desync(p, m, w) for p, m, w in self._call("reconcile", wire, wire=wire)]
 
     # -- advance -----------------------------------------------------------
 
@@ -1637,38 +887,7 @@ class CombatMirror:
                 about what is legal is a divergence, not a recoverable
                 condition.
         """
-        state = self.state
-        # Any committed action ends the previous choice's grace period: the
-        # deferral in `reconcile` covers the ONE board the world serializes
-        # between a pick and its grant, not everything that follows.
-        # `advance_through_choice` re-arms it after its own advance.
-        self._choice_in_flight = None
-        before = state.shuffle_stream_counter()
-        # GH #368.1: the trace is armed ONLY across the mirror's own step.
-        # The driver runs MCTS on this same thread between decisions, and its
-        # rollouts deal damage through the same pipeline — leaving the trace
-        # armed across a search would bury the handful of rows that matter
-        # under tens of thousands of hypothetical ones.
-        self._arm_damage_trace()
-        result = state.apply_step(action)
-        self._accumulate_damage_trace()
-        if state.shuffle_stream_counter() != before:
-            self._crossed_shuffle = True
-        self._last_action = action
-        self._last_result = result
-
-        if result in ("invalid_target", "illegal_play"):
-            self._diverge(
-                f"engine rejected an action the world committed: {action!r}",
-                kind="invalid_action",
-                wire=self._last_wire,
-                paths=["$.action"],
-                extra={"action": action},
-            )
-            return result
-
-        self._parked = state.pending_choice() if result == "pending_choice" else None
-        return result
+        return self._call("advance", action)
 
     # -- choices -----------------------------------------------------------
 
@@ -1680,7 +899,7 @@ class CombatMirror:
         therefore wipes the live choice). Cleared by :meth:`inject_choice`,
         which is what grades it.
         """
-        return self._parked
+        return self._core.parked_choice()
 
     def inject_choice(
         self,
@@ -1716,9 +935,12 @@ class CombatMirror:
 
                 A real driver rarely has locators: a ``card_select`` message
                 names cards, not board positions. Options without one are
-                RESOLVED against the engine's own parked choice by
-                :meth:`_resolve_locators` — which is also where a live list
-                the engine cannot account for becomes a divergence.
+                RESOLVED against the engine's own parked choice, one-to-one on
+                ``(id, upgraded)`` in the world's order — which is also where
+                a live list the engine cannot account for becomes a
+                divergence. Without a parked choice a deterministic kind
+                cannot be answered at all: injecting unlocated options would
+                resolve to a silent no-op.
             min_select / max_select: Selection arity from the world.
             can_skip: Whether the world offers a skip.
             origin: The world's own description of the screen — the
@@ -1739,140 +961,16 @@ class CombatMirror:
                 engine-derived option list differs from the world's, or when
                 the engine refuses the injected options.
         """
-        import sts2_rs
-
-        state = self.state
-        parked, self._parked = self._parked, None
-        # A screen that never opens leaves nothing to answer: clear eagerly so
-        # a refused injection cannot hand its options to the next
-        # `advance_through_choice`.
-        self._open_injection = None
-        options = [dict(o) for o in options]
-
-        generative = sts2_rs.choice_kind_is_generative(kind)
-        graded: list[Desync] = []
-        if parked is not None and not generative:
-            if not self._resolve_locators(options, parked, kind):
-                return []
-            graded = _grade_choice(parked, kind, options, min_select, max_select)
-        elif not generative and any(
-            o.get("pile") is None or o.get("index") is None for o in options
-        ):
-            # No parked choice to locate against, and the driver only knows
-            # card NAMES — so these options point at no board position.
-            # Injecting them anyway is the one thing this class must not do:
-            # every deterministic resolver bails when `selected_card_uid`
-            # comes back `None` (`resolve_upgrade_in_hand`, lib.rs:8150),
-            # and `ChoiceKind::CardSelect` — the kind a driver reaches for
-            # when it has nothing better — is an explicit no-op placeholder
-            # arm in the engine, not a working catch-all. The world would
-            # upgrade/exhaust/discard a card, the mirror would close its
-            # choice having applied NOTHING, no grading would run (grading
-            # needs `parked`), and nothing would raise. A silent, permanent
-            # desync dressed as success.
-            #
-            # Reachable whenever the mirror was re-seeded rather than parked
-            # (after an OBSERVE drop, after a shadow-answered decision), so
-            # it is not a theoretical path.
-            self._diverge(
-                f"cannot answer a deterministic {kind}: the world's options carry no "
-                "locator and the engine has no parked choice to resolve them against "
-                "— injecting would resolve to a silent no-op",
-                kind="unlocatable_injection",
-                wire=self._last_wire,
-                paths=["$.choice.injection"],
-                extra={
-                    "choice_kind": kind,
-                    "options": options,
-                    "engine_derived": parked,
-                },
-            )
-            return []
-
-        try:
-            # `replace_parked` when the mirror is sitting on its own derived
-            # list: the world's options win, and — critically — clearing the
-            # choice this way leaves `pending_play` intact, which is the whole
-            # reason the mirror was left parked instead of rebuilt.
-            state.open_injected_choice(
-                kind,
-                options,
-                min_select,
-                max_select,
-                can_skip=can_skip,
-                replace_parked=parked is not None,
-            )
-        except Exception as exc:  # re-raised as a divergence below
-            self._diverge(
-                f"engine refused the world's option list: {exc}",
-                kind="injection",
-                wire=self._last_wire,
-                paths=["$.choice.injection"],
-                extra={
-                    "choice_kind": kind,
-                    "options": options,
-                    "engine_derived": parked,
-                    "error": str(exc),
-                },
-            )
-            return []
-
-        self.stats.injections += 1
-        # The whole screen, as the mirror actually opened it: the world's
-        # options with the board positions `_resolve_locators` pinned them to,
-        # and the engine's own derivation beside them. A divergence one advance
-        # later says "these cards are in the wrong pile" and nothing about the
-        # pick that put them there, which is unarguable and unusable — this is
-        # what makes a choice-adjacent divergence self-explaining.
-        self._last_injection = {
-            "kind": kind,
-            "options": options,
-            "min_select": min_select,
-            "max_select": max_select,
-            "engine_derived": (parked or {}).get("cards"),
-            "picks": None,
-        }
-        self._open_injection = self._last_injection
-        if parked is None:
-            self.stats.unparked_injections += 1
-            self._last_unparked = {
-                "kind": kind,
-                "options": [o.get("id") for o in options],
-                "min_select": min_select,
-                "max_select": max_select,
-                "origin": origin,
-                # What the engine was doing when the world opened this screen.
-                # `origin` names the C# entry point, but several effects share
-                # one (FromChooseACardScreen serves Discovery, four potions,
-                # Toolbox and three relics), so the culprit is only pinned
-                # once you also know which action the mirror had just run and
-                # whether the engine parked anything at all for it.
-                "after_action": self._last_action,
-                "after_result": self._last_result,
-            }
-        else:
-            self._last_unparked = None
-        if graded:
-            # NOT `stats.desyncs` — that is per-reconcile and this is
-            # per-injection; see `MirrorStats.choice_mismatches`.
-            self.stats.choice_mismatches += 1
-            self.stats.desync_fields += len(graded)
-            self._diverge(
-                f"engine derived a different {kind} than the world showed: "
-                + "; ".join(str(d) for d in graded[:6]),
-                kind="choice_mismatch",
-                wire=self._last_wire,
-                paths=[d.path for d in graded],
-                extra={
-                    "choice_kind": kind,
-                    "options": options,
-                    "engine_derived": parked,
-                    "desyncs": [
-                        {"path": d.path, "mirror": d.mirror, "world": d.world} for d in graded
-                    ],
-                },
-            )
-        return graded
+        graded = self._call(
+            "inject_choice",
+            kind,
+            [dict(o) for o in options],
+            min_select,
+            max_select,
+            can_skip,
+            origin,
+        )
+        return [Desync(p, m, w) for p, m, w in graded]
 
     def arm_turn_start_resume(self, after_relic: str) -> bool:
         """Park the rest of turn setup behind the OPEN turn-start screen.
@@ -1897,23 +995,8 @@ class CombatMirror:
             True when the marker was armed. False when the engine declined —
             no choice open, or the relic is not in the mirror's own inventory —
             in which case nothing is parked and the resolve behaves as before.
-
-        Raises:
-            RuntimeError: The installed ``sts2_rs`` wheel predates this surface.
-                Deliberately loud: degrading to a no-op would silently restore
-                the very desync this exists to close, on a run that looks fine.
         """
-        if self._state is None:
-            return False
-        arm = getattr(self._state, "arm_turn_start_resume", None)
-        if arm is None:
-            raise RuntimeError(
-                "CombatMirror.arm_turn_start_resume: the installed sts2_rs wheel has no "
-                "CombatState.arm_turn_start_resume — rebuild it "
-                "(scripts/wheel-venv.sh build) before sweeping, or the Gambling-Chip "
-                "turn-1 hook batch silently goes missing from the mirror again."
-            )
-        return bool(arm(after_relic))
+        return self._call("arm_turn_start_resume", after_relic)
 
     def arm_turn_start_resume_after_power(self, after_power: str) -> bool:
         """Park the rest of turn setup behind a POWER's turn-start screen.
@@ -1932,24 +1015,8 @@ class CombatMirror:
         Returns:
             True when the marker was armed. False when the engine declined —
             no choice open, or the mirror's player does not carry the power.
-
-        Raises:
-            RuntimeError: The installed ``sts2_rs`` wheel predates this
-                surface. Loud for the same reason as the relic twin: a no-op
-                degradation silently restores the desync on a run that looks
-                fine.
         """
-        if self._state is None:
-            return False
-        arm = getattr(self._state, "arm_turn_start_resume_after_power", None)
-        if arm is None:
-            raise RuntimeError(
-                "CombatMirror.arm_turn_start_resume_after_power: the installed sts2_rs "
-                "wheel has no CombatState.arm_turn_start_resume_after_power — rebuild it "
-                "(scripts/wheel-venv.sh build) before sweeping, or the Tyranny / Tools of "
-                "the Trade turn-start batch silently goes missing from the mirror again."
-            )
-        return bool(arm(after_power))
+        return self._call("arm_turn_start_resume_after_power", after_power)
 
     def arm_turn_start_resume_for(self, block: TurnStartBlock) -> bool:
         """Arm whichever resume :class:`TurnStartBlock` names.
@@ -1963,66 +1030,15 @@ class CombatMirror:
             return self.arm_turn_start_resume_after_power(block.id)
         return self.arm_turn_start_resume(block.id)
 
-    def _resolve_locators(
-        self, options: list[dict[str, Any]], parked: dict[str, Any], kind: str
-    ) -> bool:
-        """Fill in each option's ``pile``/``index`` from the engine's own choice.
-
-        A ``card_select`` message names cards; the engine names board
-        positions. Matching is one-to-one on ``(id, upgraded)`` in the order
-        the world listed them, so two Strikes in the same pile consume two
-        distinct engine options rather than both resolving to the first.
-
-        Deliberately NOT a name-matching heuristic with a fallback. If the
-        engine's derivation cannot account for every card the world is showing,
-        the two are looking at different boards, and that is the divergence the
-        whole mirror exists to catch — so it is reported, not patched over.
-
-        Returns:
-            True when every option is located (or already was). False when the
-            mirror diverged, which under STRICT never returns at all.
-        """
-        available = list(parked.get("cards") or [])
-        used: set[int] = set()
-        for i, opt in enumerate(options):
-            if opt.get("pile") is not None and opt.get("index") is not None:
-                continue
-            key = (opt.get("id"), bool(opt.get("upgraded")))
-            match = next(
-                (
-                    j
-                    for j, c in enumerate(available)
-                    if j not in used
-                    and (c.get("id"), bool(c.get("upgraded"))) == key
-                    and c.get("pile") is not None
-                ),
-                None,
-            )
-            if match is None:
-                self._diverge(
-                    f"the world offers {key[0]!r} (upgraded={key[1]}) as {kind} "
-                    f"option {i}, which the engine's own choice does not contain",
-                    kind="unlocatable_option",
-                    wire=self._last_wire,
-                    paths=["$.choice.options"],
-                    extra={
-                        "choice_kind": kind,
-                        "options": options,
-                        "engine_derived": parked,
-                    },
-                )
-                return False
-            used.add(match)
-            opt["pile"] = available[match]["pile"]
-            opt["index"] = available[match]["index"]
-        return True
-
     def advance_through_choice(self, selection: Sequence[int]) -> str:
         """Answer the open choice and confirm it closed.
 
         A world that picks fewer than ``max_select`` is finalized here rather
-        than left mid-accumulation — see the inline note. Anything still open
-        after that is a genuine arity disagreement.
+        than left mid-accumulation (the engine re-opens a partial multi-pick
+        and waits; the world resolved in one shot). Anything still open after
+        that is a genuine arity disagreement. The picked options are armed for
+        one reconcile, whose board may show the screen closed before its grant
+        landed.
 
         Args:
             selection: Option indices the world picked. Empty means skip.
@@ -2035,58 +1051,7 @@ class CombatMirror:
                 showed a selection the engine never opened), or when the
                 choice survives both the picks and the finalize.
         """
-        state = self.state
-        # Consumed here whether or not the answer lands: an injection is
-        # answered exactly once.
-        injected, self._open_injection = self._open_injection, None
-        open_choice = state.pending_choice()
-        if open_choice is None:
-            self._diverge(
-                "advance_through_choice with no choice open",
-                kind="no_choice",
-                wire=self._last_wire,
-                paths=["$.choice.absent"],
-                extra={"selection": list(selection)},
-            )
-            return "advanced"
-
-        picks = [int(i) for i in selection]
-        if self._last_injection is not None:
-            self._last_injection["picks"] = picks
-        result = self.advance({"action": "choose", "selection": picks})
-        # A partial multi-pick ACCUMULATES: `resolve_choice_action` records the
-        # index and re-opens the same choice, firing no effects, waiting for
-        # either the next pick or a finalize. The world resolved in one shot,
-        # so finalize here to land on the byte-identical end state the engine
-        # documents that path to produce.
-        if (
-            self._state is not None
-            and self._state.pending_choice() is not None
-            and int(open_choice.get("max_select", 1)) > 1
-            and len(picks) < int(open_choice["max_select"])
-        ):
-            result = self.advance({"action": "choose", "selection": []})
-        if self._state is not None and self._state.pending_choice() is not None:
-            # A choice that survives its own answer means the engine expects
-            # more picks than the world made — the two disagree on arity.
-            self._diverge(
-                f"choice still open after selection {list(selection)}",
-                kind="unclean_choice",
-                wire=self._last_wire,
-                paths=["$.choice.unclean"],
-                extra={
-                    "selection": list(selection),
-                    "still_open": self._state.pending_choice(),
-                },
-            )
-        # Arm the one-board grace period for the grant this pick just made —
-        # the live producer can serialize the next combat decision before it
-        # lands. `advance` cleared the flag, so this is the only writer, and
-        # only a pick that named real options can arm it.
-        opts = (injected or {}).get("options") or []
-        named = [opts[i] for i in picks if 0 <= i < len(opts)]
-        self._choice_in_flight = named or None
-        return result
+        return self._call("advance_through_choice", [int(i) for i in selection])
 
     # -- search ------------------------------------------------------------
 
@@ -2123,63 +1088,12 @@ class CombatMirror:
             MirrorDivergence: When the live mirror is already on the belief
                 representation.
         """
-        import sts2_rs
-
-        knowledge = self.state.draw_pile_knowledge()
-        if knowledge.get("deferred_draw_order"):
-            self._diverge(
-                "the live mirror is on the belief draw representation "
-                "(deferred_draw_order=True) — only the private search clone may be",
-                kind="belief_leak",
-                wire=self._last_wire,
-                paths=["$.deck.deferred_draw_order"],
-                extra={"draw_pile_knowledge": dict(knowledge)},
-            )
-            return {"actions": [], "pv": [], "sims": 0}
-
         cfg = cfg or self.cfg
         if seed is not None:
             cfg = replace(cfg, seed=seed)
-        if cfg.hidden_info in _CLAIRVOYANT_PROFILES:
-            raise ValueError(
-                "CombatMirror.search: refusing hidden_info="
-                f"{cfg.hidden_info!r}. The mirror holds the TRUE draw order and "
-                "RNG cursors, so a clairvoyant root would plan against cards the "
-                "player cannot see. Use 'beliefdraw' (the deployed honest "
-                "profile), 'drawchance', or 'rootscramble'."
-            )
-
-        return self._recommend(self.state, cfg)
-
-    def _recommend(self, state: Any, cfg: RecommendConfig) -> dict[str, Any]:
-        """One `mcts_recommend` over a clone of `state`, counted in `stats`.
-
-        Split out of :meth:`search` so :meth:`search_choice_picks` can search a
-        PRIVATE working state (the mirror's own state plus the picks made so
-        far this decision) without duplicating the call or the accounting.
-        The guards stay in :meth:`search`: they are properties of the LIVE
-        mirror, and the working state is a clone of one already checked.
-        """
-        import sts2_rs
-
-        self.stats.searches += 1
-        return sts2_rs.mcts_recommend(
-            state.clone(),
-            sims=cfg.sims,
-            c_puct=cfg.resolved_c_puct(),
-            depth=cfg.depth,
-            seed=cfg.seed,
-            threads=cfg.threads,
-            fair=cfg.fair,
-            rollout_policy=cfg.rollout_policy,
-            hidden_info=cfg.hidden_info,
-            draw_widening_c=cfg.resolved_draw_widening_c(),
-            endturn_widening_c=cfg.endturn_widening_c,
-            endturn_widening_alpha=cfg.endturn_widening_alpha,
-            common_random_numbers=cfg.common_random_numbers,
-            win_hp_carry=cfg.win_hp_carry,
-            win_potion_carry=cfg.win_potion_carry,
-        )
+        # The guards and the call: `CombatMirrorCore.search`
+        # (`sts2_advisor::combat_mirror`, GH #1426).
+        return self._call("search", asdict(cfg))
 
     def search_choice_picks(
         self,
@@ -2225,53 +1139,39 @@ class CombatMirror:
         Returns:
             Distinct option indices, in pick order. Empty means skip.
         """
-        from sts2_hint.recommender import (
-            FINALIZE,
-            choice_picks_from_tags,
-            next_choice_pick_from_tags,
-            tags_from_result,
+        return self._call(
+            "search_choice_picks",
+            asdict(cfg or self.cfg),
+            hand,
+            n_options,
+            min_select,
+            max_select,
         )
 
-        if max_select <= 1:
-            return choice_picks_from_tags(
-                tags_from_result(self.search(cfg), hand),
-                n_options=n_options,
-                min_select=min_select,
-                max_select=max_select,
-            )
+    def prepare_card_select(
+        self, state: dict[str, Any], wire: dict[str, Any], headless: dict[str, Any]
+    ) -> tuple[int, int, int]:
+        """Put the mirror on the world's ``card_select``: reconcile against the
+        screen's ``wire``, recognize the screen (:func:`recognize_card_select`),
+        inject the world's options and arm a blocked turn start behind them.
 
-        # The guards belong to the live mirror; run them once, then walk.
-        first = self.search(cfg)
-        cfg = cfg or self.cfg
-        working = self.state.clone()
-        picks: list[int] = []
-        result = first
-        while len(picks) < max_select:
-            tags = tags_from_result(result, hand)
-            nxt = next_choice_pick_from_tags(
-                tags,
-                n_options=n_options,
-                taken=picks,
-                allow_finalize=len(picks) >= min_select,
-            )
-            if nxt is FINALIZE or nxt is None:
-                break
-            picks.append(int(nxt))
-            if len(picks) >= max_select:
-                break
-            # Apply the pick to the PRIVATE state so the next search is
-            # conditioned on it, then confirm the engine re-opened the choice.
-            # It auto-finalizes on the pick that reaches `max_select`, and a
-            # closed choice means there is nothing left to search.
-            working.apply_step({"action": "choose", "selection": [int(nxt)]})
-            if working.pending_choice() is None:
-                break
-            result = self._recommend(working, cfg)
+        The first half of ``realgame_mcts.pick_card_select_mirrored``, in Rust
+        (``sts2_advisor::card_select``, GH #1426).
 
-        if len(picks) < min_select:
-            picks.extend(i for i in range(n_options) if i not in picks)
-            del picks[min_select:]
-        return picks
+        Args:
+            state: The bridge ``card_select`` message.
+            wire: ``realgame_adapter.combat_wire`` of its embedded combat.
+            headless: ``to_headless_combat_play`` of the same board.
+
+        Returns:
+            ``(n_options, min_select, max_select)``, the arity clamped to the
+            options on screen.
+
+        Raises:
+            MirrorDivergence: Under STRICT, on a divergence.
+            sts2_rs.UnsupportedStateError: A card the registry does not know.
+        """
+        return tuple(self._call("prepare_card_select", state, wire, headless, wire=wire))
 
     # -- divergence --------------------------------------------------------
 
@@ -2280,107 +1180,12 @@ class CombatMirror:
         message: str,
         *,
         kind: str,
-        wire: dict[str, Any] | None,
         paths: list[str],
-        mirror_wire: dict[str, Any] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        """Record a divergence, then raise (STRICT) or drop the mirror (OBSERVE).
-
-        ``mirror_wire`` must be the mirror's **prediction** — the state as it
-        was before reality replaced it. Serializing ``self._state`` instead
-        would report the reconstruction on both sides of the record and make
-        every desync look like a diff of a dict against itself.
-        """
-        import sts2_rs
-
-        report: dict[str, Any] = {
-            "ts": time.time(),
-            "label": self.label,
-            "kind": kind,
-            "message": message,
-            "policy": self.policy.value,
-            "stats": self.stats.as_dict(),
-            "last_action": self._last_action,
-            "world_wire": wire,
-        }
-        # GH #368.1: every HP-loss event the mirror produced since the last
-        # reconcile, with the dispatcher that produced it. Drained here rather
-        # than at the diff, so a divergence raised from `step` (an action the
-        # engine refuses) carries its window too.
-        trace, trace_dropped = self._take_damage_trace()
-        if trace:
-            report["damage_trace"] = trace
-            if trace_dropped:
-                # Never let a truncated trace read as a complete one.
-                report["damage_trace_dropped"] = trace_dropped
-        if self._last_injection is not None:
-            report["last_injection"] = self._last_injection
-        if self._last_drift:
-            report["cursor_drift"] = [
-                {"stream": d.path, "mirror": d.mirror, "world": d.world} for d in self._last_drift
-            ]
-        if self._last_unparked is not None:
-            # The most recent screen the engine had not opened itself. Its
-            # `card_select` catch-all resolver is a no-op, so if the world
-            # granted anything there the mirror never received it — which is
-            # the first thing to check when a deck path diverges.
-            report["last_unparked_choice"] = self._last_unparked
-        if mirror_wire is None and self._state is not None:
-            try:
-                mirror_wire = sts2_rs.state_to_dict(self._state)
-            except Exception as exc:  # forensics must never mask the divergence
-                report["mirror_wire_error"] = str(exc)
-        report["mirror_wire"] = mirror_wire
-        report["paths"] = paths
-        report.update(extra or {})
-        _append_jsonl(self.log_path, report)
-        if self.on_divergence is not None:
-            self.on_divergence(paths)
-
-        if self.policy is MirrorPolicy.STRICT:
-            raise MirrorDivergence(f"[mirror {self.label}] {message}", report)
-        self.tainted = True
-        self.drop(reason=message)
-
-
-def _grade_choice(
-    parked: dict[str, Any],
-    kind: str,
-    options: Sequence[dict[str, Any]],
-    min_select: int,
-    max_select: int,
-) -> list[Desync]:
-    """Diff the engine's own derived choice against the world's.
-
-    Compares kind, arity, and the option *multiset* by ``(id, upgraded, pile,
-    index)`` — a concrete board position, not a card name, because names repeat
-    (two Strikes in one pile) and positions don't. Locators absent on both
-    sides (synthetic options) compare as ``None`` and so only match each other.
-
-    A multiset, not a list, because the mirror opens the choice in the
-    **world's** order and answers by index into it: the engine listing the same
-    cards in a different order changes nothing about what gets picked, and
-    flagging it would be a false positive. What is still a real signal — the
-    engine offering a card the world does not, or a different number of them —
-    survives the sort.
-    """
-
-    def key(o: dict[str, Any]) -> tuple[Any, ...]:
-        return (o.get("id"), bool(o.get("upgraded")), o.get("pile"), o.get("index"))
-
-    out: list[Desync] = []
-    if parked.get("kind") != kind:
-        out.append(Desync("$.choice.kind", parked.get("kind"), kind))
-    if int(parked.get("min_select", 0)) != int(min_select):
-        out.append(Desync("$.choice.min_select", parked.get("min_select"), min_select))
-    if int(parked.get("max_select", 0)) != int(max_select):
-        out.append(Desync("$.choice.max_select", parked.get("max_select"), max_select))
-    mine = sorted(key(c) for c in parked.get("cards") or [])
-    theirs = sorted(key(o) for o in options)
-    if mine != theirs:
-        out.append(Desync("$.choice.options", mine, theirs))
-    return out
+        """Record a divergence the search found, then raise (STRICT) or drop
+        the mirror (OBSERVE)."""
+        self._call("diverge", message, kind, paths, extra)
 
 
 def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
@@ -2393,43 +1198,6 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
         # A full disk must not turn a legible divergence into an IOError
         # traceback that hides it.
         pass
-
-
-#: Generative screens roll their own content, so their options exist in NO
-#: pile and can never be located — but the engine's generative kinds need no
-#: locators at all. The world names the effect (``source_model``,
-#: RunSimulator.cs / SpireMentor MainFile.cs CardSelectCmd context patch); trust
-#: it first, and fall back to the shape (no option locatable anywhere) when
-#: the patch didn't fire.
-#:
-#: **This table is currently unreachable for every entry, in BOTH world
-#: drivers**, and the fallback below is what actually classifies generative
-#: screens. All of these open via ``CardSelectCmd.FromChooseACardScreen``,
-#: whose v0.107.1 signature is ``(PlayerChoiceContext, IReadOnlyList<CardModel>,
-#: Player, bool canSkip)`` (``CardSelectCmd.cs:216``) — it declares no
-#: ``AbstractModel source`` parameter (only ``FromHand`` /
-#: ``FromHandForDiscard`` / ``FromHandForUpgrade`` do), and ``Player`` is not
-#: an ``AbstractModel``, so the capture patch has nothing to name. Kept, and
-#: kept COMPLETE, because it is the correct classification the moment the game
-#: or the patch supplies a name — and because the completeness is what the
-#: audit checks.
-#:
-#: Free vs non-free is the whole point of the split: ``add_generated_to_hand``
-#: makes the search pay for the card, ``add_generated_free_to_hand`` does not.
-#: The two non-free grants are Toolbox (``Toolbox.cs:28`` — no
-#: ``SetToFreeThisTurn``) and Quasar (``Quasar.cs:32``,
-#: ``AddGeneratedCardToCombat(.., Hand)``); ``Discovery.cs:26``, ``Splash.cs:53``
-#: and all four potions set it.
-_GENERATIVE_SOURCES = {
-    "Toolbox": "add_generated_to_hand",
-    "Quasar": "add_generated_to_hand",
-    "Discovery": "add_generated_free_to_hand",
-    "Splash": "add_generated_free_to_hand",
-    "AttackPotion": "add_generated_free_to_hand",
-    "SkillPotion": "add_generated_free_to_hand",
-    "PowerPotion": "add_generated_free_to_hand",
-    "ColorlessPotion": "add_generated_free_to_hand",
-}
 
 
 class TurnStartBlock(NamedTuple):
@@ -2445,70 +1213,6 @@ class TurnStartBlock(NamedTuple):
 
     source: str
     id: str
-
-
-#: C# powers whose ``AfterPlayerTurnStart`` **awaits** a card select, keyed by
-#: the ``source_model`` the world names, mapped to the engine ``ChoiceKind``
-#: the screen really is plus the power's python id. GH #355.
-#:
-#: This is the "any turn" half of the Gambling-Chip fix. Both v0.107.1 relics
-#: with a turn-start select are hard-gated to turn 1 (``GamblingChip.cs:18``
-#: ``TurnNumber <= 1``, ``ChoicesParadox.cs:29`` ``TurnNumber != 1``), so the
-#: relic surface can only ever fire on the first turn. These three powers have
-#: no turn gate at all, so a mirror seeded from one of their screens is the
-#: same mid-setup snapshot on turn 7 as Gambling Chip's was on turn 1.
-#:
-#: ``EntropyPower`` is deliberately ABSENT even though it is the third such
-#: power (``EntropyPower.cs:21``, ``FromHand(TransformSelectionPrompt,
-#: Amount)``): the engine has no in-hand transform ChoiceKind — its cluster
-#: arm transforms ``hand.iter().take(amount)`` outright with no screen — so
-#: there is no kind to map the injection to, and guessing one would resolve
-#: the pick against the wrong resolver. Recognizing it needs the engine-side
-#: select first; until then an Entropy screen keeps the refusal path, which is
-#: where it already was.
-_TURN_START_POWER_SOURCES: dict[str, tuple[str, str]] = {
-    # source_model -> (engine ChoiceKind python name, power python id)
-    "TyrannyPower": ("exhaust_from_hand", "TYRANNY"),
-    "ToolsOfTheTradePower": ("discard_from_hand", "TOOLS_OF_THE_TRADE"),
-}
-
-
-def _locate_options_in_hand(options: list[dict[str, Any]], board: dict[str, Any]) -> bool:
-    """Stamp each option with its ``(pile, index)`` position in the HAND.
-
-    The engine names board positions; a ``card_select`` message names cards.
-    When the engine parked no choice of its own there is nothing to resolve
-    against (:meth:`CombatMirror._resolve_locators` is the parked path), so a
-    screen that is known to be drawn from the hand locates itself here.
-
-    Matching is one-to-one in hand order, so two identical Strikes consume two
-    DISTINCT hand indices rather than both pointing at the first — an option
-    list that resolved to one position would make the search rank a pick it
-    cannot then perform.
-
-    MUTATES ``options`` in place. Returns True when every option found a
-    distinct hand slot; False leaves the partial stamping alone and tells the
-    caller to keep the refusal path — an option the hand cannot account for
-    means the screen is not the hand screen it was taken for.
-    """
-    from sts2_hint import adapter
-
-    hand = [
-        (adapter.registry_card_id(str(c.get("id")), "$.hand"), bool(c.get("upgraded")))
-        for c in (board.get("hand") or [])
-    ]
-    used: set[int] = set()
-    ok = True
-    for o in options:
-        want = (str(o["id"]), bool(o["upgraded"]))
-        for i, hc in enumerate(hand):
-            if i not in used and hc == want:
-                o["pile"], o["index"] = "hand", i
-                used.add(i)
-                break
-        else:
-            ok = False
-    return ok
 
 
 def skip_arity_from_world(
@@ -2562,12 +1266,9 @@ def skip_arity_from_world(
     Returns:
         ``(can_skip, min_select)``, both normalized.
     """
-    if source != "FromChooseACardScreen" or cancelable is None:
-        return min_select <= 0, min_select
-    can_skip = bool(cancelable)
-    if not can_skip and min_select <= 0 and max_select >= 1:
-        min_select = 1
-    return can_skip, min_select
+    import sts2_rs
+
+    return sts2_rs.card_select_skip_arity(cancelable, source, min_select, max_select)
 
 
 def recognize_card_select(
@@ -2579,6 +1280,7 @@ def recognize_card_select(
     min_select: int,
     source_model: str | None = None,
     prompt_key: str | None = None,
+    source: str | None = None,
 ) -> tuple[str, str | None]:
     """Recognize a mid-combat ``card_select`` screen the engine never opened.
 
@@ -2628,6 +1330,9 @@ def recognize_card_select(
             (``state["source_model"]``, RunSimulator.cs CardSelectCmd context
             patch), when it captured one.
         prompt_key: The world's localization prompt key, when captured.
+        source: The world's selector (``state["source"]``). A
+            ``FromChooseACardScreen`` offers generated cards, also when one
+            matches a card in a pile (GH #1746).
 
     Returns:
         ``(kind, turn_start_blocked_on)``. ``kind`` is what the caller passes
@@ -2638,126 +1343,14 @@ def recognize_card_select(
         ``inject_choice`` and BEFORE the search, so the rollouts see the
         deferred turn-setup continuation.
     """
-    from sts2_hint import adapter
+    import sts2_rs
 
-    n = len(options)
-    kind = str(parked.get("kind")) if parked else "card_select"
-    turn_start_blocked_on: TurnStartBlock | None = None
-    if parked is None:
-        src = str(source_model or "")
-        # `kind` is what the wire dialect actually carries (`state_to_dict`
-        # emits {kind, uid, hp, ...}; there is no `id` key) — reading only
-        # `id` left this set always-empty, so the KnowledgeDemon curse pick
-        # below could never fire and the screen fell through to the
-        # generative-shape fallback: the mirror granted the curse INTO HAND
-        # instead of resolving `monster_curse_select`, and the suspended
-        # enemy turn never resumed (the two mirror_d1 seed-1004 records with
-        # the mirror a full round behind at hand [DISINTEGRATION]).
-        wire_enemy_ids = {
-            str(e.get("id") or e.get("kind") or "") for e in (wire.get("encounter") or [])
-        }
-        if src in _GENERATIVE_SOURCES:
-            kind = _GENERATIVE_SOURCES[src]
-        elif src in _TURN_START_POWER_SOURCES:
-            # GH #355. A power's `AfterPlayerTurnStart` select, on ANY turn.
-            # Unlike Gambling Chip this needs no shape heuristic: the world
-            # NAMES the power (`FromHand` / `FromHandForDiscard` both declare
-            # the `AbstractModel source` parameter the capture patch reads, and
-            # both powers pass `this`), so the recognition is the name itself
-            # and cannot be confused with a potion of the same shape.
-            #
-            # Locators come from the hand, exactly as the Gambling-Chip block
-            # below does it — C# `FromHand`/`FromHandForDiscard` pass the hand
-            # `Cards` with no OrderBy, so the world's option order IS hand
-            # order, and duplicates must still consume distinct indices.
-            power_kind, power_id = _TURN_START_POWER_SOURCES[src]
-            try:
-                located = _locate_options_in_hand(options, board)
-            except Exception:
-                located = False
-            if located:
-                kind = power_kind
-                turn_start_blocked_on = TurnStartBlock("power", power_id)
-        elif (
-            n == 2
-            and options
-            and str(options[0].get("id")) == "DISINTEGRATION"
-            and "KnowledgeDemon" in wire_enemy_ids
-        ):
-            # KnowledgeDemon's curse pick maps card_id → (PowerKind, amount)
-            # in `resolve_monster_curse_select` — no locators needed either.
-            kind = "monster_curse_select"
-        else:
-            try:
-                deck = wire.get("deck") or {}
-                in_any_pile = {
-                    (str(c.get("id")), bool(c.get("upgraded")))
-                    for key in ("hand", "draw_pile", "discard_pile", "exhaust_pile")
-                    for c in (deck.get(key) or [])
-                }
-                if options and all(
-                    (str(o["id"]), bool(o["upgraded"])) not in in_any_pile for o in options
-                ):
-                    relics_up = {
-                        str(r.get("id") or r.get("name") or "").upper()
-                        for r in (board.get("player") or {}).get("relics", [])
-                    }
-                    round_one = int(board.get("round") or 0) <= 1
-                    kind = (
-                        "add_generated_to_hand"
-                        if round_one and any("TOOLBOX" in r for r in relics_up)
-                        else "add_generated_free_to_hand"
-                    )
-            except Exception:
-                pass
-    if parked is None and kind == "card_select":
-        # Gambling Chip's turn-1 mulligan: the mirror is seeded from this
-        # very decision's wire, so its own `after_player_turn_start` hook never
-        # ran and nothing is parked — 32 of the 57 v28wr unanswerable
-        # injections, and the arm always answered "skip" (never mulligans,
-        # while the engine arm searches it natively). The screen is
-        # recognizable without a prompt key: round 1, skippable, and the
-        # option multiset is exactly the mirror's whole hand. Map it to the
-        # engine's real kind so resolution actually discards+draws in the
-        # mirror and the search ranks the picks; the locators come from the
-        # hand itself.
-        try:
-            mirror_wire_hand = [
-                (adapter.registry_card_id(str(c.get("id")), "$.hand"), bool(c.get("upgraded")))
-                for c in (board.get("hand") or [])
-            ]
-            opts_key = sorted((str(o["id"]), bool(o["upgraded"])) for o in options)
-            relic_ids = {
-                str(r.get("id") or r.get("name") or "")
-                for r in (board.get("player") or {}).get("relics", [])
-            }
-            if (
-                int(board.get("round") or 0) <= 1
-                and min_select == 0
-                and n == len(mirror_wire_hand)
-                and opts_key == sorted(mirror_wire_hand)
-                and any("GAMBLING" in r.upper() for r in relic_ids)
-            ):
-                kind = "discard_from_hand_and_draw"
-                # Arming the turn-setup resume is the one part of this
-                # recognition that MUST NOT misfire: replaying the turn-start
-                # batch against a board that already ran it doubles the Vigor /
-                # energy / AoE. GamblersBrew's potion screen has the identical
-                # shape (choose-any over the whole hand, same
-                # `DiscardAndDraw`) and can be drunk on turn 1 by a player who
-                # also holds the relic — so require the DLL's own prompt key
-                # when it captured one, and only fall back to the shape when it
-                # did not (`prompt_key` is None on an unpatched entry point).
-                pk = str(prompt_key or "")
-                relic = next((r for r in relic_ids if "GAMBLING" in r.upper()), None)
-                if relic is not None and (not pk or "GAMBLING_CHIP" in pk.upper()):
-                    turn_start_blocked_on = TurnStartBlock("relic", relic)
-                _locate_options_in_hand(options, board)
-        except Exception:
-            # Best-effort recognition; an unmappable id just keeps the
-            # refusal path, which is where we already were.
-            pass
-    return kind, turn_start_blocked_on
+    kind, block, located = sts2_rs.card_select_recognize(
+        parked, options, board, wire, min_select, source_model, prompt_key, source
+    )
+    for option, stamped in zip(options, located, strict=True):
+        option.update(stamped)
+    return kind, (TurnStartBlock(*block) if block is not None else None)
 
 
 __all__ = [

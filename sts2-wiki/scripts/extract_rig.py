@@ -17,6 +17,7 @@ e.g.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -262,32 +263,78 @@ def find_rigs(index, pck_path):
     return rigs
 
 
-def new_rigs(rigs, old_index):
-    """The subset of ``rigs`` whose skeleton ``old_index`` (an older build's pck) lacks.
+def new_rigs(rigs, old_index, changed=None):
+    """The subset of ``rigs`` that ``old_index`` (an older build's pck) lacks or drew differently.
 
-    A later build's art overlay carries only the rigs that build ADDED (v0.113.0:
-    the Fool, the Aeonglass, Byrdine, Wuppy). Comparing slug folders instead
-    would also pick up every alias slug an older extraction never wrote, and
-    every extra atlas page of a rig the shared tree packs differently.
+    A later build's art overlay carries the rigs that build ADDED (v0.113.0: the
+    Fool, the Aeonglass, Byrdine, Wuppy), matched by skeleton name. Comparing
+    slug folders instead would also pick up every alias slug an older
+    extraction never wrote, and every extra atlas page of a rig the shared tree
+    packs differently.
+
+    …and the rigs ``changed(skel, atlas)`` says that build REDREW: a new
+    skeleton, atlas or texture page (:func:`rigs_changed`). v0.111.1 redrew
+    four of the five characters and gave Silent and seven monsters new
+    skeletons; v0.113.0 also gave 31 monsters the Fool's arrow slots
+    (``ARROW_HIT_FRONT``, which ``NCreature.HasSpineArrowSlots`` sends an
+    impaled arrow into). The shared tree keeps the default build's copy, so
+    each later build needs its own.
     """
     return {
         key: (skel, atlas)
         for key, (skel, atlas) in rigs.items()
-        if not _find(old_index, skel, "spskel")
+        if not _find(old_index, skel, "spskel") or (changed is not None and changed(skel, atlas))
     }
 
 
-def extract_all(pck_path, images_root, force=False, new_since=None):
+def rig_digest(pck_path, index, skel, atlas):
+    """A hash of everything a rig draws from: skeleton, atlas and every page's textures.
+
+    None when the pck lacks the skeleton or the atlas. A page's compression
+    variants (BPTC/S3TC) are all hashed, in path order; the atlas names its pages.
+    """
+    skel_hits, atlas_hits = _find(index, skel, "spskel"), _find(index, atlas, "spatlas")
+    if not (skel_hits and atlas_hits):
+        return None
+    h = hashlib.sha256()
+    h.update(_read(pck_path, *index[skel_hits[0]]))
+    atlas_raw = _read(pck_path, *index[atlas_hits[0]])
+    h.update(atlas_raw)
+    atlas_text = json.loads(atlas_raw)["atlas_data"]
+    for page in (ln.strip() for ln in atlas_text.splitlines()):
+        if page.endswith(".png"):
+            for ctex in sorted(_find(index, page[:-4], "ctex")):
+                h.update(_read(pck_path, *index[ctex]))
+    return h.hexdigest()
+
+
+def rigs_changed(pck_path, index, old_pck, old_index):
+    """``(skel, atlas) -> bool``: does ``pck_path`` draw this rig differently from ``old_pck``?"""
+
+    def changed(skel, atlas):
+        old = rig_digest(old_pck, old_index, skel, atlas)
+        return old is not None and rig_digest(pck_path, index, skel, atlas) != old
+
+    return changed
+
+
+def extract_all(pck_path, images_root, force=False, new_since=None, only_under=None):
     """Write every rig ``find_rigs`` names under ``images_root``; returns the failures.
 
     Idempotent: a rig whose ``<slug>.skel`` exists is skipped unless ``force``.
     ``new_since`` (an older build's pck) keeps only the rigs that build lacks
-    (:func:`new_rigs`).
+    or draws differently (:func:`new_rigs`). ``only_under`` (an images root)
+    keeps only the rigs that tree has a ``<category>/<slug>/`` folder for: the
+    default build's copies of a later build's re-exports, whose portraits are
+    the baseline its own are compared against.
     """
     index = read_pck_index(pck_path)
     rigs = find_rigs(index, pck_path)
+    if only_under:
+        rigs = {k: v for k, v in rigs.items() if os.path.isdir(os.path.join(only_under, *k))}
     if new_since:
-        rigs = new_rigs(rigs, read_pck_index(new_since))
+        old_index = read_pck_index(new_since)
+        rigs = new_rigs(rigs, old_index, rigs_changed(pck_path, index, new_since, old_index))
     written = skipped = 0
     failures = []
     for (category, slug), (skel, atlas) in sorted(rigs.items()):
@@ -324,11 +371,17 @@ def main():
     ap.add_argument(
         "--new-since",
         metavar="OLD_PCK",
-        help="with --all: only the rigs whose skeleton OLD_PCK (an older build) lacks",
+        help="with --all: only the rigs OLD_PCK (an older build) lacks"
+        " or draws differently (skeleton, atlas or texture pages)",
+    )
+    ap.add_argument(
+        "--only-under",
+        metavar="IMAGES_ROOT",
+        help="with --all: only the rigs IMAGES_ROOT has a <category>/<slug>/ folder for",
     )
     a = ap.parse_args()
     if a.all:
-        sys.exit(1 if extract_all(a.pck, a.all, a.force, a.new_since) else 0)
+        sys.exit(1 if extract_all(a.pck, a.all, a.force, a.new_since, a.only_under) else 0)
     if not (a.name and a.out_root):
         ap.error("name and out_root are required without --all")
     try:

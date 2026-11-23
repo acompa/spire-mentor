@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { LiveTimeline } from "../api";
+import { t } from "../i18n";
 
 /**
  * A modal node-link view of the live run's branch tree. Rows are decision
@@ -110,7 +111,7 @@ export default function BranchTree({
   const accent = "var(--accent, #6aa0ff)";
 
   return (
-    <div role="dialog" aria-label="Branch tree" onClick={onClose}
+    <div role="dialog" aria-label={t("Branch tree")} onClick={onClose}
       style={{ position: "fixed", inset: 0, zIndex: 60, background: "oklch(20% 0.02 255 / .55)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()}
@@ -119,12 +120,12 @@ export default function BranchTree({
           boxShadow: "0 12px 40px oklch(30% 0.04 255 / .4)" }}>
         <div className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
           gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
-          <b>Branch tree</b>
+          <b>{t("Branch tree")}</b>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ color: "var(--muted)", fontSize: 11 }}>click a node to rewind</span>
-            <button onClick={onClose} aria-label="Close"
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>{t("click a node to rewind")}</span>
+            <button onClick={onClose} aria-label={t("Close")}
               style={{ padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>
-              close (Esc)
+              {t("close (Esc)")}
             </button>
           </div>
         </div>
@@ -165,8 +166,8 @@ export default function BranchTree({
                   onClick={() => onSeek(n.id)}
                   aria-current={isLeaf ? "step" : undefined}
                   title={!canSeek
-                    ? `${n.label} — rewinds to the nearest earlier save point (the game only saves at room entry / post-combat)`
-                    : isLeaf ? `current position — ${n.label}` : `rewind to: ${n.label}`}
+                    ? t("{label} — rewinds to the nearest earlier save point (the game only saves at room entry / post-combat)", { label: n.label })
+                    : isLeaf ? t("current position — {label}", { label: n.label }) : t("rewind to: {label}", { label: n.label })}
                   style={{
                     position: "absolute", left: p.x, top: p.y, transform: "translateY(-50%)",
                     display: "flex", alignItems: "center", gap: 7, maxWidth: COL_GAP - 12,
@@ -182,7 +183,7 @@ export default function BranchTree({
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {n.error ? `⚠ ${n.label}` : n.label}
                   </span>
-                  {isLeaf && <span style={{ flexShrink: 0, fontSize: 9.5, color: "var(--muted)" }}>now</span>}
+                  {isLeaf && <span style={{ flexShrink: 0, fontSize: 9.5, color: "var(--muted)" }}>{t("now")}</span>}
                 </button>
               );
             })}

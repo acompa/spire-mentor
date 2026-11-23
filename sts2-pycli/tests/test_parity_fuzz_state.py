@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 from parity_fuzz_state import (
     _pascal_to_upper_snake,
+    _sort_powers,
     _strip_power_suffix,
     diff,
     normalize_csharp,
@@ -271,6 +272,22 @@ def test_normalize_rust_strips_power_suffix_symmetric_with_csharp():
     out = normalize_rust(_FakePyCombatState(d))
     target = next(m for m in out["monsters"] if m["uid"] == 0)
     assert [p["kind"] for p in target["powers"]] == ["MANGLE"]
+
+
+def test_csharp_extra_turn_power_reads_as_the_engines_ambergris():
+    """v0.113.0 renamed ``AmbergrisPower`` to ``ExtraTurnPower`` (same body:
+    ``Powers/ExtraTurnPower.cs``, applied by ``Ambergris.OnUse`` and
+    ``TheHangedMan.OnPlay``); the Rust engine kept ``PowerKind::Ambergris``
+    for both builds. Without the alias every v0.113.0 Ambergris drink was a
+    full-state split on ``player.powers[].kind`` that hid the run's real
+    first split (act23 dread Fool:1000, step 6)."""
+    assert _sort_powers([{"kind": "EXTRA_TURN_POWER", "amount": 1}]) == [
+        {"kind": "AMBERGRIS", "amount": 1}
+    ]
+    # v0.111.0 still names it AmbergrisPower.
+    assert _sort_powers([{"kind": "AMBERGRIS_POWER", "amount": 1}]) == [
+        {"kind": "AMBERGRIS", "amount": 1}
+    ]
 
 
 @pytest.mark.parametrize(

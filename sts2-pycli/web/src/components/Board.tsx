@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { assetUrl, type Card, type CombatLogRow, type Enemy, type MctsConfig, type Score, type Step } from "../api";
-import { characterArt } from "../characters";
+import { energyOrbLayers } from "../characters";
 import Combatant from "./Combatant";
+import FoolQuiver from "./FoolQuiver";
 import { DEFAULT_DYING_FADE_SECONDS, hpBarWidth, spriteBodyH } from "./combatantMetrics";
 import KaiserCrabGroup, { type ArmAt, type CrabArm } from "./KaiserCrabGroup";
 import type { PartChrome } from "./partChrome";
@@ -69,6 +70,7 @@ import { roomArtUrls, sceneArtUrls, useArtReady } from "./roomPreload";
 import ZoomCard from "./ZoomCard";
 import { heldIndex, hold, tapCard, tapEnemy, tapStage, type Held, type TapResult } from "../handSelect";
 import { useZoomPlacement } from "../useZoomPlacement";
+import { t } from "../i18n";
 
 function needsTarget(card: { target_type?: string }): boolean {
   const t = card.target_type ?? "";
@@ -145,7 +147,10 @@ function PilePlaque({ label, count, kind, onClick }: {
     // gs-pilebtn is kept as a bare selector hook (no styles) — external tooling
     // (the gauntlet capture harness) locates the pile buttons by it.
     <button type="button" onClick={onClick} className={`gs-pilebtn gs-pileplaque gs-pile-${kind}`}
-      aria-label={`${label} ${count}`} title={`${label} pile (${count})`}>
+      aria-label={`${label} ${count}`}
+      title={kind === "draw" ? t("draw pile ({n})", { n: count })
+        : kind === "discard" ? t("discard pile ({n})", { n: count })
+        : t("exhaust pile ({n})", { n: count })}>
       <img className="gs-pileplaque-art" src={assetUrl(PILE_ART[kind])} alt="" aria-hidden="true"
         draggable={false} />
       <span className="gs-pileplaque-count" aria-hidden="true">
@@ -735,6 +740,8 @@ export default function Board({
   // was last seen, exactly the same "read it before it's gone" reason
   // `dyingSnapshotsRef` above exists.
   const powerIconsRef = useRef<Map<string, string | null>>(new Map());
+  // The power's name as shown (Chinese `display_name`), keyed like the icons.
+  const powerShownRef = useRef<Map<string, string>>(new Map());
 
   // Every power's buff/debuff valence, from the SAME generated table sound
   // already classifies by (`sfx_map.json`'s `powers` — see
@@ -929,7 +936,7 @@ export default function Board({
         } else if (e.kind === "powerAdd") {
           const valence = powerValenceRef.current(e.power, e.amount);
           cur.powerPop = {
-            power: e.power,
+            power: powerShownRef.current.get(e.power) ?? e.power,
             icon: powerIconsRef.current.get(e.power) ?? null,
             mode: "applied",
             kind: powerPopKind(valence),
@@ -944,7 +951,7 @@ export default function Board({
           if (mode === "full" && valence === "Debuff") cur.shake = nonce;
         } else if (e.kind === "powerRemove") {
           cur.powerPop = {
-            power: e.power,
+            power: powerShownRef.current.get(e.power) ?? e.power,
             icon: powerIconsRef.current.get(e.power) ?? null,
             mode: "removed",
           };
@@ -1251,7 +1258,10 @@ export default function Board({
       // a bucket serving a pre-`power_big` art tree working exactly as before.
       // `Powers.tsx`'s tray still reads `p.image` directly and must keep doing
       // so: it draws at 26px.
-    ]) powerIconsRef.current.set(p.name, p.image_big ?? p.image ?? null);
+    ]) {
+      powerIconsRef.current.set(p.name, p.image_big ?? p.image ?? null);
+      if (p.display_name) powerShownRef.current.set(p.name, p.display_name);
+    }
     schedulerRef.current?.play(events);
     // Anything but `full` settles in one beat — autoplay, fast-step and
     // prefers-reduced-motion keep exactly today's behaviour.
@@ -1957,8 +1967,25 @@ export default function Board({
   // edge shrinks to fit rather than hanging off the screen. Normally a no-op —
   // the workbench stage is usually WIDER than 16:9, which shows more room, not
   // less.
+  //
+  // The game measures where each creature actually STANDS, so a fighter on an
+  // authored marker counts at that marker. The Ovicopter's is 1011 scene px
+  // right of centre, past the 960 a 16:9 frame shows: measured at its row
+  // slot instead, a tablet's narrower stage left it off the glass with its
+  // intent and HP bar for the whole fight (bug report wb-6ee07f3a2a54ba6c).
+  // Every slot the fight has handed out counts, dead or alive, so a death
+  // does not rescale the row.
+  const markerFit: { slot: Slot; w: number }[] = [];
+  if (authored) {
+    for (const [k, name] of held) {
+      const marker = slotNamed(authored, name);
+      const w = roster.get(k);
+      if (marker && w != null) markerFit.push({ slot: { x: marker.x, y: marker.y }, w });
+    }
+  }
   const rowFit = aspectFit(
-    [...rowSlots, playerSlot], [...rowWidths, playerWidth], camera.scale, fit.visibleHalfW);
+    [...rowSlots, ...markerFit.map((m) => m.slot), playerSlot],
+    [...rowWidths, ...markerFit.map((m) => m.w), playerWidth], camera.scale, fit.visibleHalfW);
   /** What the FIGHTERS are drawn at — the scene factor with that fit applied.
    *  The room art keeps `pxPerScene`: the game scales the ally/enemy containers
    *  here, never the background. */
@@ -2147,12 +2174,13 @@ export default function Board({
   /** The character's layered faceted orb (ui/combat/energy_counters/):
    *  base + swirl + core + rim + facets composite the game's ruby. */
   const energyOrb = (
-    <div className="gs-energy" title={`energy ${s.energy}/${s.max_energy}`}>
+    <div className="gs-energy" title={t("energy {n}/{max}", { n: s.energy, max: s.max_energy })}>
       {(() => {
-        const ch = orbCharacter(s.energy_image);
-        return [1, 2, 3, 4, 5].map((n) => (
-          <img key={n} className="gs-orb-layer" alt="" aria-hidden="true" draggable={false}
-            src={assetUrl(characterArt(ch, `ui/combat/energy_counters/${ch}/${ch}_orb_layer_${n}.png`))} />
+        // Only the layers the game draws: Necrobinder has three, Regent no
+        // layer 4 (`energyOrbLayers`). A missing one became a placeholder tile.
+        return energyOrbLayers(orbCharacter(s.energy_image)).map((rel, i) => (
+          <img key={i} className="gs-orb-layer" alt="" aria-hidden="true" draggable={false}
+            src={assetUrl(rel)} />
         ));
       })()}
       <span className="gs-gem-val">{s.energy}/{s.max_energy}</span>
@@ -2269,13 +2297,15 @@ export default function Board({
         {/* Portrait split, a card zoomed: the centred card covers this spot,
             so the orb is drawn in the player band instead (`PlayerBand`). */}
         {!(splitBand && zoomCard) && energyOrb}
-        <PilePlaque label="draw" kind="draw" count={s.draw_pile_count} onClick={() => setPile("draw")} />
-        <PilePlaque label="discard" kind="discard" count={s.discard_pile_count} onClick={() => setPile("discard")} />
+        {/* The Fool's bow and quiver, above the orb (fool_combat_ui.tscn). */}
+        {s.arrows && s.arrows.length > 0 && <FoolQuiver arrows={s.arrows} />}
+        <PilePlaque label={t("draw")} kind="draw" count={s.draw_pile_count} onClick={() => setPile("draw")} />
+        <PilePlaque label={t("discard")} kind="discard" count={s.discard_pile_count} onClick={() => setPile("discard")} />
         {/* The game has no persistent exhaust pile in the HUD — the affordance
             appears (small, tucked left of the discard pile) only once
             something has actually been exhausted. */}
         {s.exhaust_pile_count > 0 && (
-          <PilePlaque label="exhaust" kind="exhaust" count={s.exhaust_pile_count} onClick={() => setPile("exhaust")} />
+          <PilePlaque label={t("exhaust")} kind="exhaust" count={s.exhaust_pile_count} onClick={() => setPile("exhaust")} />
         )}
         {/* End Turn plate lives in the scene (right edge, above the discard
             pile) — inert/disabled in replay, clickable in live play. The real
@@ -2283,16 +2313,16 @@ export default function Board({
             turn number and the win-prob hint overlay the plate. */}
         <button type="button" className={`gs-endturn${endMark ? ` gs-mark-${endMark.tier}` : ""}`}
           onClick={onEndTurn} disabled={!onEndTurn}
-          title={onEndTurn ? "End Turn (E)" : "End Turn (replay)"}>
+          title={onEndTurn ? t("End Turn (E)") : t("End Turn (replay)")}>
           <img className="gs-endturn-art" src={assetUrl("ui/combat_ui/end_turn_button.png")}
             alt="" aria-hidden="true" draggable={false} />
           <img className="gs-endturn-glow" src={assetUrl("ui/combat_ui/end_turn_button_glow.png")}
             alt="" aria-hidden="true" draggable={false} />
           <span className="gs-endturn-face">
-            <span>End Turn {s.round}</span>
+            <span>{t("End Turn {n}", { n: s.round })}</span>
             {endScore && <span className="gs-endturn-score">{endScore.win_prob.toFixed(2)}</span>}
             {endMark?.order != null && (
-              <span className={`gs-badge gs-step-tag gs-step-${endMark.tier}`} aria-label={`step ${endMark.order}`}>
+              <span className={`gs-badge gs-step-tag gs-step-${endMark.tier}`} aria-label={t("step {n}", { n: endMark.order })}>
                 {endMark.order}
               </span>
             )}
@@ -2511,26 +2541,26 @@ export default function Board({
               was 143px of a 640px-tall tablet screen, taken off the board. */}
           {onPlayRecommended && (
             <button onClick={onPlayRecommended} disabled={hintBusy}>
-              play best (G)
+              {t("play best (G)")}
             </button>
           )}
           {onAutoplay && (
             <button onClick={onAutoplay} disabled={hintBusy}>
-              autoplay (A)
+              {t("autoplay (A)")}
             </button>
           )}
           {onAutoplayToEnd && (
-            <button onClick={onAutoplayToEnd} disabled={hintBusy} title="play the MCTS-recommended move every step until the fight ends (win or lose)">
-              play to end (F)
+            <button onClick={onAutoplayToEnd} disabled={hintBusy} title={t("play the MCTS-recommended move every step until the fight ends (win or lose)")}>
+              {t("play to end (F)")}
             </button>
           )}
           {onSearch && (
-            <button onClick={onSearch} title="inspect the MCTS search tree">
-              search (S)
+            <button onClick={onSearch} title={t("inspect the MCTS search tree")}>
+              {t("search (S)")}
             </button>
           )}
-          {hintBusy && <span style={{ color: "var(--muted)" }}>thinking…</span>}
-          {pendingCard != null && <span style={{ color: "var(--accent-strong)" }}>select a target…</span>}
+          {hintBusy && <span style={{ color: "var(--muted)" }}>{t("thinking…")}</span>}
+          {pendingCard != null && <span style={{ color: "var(--accent-strong)" }}>{t("select a target…")}</span>}
           {hintConfig && onHintConfig && (
             <span className="gs-toolrow-adv">
               <MctsControls config={hintConfig} onChange={onHintConfig} disabled={hintBusy} />
@@ -2543,9 +2573,9 @@ export default function Board({
         // Keyed by nonce so a second auto-play in the same action (Stampede 2,
         // a Havoc chain) restarts the animation instead of being swallowed.
         <div key={autoCard.nonce} className="gs-autoplay-card" data-testid="autoplay-card"
-          aria-live="polite" aria-label={`auto-played ${autoCard.card.name}`}>
+          aria-live="polite" aria-label={t("auto-played {name}", { name: autoCard.card.name })}>
           <CardFrame card={autoCard.card} width={150} />
-          <span className="gs-autoplay-tag">auto-played</span>
+          <span className="gs-autoplay-tag">{t("auto-played")}</span>
         </div>
       )}
 
@@ -2572,6 +2602,7 @@ export default function Board({
 
       {pile && (() => {
         const piles: Record<PileKind, { title: string; cards: Card[]; note?: string }> = {
+          // English: PileViewer keys its sentences on these and translates them.
           draw: { title: "Draw pile", cards: s.draw_pile ?? [], note: "order hidden — sorted, not draw order" },
           discard: { title: "Discard pile", cards: s.discard_pile ?? [] },
           exhaust: { title: "Exhaust pile", cards: s.exhaust_pile ?? [] },

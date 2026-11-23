@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import type { Card } from "../api";
 import CardFrame from "./CardFrame";
+import ViewUpgradesToggle from "./ViewUpgradesToggle";
+import { upgradedTwin, useGlossary, useViewUpgrades } from "../glossary";
 import "../skins/pileviewer.css";
+import { t, tn } from "../i18n";
 
 /** The measured GAME-SCENE rectangle the takeover dims (viewport pixels). */
 type Frame = { top: number; left: number; width: number; height: number };
@@ -91,15 +94,21 @@ export default function PileViewer({
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  const sentence = PILE_SENTENCE[title.trim().toLowerCase()] ?? `${title}.`;
-  const count = `${cards.length} ${cards.length === 1 ? "card" : "cards"}`;
-  const voiced = note ? (NOTE_VOICE[note] ?? note) : null;
+  const glossary = useGlossary();
+  const [showUpgrades] = useViewUpgrades();
+  // Runtime keys: the PILE_SENTENCE / NOTE_VOICE constants (listed in i18n/zh/screens.ts).
+  // `title` / `note` arrive in ENGLISH (the lookups below key on them) and are
+  // translated here, for display only.
+  const known = PILE_SENTENCE[title.trim().toLowerCase()];
+  const sentence = known ? t(known) : `${t(title)}.`;
+  const count = tn(cards.length, "{n} card", "{n} cards");
+  const voiced = note ? (NOTE_VOICE[note] ? t(NOTE_VOICE[note]) : t(note)) : null;
 
   return (
     <div
       className="gs-pileview"
       role="dialog"
-      aria-label={title}
+      aria-label={t(title)}
       onClick={onClose}
       style={
         frame
@@ -117,14 +126,14 @@ export default function PileViewer({
     >
       <div className="gs-pileview-scroll">
         {cards.length === 0 ? (
-          <div className="gs-pileview-empty">This pile is empty.</div>
+          <div className="gs-pileview-empty">{t("This pile is empty.")}</div>
         ) : (
           <div className="gs-pileview-grid">
             {cards.map((c, i) => (
               // cards are inert here (as before) — a click on one must not
               // fall through to the backdrop-close
               <div key={i} className="gs-pileview-cardslot" onClick={(e) => e.stopPropagation()}>
-                <CardFrame card={c} width={220} />
+                <CardFrame card={showUpgrades ? upgradedTwin(c, glossary) : c} width={220} />
               </div>
             ))}
           </div>
@@ -137,8 +146,8 @@ export default function PileViewer({
       <button
         type="button"
         className="gs-pileview-return"
-        aria-label="Return — close pile view (Esc)"
-        title="Return — close pile view (Esc)"
+        aria-label={t("Return — close pile view (Esc)")}
+        title={t("Return — close pile view (Esc)")}
         onClick={(e) => { e.stopPropagation(); onClose(); }}
       >
         <svg viewBox="0 0 104 84" aria-hidden="true" focusable="false">
@@ -157,6 +166,8 @@ export default function PileViewer({
           <path d="M 10 44 L 46 15 L 46 73 Z" fill="#ffeecd" />
         </svg>
       </button>
+
+      <ViewUpgradesToggle className="gs-pileview-upgrades" />
 
       <div className="gs-pileview-caption">
         <div className="gs-pileview-line1">{sentence}</div>

@@ -97,3 +97,6 @@ experiments/turnplan-g0/
 experiments/turnplan-pro/
 # GH #830 elite-gap diagnosis runs (docs/experiments/2026-10-23-830-elite-gap.md).
 experiments/elite-gap/
+
+# The human-start bank (`python -m ppo.e2e.human build`, from the run corpus).
+data/ppo/human_starts.jsonl.gz

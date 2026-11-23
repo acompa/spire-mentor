@@ -22,6 +22,7 @@ import {
   divergingColor,
   topPartners,
 } from "./data";
+import { t } from "../i18n";
 
 export interface CardTextEntry {
   title: string;
@@ -37,8 +38,8 @@ const DEFAULT_N    = 60;   // default top-N cards shown
 
 const METRIC_LABELS: Record<HeatmapMetric, string> = {
   pmi: "PMI",
-  econ_S: "Econ S",
-  combat_S: "Combat S",
+  econ_S: t("Econ S"),
+  combat_S: t("Combat S"),
 };
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -105,13 +106,13 @@ export function renderHeatmap(
 
   // N selector
   const nLabel = document.createElement("span");
-  nLabel.textContent = "Show:";
+  nLabel.textContent = t("Show:");
   controls.appendChild(nLabel);
 
   const nSel = document.createElement("select");
   nSel.style.cssText = "background:#252548; color:#ddd; border:1px solid #555; border-radius:3px; padding:2px 4px; font-size:0.82rem; cursor:pointer;";
   const nOptions = [40, 60, 100, Math.max(1, cardOrder.length)] as const;
-  const nLabels  = ["Top 40", "Top 60", "Top 100", `All (${cardOrder.length})`];
+  const nLabels  = [t("Top {n}", { n: 40 }), t("Top {n}", { n: 60 }), t("Top {n}", { n: 100 }), t("All ({n})", { n: cardOrder.length })];
   nOptions.forEach((v, i) => {
     const opt = document.createElement("option");
     opt.value = String(v);
@@ -125,7 +126,7 @@ export function renderHeatmap(
 
   // Metric selector
   const metricLabel = document.createElement("span");
-  metricLabel.textContent = "Metric:";
+  metricLabel.textContent = t("Metric:");
   metricLabel.style.marginLeft = "0.6rem";
   controls.appendChild(metricLabel);
 
@@ -190,12 +191,12 @@ export function renderHeatmap(
       h += `<hr style="border:none;border-top:1px solid #333;margin:5px 0">`;
       h += `<span style="color:#888;font-size:11px">`;
       h += `PMI: <b style="color:#e8c98a">${edge.pmi.toFixed(3)}</b>`;
-      if (edge.econ_S !== null) h += ` · Econ S: <b style="color:#e8c98a">${edge.econ_S.toFixed(3)}</b>`;
-      if (edge.combat_S !== null) h += ` · Combat S: <b style="color:#e8c98a">${edge.combat_S.toFixed(3)}</b>`;
+      if (edge.econ_S !== null) h += ` · ${t("Econ S")}: <b style="color:#e8c98a">${edge.econ_S.toFixed(3)}</b>`;
+      if (edge.combat_S !== null) h += ` · ${t("Combat S")}: <b style="color:#e8c98a">${edge.combat_S.toFixed(3)}</b>`;
       h += ` · <span style="color:#999">${esc(edge.quadrant)}</span>`;
       h += `</span>`;
     } else {
-      h += `<br><span style="color:#666;font-size:11px">no data (below floor)</span>`;
+      h += `<br><span style="color:#666;font-size:11px">${t("no data (below floor)")}</span>`;
     }
     return h;
   }
@@ -205,7 +206,7 @@ export function renderHeatmap(
     const partners = topPartners(catalog, id, 5);
     if (partners.length > 0) {
       h += `<hr style="border:none;border-top:1px solid #333;margin:5px 0">`;
-      h += `<span style="color:#888;font-size:11px">Top partners (PMI):</span><br>`;
+      h += `<span style="color:#888;font-size:11px">${t("Top partners (PMI):")}</span><br>`;
       for (const p of partners) {
         const pl = resolvedLabel(p.partnerId, cardText, nodeById);
         h += `· ${esc(pl)} <span style="color:#6af">${p.pmi.toFixed(2)}</span><br>`;
@@ -221,7 +222,7 @@ export function renderHeatmap(
     if (cardOrder.length === 0) {
       const msg = document.createElement("p");
       msg.style.cssText = "padding:1rem; color:#888;";
-      msg.textContent = "No card_order in catalog — regenerate with order-catalog.";
+      msg.textContent = t("No card_order in catalog — regenerate with order-catalog.");
       canvasWrap.appendChild(msg);
       return;
     }
@@ -233,7 +234,7 @@ export function renderHeatmap(
     if (nCards === 0) {
       const msg = document.createElement("p");
       msg.style.cssText = "padding:1rem; color:#888;";
-      msg.textContent = "No signal cards to show.";
+      msg.textContent = t("No signal cards to show.");
       canvasWrap.appendChild(msg);
       return;
     }
@@ -539,7 +540,7 @@ export function renderHeatmap(
     if (allNull && (currentMetric === "econ_S" || currentMetric === "combat_S")) {
       const notice = document.createElement("div");
       notice.style.cssText = "padding:0.4rem 0.7rem; font-size:0.78rem; color:#aa7; background:#1a1a20; border-top:1px solid #333;";
-      notice.textContent = `${METRIC_LABELS[currentMetric]}: not computed in this catalog.`;
+      notice.textContent = t("{metric}: not computed in this catalog.", { metric: METRIC_LABELS[currentMetric] });
       wrap.appendChild(notice);
     }
   }

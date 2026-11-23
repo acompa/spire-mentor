@@ -82,6 +82,11 @@ export interface SfxMap {
    *  a bucket may still be serving a map generated before it existed, and an
    *  absent list degrades to the name-only classification that shipped then. */
   powersAllowNegative?: string[];
+  /** The sound a power makes in the hook that removes it — God Byrd's
+   *  Byrdine strike, Asleep's waking, Curl Up's curl — keyed by display name
+   *  like `powers`, and played when the power leaves its owner. Optional for
+   *  the same reason as `characters`. */
+  powerSpent?: Record<string, string>;
   cards: Record<string, string>;
   relics: Record<string, string>;
   monsters: Record<string, MonsterSfx>;
@@ -100,6 +105,12 @@ export interface SfxMap {
    *  non-FMOD scheme existed. Keyed by card display title, like `cards`;
    *  optional for the same reason as `characters`. */
   cardHits?: Record<string, string>;
+  /** The syllables a Fool melody card sings, in play order: one per
+   *  `MelodyCmd.PlayMelodyVfx` call, so Wah Cho Ki lists wa, cho and ki.
+   *  Keyed by card display title, like `cards`; optional for the same reason
+   *  as `characters` (a map from before the table names a melody card's
+   *  first syllable in `cards` instead). */
+  cardMelodies?: Record<string, string[]>;
   /** Keyed by orb TYPE ("Frost"), which is what the wire sends as `Orb.type`.
    *  Optional for the same reason as `characters`. */
   orbs?: Record<string, OrbSfx>;

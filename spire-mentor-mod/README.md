@@ -4,13 +4,13 @@
 `sts2-bridge/` — older logs, experiment records and installs under
 `mods/SpireCoach/` or `mods/SimBridge/` use those names.)
 
-A C# mod for **Slay the Spire 2** (game build **v0.107.1**, Windows) that
+A C# mod for **Slay the Spire 2** (game build **v0.111.1**, the stable branch, or the **v0.113.0** beta; Windows) that
 connects the real, running game to an external AI over a local TCP socket.
 Two ways to use it:
 
 - **Advisor mode** — you play; the mod streams each decision to an AI backend
   and renders its advice in-game (card scores, ranked moves, win chance, map
-  route). Switches itself on when the game starts (Windows); untick
+  route). Switches itself on when the game starts (Windows and Linux); untick
   "Turn the coach on when the game starts" in the mod settings to stop that.
 - **Autopilot mode** — an external agent plays whole runs by itself
   (used for unattended sweeps and evaluation against the headless
@@ -45,7 +45,8 @@ mod leaves the game 100% vanilla.
 
 ## Requirements
 
-- Windows, with your own Steam install of Slay the Spire 2 at **v0.107.1**
+- Windows, with your own Steam install of Slay the Spire 2 at **v0.111.1** (stable) or
+  **v0.113.0** (beta); v0.107.1 still runs
   (the mod patches game internals and clicks concrete UI scene paths — a game
   update can break it silently).
 - .NET 9 SDK (`winget install Microsoft.DotNet.SDK.9`, or the repo root's
@@ -86,9 +87,9 @@ falling back to `C:/Program Files (x86)/Steam/steamapps/common/Slay the Spire 2`
 dotnet build -p:STS2_GAME_DIR="D:/SteamLibrary/steamapps/common/Slay the Spire 2"
 ```
 
-**One DLL for every game build (GH #800).** The same DLL runs on the stable
-build (v0.107.1) and the beta (v0.111.0), whichever one it was compiled
-against. A few game members it calls changed signature between the two
+**One DLL for every game build (GH #800).** The same DLL runs on every supported
+build (v0.107.1, v0.111.0 and its stable v0.111.1, v0.113.0), whichever one
+it was compiled against. A few game members it calls changed signature between the two
 (`RunRngSet.Seed` uint → ulong, `Rng.Counter` removed,
 `CardSelectCmd.UseSelector` gained a parameter); a direct call would compile
 either way and then throw `MissingMethodException` on the other build, so
@@ -154,7 +155,7 @@ settings. Fields (authoritative docs: `SimConfig.cs`):
 | `port` | `9002` | TCP listen port (loopback only) |
 | `auto_start` | `false` | Launch Autopilot at boot (the unattended sweep lane). `false` = Off, or Advisor if the "Turn the coach on when the game starts" setting is ticked (default; Windows only) |
 | `advisor_autoplay` | `false` | Testing: once a run is live, switch to Advisor mode and toggle AI autoplay (the F8+F7 path) unattended. Forces `pause_on` empty |
-| `advisor_brain` | `null` | `"search"` / `"instinct"`: the advisor brain for this session, overriding the in-game setting (not saved over it) until a player switches brain in game; `null` = the in-game setting. How an unattended run plays with Instinct (`ascension_climb.py --advisor-brain instinct`) |
+| `advisor_brain` | `null` | Test tooling only: `"search"` / `"instinct"` forces that brain for every seat this session (see "Forcing a brain" below); `null` = Instinct, the search as its fallback, as for every player |
 | `pause_on` | `"unsupported"` | Where F7 stops and hands the decision back (F7 resumes). `unsupported` = decisions the AI has no real policy for (the advisor's `hand_back`); add event ids / `advice_for` values to always play those yourself, e.g. `"unsupported, Neow"`; `""` = never pause. A JSON array works too |
 | `character` / `ascension` / `seed` | `"Ironclad"` / `0` / `null` | Run setup for Autopilot; `seed: null` = fresh random seed |
 | `num_runs` | `1` | Runs to play in sequence before going idle |
@@ -174,6 +175,33 @@ settings. Fields (authoritative docs: `SimConfig.cs`):
 \* the template ships `"normal"` for player installs; the in-code default is
 `"instant"` (best for unattended experiments).
 
+### Forcing a brain (test tooling)
+
+Players get one advisor brain: **Instinct**, the end-to-end net, with the
+search (MCTS for the fights, the PPO run policy for the screens) as its
+fallback. A player's request asks for Instinct wherever the advisor's
+`capabilities.instinct` covers the run, and the advisor answers with the
+search, saying why (`instinct_unavailable`), where Instinct cannot; the
+badge's note shows which one answered. Nothing in game switches it (no
+badge entry, hotkey, settings row or frame action), and the `AdvisorBrain`
+key that 0.11.7 and older saved in BaseLib's settings file is read by
+nothing (BaseLib skips it and drops it on the next save).
+
+Measurements that need a fixed brain force one for the session, for the
+player's seat and the AI partners alike (`AdvisorBrainRules`):
+
+- `--spire-mentor-brain search|instinct` on the game's command line: this
+  launch only, and over the conf (the instances of a co-op test share one
+  conf, so a benchmark arm is set per launch).
+- `"advisor_brain": "search"` / `"instinct"` in `SpireMentor.conf`:
+  `tools/ascension_climb.py --advisor-brain` writes it with the rest of its
+  unattended conf. The in-game switch never wrote this file, so a value here
+  is always one tooling (or a hand edit) put there.
+
+Anything else is no override (logged, never guessed). The AI partners'
+own default is `AdvisorBrainRules.PartnerDefault` (Instinct), one constant
+a co-op benchmark can flip.
+
 ## In-game controls
 
 - **Settings page** — main menu → Mod Configuration (BaseLib) → Spire Mentor:
@@ -189,7 +217,7 @@ settings. Fields (authoritative docs: `SimConfig.cs`):
   every hotkey, grouped: **Mode** `Off · Coach · Hints · AI plays` (one switch
   for F8 + the style; *AI plays* is F7, and reads *Autopilot* while a
   config-armed Autopilot holds the run — `MentorModes` in `CoachStyle.cs`),
-  **Brain** Search / Instinct (where Instinct can play), **This decision**
+  **This decision**
   Peek (F5) / Let AI pick (F6), **Autoplay** Autobattle (Shift+F7) / AI
   plays until stopped (F7), **Speed** (F9/F10), and **More**: three dropdowns
   (`SimUiKit.MakeMenuButton`), **Rewind ▾** (`⟲ Turn` / `⟲ Room` /
@@ -203,8 +231,10 @@ settings. Fields (authoritative docs: `SimConfig.cs`):
   with AI partners. Drag the `⠿` grip to move the badge; double-click it to
   dock it again.
 - **Panels in their own window** (`SimFrameLauncher.cs`, `FrameLaunchRules.cs`;
-  Windows) — the mod starts the Spire Mentor frame (`../spire-mentor-frame/`,
-  shipped in `mods/SpireMentor/SpireMentorFrame/`, .NET Framework 4.8) next
+  Windows, and Linux with the game on X11 / XWayland) — the mod starts the
+  Spire Mentor frame (`../spire-mentor-frame/`, shipped in
+  `mods/SpireMentor/SpireMentorFrame/`: .NET Framework 4.8 on Windows, one
+  Python file run by the host's `python3` on Linux, see that README) next
   to the running game: the frame adopts the game's window and lays the
   toolbar, advice, coach and action log out around it, from the bundled
   workbench's `frame.html` on the advisor's control plane (:8079;
@@ -216,7 +246,9 @@ settings. Fields (authoritative docs: `SimConfig.cs`):
   (`FrameFullscreen.cs`): its toolbar's **⛶ Fullscreen**, the game's Fullscreen
   tickbox or Alt+Enter move the panels into the game and the frame covers the
   monitor, borderless; the **⛶ Exit fullscreen** button beside the badge goes
-  back. The workbench keys (g / p / h / f)
+  back. With the frame closed (the panels in a plain game window) the same
+  button reads **⧉ Panels beside the game** and opens the frame again
+  (`FrameLaunchRules.PanelsButtonLabel`). The workbench keys (g / p / h / f)
   stay bound only for a game the frame launched (`--spire-mentor-frame-port`).
 - **Hotkeys** (`SimHotkeys.cs`) — `F1` help panel (the in-game documentation:
   current mode, every key, file locations), `Ctrl+L` action-log panel (it
@@ -318,7 +350,8 @@ the same store, with the game's latest position added. Reading reports back:
 ## Advisor backend
 
 The AI on the other end of the socket lives in
-[`../sts2-pycli`](../sts2-pycli): an MCTS search for combat plus a trained
+[`../sts2-pycli`](../sts2-pycli): Instinct, an end-to-end net that plays
+every decision, and as its fallback an MCTS search for combat plus a trained
 run policy for map routes, card rewards, shops, events, and rest sites.
 `SimAdvisorProcess.cs` auto-launches it when Advisor mode needs one and no
 client is connected, preferring (in order) the command configured on the
@@ -378,6 +411,8 @@ Blank (the default) tries two pages in order (`SimWorkbenchLink.cs`):
    live game's tree, live search and rewind work with no opt-in, and
    `?follow=1` follows the advisor's run log as on the dev workbench (the
    page mirrors it from the control plane's `GET /log`, `web/src/liveLog.ts`).
+   On load it also imports the advisor's earlier run logs (`GET /logs`), so
+   Run history lists runs played while no workbench was open.
    It answers `GET /api/health` only while it has a build to serve.
 2. **The dev workbench**, `http://127.0.0.1:8077/?follow=1`: the
    Python-backed one, which the advisor starts on its own in dev installs.

@@ -14,7 +14,7 @@ pub(crate) fn play_rip_and_tear(state: &mut CombatState, _t: Option<CreatureUid>
     // picks a NEW random alive enemy (independent RNG draw per hit).
     // Same shape as SwordBoomerang / Ricochet.
     let dmg = current_damage(state);
-    for _ in 0..2 {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
         let Some(t) = state.get_random_enemy() else {
             break;
         };

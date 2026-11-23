@@ -30,8 +30,9 @@ never in `python -c`):
   practice segment's value-only bootstrap row (`meta.boot`) and its end ride
   in the same message.
 * learner -> worker: `("act", [merged class per row], info)` or `("stop",)`.
-  `info["decisions"]` is the learner's decision clock (practice schedule and
-  queue ages); `info["feats"]` asks for the run teacher's inputs.
+  `info["decisions"]` is the learner's decision clock (practice schedule, queue
+  ages and, in a mix lane, each new run's character: `cfg["mix"]`,
+  `mix.draw_character`); `info["feats"]` asks for the run teacher's inputs.
 
 Run seeds follow #1081's slot layout (plan §3.1 "Other seeds"):
 `run_seed_base + 7 * start_it + (wid * 64 + slot) * 100,000 + run count`.
@@ -136,9 +137,15 @@ def end_record(
     stamps: dict[str, Any],
     *,
     f9_texts: list[str] | None = None,
+    character: str | None = None,
+    forced_card: str | None = None,
+    human_start: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What the learner needs from an `E2ETerminal` (plain types only). `f9_texts` are
-    the segment's first F9 violation texts (`f9_samples`)."""
+    the segment's first F9 violation texts (`f9_samples`); `character` is the segment's
+    run's (`E2EEnv.character`: a mix lane's runs differ, `ppo.e2e.mix`); `forced_card`
+    its forced card (GH #1541, `ppo.e2e.forced`), None for an ordinary run; `human_start`
+    its human start (`ppo.e2e.human`), of which the record keeps the key and act."""
     counts = dict(term.counts) if term.counts is not None else {}
     return {
         "uid": uid,
@@ -157,6 +164,10 @@ def end_record(
         "seed": int(term.seed),
         "kind": kind,
         "cell": cell,
+        "character": character,
+        "forced_card": forced_card,
+        "human_key": human_start["key"] if human_start else None,
+        "human_act": int(human_start["act"]) if human_start else None,
         "error": term.error,
         "total_reward": float(term.total_reward),
         "unassigned_reward": float(term.unassigned_reward),
@@ -206,13 +217,14 @@ def error_record(
     env_counts: Mapping[str, int] | None = None,
     seed: int = -1,
     f9_texts: list[str] | None = None,
+    character: str | None = None,
 ) -> dict[str, Any]:
     """A segment the worker ended on an exception of its own (outside the env, which
     ends a segment as an `error` terminal itself); `etype` is counted as
     `error/<etype>`, the env's name for an error segment's reason. `env_counts` and
     `seed` are the segment's env's so far (`E2EEnv.counts`, `E2EEnv.seed`), so an F9
     violation it sampled before the error still reaches the learner, and the seed
-    replays it."""
+    replays it; `character` is its run's (None when no env was built)."""
     counts: Counter = Counter({str(k): int(v) for k, v in (env_counts or {}).items()})
     if etype:
         counts[f"error/{etype}"] += 1
@@ -233,6 +245,7 @@ def error_record(
         "seed": int(seed),
         "kind": kind,
         "cell": cell,
+        "character": character,
         "error": err,
         "total_reward": 0.0,
         "unassigned_reward": 0.0,
@@ -262,6 +275,23 @@ class Slot:
         self.t0 = time.time()
 
 
+def _char(env: Any) -> dict[str, str]:
+    """An action-log record's `extra` character (`actionlog._segment_env` replays the run
+    as it): the env's run's, when it differs from the process's (a mix lane's run), so a
+    one-character lane's records stay as they were; and a forced run's `forced_card`."""
+    from . import factory
+
+    c = getattr(env, "character", None)
+    out = {} if c is None or c == factory.CHARACTER else {"character": str(c)}
+    # GH #1541: a forced run's card, which its replay adds to the starting deck.
+    if card := getattr(env, "forced_card", None):
+        out["forced_card"] = str(card)
+    # A human start, whole: its replay rebuilds it without the bank (`ppo.e2e.human`).
+    if start := getattr(env, "human_start", None):
+        out["human_start"] = dict(start)
+    return out
+
+
 def _seeds(cfg: dict[str, Any], wid: int, slot: int) -> Iterator[int]:
     n = 0
     while True:
@@ -284,6 +314,9 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
     from . import contracts as C
     from . import tokens as TK
     from .env import E2EDecision, EnvConfig, ends_segment
+    from .forced import ForcedCfg
+    from .human import HumanCfg
+    from .mix import MixCfg
     from .practice import PracticeQueues, SegmentSource
     from .rsenv import RsDecision
 
@@ -327,6 +360,13 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
     env_cfg = EnvConfig(
         f9_tolerate=tuple(cfg.get("f9_tolerate") or ()), rust=rust, rust_rare=rust_rare
     )
+    # An all-character lane (GH #1197): each full run draws its character at the
+    # learner's decision clock (`mix.draw_character`); None plays the process's.
+    mix_cfg = MixCfg.from_dict(cfg["mix"]) if cfg.get("mix") else None
+    # GH #1541: a share of full runs start with a never-picked card (`forced.draw_forced`).
+    forced_cfg = ForcedCfg.from_dict(cfg["forced"]) if cfg.get("forced") else None
+    # A share of full runs start from a real player's mid-run state (`human.draw_start`).
+    human_cfg = HumanCfg.from_dict(cfg["human"]) if cfg.get("human") else None
 
     def now() -> int:
         return clock["decisions"]
@@ -335,7 +375,16 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
         Slot(
             wid,
             k,
-            SegmentSource(queues, _seeds(cfg, wid, k), n_slots=n_envs, cfg=env_cfg, clock=now),
+            SegmentSource(
+                queues,
+                _seeds(cfg, wid, k),
+                n_slots=n_envs,
+                cfg=env_cfg,
+                clock=now,
+                mix=mix_cfg,
+                forced=forced_cfg,
+                human=human_cfg,
+            ),
         )
         for k in range(n_envs)
     ]
@@ -363,6 +412,14 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
 
     # Segment ends not yet sent; a step error lands here and goes out with the next round.
     ends: list[dict[str, Any]] = []
+    slot = None
+    if cfg.get("shm_rounds"):
+        from multiprocessing import util as mp_util
+
+        from .roundshm import RoundSlot
+
+        slot = RoundSlot(owner=os.getppid())  # named after the learner (`rowstore.sweep`)
+        mp_util.Finalize(slot, slot.close, exitpriority=10)  # also when the loop raises
 
     def log_end(s: Slot, term: Any) -> None:
         """Offer an ended segment to the action log. A log that fails (a full disk) is
@@ -370,7 +427,7 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
         if sink is None:
             return
         try:
-            sink.offer(term, extra={"uid": s.uid, "decisions": clock["decisions"]})
+            sink.offer(term, extra={"uid": s.uid, "decisions": clock["decisions"], **_char(s.env)})
         except BaseException as ex:
             if not ends_segment(ex):
                 raise
@@ -386,7 +443,11 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
             try:
                 from .actionlog import worker_error_record
 
-                sink.write(worker_error_record(env, err, extra={"uid": s.uid, "etype": etype}))
+                sink.write(
+                    worker_error_record(
+                        env, err, extra={"uid": s.uid, "etype": etype, **_char(env)}
+                    )
+                )
             except BaseException as lex:
                 if not ends_segment(lex):
                     raise
@@ -404,6 +465,7 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
                 env_counts=getattr(env, "counts", None),
                 seed=int(getattr(env, "seed", -1)),
                 f9_texts=f9_samples(env),
+                character=getattr(env, "character", None),
             )
         )
         s.d = None
@@ -443,6 +505,9 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
                             s.cell,
                             stamps,
                             f9_texts=f9_samples(s.env),
+                            character=getattr(s.env, "character", None),
+                            forced_card=getattr(s.env, "forced_card", None),
+                            human_start=getattr(s.env, "human_start", None),
                         )
                     )
                     log_end(s, d)
@@ -493,6 +558,9 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
                             s.cell,
                             stamps,
                             f9_texts=f9_samples(s.env),
+                            character=getattr(s.env, "character", None),
+                            forced_card=getattr(s.env, "forced_card", None),
+                            human_start=getattr(s.env, "human_start", None),
                         )
                     )
                     log_end(s, s.env.terminal)
@@ -518,6 +586,10 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
             }
         extra = {"feats": feats if want["feats"] else None, "stats": stats, "stamps": stamps}
         rb = TK.row_batch(toks, run_uid=uids, t=ts, cell=cells, bootstrap=boots)
+        if cfg.get("compact_rows"):  # the learner stores, serves and trains on these
+            rb = C.compact_rows(rb)
+        if slot is not None:  # `shm_rounds`: the rows go by reference (`roundshm`)
+            rb = slot.write(rb)
         rounds += 1
         sent, ends = ends, []
         conn.send(
@@ -533,6 +605,8 @@ def worker_main(wid: int, conn: Any, cfg: dict[str, Any]) -> None:
         )
         msg = conn.recv()
         if msg[0] == "stop":
+            if slot is not None:
+                slot.close()
             conn.close()
             return
         _, acts, info = msg

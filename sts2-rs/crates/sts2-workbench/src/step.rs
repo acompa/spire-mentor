@@ -35,7 +35,15 @@ pub fn live_step(state: Value, ctx: &EnrichCtx<'_>) -> Value {
     // card_select option's label is the card's unresolved loc key
     // (`ULTIMATE_STRIKE.title`), not the display name the enriched card
     // carries. Same here: options come from the state as serialized.
-    let options = step.get("state").map(normalize_options).unwrap_or_default();
+    // In Chinese the options are named from the resolved state, so a label
+    // shows the card's Chinese title, not its key; English keeps the
+    // Python's bytes.
+    let options = if crate::localization::display_zh() {
+        let named = crate::localization::resolve_state_names(step.get("state"), ctx.loc);
+        normalize_options(&named)
+    } else {
+        step.get("state").map(normalize_options).unwrap_or_default()
+    };
     let mut enriched = enrich(step, ctx);
     if let Some(st) = enriched.get_mut("state").and_then(Value::as_object_mut) {
         st.insert("options".into(), Value::Array(options));

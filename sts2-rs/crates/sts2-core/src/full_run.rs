@@ -44,6 +44,10 @@ use crate::CombatState;
 /// large enough to survive any Act 1–3 combat under random play.
 pub const INVINCIBLE_HP: i32 = 100_000;
 
+/// Lowest Sandpit countdown an invincible run allows; see
+/// [`apply_invincible_buffs`].
+pub const INVINCIBLE_SANDPIT_FLOOR: i32 = 2;
+
 /// Default hard cap on total actions per run (matches the PyO3
 /// `random_playout` default).
 pub const DEFAULT_MAX_STEPS: usize = 100_000;
@@ -326,9 +330,21 @@ pub fn drive_full_run(
 /// when `creature_uid` is set) and the legacy `PlayerCombatState` fields,
 /// keeping them consistent so the mirror invariant holds either way.
 ///
+/// HP pinning alone does not stop every loss: TheInsatiable's Sandpit
+/// (C# `SandpitPower.AfterRemoved`) kills the player with `force: true`
+/// when its countdown runs out, whatever their HP. So the countdown is held
+/// at [`INVINCIBLE_SANDPIT_FLOOR`] too. The floor is 2 because one step
+/// (an `EndTurn`) ticks it at most once, and the pin runs after every step,
+/// so it never reaches 0 (GH #1471).
+///
 /// Must run at *combat start*, before the player's first action. Never
 /// used on a trace-recorded run — it perturbs combat state.
 pub fn apply_invincible_buffs(combat: &mut CombatState) {
+    for p in &mut combat.powers {
+        if p.kind == crate::powers::PowerKind::Sandpit && p.amount < INVINCIBLE_SANDPIT_FLOOR {
+            p.amount = INVINCIBLE_SANDPIT_FLOOR;
+        }
+    }
     if let Some(uid) = combat.player.creature_uid {
         if let Some(c) = combat.creatures.iter_mut().find(|c| c.id == uid.0) {
             c.max_hp = INVINCIBLE_HP;

@@ -141,7 +141,7 @@ pub(crate) fn play_ki_whip(state: &mut CombatState, t: Option<CreatureUid>) -> E
 pub(crate) fn play_wah_ki(state: &mut CombatState, t: Option<CreatureUid>) -> EffectResult {
     let t = target(t, "WahKi");
     let dmg = current_damage(state);
-    for _ in 0..2 {
+    for _ in 0..card_effects::resolving_card_attack_hits(state, 2) {
         let _ = deal_damage_player_to_enemy(state, t, dmg);
     }
     apply_to_player(state, PowerKind::EnergyNextTurn, 1);

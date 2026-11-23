@@ -36,6 +36,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from sts2_client import SUPPORTED_GAME_VERSIONS
+
 _HERE = Path(__file__).resolve().parent
 _RS_ROOT = (_HERE / ".." / ".." / "sts2-rs").resolve()
 _BINARY = _RS_ROOT / "target" / "release" / "run_arena"
@@ -252,6 +254,8 @@ def cmd_sweep(args: argparse.Namespace) -> None:
     if args.ascension is not None:
         cmd += ["--ascension", str(args.ascension)]
     cmd += ["--act1", args.act1]
+    if args.game_version is not None:
+        cmd += ["--game-version", args.game_version]
     if args.sims is not None:
         cmd += ["--sims", str(args.sims)]
     if args.boss_sims is not None:
@@ -328,6 +332,13 @@ def main(argv: list[str] | None = None) -> None:
     # fixed-act arms and `compare` them — do NOT compare a fixed arm against
     # `roll` (see `_act1_composition`).
     p_sweep.add_argument("--act1", default="roll", choices=["overgrowth", "underdocks", "roll"])
+    # GH #1359. Omitted, the binary simulates its own default (v0.107.1).
+    p_sweep.add_argument(
+        "--game-version",
+        default=None,
+        choices=SUPPORTED_GAME_VERSIONS,
+        help="game build to simulate (default: the engine's, v0.107.1)",
+    )
     p_sweep.add_argument("--sims", type=int, default=None, help="debug sims override")
     p_sweep.add_argument("--boss-sims", type=int, default=None)
     p_sweep.add_argument("--jobs", type=int, default=0)

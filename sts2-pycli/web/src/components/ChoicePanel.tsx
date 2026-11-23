@@ -1,4 +1,5 @@
 import type { Option } from "../api";
+import { t } from "../i18n";
 
 export default function ChoicePanel({
   options,
@@ -15,7 +16,7 @@ export default function ChoicePanel({
   return (
     <div className="mono" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
       {title && <div style={{ fontWeight: 600, marginBottom: 6 }}>{title}</div>}
-      {options.length === 0 && <div style={{ color: "var(--muted)" }}>no choices</div>}
+      {options.length === 0 && <div style={{ color: "var(--muted)" }}>{t("no choices")}</div>}
       {options.map((o, i) => (
         <button
           key={i}

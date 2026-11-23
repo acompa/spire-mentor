@@ -27,7 +27,10 @@ pub(crate) fn play_finisher(state: &mut CombatState, target: Option<CreatureUid>
     // the per-turn bucket is also bumped AFTER this dispatch). The
     // prior `(prior+1).max(1)` body added a phantom self-hit AND
     // floored output at 1 when C# `WithHitCount(0)` deals 0 hits.
-    let hits = resolving_preview(state, preview_finisher, target);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_finisher, target),
+    );
     let base = current_card_damage(state);
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, base);

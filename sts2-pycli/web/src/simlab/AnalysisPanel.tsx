@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import NumberInput from "../components/NumberInput";
 import { api, type BuiltPosition, type Catalog, type MctsRow, type SweepSpec } from "./api";
 import type { Position } from "./position";
+import { t, tn } from "../i18n";
 
 /** How the engine last answered a build request. */
 export type BuildStatus =
@@ -80,19 +81,19 @@ function BuildCard({ status }: { status: BuildStatus }) {
   return (
     <section className="sl-panel">
       <div className="sl-panel-head">
-        <span className="sl-label">Position</span>
+        <span className="sl-label">{t("Position")}</span>
       </div>
-      {status.state === "building" && <div className="sl-status sl-status-wait">Building…</div>}
-      {status.state === "idle" && <div className="sl-status sl-status-wait">Waiting for a position.</div>}
+      {status.state === "building" && <div className="sl-status sl-status-wait">{t("Building…")}</div>}
+      {status.state === "idle" && <div className="sl-status sl-status-wait">{t("Waiting for a position.")}</div>}
       {status.state === "error" && (
         <div className="sl-status sl-status-bad" role="alert">
-          <b>Not built.</b> {status.message}
+          <b>{t("Not built.")}</b> {status.message}
         </div>
       )}
       {status.state === "built" && (
         <div className="sl-status sl-status-good">
-          <b>Built.</b>{" "}
-          {status.built.notes.length === 0 ? "The engine accepted this position with nothing to report." : "The engine accepted this position, with notes:"}
+          <b>{t("Built.")}</b>{" "}
+          {status.built.notes.length === 0 ? t("The engine accepted this position with nothing to report.") : t("The engine accepted this position, with notes:")}
           {status.built.notes.length > 0 && (
             <ul>
               {status.built.notes.map((n, i) => (
@@ -144,7 +145,7 @@ function PlayOutCard({
     if (!built) return;
     setErr(null);
     if (picked.length === 0) {
-      setErr("pick at least one strategy");
+      setErr(t("pick at least one strategy"));
       return;
     }
     setBusy(true);
@@ -162,7 +163,7 @@ function PlayOutCard({
           cells.push([label, JSON.stringify(m.wire)]);
           if (m.position) positions.push([label, JSON.stringify(m.position)]);
         }
-        if (cells.length === 0) setErr("no first move can be swept from (every move opens a choice or ends the fight)");
+        if (cells.length === 0) setErr(t("no first move can be swept from (every move opens a choice or ends the fight)"));
       }
       if (cells.length === 0) {
         cells.push(["as is", JSON.stringify(built.wire)]);
@@ -193,15 +194,14 @@ function PlayOutCard({
   return (
     <section className="sl-panel">
       <div className="sl-panel-head">
-        <span className="sl-label">Play out</span>
+        <span className="sl-label">{t("Play out")}</span>
       </div>
       <p className="sl-blurb">
-        Play this exact position to the end of the fight many times under each strategy — same hand, same pile order, same
-        telegraphs; only the dice that have not been rolled yet vary. The result is a distribution of HP lost, not one playout.
+        {t("Play this exact position to the end of the fight many times under each strategy — same hand, same pile order, same telegraphs; only the dice that have not been rolled yet vary. The result is a distribution of HP lost, not one playout.")}
       </p>
       <div className="sl-row sl-wrap">
         <fieldset className="sl-fieldset">
-          <legend>strategies</legend>
+          <legend>{t("strategies")}</legend>
           {strategies.map((s) => (
             <label key={s} className="sl-check">
               <input type="checkbox" checked={picked.includes(s)} onChange={() => toggle(s)} /> {s}
@@ -209,31 +209,31 @@ function PlayOutCard({
           ))}
         </fieldset>
         <label className="sl-field">
-          <span>trials</span>
-          <NumberInput min={1} value={trials} onChange={setTrials} width={72} ariaLabel="trials" />
+          <span>{t("trials")}</span>
+          <NumberInput min={1} value={trials} onChange={setTrials} width={72} ariaLabel={t("trials")} />
         </label>
-        <label className="sl-check" title="one cell per legal first move (the Jorbs table): play X, play Y, drink Z, end turn">
-          <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} /> compare first moves
+        <label className="sl-check" title={t("one cell per legal first move (the Jorbs table): play X, play Y, drink Z, end turn")}>
+          <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} /> {t("compare first moves")}
         </label>
       </div>
       {picked.includes("mcts") && (
         <div className="sl-row">
           <label className="sl-field">
-            <span>mcts sims / decision</span>
-            <NumberInput min={1} value={mctsSims} onChange={setMctsSims} width={72} ariaLabel="mcts sims" />
+            <span>{t("mcts sims / decision")}</span>
+            <NumberInput min={1} value={mctsSims} onChange={setMctsSims} width={72} ariaLabel={t("mcts sims")} />
           </label>
           <label className="sl-field">
-            <span>rollout depth</span>
-            <NumberInput min={1} value={mctsDepth} onChange={setMctsDepth} width={72} ariaLabel="mcts depth" />
+            <span>{t("rollout depth")}</span>
+            <NumberInput min={1} value={mctsDepth} onChange={setMctsDepth} width={72} ariaLabel={t("mcts depth")} />
           </label>
         </div>
       )}
       <div className="sl-row">
         <button type="button" className="sl-primary" onClick={run} disabled={busy || !built}>
-          {busy ? "starting…" : "play it out"}
+          {busy ? t("starting…") : t("play it out")}
         </button>
         <span className="sl-muted">
-          ≈ {cells} cell{cells === 1 ? "" : "s"} × {trials} trials{picked.includes("mcts") ? " · mcts is minutes per cell" : ""}
+          ≈ {tn(cells, "{n} cell", "{n} cells")} × {t("{n} trials", { n: trials })}{picked.includes("mcts") ? " · " + t("mcts is minutes per cell") : ""}
         </span>
       </div>
       {err && <div className="sl-error">{err}</div>}
@@ -271,19 +271,18 @@ function SearchCard({ position, built }: { position: Position; built: BuiltPosit
   return (
     <section className="sl-panel">
       <div className="sl-panel-head">
-        <span className="sl-label">Search</span>
+        <span className="sl-label">{t("Search")}</span>
       </div>
       <p className="sl-blurb">
-        The workbench's MCTS on this board: win probability per first move. Fast, and honest about what it did not see (hidden
-        draw order is sampled, not peeked).
+        {t("The workbench's MCTS on this board: win probability per first move. Fast, and honest about what it did not see (hidden draw order is sampled, not peeked).")}
       </p>
       <div className="sl-row">
         <label className="sl-field">
-          <span>simulations</span>
-          <NumberInput min={100} max={20000} step={100} value={sims} onChange={setSims} width={80} ariaLabel="mcts simulations" />
+          <span>{t("simulations")}</span>
+          <NumberInput min={100} max={20000} step={100} value={sims} onChange={setSims} width={80} ariaLabel={t("mcts simulations")} />
         </label>
         <button type="button" className="sl-primary" onClick={search} disabled={busy || !built}>
-          {busy ? "searching…" : "search this position"}
+          {busy ? t("searching…") : t("search this position")}
         </button>
       </div>
       {err && <div className="sl-error">{err}</div>}
@@ -291,10 +290,10 @@ function SearchCard({ position, built }: { position: Position; built: BuiltPosit
         <table className="sl-table">
           <thead>
             <tr>
-              <th style={{ textAlign: "left" }}>move</th>
-              <th>win %</th>
+              <th style={{ textAlign: "left" }}>{t("move")}</th>
+              <th>{t("win %")}</th>
               <th>q</th>
-              <th>visits</th>
+              <th>{t("visits")}</th>
             </tr>
           </thead>
           <tbody>
@@ -302,8 +301,8 @@ function SearchCard({ position, built }: { position: Position; built: BuiltPosit
               <tr key={i} className={r.is_best ? "best" : undefined}>
                 <td style={{ textAlign: "left" }}>
                   {r.label}
-                  {r.is_best && <span className="sl-best">best</span>}
-                  {r.low_confidence && <span className="sl-muted"> · low confidence</span>}
+                  {r.is_best && <span className="sl-best">{t("best")}</span>}
+                  {r.low_confidence && <span className="sl-muted"> · {t("low confidence")}</span>}
                 </td>
                 <td>{(r.win_prob * 100).toFixed(1)}</td>
                 <td>{r.q.toFixed(3)}</td>

@@ -118,7 +118,7 @@ internal static class SimAdvisorAutoplay
             Logger.Log("[SimAdvisorAutoplay] Run is live; switching to advisor mode.");
             MainFile.StopAutopilot();
             SimRuntime.Mode = SimMode.Advisor;
-            SimActionLog.Note("hands-free: advisor mode on (advisor_autoplay)");
+            SimActionLog.Note(L10n.T("hands-free: advisor mode on (advisor_autoplay)"));
 
             if (Engine.GetMainLoop() is not SceneTree tree)
             {

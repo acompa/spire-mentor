@@ -374,6 +374,39 @@ fn shop_round_trips_with_discount_relics() {
     );
 }
 
+/// The Fake Merchant's shop (GH #1607): grafted from its emitted inventory
+/// it charges the rolled prices (no Membership Card in an event room) and
+/// leaving ends the event as the real one does.
+#[test]
+fn fake_merchant_shop_round_trips() {
+    let mut real = walk_until(|rm| rm.phase() == Phase::MapChoice);
+    real.run_state
+        .relics
+        .push(sts2_core::RelicId::MembershipCard);
+    real.run_state.gold = 999;
+    let mut rm = real.clone();
+    real.debug_enter_event(
+        sts2_core::events::EventId::FakeMerchant,
+        sts2_content::events::dispatch::begin_event_in_entered_room,
+    );
+    assert!(real.in_fake_merchant_shop());
+    let inv = emit::shop_inventory(&real);
+    assert_eq!(inv["fake_merchant"], json!(true));
+    let unmatched = graft::open_shop(&mut rm, &inv).expect("opens");
+    assert!(unmatched.is_empty(), "{unmatched:?}");
+    assert!(rm.in_fake_merchant_shop());
+    assert_eq!(emit::shop_inventory(&rm), inv);
+    assert_eq!(rm.get_available_actions(), real.get_available_actions());
+    let (mut a, mut b) = (real.clone(), rm.clone());
+    let _ = a.take_action(RunAction::ShopBuyRelic { idx: 2 });
+    let _ = b.take_action(RunAction::ShopBuyRelic { idx: 2 });
+    assert_eq!(b.run_state.gold, a.run_state.gold);
+    assert_eq!(b.run_state.relics, a.run_state.relics);
+    let _ = b.take_action(RunAction::LeaveShop);
+    assert_eq!(b.phase(), Phase::MapChoice);
+    assert_eq!(b.run_state.current_event, None);
+}
+
 #[test]
 fn boss_relic_round_trips_from_a_placed_boss_node() {
     let real = walk_until(|rm| rm.phase() == Phase::BossRelic);

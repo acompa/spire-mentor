@@ -11,9 +11,15 @@ from workbench.server import create_app
 
 
 def _client(tmp_path, monkeypatch, game_cls=FakeGame):
-    from workbench import branching
+    import sts2_client
+    from workbench import branching, localization
 
     monkeypatch.setattr(branching, "Game", game_cls)
+    # The fake stands in for the C# backend, whose one build is the process
+    # oracle's. Make that a build this checkout can DISPLAY: a public snapshot
+    # ships only the legacy build's localization, so the default build's
+    # combat log would name raw ids there (GH #1368).
+    monkeypatch.setattr(sts2_client, "GAME_VERSION", localization.launcher_default_game_version())
     images = tmp_path / "images"
     images.mkdir()
     logs = tmp_path / "logs"
@@ -361,7 +367,7 @@ def test_play_from_here_explains_itself_on_an_unresumable_log(tmp_path, monkeypa
         if entry.get("type") == "action":
             entry["data"].pop("replay", None)
         lines.append(_json.dumps(entry))
-    legacy = tmp_path / "legacy.jsonl"
+    legacy = tmp_path / "logs" / "legacy.jsonl"
     legacy.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     body = c.post("/api/load", json={"path": str(legacy)}).json()

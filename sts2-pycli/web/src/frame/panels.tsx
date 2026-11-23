@@ -18,6 +18,7 @@ import {
   type FrameState,
   type ShownChip,
 } from "./store";
+import { t } from "../i18n";
 
 // ---------------------------------------------------------------------------
 // Toolbar
@@ -188,122 +189,122 @@ export function ToolbarPanel(props: {
     <div className={`fr-toolbar${aiPlaying ? " fr-toolbar-ai" : ""} fr-mode-${mode ?? "none"}`}>
       <div className="fr-toolbar-row">
         {aiPlaying && (
-          <button type="button" className="fr-btn fr-stop" title="Stop the AI (F7)" onClick={() => modAction("stop_ai")}>
-            ■ Stop AI <kbd>F7</kbd>
+          <button type="button" className="fr-btn fr-stop" title={t("Stop the AI (F7)")} onClick={() => modAction("stop_ai")}>
+            ■ {t("Stop AI")} <kbd>F7</kbd>
           </button>
         )}
         <Segmented
-          label="Mode"
+          label={t("Mode")}
           value={mode}
           disabled={!connected}
           items={[
-            { key: "off", label: "Off", title: "The AI stays quiet (F8 toggles)", action: "mode_off" },
+            { key: "off", label: t("Off"), title: t("The AI stays quiet (F8 toggles)"), action: "mode_off" },
             {
               key: "coach",
-              label: "Coach",
-              title: "Nothing before you act; Peek (F5) shows the AI's pick, the coach says afterwards where you differed",
+              label: t("Coach"),
+              title: t("Nothing before you act; Peek (F5) shows the AI's pick, the coach says afterwards where you differed"),
               action: "mode_coach",
             },
-            { key: "hints", label: "Hints", title: "The AI's picks are ringed and numbered while you decide", action: "mode_hints" },
+            { key: "hints", label: t("Hints"), title: t("The AI's picks are ringed and numbered while you decide"), action: "mode_hints" },
             {
               key: "aiplays",
-              label: ui?.mode === "autopilot" ? "Autopilot" : "AI plays",
-              title: "The AI plays until you stop it (F7)",
+              label: ui?.mode === "autopilot" ? t("Autopilot") : t("AI plays"),
+              title: t("The AI plays until you stop it (F7)"),
               action: "mode_ai_plays",
             },
           ]}
         />
         {ui?.brain?.show && (
           <Segmented
-            label="Brain"
+            label={t("Brain")}
             value={ui.brain.value}
             disabled={!connected}
             items={[
               {
                 key: "search",
-                label: "Search",
-                title: "Thinks ahead: a search over the fight, the run net for the screens (Shift+F8)",
+                label: t("Search"),
+                title: t("Thinks ahead: a search over the fight, the run net for the screens (Shift+F8)"),
                 action: "toggle_brain",
               },
-              { key: "instinct", label: "Instinct", title: "The end-to-end net, no search: fast, every decision (Shift+F8)", action: "toggle_brain" },
+              { key: "instinct", label: t("Instinct"), title: t("The end-to-end net, no search: fast, every decision (Shift+F8)"), action: "toggle_brain" },
             ]}
           />
         )}
         <span className="fr-sep" />
-        {ui?.coach_style && <Btn label="Peek" title="Peek at the AI's pick for this decision (F5)" action="peek" />}
-        <Btn label="Let AI pick" title="The AI takes just this decision (F6)" action="ai_once" disabled={!takeover} />
+        {ui?.coach_style && <Btn label={t("Peek")} title={t("Peek at the AI's pick for this decision (F5)")} action="peek" />}
+        <Btn label={t("Let AI pick")} title={t("The AI takes just this decision (F6)")} action="ai_once" disabled={!takeover} />
         <Btn
-          label={ui?.autobattle_on ? "Stop battle" : "Autobattle"}
-          title="The AI plays the fights, you make the run-level decisions (Shift+F7)"
+          label={ui?.autobattle_on ? t("Stop battle") : t("Autobattle")}
+          title={t("The AI plays the fights, you make the run-level decisions (Shift+F7)")}
           action="autobattle"
           disabled={!takeover}
           active={ui?.autobattle_on}
         />
         {ui?.partner_go.show && (
           <Btn
-            label={ui.partner_go.waiting ? `▶ Partner go${ui.partner_go.seconds > 0 ? ` ${ui.partner_go.seconds}s` : ""}` : "Partner go"}
-            title="Every waiting AI partner plays its turn now (Shift+F6)"
+            label={ui.partner_go.waiting ? `▶ ${t("Partner go")}${ui.partner_go.seconds > 0 ? ` ${ui.partner_go.seconds}s` : ""}` : t("Partner go")}
+            title={t("Every waiting AI partner plays its turn now (Shift+F6)")}
             action="partner_go"
             disabled={!ui.partner_go.waiting}
           />
         )}
         <span className="fr-sep" />
-        <span className="fr-speed-group" title="Game speed (F9 / F10)">
-          <Btn label="−" title="Game speed down (F9)" action="speed_down" disabled={!connected} />
+        <span className="fr-speed-group" title={t("Game speed (F9 / F10)")}>
+          <Btn label="−" title={t("Game speed down (F9)")} action="speed_down" disabled={!connected} />
           <span className="fr-speed">{ui?.speed ?? "–"}</span>
-          <Btn label="+" title="Game speed up (F10)" action="speed_up" disabled={!connected} />
+          <Btn label="+" title={t("Game speed up (F10)")} action="speed_up" disabled={!connected} />
         </span>
         <span className="fr-sep" />
         <Menu
-          label="Rewind"
+          label={t("Rewind")}
           items={[
-            { label: "⟲ Turn", title: "Undo to the start of this combat turn (Ctrl+Z)", action: "undo_turn" },
-            { label: "⟲ Room", title: "Rewind to the start of this room (Ctrl+Shift+Z)", action: "restart_room" },
-            { label: "⟲⟲ Back", title: "Rewind one room further back", action: "back_one_room" },
+            { label: `⟲ ${t("Turn")}`, title: t("Undo to the start of this combat turn (Ctrl+Z)"), action: "undo_turn" },
+            { label: `⟲ ${t("Room")}`, title: t("Rewind to the start of this room (Ctrl+Shift+Z)"), action: "restart_room" },
+            { label: `⟲⟲ ${t("Back")}`, title: t("Rewind one room further back"), action: "back_one_room" },
           ]}
         />
         <Menu
-          label="Panels"
+          label={t("Panels")}
           items={[
             ...props.framePanels.map((p) => ({
               label: p.label,
-              title: `Show / hide the ${p.label} panel`,
+              title: t("Show / hide the {panel} panel", { panel: p.label }),
               checked: p.shown,
               onClick: p.toggle,
             })),
             {
-              label: "Workbench (its own window)",
-              title: "Follows this run: logs, search tree, run tree. Put it on another monitor or alt-tab to it",
+              label: t("Workbench (its own window)"),
+              title: t("Follows this run: logs, search tree, run tree. Put it on another monitor or alt-tab to it"),
               checked: host.workbench_open,
               onClick: () => openWorkbenchWindow(),
             },
             {
-              label: "Fullscreen",
-              title: FULLSCREEN_TITLE,
+              label: t("Fullscreen"),
+              title: t(FULLSCREEN_TITLE),
               onClick: props.onFullscreen,
               separatorBefore: true,
             },
             {
-              label: "Highlights in the game (F4)",
-              title: "Rings on the moves to make, the map route, enemy tags",
+              label: t("Highlights in the game (F4)"),
+              title: t("Rings on the moves to make, the map route, enemy tags"),
               action: "toggle_hud",
               separatorBefore: true,
             },
-            { label: "Help (F1)", title: "What everything does (in-game)", action: "help" },
-            { label: "Settings", title: "Mod settings (in-game; works mid-run)", action: "settings" },
-            { label: "Report a bug (Ctrl+Shift+B)", title: "Send this position and the logs", action: "report_bug" },
+            { label: t("Help (F1)"), title: t("What everything does (in-game)"), action: "help" },
+            { label: t("Settings"), title: t("Mod settings (in-game; works mid-run)"), action: "settings" },
+            { label: t("Report a bug (Ctrl+Shift+B)"), title: t("Send this position and the logs"), action: "report_bug" },
           ]}
         />
         <Menu
-          label="Workbench"
+          label={t("Workbench")}
           items={[
             {
-              label: "Open the workbench",
-              title: "Its own window, following this run: logs, search tree, run tree",
+              label: t("Open the workbench"),
+              title: t("Its own window, following this run: logs, search tree, run tree"),
               onClick: () => openWorkbenchWindow(),
             },
-            { label: "Open in browser", title: "The same, in your browser", action: "open_workbench_browser" },
-            { label: "Copy state (Ctrl+Shift+C)", title: "Copy this position for the workbench", action: "copy_state" },
+            { label: t("Open in browser"), title: t("The same, in your browser"), action: "open_workbench_browser" },
+            { label: t("Copy state (Ctrl+Shift+C)"), title: t("Copy this position for the workbench"), action: "copy_state" },
           ]}
         />
         {/* One line, after the buttons: the row is all the height the toolbar
@@ -311,7 +312,7 @@ export function ToolbarPanel(props: {
             "Building the engine 0:42"); the full status is the tooltip. */}
         <span className="fr-status" title={host.mod_connected ? (ui?.status ?? "") : undefined}>
           {!host.mod_connected ? (
-            <span className="fr-dim">Waiting for the game…</span>
+            <span className="fr-dim">{t("Waiting for the game…")}</span>
           ) : (
             <>
               <span className={`fr-status-dot fr-status-${ui?.advisor_status ?? "none"}`} />
@@ -326,8 +327,8 @@ export function ToolbarPanel(props: {
         </span>
         {/* Last, at the row's right end, where a window's own controls sit:
             players looked for "fullscreen" and did not find it in Panels. */}
-        <button type="button" className="fr-btn fr-fullscreen" title={FULLSCREEN_TITLE} disabled={!connected} onClick={props.onFullscreen}>
-          ⛶ Fullscreen
+        <button type="button" className="fr-btn fr-fullscreen" title={t(FULLSCREEN_TITLE)} disabled={!connected} onClick={props.onFullscreen}>
+          ⛶ {t("Fullscreen")}
         </button>
       </div>
     </div>
@@ -431,8 +432,8 @@ function EvalBar({ advice }: { advice: Advice }) {
   return (
     <div className="fr-eval">
       <div className="fr-eval-text">
-        Win chance {advice.p_win != null ? `${Math.round(advice.p_win * 100)}%` : "?"}
-        {advice.show_numbers && q != null && <span className="fr-dim"> · eval {signed(q, 2)}{advice.low_confidence ? " (~)" : ""}</span>}
+        {t("Win chance")} {advice.p_win != null ? `${Math.round(advice.p_win * 100)}%` : "?"}
+        {advice.show_numbers && q != null && <span className="fr-dim"> · {t("eval")} {signed(q, 2)}{advice.low_confidence ? " (~)" : ""}</span>}
       </div>
       <div className="fr-eval-bar">
         <span style={{ width: `${Math.max(0, Math.min(1, fill)) * 100}%`, background: qColor(fill * 2 - 1) }} />
@@ -460,8 +461,8 @@ function EstimateBar({ estimate }: { estimate: NonNullable<Advice["estimate"]> }
       <div className="fr-eval-bar">
         <span className={`fr-est-bar-${parts[0].tone}`} style={{ width: `${run * 100}%` }} />
       </div>
-      {hp && <div className="fr-dim">This fight: {hp}</div>}
-      <div className="fr-dim">if Instinct plays every move from here</div>
+      {hp && <div className="fr-dim">{t("This fight: {hp}", { hp })}</div>}
+      <div className="fr-dim">{t("if Instinct plays every move from here")}</div>
     </div>
   );
 }
@@ -474,7 +475,7 @@ export function AdvicePanel({ state }: { state: FrameState }) {
   if (!advice) {
     return (
       <div className="fr-empty">
-        {ui?.coach_style ? "Coach style: nothing before you act (Peek / F5 shows the AI's pick)." : "No advice for this screen."}
+        {ui?.coach_style ? t("Coach style: nothing before you act (Peek / F5 shows the AI's pick).") : t("No advice for this screen.")}
       </div>
     );
   }
@@ -505,7 +506,7 @@ export function AdvicePanel({ state }: { state: FrameState }) {
       </div>
       {(more > 0 || expanded) && (
         <button type="button" className="fr-more" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "▴ show fewer" : `… ${more} more ▾`}
+          {expanded ? `▴ ${t("show fewer")}` : `… ${t("{n} more", { n: more })} ▾`}
         </button>
       )}
       {tie.map((l) => (
@@ -513,7 +514,7 @@ export function AdvicePanel({ state }: { state: FrameState }) {
           {l}
         </div>
       ))}
-      {plan.length === 0 && showNumbers && advice.pv.length > 0 && <div className="fr-pv">line: {advice.pv.join(" · ")}</div>}
+      {plan.length === 0 && showNumbers && advice.pv.length > 0 && <div className="fr-pv">{t("line:")} {advice.pv.join(" · ")}</div>}
       {advice.source_tag && <div className="fr-note">{advice.source_tag}</div>}
       {advice.note && <div className="fr-note">{advice.note}</div>}
     </div>
@@ -529,7 +530,7 @@ function ChipCard({ chip, dispatch }: { chip: ShownChip; dispatch: Dispatch }) {
     <div
       className={`fr-chip fr-tone-${chip.tone}${chip.pinned ? " fr-chip-pinned" : ""}`}
       onClick={() => dispatch({ type: "pin_chip", id: chip.id, pinned: !chip.pinned })}
-      title={chip.pinned ? "Pinned — click to unpin" : "Click to pin"}
+      title={chip.pinned ? t("Pinned — click to unpin") : t("Click to pin")}
     >
       <div className="fr-chip-head">
         <span className="fr-chip-title">
@@ -540,7 +541,7 @@ function ChipCard({ chip, dispatch }: { chip: ShownChip; dispatch: Dispatch }) {
           <button
             type="button"
             className="fr-icon"
-            title="Open this moment in the workbench"
+            title={t("Open this moment in the workbench")}
             onClick={(e) => {
               e.stopPropagation();
               openWorkbenchWindow(chip.log_name, chip.log_idx);
@@ -552,7 +553,7 @@ function ChipCard({ chip, dispatch }: { chip: ShownChip; dispatch: Dispatch }) {
         <button
           type="button"
           className="fr-icon"
-          title="Close"
+          title={t("Close")}
           onClick={(e) => {
             e.stopPropagation();
             dispatch({ type: "close_chip", id: chip.id });
@@ -575,7 +576,7 @@ export type Dispatch = (m: import("./store").Incoming) => void;
 export function CoachPanel({ state, dispatch }: { state: FrameState; dispatch: Dispatch }) {
   const p = state.coachPanel;
   if (state.chips.length === 0 && !p) {
-    return <div className="fr-empty">The coach's verdicts on your turns and picks show here.</div>;
+    return <div className="fr-empty">{t("The coach's verdicts on your turns and picks show here.")}</div>;
   }
   return (
     <div className="fr-coach">
@@ -589,7 +590,7 @@ export function CoachPanel({ state, dispatch }: { state: FrameState; dispatch: D
         <div className="fr-recap">
           <div className="fr-chip-head">
             <span className="fr-chip-title">{p.title}</span>
-            <button type="button" className="fr-icon" title="Close" onClick={() => dispatch({ type: "close_coach_panel" })}>
+            <button type="button" className="fr-icon" title={t("Close")} onClick={() => dispatch({ type: "close_coach_panel" })}>
               ×
             </button>
           </div>
@@ -599,7 +600,7 @@ export function CoachPanel({ state, dispatch }: { state: FrameState; dispatch: D
               <div className="fr-recap-heading">
                 {s.heading}
                 {p.log_name && s.log_idx != null && (
-                  <button type="button" className="fr-icon" title="Open in the workbench" onClick={() => openWorkbenchWindow(p.log_name, s.log_idx)}>
+                  <button type="button" className="fr-icon" title={t("Open in the workbench")} onClick={() => openWorkbenchWindow(p.log_name, s.log_idx)}>
                     ↗
                   </button>
                 )}
@@ -645,7 +646,7 @@ export function LogPanel({ state }: { state: FrameState }) {
     >
       {entries.length === 0 ? (
         // EventLog's own empty text ("load a run…") is the workbench's.
-        <div className="fr-empty">Your plays and the AI's show here once a run starts.</div>
+        <div className="fr-empty">{t("Your plays and the AI's show here once a run starts.")}</div>
       ) : (
         <EventLog entries={entries} current={entries.length - 1} onPick={() => {}} />
       )}

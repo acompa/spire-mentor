@@ -189,3 +189,74 @@ def test_combat_split_falls_back_to_the_coarse_fields():
     """A coarse mismatch the projection does not cover is still a split."""
     assert combat_split_lines("combat", "combat", [], ["gold: cs=5 rs=6"]) == ["gold: cs=5 rs=6"]
     assert combat_split_lines("combat", "combat", [], []) == []
+
+
+# ----- Dread context (GH #1346) ---------------------------------------------
+
+
+def _dread_csharp(**over) -> dict:
+    """A ``get_state`` of a Dread combat under ``WaterfallGiantDominion``."""
+    cs = copy.deepcopy(_csharp())
+    cs.update(
+        game_mode="dread",
+        dominion="WATERFALL_GIANT_DOMINION",
+        dread_explosive=5,
+        dread_weak_encounter=False,
+    )
+    cs.update(over)
+    return cs
+
+
+def _dread_rust(**over) -> dict:
+    """The matching engine wire: ``dread_weak_encounter`` is absent when false."""
+    rs = _rust()
+    rs.update(game_mode="dread", dominion="WATERFALL_GIANT_DOMINION", dread_explosive=5)
+    rs.update(over)
+    return rs
+
+
+def test_matching_dread_context_has_no_split():
+    assert diff_full(project_csharp(_dread_csharp()), project_rust_dict(_dread_rust())) == []
+    # Another dominion: no Explosive note on either side (C# 0, Rust absent).
+    cs = _dread_csharp(dominion="QUEEN_DOMINION", dread_explosive=0)
+    rs = _dread_rust(dominion="QUEEN_DOMINION")
+    del rs["dread_explosive"]
+    assert diff_full(project_csharp(cs), project_rust_dict(rs)) == []
+    # The act's boss room: Dread, no dominion.
+    cs = _dread_csharp(dominion=None, dread_explosive=0)
+    rs = _rust()
+    rs["game_mode"] = "dread"
+    assert diff_full(project_csharp(cs), project_rust_dict(rs)) == []
+
+
+def test_dread_explosive_split_is_reported():
+    """``WaterfallGiantDominion.GetExplosiveAmount`` against the engine's stamp."""
+    divs = diff_full(
+        project_csharp(_dread_csharp()), project_rust_dict(_dread_rust(dread_explosive=7))
+    )
+    assert divs == [{"path": "dread.explosive", "csharp": 5, "rust": 7}]
+
+
+def test_dread_weak_encounter_split_is_reported():
+    cs = _dread_csharp(dread_weak_encounter=True, dread_explosive=4)
+    divs = diff_full(project_csharp(cs), project_rust_dict(_dread_rust(dread_explosive=4)))
+    assert divs == [{"path": "dread.weak_encounter", "csharp": True, "rust": False}]
+    rs = _dread_rust(dread_explosive=4, dread_weak_encounter=True)
+    assert diff_full(project_csharp(cs), project_rust_dict(rs)) == []
+
+
+def test_dread_dominion_and_mode_splits_are_reported():
+    rs = _dread_rust(dominion="KAISER_CRAB_DOMINION")
+    paths = [d["path"] for d in diff_full(project_csharp(_dread_csharp()), project_rust_dict(rs))]
+    assert paths == ["dread.dominion"]
+    # The engine on a standard board while the game is in Dread.
+    paths = [
+        d["path"] for d in diff_full(project_csharp(_dread_csharp()), project_rust_dict(_rust()))
+    ]
+    assert paths == ["dread.dominion", "dread.explosive", "dread.game_mode"]
+
+
+def test_oracle_without_dread_context_skips_the_check():
+    """A standard run's ``get_state`` (and a Dread one from an oracle build
+    that predates the fields) names no game mode: nothing is compared."""
+    assert diff_full(project_csharp(_csharp()), project_rust_dict(_dread_rust())) == []

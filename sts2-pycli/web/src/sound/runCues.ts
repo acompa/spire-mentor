@@ -40,8 +40,9 @@ export type UiCueKind =
   | "cardDeal" | "cardExhaust" | "cardSelect"
   | "cardSmith" | "cardTransform" | "enchant"
   | "potionGain" | "potionSlosh"
-  | "restSleep" | "restBlanket" | "restDig"
-  | "screenOpen" | "merchantWelcome" | "merchantThanks" | "summon";
+  | "restSleep" | "restBlanket" | "restDig" | "restEvolve"
+  | "screenOpen" | "merchantWelcome" | "merchantThanks" | "summon"
+  | "arrowDislodge";
 
 /**
  * `keys` is a LIST because three of these families are randomised in the game,
@@ -114,6 +115,12 @@ const UI_KEYS: Record<UiCueKind, {
   restBlanket: { keys: ["restBlanket"], cls: "informative", pitch: PITCH_VARIANCE.small },
   // `DigRestSiteOption.DoLocalPostSelectVfx` (`:35`).
   restDig: { keys: ["restDig"], cls: "informative", pitch: PITCH_VARIANCE.small },
+  // `EvolveRestSiteOption.OnSelect` -> `NByrdEvolutionVfx` (v0.113.0+; the
+  // map names it only for a build that has the node).
+  restEvolve: { keys: ["restEvolve"], cls: "informative" },
+  // The Fool's arrow flying back out of an enemy
+  // (`NImpaledArrowVfx.RetrieveAndFree`, v0.113.0+).
+  arrowDislodge: { keys: ["arrowDislodge"], cls: "informative" },
   // --- screens / NPCs ---
   screenOpen: { keys: ["screenOpen"], cls: "chatter" },
   // Necrobinder's Osty arriving on the board.
@@ -208,6 +215,13 @@ export function cuesForCard(
 
   const own = map.cards[cardName];
   if (own) cues.push({ event: own, cls: "informative" });
+
+  // The Fool's melody syllables. The game spaces them 0.3–0.5 s apart
+  // (`MelodyCmd.PlayMelodyVfx` waits after each); here they land together,
+  // like every other layer of a card play.
+  for (const event of map.cardMelodies?.[cardName] ?? []) {
+    if (!cues.some((c) => c.event === event)) cues.push({ event, cls: "informative" });
+  }
 
   const hit = map.cardHits?.[cardName];
   if (hit) cues.push({ event: hit, cls: "informative" });

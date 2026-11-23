@@ -24,6 +24,7 @@ use sts2_core::full_run::{
 };
 use sts2_core::potions::CharacterId;
 use sts2_core::run_manager::{Phase, RunAction};
+use sts2_core::GameVersion;
 
 use crate::deck_archetype::classify_archetype;
 use crate::policy::{
@@ -256,20 +257,26 @@ impl Act1Choice {
         }
     }
 
-    /// The act this choice actually produces for `seed`.
+    /// The act this choice actually produces for `seed` on game build
+    /// `version`.
     ///
     /// `Roll` reproduces `RunManager::with_rolled_act1` — same stream, same
     /// `test_mode_on(true)` unlock assumption — so a row can report the act a
-    /// cell really walked without holding the `RunManager`.
+    /// cell really walked without holding the `RunManager`. The build matters:
+    /// v0.111.0 seeds the `act_selection` stream differently (GH #788), so the
+    /// same integer seed can roll a different act per build.
     #[must_use]
-    pub fn resolve(self, seed: i32) -> ActVariant {
+    pub fn resolve(self, seed: i32, version: GameVersion) -> ActVariant {
         match self {
             Self::Overgrowth => ActVariant::Overgrowth,
             Self::Underdocks => ActVariant::Underdocks,
-            Self::Roll => {
-                sts2_core::act_selection::roll_acts(seed, &ActSelectionUnlocks::test_mode_on(true))
-                    [0]
-            }
+            // An integer seed is a `uint` master seed in every build — the
+            // same value `new_arena_run_manager` hands `with_run_seed`.
+            Self::Roll => sts2_core::act_selection::roll_acts_for(
+                version,
+                u64::from(seed as u32),
+                &ActSelectionUnlocks::test_mode_on(true),
+            )[0],
         }
     }
 
@@ -280,8 +287,8 @@ impl Act1Choice {
     /// Glory are act-2/3 models and cannot come out of index 0; they are
     /// mapped rather than panicked on so a report is never unwritable.
     #[must_use]
-    pub fn resolved_token(self, seed: i32) -> String {
-        match self.resolve(seed) {
+    pub fn resolved_token(self, seed: i32, version: GameVersion) -> String {
+        match self.resolve(seed, version) {
             ActVariant::Overgrowth => "overgrowth",
             ActVariant::Underdocks => "underdocks",
             ActVariant::Hive => "hive",
@@ -308,6 +315,10 @@ pub struct CellSpec {
     /// Which Act-1 model this cell walks (GH #544). Defaults to
     /// [`Act1Choice::Roll`], the real game's seed-driven pick.
     pub act1: Act1Choice,
+    /// The game build this cell simulates (GH #1359). CLI `--game-version`;
+    /// [`GameVersion::default`] when absent, which is what every arena run
+    /// simulated before the switch existed.
+    pub game_version: GameVersion,
     /// Collect §3.6 audit records for this cell.
     pub audit: bool,
     /// E2 importance leg (plan §3.5): when set, this surface's decisions
@@ -323,6 +334,12 @@ fn default_act1_token() -> String {
     Act1Choice::Overgrowth.token().to_string()
 }
 
+/// `skip_serializing_if` predicate for [`ArenaRow::game_version`].
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+fn is_default_game_version(v: &GameVersion) -> bool {
+    *v == GameVersion::default()
+}
+
 /// One output row of a sweep (JSONL line in `report.jsonl`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArenaRow {
@@ -335,6 +352,12 @@ pub struct ArenaRow {
     /// pre-#544 report loadable (they were all Overgrowth).
     #[serde(default = "default_act1_token")]
     pub act1: String,
+    /// The game build this run simulated (GH #1359). Left out of the JSON at
+    /// [`GameVersion::default`], so a default-build report stays
+    /// byte-identical to one written before the field existed, and a row
+    /// without it reads back as that build — which is what it ran on.
+    #[serde(default, skip_serializing_if = "is_default_game_version")]
+    pub game_version: GameVersion,
     pub policy: String,
     pub combat_budget: String,
     /// `won|lost|max_steps|livelock|empty_actions|not_implemented|rejected|policy_halt|panic|timeout`.
@@ -481,6 +504,8 @@ pub fn run_action_variant_name(action: &RunAction) -> &'static str {
         RunAction::CombatResolveChoice { .. } => "CombatResolveChoice",
         RunAction::DrinkPotion { .. } => "DrinkPotion",
         RunAction::PotionSwap { .. } => "PotionSwap",
+        RunAction::UsePotionOutOfCombat { .. } => "UsePotionOutOfCombat",
+        RunAction::DiscardPotion { .. } => "DiscardPotion",
         RunAction::PickCardReward { .. } => "PickCardReward",
         RunAction::PickRelicReward => "PickRelicReward",
         RunAction::SkipRelic => "SkipRelic",
@@ -1056,12 +1081,22 @@ pub(crate) fn new_arena_run_manager(
     character: CharacterId,
     ascension: u8,
     act1: Act1Choice,
+    game_version: GameVersion,
 ) -> sts2_core::run_manager::RunManager {
+    // GH #1359: the game build, chained where the PyO3 binding chains it —
+    // straight after the factory, before Neow start (`with_game_version`
+    // asserts the run has not started) and before act selection / run setup,
+    // which roll from the build's seed arithmetic. An integer seed is a
+    // `uint` master in every build (GH #788), as in the binding. Both calls
+    // are no-ops at the default build, so that path stays bit-identical.
+    //
     // Start at the Neow event like the real game (C# floor 1 = Neow;
     // skipping it both forfeits the opening bonus and shifts the act-1
     // event cursor) — 2026-06-12 anomaly triage on the M1 sweeps.
-    let mut rm =
-        new_run_manager_for_character_with_ascension(seed, character, ascension).with_neow_start();
+    let mut rm = new_run_manager_for_character_with_ascension(seed, character, ascension)
+        .with_game_version(game_version)
+        .with_run_seed(u64::from(seed as u32))
+        .with_neow_start();
     rm.run_state.set_agent_decisions();
     // GH #252 / #447 acquisition follow-up: full-belt potion rewards
     // surface a discard-to-claim swap decision (priced by the OC table in
@@ -1129,6 +1164,7 @@ pub fn run_cell(spec: &CellSpec) -> (ArenaRow, Vec<AuditRecord>) {
             spec_copy.character,
             spec_copy.ascension,
             spec_copy.act1,
+            spec_copy.game_version,
         );
         // NOTE: `interactive_potion_swap` (GH #252/#379) is deliberately NOT
         // set here — `new_arena_run_manager` already resolved it from
@@ -1281,7 +1317,8 @@ pub fn run_cell(spec: &CellSpec) -> (ArenaRow, Vec<AuditRecord>) {
                     seed: spec.seed,
                     character: character_token(spec.character).to_string(),
                     ascension: spec.ascension,
-                    act1: spec.act1.resolved_token(spec.seed),
+                    act1: spec.act1.resolved_token(spec.seed, spec.game_version),
+                    game_version: spec.game_version,
                     policy: label,
                     combat_budget: spec.combat.token().to_string(),
                     outcome,
@@ -1321,7 +1358,8 @@ pub fn run_cell(spec: &CellSpec) -> (ArenaRow, Vec<AuditRecord>) {
                 seed: spec.seed,
                 character: character_token(spec.character).to_string(),
                 ascension: spec.ascension,
-                act1: spec.act1.resolved_token(spec.seed),
+                act1: spec.act1.resolved_token(spec.seed, spec.game_version),
+                game_version: spec.game_version,
                 policy: label,
                 combat_budget: spec.combat.token().to_string(),
                 outcome: "panic".into(),
@@ -1510,7 +1548,13 @@ mod tests {
     #[test]
     fn apply_card_injection_appends_and_rejects_unknown() {
         sts2_content::cards::dispatch::ensure_installed();
-        let mut rm = new_arena_run_manager(1, CharacterId::Ironclad, 0, Act1Choice::default());
+        let mut rm = new_arena_run_manager(
+            1,
+            CharacterId::Ironclad,
+            0,
+            Act1Choice::default(),
+            GameVersion::default(),
+        );
         let before = rm.run_state.master_deck.len();
 
         let n = apply_card_injection(&mut rm, "INFLAME, BASH").expect("known tokens resolve");
@@ -1546,6 +1590,7 @@ mod tests {
             max_steps: 3000,
             livelock_stall_limit: DEFAULT_LIVELOCK_STALL_LIMIT,
             act1: Act1Choice::default(),
+            game_version: GameVersion::default(),
             audit: false,
             ablate: None,
         }
@@ -1612,7 +1657,13 @@ mod tests {
     fn run_cell_construction_yields_initialized_run_state() {
         crate::rollout::ensure_content_installed();
         let s = spec(123);
-        let rm = new_arena_run_manager(s.seed, s.character, s.ascension, s.act1);
+        let rm = new_arena_run_manager(
+            s.seed,
+            s.character,
+            s.ascension,
+            s.act1,
+            GameVersion::default(),
+        );
         // The exact guardrail `run_cell` enforces at runtime.
         check_run_setup_valid(&rm).expect("arena construction must pass setup validation");
         // Relics are actually drawable (player + shared bags + boss pool).
@@ -1698,32 +1749,110 @@ mod tests {
     }
 
     /// The fixed choices resolve to themselves; `roll` reproduces
-    /// `RunManager::with_rolled_act1` for the same seed. If these two ever
-    /// diverge, a `roll` sweep reports an act it did not actually walk.
+    /// `RunManager::with_rolled_act1` for the same seed, on every build. If
+    /// these two ever diverge, a `roll` sweep reports an act it did not
+    /// actually walk.
     #[test]
     fn roll_resolves_to_the_act_the_run_manager_actually_builds() {
         crate::rollout::ensure_content_installed();
-        assert_eq!(
-            Act1Choice::Overgrowth.resolve(7),
-            sts2_core::act_selection::ActVariant::Overgrowth
-        );
-        assert_eq!(
-            Act1Choice::Underdocks.resolve(7),
-            sts2_core::act_selection::ActVariant::Underdocks
-        );
-        // Both acts have to actually occur across the sample, or this test
-        // would pass just as well against a `resolve` hardwired to one act.
-        let mut seen = std::collections::HashSet::new();
-        for seed in 0..40i32 {
-            let resolved = Act1Choice::Roll.resolve(seed);
-            seen.insert(resolved);
-            let rm = new_arena_run_manager(seed, CharacterId::Ironclad, 0, Act1Choice::Roll);
+        for version in GameVersion::ALL {
             assert_eq!(
-                rm.run_state.act1, resolved,
-                "seed {seed}: reported act disagrees with the built run"
+                Act1Choice::Overgrowth.resolve(7, version),
+                sts2_core::act_selection::ActVariant::Overgrowth
+            );
+            assert_eq!(
+                Act1Choice::Underdocks.resolve(7, version),
+                sts2_core::act_selection::ActVariant::Underdocks
+            );
+            // Both acts have to actually occur across the sample, or this
+            // test would pass just as well against a `resolve` hardwired to
+            // one act.
+            let mut seen = std::collections::HashSet::new();
+            for seed in 0..40i32 {
+                let resolved = Act1Choice::Roll.resolve(seed, version);
+                seen.insert(resolved);
+                let rm = new_arena_run_manager(
+                    seed,
+                    CharacterId::Ironclad,
+                    0,
+                    Act1Choice::Roll,
+                    version,
+                );
+                assert_eq!(
+                    rm.run_state.act1, resolved,
+                    "{version} seed {seed}: reported act disagrees with the built run"
+                );
+            }
+            assert_eq!(
+                seen.len(),
+                2,
+                "{version}: the sample must cover both act-1 models"
             );
         }
-        assert_eq!(seen.len(), 2, "the sample must cover both act-1 models");
+    }
+
+    /// GH #1359: the build reaches the run. Before `--game-version` the
+    /// arena always simulated the default build, so a sweep compared against
+    /// a `PpoRunEnv` on another build was version skew.
+    #[test]
+    fn the_cell_build_reaches_the_run_and_its_seeding() {
+        crate::rollout::ensure_content_installed();
+        let mut acts_differ = false;
+        for seed in 0..40i32 {
+            let old = new_arena_run_manager(
+                seed,
+                CharacterId::Ironclad,
+                0,
+                Act1Choice::Roll,
+                GameVersion::V0_107_1,
+            );
+            for version in [GameVersion::V0_111_0, GameVersion::V0_113_0] {
+                let rm = new_arena_run_manager(
+                    seed,
+                    CharacterId::Ironclad,
+                    0,
+                    Act1Choice::Roll,
+                    version,
+                );
+                assert_eq!(rm.game_version, version);
+                assert_eq!(rm.run_state.game_version, version);
+                // The master seed is the integer seed as a `uint` in every
+                // build (GH #788) — only the derived streams differ.
+                assert_eq!(rm.run_state.rng.seed, u64::from(seed as u32));
+                check_run_setup_valid(&rm).expect("a non-default build sets up validly");
+                acts_differ |= rm.run_state.act1 != old.run_state.act1;
+            }
+        }
+        // The v0.111.0 act roll is seeded differently, so some seed must land
+        // on the other act; otherwise the build never reached the roll.
+        assert!(
+            acts_differ,
+            "no seed rolled a different act on the new builds"
+        );
+    }
+
+    /// A default-build row serialises exactly as before the field existed,
+    /// a row from another build names it, and both read back.
+    #[test]
+    fn arena_row_names_its_build_only_off_the_default() {
+        let (row, _) = run_cell(&CellSpec {
+            max_steps: 1,
+            ..spec(5)
+        });
+        assert_eq!(row.game_version, GameVersion::default());
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(!json.contains("game_version"), "{json}");
+        assert_eq!(serde_json::from_str::<ArenaRow>(&json).unwrap(), row);
+
+        let (row, _) = run_cell(&CellSpec {
+            max_steps: 1,
+            game_version: GameVersion::V0_111_0,
+            ..spec(5)
+        });
+        assert_eq!(row.game_version, GameVersion::V0_111_0);
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains(r#""game_version":"v0.111.0""#), "{json}");
+        assert_eq!(serde_json::from_str::<ArenaRow>(&json).unwrap(), row);
     }
 
     /// Each choice reaches the engine — the wiring test. `Roll` is covered
@@ -1741,7 +1870,13 @@ mod tests {
                 sts2_core::act_selection::ActVariant::Underdocks,
             ),
         ] {
-            let rm = new_arena_run_manager(4242, CharacterId::Ironclad, 0, choice);
+            let rm = new_arena_run_manager(
+                4242,
+                CharacterId::Ironclad,
+                0,
+                choice,
+                GameVersion::default(),
+            );
             assert_eq!(rm.run_state.act1, want, "{}", choice.token());
             // The act must be set BEFORE `initialize_run_setup` pre-generates
             // the rooms, so assert the rooms exist and the act agrees — a
@@ -1760,13 +1895,16 @@ mod tests {
     #[test]
     fn a_rolled_cell_reports_a_concrete_act_not_the_word_roll() {
         for seed in 0..20i32 {
-            let token = Act1Choice::Roll.resolved_token(seed);
+            let token = Act1Choice::Roll.resolved_token(seed, GameVersion::default());
             assert!(
                 token == "overgrowth" || token == "underdocks",
                 "seed {seed} reported {token:?}"
             );
         }
-        assert_eq!(Act1Choice::Underdocks.resolved_token(1), "underdocks");
+        assert_eq!(
+            Act1Choice::Underdocks.resolved_token(1, GameVersion::default()),
+            "underdocks"
+        );
     }
 
     /// GH #399 cross-language pin. G1 (`sts2-pycli/tests/test_ppo_env_parity.py`)
@@ -1781,7 +1919,13 @@ mod tests {
     fn run_cell_construction_enables_deck_mutation_surfaces() {
         crate::rollout::ensure_content_installed();
         let s = spec(123);
-        let rm = new_arena_run_manager(s.seed, s.character, s.ascension, s.act1);
+        let rm = new_arena_run_manager(
+            s.seed,
+            s.character,
+            s.ascension,
+            s.act1,
+            GameVersion::default(),
+        );
         assert!(rm.run_state.interactive_card_removal, "removal flag");
         assert!(rm.run_state.interactive_card_upgrade, "upgrade flag");
         // One flag, two queues: there is no `interactive_card_enchant` — every
@@ -1805,6 +1949,15 @@ mod tests {
             crate::policy::resolve_potion_swap_flag_from_env(),
             "potion-swap flag must come from the shared resolver, not an \
              inlined default — `ppo/env.py` reads the same one"
+        );
+        // GH #1606: the potion popup stays off; no run-PPO champion or
+        // heuristic has a row for `UsePotionOutOfCombat` / `DiscardPotion`.
+        assert!(!rm.run_state.ooc_potion_actions, "potion popup flag");
+        // GH #1619 / #1621: no run-PPO champion or heuristic has a row for
+        // the Smith / Cook cancel or sees a pick-N select's picks unapplied.
+        assert!(
+            !rm.run_state.deck_select_screens,
+            "deck select screens flag"
         );
     }
 
@@ -1968,6 +2121,7 @@ mod tests {
             sts2_core::CharacterId::Ironclad,
             10,
             Act1Choice::default(),
+            GameVersion::default(),
         );
         rm.run_state.act_index = 3;
         rm.run_state.generate_map();
@@ -1993,6 +2147,7 @@ mod tests {
             sts2_core::CharacterId::Ironclad,
             9,
             Act1Choice::default(),
+            GameVersion::default(),
         );
         rm.run_state.act_index = 3;
         rm.run_state.generate_map();

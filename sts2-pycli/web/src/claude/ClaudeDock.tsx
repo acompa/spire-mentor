@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LinkStatus } from "./link";
 import { frameDoc, nextFrameHeight } from "./frameDoc";
 import type { ClaudeLinkState, DockItem } from "./useClaudeLink";
+import { t } from "../i18n";
 
 /**
  * The Claude dock: what a linked Claude Code session put on screen with
@@ -14,11 +15,11 @@ import type { ClaudeLinkState, DockItem } from "./useClaudeLink";
  */
 
 const STATUS_LABEL: Record<LinkStatus, string> = {
-  off: "off",
-  waiting: "waiting for Claude Code",
-  connected: "connected",
-  replaced: "taken over by another tab",
-  unauthorized: "pairing token refused",
+  off: t("off"),
+  waiting: t("waiting for Claude Code"),
+  connected: t("connected"),
+  replaced: t("taken over by another tab"),
+  unauthorized: t("pairing token refused"),
 };
 
 function FrameView({ item }: { item: DockItem }) {
@@ -65,7 +66,7 @@ export default function ClaudeDock({ link }: { link: ClaudeLinkState }) {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} title={`Claude link: ${STATUS_LABEL[link.status]}`}
+      <button onClick={() => setOpen(true)} title={t("Claude link: {status}", { status: STATUS_LABEL[link.status] })}
         style={{ position: "fixed", right: 16, bottom: 16, zIndex: 55, display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ width: 8, height: 8, borderRadius: 4, background: dot }} />
         🤖 Claude{link.items.length ? ` · ${link.items.length}` : ""}
@@ -73,7 +74,7 @@ export default function ClaudeDock({ link }: { link: ClaudeLinkState }) {
     );
   }
   return (
-    <aside aria-label="Claude dock"
+    <aside aria-label={t("Claude dock")}
       style={{ position: "fixed", right: 16, bottom: 16, zIndex: 55,
         width: wide ? "min(960px, 94vw)" : "min(480px, 92vw)", maxHeight: "78vh",
         display: "flex", flexDirection: "column", background: "var(--panel)", color: "var(--text)",
@@ -84,21 +85,21 @@ export default function ClaudeDock({ link }: { link: ClaudeLinkState }) {
         <strong>🤖 Claude</strong>
         <span style={{ color: "var(--muted)", fontSize: 12 }}>{STATUS_LABEL[link.status]}</span>
         <span style={{ flex: 1 }} />
-        {link.status === "unauthorized" && <button onClick={link.pair} title="enter the token Claude gives you">pair…</button>}
-        {link.items.length > 0 && <button onClick={link.clear} title="remove every item">clear</button>}
-        <button onClick={() => setWide((w) => !w)} title={wide ? "narrow" : "wide"}>{wide ? "⇥" : "⇤"}</button>
-        <button onClick={() => setOpen(false)} title="minimise">—</button>
+        {link.status === "unauthorized" && <button onClick={link.pair} title={t("enter the token Claude gives you")}>{t("pair…")}</button>}
+        {link.items.length > 0 && <button onClick={link.clear} title={t("remove every item")}>{t("clear")}</button>}
+        <button onClick={() => setWide((w) => !w)} title={wide ? t("narrow") : t("wide")}>{wide ? "⇥" : "⇤"}</button>
+        <button onClick={() => setOpen(false)} title={t("minimise")}>—</button>
       </header>
       <div style={{ overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 12 }}>
         {link.items.length === 0 && (
           <div style={{ color: "var(--muted)", fontSize: 13 }}>
             {link.status === "connected"
-              ? "Linked. Ask Claude Code in your terminal about this run — what it shows lands here."
+              ? t("Linked. Ask Claude Code in your terminal about this run — what it shows lands here.")
               : link.status === "replaced"
-                ? "Another workbench tab took the link. Turn it off and on in Tools to take it back."
+                ? t("Another workbench tab took the link. Turn it off and on in Tools to take it back.")
                 : link.status === "unauthorized"
-                  ? "The relay refused this page's pairing token. Ask Claude for the workbench pairing token, then press pair…."
-                : "Waiting for a Claude Code session started in the repo (it runs the relay from .mcp.json)."}
+                  ? t("The relay refused this page's pairing token. Ask Claude for the workbench pairing token, then press pair….")
+                : t("Waiting for a Claude Code session started in the repo (it runs the relay from .mcp.json).")}
           </div>
         )}
         {link.items.map((item) => (
@@ -108,7 +109,7 @@ export default function ClaudeDock({ link }: { link: ClaudeLinkState }) {
               <span style={{ color: "var(--muted)", fontSize: 11 }}>
                 {new Date(item.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </span>
-              <button onClick={() => link.dismiss(item.id)} title="remove" aria-label={`remove ${item.title}`}>✕</button>
+              <button onClick={() => link.dismiss(item.id)} title={t("remove")} aria-label={t("remove {title}", { title: item.title })}>✕</button>
             </div>
             <FrameView item={item} />
           </section>
@@ -123,9 +124,9 @@ export function ClaudeLinkToggle({ link }: { link: ClaudeLinkState }) {
   const on = link.url != null;
   return (
     <button aria-pressed={on} onClick={() => link.setEnabled(!on)}
-      title={on ? `Claude link to ${link.url}: ${STATUS_LABEL[link.status]} — click to turn off`
-        : "let a Claude Code session in your terminal read this run, run analyses on it, and show charts here"}>
-      🤖 Claude link{on ? ` · ${STATUS_LABEL[link.status]}` : ""}
+      title={on ? t("Claude link to {url}: {status} — click to turn off", { url: link.url ?? "", status: STATUS_LABEL[link.status] })
+        : t("let a Claude Code session in your terminal read this run, run analyses on it, and show charts here")}>
+      🤖 {t("Claude link")}{on ? ` · ${STATUS_LABEL[link.status]}` : ""}
     </button>
   );
 }

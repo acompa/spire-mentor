@@ -12,7 +12,7 @@
   "idx": 0,
   "meta": {
    "act": 1,
-   "act_name": "Overgrowth",
+   "act_name": "Underdocks",
    "bg_col": null,
    "bg_row": null,
    "bg_seed": 2,
@@ -25,8 +25,8 @@
   "source": "live",
   "state": {
    "act": 1,
-   "act1": "overgrowth",
-   "act_name": "Overgrowth",
+   "act1": "underdocks",
+   "act_name": "Underdocks",
    "ascension": 0,
    "bg_seed": 2,
    "choices": [
@@ -54,10 +54,10 @@
    "full_map": {
     "boss": {
      "col": 3,
-     "icon": "https://assets.test/run_history/ceremonial_beast_boss.png",
-     "id": "CEREMONIAL_BEAST_BOSS",
-     "kind": "CeremonialBeast",
-     "name": "Ceremonial Beast",
+     "icon": "https://assets.test/run_history/waterfall_giant_boss.png",
+     "id": "WATERFALL_GIANT_BOSS",
+     "kind": "WaterfallGiant",
+     "name": "Waterfall Giant",
      "row": 16,
      "type": "Boss"
     },

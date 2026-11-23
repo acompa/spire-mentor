@@ -1,7 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Card, Score } from "../api";
 import { cardBoxHeight } from "../cardGeometry";
-import { CARD_ASPECT, HAND_REST_MIN_F, HAND_REST_VISIBLE, fanLayout, handFloors, handInsets } from "../handFan";
+import {
+  CARD_ASPECT, COUNT_BADGE_W, HAND_REST_MIN_F, HAND_REST_VISIBLE, STEP_BADGE_W, badgeBesideSpine, fanIsTight,
+  fanLayout, handFloors, handInsets, handStacks, spineLength,
+} from "../handFan";
 import { atLeast, floorPx, isSmallPhoneScreen, usePhone, useStageZoom, type PhoneMode } from "../phone";
 import { fitScene } from "../scene";
 import CardFrame from "./CardFrame";
@@ -98,6 +101,14 @@ function useHandMetrics(
   return m;
 }
 
+/** What makes two held cards copies for `handStacks`: everything the card
+ *  draws (its index aside), plus the advice's mark and, with engine numbers
+ *  on, its win %. A card the plan numbers therefore keeps its own slot, and
+ *  two Strikes stack only when tapping either is the same play. */
+function stackKey(c: Card, mark: string, win: number | undefined): string {
+  return `${JSON.stringify({ ...c, index: 0 })}|${mark}|${win == null ? "" : Math.round(win * 1000)}`;
+}
+
 /** Real px a touch travels along the strip before it browses instead of taps. */
 const BROWSE_SLOP = 10;
 
@@ -131,18 +142,40 @@ export default function Hand({
    *  shown zoomed, and never plays it). */
   onCardBrowse?: (card: Card) => void;
 }) {
-  const n = cards.length;
   const root = useRef<HTMLDivElement>(null);
   const phone = usePhone();
   const k = useStageZoom();
   const { cw, availW, show } = useHandMetrics(root, framing, phone, k);
   const insets = handInsets(phone);
+  // The advice's marks (advice/marks.ts): which cards to play, numbered. The
+  // engine's own win % rides along only with "engine numbers" on.
+  const { marks, showNumbers } = useAdviceMarks();
+  const winOf = (c: Card) => (showNumbers ? scores?.find((s) => s.stable_idx === c.index) : undefined)?.win_prob;
+  // A CROWDED HAND ON A PHONE. Past ~5 cards the flat fan packs so tight that
+  // each covered card shows only its cost gem: the name banner is centred and
+  // sits under the next card. Two things fix that, and both switch on only
+  // once the fan is tight (`fanIsTight`), so a small hand looks as it always
+  // did. First, copies of a card fold into one slot with a "×N" badge, which
+  // gives the rest room. Then, if the fan is still tight, every covered card
+  // draws its name down the left edge that stays showing (a spine).
+  const crowded = phone != null && fanIsTight(cards.length, cw, availW);
+  const stacks = crowded
+    ? handStacks(cards, (c) => {
+      const m = marks.get(cardKey(c.index));
+      return stackKey(c, m ? `${m.tier}:${m.order ?? ""}` : "", winOf(c));
+    })
+    : cards.map((c) => ({ card: c, cards: [c] }));
+  const n = stacks.length;
+  const stacked = n < cards.length;
+  const spined = crowded && fanIsTight(n, cw, availW);
   // Held by CARD index, not fan position: a card can be played out from under
   // the pointer, and a stale position would spread the fan around whichever
   // card slid into that slot.
   const [hoverId, setHoverId] = useState<number | null>(null);
-  const hover = onCardTap || hoverId == null ? -1 : cards.findIndex((c) => c.index === hoverId);
+  const hover = onCardTap || hoverId == null ? -1
+    : stacks.findIndex((s) => s.cards.some((c) => c.index === hoverId));
   const slots = fanLayout(n, cw, availW, hover, { flat: phone != null });
+  const step = n > 1 ? cw - slots[1].overlap : cw;
   // TWO-TAP PLAY ON A TOUCHSCREEN. The fan is deliberately cropped by the
   // stage's bottom edge — the game crops it too — and raising a card is what
   // lets you read it in full. A tablet has no hover, so the hand was a row of
@@ -151,9 +184,6 @@ export default function Hand({
   // raises, second plays. Unplayable cards raise too — reading them is the
   // whole point.
   const touch = useMediaQuery(TOUCH_QUERY);
-  // The advice's marks (advice/marks.ts): which cards to play, numbered. The
-  // engine's own win % rides along only with "engine numbers" on.
-  const { marks, showNumbers } = useAdviceMarks();
   // BROWSING BY DRAG (phone). A touch that travels `BROWSE_SLOP` px along the
   // strip stops being a tap: from then on the card under the finger's X is
   // the selected one, whatever its Y (the thumb drifts up over the zoom). A
@@ -164,10 +194,10 @@ export default function Hand({
   const swallowClick = useRef(false);
   const cardAtX = (x: number): Card | null => {
     const hits = Array.from(root.current?.querySelectorAll(".gs-handslot-hit") ?? []).map((h) => h.getBoundingClientRect());
-    if (!hits.length || hits.length !== cards.length) return null;
+    if (!hits.length || hits.length !== stacks.length) return null;
     let i = 0;
     while (i < hits.length - 1 && x >= hits[i + 1].left) i++;
-    return cards[i];
+    return stacks[i].card;
   };
   const browseHandlers = onCardBrowse ? {
     onPointerDown: (e: React.PointerEvent) => {
@@ -207,7 +237,7 @@ export default function Hand({
                // phone in landscape is not the middle of the stage.
                ...(insets ? { paddingLeft: floorPx(insets.left, k), paddingRight: floorPx(insets.right, k) } : {}),
              } as React.CSSProperties}>
-      {cards.map((c, i) => {
+      {stacks.map(({ card: c, cards: copies }, i) => {
         const sc = showNumbers ? scores?.find((s) => s.stable_idx === c.index) : undefined;
         const mark = marks.get(cardKey(c.index)) ?? null;
         // The plan's cards are pulled part-way out of the fan, as the mod
@@ -219,6 +249,13 @@ export default function Hand({
         // affordable card cyan and dims the rest. A replay frame has neither,
         // so its cards stay neutral-bright (see .gs-handslot.gs-playable).
         const clickable = !!onCardClick && c.can_play !== false;
+        // The spine runs on every card a later one covers; the last card shows
+        // its whole face. A badge (the count, the step number) stands at the
+        // strip's bottom beside the spine where the step leaves room for it,
+        // and otherwise goes inside the spine, ahead of the name.
+        const spine = spined && i < n - 1 ? spineLength(cw, show, floorPx(4, k)) : null;
+        const badgeW = mark?.order != null ? STEP_BADGE_W : copies.length > 1 ? COUNT_BADGE_W : null;
+        const beside = spine != null && badgeW != null && badgeBesideSpine(step, cw, k, badgeW);
         // Desktop plays on the single click it always had. On a touchscreen
         // the first tap only raises the card; the second commits it.
         const activate = () => {
@@ -232,7 +269,8 @@ export default function Hand({
             key={c.index}
             className={`gs-handslot${clickable ? " gs-playable" : ""}`
               + `${i === hover ? " gs-hovered" : ""}${pulled ? " gs-pulled" : ""}`
-              + `${onCardTap && c.index === selectedIndex ? " gs-selected" : ""}`}
+              + `${beside ? " gs-badge-beside" : ""}`
+              + `${onCardTap && copies.some((x) => x.index === selectedIndex) ? " gs-selected" : ""}`}
             // Hover is React state rather than CSS `:hover` because the fan
             // reacts to it as a WHOLE (the neighbours step aside), and because
             // the state has to be read off the hitbox, not off the card that
@@ -244,7 +282,7 @@ export default function Hand({
             // gesture and you would never get to read it. The tap raises it.
             onPointerEnter={touch ? undefined : () => setHoverId(c.index)}
             onPointerLeave={touch ? undefined
-              : () => setHoverId((h) => (h === c.index ? null : h))}
+              : () => setHoverId((h) => (copies.some((x) => x.index === h) ? null : h))}
             onClick={onCardTap || touch || clickable ? activate : undefined}
             style={{
               marginLeft: -overlap,
@@ -268,12 +306,20 @@ export default function Hand({
                   && c.unplayable_reason !== "blocked"}
                 blocked={!!onCardClick && c.can_play === false
                   && c.unplayable_reason === "blocked"}
-                played={c.index === playedIndex}
-                hotkey={onCardClick && i < 9 ? i + 1 : undefined}
+                played={copies.some((x) => x.index === playedIndex)}
+                // The number keys count the hand's cards, which a stacked fan
+                // no longer lines up with: no hotkey tags while it stacks. Nor
+                // on a touchscreen, which has no number keys: there a 1-2-3
+                // in the card's corner reads as the AI's play order (bug
+                // report wb-2f2f80cf2b956066, Coach mode on a phone).
+                hotkey={onCardClick && !stacked && !touch && i < 9 ? i + 1 : undefined}
                 winProb={sc?.win_prob}
                 mark={mark?.tier}
                 step={mark?.order}
                 previewDamage={previewDamageFor?.(c)}
+                spine={spine}
+                spineBadges={spine != null && !beside}
+                count={copies.length}
               />
             </div>
             <div className="gs-handslot-hit" aria-hidden="true" />

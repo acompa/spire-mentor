@@ -1,3 +1,7 @@
 {
- "detail": "ppo policy only available at a non-combat decision"
+ "count": 96,
+ "resume": {
+  "kind": "run",
+  "reason": null
+ }
 }

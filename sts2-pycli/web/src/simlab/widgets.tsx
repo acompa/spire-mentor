@@ -1,4 +1,5 @@
 import type { Results, SweepStatus } from "./api";
+import { t } from "../i18n";
 
 // ---------------------------------------------------------------------------
 // Shared bits: panel styles, status glyphs, progress bar, throughput readout.
@@ -20,13 +21,13 @@ export function StatusInline({ s }: { s: SweepStatus }): React.ReactElement {
     label = "";
   } else if (s.status === "error") {
     glyph = "✗";
-    label = s.error ?? "error";
+    label = s.error ?? t("error");
   } else if (s.status === "cancelled") {
     glyph = "⊘";
-    label = s.total ? `cancelled · ${s.done ?? 0}/${s.total}` : "cancelled";
+    label = s.total ? `${t("cancelled")} · ${s.done ?? 0}/${s.total}` : t("cancelled");
   } else if (s.status === "running") {
     glyph = "⏳";
-    const base = s.total ? `${s.done ?? 0}/${s.total}` : "running";
+    const base = s.total ? `${s.done ?? 0}/${s.total}` : t("running");
     label = s.combats_per_s ? `${base} · ${s.combats_per_s.toFixed(1)}/s` : base;
   } else {
     glyph = "·";
@@ -122,10 +123,10 @@ export function ThroughputSummary({
   if (perCore <= 0 && status.combats_per_s === undefined) return null;
   return (
     <span style={{ color: "var(--muted)", fontSize: 13, whiteSpace: "nowrap", marginLeft: "auto" }}>
-      ⚡ {perCore.toFixed(0)} act/s/core
+      ⚡ {t("{n} act/s/core", { n: perCore.toFixed(0) })}
       {status.combats_per_s !== undefined &&
-        ` · ${status.combats_per_s.toFixed(1)} combat/s${
-          status.jobs ? ` (${status.jobs} workers)` : ""
+        ` · ${t("{n} combat/s", { n: status.combats_per_s.toFixed(1) })}${
+          status.jobs ? ` ${t("({n} workers)", { n: status.jobs })}` : ""
         }`}
     </span>
   );

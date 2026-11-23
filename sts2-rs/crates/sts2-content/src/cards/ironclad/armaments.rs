@@ -63,6 +63,15 @@ pub(crate) fn play_armaments(state: &mut CombatState, _t: Option<CreatureUid>) -
         return EffectResult::Resolved;
     }
 
+    // `CardSelectCmd.FromHandForUpgrade` returns null once
+    // `CombatManager.IsOverOrEnding` (v0.111.0 `CardSelectCmd.cs:915`,
+    // v0.113.1 `:753`), before its count check: a block-gain reaction
+    // (Juggernaut) that killed the last enemy leaves no select and no
+    // auto-upgrade (GH #1623, agent-parity seed AP1008).
+    if sts2_core::combat_loop::combat_is_ending(state) {
+        return EffectResult::Resolved;
+    }
+
     // Base Armaments (decomp `FromHandForUpgrade`):
     //   list.Count <= 1 → auto-pick FirstOrDefault (no prompt);
     //   list.Count >= 2 → open the UpgradeInHand selection.

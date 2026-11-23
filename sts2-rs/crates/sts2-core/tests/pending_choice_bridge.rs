@@ -87,6 +87,7 @@ fn build_arena(options_json: &[Value]) -> (CardStore, Vec<ChoiceOption>) {
             card_type,
             target_type: TargetType::None,
             upgraded,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: sts2_core::cards::CombatVars::new(),

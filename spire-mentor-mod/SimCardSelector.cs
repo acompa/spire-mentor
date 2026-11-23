@@ -38,6 +38,7 @@ public class SimCardSelector : ICardSelector
     public async System.Threading.Tasks.Task<IEnumerable<CardModel>> GetSelectedCards(
         IEnumerable<CardModel> options, int minSelect, int maxSelect)
     {
+        var (choiceContext, chooser, choiceOptions) = SimCardSelectContext.ConsumeChoice();
         List<CardModel> choices = options.ToList();
         if (choices.Count == 0)
         {
@@ -49,14 +50,49 @@ public class SimCardSelector : ICardSelector
             return choices;
         }
 
+        // Open before the signal: it parks a card play in
+        // GatheringPlayerChoice, which SimCombatHandler's settle reads as done
+        // unless a pick is open; and it stays open until the action resumes.
+        SelectionOpen = true;
+        try
+        {
+            if (choiceContext == null || chooser == null)
+            {
+                return await AskAgentAsync(choices, minSelect, maxSelect);
+            }
+            // The game's own bracket, skipped when a selector is installed
+            // (GH #1367): a pick in a turn's setup pauses it, so the turn's
+            // AfterSideTurnStart hooks run before the pick, as when played by
+            // hand and on the headless host. The board is read after.
+            await SimGameApi.SignalPlayerChoiceBegun(choiceContext, chooser, choiceOptions);
+            IEnumerable<CardModel> picked = await AskAgentAsync(choices, minSelect, maxSelect);
+            await choiceContext.SignalPlayerChoiceEnded();
+            return picked;
+        }
+        finally
+        {
+            SelectionOpen = false;
+        }
+    }
+
+    /// <summary>
+    /// Ask the agent to pick from <paramref name="choices"/> until it answers
+    /// validly; a selection with one legal outcome never gets here.
+    /// </summary>
+    private static async System.Threading.Tasks.Task<IEnumerable<CardModel>> AskAgentAsync(
+        List<CardModel> choices, int minSelect, int maxSelect)
+    {
         List<Dictionary<string, object?>> cards = IndexedCards(choices);
         RunState? runState = RunManager.Instance.DebugOnlyGetState();
         Player? player = LocalContext.GetMe(runState);
 
         // Captured by MainFile's CardSelectCmd patches just before the game
         // called us; consuming clears it for the next selection.
-        // CLEANROOM2-Q7: only the four captured fields the spec lists are sent;
-        // source_kind / source_target_index / source_upgraded stay advisor-lane.
+        // CLEANROOM2-Q7: only the captured fields the spec lists are sent (the
+        // four screen fields plus pending_enchantment, GH #574, read before
+        // Consume clears it); source_kind / source_target_index /
+        // source_upgraded stay advisor-lane.
+        string? pendingEnchantment = SimCardSelectContext.PendingEnchantment;
         (string? source, string? promptKey, string? sourceModel, bool? capturedCancelable) =
             SimCardSelectContext.Consume();
         // Fallback inference only; wrong for mandatory FromChooseACardScreen callers.
@@ -74,13 +110,14 @@ public class SimCardSelector : ICardSelector
             ["prompt_key"] = promptKey!,
             ["source"] = source!,
             ["source_model"] = sourceModel!,
+            // Which enchantment a TO_ENCHANT pick stamps; null otherwise.
+            ["pending_enchantment"] = pendingEnchantment!,
             ["combat"] = SimCombatHandler.BuildEmbeddedCombatState(player)!,
         };
         // The game passes no token. Bind to the run's, so a selector stranded
         // by a run timeout does not keep asking during the next run.
         CancellationToken ct = SimAutoSlayer.CurrentRunToken;
 
-        SelectionOpen = true;
         try
         {
             while (true)
@@ -108,10 +145,6 @@ public class SimCardSelector : ICardSelector
                 : choices.Take(Math.Max(1, minSelect)).ToList();
             Logger.Log($"[SimCardSelector] card_select cancelled; resolving with {fallback.Count} card(s)");
             return fallback;
-        }
-        finally
-        {
-            SelectionOpen = false;
         }
     }
 
@@ -255,8 +288,7 @@ public class SimCardSelector : ICardSelector
             {
                 if (!cancelable)
                 {
-                    SimProtocolHelpers.SendError("not_cancelable",
-                        $"this selection is not cancelable; choose at least {minSelect} card(s)", runState, player);
+                    SendNotCancelable(minSelect, runState, player);
                     return null;
                 }
                 Logger.Log($"[SimCardSelector] Agent declined the selection ({action})");
@@ -274,9 +306,17 @@ public class SimCardSelector : ICardSelector
             if (root.TryGetProperty("index", out JsonElement indexEl) && indexEl.ValueKind == JsonValueKind.Number)
             {
                 bool isInt = indexEl.TryGetInt32(out int index);
-                if (isInt && index >= options.Count && minSelect <= 0)
+                if (isInt && index >= options.Count)
                 {
-                    return new List<CardModel>();
+                    // An index past the end selects nothing: a skip, if the screen allows one.
+                    switch (CardSelectRules.ForEmptyChoice(minSelect, cancelable))
+                    {
+                        case CardSelectRules.EmptyChoice.Skip:
+                            return new List<CardModel>();
+                        case CardSelectRules.EmptyChoice.NotCancelable:
+                            SendNotCancelable(minSelect, runState, player);
+                            return null;
+                    }
                 }
                 if (isInt && index >= 0 && index < options.Count && minSelect <= 1)
                 {
@@ -312,9 +352,16 @@ public class SimCardSelector : ICardSelector
                 selected.Add(options[i]);
             }
 
-            if (selected.Count == 0 && minSelect <= 0)
+            if (selected.Count == 0)
             {
-                return selected;
+                switch (CardSelectRules.ForEmptyChoice(minSelect, cancelable))
+                {
+                    case CardSelectRules.EmptyChoice.Skip:
+                        return selected;
+                    case CardSelectRules.EmptyChoice.NotCancelable:
+                        SendNotCancelable(minSelect, runState, player);
+                        return null;
+                }
             }
             if (selected.Count >= minSelect && selected.Count <= maxSelect)
             {
@@ -331,4 +378,8 @@ public class SimCardSelector : ICardSelector
             return null;
         }
     }
+
+    private static void SendNotCancelable(int minSelect, RunState? runState, Player? player) =>
+        SimProtocolHelpers.SendError("not_cancelable",
+            $"this selection is not cancelable; choose at least {Math.Max(1, minSelect)} card(s)", runState, player);
 }

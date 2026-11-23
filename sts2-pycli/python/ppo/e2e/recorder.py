@@ -216,6 +216,8 @@ def replay(run: dict[str, Any], check: bool = True, tokenizer: Any = None) -> It
     `reset_fight()` at every fight start and `observe(policy)` at every combat
     step, forced ones included, before the action; a yielded combat state's
     `bv` is the one it observed."""
+    import sts2_rs
+
     from ppo.combat_ctx.intent_log import IntentLog
     from ppo.combat_ctx.snapshot import honest_snapshot, obs_actions
 
@@ -235,6 +237,7 @@ def replay(run: dict[str, Any], check: bool = True, tokenizer: Any = None) -> It
         phase = rm.phase()
         if phase == "event":
             rm.materialize_event()
+            phase = rm.phase()  # the Fake Merchant opens as a shop (GH #1607)
         snap = bv = cs = None
         if phase == "combat":
             cs = rm.combat_state()
@@ -245,6 +248,8 @@ def replay(run: dict[str, Any], check: bool = True, tokenizer: Any = None) -> It
                 if tokenizer is not None:
                     tokenizer.reset_fight()
             bv = cs.belief_view(0)
+            # The env's row snapshot (`env._snapshot`); the tokenizer adds a "chars"
+            # row's live keys (`tactical.live_snapshot`).
             snap = honest_snapshot(bv, fight["room"])
             if int(snap["round"]) < last_round:
                 # A new fight in the same combat phase (back-to-back bosses).

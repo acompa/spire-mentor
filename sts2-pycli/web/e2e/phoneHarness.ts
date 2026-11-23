@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { FireResult, PreviewApi, PreviewStep } from "../src/previewSteps";
 
 /** CSS-px viewports of the two phones the layout is checked against: a large
  *  Android (Pixel-class) and the small end (iPhone SE-class). */
@@ -93,6 +94,14 @@ export async function openPreview(page: Page, query: string): Promise<void> {
   }
   await page.locator(".gs-sprite-wrap").first().waitFor({ state: "visible" });
   await page.waitForTimeout(800); // rigs load and the stage zoom settles
+}
+
+/** Run a scripted preview step now. The page must have been opened with
+ *  `<step>=manual` (e.g. `buff=manual`): the step then has no timer and waits
+ *  for this, so it lands exactly when the test is ready for it (GH #1442).
+ *  Returns once the new step is rendered, with the board's step index. */
+export async function fireStep(page: Page, step: PreviewStep): Promise<FireResult> {
+  return page.evaluate((s) => (window as unknown as { __preview: PreviewApi }).__preview.fire(s), step);
 }
 
 /** Tap hand card `i` in the middle of the strip of it no later card covers,

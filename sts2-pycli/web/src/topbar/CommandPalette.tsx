@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { filterEntries, type PaletteEntry } from "./paletteEntries";
+import { t } from "../i18n";
 
 /**
  * Ctrl+K / ⌘K: every top-bar command in one filterable list.
@@ -46,14 +47,14 @@ export default function CommandPalette({ open, entries, onClose }: {
   let lastGroup = "";
   return (
     <div data-testid="palette-backdrop" className="wb-palette-backdrop" onMouseDown={onClose}>
-      <div role="dialog" aria-label="Command palette" className="mono wb-palette"
+      <div role="dialog" aria-label={t("Command palette")} className="mono wb-palette"
         onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKey}>
-        <input ref={input} type="text" value={query} placeholder="type a command…"
-          aria-label="command" role="combobox" aria-expanded="true" aria-controls="wb-palette-list"
+        <input ref={input} type="text" value={query} placeholder={t("type a command…")}
+          aria-label={t("command")} role="combobox" aria-expanded="true" aria-controls="wb-palette-list"
           aria-activedescendant={shown[cursor] ? `wb-palette-${shown[cursor].id}` : undefined}
           onChange={(e) => setQuery(e.target.value)} />
         <div id="wb-palette-list" role="listbox" className="wb-palette-list">
-          {shown.length === 0 && <div className="wb-palette-empty">no command matches</div>}
+          {shown.length === 0 && <div className="wb-palette-empty">{t("no command matches")}</div>}
           {shown.map((e, i) => {
             const header = e.group !== lastGroup ? e.group : null;
             lastGroup = e.group;
@@ -66,7 +67,7 @@ export default function CommandPalette({ open, entries, onClose }: {
                   className={`wb-palette-item${i === cursor ? " wb-palette-item--cursor" : ""}${e.disabledReason ? " wb-palette-item--disabled" : ""}`}
                   onMouseEnter={() => setCursor(i)} onClick={() => runAt(i)}>
                   <span className="wb-palette-label">
-                    {e.label}{e.checked !== undefined && <span className="wb-palette-state">{e.checked ? " · on" : " · off"}</span>}
+                    {e.label}{e.checked !== undefined && <span className="wb-palette-state">{e.checked ? t(" · on") : t(" · off")}</span>}
                   </span>
                   {e.disabledReason
                     ? <span className="wb-palette-reason">{e.disabledReason}</span>
@@ -76,7 +77,7 @@ export default function CommandPalette({ open, entries, onClose }: {
             );
           })}
         </div>
-        <div className="wb-palette-hint">↑↓ move · Enter run · Esc close</div>
+        <div className="wb-palette-hint">{t("↑↓ move · Enter run · Esc close")}</div>
       </div>
     </div>
   );

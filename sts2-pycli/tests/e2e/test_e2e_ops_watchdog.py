@@ -319,13 +319,21 @@ def test_low_disk_prunes_then_stops_and_keeps_pinned_states(make_lane):
 
 @pytest.mark.parametrize("mode", ["slow", "silent"])
 def test_stall_restarts_the_learner(make_lane, mode):
-    # The healthy phase (90 iterations) must outlast the arming delay so the
-    # process's median stays the healthy rate.
-    plan = {"default": {"budget": 1000}, "launches": {"1": {"stall_at": 900, "stall_mode": mode}}}
+    # No verdict can fall in the healthy phase: its 90 iterations (one
+    # throughput row each, a 2 ms tick) end long before the check arms at
+    # grace + window = 4.6 s after the start, so a learner starved under a
+    # loaded gate cannot read as stalled there (a 0.3 s window armed while
+    # healthy rows were still coming fired at 710/720 under `gate-full`). The
+    # stall's rows (one per 0.25 s) stay fewer than the 90 healthy ones for
+    # ~20 s, so the process's median stays the healthy rate however late the
+    # watchdog looks.
+    stall = {"stall_at": 900, "stall_mode": mode, "stall_every_s": 0.25}
+    healthy = {"tick_s": 0.002, "throughput_every_s": 0.0}
+    plan = {"default": {"budget": 1000}, "launches": {"1": {**healthy, **stall}}}
     env = {
         "E2E_WD_STALL_FRAC": "0.5",
-        "E2E_WD_STALL_GRACE_S": "1.5",
-        "E2E_WD_STALL_WINDOW_S": "0.3",
+        "E2E_WD_STALL_GRACE_S": "4.0",
+        "E2E_WD_STALL_WINDOW_S": "0.6",
     }
     lane = make_lane(plan=plan, env=env)
     assert lane.run() == 0, lane.dump()
@@ -503,6 +511,33 @@ def test_second_watchdog_on_the_same_lane_is_refused(make_lane):
     assert len(lane.starts()) == 1
     p.send_signal(signal.SIGTERM)
     assert lane.wait(p) == 0
+
+
+def test_a_stalled_tick_does_not_hold_a_stop(make_lane, tmp_path):
+    """GH #1450: bash runs a trap only after its foreground child returns, so a
+    ``wdpy tick`` that hung under load held a SIGTERM for as long as it hung.
+    The tick now runs in the background and a stop cuts it short."""
+    hold, held = tmp_path / "hold", tmp_path / "held"
+    py = tmp_path / "pybin" / "python"
+    py.parent.mkdir()
+    py.write_text(
+        "#!/bin/bash\n"
+        "# The real interpreter, except that a tick hangs while the hold file exists.\n"
+        f'if [[ $3 == tick && -e "{hold}" ]]; then : >"{held}"; exec sleep 600; fi\n'
+        f'exec "{sys.executable}" "$@"\n',
+        encoding="utf-8",
+    )
+    py.chmod(0o755)
+    lane = make_lane(plan={"default": {"budget": 10**9}}, lane_env={"E2E_PY": str(py)})
+    p = lane.start()
+    lane.wait_for(lambda: lane.decisions() > 20, what="training")
+    hold.touch()
+    lane.wait_for(held.exists, what="a held tick")
+    p.send_signal(signal.SIGTERM)
+    assert lane.wait(p, timeout=30) == 0, lane.dump()
+    log = (lane.save / C.WATCHDOG_LOG).read_text(encoding="utf-8")
+    assert "SIGTERM during a tick: stopping the learner" in log, lane.dump()
+    assert any(r["event"] == "signal" for r in lane.log()), lane.dump()
 
 
 def test_learner_env_is_the_allowlist_and_runs_in_its_own_session(make_lane, tmp_path):

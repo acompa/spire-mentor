@@ -643,3 +643,28 @@ fn fan_of_knives_inky_shiv_weakens_wrigglers_spawned_by_its_kill() {
         assert_eq!(weak, Some(1), "Inky weakens every spawned Wriggler");
     }
 }
+
+/// Every Wither is one card: C# `Wither.CanonicalVars` is
+/// `DamageVar(3m, ValueProp.Unpowered | ValueProp.Move)` (`Wither.cs:57`,
+/// v0.113.0) whichever effect creates it. The engine builds it in two
+/// places — Aeonglass's moves from the content spec, and Withering Presence
+/// and the Aeonglass dominion from core's own POD (`sts2-core` cannot reach
+/// the spec) — and the two must be the same card. The core POD used to
+/// carry `base_damage` 0, which the wire (`base_damage`) and the e2e card
+/// token (`C_DMG`) showed.
+#[test]
+fn core_built_wither_is_the_spec_wither() {
+    install_pool();
+    let mut state = CombatState::default();
+    state.player.current_hp = 70;
+    state.player.max_hp = 70;
+    let _player = state.init_player_creature();
+    let from_core = sts2_core::card_effects::spawn_wither_into_pile(&mut state, PileKind::Discard);
+    let from_spec = spawn_wither(&mut state, PileKind::Discard);
+    let core_card = state.cards[from_core.0.get() as usize - 1];
+    let mut spec_card = state.cards[from_spec.0.get() as usize - 1];
+    assert_eq!(spec_card.base_damage, 3, "Wither.cs:57 DamageVar(3)");
+    assert_eq!(core_card.base_damage, 3, "the core-built Wither");
+    spec_card.uid = core_card.uid;
+    assert_eq!(core_card, spec_card);
+}

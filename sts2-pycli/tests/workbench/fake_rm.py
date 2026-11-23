@@ -88,6 +88,9 @@ class FakeRm:
     def master_deck_detailed(self) -> list[tuple[str, bool]]:
         return []
 
+    def master_deck_enchantments(self) -> list[tuple[str, int] | None]:
+        return [None] * len(self.master_deck_detailed())
+
     def max_potion_slots(self) -> int:
         return 3
 
@@ -106,6 +109,9 @@ class FakeRm:
 
     def card_removal_options(self) -> list[int]:
         return []
+
+    def card_removal_option_enchantments(self) -> list[tuple[str, int] | None]:
+        return [None] * len(self.card_removal_options())
 
     def full_map(self) -> dict[str, Any]:
         return {}

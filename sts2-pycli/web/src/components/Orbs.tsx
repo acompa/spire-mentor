@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { assetUrl, type Orb } from "../api";
 import { orbArc, GAME_BODY_H, ORB_TO_BODY } from "./orbArc";
+import { t } from "../i18n";
 
 /** The game's empty-slot art: the dashed ring `NOrb` shows while its `Model` is
  *  null (the `%Outline` TextureRect, drawn for the local player only).
@@ -20,10 +21,10 @@ const EMPTY_ORB_ART = "orb_atlas/empty.png";
  *  otherwise leave a hole in the belt. */
 function EmptySlot({ style }: { style: CSSProperties }) {
   const [missing, setMissing] = useState(false);
-  if (missing) return <span className="gs-orb-empty" role="img" aria-label="empty orb slot" style={style} />;
+  if (missing) return <span className="gs-orb-empty" role="img" aria-label={t("empty orb slot")} style={style} />;
   return (
     <img className="gs-orb-empty-art" src={assetUrl(EMPTY_ORB_ART)} alt="" role="img"
-      aria-label="empty orb slot" draggable={false} style={style}
+      aria-label={t("empty orb slot")} draggable={false} style={style}
       onError={() => setMissing(true)} />
   );
 }
@@ -72,7 +73,7 @@ export default function Orbs({ orbs, slots, bodyH, size, row }: {
     <div className={`gs-orbs${row ? " gs-orbs-row" : ""}`} data-combatant="orbs">
       {filled.map((o, i) => (
         <div key={o.index} style={slot(i)}
-          title={`${o.name}${o.passive != null ? ` — passive ${o.passive}, evoke ${o.evoke}` : ""}`}>
+          title={`${o.name}${o.description ? ` — ${o.description}` : o.passive != null ? t(" — passive {passive}, evoke {evoke}", { passive: o.passive, evoke: o.evoke }) : ""}`}>
           {o.image ? (
             <img src={o.image} alt={o.name} draggable={false} style={{ width: px, height: px, display: "block" }} />
           ) : (

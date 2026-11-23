@@ -26,7 +26,10 @@ pub(crate) fn play_lunar_blast(
     //   hits = combat.count_cards_played_this_turn(owner, card_type=SKILL)
     //   for _ in range(hits): apply_damage(...); if target.is_dead: break
     // Bead `sts2-rs-i49k` closes the r6l9 follow-up on this card.
-    let hits = resolving_preview(state, preview_lunar_blast, target);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_lunar_blast, target),
+    );
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, current_damage(state));
         if !state

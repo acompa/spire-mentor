@@ -39,7 +39,8 @@ type Fight = Vec<(String, Option<Value>)>;
 /// search it came from.
 fn first_combat(character: &str, seed: i32) -> Fight {
     let mut game = Game::new();
-    game.start_faithful(character, seed, 0).expect("run starts");
+    game.start_faithful(character, seed, 0, "overgrowth")
+        .expect("run starts");
     let mut agent = RunAgent::new(seed, SIMS, BOSS_SIMS);
     let mut out = Vec::new();
     for _ in 0..2_000 {

@@ -339,6 +339,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/gremlin_merc/gremlin_merc",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -163.0,
     "rig_bounds_h": 302.0,
     "rig_bounds_w": 280.0,
     "rig_scale": 0.32,
@@ -700,6 +702,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/silent/silent",
+   "rig_arrow_x": 0.0,
+   "rig_arrow_y": -146.0,
    "rig_bounds_h": 244.0,
    "rig_bounds_w": 244.0,
    "rig_scale": 0.29

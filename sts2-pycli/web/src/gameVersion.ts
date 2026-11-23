@@ -16,6 +16,8 @@
  *   2026-11-14) until the user picks one. Requests always name their build.
  */
 
+import { getLang, t, type Lang } from "./i18n";
+
 export const LEGACY_GAME_VERSION = "v0.107.1";
 
 /** The stored launcher pick meaning "no pick yet": follow the server default. */
@@ -23,10 +25,21 @@ export const NO_VERSION_PICK = "";
 
 /** Launcher labels for the versions we know; an unknown one shows as-is. */
 const LABELS: Record<string, string> = {
-  "v0.107.1": "game v0.107.1 (stable)",
-  "v0.111.0": "v0.111.0 (beta)",
-  "v0.113.0": "v0.113.0 (beta, + the Fool)",
+  "v0.107.1": t("v0.107.1 (previous stable)"),
+  "v0.111.0": t("v0.111 (stable)"),
+  "v0.113.0": t("v0.113.0 (beta, + the Fool)"),
 };
+
+/** Builds the version pickers no longer offer (GH #1572): Steam stopped
+ *  serving v0.107.1 once v0.111.1 went stable. The engine still plays it, so a
+ *  stored pick, an imported position or the C# engine (which plays only that
+ *  build) keeps working; the picker just shows it while it is the one in use. */
+const RETIRED_FROM_PICKER = new Set(["v0.107.1"]);
+
+/** The builds a picker lists: the server's, minus retired ones unless `current` is one. */
+export function pickerVersions(versions: readonly string[], current: string): string[] {
+  return versions.filter((v) => !RETIRED_FROM_PICKER.has(v) || v === current);
+}
 
 export function gameVersionLabel(v: string): string {
   return LABELS[v] ?? v;
@@ -96,6 +109,18 @@ export function effectiveGameVersion(
  *  `/<ver>/<file>` — `sfx_map.json`, `card_text.json`. */
 export function versionedPublicPath(file: string, v: string | null | undefined): string {
   return v && v !== LEGACY_GAME_VERSION ? `/${v}/${file}` : `/${file}`;
+}
+
+/** `versionedPublicPath` in the page's language: a table of game TEXT
+ *  (`glossary.json`, `card_text.json`) has a Simplified Chinese twin under
+ *  `public/zh/` (`--lang zhs` of its generator), read when the page runs in
+ *  Chinese. English reads exactly `versionedPublicPath`'s URL. Callers fall
+ *  back to that URL when the zh file is missing (a build without one). */
+export function localizedPublicPath(
+  file: string, v: string | null | undefined, lang: Lang = getLang(),
+): string {
+  const path = versionedPublicPath(file, v);
+  return lang === "zh" ? `/zh${path}` : path;
 }
 
 /** The request-body fragment for `v`: every request names its build. Empty

@@ -23,6 +23,7 @@ use sts2_wire::emit::combat_state_to_value;
 use sts2_wire::state_dict::{parse_state_dict, registry_names_for, state_from_dict_impl};
 
 use crate::deck::PyRandom;
+use crate::i18n::trf;
 
 /// `runner.MAX_ACTIONS`: a trial that has not ended after this many actions
 /// is `timed_out`.
@@ -419,24 +420,35 @@ pub fn parse_encounter(encounter: &str) -> (String, Vec<String>) {
 /// `specs.validate_deck`.
 pub fn validate_deck(name: &str, cards: &[String]) -> Result<(), String> {
     if name.is_empty() || name.contains('/') {
-        return Err(format!(
-            "invalid deck name {name:?} (must be non-empty and contain no '/')"
+        return Err(trf(
+            "invalid deck name {name} (must be non-empty and contain no '/')",
+            &[("name", &format!("{name:?}"))],
         ));
     }
     if cards.is_empty() {
-        return Err(format!("deck {name:?} is empty"));
+        return Err(trf(
+            "deck {name} is empty",
+            &[("name", &format!("{name:?}"))],
+        ));
     }
     if cards.len() > MAX_DECK {
-        return Err(format!(
-            "deck {name:?} has {} cards (max {MAX_DECK})",
-            cards.len()
+        return Err(trf(
+            "deck {name} has {n} cards (max {max})",
+            &[
+                ("name", &format!("{name:?}")),
+                ("n", &cards.len()),
+                ("max", &MAX_DECK),
+            ],
         ));
     }
     let known = registry_names_for("card").unwrap_or_default();
     for c in cards {
         let base = c.split_once('+').map_or(c.as_str(), |(b, _)| b);
         if !known.iter().any(|k| k == base) {
-            return Err(format!("deck {name:?}: unknown card id {c:?}"));
+            return Err(trf(
+                "deck {name}: unknown card id {card}",
+                &[("name", &format!("{name:?}")), ("card", &format!("{c:?}"))],
+            ));
         }
     }
     Ok(())

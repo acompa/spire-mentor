@@ -23,6 +23,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+import content_universe
 from card_inventory import _version_tuple, has_v0111_cards
 
 # Canonical Ironclad card ids. Cross-checked against the Rust generated
@@ -247,8 +248,10 @@ def generate_loadout(
     A run outlives one fight, so it carries more relics than a scenario does
     (rewards, shops and rest sites are what the graft exists to exercise), and
     gold, so shops get bought from. Deterministic per
-    ``(seed, character, game_version)``. The relics skip ``EVENT_RELICS``:
-    an event can grant those a second time.
+    ``(seed, character, game_version)``. The relic and potion pools are the
+    build's whole universe (``loadout_relics``, ``loadout_potions``, GH #1500),
+    less ``EVENT_RELICS`` (an event can grant those a second time) and other
+    characters' class potions.
 
     Lives apart from ``generate_v2`` because that function's rng stream keys
     the committed trace cache.
@@ -260,8 +263,8 @@ def generate_loadout(
             c + ("+1" if rng.random() < 0.25 else "")
             for c in (rng.choice(pool) for _ in range(rng.randint(8, 25)))
         ),
-        relics=tuple(rng.sample(LOADOUT_RELICS, rng.randint(3, 12))),
-        potions=tuple(rng.sample(ALL_POTIONS, rng.randint(0, 3))),
+        relics=tuple(rng.sample(loadout_relics(game_version), rng.randint(3, 12))),
+        potions=tuple(rng.sample(loadout_potions(character, game_version), rng.randint(0, 3))),
         gold=rng.randint(0, 999),
     )
 
@@ -606,25 +609,59 @@ ALL_RELICS: list[str] = [
     "WONGO_CUSTOMER_APPRECIATION_BADGE",
 ]
 
-#: The Event-rarity relics in ``ALL_RELICS`` (``rarity`` in
-#: ``sts2-wiki/data/<version>/relics.json``; the same 35 in v0.107.1 and
-#: v0.111.0). An event hands each of them out by name, not from a grab bag, so
-#: a run grafted with one can meet its event and be given a second copy. The
-#: real game can't hold two: events don't repeat and every other source pulls
-#: from the grab bags, which drop owned relics. C# fires hooks once per copy
-#: and Rust once per ``RelicId``, so the copy shows up as a false divergence.
-#: ``generate_loadout`` leaves them out. (``ALL_RELICS`` has no Ancient ones.)
+#: Every relic an event or Ancient hands out by name: the Event- and
+#: Ancient-rarity relics, plus the rest of the C# event relic pool, the starter
+#: upgrades Touch of Orobas swaps in (Black Blood, Ring of the Drake, ...)
+#: (``rarity`` / ``pool`` in ``sts2-wiki/data/<version>/relics.json``). Every
+#: build's, so the list covers v0.113.0 too; 35 of them are in ``ALL_RELICS``.
+#:
+#: A run grafted with one can meet the event that gives it and be handed a
+#: second copy. The real game can't hold two: events don't repeat and every
+#: other source pulls from the grab bags, which drop owned relics. C# fires
+#: hooks once per copy and Rust once per ``RelicId``, so the copy shows up as a
+#: false divergence. ``generate_loadout`` leaves them out.
+#: ``tests/test_id_partitions.py`` checks the set against the wiki data.
 EVENT_RELICS: frozenset[str] = frozenset(
     {
+        "ALCHEMICAL_COFFER",
+        "ARCANE_SCROLL",
+        "ARCHAIC_TOOTH",
+        "ASTROLABE",
+        "BATH_ROBES",
+        "BATH_TOWEL",
+        "BEAUTIFUL_BRACELET",
         "BIG_MUSHROOM",
+        "BIIIG_HUG",
         "BING_BONG",
+        "BLACK_BLOOD",
+        "BLACK_STAR",
+        "BLESSED_ANTLER",
+        "BLOOD_SOAKED_ROSE",
         "BONE_TEA",
+        "BOOMING_CONCH",
+        "BRILLIANT_SCARF",
+        "BYRDINE",
         "BYRDPIP",
+        "CALLING_BELL",
+        "CHOICES_PARADOX",
         "CHOSEN_CHEESE",
+        "CLAWS",
+        "CROSSBOW",
+        "CURSED_PEARL",
         "DARKSTONE_PERIAPT",
         "DAUGHTER_OF_THE_WIND",
+        "DELICATE_FROND",
+        "DIAMOND_DIADEM",
+        "DISTINGUISHED_CAPE",
+        "DIVINE_DESTINY",
+        "DOWSING_ROD",
         "DREAM_CATCHER",
+        "DRIFTWOOD",
+        "DUSTY_TOME",
+        "ECTOPLASM",
+        "ELECTRIC_SHRYMP",
         "EMBER_TEA",
+        "EMPTY_CAGE",
         "FAKE_ANCHOR",
         "FAKE_BLOOD_VIAL",
         "FAKE_HAPPY_FLOWER",
@@ -635,27 +672,232 @@ EVENT_RELICS: frozenset[str] = frozenset(
         "FAKE_SNECKO_EYE",
         "FAKE_STRIKE_DUMMY",
         "FAKE_VENERABLE_TEA_SET",
+        "FIDDLE",
+        "FISHING_ROD",
         "FORGOTTEN_SOUL",
         "FRAGRANT_MUSHROOM",
         "FRESNEL_LENS",
+        "FUR_COAT",
+        "GLASS_EYE",
+        "GLITTER",
+        "GOLDEN_COMPASS",
+        "GOLDEN_PEARL",
         "HAND_DRILL",
+        "HEFTY_TABLET",
         "HISTORY_COURSE",
+        "INFUSED_CORE",
+        "IRON_CLUB",
+        "JEWELED_MASK",
+        "JEWELRY_BOX",
+        "KALEIDOSCOPE",
+        "LARGE_CAPSULE",
+        "LASTING_CANDY",
+        "LAVA_ROCK",
+        "LEAD_PAPERWEIGHT",
+        "LEAFY_POULTICE",
+        "LOOMING_FRUIT",
+        "LORDS_PARASOL",
+        "LOST_COFFER",
         "LOST_WISP",
+        "MASSIVE_SCROLL",
         "MAW_BANK",
+        "MEAT_CLEAVER",
+        "MIGHTY_WINGS",
         "MR_STRUGGLES",
+        "MUSIC_BOX",
+        "NEOWS_BONES",
+        "NEOWS_SACRIFICE",
+        "NEOWS_TALISMAN",
+        "NEOWS_TORMENT",
+        "NEW_LEAF",
+        "NUTRITIOUS_OYSTER",
+        "NUTRITIOUS_SOUP",
+        "OBSIDIAN_VICE",
+        "PAELS_BLOOD",
+        "PAELS_CLAW",
+        "PAELS_EYE",
+        "PAELS_FLESH",
+        "PAELS_GROWTH",
+        "PAELS_HORN",
+        "PAELS_LEGION",
+        "PAELS_TEARS",
+        "PAELS_TOOTH",
+        "PAELS_WING",
+        "PANDORAS_BOX",
+        "PHIAL_HOLSTER",
+        "PHILOSOPHERS_STONE",
+        "PHYLACTERY_UNBOUND",
         "POLLINOUS_CORE",
+        "POMANDER",
+        "PRECARIOUS_SHEARS",
+        "PRECISE_SCISSORS",
+        "PRESERVED_FOG",
+        "PRISMATIC_GEM",
+        "PUMPKIN_CANDLE",
+        "RADIANT_PEARL",
+        "RAZOR_TOOTH",
+        "RING_OF_THE_DRAKE",
         "ROYAL_POISON",
+        "RUNIC_PYRAMID",
+        "SAI",
+        "SAND_CASTLE",
+        "SCROLL_BOXES",
+        "SEAL_OF_GOLD",
+        "SEA_GLASS",
+        "SERE_TALON",
+        "SIGNET_RING",
+        "SILKEN_TRESS",
+        "SILVER_CRUCIBLE",
+        "SMALL_CAPSULE",
+        "SNECKO_EYE",
+        "SOZU",
+        "SPARKLING_ROUGE",
+        "SPIKED_GAUNTLETS",
+        "STONE_HUMIDIFIER",
+        "STORYBOOK",
+        "STORYTELLER",
         "SWORD_OF_JADE",
         "SWORD_OF_STONE",
+        "TANXS_WHISTLE",
         "TEA_OF_DISCOURTESY",
         "THE_BOOT",
+        "THROWING_AXE",
+        "THUMBSCREW",
+        "TOASTY_MITTENS",
+        "TORMENTOUS_COLLAR",
+        "TOUCH_OF_OROBAS",
+        "TOY_BOX",
+        "TRI_BOOMERANG",
+        "VELVET_CHOKER",
+        "VERY_HOT_COCOA",
+        "WAR_HAMMER",
+        "WHISPERING_EARRING",
+        "WINGED_BOOTS",
         "WONGOS_MYSTERY_TICKET",
         "WONGO_CUSTOMER_APPRECIATION_BADGE",
+        "WUPPY",
+        "YUMMY_COOKIE",
     }
 )
 
-#: The relics ``generate_loadout`` draws from.
-LOADOUT_RELICS: list[str] = [r for r in ALL_RELICS if r not in EVENT_RELICS]
+#: Relics the frozen single-fight relic axis (``ALL_RELICS``) leaves out and
+#: ``generate_loadout`` grafts instead: the Rare, Shop, Starter and newer-build
+#: relics. ``ALL_RELICS`` stays frozen because ``generate_v2``'s rng stream
+#: keys the committed trace cache. GH #1500: a relic of the build must be in
+#: ``ALL_RELICS``, here, in ``EVENT_RELICS`` or in ``PLACEHOLDER_RELICS``, or
+#: ``tests/test_id_partitions.py`` fails, so a new relic needs a decision.
+LOADOUT_ONLY_RELICS: frozenset[str] = frozenset(
+    {
+        "ART_OF_WAR",
+        "BEATING_REMNANT",
+        "BELT_BUCKLE",
+        "BIG_HAT",
+        "BIZARRE_LAMP",
+        "BOOKMARK",
+        "BREAD",
+        "BRIMSTONE",
+        "BURNING_STICKS",
+        "CAPTAINS_WHEEL",
+        "CAULDRON",
+        "CHANDELIER",
+        "CHARONS_ASHES",
+        "CHEMICAL_X",
+        "CLOAK_CLASP",
+        "CONDUCTORS_BATON",
+        "DEMON_TONGUE",
+        "DINGY_RUG",
+        "DOLLYS_MIRROR",
+        "DRAGON_FRUIT",
+        "EMOTION_CHIP",
+        "EXERCISE_MAT",
+        "FERTILIZER",
+        "FROZEN_EGG",
+        "GAMBLING_CHIP",
+        "GAME_PIECE",
+        "GHOST_SEED",
+        "GIRYA",
+        "GNARLED_HAMMER",
+        "HELICAL_DART",
+        "ICE_CREAM",
+        "INTIMIDATING_HELMET",
+        "IVORY_TILE",
+        "KIFUDA",
+        "KUNAI",
+        "LAVA_LAMP",
+        "LEES_WAFFLE",
+        "LIZARD_TAIL",
+        "LUNAR_PASTRY",
+        "MANGO",
+        "MEAT_ON_THE_BONE",
+        "MEMBERSHIP_CARD",
+        "METRONOME",
+        "MINIATURE_TENT",
+        "MINI_REGENT",
+        "MOLTEN_EGG",
+        "MUMMIFIED_HAND",
+        "MYSTIC_LIGHTER",
+        "NINJA_SCROLL",
+        "OCARINA",
+        "OLD_COIN",
+        "ORANGE_DOUGH",
+        "ORRERY",
+        "PAPER_KRANE",
+        "POCKETWATCH",
+        "POWER_CELL",
+        "PRAYER_WHEEL",
+        "PUNCH_DAGGER",
+        "RAINBOW_RING",
+        "RINGING_TRIANGLE",
+        "ROYAL_STAMP",
+        "RUINED_HELMET",
+        "RUNIC_CAPACITOR",
+        "SCREAMING_FLAGON",
+        "SHOVEL",
+        "SHURIKEN",
+        "SLING_OF_COURAGE",
+        "SONG_BOW",
+        "STONE_CALENDAR",
+        "STURDY_CLAMP",
+        "THE_ABACUS",
+        "THE_COURIER",
+        "TOOLBOX",
+        "TOUGH_BANDAGES",
+        "TOXIC_EGG",
+        "TUNGSTEN_ROD",
+        "TWINE",
+        "UNCEASING_TOP",
+        "UNDYING_SIGIL",
+        "UNSETTLING_LAMP",
+        "VEXING_PUZZLEBOX",
+        "VITRUVIAN_MINION",
+        "WHITE_BEAST_STATUE",
+        "WHITE_STAR",
+        "WHITTLING_KNIFE",
+        "WING_CHARM",
+    }
+)
+
+#: Relics with nothing to exercise: ``CIRCLET`` is the fallback the game hands
+#: out when a relic pool is empty (``pool: "Fallback"``, no hooks) and
+#: ``DEPRECATED_RELIC`` the placeholder for retired ids.
+PLACEHOLDER_RELICS: frozenset[str] = frozenset({"CIRCLET", "DEPRECATED_RELIC"})
+
+
+def loadout_relics(game_version: str | None = None) -> list[str]:
+    """The relics ``generate_loadout`` draws from at ``game_version``.
+
+    The build's whole relic universe (``RelicId::all_for`` order) minus
+    ``EVENT_RELICS`` and ``PLACEHOLDER_RELICS``. Before GH #1500 this was
+    ``ALL_RELICS`` minus the event relics: 75 of v0.111.0's 299 relics, and
+    none of v0.113.0's.
+    """
+    version = game_version or sweep_game_version()
+    return [
+        r
+        for r in content_universe.relics(version)
+        if r not in EVENT_RELICS and r not in PLACEHOLDER_RELICS
+    ]
+
 
 ALL_POTIONS: list[str] = [
     "ATTACK_POTION",
@@ -707,6 +949,51 @@ ALL_POTIONS: list[str] = [
     "VULNERABLE_POTION",
     "WEAK_POTION",
 ]
+
+#: Class potions (``PotionKind::character_lock``): only their own character
+#: can drink them, so ``ALL_POTIONS`` (the frozen Ironclad-pack sweep list)
+#: leaves them all out and ``generate_loadout`` grafts each only onto its own
+#: character. ``tests/test_id_partitions.py`` checks this against the Rust.
+CLASS_POTIONS: frozenset[str] = frozenset(
+    {
+        "ASHWATER",
+        "BLOOD_POTION",
+        "BONE_BREW",
+        "BOTTLED_SONG",
+        "COSMIC_CONCOCTION",
+        "CRYSTALLINE_EUPHORIA",
+        "CUNNING_POTION",
+        "ESSENCE_OF_DARKNESS",
+        "FOCUS_POTION",
+        "GHOST_IN_A_JAR",
+        "KINGS_COURAGE",
+        "POISON_POTION",
+        "POTION_OF_CAPACITY",
+        "POTION_OF_DOOM",
+        "POT_OF_GHOULS",
+        "PRECISION_POTION",
+        "SOLDIERS_STEW",
+        "STAR_POTION",
+    }
+)
+
+#: Shared potions newer than the frozen ``ALL_POTIONS``: ``generate_loadout``
+#: grafts them, the single-fight sweep does not. AMBERGRIS is v0.111.0's
+#: Neow's Sacrifice event potion.
+LOADOUT_ONLY_POTIONS: frozenset[str] = frozenset({"AMBERGRIS"})
+
+
+def loadout_potions(character: str, game_version: str | None = None) -> list[str]:
+    """The potions ``generate_loadout`` draws from for ``character``.
+
+    The build's potion universe (``PotionKind`` order) minus the other
+    characters' class potions. Before GH #1500 it was ``ALL_POTIONS``: 48 of
+    the build's 64-67, with no class potion at all.
+    """
+    version = game_version or sweep_game_version()
+    locks = content_universe.potion_character_locks()
+    return [p for p in content_universe.potions(version) if locks.get(p, character) == character]
+
 
 #: Canonical Regent (orange) card ids — the `name:` field of every factory in
 #: ../sts2-rs/crates/sts2-content/src/cards/regent/*.rs (REGENT_SPECS, 88

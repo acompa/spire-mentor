@@ -161,7 +161,7 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
         await expect(panel, "tap outside").toHaveCount(0, { timeout: 5000 });
       });
 
-      test("the bar is four labelled tap-size buttons, nothing to scroll; Undo and Log work", async ({ page }) => {
+      test("the bar is five labelled tap-size buttons, nothing to scroll; Undo and Log work", async ({ page }) => {
         await reachCombat(page);
         // No workbench row under the bar pushes the game down.
         await expect(page.locator(".gs-toolrow")).toBeHidden();
@@ -169,9 +169,9 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
         if (orientation !== "portrait") return;
         await expect(page.locator(".wb-topbar-scroll")).toHaveCount(0);
         const btns = page.locator(".wb-phonebar button:visible");
-        await expect(btns).toHaveCount(3); // mode, Undo, Log (Menu is beside the bar)
+        await expect(btns).toHaveCount(4); // mode, ▶ AI, Undo, Log (Menu is beside the bar)
         const vp = page.viewportSize()!;
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
           const b = await realBox(btns.nth(i));
           expect(b.height, `button #${i} height`).toBeGreaterThanOrEqual(43.5);
           expect(b.width, `button #${i} width`).toBeGreaterThanOrEqual(43.5);

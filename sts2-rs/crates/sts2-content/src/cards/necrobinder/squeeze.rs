@@ -51,7 +51,7 @@ pub(crate) fn preview_squeeze(
     _target: Option<CreatureUid>,
 ) -> i32 {
     let (base_addend, per_stack) = if card.upgraded { (30, 6) } else { (25, 5) };
-    base_addend + per_stack * osty_attack_card_count(state)
+    base_addend + per_stack * osty_attack_card_count(state, card.uid)
 }
 
 pub(crate) fn play_squeeze(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
@@ -68,12 +68,12 @@ pub(crate) fn play_squeeze(state: &mut CombatState, target: Option<CreatureUid>)
 }
 
 /// Count of OstyAttack cards in the player's full combat deck **other than**
-/// the card currently resolving (C# `AllCards.Count(c => c.Tags.Contains(
-/// OstyAttack) && c != card)`). `AllCards` = hand + draw + discard + exhaust +
-/// play. The resolving Squeeze sits on top of the Play pile during its OnPlay,
-/// so it is excluded by uid. Bead `sts2-rs-osty-attack-count`.
-fn osty_attack_card_count(state: &CombatState) -> i32 {
-    let resolving = sts2_core::card_effects::resolving_card_uid(state);
+/// `this` Squeeze (C# `AllCards.Count(c => c.Tags.Contains(OstyAttack) &&
+/// c != card)`). `AllCards` = hand + draw + discard + exhaust + play. During
+/// OnPlay `this` is the resolving card on top of Play; on the card face it is
+/// the Squeeze sitting in hand, which used to be counted (face read +5 / +6
+/// high). Bead `sts2-rs-osty-attack-count`; GH #1197.
+fn osty_attack_card_count(state: &CombatState, this: sts2_core::CardUid) -> i32 {
     let mut count = 0i32;
     for pile in [
         state.player.hand.as_slice(),
@@ -83,7 +83,7 @@ fn osty_attack_card_count(state: &CombatState) -> i32 {
         state.player.play.as_slice(),
     ] {
         for &uid in pile {
-            if Some(uid) == resolving {
+            if uid == this {
                 continue;
             }
             let idx = uid.0.get() as usize - 1;
@@ -194,6 +194,51 @@ mod tests {
         state.player.play.push(squeeze);
 
         // Poke, Flatten, Snap, BoneShards, Unleash = 5 (Squeeze excluded; Defend ignored).
-        assert_eq!(osty_attack_card_count(&state), 5);
+        assert_eq!(osty_attack_card_count(&state, squeeze), 5);
+    }
+
+    /// The face of a Squeeze still in hand counts the OTHER Osty attacks only
+    /// (Squeeze.cs:28 `c != card2`), not itself.
+    #[test]
+    fn face_in_hand_does_not_count_itself() {
+        let mut state = CombatState::default();
+        let squeeze = mint(&mut state, CardId::Squeeze);
+        state.player.hand.push(squeeze);
+        let poke = mint(&mut state, CardId::Poke);
+        state.player.hand.push(poke);
+        let card = state.cards[squeeze.0.get() as usize - 1];
+        assert_eq!(preview_squeeze(&state, &card, None), 25 + 5);
+    }
+
+    /// The public face path (`preview::calculated_value`, what the wire's
+    /// card face and `live_attack` read) agrees with Squeeze.cs:24-29:
+    /// `25 + 5 x` (`30 + 6 x` upgraded) the OstyAttack cards in `AllCards`
+    /// other than this one (`c != card2`). No Osty: the raw value.
+    #[test]
+    fn calculated_value_counts_the_other_osty_attacks() {
+        use crate::cards::preview::calculated_value;
+        let mut state = CombatState::default();
+        let squeeze = mint(&mut state, CardId::Squeeze);
+        state.player.hand.push(squeeze);
+        let card = |s: &CombatState| s.cards[squeeze.0.get() as usize - 1];
+        // Alone: no other Osty attack.
+        assert_eq!(calculated_value(&state, &card(&state), None), Some(25));
+        // A second Squeeze (in the draw pile) and a Poke (discard) count; the
+        // Squeeze itself and a Defend do not.
+        let other = mint(&mut state, CardId::Squeeze);
+        state.player.draw.push(other);
+        let poke = mint(&mut state, CardId::Poke);
+        state.player.discard.push(poke);
+        let defend = mint(&mut state, CardId::DefendNecrobinder);
+        state.player.hand.push(defend);
+        assert_eq!(
+            calculated_value(&state, &card(&state), None),
+            Some(25 + 5 * 2)
+        );
+        state.cards[squeeze.0.get() as usize - 1].upgraded = true;
+        assert_eq!(
+            calculated_value(&state, &card(&state), None),
+            Some(30 + 6 * 2)
+        );
     }
 }

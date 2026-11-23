@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 
 import pytest
+import sts2_client
 
 pytestmark = pytest.mark.oracle
 
@@ -79,3 +80,83 @@ def test_cards_relics_potions_and_powers_carry_their_filled_text(game):
     assert powers["SPEED_POTION_POWER"] == "Gain 5 Dexterity until the end of this turn."
     texts = [*cards.values(), *relics.values(), potion, *powers.values()]
     assert not [t for t in texts if PLACEHOLDER.search(t) or "res://" in t]
+
+
+def test_an_ancients_relic_options_use_the_relics_own_text(game):
+    """Orobas's relic options fall back to the relic's text (`EventOption.FromRelic`).
+
+    The host's loc patch said every key existed, so the fallback never ran:
+    Sea Glass came out as "Sea Glass" with ``{Character.StringValue:...}``
+    unfilled where the game names it after the character it shows ("Noble
+    Glass" for the Regent's cards), and Touch of Orobas the same (#1287).
+    The seed offers both options and differs by build (v0.107.1 seeds its RNG
+    differently; the character Sea Glass shows differs by build too).
+    """
+    seed = "OROBAS47" if sts2_client.GAME_VERSION == "v0.107.1" else "OROBAS6"
+    glass = {
+        "Demon Glass": "The Ironclad",
+        "Venom Glass": "The Silent",
+        "Gear Glass": "The Defect",
+        "Lich Glass": "The Necrobinder",
+        "Noble Glass": "The Regent",
+    }
+    game.send({"cmd": "start_run", "character": "Ironclad", "seed": seed, "ascension": 0})
+    state = game.send({"cmd": "enter_room", "type": "event", "event": "OROBAS"})
+    assert state["decision"] == "event_choice"
+    options = {o["text_key"].rsplit(".", 1)[-1]: o for o in state["options"]}
+    title = options["SEA_GLASS"]["title"]
+    assert title in glass, title
+    assert options["SEA_GLASS"]["description"] == (
+        f"See 15 cards from {glass[title]}. Choose any number of them to add to your Deck."
+    )
+    assert options["TOUCH_OF_OROBAS"]["description"] == "Replace Burning Blood with Black Blood."
+    for option in state["options"]:
+        assert not PLACEHOLDER.search(option["title"] + option["description"]), option
+
+    # Once owned, the relic keeps that name (`RelicModel.Title`, not `<id>.title`).
+    state = game.send(
+        {
+            "cmd": "action",
+            "action": "choose_option",
+            "args": {"option_index": options["SEA_GLASS"]["index"]},
+        }
+    )
+    names = {r["id"]: r["name"] for r in state["player"]["relics"]}
+    assert names["SEA_GLASS"] == title, names
+
+
+def test_event_option_titles_carry_the_events_own_values(game):
+    """Option titles are filled with the event's DynamicVars, as
+    `NEventOptionButton._Ready` does (`Event.DynamicVars.AddTo(Option.Title)`).
+
+    The host formatted the title without them, so Ranwid the Elder offered
+    ``Give {Gold} Gold`` / ``Give {Potion}`` / ``Give {Relic}`` where the game
+    names the potion and relic it takes, and Grave of the Forgotten
+    ``Accept the {Relic}`` (#1287 sweep, counted as host-unformatted).
+    """
+    game.send({"cmd": "start_run", "character": "Ironclad", "seed": "RANWID1", "ascension": 0})
+    game.send(
+        {
+            "cmd": "set_player",
+            "gold": 150,
+            "relics": ["BURNING_BLOOD", "LANTERN"],
+            "potions": ["STRENGTH_POTION"],
+        }
+    )
+    state = game.send({"cmd": "enter_room", "type": "event", "event": "RANWID_THE_ELDER"})
+    assert state["decision"] == "event_choice"
+    titles = {o["text_key"].rsplit(".", 1)[-1]: o["title"] for o in state["options"]}
+    assert titles["GOLD"] == "Give 100 Gold"
+    assert titles["POTION"] == "Give Strength Potion"
+    assert titles["RELIC"] in {"Give Burning Blood", "Give Lantern"}, titles
+
+
+def test_grave_of_the_forgotten_names_the_relic_it_gives(game):
+    """Same cause as above: ``Accept the {Relic}`` where the game names Forgotten Soul."""
+    game.send({"cmd": "start_run", "character": "Ironclad", "seed": "GRAVE1", "ascension": 0})
+    state = game.send({"cmd": "enter_room", "type": "event", "event": "GRAVE_OF_THE_FORGOTTEN"})
+    assert state["decision"] == "event_choice"
+    titles = {o["text_key"].rsplit(".", 1)[-1]: o["title"] for o in state["options"]}
+    assert titles["ACCEPT"] == "Accept the Forgotten Soul"
+    for option in state["options"]:
+        assert not PLACEHOLDER.search(option["title"] + option["description"]), option

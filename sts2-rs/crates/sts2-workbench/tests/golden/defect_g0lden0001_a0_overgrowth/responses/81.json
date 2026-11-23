@@ -290,6 +290,8 @@
     "name": "Snapping Jaxfruit",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/snapping_jaxfruit/snapping_jaxfruit",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -82.0,
     "rig_bounds_h": 254.0,
     "rig_bounds_w": 230.0,
     "rig_scale": 0.3,
@@ -313,6 +315,8 @@
     "name": "Flyconid",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/flying_mushrooms/flying_mushrooms",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -128.0,
     "rig_bounds_h": 309.0,
     "rig_bounds_w": 228.0,
     "rig_scale": 0.4,
@@ -616,6 +620,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/defect/defect",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -179.0,
    "rig_bounds_h": 260.0,
    "rig_bounds_w": 250.0,
    "rig_scale": 0.125

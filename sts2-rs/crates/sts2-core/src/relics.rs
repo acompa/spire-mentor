@@ -42,6 +42,12 @@
 mod relic_ids_generated;
 pub use relic_ids_generated::RelicId;
 
+/// v0.113.0 `Wuppy.strongHp` (`Relics/Wuppy.cs`): the `MaxHp`
+/// `AfterObtained` gives a Wuppy obtained without one (`MaxHp == 0`), and so
+/// the `CurrentHp` of one whose `CurrentHp` was never set. WuppyInTrouble
+/// sets 60 (`ImmediateWuppyHp`) or 30 (`CautiousWuppyHp`) before obtaining.
+pub const WUPPY_DEFAULT_MAX_HP: i32 = 60;
+
 /// Declares [`RelicKind`] together with a mechanically-derived
 /// [`RelicKind::ALL`] roster.
 ///
@@ -673,6 +679,13 @@ pub enum RelicKind {
     BathTowel,
     /// v0.113.0 event relic, see [`RelicId::BathRobes`].
     BathRobes,
+    /// v0.113.0 event relic, see [`RelicId::Thumbscrew`]. Its
+    /// `ModifyAttackHitCount` is the `modify_attack_hit_count` channel.
+    Thumbscrew,
+    /// v0.113.0 event relic, see [`RelicId::Wuppy`]: summons the Wuppy pet
+    /// at combat start. Its `counter` is the relic's saved `CurrentHp`
+    /// (C# `DisplayAmount`), kept equal to the pet's HP in combat.
+    Wuppy,
 }
 }
 
@@ -1052,12 +1065,12 @@ impl RelicId {
             // `RelicKind` so its universe (combat encoders, digests) stays
             // the v0.107.1 one.
             Self::DowsingRod | Self::NeowsSacrifice => None,
-            // v0.113.0-only event relics. Thumbscrew (a new
-            // `ModifyAttackHitCount` hook) and Wuppy (a pet that takes the
-            // owner's powered attacks) have no combat side yet; Byrdine's
-            // pet summon is `RelicKind::Byrdine`; the rest have listeners in
-            // `crate::relic_effects::v0113_event`.
-            Self::Thumbscrew | Self::Wuppy => None,
+            // v0.113.0-only event relics. Thumbscrew's `ModifyAttackHitCount`
+            // is the `modify_attack_hit_count` channel; Byrdine's and Wuppy's
+            // pet summons are `RelicKind::Byrdine` / `RelicKind::Wuppy`; the
+            // rest have listeners in `crate::relic_effects::v0113_event`.
+            Self::Thumbscrew => Some(RelicKind::Thumbscrew),
+            Self::Wuppy => Some(RelicKind::Wuppy),
             Self::Byrdine => Some(RelicKind::Byrdine),
             Self::ObsidianVice => Some(RelicKind::ObsidianVice),
             Self::TormentousCollar => Some(RelicKind::TormentousCollar),
@@ -1108,6 +1121,9 @@ impl RelicKind {
             // C# `SwordOfStone._combatsLeft = 5` (transform after 5 elite
             // victories).
             RelicKind::SwordOfStone => 5,
+            // C# `Wuppy.AfterObtained`: `MaxHp` defaults to 60 and an unset
+            // `CurrentHp` to `MaxHp`. The counter is `CurrentHp`.
+            RelicKind::Wuppy => WUPPY_DEFAULT_MAX_HP,
             _ => 0,
         }
     }
@@ -1441,6 +1457,8 @@ impl RelicKind {
             RelicKind::MightyWings => "MIGHTY_WINGS",
             RelicKind::BathTowel => "BATH_TOWEL",
             RelicKind::BathRobes => "BATH_ROBES",
+            RelicKind::Thumbscrew => "THUMBSCREW",
+            RelicKind::Wuppy => "WUPPY",
         }
     }
 
@@ -1466,6 +1484,8 @@ impl RelicKind {
                 | RelicKind::MightyWings
                 | RelicKind::BathTowel
                 | RelicKind::BathRobes
+                | RelicKind::Thumbscrew
+                | RelicKind::Wuppy
         )
     }
 }

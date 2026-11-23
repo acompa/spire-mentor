@@ -124,7 +124,7 @@ internal static class SimRestore
             SerializableRun save = parsed.SaveData;
 
             Logger.Log($"[SimRestore] Rewinding to snapshot {snapshotId}...");
-            SimActionLog.Note($"Rewinding to snapshot {snapshotId}...");
+            SimActionLog.Note(L10n.F("Rewinding to snapshot {0}...", snapshotId));
 
             await ReloadRunFromSave(save);
 
@@ -132,7 +132,7 @@ internal static class SimRestore
                 ? RunManager.Instance.DebugOnlyGetState().TotalFloor
                 : 0;
             Logger.Log($"[SimRestore] Restored snapshot {snapshotId} (floor {floor}).");
-            SimActionLog.Note($"Rewound to floor {floor}.");
+            SimActionLog.Note(L10n.F("Rewound to floor {0}.", floor));
 
             SimAdvisor.Instance.NotifyRunRestored();
 
@@ -158,7 +158,8 @@ internal static class SimRestore
     private static void Fail(string snapshotId, string code, string detail)
     {
         Logger.Log($"[SimRestore] {code}: {detail}");
-        SimActionLog.Note($"Rewind failed ({code}): {detail}");
+        // The wire keeps the English detail (see SimCombatUndo.Fail).
+        SimActionLog.Note(L10n.F("Rewind failed ({0}): {1}", code, L10n.T(detail)));
         BridgeServer.Instance.SendState(JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["type"] = "error",

@@ -47,6 +47,7 @@ EVENT_ENCOUNTERS = {
     "MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER",
     "FAKE_MERCHANT_EVENT_ENCOUNTER",
     "DENSE_VEGETATION_EVENT_ENCOUNTER",
+    "PUNCH_OFF_EVENT_ENCOUNTER",
 }
 #: Moves the board forces on a monster besides its move machine, by monster:
 #: a forecast made against the current board can name another move with
@@ -74,13 +75,14 @@ BOARD_DRIVEN: dict[str, frozenset[str]] = {
     # (`RavenousPower.AfterDeath`).
     "CorpseSlug": frozenset({"STUNNED"}),
     # `CanLay` counts living teammates (`Ovicopter.cs:46`): eggs hatching or
-    # dying decide LAY_EGGS vs NUTRITIONAL_PASTE.
-    "Ovicopter": frozenset({"NUTRITIONAL_PASTE_MOVE"}),
+    # dying decide LAY_EGGS vs NUTRITIONAL_PASTE, either way.
+    "Ovicopter": frozenset({"NUTRITIONAL_PASTE_MOVE", "LAY_EGGS_MOVE"}),
     # `CanFabricate` counts living teammates (`Fabricator.cs:51`).
     "Fabricator": frozenset({"FABRICATE"}),
     # The Amalgam's death turns a coming BURN_BRIGHT_FOR_ME into the enraged
-    # move (`Queen.AfterDeath`, `SetMoveImmediate(EnragedState)`).
-    "Queen": frozenset({"OFF_WITH_YOUR_HEAD_MOVE"}),
+    # move (`Queen.AfterDeath`, `SetMoveImmediate(EnragedState)`: ENRAGE_MOVE,
+    # whose follow-up is OFF_WITH_YOUR_HEAD).
+    "Queen": frozenset({"ENRAGE_MOVE", "OFF_WITH_YOUR_HEAD_MOVE"}),
     # Shriek stuns it into TERROR when it drops below half HP
     # (`ShriekPower.cs:30`).
     "TerrorEel": frozenset({"TERROR_MOVE"}),
@@ -517,6 +519,7 @@ def test_getters_on_live_a10_runs(version: str) -> None:
         ("BattlewornDummy", 0, "BATTLEWORN_DUMMY_EVENT_ENCOUNTER"),
         ("DenseVegetation", 1, "DENSE_VEGETATION_EVENT_ENCOUNTER"),
         ("TheLanternKey", 1, "MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER"),
+        ("PunchOff", 1, "PUNCH_OFF_EVENT_ENCOUNTER"),
     ],
 )
 def test_an_event_fight_reports_the_event_encounter(

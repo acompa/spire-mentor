@@ -64,13 +64,25 @@ pub fn off_board(enemy: &Value) -> bool {
 
 /// One display label per entry of `enemies` (the view's enemy dicts), in the
 /// same order. The grouping name is Python's `str(e.get("name") or
-/// e.get("id") or f"enemy {i}")`.
+/// e.get("id") or f"enemy {i}")` — in Chinese display mode, the game's
+/// Chinese name of the entry's monster `kind` when it has one (the `name`
+/// field stays English: art and labels on the page key off it).
 #[must_use]
 pub fn enemy_labels(enemies: &[Value]) -> Vec<String> {
+    let zh = crate::localization::display_zh();
     let names: Vec<String> = enemies
         .iter()
         .enumerate()
         .map(|(i, e)| {
+            if zh {
+                if let Some(kind) = e
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .filter(|k| !k.is_empty())
+                {
+                    return crate::display_maps::monster_display_name(kind);
+                }
+            }
             ["name", "id"]
                 .iter()
                 .find_map(|k| py::get_raw(e, k).filter(|v| py::truthy(v)))

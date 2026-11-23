@@ -1647,6 +1647,101 @@ def test_t10_param_groups_partition_the_trainable_parameters() -> None:
     assert [g["lr"] for g in opt.param_groups] == [applied["trunk"], applied["value"]]
 
 
+def test_lr_input_splits_an_input_group_off_the_trunk() -> None:
+    """GH #1197 adapt phase: with `lr_input` set, the parameters under `input_roots`
+    (top-level names) form a third group "input", first; without it, two groups as before."""
+    net = _Net()
+    groups = algo.param_groups(
+        net, lr_trunk=0.0, lr_value=3e-4, lr_input=2e-4, input_roots=("emb",)
+    )
+    assert [g["name"] for g in groups] == ["input", "trunk", "value"]
+    assert [g["base_lr"] for g in groups] == [2e-4, 0.0, 3e-4]
+    name = {id(p): n for n, p in net.named_parameters()}
+    got = {g["name"]: sorted(name[id(p)] for p in g["params"]) for g in groups}
+    assert got["input"] == ["emb.weight"]
+    assert got["trunk"] == ["policy.bias", "policy.weight", "trunk.bias", "trunk.weight"]
+    assert all(n.startswith("value.") for n in got["value"])
+    # A root matches a whole top-level name, never a name prefix.
+    with pytest.raises(ValueError, match="input"):
+        algo.param_groups(net, lr_input=1e-4, input_roots=("em",))
+    with pytest.raises(ValueError, match="input"):
+        algo.param_groups(net, lr_input=1e-4)
+    # lr_input None: today's two groups, whatever the roots.
+    two = algo.param_groups(net, input_roots=("emb",))
+    assert [g["name"] for g in two] == ["trunk", "value"]
+    cfg = dataclasses.replace(S.DEFAULT, lr_input=2e-4)
+    opt = algo.make_optimizer(net, cfg=cfg, input_roots=("emb",))
+    applied = algo.set_lr(opt, 0.5)
+    assert applied == {
+        "input": pytest.approx(1e-4),
+        "trunk": pytest.approx(0.5e-4),
+        "value": pytest.approx(1.5e-4),
+    }
+
+
+class _MidNet(torch.nn.Module):
+    """The input root sits between trunk parameters in `named_parameters` order, so a
+    regroup that only re-split the saved index lists would mix parameters up."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.a = torch.nn.Linear(3, 3)
+        self.stem = torch.nn.Linear(3, 4)
+        self.b = torch.nn.Linear(4, 2)
+        self.value = torch.nn.Linear(2, 1)
+
+
+def _stepped(net: torch.nn.Module, opt: torch.optim.Optimizer, n: int, seed: int) -> None:
+    g = torch.Generator().manual_seed(seed)
+    for _ in range(n):
+        for p in net.parameters():
+            p.grad = torch.randn(p.shape, generator=g)
+        opt.step()
+
+
+def _state_by_name(net: torch.nn.Module, opt: torch.optim.Optimizer) -> dict[str, dict]:
+    st = opt.state
+    return {
+        n: {k: v.clone() if torch.is_tensor(v) else v for k, v in st[p].items()}
+        for n, p in net.named_parameters()
+        if p in st
+    }
+
+
+@pytest.mark.parametrize("direction", ["2to3", "3to2"])
+def test_optimizer_state_regroups_between_two_and_three_groups(direction: str) -> None:
+    """A state saved with 2 groups resumes into 3 (the adapt phase starts) and one saved
+    with 3 resumes into 2 (lr_input dropped again): every parameter keeps its own moments
+    and step count, matched by parameter, not by position."""
+    torch.manual_seed(0)
+    net = _MidNet()
+    roots = ("stem",)
+    three = dataclasses.replace(S.DEFAULT, lr_input=2e-4)
+    src_cfg, dst_cfg = (S.DEFAULT, three) if direction == "2to3" else (three, S.DEFAULT)
+    src = algo.make_optimizer(net, cfg=src_cfg, input_roots=roots)
+    _stepped(net, src, 3, seed=1)
+    want = _state_by_name(net, src)
+    saved = copy.deepcopy(src.state_dict())
+    dst = algo.make_optimizer(net, cfg=dst_cfg, input_roots=roots)
+    assert len(dst.param_groups) != len(saved["param_groups"])
+    algo.load_opt_state(dst, saved, net, input_roots=roots)
+    assert [g["name"] for g in dst.param_groups] == (
+        ["input", "trunk", "value"] if direction == "2to3" else ["trunk", "value"]
+    )
+    fresh = algo.make_optimizer(net, cfg=dst_cfg, input_roots=roots)
+    assert [g["base_lr"] for g in dst.param_groups] == [g["base_lr"] for g in fresh.param_groups]
+    got = _state_by_name(net, dst)
+    assert set(got) == set(want) == {n for n, _ in net.named_parameters()}
+    for n in want:
+        for k in ("step", "exp_avg", "exp_avg_sq"):
+            assert torch.equal(torch.as_tensor(got[n][k]), torch.as_tensor(want[n][k])), (n, k)
+    _stepped(net, dst, 1, seed=2)  # and it steps on
+    # The same structure: a plain load, as before.
+    same = algo.make_optimizer(net, cfg=src_cfg, input_roots=roots)
+    algo.load_opt_state(same, saved, net, input_roots=roots)
+    assert _state_by_name(net, same).keys() == want.keys()
+
+
 def _adamw_first_step(p, g, lr, wd=1e-4, b1=0.9, b2=0.999, eps=1e-8):
     p = p.double() * (1 - lr * wd)
     m_hat = (1 - b1) * g.double() / (1 - b1)
@@ -2015,3 +2110,62 @@ def test_algo_state_protocol_guards() -> None:
         algo.AlgoState.from_dict({**d, "version": 99})
     with pytest.raises(ValueError):
         algo.AlgoState(n_types=4, teacher_types=np.ones(5, bool))
+
+
+# ── GH #1541: the probability floor ──────────────────────────────────────────
+
+
+def test_probability_floor_is_a_hinge_on_log_pi_below_the_floor() -> None:
+    """floor_w · Σ_a max(0, log p − log π(a)) on policy rows with a floor; its gradient
+    raises exactly the classes under the floor."""
+    b, a = 10, 5
+    rows = _loss_rows(b, a, seed=21, pi_frac=0.7, teacher=False, beta=0.0)
+    fp = torch.where(torch.arange(b) % 3 == 0, 0.0, 0.1)  # every third row: no floor
+    rows = dataclasses.replace(rows, floor_p=fp, floor_w=torch.full((b,), 0.4))
+    logits = (3.0 * torch.randn(b, a, generator=torch.Generator().manual_seed(21))).requires_grad_()
+    out = algo.ppo_losses(logits, torch.zeros(b), rows)
+    off = algo.ppo_losses(logits, torch.zeros(b), dataclasses.replace(rows, floor_p=None))
+    lp = algo.masked_log_softmax(logits, rows.n_classes)
+    cm = algo.class_mask(rows.n_classes, a)
+    on = rows.pi & (fp > 0)
+    gap = torch.where(cm & on[:, None], (torch.log(fp)[:, None] - lp).clamp_min(0.0), 0.0)
+    torch.testing.assert_close(out.loss - off.loss, 0.4 * gap.sum() / b)
+    assert int(out.stats["n_fl"]) == int(on.sum()) > 0
+    assert int(out.stats["fl_below"]) == int((gap > 0).sum()) > 0
+    assert int(off.stats["n_fl"]) == 0 and not float(off.stats["fl_loss"])
+    g = torch.autograd.grad(out.loss - off.loss, logits)[0]
+    below = gap > 0
+    assert (g[below] < 0).all()  # descent raises the logits under the floor
+    rows_off = ~on
+    assert (g[rows_off] == 0).all()
+
+
+def test_probability_floor_is_zero_above_the_floor_and_inert_off_policy() -> None:
+    b, a = 6, 4
+    rows = _loss_rows(b, a, seed=22, pi_frac=1.0, teacher=False, beta=0.0)
+    rows = dataclasses.replace(
+        rows,
+        n_classes=torch.full((b,), a),
+        action=torch.zeros(b, dtype=torch.long),
+        floor_p=torch.full((b,), 0.05),
+        floor_w=torch.full((b,), 1.0),
+    )
+    uniform = algo.ppo_losses(torch.zeros(b, a), torch.zeros(b), rows)
+    assert not float(uniform.stats["fl_loss"]) and not float(uniform.stats["fl_below"])
+    # A garbage row outside v (NaN floor, NaN logits) reaches neither loss nor stats.
+    g = _with_garbage_row(rows)
+    g = dataclasses.replace(
+        g,
+        floor_p=torch.cat([rows.floor_p, torch.tensor([NAN])]),
+        floor_w=torch.cat([rows.floor_w, torch.tensor([NAN])]),
+    )
+    lg = torch.cat([torch.zeros(b, a), torch.full((1, a), NAN)])
+    out = algo.ppo_losses(lg, torch.cat([torch.zeros(b), torch.tensor([NAN])]), g)
+    assert torch.isfinite(out.loss) and int(out.stats["n_fl"]) == b
+
+
+def test_stats_means_divide_the_floor_by_floored_rows() -> None:
+    m = algo.stats_means({"n_fl": torch.tensor(4.0), "fl_loss": torch.tensor(2.0),
+                          "fl_below": torch.tensor(6.0)})  # fmt: skip
+    assert (m["n_fl"], m["fl_loss"], m["fl_below"]) == (4, 0.5, 1.5)
+    assert math.isnan(algo.stats_means({"n_fl": 0.0, "fl_loss": 0.0})["fl_loss"])

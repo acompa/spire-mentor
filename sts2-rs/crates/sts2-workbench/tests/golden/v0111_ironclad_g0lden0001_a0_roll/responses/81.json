@@ -263,6 +263,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/byrdonis/byrdonis",
+    "rig_arrow_x": -13.0,
+    "rig_arrow_y": -253.0,
     "rig_bounds_h": 461.0,
     "rig_bounds_w": 640.0,
     "rig_scale": 0.3135,
@@ -530,7 +532,7 @@
    ],
    "gold": 141,
    "hp": 71,
-   "image": "https://assets.test/character_sprites/ironclad.png",
+   "image": "https://assets.test/v0.111.0/character_sprites/ironclad.png",
    "max_hp": 80,
    "name": "Ironclad",
    "potion_slots": 3,
@@ -549,7 +551,9 @@
      "name": "Pomander"
     }
    ],
-   "rig": "https://assets.test/character_rigs/ironclad/ironclad",
+   "rig": "https://assets.test/v0.111.0/character_rigs/ironclad/ironclad",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -168.0,
    "rig_bounds_h": 278.0,
    "rig_bounds_w": 242.0,
    "rig_scale": 0.28

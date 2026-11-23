@@ -33,7 +33,7 @@ The mod's one in-game control, docked under the right end of the game's top bar 
 _Avoid_: toolbar, strip, pill (the 0.9 layout)
 
 **Advisor brain**:
-Which AI answers the advice, chosen by the player: **Search** (MCTS for the fights, the PPO run policy for the screens; the default) or **Instinct** (the end-to-end net, no search, every decision). Sent as `brain` on every advice request; the advisor decides per request whether Instinct can play it and says so when it cannot (`PROTOCOL.md` section 5, v5.2).
+Which AI answers the advice: **Instinct** (the end-to-end net, no search, every decision), the only one a player gets, with **Search** (MCTS for the fights, the PPO run policy for the screens) as its fallback wherever Instinct cannot answer. Sent as `brain` on every advice request; the advisor decides per request whether Instinct can play it and says so when it cannot (`PROTOCOL.md` section 5, v5.2). Only test tooling forces Search (`--spire-mentor-brain`, `advisor_brain` in the conf).
 _Avoid_: mode (that is Off / Advisor / Autopilot), style (Hints / Coach)
 
 **AI partner**:

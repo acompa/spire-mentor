@@ -24,8 +24,34 @@ pub struct StateTable {
     entries: Vec<(StateId, MonsterState)>,
 }
 
+/// `a == b` for two state ids, answering from the pointer+len compare when
+/// both are the same `&'static str` (the common case: ids are the table's own
+/// keys) and falling back to the string compare otherwise.
+#[inline]
+fn same_id(a: StateId, b: StateId) -> bool {
+    (a.as_ptr() == b.as_ptr() && a.len() == b.len()) || a == b
+}
+
 impl StateTable {
     fn idx_of(&self, id: &str) -> Option<usize> {
+        // Fast path: a lookup key is almost always one of the table's own
+        // `&'static str` ids (a `follow_up`, a branch target, `current_state`),
+        // so the same pointer. Equal pointer and length imply equal strings,
+        // and keys are unique, so a hit here is the index the binary search
+        // would return — without its `memcmp` per probe. A miss (an equal
+        // string at another address, or an absent key) falls through to the
+        // search unchanged.
+        if let Some(i) = self
+            .entries
+            .iter()
+            .position(|(k, _)| k.as_ptr() == id.as_ptr() && k.len() == id.len())
+        {
+            debug_assert_eq!(
+                self.entries.binary_search_by(|(k, _)| (*k).cmp(id)).ok(),
+                Some(i)
+            );
+            return Some(i);
+        }
         self.entries.binary_search_by(|(k, _)| (*k).cmp(id)).ok()
     }
 
@@ -50,11 +76,47 @@ impl StateTable {
     /// Insert preserving sort order; returns the previous value for a
     /// duplicate id (mirrors `BTreeMap::insert`).
     pub fn insert(&mut self, id: StateId, state: MonsterState) -> Option<MonsterState> {
-        match self.entries.binary_search_by(|(k, _)| (*k).cmp(id)) {
+        let prev = match self.entries.binary_search_by(|(k, _)| (*k).cmp(id)) {
             Ok(i) => Some(std::mem::replace(&mut self.entries[i], (id, state)).1),
             Err(i) => {
                 self.entries.insert(i, (id, state));
                 None
+            }
+        };
+        self.canonicalize_links();
+        prev
+    }
+
+    /// Point every transition target (`follow_up`, branch `state_id`) at the
+    /// table's own key for that id — an equal string, so every `==` reads
+    /// the same — so the lookups a roll makes along those links hit
+    /// [`Self::idx_of`]'s pointer fast path instead of a `memcmp` binary
+    /// search (the same literal can live at several addresses across
+    /// codegen units and crates). A target with no state keeps its id.
+    fn canonicalize_links(&mut self) {
+        let keys: SmallVec<[StateId; 16]> = self.entries.iter().map(|(k, _)| *k).collect();
+        let canon = |id: &mut StateId| {
+            if let Ok(i) = keys.binary_search(id) {
+                *id = keys[i];
+            }
+        };
+        for (_, st) in &mut self.entries {
+            match st {
+                MonsterState::Move(m) => {
+                    if let Some(f) = m.follow_up.as_mut() {
+                        canon(f);
+                    }
+                }
+                MonsterState::RandomBranch(rb) => {
+                    for b in &mut rb.branches {
+                        canon(&mut b.state_id);
+                    }
+                }
+                MonsterState::ConditionalBranch(cb) => {
+                    for b in &mut cb.branches {
+                        canon(&mut b.state_id);
+                    }
+                }
             }
         }
     }
@@ -89,9 +151,11 @@ impl StateTable {
 impl From<BTreeMap<StateId, MonsterState>> for StateTable {
     fn from(map: BTreeMap<StateId, MonsterState>) -> Self {
         // BTreeMap iteration is already id-sorted.
-        Self {
+        let mut table = Self {
             entries: map.into_iter().collect(),
-        }
+        };
+        table.canonicalize_links();
+        table
     }
 }
 
@@ -255,6 +319,22 @@ impl MonsterState {
     }
 }
 
+/// Outcome of a planned roll ([`MonsterAi::plan_roll_with_combat`]),
+/// committed by [`MonsterAi::apply_roll`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RollPlan {
+    /// The guards hold the current move: nothing changes.
+    Hold,
+    /// Land on the `Move` at table index `target`, consuming the queued override if
+    /// `consumed_forced`, and clearing the performed flag if the machine
+    /// `left_move` (was on a `Move`).
+    Go {
+        target: usize,
+        consumed_forced: bool,
+        left_move: bool,
+    },
+}
+
 /// Lookahead entry returned by [`MonsterAi::peek_intents`]. Bead
 /// `sts2-rs-6pzjm` — wide-eval feature feeder.
 ///
@@ -317,7 +397,12 @@ pub struct MonsterAi {
     /// remove) can only ever make reads fall back to the string lookup —
     /// never return the wrong state.
     current_idx: u32,
-    state_log: SmallVec<[StateId; 16]>,
+    /// A heap `Vec`, not an inline `SmallVec<[_; 16]>`: the enemy-turn roll
+    /// moves the whole `MonsterAi` out of its creature and back each turn
+    /// (split borrow against `&CombatState`), and 256 inline bytes made
+    /// that two large memcpys per enemy per turn. The log starts empty, so
+    /// the fight-start `CombatState::clone` allocates nothing for it.
+    state_log: Vec<StateId>,
     performed_first_move: bool,
     /// Whether the initial state has been resolved against the RUN's
     /// `monster_ai` stream yet (as opposed to the throwaway rng
@@ -427,7 +512,7 @@ impl MonsterAi {
             initial,
             current: initial,
             current_idx: 0,
-            state_log: SmallVec::new(),
+            state_log: Vec::new(),
             performed_first_move: false,
             initial_resolved: false,
             performed_at_least_once: false,
@@ -461,7 +546,7 @@ impl MonsterAi {
             initial,
             current: initial,
             current_idx: 0,
-            state_log: SmallVec::new(),
+            state_log: Vec::new(),
             performed_first_move: false,
             initial_resolved: false,
             performed_at_least_once: false,
@@ -484,11 +569,35 @@ impl MonsterAi {
     /// rare — once per enemy turn — so the one binary search per call is
     /// the cold half of the trade that makes [`Self::cur`] hot-path O(1)).
     fn set_current(&mut self, id: StateId) {
-        self.current = id;
         // An unknown id (force paths debug_assert against it) parks the
         // cache on an out-of-range slot: `cur()` then falls back to the
         // string lookup, which panics exactly where the old code did.
-        self.current_idx = self.states.idx_of(id).map_or(u32::MAX, |i| i as u32);
+        let idx = self.states.idx_of(id);
+        // Store the table's own key for `id` (an equal string, so every
+        // `==` on `current` and on the log it feeds reads the same): later
+        // lookups of `current` then hit `idx_of`'s pointer fast path instead
+        // of a `memcmp` binary search.
+        self.current = idx
+            .and_then(|i| self.states.entry_at(i))
+            .map_or(id, |&(k, _)| k);
+        debug_assert_eq!(self.current, id);
+        self.current_idx = idx.map_or(u32::MAX, |i| i as u32);
+    }
+
+    /// [`Self::set_current`] for the state at table index `idx` (already
+    /// looked up): the same `current` (the table's own key) and cache.
+    fn set_current_at(&mut self, idx: usize) {
+        self.current = self.states.entries[idx].0;
+        self.current_idx = idx as u32;
+    }
+
+    /// Append `id` to the `StateLog`. The first entry reserves the 16 slots
+    /// the log used to keep inline, so a typical fight's log never regrows.
+    fn log_state(&mut self, id: StateId) {
+        if self.state_log.capacity() == 0 {
+            self.state_log.reserve_exact(16);
+        }
+        self.state_log.push(id);
     }
 
     /// The current [`MonsterState`], via the index cache when it is still
@@ -504,14 +613,28 @@ impl MonsterAi {
                 return st;
             }
         }
+        self.cur_by_lookup()
+    }
+
+    /// [`Self::cur`]'s fallback when the index cache is stale.
+    #[cold]
+    #[inline(never)]
+    fn cur_by_lookup(&self) -> &MonsterState {
         &self.states[self.current]
     }
 
+    #[inline]
     pub fn current_move(&self) -> &MoveState {
         match self.cur() {
             MonsterState::Move(m) => m,
-            _ => panic!("current state '{}' is not a MoveState", self.current),
+            _ => self.current_not_a_move(),
         }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn current_not_a_move(&self) -> ! {
+        panic!("current state '{}' is not a MoveState", self.current)
     }
 
     /// Non-panicking [`Self::current_move`]: `None` when the AI is parked on
@@ -527,6 +650,7 @@ impl MonsterAi {
         }
     }
 
+    #[inline]
     pub fn current_state_id(&self) -> StateId {
         self.current
     }
@@ -745,7 +869,7 @@ impl MonsterAi {
             && !self.performed_at_least_once
             && self.cur().should_appear_in_logs()
         {
-            self.state_log.push(self.current);
+            self.log_state(self.current);
         }
     }
 
@@ -834,8 +958,9 @@ impl MonsterAi {
     ///
     /// Deliberately does NOT touch `current`: that one field IS on the wire,
     /// so reality wins on it exactly as it does for every other observable.
-    /// `states` / `initial` / `owner_uid` / `slot` are rebuilt correctly by
-    /// the spawn path and are not per-instance history.
+    /// `initial` / `owner_uid` / `slot` are rebuilt correctly by the spawn
+    /// path and are not per-instance history; `states` is, for the moves that
+    /// edit their own numbers (below).
     ///
     /// Measured on the oracle (native engine both sides, so zero
     /// content-parity confound and zero RNG excuse — `cursor_drifts == 0` on
@@ -848,10 +973,19 @@ impl MonsterAi {
         self.performed_at_least_once = carried.performed_at_least_once;
         self.initial_resolved = carried.initial_resolved;
         self.counter = carried.counter;
-        self.forced_next_state = carried.forced_next_state;
         // Whether the current state was forced is only meaningful for the
-        // same current state.
-        self.current_forced = carried.current_forced && carried.current == self.current;
+        // same current state; on another one the fresh build's own reading
+        // of the board stands, and so does a move it read the board's
+        // forced state resuming: the game's synthetic stun (`STUNNED`, its
+        // `forced_next`) where the carried machine sat on a stun state of
+        // its own (GH #1675). A queued override otherwise rides across.
+        let same = carried.current == self.current;
+        if same || self.forced_next_state.is_none() {
+            self.forced_next_state = carried.forced_next_state;
+        }
+        if same {
+            self.current_forced = carried.current_forced;
+        }
         // The encounter slot is NOT "rebuilt correctly by the fresh build"
         // for dynamically-slotted spawns (Fabricator bots, Ovicopter eggs):
         // the wire carries no slot, the fresh build leaves `None`, and a
@@ -860,6 +994,16 @@ impl MonsterAi {
         // events). The mirror's own assignment survives here instead.
         if self.slot.is_none() {
             self.slot = carried.slot;
+        }
+        // The move table itself is per-instance history where a move edits
+        // its own numbers: Waterfall Giant's PRESSURE_GUN gains 5 damage on
+        // every hit (`waterfall_giant_pressure_gun_effect`), and a fresh
+        // build reads the base again (GH #1687). Same machine, same table.
+        if self.states.len() == carried.states.len()
+            && self.states.keys().all(|k| carried.states.contains_key(k))
+        {
+            self.states = std::sync::Arc::clone(&carried.states);
+            self.set_current(self.current);
         }
     }
 
@@ -908,7 +1052,7 @@ impl MonsterAi {
     /// is appended here. A forced state is in neither log.
     #[must_use]
     pub fn wire_move_log(&self) -> SmallVec<[StateId; 16]> {
-        let mut log = self.state_log.clone();
+        let mut log: SmallVec<[StateId; 16]> = SmallVec::from_slice(&self.state_log);
         if !self.performed_at_least_once
             && !self.current_forced
             && self.cur().should_appear_in_logs()
@@ -935,7 +1079,7 @@ impl MonsterAi {
         if let Some(performed) = s.performed {
             self.performed_at_least_once = performed;
         }
-        let mut log: SmallVec<[StateId; 16]> = s.log.iter().copied().collect();
+        let mut log: Vec<StateId> = s.log.to_vec();
         if !self.performed_at_least_once
             && !self.current_forced
             && log.last() == Some(&self.current)
@@ -1007,35 +1151,94 @@ impl MonsterAi {
         rng: &mut DotNetRng,
         combat: &CombatState,
     ) -> &MoveState {
-        if !self.performed_first_move && self.cur().is_move() {
-            return match self.cur() {
-                MonsterState::Move(m) => m,
-                _ => unreachable!(),
-            };
+        let plan = self.plan_roll_with_combat(rng, combat, self.owner_uid);
+        self.apply_roll(plan);
+        self.current_move()
+    }
+
+    /// The read-only half of [`Self::roll_move_with_combat`]: where the roll
+    /// lands, drawing any `RandomBranch` ticks from `rng`, without touching
+    /// the machine. `owner` stands in for [`Self::owner_uid`] so the combat
+    /// loop can plan against `&CombatState` while this AI still sits inside
+    /// it (no take/put of the AI around the roll), then commit with
+    /// [`Self::apply_roll`] (after [`Self::set_owner`]).
+    pub(crate) fn plan_roll_with_combat(
+        &self,
+        rng: &mut DotNetRng,
+        combat: &CombatState,
+        owner: Option<CreatureUid>,
+    ) -> RollPlan {
+        // One validated read of the current state serves both early-return
+        // guards (the not-yet-performed first move, and `CanTransitionAway`)
+        // and, when no override is queued, the transition itself.
+        let cur = self.cur();
+        let left_move = if let MonsterState::Move(m) = cur {
+            if !self.performed_first_move || (m.must_perform_once && !self.performed_at_least_once)
+            {
+                debug_assert!(!self.performed_first_move || !self.can_transition_away());
+                return RollPlan::Hold;
+            }
+            true
+        } else {
+            false
+        };
+        let (first, consumed_forced) = match self.forced_next_state {
+            Some(id) => (id, true),
+            None => (self.next_state_of(cur, rng, combat, owner), false),
+        };
+        RollPlan::Go {
+            target: self.resolve_from(first, rng, combat, owner),
+            consumed_forced,
+            left_move,
         }
+    }
 
-        if self.cur().is_move() && !self.can_transition_away() {
-            return match self.cur() {
-                MonsterState::Move(m) => m,
-                _ => unreachable!(),
-            };
+    /// Commit a [`RollPlan`] from [`Self::plan_roll_with_combat`] (or
+    /// [`Self::plan_initial_move_with_combat`]): the same writes the
+    /// in-place roll made — consume the queued override, clear the left
+    /// move's performed flag, land on the target, clear `current_forced`.
+    pub(crate) fn apply_roll(&mut self, plan: RollPlan) {
+        if let RollPlan::Go {
+            target,
+            consumed_forced,
+            left_move,
+        } = plan
+        {
+            if consumed_forced {
+                self.forced_next_state = None;
+            }
+            if left_move {
+                self.performed_at_least_once = false;
+            }
+            self.set_current_at(target);
+            self.current_forced = false;
         }
+    }
 
-        let next_id = self
-            .forced_next_state
-            .take()
-            .unwrap_or_else(|| self.get_next_state_with_combat(self.current, rng, combat));
-        if self.cur().is_move() {
-            self.performed_at_least_once = false;
-        }
-        self.set_current(next_id);
-        self.current_forced = false;
-
-        self.resolve_to_move_with_combat(rng, combat);
-
-        match self.cur() {
-            MonsterState::Move(m) => m,
-            _ => unreachable!(),
+    /// Walk from `id` through non-move states to the first `Move`, exactly
+    /// the hops [`Self::resolve_to_move_with_combat`] makes after landing on
+    /// `id` (same 100-hop safety cap, same unknown-id panic).
+    fn resolve_from(
+        &self,
+        mut id: StateId,
+        rng: &mut DotNetRng,
+        combat: &CombatState,
+        owner: Option<CreatureUid>,
+    ) -> usize {
+        let mut safety = 100u8;
+        loop {
+            let idx = self
+                .states
+                .idx_of(id)
+                .unwrap_or_else(|| panic!("unknown monster-AI state id {id:?}"));
+            let st = &self.states.entries[idx].1;
+            if st.is_move() {
+                return idx;
+            }
+            safety = safety
+                .checked_sub(1)
+                .expect("infinite loop in state machine resolution");
+            id = self.next_state_of(st, rng, combat, owner);
         }
     }
 
@@ -1085,18 +1288,37 @@ impl MonsterAi {
             !self.performed_first_move,
             "resolve_initial_move_with_combat called after the first move",
         );
-        // Mark it resolved BEFORE the early return: a `Move` initial is
-        // resolved too, it just costs zero reads (C#'s first `RollMove`
-        // early-returns on it). Setting the flag only on the branch path would
-        // make every Move-initial creature look perpetually unresolved.
-        self.initial_resolved = true;
+        let plan = self.plan_initial_move_with_combat(rng, combat, self.owner_uid);
+        self.apply_initial_move(plan);
+    }
+
+    /// The read-only half of [`Self::resolve_initial_move_with_combat`]; see
+    /// [`Self::plan_roll_with_combat`] for the split.
+    pub(crate) fn plan_initial_move_with_combat(
+        &self,
+        rng: &mut DotNetRng,
+        combat: &CombatState,
+        owner: Option<CreatureUid>,
+    ) -> RollPlan {
         if self.states[self.initial].is_move() {
             // C#: `Move` initial early-returns from the first RollMove.
-            return;
+            return RollPlan::Hold;
         }
-        self.set_current(self.initial);
-        self.current_forced = false;
-        self.resolve_to_move_with_combat(rng, combat);
+        RollPlan::Go {
+            target: self.resolve_from(self.initial, rng, combat, owner),
+            consumed_forced: false,
+            left_move: false,
+        }
+    }
+
+    /// Commit [`Self::plan_initial_move_with_combat`].
+    pub(crate) fn apply_initial_move(&mut self, plan: RollPlan) {
+        // Mark it resolved even on `Hold`: a `Move` initial is resolved too,
+        // it just costs zero reads (C#'s first `RollMove` early-returns on
+        // it). Setting the flag only on the branch path would make every
+        // Move-initial creature look perpetually unresolved.
+        self.initial_resolved = true;
+        self.apply_roll(plan);
     }
 
     /// Test-only convenience: roll using a fresh `DotNetRng` seeded
@@ -1174,19 +1396,27 @@ impl MonsterAi {
     /// moves only.
     pub fn on_move_performed_state(&mut self, performed: StateId) {
         self.performed_first_move = true;
-        let forced = if performed == self.current {
+        // Pointer+len first: `performed` is normally the very key
+        // `set_current` stored, so this skips the `memcmp` (an equal string
+        // at another address still compares equal through `==`).
+        let forced = if same_id(performed, self.current) {
             self.performed_at_least_once = true;
             self.current_forced
         } else {
             self.performing_forced
         };
-        if !forced
-            && self
-                .states
-                .get(performed)
-                .is_some_and(MonsterState::should_appear_in_logs)
-        {
-            self.state_log.push(performed);
+        // `performed` is almost always `current`, and since `set_current`
+        // stores the table's own key, usually the same pointer as the cached
+        // entry's key: read that entry rather than a fresh lookup. A pointer
+        // match is that entry; anything else takes the lookup as before.
+        let performed_state = match self.states.entry_at(self.current_idx as usize) {
+            Some((k, st)) if k.as_ptr() == performed.as_ptr() && k.len() == performed.len() => {
+                Some(st)
+            }
+            _ => self.states.get(performed),
+        };
+        if !forced && performed_state.is_some_and(MonsterState::should_appear_in_logs) {
+            self.log_state(performed);
         }
     }
 
@@ -1329,7 +1559,7 @@ impl MonsterAi {
         }
 
         let mut cursor_current = self.current;
-        let mut cursor_log: SmallVec<[StateId; 16]> = self.state_log.clone();
+        let mut cursor_log: SmallVec<[StateId; 16]> = SmallVec::from_slice(&self.state_log);
         let mut cursor_performed_first = self.performed_first_move;
         let mut cursor_performed_once = self.performed_at_least_once;
         let mut running_certainty: f32 = 1.0;
@@ -1439,7 +1669,7 @@ impl MonsterAi {
         if k == 0 || !self.cur().is_move() {
             return out;
         }
-        let mut log: SmallVec<[StateId; 16]> = self.state_log.clone();
+        let mut log: SmallVec<[StateId; 16]> = SmallVec::from_slice(&self.state_log);
         // A move already performed this turn is already in the log (the
         // state `on_move_performed` leaves before the roll); don't count it
         // twice. A forced state (a stun) is never logged.
@@ -1593,14 +1823,8 @@ impl MonsterAi {
     }
 
     fn resolve_to_move_with_combat(&mut self, rng: &mut DotNetRng, combat: &CombatState) {
-        let mut safety = 100u8;
-        while !self.cur().is_move() {
-            safety = safety
-                .checked_sub(1)
-                .expect("infinite loop in state machine resolution");
-            let next = self.get_next_state_with_combat(self.current, rng, combat);
-            self.set_current(next);
-        }
+        let target = self.resolve_from(self.current, rng, combat, self.owner_uid);
+        self.set_current_at(target);
     }
 
     fn resolve_random_branch(&self, rb: &RandomBranchState, rng: &mut DotNetRng) -> StateId {
@@ -1714,21 +1938,22 @@ impl MonsterAi {
         }
     }
 
-    fn get_next_state_with_combat(
+    /// The transition out of `from` (a state of this machine, already looked
+    /// up — the combat roll passes the cached current state so it costs no
+    /// id lookup).
+    fn next_state_of(
         &self,
-        from: StateId,
+        from: &MonsterState,
         rng: &mut DotNetRng,
         combat: &CombatState,
+        owner: Option<CreatureUid>,
     ) -> StateId {
-        match &self.states[from] {
+        match from {
             MonsterState::Move(m) => m.follow_up.expect("MoveState has no follow_up_id"),
             MonsterState::RandomBranch(rb) => self.resolve_random_branch(rb, rng),
             MonsterState::ConditionalBranch(cb) => {
                 for branch in &cb.branches {
-                    if branch
-                        .condition
-                        .resolve(combat, self.owner_uid, self.counter)
-                    {
+                    if branch.condition.resolve(combat, owner, self.counter) {
                         return branch.state_id;
                     }
                 }

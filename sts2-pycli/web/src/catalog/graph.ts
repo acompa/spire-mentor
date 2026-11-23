@@ -1,6 +1,7 @@
 import * as d3 from "d3";
 import type { Catalog, CatalogNode } from "./data";
 import { normToPixel, hueToColor, topPartners } from "./data";
+import { t } from "../i18n";
 
 export interface CardTextEntry {
   title: string;
@@ -70,7 +71,7 @@ export function renderGraph(
       .attr("y", height / 2)
       .attr("text-anchor", "middle")
       .attr("fill", "#888")
-      .text("No UMAP coordinates in catalog — re-run with embed-catalog.");
+      .text(t("No UMAP coordinates in catalog — re-run with embed-catalog."));
     return () => root.selectAll("*").remove();
   }
 
@@ -120,7 +121,7 @@ export function renderGraph(
     }
     if (partners.length > 0) {
       html += `<hr style="border:none;border-top:1px solid #444;margin:6px 0">`;
-      html += `<span style="color:#888;font-size:11px">Top partners (PMI):</span><br>`;
+      html += `<span style="color:#888;font-size:11px">${t("Top partners (PMI):")}</span><br>`;
       for (const p of partners) {
         const pLabel = cardText[p.partnerId]?.title ?? p.partnerLabel;
         html += `• ${pLabel} <span style="color:#6af">${p.pmi.toFixed(2)}</span><br>`;
@@ -220,7 +221,7 @@ export function renderGraph(
       .attr("y", height - 8)
       .attr("fill", "#666")
       .attr("font-size", "10px")
-      .text(`${fallbackNodes.length} card(s) without UMAP coords omitted`);
+      .text(t("{n} card(s) without UMAP coords omitted", { n: fallbackNodes.length }));
   }
 
   // ── Render labels ─────────────────────────────────────────────────────────

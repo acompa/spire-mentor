@@ -85,3 +85,52 @@ fn a_bad_fool_state_is_a_schema_error() {
         assert!(state_from_json(&v).is_err(), "{v}");
     }
 }
+
+/// The workbench draws the quiver and the arrows stuck in each enemy from
+/// `arrow_view`, and the Impaled badge from `display_amount`, which must be
+/// the C# `ImpaledPower.DisplayAmount` (HitCounter), not the amount (1).
+#[test]
+fn arrow_view_and_impaled_display_amount() {
+    use sts2_core::{Power, PowerKind, PowerUid};
+    let mut st = state_from_json(&fixture()).expect("builds");
+    let enemy = st.enemy_uids[0];
+    st.player.fool = Some(Box::new(FoolState {
+        arrows: smallvec![
+            arrow(ArrowStatus::Away, false),
+            arrow(ArrowStatus::Retrieved, false),
+            arrow(ArrowStatus::Away, false),
+        ],
+        impaled: smallvec![(enemy, smallvec![0, 2])],
+        ..FoolState::default()
+    }));
+    let pid = std::num::NonZeroU32::new(9_001).expect("nz");
+    let mut p = Power::new(pid, PowerKind::Impaled, 1);
+    p.counter = 2;
+    st.powers.push(p);
+    let c = st
+        .creatures
+        .iter_mut()
+        .find(|c| c.id == enemy.0)
+        .expect("enemy");
+    c.powers.push(PowerUid(pid));
+
+    let v = combat_state_to_value(&st).expect("emits");
+    let words: Vec<i64> = v["fool_state"]
+        .as_array()
+        .expect("fool_state")
+        .iter()
+        .map(|w| w.as_i64().expect("int"))
+        .collect();
+    let av = sts2_wire::fool_state::arrow_view(&words).expect("arrow view");
+    assert_eq!(av.arrows, vec![1, 0, 1]);
+    assert_eq!(av.impaled, vec![(0, 2)]);
+
+    let impaled = v["encounter"][0]["powers"]
+        .as_array()
+        .expect("powers")
+        .iter()
+        .find(|p| p["name"] == "IMPALED")
+        .expect("impaled power");
+    assert_eq!(impaled["amount"], 1);
+    assert_eq!(impaled["display_amount"], 2);
+}

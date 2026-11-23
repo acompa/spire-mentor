@@ -17,7 +17,7 @@ end" and autobattle, every non-combat decision is scored for the WPA review
 and verify, and run-mode saves restore — see "Run mode" below. Milestone 4 adds the
 **replay viewer** (a finished run leaves its JSONL log in IndexedDB; the
 timeline, map, step view, recommend / search tree, regret and run reviews,
-the MCTS Runs page and "play from here" all work over it) and the **deck
+the Run history page (formerly "MCTS Runs") and "play from here" all work over it) and the **deck
 analysis** routes — see "Replay viewer" below. Milestone 5 adds **bug
 reports** on the Pages host and **state import** — paste a run position
 copied out of the live game and rebuild it in the browser (see those two
@@ -181,7 +181,7 @@ combat, a seeded 48-sim search in a fight — plus `auto_action`,
 `last_move_regret` — since removed, GH #869 — and `regret_review`); **46 scenarios, 7218 requests** at M3;
 **8454 requests** at M4, every scenario ending with a quit and the replay
 block (list, load, timeline, map, steps, deck grades, the reviews, the
-searches, the MCTS Runs page, play-from-here) plus live deck-analysis and
+searches, the Run history page, play-from-here) plus live deck-analysis and
 reward-preview probes. The run-mode routes hash-match because the run agent
 is the same Rust code on both hosts; `autobattle/verdict` is structural in
 the scenarios without a net, where the brain's pick is each host's own
@@ -332,7 +332,9 @@ port `BranchingLiveSession.start_run_mode` / `run_mode_step` /
 
 The UI calls this brain and advisor **Instinct** ("Instinct (PPO only)" in the pickers); code, routes and stored values keep `e2e`.
 
-`off_combat_brain: "e2e"` is the e2e Ironclad student (`sts2-rs/crates/sts2-e2e`,
+`off_combat_brain: "e2e"` is the e2e student (`sts2-rs/crates/sts2-e2e`; since
+GH #1197 the all-character net, which plays Ironclad, Silent, Defect, Regent and
+Necrobinder;
 weights `sts2-pycli/data/e2e/*.e2ew` + `.provenance.md`): one transformer that
 makes EVERY decision of the run, fights included, with no search. Plan:
 `docs/plans/2026-11-06-workbench-e2e-brain.md`.
@@ -349,8 +351,9 @@ makes EVERY decision of the run, fights included, with no search. Plan:
   student's per-run state (driver + tokenizer cache) is kept per node and
   rebuilt by shadow replay after seek / restore / import.
   `recommended_action` and the autobattle champion pick ask the student too.
-- **Start.** `start-faithful {e2e: true}` forces the training run: Ironclad,
-  v0.111.0, act 1 rolled, potion swap on, ascension default 10. The run
+- **Start.** `start-faithful {e2e: true}` forces the training run: the picked
+  character (one of the five), v0.111.0, act 1 rolled, potion swap on,
+  ascension default 10. The run
   identity carries `e2e_setup` through saves, persists and run logs.
 - **Net, on demand.** ~21 MB. The worker fetches `/e2e/<file>` only when a call
   selects the brain (or the engine answers 424 for a restored run, retried
@@ -359,7 +362,7 @@ makes EVERY decision of the run, fights included, with no search. Plan:
   `_headers` serves `/e2e/*` immutable. The public export has no `data/e2e`
   (the unit allowlist names only the PPO champions), so there the build ships
   without it and the brain answers 424 with the fetch's 404.
-- **Probe.** `POST /api/e2e/selfplay {seed, ascension?, max_decisions?}` plays
+- **Probe.** `POST /api/e2e/selfplay {seed, character?, ascension?, max_decisions?}` plays
   a fresh run headless: `{won, decisions, chosen, ms_total, ms_per_decision,
   ms_{tokenize,net,env}_per_decision}`; `chosen` equals a native `E2eEnv` run.
 - **Size + SIMD.** The brain adds ~0.7 MB to the engine wasm. `+simd128`
@@ -374,8 +377,8 @@ makes EVERY decision of the run, fights included, with no search. Plan:
 ### Instinct as advisor (hand-played runs)
 
 A run you play yourself can take the student as its **advisor** instead of the
-search: `advisor: "e2e"` (Ironclad on v0.111.0 only — any other run keeps the
-search). Every surface that advises a hand-played move then shows the
+search: `advisor: "e2e"` (its five characters on v0.111.0 only — any other run
+keeps the search). Every surface that advises a hand-played move then shows the
 student's pick and its softmax probabilities (a POLICY's, never win chances):
 
 | Surface | Route | Under the e2e advisor |
@@ -436,8 +439,8 @@ champion verdict (the run brain's, not the advisor's).
   student cannot read); the run-mode config persists it (named only when
   `e2e`). The page keeps the preference in `localStorage` (`wb.advisor`): the
   launcher's "Play yourself" card has an **advisor** picker and the top bar an
-  **🔎 search / 🧠 e2e net** chip, both shown only for an Ironclad v0.111.0
-  Rust run; picking the e2e brain to watch picks it to advise too. The default
+  **🔎 search / 🧠 e2e net** chip, both shown only for a v0.111.0 Rust run of
+  one of Instinct's characters; picking the e2e brain to watch picks it to advise too. The default
   stays the search: the student's ~21 MB net downloads on first use (the
   worker fetches it when a call selects the advisor or answers 424), and
   v0.111.0 is not the default build. Tests: `tests/e2e_advisor.rs` (a
@@ -486,9 +489,9 @@ champion verdict (the run brain's, not the advisor's).
 
 A page for a seed seen in a post ("maybe unwinnable"): paste the game seed,
 and Instinct plays it until it wins. Linked from the top bar (🎲 Seed check).
-The page picks character, build and ascension. Instinct only plays Ironclad
-on v0.111.0, so the other characters and builds are listed but disabled (the
-engine refuses them with a 400 too); any ascension 0–10 runs, with a note
+The page picks character, build and ascension. Instinct plays its five
+characters on v0.111.0 only, so the other builds are listed but disabled (the
+engine refuses another character or build with a 400 too); any ascension 0–10 runs, with a note
 below A10 that the net trained at A10. Design:
 `docs/superpowers/specs/2026-11-08-workbench-seed-checker-design.md`.
 
@@ -820,6 +823,12 @@ log) works there too: the page cannot read the advisor's file, so
 `src/liveLog.ts` polls the control plane's `GET /log?stat=1` and, when the
 log changed, copies `GET /log` into the worker's run store
 (`POST /api/runs/put`), after which App.tsx's follow loop runs unchanged.
+Follow only ever sees the log being written while a page is open, so on
+load (and on Run history's Refresh) `importAdvisorLogs` also copies every
+log in the advisor's logs directory (`GET /logs`, then `GET /log?name=`)
+that the store lacks or holds a shorter copy of, newest 200 first. Runs
+played with no workbench open, or in an earlier session, show up in Run
+history and the Replay list that way.
 
 The proxy's routes mapped 1:1 onto the control plane's; the one transform it
 did — rendering each tree node's `combat_log_raw` with the localization —
@@ -886,7 +895,7 @@ Details that matter:
 |---|---|
 | M2 | **Shipped** (see "Advisors"): the search-backed and rollout advisors over worker RPC, streamed progress. |
 | M3 | **Shipped** (see "Run mode"): PPO in-browser, run mode / autobattle, node values, WPA review + verify, run-mode saves. |
-| M4 | **Shipped** (see "Replay viewer"): run logs on quit, the replay viewer and its reviews / searches / play-from-here, the MCTS Runs page, deck analysis. |
+| M4 | **Shipped** (see "Replay viewer"): run logs on quit, the replay viewer and its reviews / searches / play-from-here, the Run history page, deck analysis. |
 | M5 | **Shipped**: bug reports, state import (both lanes since GH #708), the SimLab sandbox and — since GH #707 — the SimLab distribution sweeps (see those sections). |
 | M6 | wasm threads (COOP/COEP: the `/*` block in `sts2-pycli/web/public/_headers`; `crossorigin` on art elements only for a remote art origin). |
 | M7 | Android TWA; native `sts2-coach` binary over `Workbench::call` for the Spire Mentor lane. Then retire the Python workbench modules and `deploy/`. (The live-game views already reach the advisor directly — see "Live-game bridge".) |

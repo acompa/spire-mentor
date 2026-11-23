@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { assetUrl, type MapGraph } from "../api";
 import MapView from "./MapView";
+import { t } from "../i18n";
 
 /**
  * A persistent, always-on-screen minimap docked above the side panel.
@@ -83,7 +84,7 @@ export default function MiniMap({
       <div className="mono" style={{ display: "flex", alignItems: "center", gap: 8,
         padding: "6px 12px", fontSize: 11, color: "var(--muted)" }}>
         <button type="button" onClick={onToggleCollapsed}
-          title={collapsed ? "show the minimap" : "hide the minimap"}
+          title={collapsed ? t("show the minimap") : t("hide the minimap")}
           style={{ font: "inherit", background: "none", border: "none", color: "var(--muted)",
             cursor: "pointer", padding: 0, width: 14 }}>
           {collapsed ? "▸" : "▾"}
@@ -91,12 +92,12 @@ export default function MiniMap({
         <b style={{ color: "var(--text)", display: "inline-flex", alignItems: "center", gap: 5 }}>
           <img src={assetUrl("map_icons/map_spoils_map_marker.png")} alt="" aria-hidden="true"
             style={{ height: 13, display: "block" }} />
-          map
+          {t("map")}
         </b>
         {bossName && (
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
-            whiteSpace: "nowrap" }} title={`next boss: ${bossName}`}>
-            <span style={{ color: "var(--muted)" }}>· next boss </span>
+            whiteSpace: "nowrap" }} title={t("next boss: {name}", { name: bossName })}>
+            <span style={{ color: "var(--muted)" }}>· {t("next boss")} </span>
             {ahead.map((b, i) => (
               <span key={`${b.col},${b.row}`} style={{ color: "oklch(60% 0.18 20)", fontWeight: 650,
                 display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "middle" }}>
@@ -109,10 +110,10 @@ export default function MiniMap({
           </span>
         )}
         {!bossName && <span style={{ flex: 1 }} />}
-        <button type="button" onClick={onExpand} title="open the full map"
+        <button type="button" onClick={onExpand} title={t("open the full map")}
           style={{ font: "inherit", background: "var(--bg)", border: "1px solid var(--border)",
             borderRadius: 4, color: "var(--muted)", cursor: "pointer", padding: "1px 7px" }}>
-          ⤢ full
+          ⤢ {t("full")}
         </button>
       </div>
       {!collapsed && (

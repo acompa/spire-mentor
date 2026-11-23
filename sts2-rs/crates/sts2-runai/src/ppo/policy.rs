@@ -24,7 +24,7 @@ use sts2_core::map::MapPointType;
 use sts2_core::run_manager::RunManager;
 #[cfg(feature = "ppo")]
 use sts2_core::run_manager::{Phase, RunAction};
-use sts2_core::shop::{is_shop_entry_available, merchant_price_with_modifiers, ShopInventory};
+use sts2_core::shop::{is_shop_entry_available, ShopInventory};
 use sts2_core::ChoiceKind;
 
 #[cfg(feature = "ppo")]
@@ -60,6 +60,7 @@ pub fn phase_str(p: Phase) -> &'static str {
         Phase::RestSite => "rest_site",
         Phase::Event => "event",
         Phase::Treasure => "treasure",
+        Phase::Rewards => "rewards",
         Phase::RunOver => "run_over",
     }
 }
@@ -142,7 +143,8 @@ pub fn classify_surface(phase: Phase, actions: &[RunAction]) -> Option<&'static 
         Phase::Shop => Some("shop"),
         Phase::RestSite => Some("rest"),
         Phase::Treasure => Some("treasure"),
-        Phase::Combat | Phase::RunOver => None,
+        // No run-PPO surface: `mask_rejectable` leaves one take (GH #1620).
+        Phase::Combat | Phase::Rewards | Phase::RunOver => None,
     }
 }
 
@@ -153,6 +155,42 @@ pub fn classify_surface(phase: Phase, actions: &[RunAction]) -> Option<&'static 
 /// unfiltered `actions`, matching Python's `masked or actions`).
 #[cfg(feature = "ppo")]
 pub fn mask_rejectable(rm: &RunManager, phase: Phase, actions: &[RunAction]) -> Vec<RunAction> {
+    // GH #1606: the potion popup's actions (only on a run with
+    // `ooc_potion_actions`, which no run-PPO host sets) have no row in any
+    // run-PPO champion; the policy ignores them and scores the phase's own.
+    // GH #1619: likewise the Smith / Cook cancel (`ConfirmDeckSelection` on a
+    // `deck_select_screens` run, which no run-PPO host builds either).
+    let cancel = rm.deck_select_cancelable();
+    let without_popup: Vec<RunAction> = actions
+        .iter()
+        .copied()
+        .filter(|a| {
+            let ooc = matches!(
+                a,
+                RunAction::UsePotionOutOfCombat { .. } | RunAction::DiscardPotion { .. }
+            );
+            let smith_cancel = cancel && *a == RunAction::ConfirmDeckSelection;
+            !(ooc || smith_cancel)
+        })
+        .collect();
+    let actions = if without_popup.is_empty() {
+        actions
+    } else {
+        without_popup.as_slice()
+    };
+    // GH #1620: the reward screen (only on a `reward_screen` run, which no
+    // run-PPO host builds) has no row in any champion. Leave its first take
+    // alone, so the policy auto-takes every reward in the set's order: what
+    // auto-collect grants, the card reward's pick last and scored as ever.
+    if phase == Phase::Rewards {
+        if let Some(take) = actions
+            .iter()
+            .find(|a| matches!(a, RunAction::TakeReward { .. }))
+        {
+            return vec![*take];
+        }
+        return actions.to_vec();
+    }
     if phase != Phase::Shop {
         return actions.to_vec();
     }
@@ -331,7 +369,7 @@ fn build_full_map_obs(rm: &RunManager) -> Option<FullMapObs> {
 /// ~:1184). Prices must match the Python-facing shop inventory and the
 /// engine's actual affordability/charge calculation, including relic discounts.
 fn build_shop_obs(inv: &ShopInventory, active_relics: &[sts2_core::relics::RelicId]) -> ShopObs {
-    let price_of = |base| i64::from(merchant_price_with_modifiers(active_relics, base));
+    let price_of = |base| i64::from(inv.cost(active_relics, base));
     let cards: Vec<ShopCardObs> = inv
         .cards
         .iter()
@@ -431,7 +469,10 @@ pub fn build_obs(rm: &RunManager, phase: &str, surface: Option<&str>) -> PpoObs 
         phase: phase.to_string(),
         surface: surface.map(str::to_string),
         seed: i64::from(rm.seed),
-        ascension: i64::from(rs.ascension_level),
+        // The standard-ladder level the net was trained on. A Blitz level
+        // is not one (GH #1347): there it is the standard level with the
+        // same fights. Standard and Dread: the run's own ascension.
+        ascension: i64::from(rs.combat_ascension()),
         deck,
         deck_enchantments: Some(deck_enchantments),
         relics,
@@ -1580,5 +1621,103 @@ mod run_nudge_tests {
         assert_eq!(after.rest_option_labels, Some(vec!["SMITH".to_owned()]));
         let actions = rm.get_available_actions();
         assert_eq!(nudge.smith_override(&rm, Phase::RestSite, &actions, 0), 0);
+    }
+}
+
+#[cfg(test)]
+mod shop_obs_tests {
+    use super::build_shop_obs;
+    use sts2_core::relics::RelicId;
+    use sts2_core::shop::{
+        ShopInventory, ShopRelicEntry, ShopRelicRarity, SHOP_ENTRY_SOLD_OUT_PRICE,
+    };
+
+    fn inv() -> ShopInventory {
+        let relic = |price| ShopRelicEntry {
+            relic_rarity: ShopRelicRarity::Common,
+            relic_id: Some(RelicId::TheCourier),
+            price,
+        };
+        ShopInventory {
+            relics: vec![relic(100), relic(SHOP_ENTRY_SOLD_OUT_PRICE)],
+            removal_cost: 75,
+            ..ShopInventory::default()
+        }
+    }
+
+    /// GH #1359: the Rust obs shows the DISPLAYED merchant price, like the
+    /// wire emitter `PpoRunEnv` reads (gate A2 seed 11 on v0.111.0: a
+    /// Courier owner saw 231 here and 184 in Python). The sold-out sentinel
+    /// passes through undiscounted, so it never reads as available.
+    #[test]
+    fn shop_prices_fold_the_owners_merchant_discounts() {
+        for (relics, want_relic, want_removal) in [
+            (vec![], 100, 75),
+            (vec![RelicId::TheCourier], 80, 60),
+            (vec![RelicId::MembershipCard], 50, 37),
+            (vec![RelicId::TheCourier, RelicId::MembershipCard], 40, 30),
+        ] {
+            let obs = build_shop_obs(&inv(), &relics);
+            assert_eq!(obs.relics[0].price, want_relic, "{relics:?}");
+            assert_eq!(obs.removal_cost, want_removal, "{relics:?}");
+            assert_eq!(
+                obs.relics[1].price,
+                i64::from(SHOP_ENTRY_SOLD_OUT_PRICE),
+                "{relics:?}"
+            );
+            assert!(!obs.relics[1].available);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "ppo"))]
+mod potion_popup_tests {
+    use super::mask_rejectable;
+    use sts2_core::run_manager::{Phase, RunAction, RunManager};
+    use sts2_core::CharacterId;
+
+    /// GH #1606: no run-PPO champion has a row for the potion popup, so the
+    /// policy's candidate list drops it and keeps the phase's own actions.
+    #[test]
+    fn the_run_policy_ignores_the_potion_popup() {
+        let rm = RunManager::new(0, CharacterId::Ironclad);
+        let actions = [
+            RunAction::Move { col: 1 },
+            RunAction::Move { col: 3 },
+            RunAction::UsePotionOutOfCombat { potion_slot: 0 },
+            RunAction::DiscardPotion { potion_slot: 0 },
+        ];
+        assert_eq!(
+            mask_rejectable(&rm, Phase::MapChoice, &actions),
+            actions[..2].to_vec()
+        );
+    }
+    /// GH #1619: nor for the Smith cancel of a `deck_select_screens` run.
+    #[test]
+    fn the_run_policy_ignores_the_smith_cancel() {
+        let mut rm = RunManager::new(0, CharacterId::Ironclad);
+        rm.run_state.deck_select_screens = true;
+        rm.run_state.master_deck = [
+            sts2_core::cards::CardId::Bash,
+            sts2_core::cards::CardId::Anger,
+        ]
+        .into_iter()
+        .map(|card_id| sts2_core::cards::Card {
+            card_id,
+            ..sts2_core::cards::Card::pod_defaults()
+        })
+        .collect();
+        rm.enter_rest_site();
+        let smith = rm
+            .run_state
+            .rest_site_options()
+            .iter()
+            .position(|o| matches!(o, sts2_core::runstate::RestSiteOption::Smith { .. }))
+            .expect("smith");
+        rm.take_action(RunAction::RestOption { idx: smith });
+        let actions = rm.get_available_actions();
+        assert_eq!(actions.last(), Some(&RunAction::ConfirmDeckSelection));
+        let masked = mask_rejectable(&rm, Phase::RestSite, &actions);
+        assert_eq!(masked, actions[..actions.len() - 1].to_vec());
     }
 }

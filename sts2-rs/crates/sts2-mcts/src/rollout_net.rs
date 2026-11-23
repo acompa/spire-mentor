@@ -143,6 +143,8 @@
 //! playout net, and [`net_for`] never returns it.
 #![allow(clippy::cast_precision_loss)]
 
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use rand::Rng;
@@ -1233,6 +1235,21 @@ pub fn action_features(
     heur_priority: i16,
 ) -> (ActionKey, [f32; ACTION_DIM_MAX]) {
     let mut x = [0.0f32; ACTION_DIM_MAX];
+    let key = fill_action_features(state, ctx, action, heur_priority, &mut x);
+    (key, x)
+}
+
+/// [`action_features`] into `x`, which must be all zeros on entry; returns
+/// the action's key. [`RolloutNet::logits`] reuses one buffer this way
+/// instead of copying a returned array per action.
+fn fill_action_features(
+    state: &CombatState,
+    ctx: &StepCtx,
+    action: &Action,
+    heur_priority: i16,
+    x: &mut [f32; ACTION_DIM_MAX],
+) -> ActionKey {
+    debug_assert!(x.iter().all(|v| v.to_bits() == 0));
     let mhp = ctx.max_hp as f32;
     x[21] = clampf(
         -f32::from(heur_priority) / crate::expert::SOFTMAX_TAU,
@@ -1252,7 +1269,7 @@ pub fn action_features(
                 .and_then(|uid| state.cards.get(uid.0.get() as usize - 1))
             else {
                 x[4] = 1.0;
-                return (ActionKey::Other, x);
+                return ActionKey::Other;
             };
             let cost = if card.is_x_cost() {
                 ctx.energy
@@ -1326,7 +1343,7 @@ pub fn action_features(
                 } else {
                     0.0
                 };
-                target_facts(ctx, *target, &mut x);
+                target_facts(ctx, *target, x);
             }
             if ctx.version.has_v4_block() {
                 let stars = sts2_core::effective_star_cost_in_combat(state, card);
@@ -1346,7 +1363,7 @@ pub fn action_features(
                 }
             }
             if ctx.version == FeatureVersion::V5 {
-                mechanics_facts(state, ctx, card, *target, cost, &mut x);
+                mechanics_facts(state, ctx, card, *target, cost, x);
             }
             ActionKey::Card {
                 id: card.card_id,
@@ -1375,7 +1392,7 @@ pub fn action_features(
             x[15] = if target.is_some() { 1.0 } else { 0.0 };
             x[23] = clampf(ctx.unblocked as f32 / mhp, 0.0, 3.0);
             if ctx.version == FeatureVersion::V2 {
-                target_facts(ctx, target, &mut x);
+                target_facts(ctx, target, x);
             }
             match state.player.potions.get(usize::from(slot)) {
                 Some(k) => ActionKey::Potion(*k),
@@ -1391,7 +1408,7 @@ pub fn action_features(
             ActionKey::Other
         }
     };
-    (key, x)
+    key
 }
 
 /// The v5 card-mechanics facts ([`V5_X_CHANNELS`] on) of playing `card` at
@@ -1504,7 +1521,13 @@ pub struct RolloutNet {
     w2t: Vec<f32>,
     /// Whether the dims fit [`Self::prepare_sparse`].
     sparse_ok: bool,
+    /// This net's identity in the [`PrepareCache`]: unique per parsed net
+    /// and never reused, so a memo can't outlive or be shared by its net.
+    id: u64,
 }
+
+/// Source of [`RolloutNet::id`] (0 is never issued).
+static NEXT_NET_ID: AtomicU64 = AtomicU64::new(1);
 
 fn default_feature_version() -> u32 {
     1
@@ -1721,6 +1744,7 @@ impl RolloutNet {
             choice_row,
             other_row,
             rows,
+            id: NEXT_NET_ID.fetch_add(1, Ordering::Relaxed),
         })
     }
 
@@ -1764,8 +1788,61 @@ impl RolloutNet {
     }
 
     /// The per-step half of every logit: `q(s)` and `lin + Pᵀ·q(s)`.
+    ///
+    /// Memoized per thread in a [`PrepareCache`]: `q(s)` and `w` are a pure
+    /// function of the net and its inputs (`s` and the encounter rows), and
+    /// a search revisits the same feature vectors over and over (~95% of
+    /// hint_bench's playout steps). A hit returns the stored outputs of the
+    /// identical computation on bit-equal inputs, so it is bit-identical.
     fn prepare(&self, ctx: &StepCtx) -> StepQuery {
-        self.prepare_raw(&ctx.state[..self.state_dim], &ctx.monsters)
+        let mut out = StepQuery::default();
+        self.prepare_into(ctx, &mut out);
+        out
+    }
+
+    /// [`Self::prepare`] into `out`, so a cache hit is copied once, straight
+    /// from the table into the caller's [`StepQuery`].
+    fn prepare_into(&self, ctx: &StepCtx, out: &mut StepQuery) {
+        let s = &ctx.state[..self.state_dim];
+        PREPARE_CACHE.with(|c| {
+            let Ok(mut caches) = c.try_borrow_mut() else {
+                *out = self.prepare_raw(s, &ctx.monsters);
+                return;
+            };
+            let i = if let Some(i) = caches.iter().position(|pc| pc.net == self.id) {
+                i
+            } else {
+                if caches.len() == PREPARE_CACHE_NETS {
+                    caches.remove(0);
+                }
+                caches.push(PrepareCache::new(self));
+                caches.len() - 1
+            };
+            let pc = &mut caches[i];
+            let slot = PrepareCache::slot(s, &ctx.monsters);
+            if pc.get_into(slot, s, &ctx.monsters, out) {
+                let hit = &*out;
+                debug_assert!(
+                    {
+                        let fresh = self.prepare_raw(s, &ctx.monsters);
+                        fresh
+                            .q
+                            .iter()
+                            .map(|x| x.to_bits())
+                            .eq(hit.q.iter().map(|x| x.to_bits()))
+                            && fresh
+                                .w
+                                .iter()
+                                .map(|x| x.to_bits())
+                                .eq(hit.w.iter().map(|x| x.to_bits()))
+                    },
+                    "a prepare-cache hit differs from a fresh prepare"
+                );
+                return;
+            }
+            *out = self.prepare_raw(s, &ctx.monsters);
+            pc.put(slot, s, &ctx.monsters, out);
+        });
     }
 
     /// [`Self::prepare`] from a state vector (`state_dim` wide) and the
@@ -1821,9 +1898,33 @@ impl RolloutNet {
     /// its products in the same order, and a skipped product is an exact
     /// `±0` that leaves a lane sum unchanged (a lane sum is never `-0`).
     fn prepare_sparse(&self, s: &[f32], monsters: &[u16; MONSTER_SLOTS]) -> StepQuery {
-        let (hidden, query) = (self.hidden, self.emb_dim);
+        let dims = (self.state_dim, self.hidden, self.emb_dim, self.action_dim);
+        // Every built-in net is v1 at 32 -> 64 -> 32 with 24 action
+        // features: a copy of the body with those widths as constants lets
+        // the compiler fully unroll its loops. Same code, same order.
+        if dims == (STATE_DIM, 64, 32, ACTION_DIM) {
+            self.prepare_sparse_dims(s, monsters, STATE_DIM, 64, 32, ACTION_DIM)
+        } else {
+            self.prepare_sparse_dims(s, monsters, dims.0, dims.1, dims.2, dims.3)
+        }
+    }
+
+    /// [`Self::prepare_sparse`] at the net's widths `(state_dim, hidden,
+    /// emb_dim, action_dim)`, passed in so a caller can make them constants.
+    // Must inline so the constant widths reach the loops.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn prepare_sparse_dims(
+        &self,
+        s: &[f32],
+        monsters: &[u16; MONSTER_SLOTS],
+        state_dim: usize,
+        hidden: usize,
+        query: usize,
+        action_dim: usize,
+    ) -> StepQuery {
         let mut acc = [[0.0f32; SPARSE_HIDDEN]; 8];
-        for (c, &x) in s[..self.state_dim].iter().enumerate() {
+        for (c, &x) in s[..state_dim].iter().enumerate() {
             if x != 0.0 {
                 let col = &self.w1t[c * hidden..(c + 1) * hidden];
                 for (a, w) in acc[c % 8][..hidden].iter_mut().zip(col) {
@@ -1862,15 +1963,24 @@ impl RolloutNet {
             .zip(&self.b2)
             .map(|(t, b)| b + t)
             .collect();
-        self.project(q)
+        self.project_dims(q, action_dim)
     }
 
     /// The [`StepQuery`] of a state query `q`: `w = lin + Pᵀ·q`.
     fn project(&self, q: SmallVec<[f32; 32]>) -> StepQuery {
+        self.project_dims(q, self.action_dim)
+    }
+
+    /// [`Self::project`] at `action_dim`, the net's own.
+    // Must inline so the constant widths reach the loops.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn project_dims(&self, q: SmallVec<[f32; 32]>, action_dim: usize) -> StepQuery {
+        debug_assert_eq!(action_dim, self.action_dim);
         let mut w = [0.0f32; ACTION_DIM_MAX];
-        w[..self.action_dim].copy_from_slice(&self.lin);
-        for (q_j, p_row) in q.iter().zip(self.proj.chunks_exact(self.action_dim)) {
-            for (w_k, p_jk) in w[..self.action_dim].iter_mut().zip(p_row) {
+        w[..action_dim].copy_from_slice(&self.lin);
+        for (q_j, p_row) in q.iter().zip(self.proj.chunks_exact(action_dim)) {
+            for (w_k, p_jk) in w[..action_dim].iter_mut().zip(p_row) {
                 *w_k += q_j * p_jk;
             }
         }
@@ -1892,15 +2002,23 @@ impl RolloutNet {
             end_turn_priority,
             self.spec.version.incoming(),
         );
-        let step = self.prepare(&ctx);
-        actions
-            .iter()
-            .zip(&heur)
-            .map(|(action, &prio)| {
-                let (key, feats) = action_features(state, &ctx, action, prio);
-                self.logit(&step, self.row(key), &feats)
-            })
-            .collect()
+        let mut step = StepQuery::default();
+        self.prepare_into(&ctx, &mut step);
+        let mut out: SmallVec<[f32; 16]> = SmallVec::with_capacity(actions.len());
+        let mut feats = [0.0f32; ACTION_DIM_MAX];
+        // The built-in nets' widths as constants, so `dot` unrolls (as in
+        // `prepare_sparse`): same code, same order.
+        let builtin = (self.emb_dim, self.action_dim) == (32, ACTION_DIM);
+        for (action, &prio) in actions.iter().zip(&heur) {
+            feats.fill(0.0);
+            let row = self.row(fill_action_features(state, &ctx, action, prio, &mut feats));
+            out.push(if builtin {
+                self.logit_dims(&step, row, &feats, 32, ACTION_DIM)
+            } else {
+                self.logit(&step, row, &feats)
+            });
+        }
+        out
     }
 
     /// Everything [`Self::logits`] computes at `state` for its legal actions
@@ -1942,10 +2060,152 @@ impl RolloutNet {
     /// model's `q·(E[row] + P·x) + bias[row] + lin·x` with the `P` product
     /// hoisted into [`Self::prepare`], once per step instead of per action.
     fn logit(&self, step: &StepQuery, row: usize, feats: &[f32; ACTION_DIM_MAX]) -> f32 {
-        let emb = &self.emb[row * self.emb_dim..(row + 1) * self.emb_dim];
+        self.logit_dims(step, row, feats, self.emb_dim, self.action_dim)
+    }
+
+    /// [`Self::logit`] at the net's `(emb_dim, action_dim)`, passed in so a
+    /// caller can make them constants.
+    // Must inline so the constant widths reach `dot`.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn logit_dims(
+        &self,
+        step: &StepQuery,
+        row: usize,
+        feats: &[f32; ACTION_DIM_MAX],
+        query: usize,
+        action_dim: usize,
+    ) -> f32 {
+        debug_assert_eq!((query, action_dim), (self.emb_dim, self.action_dim));
+        let emb = &self.emb[row * query..(row + 1) * query];
         self.bias[row]
-            + dot(&step.q, emb)
-            + dot(&step.w[..self.action_dim], &feats[..self.action_dim])
+            + dot(&step.q[..query], emb)
+            + dot(&step.w[..action_dim], &feats[..action_dim])
+    }
+}
+
+/// log2 of the slots per net in a [`PrepareCache`] (two-way set associative).
+const PREPARE_CACHE_BITS: u32 = 12;
+/// Nets one thread keeps a [`PrepareCache`] for at once.
+const PREPARE_CACHE_NETS: usize = 4;
+
+thread_local! {
+    static PREPARE_CACHE: RefCell<Vec<PrepareCache>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// A two-way set-associative memo of one net's [`RolloutNet::prepare`]: per slot the
+/// exact input bits (`s` and the encounter rows) and the outputs `q` and the
+/// first `action_dim` entries of `w` (the rest of `w` is always 0).
+struct PrepareCache {
+    net: u64,
+    state_dim: usize,
+    query: usize,
+    action_dim: usize,
+    used: Vec<bool>,
+    keys: Vec<u32>,
+    monsters: Vec<[u16; MONSTER_SLOTS]>,
+    q: Vec<f32>,
+    w: Vec<f32>,
+}
+
+impl PrepareCache {
+    fn new(net: &RolloutNet) -> Self {
+        let n = 1usize << PREPARE_CACHE_BITS;
+        Self {
+            net: net.id,
+            state_dim: net.state_dim,
+            query: net.emb_dim,
+            action_dim: net.action_dim,
+            used: vec![false; n],
+            keys: vec![0; n * net.state_dim],
+            monsters: vec![[0; MONSTER_SLOTS]; n],
+            q: vec![0.0; n * net.emb_dim],
+            w: vec![0.0; n * net.action_dim],
+        }
+    }
+
+    fn slot(s: &[f32], monsters: &[u16; MONSTER_SLOTS]) -> usize {
+        // Fold the input words with a per-position rotation (cheap and
+        // independent per word), then mix once. Only the hit rate depends on
+        // this hash: a hit still compares every word.
+        const K: u64 = 0x517c_c1b7_2722_0a95;
+        let (pairs, tail) = s.as_chunks::<2>();
+        let mut h = 0u64;
+        for (i, [a, b]) in pairs.iter().enumerate() {
+            let w = u64::from(a.to_bits()) | (u64::from(b.to_bits()) << 32);
+            h ^= w.rotate_left((i as u32).wrapping_mul(23) & 63);
+        }
+        for x in tail {
+            h ^= u64::from(x.to_bits()).rotate_left(29);
+        }
+        let [m0, m1, m2, m3, m4] = monsters.map(u64::from);
+        h ^= (m0 | (m1 << 16) | (m2 << 32) | (m3 << 48)).rotate_left(13) ^ m4.rotate_left(47);
+        h = (h ^ (h >> 31)).wrapping_mul(K);
+        h = (h ^ (h >> 29)).wrapping_mul(K);
+        // A two-way set: the slot pair `2 * set`, `2 * set + 1`.
+        ((h >> (64 - PREPARE_CACHE_BITS + 1)) as usize) * 2
+    }
+
+    /// On a hit, overwrite `out` with the stored outputs and return true.
+    fn get_into(
+        &self,
+        set: usize,
+        s: &[f32],
+        monsters: &[u16; MONSTER_SLOTS],
+        out: &mut StepQuery,
+    ) -> bool {
+        self.get_slot(set, s, monsters, out) || self.get_slot(set + 1, s, monsters, out)
+    }
+
+    fn get_slot(
+        &self,
+        slot: usize,
+        s: &[f32],
+        monsters: &[u16; MONSTER_SLOTS],
+        out: &mut StepQuery,
+    ) -> bool {
+        let key = &self.keys[slot * self.state_dim..(slot + 1) * self.state_dim];
+        if !self.used[slot]
+            || self.monsters[slot] != *monsters
+            || !key.iter().zip(s).all(|(k, x)| *k == x.to_bits())
+        {
+            return false;
+        }
+        out.q.clear();
+        out.q
+            .extend_from_slice(&self.q[slot * self.query..(slot + 1) * self.query]);
+        let (w, rest) = out.w.split_at_mut(self.action_dim);
+        w.copy_from_slice(&self.w[slot * self.action_dim..(slot + 1) * self.action_dim]);
+        rest.fill(0.0);
+        true
+    }
+
+    /// Store at the set's first way, moving its previous entry to the second.
+    fn put(&mut self, slot: usize, s: &[f32], monsters: &[u16; MONSTER_SLOTS], step: &StepQuery) {
+        debug_assert!(step.w[self.action_dim..].iter().all(|x| x.to_bits() == 0));
+        if self.used[slot] {
+            let (sd, qd, ad) = (self.state_dim, self.query, self.action_dim);
+            self.used[slot + 1] = true;
+            self.keys
+                .copy_within(slot * sd..(slot + 1) * sd, (slot + 1) * sd);
+            self.monsters[slot + 1] = self.monsters[slot];
+            self.q
+                .copy_within(slot * qd..(slot + 1) * qd, (slot + 1) * qd);
+            self.w
+                .copy_within(slot * ad..(slot + 1) * ad, (slot + 1) * ad);
+        }
+        self.used[slot] = true;
+        for (k, x) in self.keys[slot * self.state_dim..(slot + 1) * self.state_dim]
+            .iter_mut()
+            .zip(s)
+        {
+            *k = x.to_bits();
+        }
+        self.monsters[slot] = *monsters;
+        self.q[slot * self.query..(slot + 1) * self.query].copy_from_slice(&step.q);
+        self.w[slot * self.action_dim..(slot + 1) * self.action_dim]
+            .copy_from_slice(&step.w[..self.action_dim]);
     }
 }
 
@@ -1969,8 +2229,18 @@ struct StepQuery {
     w: [f32; ACTION_DIM_MAX],
 }
 
+impl Default for StepQuery {
+    fn default() -> Self {
+        Self {
+            q: SmallVec::new(),
+            w: [0.0; ACTION_DIM_MAX],
+        }
+    }
+}
+
 /// `a · b` over eight independent partial sums, which LLVM vectorizes; a
 /// single running sum is a serial chain of float adds it may not reorder.
+#[inline]
 fn dot(a: &[f32], b: &[f32]) -> f32 {
     let ((ca, ra), (cb, rb)) = (a.as_chunks::<8>(), b.as_chunks::<8>());
     let tail = ra.iter().zip(rb).map(|(x, y)| x * y).sum::<f32>();
@@ -2796,6 +3066,63 @@ mod tests {
             ActionKey::Potion(PotionKind::FirePotion).name(),
             "potion:FIRE_POTION"
         );
+    }
+
+    #[test]
+    fn prepare_cache_is_exact_and_per_net() {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(11);
+        let (hidden, dim) = (16usize, 8usize);
+        let keys = ["<unk>", "end_turn"];
+        let mut make = || {
+            let mut mat = |rows: usize, cols: usize| -> Vec<Vec<f32>> {
+                (0..rows)
+                    .map(|_| (0..cols).map(|_| rng.gen_range(-1.0f32..1.0)).collect())
+                    .collect()
+            };
+            let json = serde_json::json!({
+                "state_dim": STATE_DIM, "action_dim": ACTION_DIM, "hidden": hidden,
+                "emb_dim": dim, "temperature": 1.0, "keys": keys,
+                "w1": mat(hidden, STATE_DIM), "b1": mat(1, hidden).remove(0),
+                "w2": mat(dim, hidden), "b2": mat(1, dim).remove(0),
+                "emb": mat(keys.len(), dim), "bias": mat(1, keys.len()).remove(0),
+                "proj": mat(dim, ACTION_DIM), "lin": mat(1, ACTION_DIM).remove(0),
+            });
+            RolloutNet::from_json(&json.to_string()).expect("parses")
+        };
+        let (a, b) = (make(), make());
+        assert_ne!(a.id, b.id);
+        let mut ctx = StepCtx::new(&CombatState::default(), &[]);
+        let bits =
+            |q: &StepQuery| -> Vec<u32> { q.q.iter().chain(&q.w).map(|x| x.to_bits()).collect() };
+        for round in 0..3 {
+            for (i, x) in ctx.state[..STATE_DIM].iter_mut().enumerate() {
+                *x = if (i + round) % 3 == 0 {
+                    0.0
+                } else {
+                    (i * (round + 1)) as f32 / 7.0
+                };
+            }
+            // Twice per net: a miss, then a hit; both equal a fresh compute,
+            // and the other net's entry for the same inputs never leaks.
+            for _ in 0..2 {
+                for net in [&a, &b] {
+                    let fresh = net.prepare_raw(&ctx.state[..STATE_DIM], &ctx.monsters);
+                    assert_eq!(bits(&net.prepare(&ctx)), bits(&fresh));
+                }
+            }
+        }
+        // More distinct inputs than slots: evictions and way moves keep
+        // every answer exact.
+        for round in 0..2 {
+            for i in 0..(3usize << PREPARE_CACHE_BITS) {
+                ctx.state[..STATE_DIM].fill(0.0);
+                ctx.state[i % STATE_DIM] = (i / STATE_DIM) as f32;
+                ctx.state[(i * 7 + round) % STATE_DIM] += 0.5;
+                let fresh = a.prepare_raw(&ctx.state[..STATE_DIM], &ctx.monsters);
+                assert_eq!(bits(&a.prepare(&ctx)), bits(&fresh));
+            }
+        }
     }
 
     #[test]

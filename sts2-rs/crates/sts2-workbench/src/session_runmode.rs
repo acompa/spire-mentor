@@ -179,6 +179,7 @@ impl Session {
         threads: u32,
         reward_sims: Option<i64>,
     ) -> Result<Value, SessionError> {
+        self.require_standard_mode("a run-mode run")?;
         if matches!(mode_seed, ModeSeed::Game(_)) && !self.e2e_setup {
             return Err(SessionError::new(
                 400,
@@ -198,14 +199,14 @@ impl Session {
         self.character = character.to_string();
         self.seed = mode_seed.session_string();
         self.ascension = ascension;
-        self.act1 = "overgrowth".to_string();
+        self.act1 = "roll".to_string();
         let raw = if self.e2e_setup {
             // The e2e student's training run (`Game::start_e2e`).
             self.act1 = "roll".to_string();
-            self.start_e2e_raw(mode_seed, ascension)?
+            self.start_e2e_raw(character, mode_seed, ascension)?
         } else {
             self.spawn_game()
-                .start_faithful(character, seed, ascension)
+                .start_faithful(character, seed, ascension, "roll")
                 .map_err(|e| SessionError::new(400, e.0))?
         };
         let state = self.map_state(raw);
@@ -213,7 +214,15 @@ impl Session {
             ModeSeed::Int(i) => i.to_string(),
             ModeSeed::Game(g) => g.clone(),
         };
-        let label = format!("Started {character} (seed {shown}, A{ascension}, {off_combat_brain})");
+        let label = crate::i18n::trf(
+            "Started {character} (seed {seed}, A{ascension}, {brain})",
+            &[
+                ("character", &crate::render::character_title(character)),
+                ("seed", &shown),
+                ("ascension", &ascension),
+                ("brain", &crate::session::brain_name(off_combat_brain)),
+            ],
+        );
         let root = self.add_node(None, state.clone(), None, json!({}), label, vec![], vec![]);
         self.set_root(root);
         self.autobattle_prev_state = None;
@@ -229,16 +238,21 @@ impl Session {
     }
 
     /// `Game::start_e2e` on a fresh game (400 in a build without `e2e`).
-    fn start_e2e_raw(&mut self, seed: &ModeSeed, ascension: u8) -> Result<Value, SessionError> {
+    fn start_e2e_raw(
+        &mut self,
+        character: &str,
+        seed: &ModeSeed,
+        ascension: u8,
+    ) -> Result<Value, SessionError> {
         #[cfg(feature = "e2e")]
         {
             self.spawn_game()
-                .start_e2e_seed(seed, ascension)
+                .start_e2e_seed(character, seed, ascension)
                 .map_err(|e| SessionError::new(400, e.0))
         }
         #[cfg(not(feature = "e2e"))]
         {
-            let _ = (seed, ascension);
+            let _ = (character, seed, ascension);
             Err(SessionError::new(400, "this build has no e2e feature"))
         }
     }
@@ -252,17 +266,16 @@ impl Session {
         let parent = self.active()?;
         let parent_id = parent.id;
         let parent_named = resolve_state_names(Some(&parent.state), self.loc);
-        let label = {
-            let game = self.game.as_ref().expect("checked");
-            match game.native_run() {
-                Some(rm) => {
-                    let (verb, wb_args) = runmode::to_workbench_verb(rm, args);
-                    action_label(&parent_named, &verb, &wb_args)
-                }
-                None => args
-                    .get("action")
-                    .map_or_else(|| "?".to_string(), crate::render::py::to_str),
-            }
+        let wb_verb = self
+            .game
+            .as_ref()
+            .and_then(|g| g.native_run())
+            .map(|rm| runmode::to_workbench_verb(rm, args));
+        let label = match &wb_verb {
+            Some((verb, wb_args)) => action_label(&parent_named, verb, wb_args),
+            None => args
+                .get("action")
+                .map_or_else(|| "?".to_string(), crate::render::py::to_str),
         };
         let marks = self.mark_display_logs();
         if self.game.as_ref().and_then(|g| g.native_run()).is_none() {
@@ -311,6 +324,9 @@ impl Session {
             details.clone(),
             combat_rows,
         );
+        if let Some((verb, wb_args)) = &wb_verb {
+            self.set_label_en(node, parent_id, verb, wb_args);
+        }
         self.active_id = Some(node);
         #[cfg(feature = "e2e")]
         self.e2e_post_external(e2e_pre, node);
@@ -376,15 +392,15 @@ impl Session {
             .and_then(Value::as_str)
             .unwrap_or("?")
             .to_string();
-        let act_label = {
+        let (wb_verb, wb_args) = {
             let rm = self
                 .game
                 .as_ref()
                 .and_then(|g| g.native_run())
                 .ok_or_else(|| SessionError::new(400, "no live run"))?;
-            let (wb_verb, wb_args) = runmode::to_workbench_verb(rm, &native);
-            action_label(&parent_named, &wb_verb, &wb_args)
+            runmode::to_workbench_verb(rm, &native)
         };
+        let act_label = action_label(&parent_named, &wb_verb, &wb_args);
         let search = rec.combat_search.as_ref().map(|cs| {
             json!({
                 "scores": crate::advisors::rows_from_mcts(cs, &parent_named),
@@ -401,6 +417,7 @@ impl Session {
             details,
             combat_rows,
         );
+        self.set_label_en(node, parent_id, &wb_verb, &wb_args);
         self.active_id = Some(node);
         self.faithful_steps += 1;
         let mut debug = json!({
@@ -448,6 +465,13 @@ impl Session {
             .as_ref()
             .and_then(|g| g.native_run())
             .is_some_and(|rm| rmx::phase_str(rm) == "combat")
+    }
+
+    /// Whether the run stands in a fight: a card play, or a choice a card
+    /// or potion opened inside one. Twin of `BranchingLiveSession.in_fight`.
+    #[must_use]
+    pub fn in_fight(&self) -> bool {
+        self.native_phase_is_combat()
     }
 
     /// `_brain_recommend`: the `ppo` brain's off-combat pick, degrading to
@@ -738,17 +762,19 @@ impl Session {
             return Err(SessionError::new(400, "no live run"));
         }
         let Some(pending) = self.autobattle_pending.clone() else {
-            return Ok(json!({"available": false, "reason": "no graded decision pending"}));
+            return Ok(
+                json!({"available": false, "reason": crate::i18n::tr("no graded decision pending")}),
+            );
         };
         let node = self.active()?;
         let Some(action) = node.action.clone() else {
             return Ok(
-                json!({"available": false, "reason": "no action taken at the graded decision"}),
+                json!({"available": false, "reason": crate::i18n::tr("no action taken at the graded decision")}),
             );
         };
         if node.parent_id != pending["node_id"].as_u64() {
             return Ok(
-                json!({"available": false, "reason": "no action taken at the graded decision"}),
+                json!({"available": false, "reason": crate::i18n::tr("no action taken at the graded decision")}),
             );
         }
         let pending_action = pending["action"].as_str().unwrap_or("").to_string();
@@ -831,6 +857,12 @@ impl Session {
     /// heuristic answered for it) or the heuristic.
     pub fn recommended_action(&mut self) -> Option<Value> {
         self.active_id?;
+        // GH #1347: a Blitz run has no run-level policy (none knows its
+        // merchant, chest or map); the combat search still answers a choice
+        // opened inside a fight.
+        if self.game_mode.is_blitz() {
+            return self.combat_choice_recommend();
+        }
         // The e2e student answers every decision, combat included.
         #[cfg(feature = "e2e")]
         if self.is_e2e_brain() {
@@ -991,7 +1023,9 @@ impl Session {
             top_k,
             min_swing,
             won,
-            "no run-level value data — value recording needs the rust backend and a loadable PPO checkpoint",
+            crate::i18n::tr(
+                "no run-level value data — value recording needs the rust backend and a loadable PPO checkpoint",
+            ),
         ))
     }
 
@@ -1037,12 +1071,16 @@ impl Session {
         restored?;
         let both_over =
             played["over"].as_bool() == Some(true) && alternative["over"].as_bool() == Some(true);
-        let base = "one agent-played continuation per line (same-seeded combat search) — \
-                    a paired spot check, not a probability";
+        let base = crate::i18n::tr(
+            "one agent-played continuation per line (same-seeded combat search) — a paired spot check, not a probability",
+        );
         let (verdict, note) = if !both_over {
             (
                 "same",
-                format!("inconclusive — a continuation didn't finish; {base}"),
+                crate::i18n::trf(
+                    "inconclusive — a continuation didn't finish; {note}",
+                    &[("note", &base)],
+                ),
             )
         } else if played["won"] == alternative["won"] {
             ("same", base.to_string())

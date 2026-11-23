@@ -66,6 +66,10 @@ internal sealed class SimAiPartner
     public int Seat { get; }
     public string Label { get; }
 
+    /// <summary><see cref="Label"/> in the player's language, for the
+    /// screen only (Label stays the logs' and the bridge's name).</summary>
+    public string DisplayName => L10n.F("AI partner {0}", Seat + 1);
+
     /// <summary>The partner's own client service; null until JoinFlow has
     /// connected it.</summary>
     public INetGameService? Service { get; private set; }

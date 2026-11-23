@@ -1,0 +1,2318 @@
+{
+  "ABRASIVE": {
+    "title": "磨蚀",
+    "description": "奇巧。\n获得1点敏捷。\n获得4点荆棘。"
+  },
+  "ACCELERANT": {
+    "title": "触媒",
+    "description": "中毒会额外触发1次。"
+  },
+  "ACCURACY": {
+    "title": "精准",
+    "description": "小刀额外造成4点伤害。"
+  },
+  "ACROBATICS": {
+    "title": "杂技",
+    "description": "抽3张牌。\n丢弃1张牌。"
+  },
+  "ADAPTIVE_STRIKE": {
+    "title": "适应打击",
+    "description": "造成18点伤害。\n将这张牌的一张0能量复制品添加到你的弃牌堆。"
+  },
+  "ADRENALINE": {
+    "title": "肾上腺素",
+    "description": "获得1点能量。\n抽2张牌。\n消耗。"
+  },
+  "AFTERIMAGE": {
+    "title": "余像",
+    "description": "你每打出一张牌，就获得1点格挡。"
+  },
+  "AFTERLIFE": {
+    "title": "来生",
+    "description": "召唤6。\n消耗。"
+  },
+  "AGGRESSION": {
+    "title": "好勇斗狠",
+    "description": "在你的回合开始时，将你弃牌堆的一张随机攻击牌放入你的手牌并将其升级。"
+  },
+  "ALCHEMIZE": {
+    "title": "炼制药水",
+    "description": "获得一瓶随机药水。\n消耗。"
+  },
+  "ALIGNMENT": {
+    "title": "星位序列",
+    "description": "获得2点能量。"
+  },
+  "ALL_FOR_ONE": {
+    "title": "万物一心",
+    "description": "造成10点伤害。\n将你弃牌堆中的所有0能量牌放入你的手牌。"
+  },
+  "ANGER": {
+    "title": "愤怒",
+    "description": "造成6点伤害。\n将一张此牌的复制品加入你的弃牌堆。"
+  },
+  "ANOINTED": {
+    "title": "天选",
+    "description": "将你抽牌堆中的所有稀有牌放入你的手牌。\n消耗。"
+  },
+  "ANTICIPATE": {
+    "title": "预判",
+    "description": "在本回合获得2点敏捷。"
+  },
+  "APOTHEOSIS": {
+    "title": "神化",
+    "description": "固有。\n升级你的全部卡牌。\n消耗。"
+  },
+  "APPARITION": {
+    "title": "灵体",
+    "description": "虚无。\n获得1层无实体。\n消耗。"
+  },
+  "ARMAMENTS": {
+    "title": "武装",
+    "description": "获得5点格挡。\n升级你手牌中的一张牌。"
+  },
+  "ARSENAL": {
+    "title": "武器库",
+    "description": "每当你生成一张牌，就获得1点力量。"
+  },
+  "ASCENDERS_BANE": {
+    "title": "进阶之灾",
+    "description": "不能被打出。\n虚无。\n永恒。"
+  },
+  "ASHEN_STRIKE": {
+    "title": "灰烬打击",
+    "description": "造成6点伤害。\n你的消耗牌堆中每有一张牌，伤害增加3。"
+  },
+  "ASSASSINATE": {
+    "title": "刺杀",
+    "description": "固有。\n造成10点伤害。\n给予1层易伤。\n消耗。"
+  },
+  "ASTRAL_PULSE": {
+    "title": "星界脉冲",
+    "description": "Deal 6 damage to ALL enemies twice."
+  },
+  "AUTOMATION": {
+    "title": "自动化",
+    "description": "你每抽10张牌，获得1点能量。"
+  },
+  "BACKFLIP": {
+    "title": "后空翻",
+    "description": "获得5点格挡。\n抽2张牌。"
+  },
+  "BACKSTAB": {
+    "title": "背刺",
+    "description": "固有。\n造成11点伤害。\n消耗。"
+  },
+  "BAD_LUCK": {
+    "title": "霉运",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，你失去13点生命。\n永恒。"
+  },
+  "BALL_LIGHTNING": {
+    "title": "球状闪电",
+    "description": "造成7点伤害。\n生成1个闪电充能球。"
+  },
+  "BANSHEES_CRY": {
+    "title": "女妖之嚎",
+    "description": "对所有敌人造成33点伤害。\n本场战斗中每打出过一张虚无牌，此牌的耗能就减少2点能量。"
+  },
+  "BARRAGE": {
+    "title": "弹幕齐射",
+    "description": "当前每有一个充能球，造成5点伤害。"
+  },
+  "BARRICADE": {
+    "title": "壁垒",
+    "description": "格挡不再在你的回合开始时消失。"
+  },
+  "BASH": {
+    "title": "痛击",
+    "description": "造成8点伤害。\n给予2层易伤。"
+  },
+  "BATTLE_TRANCE": {
+    "title": "战斗专注",
+    "description": "抽3张牌。\n你在本回合内不能再抽任何牌。"
+  },
+  "BEACON_OF_HOPE": {
+    "title": "希望灯塔",
+    "description": "每当你在你的回合获得格挡时，其他玩家获得相应一半的格挡。"
+  },
+  "BEAM_CELL": {
+    "title": "光束射线",
+    "description": "造成3点伤害。\n给予1层易伤。"
+  },
+  "BEAT_DOWN": {
+    "title": "狠揍",
+    "description": "打出你弃牌堆中的3张随机攻击牌。"
+  },
+  "BEAT_INTO_SHAPE": {
+    "title": "锻打成型",
+    "description": "造成5点伤害。\n铸造5。\n本回合内，你此前每击中过该敌人一次，这张牌就额外铸造5点。"
+  },
+  "BECKON": {
+    "title": "呼唤",
+    "description": "在你的回合结束时，如果这张牌在你的手牌中，\n你失去6点生命。"
+  },
+  "BEGONE": {
+    "title": "下去！",
+    "description": "选择你手牌中的一张牌，将其变化为仆从打击。"
+  },
+  "BELIEVE_IN_YOU": {
+    "title": "相信着你",
+    "description": "另一名玩家获得2点能量。"
+  },
+  "BIASED_COGNITION": {
+    "title": "偏差认知",
+    "description": "获得4点集中。\n在你的回合开始时，失去1点集中。"
+  },
+  "BIG_BANG": {
+    "title": "大爆炸",
+    "description": "抽1张牌。\n获得1点能量。\n获得1点辉星。\n铸造5。\n消耗。"
+  },
+  "BLACK_HOLE": {
+    "title": "黑洞",
+    "description": "每当你花费或获得1点辉星时，对所有敌人造成3点伤害。"
+  },
+  "BLADE_DANCE": {
+    "title": "刀刃之舞",
+    "description": "添加3张小刀到你的手牌。\n消耗。"
+  },
+  "BLADE_OF_INK": {
+    "title": "墨之刃",
+    "description": "添加2张墨影小刀到你的手牌。"
+  },
+  "BLIGHT_STRIKE": {
+    "title": "荒疫打击",
+    "description": "造成8点伤害。\n给予等量于所造成伤害的灾厄。"
+  },
+  "BLOOD_WALL": {
+    "title": "血墙",
+    "description": "失去2点生命。\n获得16点格挡。"
+  },
+  "BLOODLETTING": {
+    "title": "放血",
+    "description": "失去3点生命。\n获得2点能量。"
+  },
+  "BLUDGEON": {
+    "title": "重锤",
+    "description": "造成32点伤害。"
+  },
+  "BLUR": {
+    "title": "残影",
+    "description": "获得5点格挡。\n你的下一回合开始时格挡不会消失。"
+  },
+  "BODY_SLAM": {
+    "title": "全身撞击",
+    "description": "造成你当前格挡值的伤害。"
+  },
+  "BODYGUARD": {
+    "title": "护卫",
+    "description": "召唤5。"
+  },
+  "BOLAS": {
+    "title": "流星锤",
+    "description": "造成3点伤害。\n在你的下个回合开始时，将此卡返回你的手牌。"
+  },
+  "BOMBARDMENT": {
+    "title": "轰击",
+    "description": "造成18点伤害。\n你的回合开始时，如果这张牌在你的消耗牌堆中，则将其打出。\n消耗。"
+  },
+  "BONE_SHARDS": {
+    "title": "碎骨",
+    "description": "如果奥斯提存活，则他对所有敌人造成9点伤害并且你获得9点格挡。\n然后奥斯提死去。"
+  },
+  "BOOST_AWAY": {
+    "title": "高速脱离",
+    "description": "获得6点格挡。\n将一张晕眩添加到你的弃牌堆中。"
+  },
+  "BOOT_SEQUENCE": {
+    "title": "启动流程",
+    "description": "固有。\n获得10点格挡。\n消耗。"
+  },
+  "BORROWED_TIME": {
+    "title": "预借时间",
+    "description": "获得4点能量。\n所有卡牌在本回合耗能增加能量。"
+  },
+  "BOUNCING_FLASK": {
+    "title": "弹跳药瓶",
+    "description": "随机给予敌人3层中毒3次。"
+  },
+  "BRAND": {
+    "title": "烙印",
+    "description": "失去1点生命。\n消耗1张牌。\n获得1点力量。"
+  },
+  "BREAK": {
+    "title": "破击",
+    "description": "造成20点伤害。\n给予5层易伤。"
+  },
+  "BREAKTHROUGH": {
+    "title": "突破",
+    "description": "失去1点生命。\n对所有敌人造成9点伤害。"
+  },
+  "BRIGHTEST_FLAME": {
+    "title": "至亮之焰",
+    "description": "获得2点能量。\n抽2张牌。\n失去1点最大生命。"
+  },
+  "BUBBLE_BUBBLE": {
+    "title": "咕嘟冒泡",
+    "description": "如果敌方拥有中毒，则给予9层中毒。"
+  },
+  "BUFFER": {
+    "title": "缓冲",
+    "description": "阻止下1次你受到的生命值损伤。"
+  },
+  "BULK_UP": {
+    "title": "暴涨",
+    "description": "失去1个充能球栏位。\n获得2点力量。\n获得2点敏捷。"
+  },
+  "BULLET_TIME": {
+    "title": "子弹时间",
+    "description": "你在本回合内不能再抽牌。你手牌中的所有牌在本回合免费打出。"
+  },
+  "BULLY": {
+    "title": "欺凌",
+    "description": "造成4点伤害。\n该敌人身上每有一层易伤就额外造成2点伤害。"
+  },
+  "BULWARK": {
+    "title": "铸墙",
+    "description": "获得12点格挡。\n铸造10。"
+  },
+  "BUNDLE_OF_JOY": {
+    "title": "新生之喜",
+    "description": "将3张随机无色牌添加到你的手牌。\n消耗。"
+  },
+  "BURN": {
+    "title": "灼伤",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，你受到2点伤害。"
+  },
+  "BURNING_PACT": {
+    "title": "燃烧契约",
+    "description": "消耗1张牌。\n抽2张牌。"
+  },
+  "BURST": {
+    "title": "爆发",
+    "description": "在这个回合，你打出的下一张技能牌会被额外打出一次。"
+  },
+  "BURY": {
+    "title": "埋葬",
+    "description": "造成52点伤害。"
+  },
+  "BYRD_SWOOP": {
+    "title": "异鸟扑击",
+    "description": "造成14点伤害。"
+  },
+  "BYRDONIS_EGG": {
+    "title": "多尼斯异鸟蛋",
+    "description": "不能被打出。\n能在休息处被孵化。"
+  },
+  "CALAMITY": {
+    "title": "劫难",
+    "description": "每当你打出一张攻击牌时，将一张随机攻击牌添加到你的手牌。"
+  },
+  "CALCIFY": {
+    "title": "钙化",
+    "description": "奥斯提的攻击额外造成4点伤害。"
+  },
+  "CALCULATED_GAMBLE": {
+    "title": "计算下注",
+    "description": "丢弃你的所有手牌,\n然后抽相同数量的牌。\n消耗。"
+  },
+  "CALL_OF_THE_VOID": {
+    "title": "虚空之唤",
+    "description": "在你的回合开始时，将1张随机牌添加到你的手牌中。添加的牌会获得虚无。"
+  },
+  "CALTROPS": {
+    "title": "铁蒺藜",
+    "description": "每当你被攻击时，对攻击者造成3点伤害。"
+  },
+  "CAPACITOR": {
+    "title": "扩容",
+    "description": "获得2个充能球栏位。"
+  },
+  "CAPTURE_SPIRIT": {
+    "title": "捕捉灵魂",
+    "description": "敌人失去3点生命。\n将3张灵魂加入你的抽牌堆。"
+  },
+  "CASCADE": {
+    "title": "倾泻",
+    "description": "打出你抽牌堆顶部的X张牌。"
+  },
+  "CATASTROPHE": {
+    "title": "横祸",
+    "description": "从你的抽牌堆中随机打出2张牌。"
+  },
+  "CELESTIAL_MIGHT": {
+    "title": "天穹之力",
+    "description": "Deal 6 damage 3 times."
+  },
+  "CHAOS": {
+    "title": "混沌",
+    "description": "生成1个随机充能球。"
+  },
+  "CHARGE": {
+    "title": "冲锋！！",
+    "description": "选择你抽牌堆中的2张牌，将其变化为\n仆从俯冲。"
+  },
+  "CHARGE_BATTERY": {
+    "title": "充电",
+    "description": "获得7点格挡。\n在下个回合获得1点能量。"
+  },
+  "CHILD_OF_THE_STARS": {
+    "title": "群星之子",
+    "description": "每当你花费1点辉星时，每花费一点1点辉星，获得2点格挡。"
+  },
+  "CHILL": {
+    "title": "冰寒",
+    "description": "当前每有一名敌人，就生成1个冰霜充能球。\n消耗。"
+  },
+  "CINDER": {
+    "title": "余烬",
+    "description": "造成18点伤害。\n随机消耗1张牌。"
+  },
+  "CLASH": {
+    "title": "交锋",
+    "description": "只有在手牌中每一张牌都是攻击牌时才能被打出。\n造成14点伤害。"
+  },
+  "CLAW": {
+    "title": "爪击",
+    "description": "造成3点伤害。\n本场战斗中所有爪击卡牌的伤害增加2点。"
+  },
+  "CLEANSE": {
+    "title": "洁净",
+    "description": "召唤3。\n从你的抽牌堆中选择一张牌将其消耗。"
+  },
+  "CLOAK_AND_DAGGER": {
+    "title": "斗篷与匕首",
+    "description": "获得6点格挡。\n将1张小刀添加到你的手牌。"
+  },
+  "CLOAK_OF_STARS": {
+    "title": "群星斗篷",
+    "description": "获得7点格挡。"
+  },
+  "CLUMSY": {
+    "title": "笨拙",
+    "description": "不能被打出。\n虚无。"
+  },
+  "COLD_SNAP": {
+    "title": "寒流",
+    "description": "造成6点伤害。\n生成1个冰霜充能球。"
+  },
+  "COLLISION_COURSE": {
+    "title": "碰撞轨迹",
+    "description": "造成11点伤害。\n将一张碎屑添加到你的手牌。"
+  },
+  "COLOSSUS": {
+    "title": "巨像",
+    "description": "获得5点格挡。\n在本回合中，有易伤状态的敌人对你造成的伤害降低50%。"
+  },
+  "COMET": {
+    "title": "彗星",
+    "description": "造成33点伤害。\n给予3层虚弱。\n给予3层易伤。"
+  },
+  "COMPACT": {
+    "title": "压缩",
+    "description": "获得6点格挡。\n将你手牌中的全部状态牌变化为燃料。"
+  },
+  "COMPILE_DRIVER": {
+    "title": "编译冲击",
+    "description": "造成7点伤害。\n你每有一种不同的充能球，就抽一张牌。"
+  },
+  "CONFLAGRATION": {
+    "title": "焚烧",
+    "description": "Deal 2 damage to ALL enemies 4 times."
+  },
+  "CONQUEROR": {
+    "title": "征服者",
+    "description": "铸造3。\n君王之剑在本回合对敌人造成双倍伤害。"
+  },
+  "CONSUMING_SHADOW": {
+    "title": "吞噬暗影",
+    "description": "生成2个黑暗充能球。\n在你的回合结束时，激发你最左侧的充能球。"
+  },
+  "CONVERGENCE": {
+    "title": "汇流",
+    "description": "在本回合保留你的手牌。\n在下个回合，\n获得1点能量与1点辉星。"
+  },
+  "COOLANT": {
+    "title": "冷却剂",
+    "description": "在你的回合开始时，你每有一种不同的充能球，就获得2点格挡。"
+  },
+  "COOLHEADED": {
+    "title": "冷静头脑",
+    "description": "生成1个冰霜充能球。\n抽1张牌。"
+  },
+  "COORDINATE": {
+    "title": "协同配合",
+    "description": "在本回合给予其他玩家5点力量。"
+  },
+  "CORROSIVE_WAVE": {
+    "title": "腐蚀波",
+    "description": "打出此牌后，你在本回合每抽到一张牌，就给予所有敌人2层中毒。"
+  },
+  "CORRUPTION": {
+    "title": "腐化",
+    "description": "技能牌消耗变为0能量。\n每当你打出一张技能牌时，将其消耗。"
+  },
+  "COSMIC_INDIFFERENCE": {
+    "title": "宇宙冷漠",
+    "description": "获得6点格挡。\n将弃牌堆中的一张牌放到你的抽牌堆的顶部。"
+  },
+  "COUNTDOWN": {
+    "title": "倒数计时",
+    "description": "在你的回合开始时，给予随机敌人6层灾厄。"
+  },
+  "CRASH_LANDING": {
+    "title": "迫降",
+    "description": "对所有敌人造成21点伤害。\n用碎屑填满你的手牌。"
+  },
+  "CREATIVE_AI": {
+    "title": "创造性AI",
+    "description": "在你的回合开始时，将一张随机能力牌加入你的手牌。"
+  },
+  "CRESCENT_SPEAR": {
+    "title": "新月长矛",
+    "description": "造成8点伤害。\n你每有一张拥有1点辉星耗能的卡牌，这张牌就额外造成2点伤害。"
+  },
+  "CRIMSON_MANTLE": {
+    "title": "绯红披风",
+    "description": "在你的回合开始时，失去1点生命并获得8点格挡。"
+  },
+  "CRUELTY": {
+    "title": "残酷",
+    "description": "有易伤状态的敌人额外受到25%的伤害。"
+  },
+  "CRUSH_UNDER": {
+    "title": "下砸",
+    "description": "对所有敌人造成7点伤害。所有敌人在本回合失去1点力量。"
+  },
+  "CURSE_OF_THE_BELL": {
+    "title": "铃铛的诅咒",
+    "description": "不能被打出。\n永恒。"
+  },
+  "DAGGER_SPRAY": {
+    "title": "匕首雨",
+    "description": "Deal 4 damage to ALL enemies twice."
+  },
+  "DAGGER_THROW": {
+    "title": "投掷匕首",
+    "description": "造成9点伤害。\n抽1张牌。\n丢弃1张牌。"
+  },
+  "DANSE_MACABRE": {
+    "title": "死亡之舞",
+    "description": "每当你打出一张耗能大于等于2点能量的牌时，获得4点格挡。"
+  },
+  "DARK_EMBRACE": {
+    "title": "黑暗之拥",
+    "description": "每当有一张牌被消耗时，\n抽1张牌。"
+  },
+  "DARK_SHACKLES": {
+    "title": "黑暗镣铐",
+    "description": "使一名敌人在本回合失去9点力量。\n消耗。"
+  },
+  "DARKNESS": {
+    "title": "漆黑",
+    "description": "生成1个黑暗充能球。\n触发所有黑暗充能球的被动。"
+  },
+  "DASH": {
+    "title": "冲刺",
+    "description": "获得10点格挡。\n造成10点伤害。"
+  },
+  "DAZED": {
+    "title": "晕眩",
+    "description": "不能被打出。\n虚无。"
+  },
+  "DEADLY_POISON": {
+    "title": "致命毒药",
+    "description": "给予5层中毒。"
+  },
+  "DEATH_MARCH": {
+    "title": "死亡行军",
+    "description": "造成8点伤害。\n你在回合进行中每抽到一张牌，都会使其额外造成4点伤害。"
+  },
+  "DEATHBRINGER": {
+    "title": "死亡使者",
+    "description": "给予所有敌人21层灾厄和1层虚弱。"
+  },
+  "DEATHS_DOOR": {
+    "title": "死亡之门",
+    "description": "获得6点格挡。\n如果你在本回合中曾给予过灾厄，则额外获得2次格挡。"
+  },
+  "DEBILITATE": {
+    "title": "摧残",
+    "description": "造成10点伤害。\n在接下来的2回合内，该敌人身上的易伤与虚弱效果翻倍。"
+  },
+  "DEBRIS": {
+    "title": "碎屑",
+    "description": "消耗。"
+  },
+  "DEBT": {
+    "title": "债务",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，你失去10金币。"
+  },
+  "DECAY": {
+    "title": "腐朽",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中, 你受到2点伤害。"
+  },
+  "DECISIONS_DECISIONS": {
+    "title": "抉择，抉择",
+    "description": "抽3张牌。\n选择你手牌中的一张技能牌，并将其打出3次。\n消耗。"
+  },
+  "DEFEND_DEFECT": {
+    "title": "防御",
+    "description": "获得5点格挡。"
+  },
+  "DEFEND_IRONCLAD": {
+    "title": "防御",
+    "description": "获得5点格挡。"
+  },
+  "DEFEND_NECROBINDER": {
+    "title": "防御",
+    "description": "获得5点格挡。"
+  },
+  "DEFEND_REGENT": {
+    "title": "防御",
+    "description": "获得5点格挡。"
+  },
+  "DEFEND_SILENT": {
+    "title": "防御",
+    "description": "获得5点格挡。"
+  },
+  "DEFILE": {
+    "title": "玷污",
+    "description": "虚无。\n造成13点伤害。"
+  },
+  "DEFLECT": {
+    "title": "偏折",
+    "description": "获得4点格挡。"
+  },
+  "DEFRAGMENT": {
+    "title": "碎片整理",
+    "description": "获得1点集中。"
+  },
+  "DEFY": {
+    "title": "违逆",
+    "description": "虚无。\n获得6点格挡。\n给予1层虚弱。"
+  },
+  "DELAY": {
+    "title": "拖延",
+    "description": "获得11点格挡。\n在下个回合，\n获得1点能量。"
+  },
+  "DEMESNE": {
+    "title": "领域",
+    "description": "虚无。\n在你的回合开始时，获得1点能量并额外多抽1张牌。"
+  },
+  "DEMON_FORM": {
+    "title": "恶魔形态",
+    "description": "在你的回合开始时，获得2点力量。"
+  },
+  "DEMONIC_SHIELD": {
+    "title": "恶魔护盾",
+    "description": "失去1点生命。\n给予另一位玩家你当前格挡值的格挡。\n消耗。"
+  },
+  "DEVASTATE": {
+    "title": "葬送",
+    "description": "造成30点伤害。"
+  },
+  "DEVOUR_LIFE": {
+    "title": "吞噬生命",
+    "description": "每当你打出一张灵魂时，召唤1。"
+  },
+  "DIRGE": {
+    "title": "挽歌",
+    "description": "召唤3X次。\n将X张灵魂添加到你的抽牌堆中。\n消耗。"
+  },
+  "DISCOVERY": {
+    "title": "发现",
+    "description": "从3张随机牌中选择1张加入你的手牌。这张牌在本回合可以免费打出。\n消耗。"
+  },
+  "DISINTEGRATION": {
+    "title": "瓦解",
+    "description": "在你的回合结束时，受到6点伤害。"
+  },
+  "DISMANTLE": {
+    "title": "拆卸",
+    "description": "Deal 8 damage.\nIf the enemy is Vulnerable, hits twice."
+  },
+  "DISTRACTION": {
+    "title": "声东击西",
+    "description": "将一张随机技能牌添加到你的手牌中。这张牌在本回合内可以免费打出。\n消耗。"
+  },
+  "DODGE_AND_ROLL": {
+    "title": "闪躲翻滚",
+    "description": "获得4点格挡。\n在下个回合，获得4点格挡。"
+  },
+  "DOMINATE": {
+    "title": "主宰",
+    "description": "给予1层易伤。\n敌人身上每有一层易伤，就获得1点力量。\n消耗。"
+  },
+  "DOUBLE_ENERGY": {
+    "title": "双倍能量",
+    "description": "将你的能量翻倍。\n消耗。"
+  },
+  "DOUBT": {
+    "title": "疑虑",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，获得1层虚弱。"
+  },
+  "DRAIN_POWER": {
+    "title": "能量汲取",
+    "description": "造成10点伤害。\n随机升级你弃牌堆中的2张牌。"
+  },
+  "DRAMATIC_ENTRANCE": {
+    "title": "闪亮登场",
+    "description": "固有。\n对所有敌人造成11点伤害。\n消耗。"
+  },
+  "DREDGE": {
+    "title": "清淤",
+    "description": "将3张牌从弃牌堆加入你的手牌。\n消耗。"
+  },
+  "DRUM_OF_BATTLE": {
+    "title": "战鼓",
+    "description": "抽2张牌。\n这张牌被消耗时，获得2点能量。"
+  },
+  "DUAL_WIELD": {
+    "title": "双持",
+    "description": "选择一张攻击牌或能力牌。将该牌的一张复制品加入你的手牌。"
+  },
+  "DUALCAST": {
+    "title": "双重释放",
+    "description": "激发你最右侧的充能球两次。"
+  },
+  "DYING_STAR": {
+    "title": "星灭",
+    "description": "虚无。\n对所有敌人造成9点伤害。所有敌人在本回合中失去9点力量。"
+  },
+  "ECHO_FORM": {
+    "title": "回响形态",
+    "description": "虚无。\n你每回合打出的第一张牌会被打出两次。"
+  },
+  "ECHOING_SLASH": {
+    "title": "回响斩击",
+    "description": "对所有敌人造成10点伤害。\n每有一名敌人被击杀，就重复此效果。"
+  },
+  "EIDOLON": {
+    "title": "幻景",
+    "description": "Exhaust your Hand.\nIf 9 cards were Exhausted this way, gain 1 Intangible."
+  },
+  "END_OF_DAYS": {
+    "title": "末日降临",
+    "description": "给予所有敌人29层灾厄。\n杀死所有灾厄大于等于当前生命值的敌人。"
+  },
+  "ENERGY_SURGE": {
+    "title": "能量涌动",
+    "description": "所有玩家获得2点能量。\n消耗。"
+  },
+  "ENFEEBLING_TOUCH": {
+    "title": "弱化之触",
+    "description": "虚无。\n让一名敌人在本回合内失去8点力量。"
+  },
+  "ENLIGHTENMENT": {
+    "title": "开悟",
+    "description": "在这个回合，你当前手牌中所有牌的耗能降低至1。\n消耗。"
+  },
+  "ENTHRALLED": {
+    "title": "执迷",
+    "description": "如果这张牌在你的手牌中，你必须优先打出这张牌。\n永恒。"
+  },
+  "ENTRENCH": {
+    "title": "巩固",
+    "description": "将你当前的格挡翻倍。"
+  },
+  "ENTROPY": {
+    "title": "熵",
+    "description": "在你的回合开始时，变化你手牌中的1张牌。"
+  },
+  "ENVENOM": {
+    "title": "涂毒",
+    "description": "每有一次攻击造成未被格挡的伤害，就给予1层中毒。"
+  },
+  "EQUILIBRIUM": {
+    "title": "均衡",
+    "description": "获得13点格挡。\n在本回合保留你的手牌。"
+  },
+  "ERADICATE": {
+    "title": "根除",
+    "description": "保留。\n造成11点伤害X次。"
+  },
+  "ESCAPE_PLAN": {
+    "title": "逃脱计划",
+    "description": "抽1张牌。\n如果抽到的是技能牌，则获得3点格挡。"
+  },
+  "ETERNAL_ARMOR": {
+    "title": "永恒铠甲",
+    "description": "获得9层覆甲。"
+  },
+  "EVIL_EYE": {
+    "title": "邪眼",
+    "description": "获得8点格挡。\n如果你在本回合消耗过卡牌，则额外获得8点格挡。"
+  },
+  "EXPECT_A_FIGHT": {
+    "title": "跃跃欲试",
+    "description": "Gain  Energy for each Attack in your Hand.\nYou cannot gain\nadditional  Energy this turn."
+  },
+  "EXPERTISE": {
+    "title": "独门技术",
+    "description": "Draw cards until you have 6 in your Hand."
+  },
+  "EXPOSE": {
+    "title": "暴露",
+    "description": "去除敌人身上的所有格挡值和人工制品。\n并给予2层易伤。\n消耗。"
+  },
+  "EXTERMINATE": {
+    "title": "杀灭",
+    "description": "Deal 3 damage to ALL enemies 4 times."
+  },
+  "FALLING_STAR": {
+    "title": "陨星",
+    "description": "造成8点伤害。\n给予1层虚弱。\n给予1层易伤。"
+  },
+  "FAN_OF_KNIVES": {
+    "title": "刀扇",
+    "description": "小刀现在会攻击所有敌人。\n将4张小刀添加到你的手牌。"
+  },
+  "FASTEN": {
+    "title": "勒紧",
+    "description": "从“防御”牌中额外获得4点格挡。"
+  },
+  "FEAR": {
+    "title": "恐惧",
+    "description": "虚无。\n造成7点伤害。\n给予1层易伤。"
+  },
+  "FEED": {
+    "title": "狂宴",
+    "description": "造成10点伤害。\n斩杀时，永久获得3点最大生命值。\n消耗。"
+  },
+  "FEEDING_FRENZY": {
+    "title": "疯狂进食",
+    "description": "在本回合内获得5点力量。"
+  },
+  "FEEL_NO_PAIN": {
+    "title": "无惧疼痛",
+    "description": "每当有一张牌被消耗时，获得3点格挡。"
+  },
+  "FERAL": {
+    "title": "野性",
+    "description": "你每回合打出的第一张\n耗能为0能量的攻击牌，\n会放回你的手牌。"
+  },
+  "FETCH": {
+    "title": "取回",
+    "description": "奥斯提造成3点伤害。\n如果这是这张牌第一次在本回合被打出，则抽1张牌。"
+  },
+  "FIEND_FIRE": {
+    "title": "恶魔之焰",
+    "description": "Exhaust your Hand.\nDeal 7 damage for each card Exhausted.\nExhaust."
+  },
+  "FIGHT_ME": {
+    "title": "与我一战！",
+    "description": "Deal 5 damage twice.\nGain 3 Strength.\nThe enemy gains 1 Strength."
+  },
+  "FIGHT_THROUGH": {
+    "title": "强撑",
+    "description": "获得13点格挡。\n将2张伤口加入你的弃牌堆。"
+  },
+  "FINESSE": {
+    "title": "妙计",
+    "description": "获得4点格挡。\n抽1张牌。"
+  },
+  "FINISHER": {
+    "title": "终结技",
+    "description": "在这个回合内每打出过一张攻击牌，就造成6点伤害一次。"
+  },
+  "FISTICUFFS": {
+    "title": "拳斗",
+    "description": "造成7点伤害。\n获得等量于所造成伤害的格挡。"
+  },
+  "FLAK_CANNON": {
+    "title": "散射炮",
+    "description": "消耗你所有的状态牌。\n每有一张被消耗的牌，就随机对敌人造成8点伤害。"
+  },
+  "FLAME_BARRIER": {
+    "title": "火焰屏障",
+    "description": "获得12点格挡。\n你在这个回合每受到一次攻击，都会对攻击者造成4点伤害。"
+  },
+  "FLANKING": {
+    "title": "夹击",
+    "description": "一名敌人在本回合受到的来自其他玩家的攻击伤害翻倍。"
+  },
+  "FLASH_OF_STEEL": {
+    "title": "亮剑",
+    "description": "造成5点伤害。\n抽1张牌。"
+  },
+  "FLATTEN": {
+    "title": "重压",
+    "description": "奥斯提造成12点伤害。\n如果奥斯提本回合攻击过，则这张牌的耗能变为0能量。"
+  },
+  "FLECHETTES": {
+    "title": "飞镖",
+    "description": "手牌中每有一张技能牌，造成5点伤害。"
+  },
+  "FLICK_FLACK": {
+    "title": "翻越撑击",
+    "description": "奇巧。\n对所有敌人造成6点伤害。"
+  },
+  "FOCUSED_STRIKE": {
+    "title": "集中打击",
+    "description": "造成9点伤害。\n在本回合获得1点集中。"
+  },
+  "FOLLOW_THROUGH": {
+    "title": "Follow Through",
+    "description": "Deal 7 damage.\nIf you have 5 or more other cards in your Hand, hits an additional time."
+  },
+  "FOLLY": {
+    "title": "愚行",
+    "description": "不能被打出。\n固有。\n虚无。\n永恒。"
+  },
+  "FOOTWORK": {
+    "title": "灵动步法",
+    "description": "获得2点敏捷。"
+  },
+  "FORBIDDEN_GRIMOIRE": {
+    "title": "禁忌魔典",
+    "description": "在战斗结束时，你可以从你的牌组中选一张牌移除。\n永恒。"
+  },
+  "FOREGONE_CONCLUSION": {
+    "title": "既定事项",
+    "description": "在下个回合，从你的抽牌堆中选择2张牌放入你的手牌。"
+  },
+  "FORGOTTEN_RITUAL": {
+    "title": "被遗忘的仪式",
+    "description": "如果你在本回合消耗过牌，则获得3点能量。\n消耗。"
+  },
+  "FRANTIC_ESCAPE": {
+    "title": "狂乱逃离",
+    "description": "远离。\n将沙坑的计数加1。\n这张牌的耗能加1。"
+  },
+  "FRIENDSHIP": {
+    "title": "友谊",
+    "description": "失去2点力量。\n在每个回合开始时获得1点能量。"
+  },
+  "FTL": {
+    "title": "超越光速",
+    "description": "造成5点伤害。\n如果你在这回合打出的牌数小于3张，抽1张牌。"
+  },
+  "FUEL": {
+    "title": "燃料",
+    "description": "Gain 1 Energy.\nDraw 1 card.\nExhaust."
+  },
+  "FURNACE": {
+    "title": "熔炉",
+    "description": "在你的回合开始时，铸造5。"
+  },
+  "FUSION": {
+    "title": "聚变",
+    "description": "生成1个等离子充能球。\n消耗。"
+  },
+  "GAMMA_BLAST": {
+    "title": "伽马爆破",
+    "description": "造成13点伤害。\n给予2层虚弱。\n给予2层易伤。"
+  },
+  "GANG_UP": {
+    "title": "群起攻之",
+    "description": "造成5点伤害。\n本回合其他玩家每攻击过一次该敌人，该牌造成的伤害就额外增加5点。"
+  },
+  "GATHER_LIGHT": {
+    "title": "收集光辉",
+    "description": "获得8点格挡。\n获得1点辉星。"
+  },
+  "GENESIS": {
+    "title": "创世纪",
+    "description": "在你的回合开始时，获得2点辉星。"
+  },
+  "GENETIC_ALGORITHM": {
+    "title": "遗传算法",
+    "description": "获得1点格挡。\n每打出一次，这张牌在本局游戏中的格挡值永久增加3点。\n消耗。"
+  },
+  "GIANT_ROCK": {
+    "title": "巨石",
+    "description": "造成16点伤害。"
+  },
+  "GLACIER": {
+    "title": "冰川",
+    "description": "获得6点格挡。\n生成2个冰霜充能球。"
+  },
+  "GLASSWORK": {
+    "title": "玻璃工艺",
+    "description": "获得5点格挡。\n生成1个玻璃充能球。"
+  },
+  "GLIMMER": {
+    "title": "微光",
+    "description": "抽3张牌。\n将你手牌中的1张牌放到抽牌堆顶部。"
+  },
+  "GLIMPSE_BEYOND": {
+    "title": "彼岸一瞥",
+    "description": "在所有玩家的抽牌堆中加入3张灵魂。\n消耗。"
+  },
+  "GLITTERSTREAM": {
+    "title": "流光溢彩",
+    "description": "获得11点格挡。\n在下一回合获得5点格挡。"
+  },
+  "GLOW": {
+    "title": "辉光",
+    "description": "获得1点辉星。\n抽1张牌。\n下一回合抽1张牌。"
+  },
+  "GO_FOR_THE_EYES": {
+    "title": "眼部攻击",
+    "description": "造成3点伤害。\n如果敌人的意图是攻击，则给予1层虚弱。"
+  },
+  "GOLD_AXE": {
+    "title": "金斧",
+    "description": "造成本场战斗中所打出牌数的伤害。"
+  },
+  "GRAND_FINALE": {
+    "title": "华丽收场",
+    "description": "只有当你的抽牌堆中没有牌时才能打出。对所有敌人造成60点伤害。"
+  },
+  "GRAPPLE": {
+    "title": "Grapple",
+    "description": "Deal 7 damage.\nWhenever you gain Block this turn, deal 5 damage to the enemy."
+  },
+  "GRAVE_WARDEN": {
+    "title": "守墓人",
+    "description": "获得8点格挡。\n将一张灵魂放入你的抽牌堆中。"
+  },
+  "GRAVEBLAST": {
+    "title": "坟冢爆射",
+    "description": "造成4点伤害。\n将弃牌堆中的一张牌放入你的手牌。\n消耗。"
+  },
+  "GREED": {
+    "title": "贪婪",
+    "description": "不能被打出。\n永恒。"
+  },
+  "GUARDS": {
+    "title": "护驾！！！",
+    "description": "将你手牌中的任意张牌变化为仆从捐躯。\n消耗。"
+  },
+  "GUIDING_STAR": {
+    "title": "引导之星",
+    "description": "Deal 12 damage.\nDraw 2 cards."
+  },
+  "GUILTY": {
+    "title": "愧疚",
+    "description": "不能被打出。\n在5场战斗后从你的牌组中移除。"
+  },
+  "GUNK_UP": {
+    "title": "污秽攻击",
+    "description": "Deal 4 damage 3 times.\nAdd a Slimed into your Discard Pile."
+  },
+  "HAILSTORM": {
+    "title": "冰雹风暴",
+    "description": "在你的回合结束时，如果你有冰霜充能球，则对所有敌人造成6点伤害。"
+  },
+  "HAMMER_TIME": {
+    "title": "锤子时间",
+    "description": "每当你铸造时，所有盟友也都铸造相同的数值。"
+  },
+  "HAND_OF_GREED": {
+    "title": "贪婪之手",
+    "description": "造成20点伤害。\n斩杀时，获得20金币。"
+  },
+  "HAND_TRICK": {
+    "title": "手上技法",
+    "description": "获得7点格挡。\n在本回合给你手牌中的一张技能牌添加奇巧。"
+  },
+  "HANG": {
+    "title": "吊杀",
+    "description": "造成10点伤害。\n让所有“吊杀”牌对这名敌人造成的伤害翻倍。"
+  },
+  "HAUNT": {
+    "title": "纠缠",
+    "description": "每当你打出一张灵魂时，随机一名敌人失去6点生命。"
+  },
+  "HAVOC": {
+    "title": "破灭",
+    "description": "打出抽牌堆顶部的牌并将其消耗。"
+  },
+  "HAZE": {
+    "title": "迷雾",
+    "description": "Sly.\nApply 4 Poison to ALL enemies."
+  },
+  "HEADBUTT": {
+    "title": "头槌",
+    "description": "造成9点伤害。\n将你弃牌堆中的一张牌放到抽牌堆顶部。"
+  },
+  "HEAVENLY_DRILL": {
+    "title": "天际钻头",
+    "description": "造成8点伤害X次。\n如果X的最终数值为4或以上，则将X的数值翻倍。"
+  },
+  "HEGEMONY": {
+    "title": "霸权",
+    "description": "造成15点伤害。\n在下个回合获得2点能量。"
+  },
+  "HEIRLOOM_HAMMER": {
+    "title": "传承之锤",
+    "description": "造成20点伤害。\n选择你手牌中的一张无色牌。将这张牌的一张复制品放入你的手牌。"
+  },
+  "HELIX_DRILL": {
+    "title": "螺旋钻击",
+    "description": "Deal 3 damage for each  Energy previously spent this turn."
+  },
+  "HELLO_WORLD": {
+    "title": "你好世界",
+    "description": "在你的回合开始时，将一张随机普通牌加入你的手牌。"
+  },
+  "HELLRAISER": {
+    "title": "地狱狂徒",
+    "description": "每当你抽到名字中有“打击”的牌时，对一名随机敌人打出这张牌。"
+  },
+  "HEMOKINESIS": {
+    "title": "御血术",
+    "description": "失去2点生命。\n造成15点伤害。"
+  },
+  "HIDDEN_CACHE": {
+    "title": "隐秘藏品",
+    "description": "获得1点辉星。\n在下个回合获得3点辉星。"
+  },
+  "HIDDEN_DAGGERS": {
+    "title": "隐秘匕首",
+    "description": "丢弃2张牌。\n将2张小刀加入你的手牌。"
+  },
+  "HIDDEN_GEM": {
+    "title": "未掘宝石",
+    "description": "你抽牌堆中的一张没有重放的随机牌获得2层重放。"
+  },
+  "HIGH_FIVE": {
+    "title": "击掌",
+    "description": "奥斯提对所有敌人\n造成11点伤害并给予它们\n2层易伤。"
+  },
+  "HOLOGRAM": {
+    "title": "全息影像",
+    "description": "获得3点格挡。\n将弃牌堆中的一张牌放入你的手牌。\n消耗。"
+  },
+  "HOTFIX": {
+    "title": "热修复",
+    "description": "在本回合获得2点集中。\n消耗。"
+  },
+  "HOWL_FROM_BEYOND": {
+    "title": "彼岸咆哮",
+    "description": "对所有敌人造成16点伤害。\n在你的回合结束时，如果这张牌在你的消耗牌堆中，则将其打出。"
+  },
+  "HUDDLE_UP": {
+    "title": "抱团",
+    "description": "所有玩家抽2张牌。\n消耗。"
+  },
+  "HYPERBEAM": {
+    "title": "超能光束",
+    "description": "Deal 28 damage to ALL enemies.\nLose 3 Focus."
+  },
+  "I_AM_INVINCIBLE": {
+    "title": "所向无敌",
+    "description": "获得10点格挡。\n在你的回合结束时，如果这张牌位于抽牌堆顶部，则将其打出。"
+  },
+  "ICE_LANCE": {
+    "title": "冰之长枪",
+    "description": "造成19点伤害。\n生成3个冰霜充能球。"
+  },
+  "IGNITION": {
+    "title": "引火",
+    "description": "使另一名玩家生成等离子充能球。\n消耗。"
+  },
+  "IMPATIENCE": {
+    "title": "急躁",
+    "description": "如果你的手牌中没有攻击牌，抽2张牌。"
+  },
+  "IMPERVIOUS": {
+    "title": "岿然不动",
+    "description": "获得30点格挡。\n消耗。"
+  },
+  "INFECTION": {
+    "title": "感染",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，你受到3点伤害。"
+  },
+  "INFERNAL_BLADE": {
+    "title": "地狱之刃",
+    "description": "将一张随机攻击牌加入你的手牌。那张牌在本回合内可以免费打出。\n消耗。"
+  },
+  "INFERNO": {
+    "title": "狱火",
+    "description": "在你的回合开始时，失去1点生命。\n每当你在你的回合内失去生命时，对所有敌人造成6点伤害。"
+  },
+  "INFINITE_BLADES": {
+    "title": "无尽刀刃",
+    "description": "在你的回合开始时，在你的手牌中加入1张小刀。"
+  },
+  "INFLAME": {
+    "title": "燃烧",
+    "description": "获得2点力量。"
+  },
+  "INJURY": {
+    "title": "受伤",
+    "description": "不能被打出。"
+  },
+  "INTERCEPT": {
+    "title": "拦截",
+    "description": "获得9点格挡。\n将本回合所有要对另一名玩家发起的攻击转移到你的身上。"
+  },
+  "INVOKE": {
+    "title": "唤起",
+    "description": "在下个回合召唤2并获得2点能量。"
+  },
+  "IRON_WAVE": {
+    "title": "铁斩波",
+    "description": "获得5点格挡。\n造成5点伤害。"
+  },
+  "ITERATION": {
+    "title": "迭代",
+    "description": "每回合你第一次抽到状态牌时，抽2张牌。"
+  },
+  "JACK_OF_ALL_TRADES": {
+    "title": "花样百出",
+    "description": "将1张随机无色牌加入你的手牌。\n消耗。"
+  },
+  "JACKPOT": {
+    "title": "大奖",
+    "description": "造成25点伤害。\n将3张随机0能量的牌加入你的手牌。"
+  },
+  "JUGGERNAUT": {
+    "title": "势不可当",
+    "description": "每当你获得格挡时，对随机敌人造成6点伤害。"
+  },
+  "JUGGLING": {
+    "title": "杂耍",
+    "description": "将你在每回合打出的第三张攻击牌的复制品加入你的手牌。"
+  },
+  "KINGLY_KICK": {
+    "title": "王者之踢",
+    "description": "造成27点伤害。\n每当你抽到这张牌时，这张牌的耗能减少1。"
+  },
+  "KINGLY_PUNCH": {
+    "title": "王者之拳",
+    "description": "造成8点伤害。\n每当你抽到这张牌时，在这场战斗中其伤害增加4。"
+  },
+  "KNIFE_TRAP": {
+    "title": "刀刃陷阱",
+    "description": "将你消耗牌堆中的所有小刀对一名敌人打出。"
+  },
+  "KNOCKDOWN": {
+    "title": "击倒",
+    "description": "造成10点伤害。\n该敌人在本回合受到的来自其他玩家的伤害变为两倍。"
+  },
+  "KNOCKOUT_BLOW": {
+    "title": "决胜一击",
+    "description": "Deal 30 damage.\nIf this kills an enemy, gain 5 Stars."
+  },
+  "KNOW_THY_PLACE": {
+    "title": "何人僭越",
+    "description": "给予1层虚弱。\n给予1层易伤。\n消耗。"
+  },
+  "LANTERN_KEY": {
+    "title": "灯火钥匙",
+    "description": "不能被打出。\n在下一阶段解锁一个特殊事件。"
+  },
+  "LARGESSE": {
+    "title": "慷慨捐助",
+    "description": "将一张随机的无色牌添加到一位其他玩家的手牌中。"
+  },
+  "LEADING_STRIKE": {
+    "title": "先制打击",
+    "description": "造成3点伤害。\n将2张小刀加入你的手牌。"
+  },
+  "LEAP": {
+    "title": "飞跃",
+    "description": "获得9点格挡。"
+  },
+  "LEG_SWEEP": {
+    "title": "扫腿",
+    "description": "给予2层虚弱。\n获得11点格挡。"
+  },
+  "LEGION_OF_BONE": {
+    "title": "骸骨军团",
+    "description": "所有玩家召唤6。\n消耗。"
+  },
+  "LETHALITY": {
+    "title": "致死性",
+    "description": "虚无。\n每回合的第一张攻击牌会造成50%额外伤害。"
+  },
+  "LIFT": {
+    "title": "托举",
+    "description": "给另一名玩家11点格挡。"
+  },
+  "LIGHTNING_ROD": {
+    "title": "引雷针",
+    "description": "获得4点格挡。\n在下2个回合开始时,生成1个闪电充能球。"
+  },
+  "LOOP": {
+    "title": "循环",
+    "description": "在你的回合开始时，触发你最右侧的一个充能球的被动能力。"
+  },
+  "LUMINESCE": {
+    "title": "冷光",
+    "description": "保留。\n获得2点能量。\n消耗。"
+  },
+  "LUNAR_BLAST": {
+    "title": "月面射击",
+    "description": "本回合中每打出过一张技能牌，此牌额外造成4点伤害一次。"
+  },
+  "MACHINE_LEARNING": {
+    "title": "机器学习",
+    "description": "在你的回合开始时，额外抽1张牌。"
+  },
+  "MAKE_IT_SO": {
+    "title": "如此甚好",
+    "description": "造成6点伤害。\n你每在一回合内打出3张技能牌，就将这张牌放入你的手牌。"
+  },
+  "MALAISE": {
+    "title": "萎靡",
+    "description": "敌人失去X点力量。给予X层虚弱。\n消耗。"
+  },
+  "MANGLE": {
+    "title": "凌虐",
+    "description": "造成15点伤害。\n敌人在本回合失去10点力量。"
+  },
+  "MANIFEST_AUTHORITY": {
+    "title": "君权自授",
+    "description": "获得7点格挡。\n将一张随机无色牌加入你的手牌。"
+  },
+  "MASTER_OF_STRATEGY": {
+    "title": "战略大师",
+    "description": "抽3张牌。\n消耗。"
+  },
+  "MASTER_PLANNER": {
+    "title": "谋划专家",
+    "description": "当你打出技能牌时，该牌获得奇巧。"
+  },
+  "MAUL": {
+    "title": "撕咬",
+    "description": "Deal 5 damage twice.\nIncrease the damage of ALL Maul cards by 1 this combat."
+  },
+  "MAYHEM": {
+    "title": "乱战",
+    "description": "在你的回合开始时，打出你抽牌堆顶部的牌。"
+  },
+  "MELANCHOLY": {
+    "title": "忧郁",
+    "description": "获得13点格挡。\n每当有任何生物死亡时，这张牌的耗能减少1点能量。"
+  },
+  "MEMENTO_MORI": {
+    "title": "铭记死亡",
+    "description": "Deal 9 damage.\nDeals 4 additional damage for each card discarded this turn."
+  },
+  "METAMORPHOSIS": {
+    "title": "羽化",
+    "description": "在你的抽牌堆中加入3张随机攻击牌。它们在本场战斗中可以被免费打出。\n消耗。"
+  },
+  "METEOR_SHOWER": {
+    "title": "流星雨",
+    "description": "对所有敌人造成14点伤害。\n给予所有敌人2层虚弱和易伤。"
+  },
+  "METEOR_STRIKE": {
+    "title": "陨石打击",
+    "description": "造成24点伤害。\n生成3个等离子充能球。"
+  },
+  "MIMIC": {
+    "title": "拟态",
+    "description": "获得等同于另一位玩家格挡值的格挡。\n消耗。"
+  },
+  "MIND_BLAST": {
+    "title": "心灵震慑",
+    "description": "固有。\n造成你抽牌堆中剩余牌数的伤害。"
+  },
+  "MIND_ROT": {
+    "title": "心灵腐化",
+    "description": "每回合少抽1张牌。"
+  },
+  "MINION_DIVE_BOMB": {
+    "title": "仆从俯冲",
+    "description": "造成13点伤害。\n消耗。"
+  },
+  "MINION_SACRIFICE": {
+    "title": "仆从捐躯",
+    "description": "获得8点格挡。\n消耗。"
+  },
+  "MINION_STRIKE": {
+    "title": "仆从打击",
+    "description": "造成6点伤害。\n抽1张牌。\n消耗。"
+  },
+  "MIRAGE": {
+    "title": "蜃景",
+    "description": "Gain Block equal to Poison on ALL enemies.\nExhaust."
+  },
+  "MISERY": {
+    "title": "苦难",
+    "description": "造成7点伤害。\n给予其他敌人该名敌人身上的所有负面效果。"
+  },
+  "MODDED": {
+    "title": "模组改造",
+    "description": "获得1个充能球栏位。\n抽1张牌。这张牌的耗能加1。"
+  },
+  "MOLTEN_FIST": {
+    "title": "熔融之拳",
+    "description": "造成10点伤害。\n将该敌人身上的易伤层数翻倍。\n消耗。"
+  },
+  "MOMENTUM_STRIKE": {
+    "title": "趁势打击",
+    "description": "造成10点伤害。\n这张牌的耗能降为0能量。"
+  },
+  "MONARCHS_GAZE": {
+    "title": "王之凝视",
+    "description": "每当你攻击敌人的时候，这名敌人在本回合失去1点力量。"
+  },
+  "MONOLOGUE": {
+    "title": "独白",
+    "description": "每当你在本回合打出卡牌时，在本回合获得1点力量。"
+  },
+  "MULTI_CAST": {
+    "title": "多重释放",
+    "description": "激发你最右侧的充能球X次。"
+  },
+  "MURDER": {
+    "title": "谋杀",
+    "description": "造成1点伤害。\n你在本场战斗中每抽过一张牌，此牌就额外造成1点伤害。"
+  },
+  "NECRO_MASTERY": {
+    "title": "亡灵精通",
+    "description": "召唤5。\n每当奥斯提失去生命值时，\n所有敌人失去等量生命值。"
+  },
+  "NEGATIVE_PULSE": {
+    "title": "负能量脉冲",
+    "description": "获得5点格挡。\n给予所有敌人7层灾厄。"
+  },
+  "NEOWS_FURY": {
+    "title": "涅奥之怒",
+    "description": "造成10点伤害。\n将你弃牌堆中的至多2张牌放入你的手牌。\n消耗。"
+  },
+  "NEUROSURGE": {
+    "title": "精神过载",
+    "description": "获得3点能量。\n抽2张牌。\n在你的回合开始时，给予自身3层灾厄。"
+  },
+  "NEUTRALIZE": {
+    "title": "中和",
+    "description": "造成3点伤害。\n给予1层虚弱。"
+  },
+  "NEUTRON_AEGIS": {
+    "title": "中子护盾",
+    "description": "获得8层覆甲。"
+  },
+  "NIGHTMARE": {
+    "title": "夜魇",
+    "description": "选择一张牌。\n在下个回合将这张牌的3张复制品加入你的手牌。\n消耗。"
+  },
+  "NO_ESCAPE": {
+    "title": "无处可逃",
+    "description": "给予10层灾厄，敌人身上每有10层灾厄，则额外给予这名敌人5层灾厄。"
+  },
+  "NORMALITY": {
+    "title": "凡庸",
+    "description": "不能被打出。\n你在本回合不能打出超过3张牌。"
+  },
+  "NOSTALGIA": {
+    "title": "怀旧",
+    "description": "每回合首次打出攻击或技能牌时，将其置于你的抽牌堆顶端。"
+  },
+  "NOXIOUS_FUMES": {
+    "title": "毒雾",
+    "description": "在你的回合开始时，给予所有敌人2层中毒。"
+  },
+  "NULL": {
+    "title": "空值",
+    "description": "造成10点伤害。\n给予2层虚弱。\n生成1个黑暗充能球。"
+  },
+  "OBLIVION": {
+    "title": "湮灭",
+    "description": "打出此牌后，你在本回合内每打出一张牌，就给予该敌人3层灾厄。"
+  },
+  "OFFERING": {
+    "title": "祭品",
+    "description": "失去6点生命。\n获得2点能量。\n抽3张牌。\n消耗。"
+  },
+  "OMNISLICE": {
+    "title": "万向斩",
+    "description": "造成8点伤害。\n对所有其他敌人造成等量的伤害。"
+  },
+  "ONE_TWO_PUNCH": {
+    "title": "连环拳",
+    "description": "在这个回合，你打出的下1张攻击牌会被额外打出一次。"
+  },
+  "ORBIT": {
+    "title": "环绕轨道",
+    "description": "你每花费能量，\n就获得1点能量。"
+  },
+  "OUTBREAK": {
+    "title": "毒性爆发",
+    "description": "Every 3 times you apply Poison, deal 11 damage to ALL enemies."
+  },
+  "OUTMANEUVER": {
+    "title": "抢占先机",
+    "description": "在下个回合获得2点能量。"
+  },
+  "OVERCLOCK": {
+    "title": "超频",
+    "description": "抽2张牌。\n将一张灼伤加入你的弃牌堆。"
+  },
+  "PACTS_END": {
+    "title": "契约终结",
+    "description": "如果你的消耗牌堆拥有大于等于3张牌，\n则对所有敌人造成17点伤害。"
+  },
+  "PAGESTORM": {
+    "title": "书页风暴",
+    "description": "每当你抽到一张虚无牌时, 抽1张牌。"
+  },
+  "PALE_BLUE_DOT": {
+    "title": "暗淡蓝点",
+    "description": "如果你在一回合内打出了大于等于5张牌，在下个回合开始时抽1张牌。"
+  },
+  "PANACHE": {
+    "title": "神气制胜",
+    "description": "每当你在一回合内打出五张牌时，对所有敌人造成10点伤害。"
+  },
+  "PANIC_BUTTON": {
+    "title": "应急按钮",
+    "description": "获得30点格挡。\n你在接下来的2回合内无法再从卡牌中获得格挡。\n消耗。"
+  },
+  "PARRY": {
+    "title": "招架",
+    "description": "君王之剑现在能让你获得10点格挡。"
+  },
+  "PARSE": {
+    "title": "领会",
+    "description": "虚无。\n抽3张牌。"
+  },
+  "PARTICLE_WALL": {
+    "title": "粒子墙",
+    "description": "获得9点格挡。\n将此牌返回你的手牌。"
+  },
+  "PATTER": {
+    "title": "星星点点",
+    "description": "获得8点格挡。\n获得2点活力。"
+  },
+  "PECK": {
+    "title": "啄击",
+    "description": "Deal 2 damage 3 times."
+  },
+  "PERFECTED_STRIKE": {
+    "title": "完美打击",
+    "description": "造成6点伤害。\n你每有一张名字中含有“打击”的牌，伤害+2。"
+  },
+  "PHANTOM_BLADES": {
+    "title": "幻影之刃",
+    "description": "小刀获得保留。\n你在每回合打出的第一张小刀额外造成9点伤害。"
+  },
+  "PHOTON_CUT": {
+    "title": "光子切割",
+    "description": "造成10点伤害。\n抽1张牌。\n将手牌中的一张牌放到抽牌堆顶部。"
+  },
+  "PIERCING_WAIL": {
+    "title": "尖啸",
+    "description": "所有敌人在本回合失去6点力量。\n消耗。"
+  },
+  "PILLAGE": {
+    "title": "劫掠",
+    "description": "造成6点伤害。\n抽牌直到你抽到一张非攻击牌。"
+  },
+  "PILLAR_OF_CREATION": {
+    "title": "创世之柱",
+    "description": "你每次生成卡牌时，获得3点格挡。"
+  },
+  "PINPOINT": {
+    "title": "精密瞄准",
+    "description": "造成15点伤害。\n你在本回合中每打出过一张技能牌，其耗能减少1能量。"
+  },
+  "POISONED_STAB": {
+    "title": "带毒刺击",
+    "description": "造成6点伤害。\n给予3层中毒。"
+  },
+  "POKE": {
+    "title": "戳击",
+    "description": "奥斯提造成6点伤害。"
+  },
+  "POMMEL_STRIKE": {
+    "title": "剑柄打击",
+    "description": "造成9点伤害。\n抽1张牌。"
+  },
+  "POOR_SLEEP": {
+    "title": "睡眠不佳",
+    "description": "不能被打出。\n保留。"
+  },
+  "POUNCE": {
+    "title": "猛扑",
+    "description": "造成14点伤害。\n你的下一张技能牌耗能变为0能量。"
+  },
+  "PRECISE_CUT": {
+    "title": "精确切击",
+    "description": "造成13点伤害。\n你的手牌中每有一张牌，此牌的伤害就降低2点。"
+  },
+  "PREDATOR": {
+    "title": "猎杀者",
+    "description": "造成15点伤害。\n在下个回合抽2张牌。"
+  },
+  "PREP_TIME": {
+    "title": "准备时间",
+    "description": "在你的回合开始时，获得4点活力。"
+  },
+  "PREPARED": {
+    "title": "早有准备",
+    "description": "抽1张牌。\n丢弃1张牌。"
+  },
+  "PRIMAL_FORCE": {
+    "title": "原始力量",
+    "description": "将手牌中的所有攻击牌变化为巨石。"
+  },
+  "PRODUCTION": {
+    "title": "生产制造",
+    "description": "获得2点能量。\n消耗。"
+  },
+  "PROLONG": {
+    "title": "延伸",
+    "description": "在下个回合获得等量于你当前格挡值的格挡。\n消耗。"
+  },
+  "PROPHESIZE": {
+    "title": "预言",
+    "description": "抽6张牌。"
+  },
+  "PROTECTOR": {
+    "title": "守护者",
+    "description": "奥斯提造成10点伤害。\n额外造成等量于奥斯提最大生命值的伤害。"
+  },
+  "PROWESS": {
+    "title": "非凡技艺",
+    "description": "获得1点力量。\n获得1点敏捷。"
+  },
+  "PULL_AGGRO": {
+    "title": "吸引仇恨",
+    "description": "召唤4。\n获得7点格挡。"
+  },
+  "PULL_FROM_BELOW": {
+    "title": "亡魂牵引",
+    "description": "本场战斗中每打出过一张虚无牌，此牌就造成5点伤害一次。"
+  },
+  "PURITY": {
+    "title": "净化",
+    "description": "保留。\n从手牌中选择最多3张牌消耗。\n消耗。"
+  },
+  "PUTREFY": {
+    "title": "腐败",
+    "description": "给予2层虚弱。\n给予2层易伤。\n消耗。"
+  },
+  "PYRE": {
+    "title": "薪火之源",
+    "description": "在回合开始时，获得1点能量。"
+  },
+  "QUADCAST": {
+    "title": "四重释放",
+    "description": "激发你最右侧的充能球4次。"
+  },
+  "QUASAR": {
+    "title": "类星体",
+    "description": "从3张随机无色牌中选择1张加入你的手牌。"
+  },
+  "RADIATE": {
+    "title": "辐射",
+    "description": "你在本回合每获得一点1点辉星，此牌就对所有敌人造成3点伤害一次。"
+  },
+  "RAGE": {
+    "title": "狂怒",
+    "description": "打出此牌后，你在这个回合内每打出一张攻击牌，获得3点格挡。"
+  },
+  "RAINBOW": {
+    "title": "彩虹",
+    "description": "生成1个闪电充能球。\n生成1个冰霜充能球。\n生成1个黑暗充能球。\n消耗。"
+  },
+  "RALLY": {
+    "title": "集结",
+    "description": "所有玩家获得12点格挡。"
+  },
+  "RAMPAGE": {
+    "title": "暴走",
+    "description": "造成9点伤害。\n将这张牌在本场战斗中的伤害增加5。"
+  },
+  "RATTLE": {
+    "title": "猛晃",
+    "description": "奥斯提造成7点伤害。\n本回合每使用过一次奥斯提攻击牌，此牌就额外造成一次伤害。"
+  },
+  "REANIMATE": {
+    "title": "死者苏生",
+    "description": "召唤20。\n消耗。"
+  },
+  "REAP": {
+    "title": "收割",
+    "description": "保留。\n造成27点伤害。"
+  },
+  "REAPER_FORM": {
+    "title": "死神形态",
+    "description": "每当你的攻击造成伤害时，同时给予等量的灾厄。"
+  },
+  "REAVE": {
+    "title": "剥夺",
+    "description": "造成9点伤害。\n将一张灵魂加入你的抽牌堆。"
+  },
+  "REBOOT": {
+    "title": "重启",
+    "description": "将你的所有未消耗的卡牌重新洗牌放入抽牌堆。\n抽4张牌。\n消耗。"
+  },
+  "REBOUND": {
+    "title": "弹回",
+    "description": "造成9点伤害。\n将你在本回合打出的下一张牌放置到你的抽牌堆顶部。"
+  },
+  "REFINE_BLADE": {
+    "title": "淬炼刀刃",
+    "description": "铸造9。\n在下个回合获得1点能量。"
+  },
+  "REFLECT": {
+    "title": "倒映",
+    "description": "获得15点格挡。\n在本回合将你格挡掉的攻击伤害反弹给攻击者。"
+  },
+  "REFLEX": {
+    "title": "本能反应",
+    "description": "奇巧。\n抽2张牌。"
+  },
+  "REFRACT": {
+    "title": "折射",
+    "description": "Deal 9 damage twice.\nChannel 2 Glass."
+  },
+  "REGRET": {
+    "title": "悔恨",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，失去相当于手牌数量的生命。"
+  },
+  "RELAX": {
+    "title": "放松",
+    "description": "获得15点格挡。\n下个回合，抽2张牌并获得2点能量。\n消耗。"
+  },
+  "REND": {
+    "title": "撕碎",
+    "description": "造成15点伤害。\n该名敌人身上每有一种负面效果，就额外造成5点伤害。"
+  },
+  "RESONANCE": {
+    "title": "共鸣",
+    "description": "获得1点力量。所有敌人失去1点力量。"
+  },
+  "RESTLESSNESS": {
+    "title": "心神不宁",
+    "description": "保留。\n如果你的手牌为空，则抽2张牌并获得2点能量。"
+  },
+  "RICOCHET": {
+    "title": "连续反弹",
+    "description": "Sly.\nDeal 3 damage to a random enemy 4 times."
+  },
+  "RIGHT_HAND_HAND": {
+    "title": "得力助手",
+    "description": "奥斯提造成4点伤害。\n每当你打出耗能为2点能量或以上的牌，将此牌从弃牌堆放回你的手牌。"
+  },
+  "RIP_AND_TEAR": {
+    "title": "狂乱撕扯",
+    "description": "Deal 7 damage to a random enemy twice."
+  },
+  "ROCKET_PUNCH": {
+    "title": "火箭飞拳",
+    "description": "Deal 13 damage.\nDraw 1 card.\nWhenever you create a Status, reduce this card's cost to 0  Energy until played."
+  },
+  "ROLLING_BOULDER": {
+    "title": "滚石",
+    "description": "在你的回合开始时，对所有敌人造成5点伤害，然后将该伤害增加5点。"
+  },
+  "ROYAL_GAMBLE": {
+    "title": "胜券在王",
+    "description": "获得91点辉星。\n消耗。"
+  },
+  "ROYALTIES": {
+    "title": "王国资产",
+    "description": "在战斗结束时，获得30金币。"
+  },
+  "RUPTURE": {
+    "title": "撕裂",
+    "description": "每当你在你的回合失去生命值时, 获得1点力量。"
+  },
+  "SACRIFICE": {
+    "title": "牺牲",
+    "description": "Retain.\nIf Osty is alive, he dies and you gain Block equal to double his Max HP."
+  },
+  "SALVO": {
+    "title": "箭雨",
+    "description": "造成12点伤害。\n在本回合保留你的手牌。"
+  },
+  "SCAVENGE": {
+    "title": "内存清理",
+    "description": "消耗一张牌。\n在下个回合获得2点能量。"
+  },
+  "SCOURGE": {
+    "title": "鞭打",
+    "description": "给予13层灾厄。\n抽1张牌。"
+  },
+  "SCRAPE": {
+    "title": "刮削",
+    "description": "造成7点伤害。\n抽4张牌。\n丢弃抽到的牌中耗能不为0能量的牌。"
+  },
+  "SCRAWL": {
+    "title": "潦草急就",
+    "description": "抽牌直到抽满手牌。\n消耗。"
+  },
+  "SCULPTING_STRIKE": {
+    "title": "雕琢打击",
+    "description": "造成9点伤害。\n为一张手牌添加虚无。"
+  },
+  "SEANCE": {
+    "title": "降灵",
+    "description": "虚无。\n将你抽牌堆中的一张牌变化为灵魂。"
+  },
+  "SECOND_WIND": {
+    "title": "重振精神",
+    "description": "消耗手牌中所有非攻击牌，每张获得5点格挡。"
+  },
+  "SECRET_TECHNIQUE": {
+    "title": "秘密技法",
+    "description": "从抽牌堆中选择一张技能牌放入你的手牌。\n消耗。"
+  },
+  "SECRET_WEAPON": {
+    "title": "秘密武器",
+    "description": "从抽牌堆中选择一张攻击牌放入你的手牌。\n消耗。"
+  },
+  "SEEKER_STRIKE": {
+    "title": "探寻打击",
+    "description": "造成9点伤害。\n从抽牌堆的随机3张牌中选择一张加入你的手牌。"
+  },
+  "SEEKING_EDGE": {
+    "title": "追踪之刃",
+    "description": "铸造7。\n君王之剑现在会对所有敌人造成伤害。"
+  },
+  "SENTRY_MODE": {
+    "title": "哨卫模式",
+    "description": "在你的回合开始时，将1张扫荡凝视加入你的手牌。"
+  },
+  "SERPENT_FORM": {
+    "title": "群蛇形态",
+    "description": "你每打出一张牌，就对随机一名敌人造成4点伤害。"
+  },
+  "SETUP_STRIKE": {
+    "title": "预备打击",
+    "description": "造成7点伤害。\n在本回合内获得2点力量。"
+  },
+  "SEVEN_STARS": {
+    "title": "七星",
+    "description": "Deal 7 damage to ALL enemies 7 times."
+  },
+  "SEVERANCE": {
+    "title": "切断",
+    "description": "造成13点伤害。\n将一张灵魂分别加入你的抽牌堆，手牌和弃牌堆中。"
+  },
+  "SHADOW_SHIELD": {
+    "title": "暗影之盾",
+    "description": "获得11点格挡。\n生成1个黑暗充能球。"
+  },
+  "SHADOW_STEP": {
+    "title": "暗影步",
+    "description": "丢弃所有手牌。\n在下个回合，你所有的攻击伤害翻倍。"
+  },
+  "SHADOWMELD": {
+    "title": "融入暗影",
+    "description": "本回合你获得的格挡值翻倍。"
+  },
+  "SHAME": {
+    "title": "羞耻",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，则获得1层脆弱。"
+  },
+  "SHARED_FATE": {
+    "title": "命运同担",
+    "description": "失去2点力量。\n敌人失去2点力量。\n消耗。"
+  },
+  "SHATTER": {
+    "title": "打碎",
+    "description": "对所有敌人造成7点伤害。\n激发你的所有充能球两次。"
+  },
+  "SHINING_STRIKE": {
+    "title": "明耀打击",
+    "description": "造成8点伤害。\n获得2点辉星。\n将这张牌放置于你的抽牌堆顶部。"
+  },
+  "SHIV": {
+    "title": "小刀",
+    "description": "对所有敌人造成4点伤害。\n消耗。"
+  },
+  "SHOCKWAVE": {
+    "title": "震荡波",
+    "description": "给予所有敌人3层虚弱和易伤。\n消耗。"
+  },
+  "SHROUD": {
+    "title": "厄运之衣",
+    "description": "每当你给予灾厄时，获得2点格挡。"
+  },
+  "SHRUG_IT_OFF": {
+    "title": "耸肩无视",
+    "description": "获得8点格挡。\n抽1张牌。"
+  },
+  "SIC_EM": {
+    "title": "紧追不放",
+    "description": "奥斯提造成5点伤害。\n在本回合内，每当奥斯提命中这名敌人时，召唤3。"
+  },
+  "SIGNAL_BOOST": {
+    "title": "信号增强",
+    "description": "你的下一张能力牌会额外打出一次。\n消耗。"
+  },
+  "SKEWER": {
+    "title": "串刺",
+    "description": "造成8点伤害X次。"
+  },
+  "SKIM": {
+    "title": "快速检索",
+    "description": "抽3张牌。"
+  },
+  "SLEIGHT_OF_FLESH": {
+    "title": "血肉戏法",
+    "description": "每当你给予一个敌人负面状态时，使其受到9点伤害。"
+  },
+  "SLICE": {
+    "title": "切割",
+    "description": "造成6点伤害。"
+  },
+  "SLIMED": {
+    "title": "黏液",
+    "description": "抽1张牌。\n消耗。"
+  },
+  "SLOTH": {
+    "title": "懒惰",
+    "description": "你在每个回合不能打出超过3张牌。"
+  },
+  "SMOKESTACK": {
+    "title": "烟囱",
+    "description": "每当你生成一张状态牌时，对所有敌人造成5点伤害。"
+  },
+  "SNAKEBITE": {
+    "title": "蛇咬",
+    "description": "保留。\n给予7层中毒。"
+  },
+  "SNAP": {
+    "title": "响指",
+    "description": "奥斯提造成7点伤害。\n给手牌中的一张牌添加保留。"
+  },
+  "SNEAKY": {
+    "title": "鬼祟",
+    "description": "奇巧。\n每当其他玩家攻击一名敌人时，获得1点格挡。"
+  },
+  "SOLAR_STRIKE": {
+    "title": "太阳打击",
+    "description": "造成9点伤害。\n获得1点辉星。"
+  },
+  "SOOT": {
+    "title": "煤灰",
+    "description": "不能被打出。"
+  },
+  "SOUL": {
+    "title": "灵魂",
+    "description": "抽2张牌。\n消耗。"
+  },
+  "SOUL_STORM": {
+    "title": "灵魂风暴",
+    "description": "造成9点伤害。\n你的消耗牌堆中每有一张灵魂，伤害增加2。"
+  },
+  "SOVEREIGN_BLADE": {
+    "title": "君王之剑",
+    "description": "Retain.\nDeal 10 damage."
+  },
+  "SOW": {
+    "title": "播种",
+    "description": "保留。\n对所有敌人造成8点伤害。"
+  },
+  "SPECTRUM_SHIFT": {
+    "title": "光谱偏移",
+    "description": "在你的回合开始时，将1张随机无色牌添加到你的手牌中。"
+  },
+  "SPEEDSTER": {
+    "title": "速行者",
+    "description": "每当你在回合进行中抽到一张牌时，对所有敌人造成2点伤害。"
+  },
+  "SPINNER": {
+    "title": "旋转工艺",
+    "description": "在你的回合开始时，生成1个玻璃充能球。"
+  },
+  "SPIRIT_OF_ASH": {
+    "title": "灰烬之灵",
+    "description": "每当你打出一张虚无牌时，获得4点格挡。"
+  },
+  "SPITE": {
+    "title": "怨恨",
+    "description": "Deal 5 damage.\nIf you lost HP this turn,\nhits 2 times."
+  },
+  "SPLASH": {
+    "title": "飞溅",
+    "description": "从3张其他角色的攻击牌中选择1张加入你的手牌。这张牌在本回合免费打出。"
+  },
+  "SPOILS_MAP": {
+    "title": "藏宝图",
+    "description": "不能被打出。\n在下一阶段的地图上，标记一个有600额外金币的地点。"
+  },
+  "SPOILS_OF_BATTLE": {
+    "title": "战利品",
+    "description": "铸造5。\n抽2张牌。"
+  },
+  "SPORE_MIND": {
+    "title": "孢子心灵",
+    "description": "消耗。"
+  },
+  "SPUR": {
+    "title": "增生",
+    "description": "保留。\n召唤3。\n奥斯提回复5点生命。"
+  },
+  "SQUASH": {
+    "title": "压扁",
+    "description": "造成10点伤害。\n给予2层易伤。"
+  },
+  "SQUEEZE": {
+    "title": "榨取",
+    "description": "奥斯提造成25点伤害。\n你每有一张别的奥斯提的攻击牌，这张牌就额外造成5点伤害。"
+  },
+  "STACK": {
+    "title": "堆栈",
+    "description": "获得等量于与你当前弃牌堆中牌数的格挡值。"
+  },
+  "STAMPEDE": {
+    "title": "惊逃",
+    "description": "在你的回合结束时，随机打出你手牌中的1张攻击牌攻击随机敌人。"
+  },
+  "STARDUST": {
+    "title": "星尘",
+    "description": "随机对敌人造成5点伤害X次。"
+  },
+  "STOKE": {
+    "title": "添柴",
+    "description": "消耗所有手牌。\n每消耗一张牌，将1张随机牌加入你的手牌。"
+  },
+  "STOMP": {
+    "title": "踩踏",
+    "description": "对所有敌人造成12点伤害。\n你在本回合中每打出过一张攻击牌，其耗能减少1能量。"
+  },
+  "STONE_ARMOR": {
+    "title": "岩石铠甲",
+    "description": "获得4层覆甲。"
+  },
+  "STORM": {
+    "title": "雷暴",
+    "description": "每当你打出一张能力牌时，生成1个闪电充能球。"
+  },
+  "STORM_OF_STEEL": {
+    "title": "钢铁风暴",
+    "description": "丢弃所有手牌。\n每丢弃一张牌，就将一张小刀添加到你的手牌。"
+  },
+  "STRANGLE": {
+    "title": "紧勒",
+    "description": "造成8点伤害。\n你在这个回合内每出一张牌，该名敌人都会失去2点生命。"
+  },
+  "STRATAGEM": {
+    "title": "计策",
+    "description": "每当你的抽牌堆打乱洗牌时，选择一张牌放入你的手牌。"
+  },
+  "STRIKE_DEFECT": {
+    "title": "打击",
+    "description": "造成6点伤害。"
+  },
+  "STRIKE_IRONCLAD": {
+    "title": "打击",
+    "description": "造成6点伤害。"
+  },
+  "STRIKE_NECROBINDER": {
+    "title": "打击",
+    "description": "造成6点伤害。"
+  },
+  "STRIKE_REGENT": {
+    "title": "打击",
+    "description": "造成6点伤害。"
+  },
+  "STRIKE_SILENT": {
+    "title": "打击",
+    "description": "造成6点伤害。"
+  },
+  "SUBROUTINE": {
+    "title": "子程序",
+    "description": "当你打出一张能力牌时，获得能量。"
+  },
+  "SUCKER_PUNCH": {
+    "title": "突然一拳",
+    "description": "造成8点伤害。\n给予1层虚弱。"
+  },
+  "SUMMON_FORTH": {
+    "title": "征召上前",
+    "description": "不论何处，将君王之剑放入你的手牌。\n铸造8。"
+  },
+  "SUNDER": {
+    "title": "分离",
+    "description": "造成24点伤害。\n如果这张牌击杀了敌人，则获得3点能量。"
+  },
+  "SUPERCRITICAL": {
+    "title": "超临界态",
+    "description": "获得4点能量。\n消耗。"
+  },
+  "SUPERMASSIVE": {
+    "title": "超质量体",
+    "description": "造成5点伤害。\n你在本场战斗中每生成过一张牌，这张牌就额外造成3点伤害。"
+  },
+  "SUPPRESS": {
+    "title": "压制",
+    "description": "固有。\n造成11点伤害。\n给予3层虚弱。"
+  },
+  "SURVIVOR": {
+    "title": "生存者",
+    "description": "获得8点格挡。\n丢弃1张牌。"
+  },
+  "SWEEPING_BEAM": {
+    "title": "扫荡射线",
+    "description": "对所有敌人造成6点伤害。\n抽1张牌。"
+  },
+  "SWEEPING_GAZE": {
+    "title": "扫荡凝视",
+    "description": "虚无。\n奥斯提对随机一名敌人造成10点伤害。\n消耗。"
+  },
+  "SWORD_BOOMERANG": {
+    "title": "飞剑回旋镖",
+    "description": "Deal 3 damage to a random enemy 3 times."
+  },
+  "SWORD_SAGE": {
+    "title": "剑圣",
+    "description": "君王之剑获得重放1。"
+  },
+  "SYNCHRONIZE": {
+    "title": "同步",
+    "description": "你每有一种不同的充能球，就在本回合获得2点集中。\n消耗。"
+  },
+  "SYNTHESIS": {
+    "title": "人工合成",
+    "description": "造成14点伤害。\n你打出的下一张能力牌耗能变为0能量。"
+  },
+  "TACTICIAN": {
+    "title": "战术大师",
+    "description": "奇巧。\n获得1点能量。"
+  },
+  "TAG_TEAM": {
+    "title": "双打组合",
+    "description": "造成11点伤害。\n其他玩家的下一张攻击牌将在该名敌人身上额外生效一次。"
+  },
+  "TANK": {
+    "title": "肉盾",
+    "description": "Take double damage from enemies.\nAllies take half damage from enemies."
+  },
+  "TAUNT": {
+    "title": "挑衅",
+    "description": "获得7点格挡。\n给予1层易伤。"
+  },
+  "TEAR_ASUNDER": {
+    "title": "扯碎",
+    "description": "造成5点伤害。\n在本场战斗中，你每失去过一次生命值，这张牌就额外造成一次伤害。"
+  },
+  "TEMPEST": {
+    "title": "暴风雨",
+    "description": "生成X个闪电充能球。"
+  },
+  "TERRAFORMING": {
+    "title": "地形改造",
+    "description": "获得6点活力。"
+  },
+  "TESLA_COIL": {
+    "title": "特斯拉线圈",
+    "description": "造成3点伤害。\n对该敌人触发你的所有闪电充能球的被动。"
+  },
+  "THE_BOMB": {
+    "title": "炸弹",
+    "description": "在3回合结束后，对所有敌人造成40点伤害。"
+  },
+  "THE_GAMBIT": {
+    "title": "孤注一掷",
+    "description": "获得50点格挡。\n如果你在本场战斗中受到未被格挡的攻击伤害，则立刻死亡。"
+  },
+  "THE_HUNT": {
+    "title": "狩猎",
+    "description": "造成10点伤害。\n斩杀时，额外获得一次卡牌奖励。\n消耗。"
+  },
+  "THE_SCYTHE": {
+    "title": "巨镰",
+    "description": "造成13点伤害。\n这张牌在本局游戏中的伤害永久性增加4。\n消耗。"
+  },
+  "THE_SEALED_THRONE": {
+    "title": "封印王座",
+    "description": "你每打出一张牌，获得1点辉星。"
+  },
+  "THE_SMITH": {
+    "title": "铸剑者",
+    "description": "铸造30。"
+  },
+  "THINKING_AHEAD": {
+    "title": "深谋远虑",
+    "description": "抽2张牌。\n将手牌中的一张牌放到你的抽牌堆的顶端。\n消耗。"
+  },
+  "THRASH": {
+    "title": "痛殴",
+    "description": "Deal 4 damage twice.\nExhaust a random Attack in your Hand and add its damage to this card."
+  },
+  "THRUMMING_HATCHET": {
+    "title": "无休手斧",
+    "description": "造成11点伤害。\n在你的下个回合开始时，将此卡返回你的手牌。"
+  },
+  "THUNDER": {
+    "title": "雷霆",
+    "description": "每当你激发闪电充能球时，对被命中的敌人造成6点伤害。"
+  },
+  "THUNDERCLAP": {
+    "title": "闪电霹雳",
+    "description": "对所有敌人造成4点伤害，给予1层易伤。"
+  },
+  "TIMES_UP": {
+    "title": "大限已至",
+    "description": "造成等量于该敌人身上的灾厄层数的伤害。\n消耗。"
+  },
+  "TOOLS_OF_THE_TRADE": {
+    "title": "必备工具",
+    "description": "在你的回合开始时，抽1张牌，丢弃1张牌。"
+  },
+  "TORIC_TOUGHNESS": {
+    "title": "坚韧之环",
+    "description": "获得5点格挡。\n在接下来的2个回合开始时，获得5点格挡。"
+  },
+  "TOXIC": {
+    "title": "毒素",
+    "description": "在你的回合结束时，如果这张牌在你的手牌中，你受到5点伤害。\n消耗。"
+  },
+  "TRACKING": {
+    "title": "跟踪",
+    "description": "Weak enemies take double damage from Attacks."
+  },
+  "TRANSFIGURE": {
+    "title": "重构",
+    "description": "给一张手牌添加重放。\n其耗能增加11点能量。\n消耗。"
+  },
+  "TRASH_TO_TREASURE": {
+    "title": "化废为宝",
+    "description": "每当你生成状态牌的时候，随机生成一个充能球。"
+  },
+  "TREMBLE": {
+    "title": "战栗",
+    "description": "给予3层易伤。\n消耗。"
+  },
+  "TRUE_GRIT": {
+    "title": "坚毅",
+    "description": "获得7点格挡。 随机消耗1张牌。"
+  },
+  "TURBO": {
+    "title": "内核加速",
+    "description": "获得2点能量。\n将一张虚空加入你的弃牌堆。"
+  },
+  "TWIN_STRIKE": {
+    "title": "双重打击",
+    "description": "Deal 5 damage twice."
+  },
+  "TYRANNY": {
+    "title": "暴政",
+    "description": "在你的回合开始时，抽一张牌，并从你的手牌中消耗1张牌。"
+  },
+  "ULTIMATE_DEFEND": {
+    "title": "究极防御",
+    "description": "获得11点格挡。"
+  },
+  "ULTIMATE_STRIKE": {
+    "title": "究极打击",
+    "description": "造成14点伤害。"
+  },
+  "UNDEATH": {
+    "title": "不死",
+    "description": "获得7点格挡。\n在弃牌堆放入一张此牌的复制品。"
+  },
+  "UNLEASH": {
+    "title": "出击",
+    "description": "奥斯提造成6点伤害。\n这张牌额外造成等量于奥斯提当前生命值的伤害。"
+  },
+  "UNMOVABLE": {
+    "title": "坚定不移",
+    "description": "翻倍你每回合第一次从卡牌中获得的格挡。"
+  },
+  "UNRELENTING": {
+    "title": "无情猛攻",
+    "description": "造成14点伤害。\n你打出的下一张攻击牌耗能变为0能量。"
+  },
+  "UNTOUCHABLE": {
+    "title": "触不可及",
+    "description": "奇巧。\n获得6点格挡。"
+  },
+  "UP_MY_SLEEVE": {
+    "title": "袖里乾坤",
+    "description": "将3张小刀加入你的手牌。\n这张牌的耗能减少1。"
+  },
+  "UPPERCUT": {
+    "title": "上勾拳",
+    "description": "造成13点伤害。\n给予1层虚弱。\n给予1层易伤。"
+  },
+  "UPROAR": {
+    "title": "骚动",
+    "description": "Deal 6 damage twice.\nPlay a random Attack from your Draw Pile."
+  },
+  "VEILPIERCER": {
+    "title": "刺破帷幕",
+    "description": "造成10点伤害。\n你打出的下一张虚无牌耗能变为0能量。"
+  },
+  "VENERATE": {
+    "title": "崇拜",
+    "description": "获得2点辉星。"
+  },
+  "VICIOUS": {
+    "title": "凶恶",
+    "description": "每当你给予易伤时，抽1张牌。"
+  },
+  "VOID": {
+    "title": "虚空",
+    "description": "不能被打出。\n虚无。\n每当你抽到这张牌时，失去1点能量。"
+  },
+  "VOID_FORM": {
+    "title": "虚空形态",
+    "description": "虚无。\n结束你的回合。\n你可以免费打出每回合的前2张牌。"
+  },
+  "VOLLEY": {
+    "title": "连射",
+    "description": "随机对敌人造成10点伤害X次。"
+  },
+  "VOLTAIC": {
+    "title": "电流相生",
+    "description": "生成等量于你在这场战斗中生成过的闪电充能球数量的闪电充能球。\n消耗。"
+  },
+  "WASTE_AWAY": {
+    "title": "衰朽",
+    "description": "每回合失去1点能量。"
+  },
+  "WELL_LAID_PLANS": {
+    "title": "计划妥当",
+    "description": "At the end of your turn, Retain up to 1 card."
+  },
+  "WHIRLWIND": {
+    "title": "旋风斩",
+    "description": "对所有敌人造成5点伤害X次。"
+  },
+  "WHISTLE": {
+    "title": "吹哨",
+    "description": "造成33点伤害。\n击晕该敌人。\n消耗。"
+  },
+  "WHITE_NOISE": {
+    "title": "白噪声",
+    "description": "将一张随机能力牌加入你的手牌。这张牌在本回合内免费打出。\n消耗。"
+  },
+  "WISH": {
+    "title": "许愿",
+    "description": "将你抽牌堆中的一张牌放入你的手牌。\n消耗。"
+  },
+  "WISP": {
+    "title": "鬼火",
+    "description": "获得1点能量。\n消耗。"
+  },
+  "WOUND": {
+    "title": "伤口",
+    "description": "不能被打出。"
+  },
+  "WRAITH_FORM": {
+    "title": "幽魂形态",
+    "description": "获得2无实体。\n在你的回合开始时，失去1点敏捷。"
+  },
+  "WRITHE": {
+    "title": "苦恼",
+    "description": "不能被打出。\n固有。"
+  },
+  "WROUGHT_IN_WAR": {
+    "title": "战火铸就",
+    "description": "造成7点伤害。\n铸造7。"
+  },
+  "ZAP": {
+    "title": "电击",
+    "description": "生成1个闪电充能球。"
+  },
+  "PREPARE": {
+    "title": "Prepare",
+    "description": "Discard 2 cards.\nNext turn, gain 2 Energy."
+  },
+  "NOT_YET": {
+    "title": "时候未到",
+    "description": "回复10点生命。\n消耗。"
+  },
+  "WITHER": {
+    "title": "凋萎",
+    "description": "不能被打出。\n在你的回合结束时，如果这张牌在你的手牌中，你受到3点伤害。"
+  },
+  "SCARE": {
+    "title": "Scare",
+    "description": "Apply 1 Weak to ALL enemies.\nExhaust."
+  }
+}

@@ -65,7 +65,45 @@ pub mod ak {
     pub const ENCHANT_DECK_CARD: u8 = 39;
     pub const GRANT_DECK_CARD: u8 = 40;
     pub const GRANT_CONFIRM: u8 = 41;
+    /// The "ooc-potion" fill event's kinds (`contracts` section 4c, GH #1606).
+    pub const USE_POTION_OOC: u8 = 54;
+    pub const DISCARD_POTION: u8 = 55;
+    /// The "#1069" fill event's kinds, the reward screen (`contracts`
+    /// section 4d, GH #1620): the reserved ones, then the spares it names
+    /// (`REWARD_KIND_NAMES`).
+    pub const TAKE_REWARD_POTION: u8 = 48;
+    pub const SKIP_REWARD_POTION: u8 = 49;
+    pub const TAKE_REWARD_GOLD: u8 = 50;
+    pub const SKIP_TREASURE: u8 = 51;
+    pub const SKIP_REWARD_GOLD: u8 = 42;
+    pub const TAKE_REWARD_RELIC: u8 = 43;
+    pub const SKIP_REWARD_RELIC: u8 = 44;
+    pub const TAKE_REWARD_CARD: u8 = 45;
+    pub const SKIP_REWARD_CARD: u8 = 46;
+    pub const PROCEED_REWARDS: u8 = 47;
+    pub const TAKE_REWARD_SPECIAL_CARD: u8 = 58;
+    pub const SKIP_REWARD_SPECIAL_CARD: u8 = 59;
+    pub const TAKE_REWARD_CARD_REMOVAL: u8 = 60;
+    pub const SKIP_REWARD_CARD_REMOVAL: u8 = 61;
 }
+
+/// `REWARD_SCREEN_KINDS`: a combat room's reward screen kinds (`contracts`
+/// section 4d).
+pub const REWARD_SCREEN_KINDS: [u8; 13] = [
+    ak::TAKE_REWARD_POTION,
+    ak::SKIP_REWARD_POTION,
+    ak::TAKE_REWARD_GOLD,
+    ak::SKIP_REWARD_GOLD,
+    ak::TAKE_REWARD_RELIC,
+    ak::SKIP_REWARD_RELIC,
+    ak::TAKE_REWARD_CARD,
+    ak::SKIP_REWARD_CARD,
+    ak::PROCEED_REWARDS,
+    ak::TAKE_REWARD_SPECIAL_CARD,
+    ak::SKIP_REWARD_SPECIAL_CARD,
+    ak::TAKE_REWARD_CARD_REMOVAL,
+    ak::SKIP_REWARD_CARD_REMOVAL,
+];
 
 /// Decision type ids (`contracts.DT`), the live ones.
 #[allow(missing_docs)]
@@ -90,6 +128,9 @@ pub mod dt {
     pub const CARD_ENCHANT: u8 = 22;
     pub const CARD_GRANT: u8 = 23;
     pub const TREASURE: u8 = 24;
+    /// The "#1069" fill event's types (`contracts` section 4d, GH #1620).
+    pub const REWARD_SCREEN: u8 = 40;
+    pub const TREASURE_CHOICE: u8 = 41;
 }
 
 /// Merged classes per decision, asserted (`MAX_OPTIONS`).
@@ -143,6 +184,22 @@ pub fn kind_name(k: u8) -> &'static str {
         ENCHANT_DECK_CARD => "ENCHANT_DECK_CARD",
         GRANT_DECK_CARD => "GRANT_DECK_CARD",
         GRANT_CONFIRM => "GRANT_CONFIRM",
+        USE_POTION_OOC => "USE_POTION_OOC",
+        DISCARD_POTION => "DISCARD_POTION",
+        TAKE_REWARD_POTION => "TAKE_REWARD_POTION",
+        SKIP_REWARD_POTION => "SKIP_REWARD_POTION",
+        TAKE_REWARD_GOLD => "TAKE_REWARD_GOLD",
+        SKIP_TREASURE => "SKIP_TREASURE",
+        SKIP_REWARD_GOLD => "SKIP_REWARD_GOLD",
+        TAKE_REWARD_RELIC => "TAKE_REWARD_RELIC",
+        SKIP_REWARD_RELIC => "SKIP_REWARD_RELIC",
+        TAKE_REWARD_CARD => "TAKE_REWARD_CARD",
+        SKIP_REWARD_CARD => "SKIP_REWARD_CARD",
+        PROCEED_REWARDS => "PROCEED_REWARDS",
+        TAKE_REWARD_SPECIAL_CARD => "TAKE_REWARD_SPECIAL_CARD",
+        SKIP_REWARD_SPECIAL_CARD => "SKIP_REWARD_SPECIAL_CARD",
+        TAKE_REWARD_CARD_REMOVAL => "TAKE_REWARD_CARD_REMOVAL",
+        SKIP_REWARD_CARD_REMOVAL => "SKIP_REWARD_CARD_REMOVAL",
         _ => "SPARE",
     }
 }
@@ -173,6 +230,8 @@ pub fn dtype_name(d: u8) -> &'static str {
         CARD_ENCHANT => "CARD_ENCHANT",
         CARD_GRANT => "CARD_GRANT",
         TREASURE => "TREASURE",
+        REWARD_SCREEN => "REWARD_SCREEN",
+        TREASURE_CHOICE => "TREASURE_CHOICE",
         _ => "SPARE",
     }
 }
@@ -207,6 +266,9 @@ pub fn dtype_kinds(d: u8) -> &'static [u8] {
         dt::CARD_ENCHANT => &[ENCHANT_DECK_CARD],
         dt::CARD_GRANT => &[GRANT_DECK_CARD, GRANT_CONFIRM],
         dt::TREASURE => &[COLLECT_TREASURE],
+        // The hashed sets; `dtype_allows` adds the reward screen's spares.
+        dt::REWARD_SCREEN => &[TAKE_REWARD_POTION, SKIP_REWARD_POTION, TAKE_REWARD_GOLD],
+        dt::TREASURE_CHOICE => &[COLLECT_TREASURE, SKIP_TREASURE],
         _ => &[],
     }
 }
@@ -240,12 +302,15 @@ fn ooc_simple(a: &str) -> Option<u8> {
         "upgrade_deck_card" => UPGRADE_DECK_CARD,
         "transform_deck_card" => TRANSFORM_DECK_CARD,
         "enchant_deck_card" => ENCHANT_DECK_CARD,
+        // The "ooc-potion" fill event (`contracts` section 4c); never a leading kind.
+        "use_potion_ooc" => USE_POTION_OOC,
+        "discard_potion" => DISCARD_POTION,
         _ => return None,
     })
 }
 
 /// `_DTYPE_BY_KIND`: leading kind → decision type, checked in this order.
-const DTYPE_BY_KIND: [(u8, u8); 25] = [
+const DTYPE_BY_KIND: [(u8, u8); 27] = [
     (ak::REST_OPTION, dt::REST),
     (ak::SHOP_BUY_CARD, dt::SHOP),
     (ak::SHOP_BUY_RELIC, dt::SHOP),
@@ -269,12 +334,53 @@ const DTYPE_BY_KIND: [(u8, u8); 25] = [
     (ak::ENCHANT_DECK_CARD, dt::CARD_ENCHANT),
     (ak::GRANT_DECK_CARD, dt::CARD_GRANT),
     (ak::GRANT_CONFIRM, dt::CARD_GRANT),
+    // The reward screen (`contracts` section 4d): a combat room's always
+    // offers proceed, the chest's always its skip.
+    (ak::PROCEED_REWARDS, dt::REWARD_SCREEN),
+    (ak::SKIP_TREASURE, dt::TREASURE_CHOICE),
     (ak::COLLECT_TREASURE, dt::TREASURE),
     (ak::EVENT_CHOICE, dt::EVENT),
 ];
 
 fn action_name(a: &Value) -> Option<&str> {
     get(a, "action").and_then(Value::as_str)
+}
+
+/// `_reward_action_kind(action)`: a reward-screen action's kind, from the
+/// reward it names (`contracts` section 4d, GH #1620).
+fn reward_action_kind(action: &Value, a: &str) -> Result<u8, SchemaError> {
+    use ak::{
+        COLLECT_TREASURE, PROCEED_REWARDS, SKIP_REWARD_CARD, SKIP_REWARD_CARD_REMOVAL,
+        SKIP_REWARD_GOLD, SKIP_REWARD_POTION, SKIP_REWARD_RELIC, SKIP_REWARD_SPECIAL_CARD,
+        SKIP_TREASURE, TAKE_REWARD_CARD, TAKE_REWARD_CARD_REMOVAL, TAKE_REWARD_GOLD,
+        TAKE_REWARD_POTION, TAKE_REWARD_RELIC, TAKE_REWARD_SPECIAL_CARD,
+    };
+    if a == "proceed_rewards" {
+        return Ok(if get(action, "chest").is_some_and(truthy) {
+            SKIP_TREASURE
+        } else {
+            PROCEED_REWARDS
+        });
+    }
+    let take = a == "take_reward";
+    let reward = get(action, "reward").and_then(Value::as_str);
+    Ok(match (reward, take) {
+        (Some("chest_relic"), true) => COLLECT_TREASURE,
+        (Some("chest_relic"), false) => SKIP_TREASURE,
+        (Some("gold"), true) => TAKE_REWARD_GOLD,
+        (Some("gold"), false) => SKIP_REWARD_GOLD,
+        (Some("potion"), true) => TAKE_REWARD_POTION,
+        (Some("potion"), false) => SKIP_REWARD_POTION,
+        (Some("relic"), true) => TAKE_REWARD_RELIC,
+        (Some("relic"), false) => SKIP_REWARD_RELIC,
+        (Some("card"), true) => TAKE_REWARD_CARD,
+        (Some("card"), false) => SKIP_REWARD_CARD,
+        (Some("special_card"), true) => TAKE_REWARD_SPECIAL_CARD,
+        (Some("special_card"), false) => SKIP_REWARD_SPECIAL_CARD,
+        (Some("card_removal"), true) => TAKE_REWARD_CARD_REMOVAL,
+        (Some("card_removal"), false) => SKIP_REWARD_CARD_REMOVAL,
+        _ => return err(format!("{a} names no known reward: {reward:?}")),
+    })
 }
 
 /// `ooc_action_kind(action, bundles, grant_n_options)`.
@@ -320,6 +426,9 @@ pub fn ooc_action_kind(
             }
             Ok(ak::GRANT_DECK_CARD)
         }
+        Some(r @ ("take_reward" | "skip_reward" | "proceed_rewards")) => {
+            reward_action_kind(action, r)
+        }
         other => ooc_simple(other.unwrap_or("")).map_or_else(
             || err(format!("unknown out-of-combat action kind {other:?}")),
             Ok,
@@ -352,16 +461,42 @@ pub fn combat_action_kind(action: &Value) -> Result<u8, SchemaError> {
     }
 }
 
+/// `OOC_POTION_HOST_DTYPES`: the decision types whose screens offer the
+/// "ooc-potion" kinds (`contracts` section 4c, GH #1606).
+const OOC_POTION_HOST_DTYPES: [u8; 12] = [
+    dt::NEOW,
+    dt::MAP,
+    dt::CARD_REWARD,
+    dt::CARD_BUNDLE,
+    dt::RELIC_REWARD,
+    dt::BOSS_RELIC,
+    dt::SHOP,
+    dt::REST,
+    dt::EVENT,
+    dt::TREASURE,
+    dt::REWARD_SCREEN,
+    dt::TREASURE_CHOICE,
+];
+
+/// `contracts.dtype_kinds(d)`: whether a decision of type `d` may offer `k`
+/// (`DType.kinds`, plus the "ooc-potion" kinds on their host screens and the
+/// reward screen's kinds, `contracts` section 4d).
+fn dtype_allows(d: u8, k: u8) -> bool {
+    dtype_kinds(d).contains(&k)
+        || (d == dt::REWARD_SCREEN && REWARD_SCREEN_KINDS.contains(&k))
+        || (matches!(k, ak::USE_POTION_OOC | ak::DISCARD_POTION)
+            && OOC_POTION_HOST_DTYPES.contains(&d))
+}
+
 /// `check_kinds(dtype, kinds)`.
 ///
 /// # Errors
 ///
 /// A kind `dtype` cannot offer.
 pub fn check_kinds(d: u8, kinds: &[u8]) -> Result<(), SchemaError> {
-    let allowed = dtype_kinds(d);
     let mut bad: Vec<&str> = kinds
         .iter()
-        .filter(|k| !allowed.contains(k))
+        .filter(|&&k| !dtype_allows(d, k))
         .map(|&k| kind_name(k))
         .collect();
     bad.sort_unstable();
@@ -503,6 +638,27 @@ fn selection_indices(a: &Value) -> Vec<usize> {
 ///
 /// # Errors
 ///
+/// `_in_unordered_pile`: option `s` is a card of the draw, discard or
+/// exhaust pile ([`choice_option_key`]'s full-card branch, not the hand).
+fn in_unordered_pile(choice: &Value, s: usize, piles: &Value) -> bool {
+    let Some(opt) = choice_options(choice).get(s) else {
+        return false;
+    };
+    let pile_name = match get(opt, "pile").and_then(Value::as_str) {
+        Some("draw") => "draw_pile",
+        Some("discard") => "discard_pile",
+        Some("exhaust") => "exhaust_pile",
+        _ => return false,
+    };
+    let len = get(piles, pile_name)
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    get(opt, "index")
+        .and_then(Value::as_u64)
+        .and_then(|i| usize::try_from(i).ok())
+        .is_some_and(|i| i < len)
+}
+
 /// A selected option out of range.
 pub fn selected_keys(a: &Value, choice: &Value, piles: &Value) -> Result<Vec<String>, SchemaError> {
     let mut sel = selection_indices(a)
@@ -557,7 +713,19 @@ pub fn combat_class_keys(
                     return err("choose actions need choice and outcome");
                 };
                 let sel = selected_keys(a, ch, piles)?;
-                pyjson::dumps(&json!(["choose", outcome(i)?, sel]))
+                // GH #1800: a pick made only of draw/discard/exhaust cards
+                // (sent sorted: identical copies are one card to the player)
+                // keys on content alone; its outcome adds only how the
+                // engine's uids order the pile under a random draw.
+                let picks = selection_indices(a);
+                let unordered =
+                    !picks.is_empty() && picks.iter().all(|&x| in_unordered_pile(ch, x, piles));
+                let out = if unordered {
+                    String::new()
+                } else {
+                    outcome(i)?
+                };
+                pyjson::dumps(&json!(["choose", out, sel]))
             }
             k => pyjson::dumps(&json!([kind_name(k), i])),
         };
@@ -793,6 +961,78 @@ pub fn combat_selection(choice: Option<&Value>, kinds: &[u8]) -> Selection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The reward screen ("#1069", GH #1620): each take / skip by the reward
+    /// it names, a combat room's screen as REWARD_SCREEN, the chest's as
+    /// TREASURE_CHOICE (its proceed leaves the relic, as its skip does).
+    #[test]
+    fn the_reward_screen_classifies_by_the_reward_each_action_names() {
+        use serde_json::json as j;
+        let acts = [
+            j!({"action": "take_reward", "idx": 0, "reward": "gold", "amount": 12}),
+            j!({"action": "take_reward", "idx": 1, "reward": "relic", "id": "Gorget"}),
+            j!({"action": "take_reward", "idx": 2, "reward": "card"}),
+            j!({"action": "skip_reward", "idx": 0, "reward": "gold", "amount": 12}),
+            j!({"action": "skip_reward", "idx": 1, "reward": "relic", "id": "Gorget"}),
+            j!({"action": "skip_reward", "idx": 2, "reward": "card"}),
+            j!({"action": "proceed_rewards", "chest": false}),
+            j!({"action": "discard_potion", "potion_slot": 0}),
+        ];
+        let (d, kinds) = classify_ooc(&acts, None, false, None).unwrap();
+        assert_eq!(d, dt::REWARD_SCREEN);
+        assert_eq!(
+            kinds,
+            vec![
+                ak::TAKE_REWARD_GOLD,
+                ak::TAKE_REWARD_RELIC,
+                ak::TAKE_REWARD_CARD,
+                ak::SKIP_REWARD_GOLD,
+                ak::SKIP_REWARD_RELIC,
+                ak::SKIP_REWARD_CARD,
+                ak::PROCEED_REWARDS,
+                ak::DISCARD_POTION,
+            ]
+        );
+        let chest = [
+            j!({"action": "take_reward", "idx": 0, "reward": "chest_relic", "id": "Gorget"}),
+            j!({"action": "skip_reward", "idx": 0, "reward": "chest_relic", "id": "Gorget"}),
+            j!({"action": "proceed_rewards", "chest": true}),
+        ];
+        assert_eq!(
+            classify_ooc(&chest, None, false, None).unwrap(),
+            (
+                dt::TREASURE_CHOICE,
+                vec![ak::COLLECT_TREASURE, ak::SKIP_TREASURE, ak::SKIP_TREASURE]
+            )
+        );
+        assert_eq!(dtype_name(dt::REWARD_SCREEN), "REWARD_SCREEN");
+        assert_eq!(kind_name(ak::PROCEED_REWARDS), "PROCEED_REWARDS");
+        let unnamed = [j!({"action": "take_reward", "idx": 0})];
+        assert!(classify_ooc(&unnamed, None, false, None).is_err());
+    }
+
+    /// The "ooc-potion" kinds ride on the screen's decision (GH #1606) and
+    /// leave the decision type names alone.
+    #[test]
+    fn the_potion_popup_rides_on_the_screen_decision() {
+        let acts = [
+            serde_json::json!({"action": "move", "col": 1}),
+            serde_json::json!({"action": "use_potion_ooc", "potion_slot": 0}),
+            serde_json::json!({"action": "discard_potion", "potion_slot": 1}),
+        ];
+        let (d, kinds) = classify_ooc(&acts, None, false, None).unwrap();
+        assert_eq!(
+            (d, kinds),
+            (
+                dt::MAP,
+                vec![ak::MOVE, ak::USE_POTION_OOC, ak::DISCARD_POTION]
+            )
+        );
+        assert_eq!(kind_name(ak::USE_POTION_OOC), "USE_POTION_OOC");
+        assert_eq!(kind_name(ak::DISCARD_POTION), "DISCARD_POTION");
+        assert_eq!(dtype_name(43), "SPARE");
+        assert!(check_kinds(dt::CARD_REMOVE, &[ak::REMOVE_DECK_CARD, ak::DISCARD_POTION]).is_err());
+    }
 
     /// The tokenizer encodes a choose option's pile (`choice_pile`), so the
     /// same card in hand and in the draw pile must not merge (#1097: eval seed

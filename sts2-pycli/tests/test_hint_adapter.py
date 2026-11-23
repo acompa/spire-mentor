@@ -322,6 +322,29 @@ def test_a_powers_self_damage_accumulator_reaches_the_engine():
     assert "counter" not in pw
 
 
+def test_possess_speed_carries_what_it_stole():
+    """GH #1836: Possess Speed's stolen Dexterity lives in private data, sent
+    as the ``Stolen`` var; the engine keeps it on ``counter`` and gives it
+    back when the owner dies."""
+    state = base_state(
+        player=player_summary(hp=70, max_hp=75, block=0, relics=[], potions=[]),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike")],
+        enemies=[enemy(index=0, name="Nibbit", hp=48, max_hp=48, intents=[])],
+    )
+    state["enemies"][0]["powers"] = [
+        {
+            "name": "Possess Speed",
+            "id": "POSSESS_SPEED_POWER",
+            "description": "",
+            "amount": 1,
+            "display_amount": 1,
+            "vars": {"Stolen": 6},
+        }
+    ]
+    (pw,) = adapter.translate(state)["encounter"][0]["powers"]
+    assert pw["counter"] == 6
+
+
 def test_toric_toughness_carries_its_stored_block():
     """``amount`` is the turns-left counter; the block lives in a var.
 
@@ -1066,6 +1089,83 @@ def test_dead_enemies_append_as_corpses():
     assert corpse["intents"] == []
 
 
+def test_removed_enemies_come_as_a_roster_in_creation_order():
+    """``removed_enemies`` (GH #1716) are corpses the game took off the board.
+    The encounter stays the board, so alive positions keep their meaning; the
+    wire adds ``removed_roster``, the board with each removed corpse put back
+    before the first enemy created after it, for a fight seeded with nothing
+    carried."""
+    state = base_state(
+        player=player_summary(),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike", cost=1)],
+        enemies=[
+            {**enemy(index=0, name="Nibbit", hp=48, max_hp=48), "combat_id": 1},
+            {**enemy(index=1, name="Nibbit", hp=40, max_hp=48), "combat_id": 4},
+        ],
+    )
+    assert "removed_roster" not in adapter.translate(state)
+    corpse = {"name": "Nibbit", "hp": 0, "max_hp": 44, "block": 0, "is_dead": True}
+    state["removed_enemies"] = [
+        {**corpse, "combat_id": 3, "intents": [{"type": "Attack", "damage": 6, "hits": 1}]},
+        {**corpse, "combat_id": 7},
+    ]
+    out = adapter.translate(state)
+    assert [(e["hp"], e["is_dead"]) for e in out["encounter"]] == [(48, False), (40, False)]
+    roster = out["removed_roster"]
+    assert [(e["hp"], e["is_dead"], e.get("removed_after_death", False)) for e in roster] == [
+        (48, False, False),
+        (0, True, True),
+        (40, False, False),
+        (0, True, True),
+    ]
+    assert roster[1]["intents"] and roster[1]["max_hp"] == 44
+
+
+def test_a_corpse_stays_behind_a_summon_put_in_front():
+    """GH #1837: Two-Tailed Rat #5 is summoned in front of the board after
+    #1 and #3 died. The engine keeps each corpse in its place: #1 first, #3
+    after #2 (seed 180000492: native slots 1-dead, 5, 2, 3-dead, 4)."""
+    rat = {"name": "Two-Tailed Rat", "block": 0}
+    state = base_state(
+        player=player_summary(),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike", cost=1)],
+        enemies=[
+            {**enemy(index=0, name="Nibbit", hp=22, max_hp=22), "combat_id": 5},
+            {**enemy(index=1, name="Nibbit", hp=21, max_hp=21), "combat_id": 2},
+            {**enemy(index=2, name="Nibbit", hp=19, max_hp=19), "combat_id": 4},
+        ],
+    )
+    corpse = {**rat, "name": "Nibbit", "hp": 0, "is_dead": True}
+    state["removed_enemies"] = [
+        {**corpse, "combat_id": 1, "max_hp": 18},
+        {**corpse, "combat_id": 3, "max_hp": 23},
+    ]
+    roster = adapter.translate(state)["removed_roster"]
+    assert [e["max_hp"] for e in roster] == [18, 22, 21, 23, 19]
+
+
+def test_a_removed_summon_goes_back_to_its_slot():
+    """GH #1838: Fabricator's Zapbot (#3) took the front slot and died before
+    any decision saw it. The game sorts its board by encounter slot, so the
+    corpse goes ahead of Fabricator, not after it by creation order. A
+    corpse also stays ahead of the summon that took its slot over."""
+    state = base_state(
+        player=player_summary(),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike", cost=1)],
+        enemies=[
+            {**enemy(index=0, name="Nibbit", hp=16, max_hp=19), "combat_id": 4, "slot": 0},
+            {**enemy(index=1, name="Nibbit", hp=94, max_hp=155), "combat_id": 1, "slot": 4},
+        ],
+    )
+    corpse = {"name": "Nibbit", "hp": 0, "block": 0, "is_dead": True}
+    state["removed_enemies"] = [
+        {**corpse, "combat_id": 3, "max_hp": 20, "slot": 0},
+        {**corpse, "combat_id": 5, "max_hp": 21, "slot": 1},
+    ]
+    roster = adapter.translate(state)["removed_roster"]
+    assert [e["max_hp"] for e in roster] == [20, 19, 21, 155]
+
+
 def test_a_reviving_corpse_keeps_its_heal_telegraph():
     """The turn before a Decimillipede segment reattaches, its move machine
     has already advanced DEAD_MOVE -> REATTACH_MOVE (a ``HealIntent``). That
@@ -1154,6 +1254,54 @@ def test_wax_and_melt_flags_survive_translation():
     plain, melted = adapter.translate(state)["player"]["relics"]
     assert "is_wax" not in plain and "is_melted" not in plain
     assert melted["is_wax"] is True and melted["is_melted"] is True
+
+
+def test_sword_of_stone_reads_the_games_count_into_the_engines():
+    """GH #1684: C# counts the elites defeated up, the engine the ones to go
+    down; the game's 1 is the engine's 4."""
+    state = base_state(
+        player=player_summary(
+            hp=70,
+            max_hp=75,
+            block=0,
+            relics=[
+                {"id": "SWORD_OF_STONE", "name": "Sword of Stone", "vars": None, "counter": 1},
+                {"name": "Nunchaku", "description": "", "vars": None, "counter": 7},
+            ],
+        ),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike")],
+        enemies=[enemy(index=0, name="Nibbit", hp=48, max_hp=48, intents=[])],
+    )
+    sword, nunchaku = adapter.translate(state)["player"]["relics"]
+    assert sword["counter"] == 4
+    assert nunchaku["counter"] == 7
+
+
+def test_left_to_go_counters_read_into_the_engines_count():
+    """Wongo's ticket (5 - combats) and Silver Crucible (3 - uses) show what is
+    left; the engine counts what is done. Read as is, a fresh ticket (5) showed
+    no counter (Spire Bench corpus)."""
+    state = base_state(
+        player=player_summary(
+            hp=70,
+            max_hp=75,
+            block=0,
+            relics=[
+                {
+                    "id": "WONGOS_MYSTERY_TICKET",
+                    "name": "Wongo's Mystery Ticket",
+                    "vars": None,
+                    "counter": 5,
+                },
+                {"id": "SILVER_CRUCIBLE", "name": "Silver Crucible", "vars": None, "counter": 1},
+            ],
+        ),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike")],
+        enemies=[enemy(index=0, name="Nibbit", hp=48, max_hp=48, intents=[])],
+    )
+    ticket, crucible = adapter.translate(state)["player"]["relics"]
+    assert ticket["counter"] == 0
+    assert crucible["counter"] == 2
 
 
 def test_a_dead_osty_keeps_its_accumulated_max_hp():
@@ -1311,3 +1459,25 @@ def test_localization_falls_back_to_the_gzipped_copy(tmp_path: Path) -> None:
     (tmp_path / "relics.json").write_text('{"ANCHOR.title": "Plain"}', encoding="utf-8")
     assert canonical_maps._load_json(tmp_path / "relics.json") == {"ANCHOR.title": "Plain"}
     assert canonical_maps._load_json(tmp_path / "missing.json") == {}
+
+
+def test_a_hidden_left_to_go_counter_reads_as_its_end():
+    """C# hides Wongo's ticket counter once five combats are done, past its
+    payout, and Silver Crucible's once its uses are spent. Read as 0, a
+    paid-out ticket showed a fresh 5 for the rest of the run (GH #1829)."""
+    state = base_state(
+        player=player_summary(
+            hp=70,
+            max_hp=75,
+            block=0,
+            relics=[
+                {"id": "WONGOS_MYSTERY_TICKET", "name": "Wongo's Mystery Ticket", "vars": None},
+                {"id": "SILVER_CRUCIBLE", "name": "Silver Crucible", "vars": None, "counter": None},
+            ],
+        ),
+        hand=[card(index=0, cid="IRONCLAD/STRIKE", name="Strike")],
+        enemies=[enemy(index=0, name="Nibbit", hp=48, max_hp=48, intents=[])],
+    )
+    ticket, crucible = adapter.translate(state)["player"]["relics"]
+    assert ticket["counter"] == -1
+    assert crucible["counter"] == 3

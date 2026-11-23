@@ -50,7 +50,11 @@ from typing import Any
 import numpy as np
 
 from . import contracts as C
+from . import factory
 from .env import Capture, E2EEnv, EnvConfig, Segment, new_env
+from .forced import ForcedCfg, draw_forced
+from .human import HumanCfg, draw_start
+from .mix import MixCfg, draw_character
 
 CELLS = C.CELLS  # ELITE_ACT1..3, BOSS_ACT1, BOSS_ACT2, BOSS_ACT3_DOUBLE
 DOUBLE_BOSS = "BOSS_ACT3_DOUBLE"
@@ -286,6 +290,19 @@ class SegmentSource:
     Captures are filed at `clock()`, the actor's live decision clock, when given (review
     finding ENVR-7: a slot's own `t` is its run's start, a whole run of every slot's
     decisions stale by capture time), else at the latest `t` this source was given.
+
+    With a `mix` (`ppo.e2e.mix.MixCfg`, an all-character lane) each full run plays
+    `draw_character(seed, t, mix)`, and every env's run check (practice starts included:
+    a capture keeps its run's character) accepts the mix's characters. Without one,
+    every run is the process's character, as before.
+
+    With `forced` (`ppo.e2e.forced.ForcedCfg`, GH #1541) a full run whose seed draws a
+    card (`draw_forced`) starts with it in its deck and captures nothing: a practice
+    start replays its capture from the seed and the action log, which lack the card.
+
+    With `human` (`ppo.e2e.human.HumanCfg`) a full run whose seed draws a human start
+    (`draw_start`) plays from it instead (no forced card then) and captures nothing,
+    for the same reason.
     """
 
     def __init__(
@@ -295,11 +312,19 @@ class SegmentSource:
         n_slots: int,
         cfg: EnvConfig | None = None,
         clock: Callable[[], int] | None = None,
+        mix: MixCfg | None = None,
+        forced: ForcedCfg | None = None,
+        human: HumanCfg | None = None,
     ) -> None:
         self.queues = queues
         self.seeds = seeds
         self.n_slots = int(n_slots)
+        self.mix = mix
+        self.forced = forced
+        self.human = human
         self.cfg = cfg or EnvConfig()
+        if mix is not None:
+            self.cfg = dataclasses.replace(self.cfg, characters=tuple(mix.characters))
         self.t = 0
         self.clock = clock or (lambda: self.t)
         self.stats: collections.Counter = collections.Counter()
@@ -314,7 +339,22 @@ class SegmentSource:
             self.stats["practice/run_fallback"] += 1
         cfg = dataclasses.replace(self.cfg, on_capture=self.queues.sink(self.clock))
         self.stats["run"] += 1
-        return new_env(int(next(self.seeds)), cfg=cfg)
+        seed = int(next(self.seeds))
+        char = cfg.character or factory.CHARACTER
+        if self.mix is not None:
+            char = draw_character(seed, self.t, self.mix)
+            cfg = dataclasses.replace(cfg, character=char)
+            self.stats[f"run/{char}"] += 1
+        start = draw_start(seed, char, self.human)
+        if start is not None:
+            cfg = dataclasses.replace(cfg, human_start=start, on_capture=None)
+            self.stats["run/human"] += 1
+            return new_env(seed, cfg=cfg)
+        card = draw_forced(seed, char, self.forced)
+        if card is not None:
+            cfg = dataclasses.replace(cfg, forced_card=card, on_capture=None)
+            self.stats["run/forced"] += 1
+        return new_env(seed, cfg=cfg)
 
 
 def segment_for(cap: Capture, reseed: int, uid: int | None = None) -> Segment:

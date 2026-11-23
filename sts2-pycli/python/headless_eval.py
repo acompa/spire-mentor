@@ -48,6 +48,8 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import functools
 import json
 import logging
 import os
@@ -55,10 +57,12 @@ import random
 import sys
 import time
 from collections import Counter, deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import crystal_sphere_policy
 import sts2_client
 import sts2_rs
 from combat_mirror import (
@@ -348,6 +352,11 @@ def _potion_obs_id(p: dict[str, Any]) -> str:
     return name
 
 
+def _is_counter(v: Any) -> bool:
+    """An integer counter (a JSON bool is not one)."""
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
 def _run_state(state: dict[str, Any], character: str) -> dict[str, Any]:
     """Headless ``player`` summary -> the bridge ``run_state`` envelope shape
     that ``realgame_ppo._base_obs``/``_base_metrics`` read."""
@@ -356,13 +365,33 @@ def _run_state(state: dict[str, Any], character: str) -> dict[str, Any]:
         {
             "id": _plain_card_id(c.get("id")) or str(c.get("name") or ""),
             "upgrade_level": 1 if c.get("upgraded") else 0,
+            # The enchantment's title ("Perfect Fit"), as the mod sends it;
+            # the rebuild stamps it back on (GH #1683).
+            **(
+                {
+                    "enchantment": _english(c["enchantment"]),
+                    "enchantment_amount": c.get("enchantment_amount") or 1,
+                }
+                if c.get("enchantment")
+                else {}
+            ),
         }
         for c in (player.get("deck") or [])
     ]
     potions = [
         # Bridge slots carry {slot, empty, id}; headless lists only the
         # FILLED potions ({index, name, ...}).
-        {"slot": p.get("index", i), "empty": False, "id": _potion_obs_id(p)}
+        # `entry` is the registry id, for a rebuild that resolves ids: a
+        # display name can differ from it ("Clarity Extract" is CLARITY;
+        # GH #1679). `id` stays the name the PPO arm was measured on.
+        {
+            # The belt slot (empty slots counted); `index` is the place among
+            # the filled ones, an older host's only number (GH #1690).
+            "slot": p.get("slot", p.get("index", i)),
+            "empty": False,
+            "id": _potion_obs_id(p),
+            "entry": p.get("entry"),
+        }
         for i, p in enumerate(player.get("potions") or [])
     ]
     # `potion_slots` (total belt capacity) lets us emit the empty slots
@@ -382,7 +411,15 @@ def _run_state(state: dict[str, Any], character: str) -> dict[str, Any]:
         "hp": player.get("hp", 0),
         "max_hp": player.get("max_hp", 0),
         "gold": player.get("gold", 0),
-        "relics": [{"id": r.get("id")} for r in (player.get("relics") or [])],
+        # The counter a relic shows (`DisplayAmount`): the rebuild restores it,
+        # or Book of Five Rings' heal lands on the wrong card.
+        "relics": [
+            {
+                "id": r.get("id"),
+                **({"counter": r["counter"]} if _is_counter(r.get("counter")) else {}),
+            }
+            for r in (player.get("relics") or [])
+        ],
         "potions": potions,
         "master_deck": master_deck,
         "ascension": 0,
@@ -446,6 +483,9 @@ def _bridge_map(full_map: dict[str, Any] | None) -> dict[str, Any] | None:
         ],
         "current": ({"col": current.get("col"), "row": current.get("row")} if current else None),
         "boss": full_map.get("boss"),
+        # The A10 act-3 second boss: shown from act entry, read by the graft
+        # (GH #1662).
+        "second_boss": full_map.get("second_boss"),
         "visited": [{"col": n.get("col"), "row": n.get("row")} for n in nodes if n.get("visited")],
     }
 
@@ -476,6 +516,15 @@ def to_bridge_card_reward(state: dict[str, Any], character: str) -> dict[str, An
             "name": _english(c.get("name")),
             "rarity": c.get("rarity"),
             "upgrade_level": 1 if c.get("upgraded") else 0,
+            # Silken Tress glams every reward card; the rebuild stamps it on.
+            **(
+                {
+                    "enchantment": _english(c["enchantment"]),
+                    "enchantment_amount": c.get("enchantment_amount") or 1,
+                }
+                if c.get("enchantment")
+                else {}
+            ),
         }
         for c in (state.get("cards") or [])
     ]
@@ -495,6 +544,8 @@ def to_bridge_rest_site(state: dict[str, Any], character: str) -> dict[str, Any]
         }
         for i, o in enumerate(state.get("options") or [])
     ]
+    # Miniature Tent: leaving with options still open (GH #1833).
+    out["can_leave"] = bool(state.get("can_leave"))
     return out
 
 
@@ -594,6 +645,14 @@ def to_bridge_card_select(state: dict[str, Any], character: str) -> dict[str, An
             "is_curse": c.get("type") == "Curse",
             "is_status": c.get("type") == "Status",
             "upgrade_level": 1 if c.get("upgraded") else 0,
+            **(
+                {
+                    "enchantment": _english(c["enchantment"]),
+                    "enchantment_amount": c.get("enchantment_amount") or 1,
+                }
+                if c.get("enchantment")
+                else {}
+            ),
         }
         for i, c in enumerate(state.get("cards") or [])
     ]
@@ -609,6 +668,10 @@ def to_bridge_card_select(state: dict[str, Any], character: str) -> dict[str, An
     # mid-combat selection: all 23 v0.107.1 combat cards that open one pass
     # `base.SelectionScreenPrompt`, a per-card loc key, not a `TO_*` key.
     out["source_model"] = state.get("source_model")
+    # An enchant screen's amount (Kifuda's Adroit 3), which the advisor's
+    # replay of earlier picks applies (GH #1715).
+    if state.get("enchantment_amount") is not None:
+        out["enchantment_amount"] = state["enchantment_amount"]
     # `CardSelectorPrefs.Cancelable` verbatim when the world supplies it. The
     # old `min_select <= 0` guess was wrong in BOTH directions: Cook/Smith and
     # RewardSynchronizer set Cancelable with a non-zero MinSelect (a skippable
@@ -662,7 +725,13 @@ def to_bridge_shop(state: dict[str, Any], character: str) -> tuple[dict[str, Any
             "buy_card",
             _english(c.get("name")),
             int(c.get("cost", 0)),
-            {"id": cid, "name": _english(c.get("name"))},
+            # A merchant card an egg relic upgraded (Toxic, Frozen, Molten
+            # Egg) is stocked upgraded; the engine's shop needs to know.
+            {
+                "id": cid,
+                "name": _english(c.get("name")),
+                "upgrade_level": 1 if c.get("upgraded") else 0,
+            },
             {"action": "buy_card", "args": {"card_index": c.get("index")}},
         )
     for r in state.get("relics") or []:
@@ -856,8 +925,13 @@ def pick_card_select_mirrored(
     mirror: CombatMirror,
     *,
     sims: int | None = None,
+    instinct_pick: Callable[[Any, int], list[int] | None] | None = None,
 ) -> tuple[dict[str, Any], list[int] | None]:
     """Answer a MID-COMBAT ``card_select`` off the persistent mirror.
+
+    ``instinct_pick(cs, max_select)``: the student's picks on the mirror's
+    state parked on the choice, as the native run asks it (COMBAT_CHOICE,
+    GH #1667); the search answers where it returns None.
 
     The mirror already executed the card that opened this screen, so it is
     parked on the engine's own version of the choice. This reconciles the
@@ -924,6 +998,7 @@ def pick_card_select_mirrored(
         min_select=min_select,
         source_model=state.get("source_model"),
         prompt_key=state.get("prompt_key"),
+        source=state.get("source"),
     )
     mirror.inject_choice(
         kind,
@@ -990,13 +1065,20 @@ def pick_card_select_mirrored(
     # and Gambling Chip's `DiscardAndDraw(list, list.Count)` then draws one
     # more card than it discards (the mirror_d1 "-1 hand" family, seeds
     # 1004/1047).
-    picks = mirror.search_choice_picks(
-        run_cfg,
-        hand=wire["deck"]["hand"],
-        n_options=len(options),
-        min_select=min_select,
-        max_select=max_select,
-    )
+    picks = instinct_pick(mirror.state, max_select) if instinct_pick is not None else None
+    if picks is not None:
+        # Distinct, in range: the DLL keeps duplicates (see below).
+        picks = list(dict.fromkeys(p for p in picks if 0 <= p < n))[:max_select]
+        if len(picks) < min_select:
+            picks = None
+    if picks is None:
+        picks = mirror.search_choice_picks(
+            run_cfg,
+            hand=wire["deck"]["hand"],
+            n_options=len(options),
+            min_select=min_select,
+            max_select=max_select,
+        )
     if not picks and min_select <= 0:
         return {"action": "skip_select", "args": {}}, []
     if not picks:
@@ -1152,6 +1234,91 @@ def pick_combat_action_from_shadow(
 # ---------------------------------------------------------------------------
 
 
+def _fresh_bridge_map(game: Any) -> dict[str, Any] | None:
+    """The act map as the world shows it now, in the bridge's shape."""
+    try:
+        return _bridge_map(game.get_map())
+    except Exception:
+        return None
+
+
+def _pick_combat_instinct(
+    instinct: Any,
+    state: dict[str, Any],
+    cfg: RecommendConfig,
+    mirror: CombatMirror,
+    room_type: str | None,
+    character: str,
+    ascension: int,
+    bridge_map: dict[str, Any] | None,
+    banned: set[str] | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Instinct's ``(headless command, engine action)`` at a fight decision,
+    or ``(None, None)`` where it cannot answer.
+
+    The fight is the mirror's (reconciled here, as the search does), so the
+    engine action can advance the mirror once the world accepted the command.
+    """
+    try:
+        wire = adapter.translate(
+            state,
+            character=cfg.character,
+            combat_id=cfg.combat_id,
+            seed=cfg.seed,
+            ascension=cfg.ascension,
+        )
+        if not mirror.alive:
+            instinct.fight_started(state)
+        mirror.reconcile(wire)
+        instinct.enemies_renamed(mirror.take_enemy_remap())
+        cs = mirror.state
+    except MirrorDivergence:
+        raise
+    except Exception as exc:
+        logger.warning("instinct: no fight to read: %s", exc)
+        return None, None
+    run_state = {**_run_state(state, character), "ascension": ascension}
+    ranked = instinct.combat(state, wire, cs, str(room_type or "monster"), run_state, bridge_map)
+    if ranked is None:
+        return None, None
+    slots = _mirror_encounter(mirror)
+    hand = wire["deck"]["hand"]
+    by_index = {int(c.get("index", i)): c for i, c in enumerate(state.get("hand") or [])}
+    for action in ranked:  # the student's order; the game's veto skips a move
+        kind = action.get("action")
+        target = action.get("target_index")
+        if kind == "end_turn":
+            return {"action": "end_turn", "args": {}}, {"action": "end_turn"}
+        args: dict[str, Any]
+        if kind in ("potion", "drink_potion"):
+            slot = int(action.get("slot", -1))
+            args = {"potion_index": slot}
+            if target is not None:
+                args["target_index"] = _shadow_target_to_dll(slots, int(target))
+            cmd = {"action": "use_potion", "args": args}
+            engine = {"action": "potion", "slot": slot, "target_index": target}
+        elif kind == "play":
+            i = int(action.get("card_index", -1))
+            if not 0 <= i < len(hand):
+                continue
+            stable = int(hand[i]["stable_idx"])
+            card = by_index.get(stable)
+            if card is None or not card.get("can_play", False):
+                continue
+            args = {"card_index": stable}
+            if target is not None:
+                args["target_index"] = _shadow_target_to_dll(slots, int(target))
+            cmd = {"action": "play_card", "args": args}
+            engine = {"action": "play", "card_index": i, "target_index": target}
+        else:
+            instinct._miss(f"no headless verb for {kind}")
+            continue
+        if banned and json.dumps(cmd, sort_keys=True) in banned:
+            continue
+        return cmd, engine
+    return None, None
+
+
 def _bridge_answer_to_command(
     msg_type: str,
     answer: dict[str, Any],
@@ -1189,6 +1356,8 @@ def _bridge_answer_to_command(
         assert shop_commands is not None
         if 0 <= idx < len(shop_commands):
             return shop_commands[idx]
+        return {"action": "leave_room", "args": {}}
+    if msg_type == "rest_site" and answer.get("action") == "leave":
         return {"action": "leave_room", "args": {}}
     if msg_type in ("rest_site", "event", "boss_relic"):
         # boss_relic: `_boss_relic_reroute`d Ancient relic offers answer with
@@ -1233,6 +1402,7 @@ def play_one_headless_session(
     forward_stderr: bool = False,
     ascension: int = 0,
     game: Any = None,
+    instinct: Any = None,
 ) -> RunOutcome:
     """Play one run on the C# host with the live decision stack.
 
@@ -1243,6 +1413,9 @@ def play_one_headless_session(
             to play the host and the real game in lockstep (GH #1287). It
             must expose ``start``, ``send``, ``get_map``, ``proc`` and
             ``world_errors`` like ``Game``.
+        instinct: A ``bench_agents.instinct_policy.InstinctPolicy`` to answer
+            with instead of the search and the PPO run policy. Where it cannot
+            answer, they do, and the run counts a fallback.
     """
     start = time.monotonic()
     step = 0
@@ -1262,6 +1435,9 @@ def play_one_headless_session(
     stall_count = 0
     recent_keys: deque[int] = deque(maxlen=_STALL_WINDOW)
     window_counts: Counter[int] = Counter()
+    if instinct is not None and hasattr(game, "on_auto"):
+        # The bench wrappers answer some screens themselves (GH #1704).
+        game.on_auto = instinct.saw
     banned_for_state: dict[int, set[str]] = {}
     prev_state_key: int | None = None
     prev_command: dict[str, Any] | None = None
@@ -1289,6 +1465,10 @@ def play_one_headless_session(
     # it, and a mid-combat card_select is answered off the choice the played
     # card already opened on it. `STS2_MIRROR_OBSERVE=1` downgrades a
     # divergence from a crash to a tagged, logged drop.
+    # Every board the search builds is this run's: without it the engine plays
+    # an A>0 fight with A0 enemy HP and damage (GH #1639).
+    if mcts_cfg is not None:
+        mcts_cfg = dataclasses.replace(mcts_cfg, ascension=ascension)
     mirror = CombatMirror(
         mcts_cfg,
         policy=policy_from_env(),
@@ -1298,7 +1478,12 @@ def play_one_headless_session(
         game = Game(forward_stderr=forward_stderr)
     world_errors: dict[str, Any] = {"count": 0, "sample": []}
     try:
-        state = game.start(character, seed=str(seed), ascension=ascension, played_save=played_save)
+        # A full-belt potion reward is a decision in the engine Instinct
+        # trained on (`POTION_SWAP`); the host drops the potion unless asked.
+        swap = {"interactive_potion_swap": True} if instinct is not None else {}
+        state = game.start(
+            character, seed=str(seed), ascension=ascension, played_save=played_save, **swap
+        )
         if shadow:
             shadow_backend = RustGame(target_convention="csharp")
             shadow_backend.start(character=character, seed=str(seed), ascension=0)
@@ -1351,6 +1536,10 @@ def play_one_headless_session(
                 )
                 break
             decision = state.get("decision") or state.get("type")
+            if instinct is not None:
+                # Every screen, asked of the student or not: its room and
+                # HP stand behind the next ones (GH #1704, #1705).
+                instinct.saw(state)
             # The host's wire does not name its build; the bridge's envelope
             # does. Without it the combat search rebuilds the fight as the
             # default build and rejects a v0.111.0 run seed (GH #1287).
@@ -1368,7 +1557,7 @@ def play_one_headless_session(
                 # re-sending the rejected play forever (seed-1025 wedge: the
                 # DLL said ``can_play`` on the wire, then bounced every play).
                 if (
-                    prev_decision == "combat_play"
+                    prev_decision in ("combat_play", "rewards")
                     and prev_command is not None
                     and prev_state_key is not None
                 ):
@@ -1507,6 +1696,20 @@ def play_one_headless_session(
                         # (RNG cursors, pins, intent history). That is the
                         # intended recovery; only the continuity is lost.
                         mirror.drop("shadow answered this decision")
+                if command is None and instinct is not None:
+                    command, engine_action = _pick_combat_instinct(
+                        instinct,
+                        state,
+                        mcts_cfg,
+                        mirror,
+                        current_room_type,
+                        character,
+                        ascension,
+                        _fresh_bridge_map(game),
+                        banned_for_state.get(state_key),
+                    )
+                    if command is None:
+                        fallback_count += 1
                 if command is None:
                     command, log_extra, engine_action = pick_combat_action_headless(
                         state,
@@ -1522,15 +1725,66 @@ def play_one_headless_session(
                 # card already parked on a choice. No replay, no prompt-key
                 # heuristic, no random fallback — see
                 # `pick_card_select_mirrored`.
+                pick = None
+                if instinct is not None:
+                    if not mirror.alive:
+                        # A fight can open on a screen (Toasty Mittens' turn-1
+                        # exhaust): it starts here, or the student reads the
+                        # last fight's encounter and HP (GH #1697).
+                        instinct.fight_started(state)
+                    run_state = {**_run_state(state, character), "ascension": ascension}
+                    choice_map = _fresh_bridge_map(game)
+
+                    room = str(current_room_type or "monster")
+                    pick = functools.partial(
+                        instinct.combat_choice,
+                        state,
+                        room_type=room,
+                        bridge_run_state=run_state,
+                        bridge_map=choice_map,
+                    )
+
                 command, pending_picks = pick_card_select_mirrored(
                     state,
                     mcts_cfg,
                     mirror,
                     sims=sims_boss if current_room_type in ("boss", "Boss") else sims_regular,
+                    instinct_pick=pick,
                 )
                 log_extra = None
                 bridge_state = {"type": "card_select"}
                 session["prev_msg_type"] = "card_select"
+            elif decision == "potion_swap":
+                slot = None
+                if instinct is not None:
+                    env = _envelope(state, "reward_screen", character)
+                    if isinstance(env.get("run_state"), dict):
+                        env["run_state"]["ascension"] = ascension
+                    slot = instinct.potion_swap(env, state, _fresh_bridge_map(game))
+                # A decline names no slot: the host reads a JSON null as a
+                # value, not as "none" (GH #1682).
+                command = {
+                    "action": "potion_swap",
+                    "args": {} if slot is None else {"discard_slot": slot},
+                }
+            elif decision == "rewards":
+                # Only an interactive host lists the reward screen (referee
+                # mode, `STS2_INTERACTIVE_REWARDS`); taken as the referee
+                # bench takes it, a refused take skipped (GH #1698).
+                from bench_agents.referee_game import host_answer
+
+                refused = {(0, c) for c in banned_for_state.get(state_key, set())}
+                command = host_answer(state, 0, refused) or {"action": "proceed"}
+                command.setdefault("args", {})
+            elif decision == "crystal_sphere":
+                # Only an interactive host shows the minigame (referee mode,
+                # `STS2_CRYSTAL_SPHERE_INTERACTIVE`); the digger plays it.
+                click = crystal_sphere_policy.host_click(state)
+                command = (
+                    {"action": "crystal_sphere_click", "args": click}
+                    if click is not None
+                    else {"action": "proceed", "args": {}}
+                )
             else:
                 if decision == "map_select":
                     try:
@@ -1575,14 +1829,25 @@ def play_one_headless_session(
                 # upgrade, event grant, shop removal) — a mid-combat one is
                 # answered off the mirror above. This is the trained PPO
                 # surface and stays as-is.
-                answer, log_extra = pick_noncombat_action_ppo(
-                    bridge_state,
-                    policy_rng,
-                    ppo_policies,
-                    run_config_character=character,
-                    run_config_seed=seed,
-                    session=session,
-                )
+                # The host's state names no ascension; the envelope's A0 default
+                # would feed the net the wrong level (GH #1639).
+                if isinstance(bridge_state.get("run_state"), dict):
+                    bridge_state["run_state"]["ascension"] = ascension
+                answer = None
+                if instinct is not None:
+                    answer = instinct.screen(bridge_state, state, _fresh_bridge_map(game))
+                    if answer is None:
+                        fallback_count += 1
+                if answer is None:
+                    answer, log_extra = pick_noncombat_action_ppo(
+                        bridge_state,
+                        policy_rng,
+                        ppo_policies,
+                        run_config_character=character,
+                        run_config_ascension=ascension,
+                        run_config_seed=seed,
+                        session=session,
+                    )
                 msg_type = bridge_state["type"]
                 command = _bridge_answer_to_command(msg_type, answer, state, shop_commands)
                 if answer.get("annotations"):

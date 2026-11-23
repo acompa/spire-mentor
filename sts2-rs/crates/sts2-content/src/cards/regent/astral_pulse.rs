@@ -13,8 +13,9 @@ use super::prelude::*;
 pub(crate) fn play_astral_pulse(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
     let base = current_damage(state);
     // C# `.WithHitCount(2)`: two AoE passes over all alive enemies.
-    deal_damage_all_enemies(state, base);
-    deal_damage_all_enemies(state, base);
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
+        deal_damage_all_enemies(state, base);
+    }
     EffectResult::Resolved
 }
 

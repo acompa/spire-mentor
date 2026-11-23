@@ -52,7 +52,8 @@ The most entangled node, by design. Concerns:
   the `sts2_rs` PyO3 module; promotion flows through `champions.toml` (below).
 - **Workbench** — web app (Python-backed server, or browser-only via the wasm build; the private repo also carries a Docker deploy image).
 - **Bridge client / advisor** — talks to spire-mentor-mod's TCP protocol; the
-  advisor ships as a frozen exe (`packaging/SimAdvisor.spec`).
+  advisor ships as the native `SimAdvisor` binary (`sts2-rs/crates/sim-advisor`,
+  staged by `scripts/stage_advisor.py`); the Python advisor is the dev path.
 
 Hard build edge: `pyproject.toml` declares an **editable path dependency** on
 `../sts2-rs/crates/sts2-py` — the one edge that makes sts2-pycli

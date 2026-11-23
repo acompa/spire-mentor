@@ -76,6 +76,58 @@ function artMount(): Plugin {
 }
 
 /**
+ * `public/preview-rig/<key>` entries are git symlinks into the sts2-wiki rig
+ * tree. A Windows checkout with `core.symlinks=false` gets each as a small
+ * text file holding the link's target, so `/preview-rig/queen/queen.atlas`
+ * fell through to the SPA's index.html and the board preview drew no queen
+ * (GH #1613). This follows such a stub; a real symlink is a directory here and
+ * vite serves it itself.
+ */
+function previewRigStubs(): Plugin {
+  const rigs = path.resolve(here, "public/preview-rig");
+  const repo = path.resolve(here, "../..");
+  const handler = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    let rel: string;
+    try {
+      rel = decodeURIComponent(new URL(req.url ?? "/", "http://localhost").pathname);
+    } catch {
+      return next();
+    }
+    const m = /^\/([^/]+)\/(.+)$/.exec(rel);
+    if (!m) return next();
+    const stub = path.join(rigs, m[1]);
+    let target: string;
+    try {
+      const st = fs.statSync(stub);
+      if (!st.isFile() || st.size > 512) return next();
+      target = fs.readFileSync(stub, "utf8").trim();
+    } catch {
+      return next();
+    }
+    const dir = path.resolve(rigs, target);
+    const file = path.normalize(path.join(dir, m[2]));
+    if (!dir.startsWith(repo + path.sep) || !file.startsWith(dir + path.sep)) return next();
+    fs.stat(file, (err, st) => {
+      if (err || !st.isFile()) return next();
+      res.setHeader("content-type", MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream");
+      res.setHeader("content-length", st.size);
+      res.setHeader("cache-control", "no-cache");
+      if (req.method === "HEAD") return res.end();
+      fs.createReadStream(file).pipe(res);
+    });
+  };
+  return {
+    name: "sts2-preview-rig-stubs",
+    configureServer(server) {
+      server.middlewares.use("/preview-rig", handler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use("/preview-rig", handler);
+    },
+  };
+}
+
+/**
  * The PPO champions for the browser build (M3). `data/ppo/champions.toml`
  * names one ONNX per character; the worker fetches `/ppo/<file>` for the
  * run's character and loads it into the wasm engine. Two jobs:
@@ -279,6 +331,7 @@ export default defineConfig(({ mode, command }) => {
   return {
     plugins: [
       react(),
+      previewRigStubs(),
       ...(isStatic && !env.VITE_ASSETS_BASE ? [artMount()] : []),
       ...(isStatic ? [ppoChampions(), e2eWeights(), swPrecache(buildId, assetsBase)] : []),
     ],

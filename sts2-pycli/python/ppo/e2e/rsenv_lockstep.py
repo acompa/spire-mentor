@@ -126,15 +126,25 @@ class Lockstep:
         by_action: bool = False,
         fingerprint: str | None = None,
         tag: str = "",
+        characters: tuple[str, ...] | None = None,
     ) -> list[E.Capture]:
         """One segment both ways from `rm` (each env gets a clone). `choose(d, k)` picks
-        row `k`'s merged class (with `by_action`, its member index). Returns the Python
-        env's captures."""
+        row `k`'s merged class (with `by_action`, its member index). `characters` is the
+        run check's set (`EnvConfig.characters`: a mix lane's). Returns the Python env's
+        captures."""
         caps_py: list[E.Capture] = []
         caps_rs: list[E.Capture] = []
         hits_py: list[str] = []
-        cfg_py = E.EnvConfig(f9_p=self.f9_p, on_capture=caps_py.append if capture else None)
-        cfg_rs = E.EnvConfig(f9_p=self.f9_p, on_capture=caps_rs.append if capture else None)
+        cfg_py = E.EnvConfig(
+            f9_p=self.f9_p,
+            on_capture=caps_py.append if capture else None,
+            characters=characters,
+        )
+        cfg_rs = E.EnvConfig(
+            f9_p=self.f9_p,
+            on_capture=caps_rs.append if capture else None,
+            characters=characters,
+        )
         pe = E.E2EEnv(seed, rm=rm.clone(), cfg=cfg_py, segment=segment)
         chk = pe.f9
         check = chk.check
@@ -267,7 +277,15 @@ class Lockstep:
                     self.bad("capture/snap", tag=tag, cell=cp.cell)
         return caps_py
 
-    def practice(self, caps: list[E.Capture], n: int, rng: np.random.Generator, tag: str) -> None:
+    def practice(
+        self,
+        caps: list[E.Capture],
+        n: int,
+        rng: np.random.Generator,
+        tag: str,
+        *,
+        characters: tuple[str, ...] | None = None,
+    ) -> None:
         """Every double-boss capture and `n` random others as practice segments, random play."""
         from .actionlog import start_from_capture
         from .practice import DOUBLE_BOSS, ROOM_OF, segment_for
@@ -290,13 +308,25 @@ class Lockstep:
                 lambda d, _k, rng=rng: int(rng.integers(d.n_classes)),
                 capture=False,
                 tag=f"{tag}:practice:{cap.cell}:{j}",
+                characters=characters,
             )
 
 
-def run_seeds(ls: Lockstep, seed0: int, n: int, *, pinned: bool, practice: int) -> None:
+def run_seeds(
+    ls: Lockstep,
+    seed0: int,
+    n: int,
+    *,
+    pinned: bool,
+    practice: int,
+    character: str | None = None,
+    characters: tuple[str, ...] | None = None,
+) -> None:
+    """Random-play runs of `character` (None: the process's) from `seed0` on, both ways;
+    `characters` is the run check's set (a mix lane's)."""
     for seed in range(seed0, seed0 + n):
         rng = np.random.default_rng(seed)
-        rm = E.make_run_manager(seed)
+        rm = E.make_run_manager(seed, character=character)
         if pinned:
             rm.set_player(hp=100_000, max_hp=100_000)
         caps = ls.segment(
@@ -305,9 +335,10 @@ def run_seeds(ls: Lockstep, seed0: int, n: int, *, pinned: bool, practice: int) 
             E.RUN,
             lambda d, _k, rng=rng: int(rng.integers(d.n_classes)),
             tag=f"run:{seed}",
+            characters=characters,
         )
         if practice:
-            ls.practice(caps, practice, rng, f"run:{seed}")
+            ls.practice(caps, practice, rng, f"run:{seed}", characters=characters)
 
 
 def run_log(ls: Lockstep, path: str, n: int, *, practice: int, window: int) -> None:
@@ -323,21 +354,28 @@ def run_log(ls: Lockstep, path: str, n: int, *, practice: int, window: int) -> N
         seed = int(h["seed"])
         rng = np.random.default_rng(seed)
         idx = rec.idx
+        # A mix lane's run (GH #1197) names its character in `extra` (`actors._char`).
+        char = (h.get("extra") or {}).get("character")
+        lane = None if char is None else (str(char),)
         if seg["kind"] == "run":
             caps = ls.segment(
                 seed,
-                E.make_run_manager(seed),
+                E.make_run_manager(seed, character=char),
                 E.RUN,
                 lambda _d, j, idx=idx: idx[j],
                 by_action=True,
                 fingerprint=h.get("fingerprint"),
                 tag=f"log:{seed}",
+                characters=lane,
             )
             if practice:
-                ls.practice(caps, practice, rng, f"log:{seed}")
+                ls.practice(caps, practice, rng, f"log:{seed}", characters=lane)
         else:
             cap = replay_capture(
-                int(seg["parent_seed"]), list(seg["parent_idx"]), int(seg["capture_steps"])
+                int(seg["parent_seed"]),
+                list(seg["parent_idx"]),
+                int(seg["capture_steps"]),
+                character=char,
             )
             reseed = int(seg["reseed"])
             segment = E.Segment(
@@ -360,6 +398,7 @@ def run_log(ls: Lockstep, path: str, n: int, *, practice: int, window: int) -> N
                 by_action=True,
                 fingerprint=h.get("fingerprint"),
                 tag=f"log:{seed}:{seg['cell']}",
+                characters=lane,
             )
         k += 1
         if k >= n:

@@ -1,5 +1,12 @@
 // CrystalSpherePick.cs -- which Crystal Sphere cell to divine (GH #872).
 //
+// Now the FALLBACK. With an advisor that advertises
+// `capabilities.crystal_sphere`, F7 sends the board (CrystalSphereWire) and
+// divines the advisor's digger's cell; this rule plays when the advisor is
+// older, hands back, does not answer within the wait, or names no usable
+// cell (SimScreenAdvice.DescribeCrystalSphere). It is also what the driver
+// lane's reference agent falls back to.
+//
 // The minigame (CrystalSphereMinigame.cs) hides fifteen items on an 11x11 grid
 // and reveals an item only once EVERY cell it covers is clear. The mod selects
 // the Big tool (the game's default) before every reveal, so each divination
@@ -7,9 +14,8 @@
 // divinations are spent (NCrystalSphereScreen: `if (_entity.IsFinished)`), so
 // "when to stop" is never a choice -- only which cells to clear.
 //
-// The board's contents are not on the wire, only which cells are still hidden,
-// so the rule is geometric. The relic is 4x4: only adjacent, non-overlapping
-// 3x3 blocks can uncover it. The fixed order below clears a 3-wide column
+// The rule reads only which cells are still hidden, so it is geometric. The
+// relic is 4x4: only adjacent, non-overlapping 3x3 blocks can uncover it. The fixed order below clears a 3-wide column
 // first (the 3-divination event option) and then the column beside it (the
 // 6-divination option, a 6x9 rectangle). Monte Carlo over the decomp's
 // placement rules (n=4000, item values relic 150 ... curse -60) put this

@@ -25,9 +25,10 @@ Rules (plan §8 Runbook, PREREG-0 P6; names in ``ppo.e2e.ops_contract``):
   above 0 in each of the last ``HELD_LEAK_ITERS`` = 7 iterations), ``DEV_JUMP``
   and ``DRIVER_ERROR``. The learner raises ``LC_RECHECK_FAIL`` itself (a
   learning check that fails after one passed); it shows in the status.
-* Eval requests in ``<lane>/evals/queue/``: DEV-1000 EMA0.996 on every 250M
+* Eval requests in ``<lane>/evals/queue/``: DEV-1000 EMA0.999 on every 250M
   milestone pin; DEV-2000 raw, EMA0.996 and EMA0.999 on every 1B pin (instead
-  of that milestone's DEV-1000); DEV-1000 EMA0.996 on the K2 and K3 pins.
+  of that milestone's DEV-1000); DEV-1000 EMA0.999 on the K2 and K3 pins
+  (EMA0.996 before PREREG Amendment 10).
 * Eval results in ``<lane>/evals/done/``: ``STALL_SIGNAL`` (HUMAN, the lane
   runs on) when DEV-2000 EMA0.996 is below 11% at 2B or 14% at 3B;
   ``DEV_JUMP`` when a DEV-1000 read is more than 5pp above the previous
@@ -67,6 +68,7 @@ import contextlib
 import datetime as dt
 import hashlib
 import json
+import math
 import os
 import socket
 import subprocess
@@ -222,7 +224,9 @@ def lr_problem(row: dict) -> str | None:
         v, c = lr.get(k), cf.get(k)
         if not (C.is_num(v) and C.is_num(c)):
             return f"group {k}: lr {v!r}, closed form {c!r}"
-        off = abs(v / c - 1.0) if c else abs(v)
+        # A closed form of 0 (the lr hold, a frozen group) admits exactly 0: an absolute
+        # tolerance would let a frozen trunk train at up to 1e-6.
+        off = abs(v / c - 1.0) if c else (0.0 if not v else math.inf)
         if off > C.LR_TOLERANCE:
             return f"group {k}: lr {v:.10g} vs closed form {c:.10g} (off by {off:.3g})"
     return None
@@ -387,7 +391,14 @@ def _watchdog_alive(sd: ckpt.SaveDir) -> tuple[bool, dict | None]:
 def _milestone_variants(m: int) -> tuple[str, tuple[str, ...]]:
     if m % C.DEV2000_EVERY == 0:
         return "DEV-2000", C.EVAL_VARIANTS_DEV2000
-    return "DEV-1000", C.EVAL_VARIANTS_DEV1000
+    return "DEV-1000", _dev1000_variants(m)
+
+
+def _dev1000_variants(decisions: int) -> tuple[str, ...]:
+    """EMA0.996 before ``DEV1000_SWITCH_AT``, EMA0.999 from it (PREREG Amendment 10)."""
+    if decisions < C.DEV1000_SWITCH_AT:
+        return C.EVAL_VARIANTS_DEV1000_BEFORE
+    return C.EVAL_VARIANTS_DEV1000
 
 
 def queue_eval(
@@ -519,7 +530,7 @@ def pin_and_eval_rules(camp: Campaign, sd: ckpt.SaveDir, st: dict, decisions: in
             "decisions": gate_pin.decisions,
         }
         if g.eval_panel:
-            for v in C.EVAL_VARIANTS_DEV1000:
+            for v in _dev1000_variants(gate_pin.decisions):
                 queue_eval(camp, sd, st, gate_pin, panel=g.eval_panel, variant=v, reason=tag)
         camp.alarm(
             sd.root, f"{g.name}_READ",
@@ -813,7 +824,14 @@ def driver_lock(root: Path, *, wait_s: float) -> Iterator[bool]:
     """Hold ``driver.lock`` while a command reads and rewrites
     ``campaign_state.json``, so a timer pass and an operator command never
     overwrite each other's update. Yields False if it is still held after ``wait_s``."""
-    import fcntl  # the driver runs on Linux; the module imports anywhere
+    # The driver runs on the Linux training box under systemd (the timer, the
+    # e2e-lane@ units), reads /proc/meminfo and hashes the pin's .so files;
+    # `fcntl` is the least of what it needs from Linux, so no Windows lock.
+    # The guard also tells ty (which checks for the host's platform) that the
+    # code below never runs on Windows. The module still imports anywhere.
+    if sys.platform == "win32":
+        raise RuntimeError("the e2e driver runs on Linux (systemd), not Windows")
+    import fcntl
 
     root.mkdir(parents=True, exist_ok=True)
     with open(root / DRIVER_LOCK, "a", encoding="utf-8") as lock:

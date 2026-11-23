@@ -27,9 +27,9 @@
 //!   (`pending_deck_{transforms,enchants,upgrades}`) EXISTS and some handlers
 //!   use it (`whispering_hug`, `morphic_grove`); the leftover placeholder
 //!   handlers just aren't wired (`sts2-rs-m3n0g.2`).
-//! - **Multi-card-choice fan-out** (`request_card_choice`): still missing —
-//!   `SpiralingWhirlpool.observe` / `Symbiote.*` / `Waterlogged*` queue card
-//!   placeholders (was `6ynt.4.choice`; folded into `sts2-rs-m3n0g.2`/`.3`).
+//! - **Deck enchant picks**: `SpiralingWhirlpool.observe`, `Symbiote.approach`
+//!   and `WaterloggedScriptorium`'s quill/sponge queue `pending_deck_enchants`
+//!   (C# `FromDeckForEnchantment`), surfaced as a `card_select` (GH #1493).
 //! - **Relic lose-half** (`relics.pop` from an event): still deferred —
 //!   `RelicTrader.trade_*` ships only the gain-half (`sts2-rs-m3n0g.1`).
 //! - **`wongo_points` + customer-badge milestone**: still not modelled.
@@ -43,14 +43,12 @@
 use crate::cards::CardRarity;
 use sts2_core::cards::{CardId, CardType};
 use sts2_core::dotnet_rng::Rng;
-use sts2_core::{
-    CardReward, EventId, EventOptionInfo, EventOutcome, EventVarSpec, RelicId, Reward, RunState,
-};
+use sts2_core::{EventId, EventOptionInfo, EventOutcome, EventVarSpec, RelicId, Reward, RunState};
 
 use super::{
-    allowed_act_2_plus, any_enchantable_deck_card, default_option_info_from_spec,
-    future_of_potions_allowed, relic_trader_allowed, slippery_bridge_allowed,
-    stone_of_all_time_allowed, EventOptionSpec, EventSpec,
+    allowed_act_2_plus, default_option_info_from_spec, future_of_potions_allowed,
+    relic_trader_allowed, slippery_bridge_allowed, stone_of_all_time_allowed, EventOptionSpec,
+    EventSpec,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────
@@ -60,15 +58,6 @@ use super::{
 /// [`super::act1_overgrowth`]).
 fn lose_gold_saturating(state: &mut RunState, amount: i32) {
     state.gold = state.gold.saturating_sub(amount);
-}
-
-/// Queue a `Reward::Card(empty)` placeholder so the run-loop sees the
-/// event produced a card reward. Concrete card-pool resolution lives
-/// in the (future) reward dispatcher.
-fn queue_card_reward(state: &mut RunState) {
-    state
-        .pending_rewards
-        .push(Reward::Card(CardReward::empty()));
 }
 
 // ── RelicTrader ──────────────────────────────────────────────────────
@@ -528,11 +517,38 @@ pub const SLIPPERY_BRIDGE: EventSpec = EventSpec {
 pub const SPIRALING_WHIRLPOOL_HEAL_PCT: i32 = 33;
 
 fn spiraling_whirlpool_observe(state: &mut RunState) -> EventOutcome {
-    // Python enchants a deck card with Spiral. Enchant + card-choice
-    // deferred; queue a card-reward placeholder so the run-loop sees
-    // the intent.
-    queue_card_reward(state);
-    EventOutcome::finished("Queued enchant-with-Spiral reward.")
+    // C# `ObserveTheSpiral` (`SpiralingWhirlpool.cs:41-54`):
+    // `FromDeckForEnchantment(Spiral, 1, Spiral.CanEnchant, prefs 1)` — the
+    // player picks one Basic Strike/Defend — then `Enchant<Spiral>(card, 1)`.
+    let queued = crate::relics::shop_event::enchant_from_deck(
+        state,
+        sts2_core::cards::EnchantmentId::Spiral,
+        1,
+        1,
+    );
+    EventOutcome::finished(if queued {
+        "Pick a card to enchant with Spiral."
+    } else {
+        "Enchanted a card with Spiral."
+    })
+}
+
+/// C# `SpiralingWhirlpool.IsAllowed` (`SpiralingWhirlpool.cs:27-30`): some
+/// deck card passes `Spiral.CanEnchant` — the base `EnchantmentModel` filter
+/// (not Status/Curse/Quest, not Unplayable, unenchanted) AND a Basic card
+/// tagged Strike or Defend (`Spiral.cs:17-28`). Same in v0.107.1 and v0.113.1.
+fn spiraling_whirlpool_allowed(state: &RunState) -> bool {
+    let pool = crate::names::deck_card_spec_pool();
+    state.master_deck.iter().any(|c| {
+        crate::names::find_deck_card_spec(&pool, c.card_id).is_some_and(|spec| {
+            crate::enchantments::can_enchant_card(
+                &spec,
+                c,
+                sts2_core::cards::EnchantmentId::Spiral,
+                state.game_version,
+            )
+        })
+    })
 }
 
 /// The Drink heal the option advertises: `SPIRALING_WHIRLPOOL_HEAL_PCT`% of
@@ -597,8 +613,8 @@ const SPIRALING_WHIRLPOOL_OPTIONS: &[EventOptionSpec] = &[
 pub const SPIRALING_WHIRLPOOL: EventSpec = EventSpec {
     id: EventId::SpiralingWhirlpool,
     python_name: "SpiralingWhirlpool",
-    // C# `deck.Any(Spiral.CanEnchant)` — base enchant filter approximation.
-    is_allowed: any_enchantable_deck_card,
+    // C# `deck.Any(Spiral.CanEnchant)`: a Basic Strike/Defend (GH #1493).
+    is_allowed: spiraling_whirlpool_allowed,
     generate_options: spiraling_whirlpool_options,
     options: SPIRALING_WHIRLPOOL_OPTIONS,
 };
@@ -1216,19 +1232,43 @@ fn waterlogged_bloody_ink(state: &mut RunState) -> EventOutcome {
     EventOutcome::finished("Gained 6 Max HP.")
 }
 
+/// `WaterloggedScriptorium`'s `CardsVar(2)`: Prickly Sponge enchants two.
+pub const WATERLOGGED_SPONGE_CARDS: usize = 2;
+
 fn waterlogged_tentacle_quill(state: &mut RunState) -> EventOutcome {
+    // C# `TentacleQuill` (`WaterloggedScriptorium.cs:86-99`): lose 55g, then
+    // `FromDeckForEnchantment(Steady, 1, prefs 1)` → `Enchant<Steady>`.
     lose_gold_saturating(state, WATERLOGGED_QUILL_COST);
-    queue_card_reward(state);
-    EventOutcome::finished("Paid 55g, queued enchant-1-card-with-Steady reward.")
+    let queued = crate::relics::shop_event::enchant_from_deck(
+        state,
+        sts2_core::cards::EnchantmentId::Steady,
+        1,
+        1,
+    );
+    EventOutcome::finished(if queued {
+        "Paid 55g; pick a card to enchant with Steady."
+    } else {
+        "Paid 55g; enchanted a card with Steady."
+    })
 }
 
 fn waterlogged_prickly_sponge(state: &mut RunState) -> EventOutcome {
+    // C# `PricklySponge` (`WaterloggedScriptorium.cs:68-84`): lose the sponge
+    // gold, then `FromDeckForEnchantment(Steady, 1, prefs CardsVar = 2)` —
+    // exactly two picks — and `Enchant<Steady>` each.
     let cost = waterlogged_sponge_cost(state);
     lose_gold_saturating(state, cost);
-    queue_card_reward(state);
-    EventOutcome::finished(format!(
-        "Paid {cost}g, queued enchant-2-cards-with-Steady reward."
-    ))
+    let queued = crate::relics::shop_event::enchant_from_deck(
+        state,
+        sts2_core::cards::EnchantmentId::Steady,
+        1,
+        WATERLOGGED_SPONGE_CARDS,
+    );
+    EventOutcome::finished(if queued {
+        format!("Paid {cost}g; pick 2 cards to enchant with Steady.")
+    } else {
+        format!("Paid {cost}g; enchanted cards with Steady.")
+    })
 }
 
 fn waterlogged_options(state: &RunState, _spec: &EventSpec) -> Vec<EventOptionInfo> {
@@ -2196,20 +2236,163 @@ mod tests {
         assert_eq!(rs.max_hp, before + WATERLOGGED_INK_MAX_HP);
     }
 
-    #[test]
-    fn waterlogged_quill_spends_and_queues_reward() {
-        let mut rs = fresh();
-        run(&WATERLOGGED_SCRIPTORIUM, "tentacle_quill", &mut rs);
-        assert_eq!(rs.gold, 500 - WATERLOGGED_QUILL_COST);
-        assert_eq!(rs.pending_rewards.len(), 1);
+    /// An Ironclad `RunManager` with agent decisions on and `deck` as its
+    /// master deck, for driving the event's deck enchant pick end to end.
+    fn enchant_manager(deck: &[CardId]) -> sts2_core::run_manager::RunManager {
+        crate::cards::dispatch::ensure_installed();
+        let mut rm =
+            sts2_core::run_manager::RunManager::new(0, sts2_core::potions::CharacterId::Ironclad);
+        rm.run_state.set_agent_decisions();
+        rm.run_state.gold = 500;
+        rm.run_state.master_deck = deck
+            .iter()
+            .map(|&id| crate::cards::spec_index::card_pod_from_id(id, false).unwrap())
+            .collect();
+        rm
     }
 
+    fn enchant_stacks(
+        rm: &sts2_core::run_manager::RunManager,
+        ench: sts2_core::cards::EnchantmentId,
+    ) -> Vec<i32> {
+        let deck = rm.run_state.master_deck.iter();
+        deck.map(|c| c.enchantment(ench)).collect()
+    }
+
+    fn pick_enchant(rm: &mut sts2_core::run_manager::RunManager, idx: usize) {
+        use sts2_core::run_manager::{ActionResult, RunAction};
+        assert_eq!(
+            rm.take_action(RunAction::EnchantDeckCard { idx }),
+            ActionResult::Advanced
+        );
+    }
+
+    /// C# `TentacleQuill`: pay 55g, then `FromDeckForEnchantment(Steady, 1)`
+    /// (`WaterloggedScriptorium.cs:86-99`) — a pick-1 over the deck, not a
+    /// card reward.
     #[test]
-    fn waterlogged_sponge_spends_and_queues_reward() {
-        let mut rs = fresh();
-        run(&WATERLOGGED_SCRIPTORIUM, "prickly_sponge", &mut rs);
-        assert_eq!(rs.gold, 500 - WATERLOGGED_SPONGE_COST);
-        assert_eq!(rs.pending_rewards.len(), 1);
+    fn waterlogged_quill_spends_and_opens_a_steady_pick() {
+        use sts2_core::cards::EnchantmentId;
+        use CardId::{Bash, DefendIronclad as Defend, StrikeIronclad as Strike};
+        let mut rm = enchant_manager(&[Strike, Bash, Defend]);
+        run(
+            &WATERLOGGED_SCRIPTORIUM,
+            "tentacle_quill",
+            &mut rm.run_state,
+        );
+        assert_eq!(rm.run_state.gold, 500 - WATERLOGGED_QUILL_COST);
+        assert!(rm.run_state.pending_rewards.is_empty(), "no card reward");
+        assert_eq!(rm.run_state.pending_deck_enchants.len(), 1);
+        assert_eq!(
+            rm.run_state.pending_deck_enchants[0].enchantment,
+            EnchantmentId::Steady
+        );
+        assert!(!rm.run_state.pending_deck_enchants[0].optional);
+        // Steady has no `CanEnchant` override: every deck card is offered.
+        assert_eq!(rm.enchant_eligible_deck_indices(), vec![0, 1, 2]);
+        pick_enchant(&mut rm, 1);
+        assert!(rm.run_state.pending_deck_enchants.is_empty());
+        assert_eq!(enchant_stacks(&rm, EnchantmentId::Steady), [0, 1, 0]);
+    }
+
+    /// C# `PricklySponge`: pay 99g, then `FromDeckForEnchantment(Steady, 1,
+    /// CardSelectorPrefs(prompt, CardsVar = 2))` — exactly two picks
+    /// (`WaterloggedScriptorium.cs:68-84`).
+    #[test]
+    fn waterlogged_sponge_spends_and_opens_a_two_card_steady_pick() {
+        use sts2_core::cards::EnchantmentId;
+        use CardId::{Bash, DefendIronclad as Defend, StrikeIronclad as Strike};
+        let mut rm = enchant_manager(&[Strike, Bash, Defend, Strike]);
+        run(
+            &WATERLOGGED_SCRIPTORIUM,
+            "prickly_sponge",
+            &mut rm.run_state,
+        );
+        assert_eq!(rm.run_state.gold, 500 - WATERLOGGED_SPONGE_COST);
+        assert!(rm.run_state.pending_rewards.is_empty(), "no card reward");
+        assert_eq!(rm.run_state.pending_deck_enchants.len(), 2);
+        assert!(rm
+            .run_state
+            .pending_deck_enchants
+            .iter()
+            .all(|e| e.enchantment == EnchantmentId::Steady && !e.optional));
+        // Pick the last card, then the first: an enchanted card leaves the
+        // offer, so idx 0 still names deck slot 0.
+        pick_enchant(&mut rm, 3);
+        assert_eq!(rm.enchant_eligible_deck_indices(), vec![0, 1, 2]);
+        pick_enchant(&mut rm, 0);
+        assert!(rm.run_state.pending_deck_enchants.is_empty());
+        assert_eq!(enchant_stacks(&rm, EnchantmentId::Steady), [1, 0, 0, 1]);
+    }
+
+    /// `FromDeckForEnchantment` takes every eligible card without a screen
+    /// when `cards.Count <= MinSelect` (`CardSelectCmd.cs:691`): two cards
+    /// and the sponge's pick-2 enchant both at once.
+    #[test]
+    fn waterlogged_sponge_enchants_both_cards_of_a_two_card_deck_without_a_pick() {
+        use sts2_core::cards::EnchantmentId;
+        use CardId::{DefendIronclad as Defend, StrikeIronclad as Strike};
+        let mut rm = enchant_manager(&[Strike, Defend]);
+        run(
+            &WATERLOGGED_SCRIPTORIUM,
+            "prickly_sponge",
+            &mut rm.run_state,
+        );
+        assert!(rm.run_state.pending_deck_enchants.is_empty());
+        assert!(rm.run_state.pending_rewards.is_empty());
+        assert_eq!(enchant_stacks(&rm, EnchantmentId::Steady), [1, 1]);
+    }
+
+    /// C# `ObserveTheSpiral`: `FromDeckForEnchantment<Spiral>` pick-1 over
+    /// the cards `Spiral.CanEnchant` accepts — Basic AND tagged Strike or
+    /// Defend (`Spiral.cs:17-28`). Bash (Basic, untagged) and Perfected
+    /// Strike (Strike-tagged, Common) are not offered, so the C# index space
+    /// skips them.
+    #[test]
+    fn spiraling_whirlpool_observe_opens_a_spiral_pick_over_basic_strikes_and_defends() {
+        use sts2_core::cards::EnchantmentId;
+        use CardId::{Bash, DefendIronclad as Defend, PerfectedStrike, StrikeIronclad as Strike};
+        let mut rm = enchant_manager(&[Strike, Bash, PerfectedStrike, Defend]);
+        let outcome = run(&SPIRALING_WHIRLPOOL, "observe", &mut rm.run_state);
+        assert!(outcome.finished);
+        assert!(rm.run_state.pending_rewards.is_empty(), "no card reward");
+        assert_eq!(rm.run_state.pending_deck_enchants.len(), 1);
+        assert_eq!(
+            rm.run_state.pending_deck_enchants[0].enchantment,
+            EnchantmentId::Spiral
+        );
+        assert_eq!(rm.enchant_eligible_deck_indices(), vec![0, 3]);
+        pick_enchant(&mut rm, 1);
+        assert_eq!(enchant_stacks(&rm, EnchantmentId::Spiral), [0, 0, 0, 1]);
+    }
+
+    /// One Spiral-eligible card: the grid auto-takes it (`cards.Count <=
+    /// MinSelect`), no pick.
+    #[test]
+    fn spiraling_whirlpool_observe_enchants_the_only_eligible_card() {
+        use sts2_core::cards::EnchantmentId;
+        use CardId::{Bash, DefendIronclad as Defend, PerfectedStrike};
+        let mut rm = enchant_manager(&[Bash, PerfectedStrike, Defend]);
+        run(&SPIRALING_WHIRLPOOL, "observe", &mut rm.run_state);
+        assert!(rm.run_state.pending_deck_enchants.is_empty());
+        assert_eq!(enchant_stacks(&rm, EnchantmentId::Spiral), [0, 0, 1]);
+    }
+
+    /// C# `SpiralingWhirlpool.IsAllowed`: some deck card passes
+    /// `Spiral.CanEnchant` (`SpiralingWhirlpool.cs:27-30`) — the generic
+    /// enchantable gate let a deck with no Basic Strike/Defend through.
+    #[test]
+    fn spiraling_whirlpool_is_allowed_needs_an_unenchanted_basic_strike_or_defend() {
+        use sts2_core::cards::EnchantmentId;
+        use CardId::{Bash, PerfectedStrike, StrikeIronclad as Strike};
+        let rm = enchant_manager(&[Bash, PerfectedStrike]);
+        assert!(!(SPIRALING_WHIRLPOOL.is_allowed)(&rm.run_state));
+        let mut rm = enchant_manager(&[Bash, Strike]);
+        assert!((SPIRALING_WHIRLPOOL.is_allowed)(&rm.run_state));
+        rm.run_state.master_deck[1]
+            .enchantments
+            .push((EnchantmentId::Sharp, 1));
+        assert!(!(SPIRALING_WHIRLPOOL.is_allowed)(&rm.run_state));
     }
 
     #[test]
@@ -2551,21 +2734,6 @@ mod tests {
         assert_eq!(render(&rs), "Take 3 damage, reroll card.");
         rs.event_state.page = 9;
         assert_eq!(render(&rs), "Take 12 damage, reroll card.");
-    }
-
-    /// Kills `spiraling_whirlpool_observe -> Default::default()` (line 191):
-    /// observe queues a card-reward placeholder AND finishes; the default
-    /// outcome would skip the reward and leave `finished` false.
-    #[test]
-    fn spiraling_whirlpool_observe_queues_reward_and_finishes() {
-        let mut rs = fresh();
-        let outcome = spiraling_whirlpool_observe(&mut rs);
-        assert!(outcome.finished);
-        assert_eq!(
-            rs.pending_rewards.len(),
-            1,
-            "observe queues one card-reward placeholder"
-        );
     }
 
     /// Kills `wongo_featured -> Default::default()`: featured spends 200g AND

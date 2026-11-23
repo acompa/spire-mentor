@@ -85,6 +85,23 @@
   color: #fff6e2; -webkit-text-stroke: 3px #5c1d06; paint-order: stroke fill;
   transform: translateY(3px);
 }
+/* Dread run marker (GH #1346): a quiet two-line tag after the portrait, the
+   mode over the dominion in force */
+.gs-hud-dread {
+  display: inline-flex; flex-direction: column; justify-content: center; gap: 2px;
+  flex: 0 1 auto; min-width: 0; line-height: 1.1; white-space: nowrap;
+}
+.gs-hud-dread b {
+  font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: #8fd8e6; text-shadow: 0 1px 2px rgba(0,0,0,.7);
+}
+/* Blitz run marker (GH #1347): the same tag, in the green the game writes
+   the mode's name in (`PORTRAIT_GAME_MODE.blitz`) */
+.gs-hud-blitz b { color: #9be28a; }
+.gs-hud-dominion {
+  font-size: 12px; color: #c9d6dc; text-shadow: 0 1px 2px rgba(0,0,0,.7);
+  overflow: hidden; text-overflow: ellipsis;
+}
 /* stat groups: drawn icon with the big outlined numerals BESIDE it */
 .gs-hud-stat { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 9px; }
 .gs-hud-ico { display: block; flex: 0 0 auto;
@@ -910,6 +927,47 @@
   color: #fff; text-shadow: 0 2px 3px rgba(20,4,2,.95), 0 0 8px rgba(0,0,0,.65);
   font-variant-numeric: tabular-nums; }
 
+/* ---- the Fool's bow + quiver ----
+   fool_combat_ui.tscn, in the game's 1920x1080 frame: the bow (89x240) 23px
+   from the left with its foot 225px up, just over the energy orb; the arrows
+   in a row from x=117, 7px below the bow's top, odd ones flipped and 8px
+   higher. Each arrow (fool_arrow.tscn) is a 28-wide slot filling the
+   container's 196px height, its 33x260 art drawn keep-aspect-centred in it
+   (stretch_mode 5), so the art runs the slot's full height. Scaled by the orb's own ratio here (game ~120px, ours 102px),
+   so the pair keeps the game's proportions. */
+.gs-quiver { --q: 0.85; position: absolute; z-index: 4; pointer-events: auto;
+  left: calc(23px * var(--q)); bottom: 198px;
+  width: calc(270px * var(--q)); height: calc(240px * var(--q));
+  filter: drop-shadow(0 5px 8px rgba(0,0,0,.55)); }
+.gs-quiver-bow { position: absolute; left: 0; top: 0;
+  width: calc(89px * var(--q)); height: calc(240px * var(--q)); object-fit: contain;
+  user-select: none; }
+.gs-quiver-arrows { position: absolute; display: flex;
+  left: calc(94px * var(--q)); top: calc(7px * var(--q)); }
+.gs-quiver-arrow { position: relative; flex: none;
+  width: calc(28px * var(--q)); height: calc(196px * var(--q)); }
+.gs-quiver-arrow[hidden] { display: none; }
+.gs-quiver-arrow img { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; user-select: none;
+  transform-origin: 50% 50%; /* pivot_offset (14, 98) of the 28x196 slot */
+  transition: opacity .25s, transform .5s cubic-bezier(.16,1,.3,1); }
+.gs-quiver-flip { top: calc(-8px * var(--q)); }
+.gs-quiver-flip img { scale: 1 -1; }
+/* Shot: the arrow art fades out as it swells to 1.4x, leaving the dark outline as
+   the empty slot (NFoolArrowUi.UpdateVisuals). */
+.gs-quiver-arrow[data-status="away"] .gs-quiver-visual { opacity: 0; transform: scale(1.4); }
+
+/* ---- arrows stuck in an impaled enemy (impaled_arrow_vfx.tscn) ----
+   Centred on the body; the back layer sits before .gs-sprite-body in the DOM
+   (behind it), the front layer after it. */
+/* At the creature's origin: the wrap's bottom-centre is the ground line the rig
+   stands on. ImpaledArrows scales into scene px and moves to the anchor. */
+.gs-impaled { position: absolute; left: 50%; top: 100%;
+  width: 0; height: 0; pointer-events: none; transform-origin: 0 0; }
+.gs-impaled img, .gs-slot-arrows img { user-select: none; }
+.gs-slot-arrows { position: absolute; left: 0; top: 0; width: 0; height: 0;
+  transform-origin: 0 0; pointer-events: none; }
+
 /* ---- card ----------------------------------------------------------------
    Composited from the game's own card-template art (see CardFrame.tsx and
    sts2-wiki/scripts/extract_card_template.py). There is deliberately no CSS
@@ -934,9 +992,17 @@
   --gs-nerf: var(--hp);
 }
 .gs-card.gs-clickable { cursor: pointer; }
-.gs-card.gs-clickable:hover { transform: translateY(-8px); z-index: 20; }
+/* Only where a pointer can hover: a touchscreen keeps `:hover` on the last
+   card tapped, so on a phone the lift marked that card alone and read as "the
+   selection", while the earlier picks of a multi-pick sat flat (bug report
+   wb-ec92e56f79a9ba85). */
+@media (hover: hover) {
+  .gs-card.gs-clickable:hover { transform: translateY(-8px); z-index: 20; }
+}
 .gs-card.gs-dim { opacity: .5; }
-.gs-card.gs-played { transform: translateY(-8px); }
+/* A picked card (CardSelect's `best`) rises as well as glowing, so every pick
+   of a multi-pick stays visibly picked. */
+.gs-card.gs-played, .gs-card.gs-best { transform: translateY(-8px); }
 /* The frame has no rectangular edge to outline, so selection reads as a glow
    around the card's actual silhouette instead of a box around its bounds. */
 .gs-card.gs-played, .gs-card.gs-best {
@@ -1008,6 +1074,17 @@
   text-shadow: calc(var(--cw) * 0.0067) calc(var(--cw) * 0.0067) 0 rgba(0,0,0,.19);
 }
 .gs-card-star { --gs-cost-outline: #175561; }
+/* GH #1600: an enchanted card's tab (card.tscn `Enchantment`): the green
+   tab on the left edge, the enchantment's icon, and its amount in cream with
+   a dark-navy outline (the Label's font_color / font_outline_color). */
+.gs-card-enchant { position: absolute; inset: 0; pointer-events: none; }
+.gs-card-enchant .gs-card-enchant-tab { pointer-events: auto; cursor: help; }
+.gs-card-enchant .wb-term { text-decoration: none; }
+.gs-card-enchant-amount {
+  position: absolute; display: grid; place-items: center; line-height: 1;
+  color: #FFF6E2; -webkit-text-stroke: calc(var(--cw) * 0.016) #090F1C;
+  paint-order: stroke fill; font-family: var(--gs-font-number, inherit);
+}
 /* Can't pay for it right now. `NCard.UpdateEnergyCostVisuals` ->
    `GetCostTextColorInHand(CardCostColor.InsufficientResources)` is
    `StsColors.red` (#FF5555) over `StsColors.unplayableEnergyCostOutline`
@@ -1064,6 +1141,48 @@
 .gs-badge.gs-win { bottom: 4px; right: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); }
 .gs-badge.gs-win.gs-best { background: var(--accent-strong); color: var(--on-accent); border-color: transparent; }
 .gs-badge.gs-upg { top: 4px; right: 4px; background: oklch(62% 0.13 150); color: var(--on-accent); font-weight: 700; }
+
+/* A covered card's SPINE (Hand.tsx, on a phone once the fan is tight): the
+   card's name down the left edge the next card leaves showing, on a band in
+   the card type's colour, like a book on a shelf. The resting card's name
+   banner is centred and so sits under its neighbour; this is the only text a
+   crowded fan can show. It starts under the energy orb; Hand sets its length
+   (to the bottom of the visible strip) and the font size that fits the name.
+   0.17 of the card's width stays inside the fan's narrowest step (0.18). */
+.gs-card .gs-card-spine {
+  position: absolute; left: 0; top: calc(var(--cw) * 0.19); z-index: 4;
+  width: calc(var(--cw) * 0.17); line-height: calc(var(--cw) * 0.17);
+  writing-mode: vertical-rl; padding-top: calc(var(--cw) * 0.03); box-sizing: border-box;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-family: var(--game-font); font-weight: 700; color: #fff8ec;
+  text-shadow: 0 1px 0 rgba(0,0,0,.85), 0 0 3px rgba(0,0,0,.6);
+  border-radius: 0 calc(var(--cw) * 0.05) calc(var(--cw) * 0.05) 0;
+  box-shadow: 1px 0 3px rgba(0,0,0,.6), inset -1px 0 0 rgba(255,255,255,.18);
+  background: linear-gradient(90deg, var(--gs-spine), color-mix(in srgb, var(--gs-spine) 62%, #000));
+  pointer-events: none;
+}
+.gs-card-spine.gs-spine-attack { --gs-spine: #a43a2c; }
+.gs-card-spine.gs-spine-skill { --gs-spine: #2c6b82; }
+.gs-card-spine.gs-spine-power { --gs-spine: #b07f22; }
+.gs-card-spine.gs-spine-other { --gs-spine: #5b5462; }
+/* A badge inside the spine (Hand.tsx, when the fan's step has no room for it
+   beside the spine): an upright chip ahead of the name. */
+.gs-card-spine .gs-spine-step, .gs-card-spine .gs-spine-count {
+  display: inline-block; writing-mode: horizontal-tb; text-align: center;
+  line-height: 1.3; margin-bottom: .3em; border-radius: 999px; font-weight: 700;
+  text-shadow: none; vertical-align: middle;
+}
+.gs-card-spine .gs-spine-step { min-width: 1.3em; background: #f2c75c; color: #2b1b08;
+  box-shadow: 0 0 0 1px #2b1b08, 0 0 4px rgba(242,199,92,.8); }
+.gs-card-spine .gs-spine-step.gs-spine-step-alt { background: #d9d2c0; box-shadow: 0 0 0 1px #2b1b08; }
+.gs-card-spine .gs-spine-count { padding: 0 .2em; font-size: .85em; background: rgba(12,10,8,.82);
+  color: #fff8ec; box-shadow: 0 0 0 1px rgba(255,240,200,.45); }
+/* The game greens an upgraded card's title; the spine follows. */
+.gs-card-spine.gs-upgraded { color: #b6f08a; }
+/* "×N" on a slot that stands for N copies (`handStacks`). Its place on a phone
+   is phone.css's; this is the look. */
+.gs-badge.gs-count-tag { left: 4px; bottom: 4px; background: rgba(12,10,8,.82); color: #fff8ec;
+  border: 1px solid rgba(255,240,200,.45); font-weight: 700; }
 
 /* ---- hand ----------------------------------------------------------------
    The game's fan: one overlapping arced row rising out of the arena's bottom

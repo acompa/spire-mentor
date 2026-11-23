@@ -19,9 +19,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import build as _build
 from . import vocab as V
 
-DECOMP_VERSION = "v0.111.0"
+# The decompilation of each lane build: the v0.113.0 engine follows the v0.113.1
+# hotfix (GH #1535).
+DECOMPS = {"v0.111.0": "v0.111.0", "v0.113.0": "v0.113.1"}
+DECOMP_VERSION = DECOMPS[_build.GAME_VERSION]
 
 # kind -> the last part of the decomp's model namespace: its classes sit in
 # `*.Sts2.Core.Models.<part>/`, found by glob (`models_dir`), the way main's

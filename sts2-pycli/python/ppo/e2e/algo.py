@@ -775,6 +775,10 @@ class LossCfg:
     vf_coef: float = 0.5  # value loss = vf_coef · (V - target)²
 
 
+#: `LossRows` columns that may be None.
+_OPTIONAL_ROWS = ("teacher", "floor_p", "floor_w")
+
+
 @dataclass(eq=False)
 class LossRows:
     """Per-row loss inputs of one micro-chunk (all length-B tensors on one device).
@@ -783,6 +787,8 @@ class LossRows:
     the value target; both may be NaN outside ``pi`` and ``v``. ``beta`` and
     ``ks`` are `IterSchedule.beta_rows` / `ks_rows`. ``teacher`` is [B, A]
     (`pad_ragged`), NaN on rows without a teacher; None when no row has one.
+    ``floor_p`` is `IterSchedule.floor_rows` and ``floor_w`` its coefficient per
+    row; None when the floor is off.
     """
 
     n_classes: torch.Tensor  # int64
@@ -797,6 +803,10 @@ class LossRows:
     ks: torch.Tensor  # float32: teacher-term weight λ_KS
     dtype: torch.Tensor  # int64: decision type
     teacher: torch.Tensor | None = None  # float32 [B, A]
+    # GH #1541's probability floor: p per row (0 = none) and its coefficient.
+    # None (both): no row is floored.
+    floor_p: torch.Tensor | None = None  # float32
+    floor_w: torch.Tensor | None = None  # float32
 
     @classmethod
     def from_numpy(cls, device: Any = "cpu", **cols: Any) -> LossRows:
@@ -812,7 +822,7 @@ class LossRows:
         for k in cls.__dataclass_fields__:
             x = cols.get(k)
             if x is None:
-                if k != "teacher":
+                if k not in _OPTIONAL_ROWS:
                     raise KeyError(f"missing loss column {k!r}")
                 out[k] = None
                 continue
@@ -871,6 +881,8 @@ def ppo_losses(
     - entropy bonus (``pi`` rows): β · H / log(n_classes) over merged classes;
     - teacher term (``v`` rows with ks > 0 and a teacher):
       λ_KS · KL(π_T ‖ π_S). Its gradient equals the U0 cross-entropy H(π_T, π_S).
+    - probability floor (``pi`` rows with floor_p > 0, GH #1541):
+      floor_w · Σ_a max(0, log floor_p − log π(a)) over the row's classes.
 
     ``policy_on=False`` (V-warm) returns the value loss only; ``logits`` may
     then be None. Rows outside ``v`` are inert: their inputs (logits, value and
@@ -894,6 +906,10 @@ def ppo_losses(
         "n_v": vmf.sum().detach(),
         "vloss": vl_rows.sum().detach(),
     }
+    with torch.no_grad():  # the value loss per decision type (stats only)
+        dv = torch.where(v_m, rows.dtype.long(), torch.zeros_like(rows.dtype.long()))
+        st["n_v_t"] = torch.zeros(n_types, device=vt.device).index_add_(0, dv, vmf)
+        st["vloss_t"] = torch.zeros(n_types, device=vt.device).index_add_(0, dv, vl_rows)
     if not policy_on:
         return LossOut(vloss, st, denom)
     if logits is None:
@@ -958,7 +974,20 @@ def ppo_losses(
     tkf = t_ok.float()
     ks_rows = ks_w * kl_rows * tkf
 
-    loss = vloss + (pl_rows.sum() - eb_rows.sum() + ks_rows.sum()) / denom
+    # Probability floor: a hinge on log π of each class below floor_p.
+    if rows.floor_p is not None and rows.floor_w is not None:
+        fp = torch.where(pi_m, rows.floor_p.float(), zero)
+        fw = torch.where(pi_m, rows.floor_w.float(), zero)
+        f_on = (fp > 0) & (fw > 0)
+        gap = (torch.log(fp.clamp_min(1e-30))[:, None] - lp_all).clamp_min(0.0)
+        gap = torch.where(cmask & f_on[:, None], gap, torch.zeros_like(gap))
+        fl_rows = fw * gap.sum(-1)
+        fl_below = (gap > 0).float().sum(-1)
+        flf = f_on.float()
+    else:
+        fl_rows = fl_below = flf = zero
+
+    loss = vloss + (pl_rows.sum() - eb_rows.sum() + ks_rows.sum() + fl_rows.sum()) / denom
 
     with torch.no_grad():
         k3 = (ratio - 1.0) - d  # KL(π_prox ‖ π_θ) estimate at the taken action
@@ -980,6 +1009,9 @@ def ppo_losses(
                 "ks_kl": (kl_rows * tkf).sum(),
                 "ks_ce": (ce_rows * tkf).sum(),
                 "ks_loss": ks_rows.sum(),
+                "n_fl": flf.sum(),
+                "fl_loss": fl_rows.sum(),
+                "fl_below": fl_below.sum(),
                 "n_pi_t": torch.zeros(n_types, device=vt.device).index_add_(0, dt, pim),
                 "ent_t": torch.zeros(n_types, device=vt.device).index_add_(0, dt, h * pim),
                 "kl_t": torch.zeros(n_types, device=vt.device).index_add_(0, dt, k3 * pim),
@@ -992,7 +1024,8 @@ def stats_means(sums: Mapping[str, Any]) -> dict[str, Any]:
     """Means of `ppo_losses` stats summed over chunks, minibatches and ranks.
 
     Scalar sums are divided by their row counts (n_v, n_pi or n_ks); the
-    per-type vectors (``*_t``) by n_pi_t, NaN where a type had no rows.
+    per-type vectors (``*_t``) by n_pi_t (``vloss_t`` by n_v_t), NaN where a type
+    had no rows.
     """
 
     def f(x: Any) -> np.ndarray:
@@ -1012,7 +1045,11 @@ def stats_means(sums: Mapping[str, Any]) -> dict[str, Any]:
     for k in ("ks_kl", "ks_ce", "ks_loss"):
         if k in sums:
             out[k] = float(f(sums[k]) / n_ks) if n_ks > 0 else math.nan
-    for k in ("n_v", "n_pi", "n_ks", "n_ks_missing"):
+    n_fl = f(sums.get("n_fl", 0.0))
+    for k in ("fl_loss", "fl_below"):
+        if k in sums:
+            out[k] = float(f(sums[k]) / n_fl) if n_fl > 0 else math.nan
+    for k in ("n_v", "n_pi", "n_ks", "n_ks_missing", "n_fl"):
         if k in sums:
             out[k] = int(f(sums[k]))
     if "n_pi_t" in sums:
@@ -1022,6 +1059,11 @@ def stats_means(sums: Mapping[str, Any]) -> dict[str, Any]:
                 if k in sums:
                     out[k] = np.where(cnt > 0, f(sums[k]) / cnt, np.nan)
         out["n_pi_t"] = cnt
+    if "n_v_t" in sums and "vloss_t" in sums:  # per type over the value rows (n_v_t)
+        cnt = f(sums["n_v_t"])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out["vloss_t"] = np.where(cnt > 0, f(sums["vloss_t"]) / cnt, np.nan)
+        out["n_v_t"] = cnt
     return out
 
 
@@ -1217,28 +1259,46 @@ def param_groups(
     *,
     lr_trunk: float = DEFAULT.lr_trunk,
     lr_value: float = DEFAULT.lr_value,
+    lr_input: float | None = None,
+    input_roots: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
-    """Two AdamW groups by parameter-name prefix: "trunk" (everything else) and "value".
+    """AdamW groups by parameter name: "trunk" (everything else) and "value".
 
     The trunk side is the ID table, stems, trunk and policy heads; the value
     module's parameters are those whose name starts with a ``value_prefixes``
-    entry. Every trainable parameter lands in exactly one group (shared tensors
-    once, under their first name). Each group keeps its ``base_lr`` for `set_lr`.
+    entry. With ``lr_input`` set, a third group "input" comes first: the
+    parameters whose top-level name (the part before the first ".") is in
+    ``input_roots`` (`ppo.e2e.net.INPUT_ROOTS`), split off the trunk side. Every
+    trainable parameter lands in exactly one group (shared tensors once, under
+    their first name). Each group keeps its ``base_lr`` for `set_lr`.
     """
     pre = tuple(value_prefixes)
+    roots = frozenset(input_roots) if lr_input is not None else frozenset()
+    inp: list[torch.nn.Parameter] = []
     trunk: list[torch.nn.Parameter] = []
     value: list[torch.nn.Parameter] = []
     for name, p in model.named_parameters():
-        if p.requires_grad:
-            (value if name.startswith(pre) else trunk).append(p)
+        if not p.requires_grad:
+            continue
+        if name.startswith(pre):
+            value.append(p)
+        elif name.split(".", 1)[0] in roots:
+            inp.append(p)
+        else:
+            trunk.append(p)
     if not value:
         raise ValueError(f"no parameter name starts with {pre}")
     if not trunk:
         raise ValueError("every parameter is in the value module")
-    return [
+    out = [
         {"params": trunk, "lr": lr_trunk, "base_lr": lr_trunk, "name": "trunk"},
         {"params": value, "lr": lr_value, "base_lr": lr_value, "name": "value"},
     ]
+    if lr_input is None:
+        return out
+    if not inp:
+        raise ValueError(f"lr_input is set but no parameter is under the input roots {roots}")
+    return [{"params": inp, "lr": lr_input, "base_lr": lr_input, "name": "input"}, *out]
 
 
 def make_optimizer(
@@ -1246,12 +1306,81 @@ def make_optimizer(
     value_prefixes: Sequence[str] = ("value.",),
     *,
     cfg: ScheduleCfg = DEFAULT,
+    input_roots: Sequence[str] = (),
     weight_decay: float = 1e-4,
     **adamw: Any,
 ) -> torch.optim.AdamW:
-    """One AdamW (weight decay 1e-4) over `param_groups`, at the cfg's base lrs."""
-    groups = param_groups(model, value_prefixes, lr_trunk=cfg.lr_trunk, lr_value=cfg.lr_value)
+    """One AdamW (weight decay 1e-4) over `param_groups`, at the cfg's base lrs.
+
+    A group at lr 0 does not move: AdamW scales both its step and its decoupled
+    weight decay by the lr (`ScheduleCfg.lr_input`'s adapt phase freezes the trunk so).
+    """
+    groups = param_groups(
+        model,
+        value_prefixes,
+        lr_trunk=cfg.lr_trunk,
+        lr_value=cfg.lr_value,
+        lr_input=cfg.lr_input,
+        input_roots=input_roots,
+    )
     return torch.optim.AdamW(groups, lr=cfg.lr_trunk, weight_decay=weight_decay, **adamw)
+
+
+def load_opt_state(
+    opt: torch.optim.Optimizer,
+    saved: Mapping[str, Any],
+    model: torch.nn.Module,
+    value_prefixes: Sequence[str] = ("value.",),
+    *,
+    input_roots: Sequence[str] = (),
+) -> None:
+    """`opt.load_state_dict(saved)`, also across a change of `param_groups`' layout.
+
+    Optimizer state is keyed by position in the flat, group-ordered parameter list,
+    so a state saved with 2 groups ("trunk", "value") cannot load into 3 ("input",
+    "trunk", "value") or back. Then every saved position is mapped to its parameter
+    (the saved layout rebuilt from ``model`` and ``input_roots``) and the state moves
+    to that parameter's position in ``opt``; the groups keep ``opt``'s settings.
+    """
+    have = [g.get("name") for g in opt.param_groups]
+    was = [g.get("name") for g in saved["param_groups"]]
+    if was == have:
+        opt.load_state_dict(saved)  # type: ignore[arg-type]
+        return
+    layouts = {
+        False: param_groups(model, value_prefixes, input_roots=input_roots),
+        True: param_groups(model, value_prefixes, lr_input=0.0, input_roots=input_roots),
+    }
+    old = {g["name"]: g["params"] for g in layouts["input" in was]}
+    if set(was) != set(old):
+        raise ValueError(f"saved optimizer groups {was} are not a param_groups layout")
+    old_flat: list[torch.nn.Parameter] = []
+    for g in saved["param_groups"]:
+        ps = old[g["name"]]
+        if len(ps) != len(g["params"]):
+            raise ValueError(
+                f"saved group {g['name']!r} has {len(g['params'])} parameters, the model {len(ps)}"
+            )
+        old_flat.extend(ps)
+    saved_idx = [i for g in saved["param_groups"] for i in g["params"]]
+    by_param = {id(p): saved_idx[k] for k, p in enumerate(old_flat)}
+    state: dict[int, Any] = {}
+    groups: list[dict[str, Any]] = []
+    i = 0
+    for g in opt.param_groups:
+        idx = []
+        for p in g["params"]:
+            j = by_param[id(p)]
+            if j in saved["state"]:
+                st = saved["state"][j]
+                ea = st.get("exp_avg")
+                if ea is not None and tuple(ea.shape) != tuple(p.shape):
+                    raise ValueError(f"saved moments {tuple(ea.shape)} != {tuple(p.shape)}")
+                state[i] = st
+            idx.append(i)
+            i += 1
+        groups.append({k: v for k, v in g.items() if k != "params"} | {"params": idx})
+    opt.load_state_dict({"state": state, "param_groups": groups})
 
 
 def set_lr(opt: torch.optim.Optimizer, frac: float) -> dict[str, float]:

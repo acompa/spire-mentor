@@ -1,6 +1,8 @@
 // Pure data builders for the SimLab chart layer. Kept free of React/Plotly so
 // they can be unit-tested in isolation and reused across the chart components.
 
+import { t } from "../i18n";
+
 export interface SeriesInfo {
   /** The original bucket key this series came from. */
   key: string;
@@ -102,7 +104,7 @@ export function cdfPoints(values: number[]): { x: number[]; y: number[] } {
  */
 export function oneIn(p: number): string {
   if (!(p > 0) || p > 1) return "—";
-  if (p === 1) return "always";
+  if (p === 1) return t("always");
   const n = Math.round(1 / p);
-  return `1 in ${n.toLocaleString("en-US")}`;
+  return t("1 in {n}", { n: n.toLocaleString("en-US") });
 }

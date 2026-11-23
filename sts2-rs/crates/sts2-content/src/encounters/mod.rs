@@ -236,6 +236,55 @@ impl EncounterDef {
         }
     }
 
+    /// [`Self::roster`] in a run of game mode `mode` (GH #1346). The one
+    /// encounter whose `GenerateMonsters` reads `AscensionHelper.IsDread()`
+    /// is `TheKinBoss` (v0.113.0 `TheKinBoss.cs:72-113`): a Dread run adds a
+    /// third `KinFollower` ahead of the priest
+    /// ([`act1_overgrowth::THE_KIN_BOSS_DREAD`]). It has no randomizer, so
+    /// `rng` is untouched there, as it is for the standard roster.
+    #[must_use]
+    pub fn roster_in(
+        &self,
+        rng: &mut sts2_core::dotnet_rng::Rng,
+        mode: sts2_core::GameMode,
+    ) -> EncounterRoster {
+        if self.has_dread_roster(mode) {
+            return act1_overgrowth::THE_KIN_BOSS_DREAD
+                .iter()
+                .copied()
+                .collect();
+        }
+        self.roster(rng)
+    }
+
+    /// `true` for `THE_KIN_BOSS` in a Dread run: see [`Self::roster_in`].
+    const fn has_dread_roster(&self, mode: sts2_core::GameMode) -> bool {
+        mode.is_dread() && matches!(self.id.as_bytes(), b"THE_KIN_BOSS")
+    }
+
+    /// [`Self::slot_count`] in a run of game mode `mode`: `TheKinBoss.Slots`
+    /// gains `slot3` in Dread (`TheKinBoss.cs:28-48`), 4 slots instead of 3.
+    #[must_use]
+    pub const fn slot_count_in(&self, mode: sts2_core::GameMode) -> u8 {
+        if self.has_dread_roster(mode) {
+            4
+        } else {
+            self.slot_count()
+        }
+    }
+
+    /// [`Self::member_slots`] in a run of game mode `mode`: the Dread
+    /// `TheKinBoss` seats its three followers in `slot1..slot3` and the
+    /// priest in `leaderSlot`, the fourth (`TheKinBoss.cs:28-48`, `:72-113`).
+    #[must_use]
+    pub const fn member_slots_in(&self, mode: sts2_core::GameMode) -> &'static [u8] {
+        if self.has_dread_roster(mode) {
+            &[0, 1, 2, 3]
+        } else {
+            self.member_slots()
+        }
+    }
+
     /// Static / deterministic roster — the canonical permutation
     /// recorded in [`Self::monsters`], ignoring any randomizer. Used by
     /// no-RNG call sites (`sts2-cli list encounters`, parity fixture

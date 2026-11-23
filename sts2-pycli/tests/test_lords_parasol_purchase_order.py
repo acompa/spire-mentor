@@ -44,3 +44,24 @@ def test_parasol_buys_after_the_room_entry_hooks(game) -> None:
         "Dragon Fruit was bought before Maw Bank's gold: the purchase ran inside "
         "the room-entry hooks"
     )
+
+
+@pytest.mark.oracle
+def test_the_removal_parasol_bought_is_used(game) -> None:
+    # The shop's card removal Lord's Parasol buys is spent like a bought one:
+    # the game marks it used from its shop UI, which headless does not run,
+    # so the host offered it again for 100 gold (Spire Bench seed 170000025).
+    state = game.start(character="Ironclad", seed="parasol4")
+    game.skip_neow(state)
+    r = game.set_player(hp=50, max_hp=80, gold=500, relics=["LORDS_PARASOL"], potions=[])
+    assert r.get("type") != "error", r
+    state = game.enter_room("shop")
+    removed = 0
+    for _ in range(5):
+        if state.get("decision") != "card_select":
+            break
+        state = game.select_cards("0")
+        removed += 1
+    assert removed == 1, "Lord's Parasol buys the removal"
+    assert state.get("decision") == "shop", state.get("decision")
+    assert state.get("card_removal_cost") is None, "the removal is spent"

@@ -398,6 +398,26 @@ def _declines_optional_grant(rm: Any, action: dict[str, Any]) -> bool:
     return action.get("idx") == len(rm.card_grant_options())
 
 
+def _picks_on_an_up_to_n_screen(rm: Any, action: dict[str, Any]) -> bool:
+    """Whether `action` is ONE pick on a screen that takes any number of cards.
+
+    The run env plays an "up to N" screen (Sea Glass's grant grid, Kifuda's
+    enchant) one action per pick and closes it with a separate confirm. A
+    plain workbench ``select_cards`` is the WHOLE selection: the backend
+    confirms after it, so a brain driving the workbench could take one card
+    where the env it was trained in could take several (GH #1361). The
+    ``keep_open`` mark tells the backend to take the pick and wait.
+    """
+    if rm is None:
+        return False
+    kind = action.get("action")
+    if kind == "grant_deck_card":
+        return int(getattr(rm, "pending_card_grant_min", 1)) == 0
+    if kind == "enchant_deck_card":
+        return bool(getattr(rm, "pending_enchant_optional", False))
+    return False
+
+
 def to_workbench_verb(rm: Any, action: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """RunAction dict → the workbench's C#-shaped ``(verb, args)``.
 
@@ -450,7 +470,10 @@ def to_workbench_verb(rm: Any, action: dict[str, Any]) -> tuple[str, dict[str, A
     if kind == "confirm_deck_selection":
         return "skip_select", {}
     if kind in ("smith_card", "remove_deck_card") or kind in _PENDING_SELECT_KINDS:
-        return "select_cards", {"indices": str(action.get("idx"))}
+        args: dict[str, Any] = {"indices": str(action.get("idx"))}
+        if _picks_on_an_up_to_n_screen(rm, action):
+            args["keep_open"] = True
+        return "select_cards", args
     if kind == "shop_remove_card":
         return "select_cards", {"indices": str(action.get("deck_idx"))}
     if kind in ("rest_option", "event_choice", "pick_boss_relic"):

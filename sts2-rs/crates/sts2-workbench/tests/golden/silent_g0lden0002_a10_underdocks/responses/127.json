@@ -331,6 +331,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/corpse_slug/corpse_slug",
+    "rig_arrow_x": -3.0,
+    "rig_arrow_y": -74.0,
     "rig_bounds_h": 164.0,
     "rig_bounds_w": 232.0,
     "rig_scale": 0.23,
@@ -659,6 +661,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/silent/silent",
+   "rig_arrow_x": 0.0,
+   "rig_arrow_y": -146.0,
    "rig_bounds_h": 244.0,
    "rig_bounds_w": 244.0,
    "rig_scale": 0.29

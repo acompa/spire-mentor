@@ -222,6 +222,10 @@ class TimelineStore:
         # non-default build is carried here.
         if head.get("game_version"):
             ident["game_version"] = head["game_version"]
+        # GH #1346: a Dread run. Written only off standard, so its absence
+        # means a standard run.
+        if head.get("game_mode"):
+            ident["game_mode"] = head["game_mode"]
         return ident
 
     def replay_line(self, idx: int) -> list[dict[str, Any]] | None:

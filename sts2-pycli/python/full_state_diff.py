@@ -17,7 +17,10 @@ Osty, relics, the turn counter. On top of that it compares:
 * each hand card's affliction and its amount (a Bound split is visible on
   the step it happens, not at the later ``illegal_play`` reject; GH #1150),
 * every RNG stream cursor both engines report (a stream one read ahead is
-  visible even when the value it produced happened to match).
+  visible even when the value it produced happened to match),
+* in a Dread run (GH #1346), the combat's game mode and dominion and
+  ``WaterfallGiantDominion``'s two notes: its Explosive amount and the
+  encounter's ``IsWeak``.
 
 Monster move-state ids are not compared: the engines name moves differently
 (C# ``SHRINKER_MOVE``, Rust ``SHRINK``).
@@ -80,7 +83,38 @@ def project_csharp(get_state: dict[str, Any]) -> dict[str, Any]:
         ]
     )
     out["rng"] = {k: int(v) for k, v in (get_state.get("rng_counters") or {}).items()}
+    out["dread"] = _csharp_dread(get_state)
     return _drop_uncompared(out)
+
+
+def _csharp_dread(get_state: dict[str, Any]) -> dict[str, Any] | None:
+    """The Dread context of a C# ``get_state``
+    (``RunSimulator.AppendDreadCombatState``), or ``None`` when it names no
+    game mode: a run that is not Dread, or an oracle build that predates the
+    fields. ``None`` is not compared.
+
+    A null ``dread_explosive`` (the oracle could not read the game's amount)
+    stays ``None`` and so splits against the engine's number."""
+    if get_state.get("game_mode") is None:
+        return None
+    explosive = get_state.get("dread_explosive")
+    return {
+        "game_mode": str(get_state["game_mode"]),
+        "dominion": get_state.get("dominion"),
+        "explosive": None if explosive is None else int(explosive),
+        "weak_encounter": bool(get_state.get("dread_weak_encounter")),
+    }
+
+
+def _rust_dread(d: dict[str, Any]) -> dict[str, Any]:
+    """The same context off the engine wire, which carries each key only
+    when it is set (``sts2-wire`` ``emit/combat.rs``)."""
+    return {
+        "game_mode": str(d.get("game_mode") or "standard"),
+        "dominion": d.get("dominion"),
+        "explosive": int(d.get("dread_explosive") or 0),
+        "weak_encounter": bool(d.get("dread_weak_encounter")),
+    }
 
 
 def project_rust(combat_state: Any) -> dict[str, Any]:
@@ -111,6 +145,7 @@ def project_rust_dict(d: dict[str, Any]) -> dict[str, Any]:
         for c in (deck.get("hand") or [])
     ]
     out["rng"] = {k: int(v) for k, v in ((d.get("rng") or {}).get("counters") or {}).items()}
+    out["dread"] = _rust_dread(d)
     return _drop_uncompared(out)
 
 
@@ -141,9 +176,14 @@ def diff_full(cs: dict[str, Any], rs: dict[str, Any]) -> list[Divergence]:
     combat state does not track), and a missing key is a reporting gap, not
     a desync. A hand position holding an X-cost card (``None`` on the Rust
     side) skips the cost check. Hand afflictions are compared only when the
-    C# ``get_state`` reports them (older oracle builds do not).
+    C# ``get_state`` reports them (older oracle builds do not). The Dread
+    context is compared only when the C# ``get_state`` names a game mode
+    (:func:`_csharp_dread`).
     """
     shared = cs["rng"].keys() & rs["rng"].keys()
+    if cs.get("dread") is None:
+        cs = {k: v for k, v in cs.items() if k != "dread"}
+        rs = {k: v for k, v in rs.items() if k != "dread"}
     if cs.get("hand_afflictions") is None:
         cs = {k: v for k, v in cs.items() if k != "hand_afflictions"}
         rs = {k: v for k, v in rs.items() if k != "hand_afflictions"}

@@ -97,6 +97,9 @@ function measure(base) {
   for (const [track, side] of [[1, "left"], [2, "right"]]) {
     if (names.includes(`${side}/idle_loop`)) state.setAnimation(track, `${side}/idle_loop`, true);
   }
+  // Aeonglass's rings loop on track 1 (the game's NAeonGlassVfx); without it
+  // the second ring rests at its setup pose, beside the hourglass.
+  if (names.includes("_track1/rings_normal")) state.setAnimation(1, "_track1/rings_normal", true);
   skeleton.setToSetupPose();
   state.apply(skeleton);
   hideFx(skeleton);
@@ -107,26 +110,39 @@ function measure(base) {
 }
 
 const rows = new Map();
-// The shared tree, then each later build's art overlay (`v0.113.0/…`, the rigs
-// that build added), whose rows follow; a slug the shared tree has keeps its
-// row, as the backends' resolvers keep the shared rig.
+// The shared tree, then each later build's art overlay (`v0.113.0/…`), whose
+// rows follow. A slug new in the overlay gets a plain row. A slug the shared
+// tree already has is a re-export, which the resolvers serve for that build
+// (`/assets/v0.113.0/monster_rigs/mawler/mawler`): it gets a `<build>/<slug>`
+// row when its box differs, because a re-export can be drawn at another size
+// (the v0.113.0 Mawler is ~2x the v0.107.1 one, bug report wb-1aedd1a1059c2d2b).
 const overlays = fs.existsSync(IMAGES)
   ? fs.readdirSync(IMAGES).filter((d) => /^v\d/.test(d)).sort()
   : [];
-const roots = [...DIRS.map((d) => d), ...overlays.flatMap((o) => DIRS.map((d) => path.join(o, d)))];
-for (const dir of roots) {
+const roots = [
+  ...DIRS.map((d) => ({ dir: d, build: null })),
+  ...overlays.flatMap((o) => DIRS.map((d) => ({ dir: path.join(o, d), build: o }))),
+];
+/** Boxes whose size differs by more than 5%: a re-export redrawn at another
+ *  size, not an idle clip retimed by a pixel or two (the v0.113.0 Fogmog and
+ *  Ceremonial Beast move by under 1%). */
+const differs = (a, b) => ["w", "h"].some((k) => Math.abs(a[k] - b[k]) > 0.05 * Math.max(a[k], b[k]));
+for (const { dir, build } of roots) {
   const root = path.join(IMAGES, dir);
   if (!fs.existsSync(root)) continue;
   for (const slug of fs.readdirSync(root).sort()) {
-    if (rows.has(slug)) continue;
     const sub = path.join(root, slug);
     if (!fs.statSync(sub).isDirectory()) continue;
     const skel = fs.readdirSync(sub).find((f) => f.endsWith(".skel"));
     if (!skel) continue;
+    const shared = rows.get(slug);
+    if (shared && !build) continue;
     try {
-      rows.set(slug, measure(path.join(sub, skel.replace(/\.skel$/, ""))));
+      const box = measure(path.join(sub, skel.replace(/\.skel$/, "")));
+      if (!shared) rows.set(slug, box);
+      else if (differs(box, shared)) rows.set(`${build}/${slug}`, box);
     } catch (e) {
-      console.error(`skip ${slug}: ${e}`);
+      console.error(`skip ${build ? `${build}/` : ""}${slug}: ${e}`);
     }
   }
 }
@@ -156,9 +172,18 @@ export function rigSlug(rigBase: string | null | undefined): string {
   return tail;
 }
 
-/** The rig's idle box in rig units, or null when the rig is unknown here. */
+/** The build an overlay rig URL names (\`/assets/v0.113.0/monster_rigs/…\` ->
+ *  \`v0.113.0\`), or null for a shared-tree rig. */
+function rigBuild(rigBase: string): string | null {
+  return /(?:^|\\/)(v\\d+\\.\\d+\\.\\d+)\\//.exec(rigBase)?.[1] ?? null;
+}
+
+/** The rig's idle box in rig units, or null when the rig is unknown here. A
+ *  build's own re-export (keyed \`<build>/<slug>\`) wins over the shared rig. */
 export function rigBox(rigBase: string | null | undefined): RigBox | null {
-  return RIG_BOUNDS[rigSlug(rigBase)] ?? null;
+  const slug = rigSlug(rigBase);
+  const build = rigBase ? rigBuild(rigBase) : null;
+  return (build && RIG_BOUNDS[\`\${build}/\${slug}\`]) || RIG_BOUNDS[slug] || null;
 }
 `);
 console.error(`wrote ${OUT} (${rows.size} rigs)`);

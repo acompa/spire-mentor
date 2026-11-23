@@ -550,6 +550,13 @@ pub enum MonsterKind {
     SoulFysh,
     /// `LagavulinMatriarch` — HP 222 (fixed). Python id `LAGAVULIN_MATRIARCH`.
     LagavulinMatriarch,
+    /// v0.113.0 `Wuppy` (`Models.Monsters/Wuppy.cs`) — the Wuppy relic's
+    /// pet: HP 50 (`MinInitialHp == MaxInitialHp`, overridden at summon by
+    /// the relic's saved `MaxHp` / `CurrentHp`), one looping `NOTHING_MOVE`.
+    /// Player-side, never in `enemy_uids`. Left OUT of [`Self::ALL_KNOWN`]
+    /// (see [`Self::V0113_ONLY`]) so the sorted species tables the trained
+    /// nets embed keep their rows; appended last so no discriminant moves.
+    Wuppy,
 }
 
 /// Canonical starting-HP spec for a [`MonsterKind`]: either a fixed value
@@ -699,6 +706,15 @@ impl MonsterKind {
         Self::LagavulinMatriarch,
     ];
 
+    /// Species that exist only from game build v0.113.0 on and stay OUT of
+    /// [`Self::ALL_KNOWN`]: that list feeds `sts2_rs.monster_species()` and
+    /// the wire's `"monster"` registry, whose sorted positions are embedding
+    /// rows of trained nets (PPO `combat_ctx`, rollout nets), so a new
+    /// species there would shift every row after it. Name parsing
+    /// (`sts2-wire` `monster_kind_from_python_name`) chains this list on, as
+    /// `PowerKind::V0113_ONLY` is chained onto the power lookup.
+    pub const V0113_ONLY: &'static [Self] = &[Self::Wuppy];
+
     /// Python-name string for the parity exporter's `enemies[*].id` field.
     /// Mirrors `sts2_env/parity/bridge_replay.py:321`
     /// (`enemy.monster_id or "UNKNOWN"`).
@@ -838,6 +854,7 @@ impl MonsterKind {
             MonsterKind::WaterfallGiant => "WaterfallGiant",
             MonsterKind::SoulFysh => "SoulFysh",
             MonsterKind::LagavulinMatriarch => "LagavulinMatriarch",
+            MonsterKind::Wuppy => "Wuppy",
         }
     }
 
@@ -1462,6 +1479,9 @@ impl MonsterKind {
                 get_value_if_ascension(ascension, ToughEnemies, 233, 222),
                 get_value_if_ascension(ascension, ToughEnemies, 233, 222),
             ),
+            // v0.113.0 `Wuppy.cs`: `MinInitialHp => 50`, `MaxInitialHp => 50`.
+            // The relic overrides both at summon (`SetMaxHp` / `SetCurrentHp`).
+            MonsterKind::Wuppy => HpRoll::Range(50, 50),
         }
     }
 
@@ -1502,6 +1522,50 @@ impl MonsterKind {
             }
         }
         self.hp_roll(ascension)
+    }
+
+    /// The HP a Dread run adds to BOTH ends of this monster's range
+    /// (v0.113.0 `AscensionHelper.IsDread()`, GH #1346): `MinInitialHp =>
+    /// GetValueIfAscension(ToughEnemies, …) + (IsDread() ? N : 0)` with
+    /// `MaxInitialHp => MinInitialHp`. Three bosses carry one —
+    /// `CeremonialBeast.cs:55` (+30: 262 at A10 -> 292),
+    /// `LagavulinMatriarch.cs:49` (+22: 233 -> 255), `TheInsatiable.cs:58`
+    /// (+20: 341 -> 361). `0` for every other kind and outside Dread.
+    #[must_use]
+    pub const fn dread_hp_bonus(self, mode: crate::GameMode) -> i32 {
+        if !mode.is_dread() {
+            return 0;
+        }
+        match self {
+            MonsterKind::CeremonialBeast => 30,
+            MonsterKind::LagavulinMatriarch => 22,
+            MonsterKind::TheInsatiable => 20,
+            _ => 0,
+        }
+    }
+
+    /// [`Self::min_initial_hp_for`] in a run of `mode`
+    /// ([`Self::dread_hp_bonus`]).
+    #[must_use]
+    pub fn min_initial_hp_in(
+        self,
+        ascension: u8,
+        version: crate::GameVersion,
+        mode: crate::GameMode,
+    ) -> i32 {
+        self.min_initial_hp_for(ascension, version) + self.dread_hp_bonus(mode)
+    }
+
+    /// [`Self::max_initial_hp_for`] in a run of `mode`
+    /// ([`Self::dread_hp_bonus`]).
+    #[must_use]
+    pub fn max_initial_hp_in(
+        self,
+        ascension: u8,
+        version: crate::GameVersion,
+        mode: crate::GameMode,
+    ) -> i32 {
+        self.max_initial_hp_for(ascension, version) + self.dread_hp_bonus(mode)
     }
 
     /// Roll the monster's starting HP from its canonical range. Inclusive
@@ -1767,7 +1831,9 @@ pub fn roll_unique_max_hps(
 }
 
 /// [`roll_unique_max_hps`] for game build `version`: the same two passes over
-/// [`MonsterKind::starting_hp_unique_for`]'s per-version ranges.
+/// [`MonsterKind::starting_hp_unique_for`]'s per-version ranges, in a
+/// standard run. A caller that knows the run's game mode uses
+/// [`roll_unique_max_hps_in`].
 #[must_use]
 pub fn roll_unique_max_hps_for(
     kinds: &[MonsterKind],
@@ -1775,13 +1841,34 @@ pub fn roll_unique_max_hps_for(
     ascension: u8,
     version: crate::GameVersion,
 ) -> Vec<i32> {
+    roll_unique_max_hps_in(kinds, niche, ascension, version, crate::GameMode::Standard)
+}
+
+/// [`roll_unique_max_hps_for`] in a run of `mode`: a Dread run shifts the
+/// range of the bosses in [`MonsterKind::dread_hp_bonus`] (GH #1346). The
+/// `niche` reads are the same in either mode; `GameMode::Standard` is
+/// [`roll_unique_max_hps_for`] exactly.
+#[must_use]
+pub fn roll_unique_max_hps_in(
+    kinds: &[MonsterKind],
+    niche: &mut CombatRng,
+    ascension: u8,
+    version: crate::GameVersion,
+    mode: crate::GameMode,
+) -> Vec<i32> {
     use std::collections::HashSet;
     // Pass 1: raw rolls, side-wide exclusion of prior creatures' RAW MaxHp.
     let mut taken_raw: HashSet<i32> = HashSet::new();
     let raws: Vec<i32> = kinds
         .iter()
         .map(|&kind| {
-            let r = kind.starting_hp_unique_for(niche, &taken_raw, ascension, version);
+            let r = kind.starting_hp_unique_with_bonus_for(
+                niche,
+                &taken_raw,
+                ascension,
+                version,
+                kind.dread_hp_bonus(mode),
+            );
             taken_raw.insert(r);
             r
         })
@@ -1908,6 +1995,57 @@ impl MonsterKind {
         base
     }
 
+    /// [`Self::on_spawn_self_buff_amount`] in a run of `mode`: a Dread run
+    /// (v0.113.0 `AscensionHelper.IsDread()`, GH #1346) adds to two
+    /// `AfterAddedToRoom` amounts —
+    ///
+    /// * `Vantom.cs:62` `SlipperyAmt => GetValueIfAscension(ToughEnemies, 9,
+    ///   8) + (IsDread() ? 2 : 0)`: 9 at A10 -> 11;
+    /// * `TestSubject.cs:87` `EnrageAmount => GetValueIfAscension(
+    ///   DeadlyEnemies, 3, 2) + (IsDread() ? 1 : 0)`: 3 at A10 -> 4.
+    #[must_use]
+    pub fn on_spawn_self_buff_amount_in(
+        self,
+        power: crate::powers::PowerKind,
+        base: i32,
+        ascension: u8,
+        version: crate::GameVersion,
+        mode: crate::GameMode,
+    ) -> i32 {
+        use crate::powers::PowerKind;
+        let amount = self.on_spawn_self_buff_amount(power, base, ascension, version);
+        if !mode.is_dread() {
+            return amount;
+        }
+        amount
+            + match (self, power) {
+                (MonsterKind::Vantom, PowerKind::Slippery) => 2,
+                (MonsterKind::TestSubject, PowerKind::Enrage) => 1,
+                _ => 0,
+            }
+    }
+
+    /// The `AfterAddedToRoom` self-buffs only a Dread run applies, after
+    /// every [`Self::on_spawn_self_buffs`] one (v0.113.0, GH #1346): both
+    /// Kaiser Crab claws end with `if (PlatingAmount > 0) PowerCmd.Apply<
+    /// PlatingPower>(…, PlatingAmount, …)`, `PlatingAmount` being 14 in Dread
+    /// and 0 otherwise (`Crusher.cs:91-101`, `:129-132`; `Rocket.cs:66-76`,
+    /// `:107-110`).
+    #[must_use]
+    pub const fn dread_on_spawn_self_buffs(
+        self,
+        mode: crate::GameMode,
+    ) -> &'static [(crate::powers::PowerKind, i32)] {
+        use crate::powers::PowerKind;
+        if !mode.is_dread() {
+            return &[];
+        }
+        match self {
+            MonsterKind::Crusher | MonsterKind::Rocket => &[(PowerKind::Plating, 14)],
+            _ => &[],
+        }
+    }
+
     /// Per-species static buffs applied at creature spawn, at their A0
     /// amounts. Mirrors C# `AfterAddedToRoom` (originally ported from the
     /// tail of each `create_<monster>` factory in
@@ -1977,12 +2115,12 @@ impl MonsterKind {
             // the `monsters[0].powers.len` / `powers[*].kind` parity
             // buckets on FOGMOG trials).
             //
-            // TODO(o1mwv): this hardcodes the chained Minion rather
-            // than modeling `IllusionPower::AfterApplied`. The Illusion
-            // *revive* mechanic (IllusionPower.cs AfterDeath →
-            // REVIVE_MOVE heal-to-full + ShouldCreatureBeRemovedFrom-
-            // CombatAfterDeath) and Minion's secondary-enemy / non-
-            // fatal-death flags are NOT modeled — separate beads.
+            // Listing the chained Minion here is exact rather than a
+            // shortcut: Illusion is only ever applied at spawn (this arm
+            // and Parafright's), so `IllusionPower.AfterApplied` has no
+            // other caller to model. The revive lives in `combat_loop.rs`
+            // (Illusion corpse heal-to-full) and Minion's secondary-enemy
+            // rule in its victory check.
             MonsterKind::EyeWithTeeth => &[(PowerKind::Illusion, 1), (PowerKind::Minion, 1)],
             // C# `Byrdonis.cs:35` AfterAddedToRoom applies TerritorialPower(1)
             // to self. Territorial is a Counter Buff whose AfterTurnEnd grants
@@ -2185,7 +2323,7 @@ impl MonsterKind {
             // convention. (TheAdversaryMkOne is omitted — its C# applies
             // ArtifactPower(0), a no-op stack.)
             //   `Parafright.cs` → IllusionPower(1) — summoned by TheObscura
-            //   via spawn_enemy_at_front (auto-applies on-spawn buffs).
+            //   via spawn_enemy_in_slot (auto-applies on-spawn buffs).
             //   C# `IllusionPower.AfterApplied` (IllusionPower.cs:59-65)
             //   grants MinionPower(1) to any creature that gains Illusion
             //   without it, so the Parafright reads [Illusion, Minion] like

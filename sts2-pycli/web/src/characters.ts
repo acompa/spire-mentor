@@ -15,6 +15,24 @@ export function characterArt(key: string, rel: string): string {
   return since ? `${since}/${rel}` : rel;
 }
 
+/** Which `<char>_orb_layer_<n>.png` each layer of a character's energy orb
+ *  draws, bottom to top, as the game's
+ *  `scenes/combat/energy_counters/<char>_energy_counter.tscn` assigns them.
+ *  Not every character has five: the Necrobinder's orb is three layers, and
+ *  the Regent's has no layer 4 (its Layer4 and Layer5 nodes both draw
+ *  layer 5). Asking for a file the game never had 404s, and the art
+ *  placeholder then paints a grey hatched tile over the orb. */
+const ORB_LAYERS: Readonly<Record<string, readonly number[]>> = {
+  necrobinder: [1, 2, 3],
+  regent: [1, 2, 3, 5, 5],
+};
+
+/** The art paths of character `key`'s energy-orb layers, bottom to top. */
+export function energyOrbLayers(key: string): string[] {
+  return (ORB_LAYERS[key] ?? [1, 2, 3, 4, 5]).map((n) =>
+    characterArt(key, `ui/combat/energy_counters/${key}/${key}_orb_layer_${n}.png`));
+}
+
 /** `v0.113.0` -> [0, 113, 0]; unparsable parts read as 0. */
 function versionParts(v: string): number[] {
   return v.replace(/^v/, "").split(".").map((n) => Number.parseInt(n, 10) || 0);

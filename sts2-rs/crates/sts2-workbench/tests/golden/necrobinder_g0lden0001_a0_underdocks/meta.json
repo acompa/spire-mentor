@@ -1,6 +1,7 @@
 {
  "coverage": [
   "card_select:apply_retain_in_hand",
+  "card_select:enchant",
   "card_select:none",
   "card_select:remove",
   "card_select:remove|upgrade",
@@ -55,12 +56,12 @@
   "status:409"
  ],
  "engine": {
-  "src_hash": "60cab7da25b2ee48",
+  "src_hash": "6effe22e5a79f136",
   "version": "0.0.1"
  },
  "final_act": 1,
  "final_floor": 12,
- "full_responses": 58,
+ "full_responses": 61,
  "full_steps": 0,
  "patches": {
   "assets_base_url": "https://assets.test",
@@ -69,7 +70,7 @@
  },
  "python": "3.13",
  "reached_game_over": true,
- "requests": 185,
+ "requests": 191,
  "scenario": {
   "act1": "underdocks",
   "ascension": 0,
@@ -232,5 +233,5 @@
   ],
   "seed": "G0LDEN0001"
  },
- "steps_played": 126
+ "steps_played": 130
 }

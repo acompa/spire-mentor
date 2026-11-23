@@ -1,15 +1,34 @@
 import type { Advisor, Score } from "./api";
 
-/** The e2e student plays (and reads) only the run it was trained on. */
+/** The characters Instinct plays: the all-character student's five (GH #1197)
+ *  on the build it was trained on, and the Fool, whose own student plays
+ *  v0.113.0 (GH #1535). */
+export const E2E_CHARACTERS = ["Ironclad", "Silent", "Defect", "Regent", "Necrobinder", "Fool"] as const;
+/** The character Instinct falls back to when the picked one is not its. */
 export const E2E_CHARACTER = "Ironclad";
+/** The all-character student's build. */
 export const E2E_GAME_VERSION = "v0.111.0";
+/** The Fool's student's build. */
+export const E2E_FOOL_GAME_VERSION = "v0.113.0";
+
+/** Whether Instinct plays `character`. */
+export function isE2eCharacter(character: string): boolean {
+  return (E2E_CHARACTERS as readonly string[]).includes(character);
+}
+
+/** The build Instinct plays `character` on (its student's). */
+export function e2eGameVersion(character: string): string {
+  return character.trim().toLowerCase() === "fool" ? E2E_FOOL_GAME_VERSION : E2E_GAME_VERSION;
+}
 
 /** Whether the e2e student can advise a run of `character` on `gameVersion`
- *  played on `backend` (it reads Ironclad on v0.111.0, Rust engine only). */
+ *  played on `backend` (one of its characters on that student's build, Rust
+ *  engine only). */
 export function e2eAdvisable(
   e2eAvailable: boolean, character: string, gameVersion: string | null | undefined, backend = "rust",
 ): boolean {
-  return e2eAvailable && backend === "rust" && character === E2E_CHARACTER && gameVersion === E2E_GAME_VERSION;
+  return e2eAvailable && backend === "rust" && isE2eCharacter(character)
+    && gameVersion === e2eGameVersion(character);
 }
 
 /** localStorage key of the hand-played run's advisor preference. */

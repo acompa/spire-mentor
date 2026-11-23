@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import type { AdviceRow, RowKind } from "./rows";
+import { t } from "../i18n";
 
 const KIND_COLOR: Record<RowKind, string> = {
   attack: "oklch(64% 0.17 28)",
@@ -79,10 +80,12 @@ export default function AdviceList({ rows, showNumbers, plan }: {
               </span>
               <span className="wb-advice-label">{r.label}</span>
               <span className="wb-advice-verdict" style={{ color: VERDICT_COLOR[r.verdict] ?? "var(--muted)" }}>
-                {r.verdict}
+                {/* Closed set (marks.ts Verdict): t("Best"), t("Also good"), t("Then"),
+                    t("Okay"), t("Weak"), t("Mistake"), t("Unlikely"). */}
+                {r.verdict ? t(r.verdict) : ""}
               </span>
               {q && (
-                <span className="wb-advice-num" title="the engine's value: +1 a sure win, −1 a sure loss (the pick's; the others as a loss against it)"
+                <span className="wb-advice-num" title={t("the engine's value: +1 a sure win, −1 a sure loss (the pick's; the others as a loss against it)")}
                   style={{ color: qShown == null ? undefined : delta ? (qShown < -0.0005 ? "oklch(70% 0.15 30)" : "var(--muted)") : qColor(r.q!) }}>
                   {qShown == null ? "" : delta ? signed(qShown, 3) : signed(qShown, 2)}
                 </span>
@@ -95,14 +98,14 @@ export default function AdviceList({ rows, showNumbers, plan }: {
                   <span className="wb-advice-num">{pct == null ? "" : pct < 0.005 ? "<1%" : `${Math.round(pct * 100)}%`}</span>
                 </>
               )}
-              {wlt && <span className="wb-advice-wlt" title="rollout wins / losses / ties">{r.wlt ?? ""}</span>}
+              {wlt && <span className="wb-advice-wlt" title={t("rollout wins / losses / ties")}>{r.wlt ?? ""}</span>}
             </div>
           );
         })}
       </div>
       {(more > 0 || expanded) && (
         <button type="button" className="wb-advice-more" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "▴ show fewer" : `… ${more} more ▾`}
+          {expanded ? t("▴ show fewer") : t("… {n} more ▾", { n: more })}
         </button>
       )}
     </div>

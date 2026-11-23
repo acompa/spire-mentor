@@ -1,11 +1,11 @@
 {
- "agreed": true,
+ "agreed": false,
  "available": true,
- "band": "matched",
+ "band": "differed",
  "brain": "ppo",
- "champion_label": "Take Snakebite",
- "champion_prob": 0.9999,
- "margin": 0.0,
- "your_label": "Take Snakebite",
- "your_prob": 0.9999
+ "champion_label": "Choose: Dive into the Water",
+ "champion_prob": 0.9922,
+ "margin": 0.9844,
+ "your_label": "Choose: Grab the Sword",
+ "your_prob": 0.0078
 }

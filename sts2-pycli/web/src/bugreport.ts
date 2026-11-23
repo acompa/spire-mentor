@@ -33,6 +33,7 @@
 import type { BugReportDump } from "./api";
 import { LEGACY_GAME_VERSION, declaredGameVersion, gameVersionBody, runLogGameVersion } from "./gameVersion";
 import { apiFetch } from "./transport";
+import { t } from "./i18n";
 
 /** The engine build a report is stamped with when its session names none
  *  (mirrors `workbench/bugreport.py`'s constant). Since GH #801 the stamp is
@@ -57,6 +58,25 @@ export interface BugReportDeps {
   origin?: string;
   userAgent?: string;
   buildId?: string;
+  /** The window's CSS-px size and pixel ratio: a phone layout bug is
+   *  unreadable without it (wb-6ee07f3a2a54ba6c). */
+  viewport?: Viewport | null;
+}
+
+export interface Viewport {
+  width: number;
+  height: number;
+  dpr: number;
+}
+
+function currentViewport(): Viewport | null {
+  if (typeof window === "undefined") return null;
+  const vv = window.visualViewport;
+  return {
+    width: Math.round(vv?.width ?? window.innerWidth),
+    height: Math.round(vv?.height ?? window.innerHeight),
+    dpr: window.devicePixelRatio || 1,
+  };
 }
 
 function resolve(deps: BugReportDeps) {
@@ -66,6 +86,7 @@ function resolve(deps: BugReportDeps) {
     origin: deps.origin ?? (typeof location !== "undefined" ? location.origin : ""),
     userAgent: deps.userAgent ?? (typeof navigator !== "undefined" ? navigator.userAgent : ""),
     buildId: deps.buildId ?? import.meta.env?.VITE_BUILD_ID ?? "dev",
+    viewport: deps.viewport !== undefined ? deps.viewport : currentViewport(),
   };
 }
 
@@ -109,7 +130,7 @@ export async function buildBrowserDump(req: CaptureRequest, deps: BugReportDeps 
     try {
       step = await engine<{ state?: unknown }>(d.api, "GET", "/api/live/state");
     } catch {
-      throw new Error("nothing to capture");
+      throw new Error(t("nothing to capture"));
     }
     const { persist } = await engine<{ persist: Record<string, unknown> }>(d.api, "GET", "/api/live/persist");
     const map = await engine<unknown>(d.api, "GET", "/api/live/map").catch(() => null);
@@ -125,12 +146,12 @@ export async function buildBrowserDump(req: CaptureRequest, deps: BugReportDeps 
     engineBuild = declaredGameVersion(persist) ?? declaredGameVersion(step) ?? LEGACY_GAME_VERSION;
   } else if (req.mode === "replay") {
     const idx = req.step;
-    if (idx == null || idx < 0) throw new Error("nothing to capture");
+    if (idx == null || idx < 0) throw new Error(t("nothing to capture"));
     let step: { state?: unknown };
     try {
       step = await engine<{ state?: unknown }>(d.api, "GET", `/api/step/${idx}`);
     } catch {
-      throw new Error("nothing to capture");
+      throw new Error(t("nothing to capture"));
     }
     let log: { text: string } | null = null;
     if (req.run_path) {
@@ -159,6 +180,7 @@ export async function buildBrowserDump(req: CaptureRequest, deps: BugReportDeps 
   meta.workbench_commit = d.buildId;
   meta.host = d.origin;
   meta.user_agent = d.userAgent;
+  if (d.viewport) meta.viewport = d.viewport;
   return { schema_version: 1, meta, repro, state, ui, note: req.note ?? null };
 }
 
@@ -245,7 +267,7 @@ export async function loadReportIntoWorkbench(dump: BugReportDump, deps: BugRepo
     await engine(d.api, "POST", "/api/runs/put", { path, text: dump.repro.run_log });
     return { kind: "replay", path };
   }
-  throw new Error("this report carries no run to load");
+  throw new Error(t("this report carries no run to load"));
 }
 
 /** The live-game position a report carries — the mod's Copy-state message
@@ -268,7 +290,7 @@ export function reportGamePosition(dump: BugReportDump): Record<string, unknown>
  *  the import's fidelity report; throws when the dump carries no position. */
 export async function importReportPosition(dump: BugReportDump, deps: BugReportDeps = {}): Promise<unknown> {
   const pos = reportGamePosition(dump);
-  if (!pos) throw new Error("this report carries no game position");
+  if (!pos) throw new Error(t("this report carries no game position"));
   const d = resolve(deps);
   const step = await engine<{ import?: unknown }>(d.api, "POST", "/api/live/import-state", {
     payload: JSON.stringify(pos),

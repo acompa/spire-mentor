@@ -97,7 +97,7 @@ _TUPLE_HEAD_RE = re.compile(r'\(\s*"(\w+)",', re.S)
 def _closure_var_names(closure: str, source: str) -> set[str]:
     """Var names a ``vars_fn`` supplies, following one level of indirection.
 
-    Three shapes are in use and all three have to be read, or the gate reports
+    Four shapes are in use and all four have to be read, or the gate reports
     a wired option as unsupplied and someone "fixes" it by re-pinning it:
 
     * inline — ``|s| vec![("Gold", …)]``
@@ -105,9 +105,15 @@ def _closure_var_names(closure: str, source: str) -> set[str]:
       ``|s| relic_trader_vars(s, 0, "TopRelicOwned", "TopRelicNew")``
     * name owned by the builder — ``|s| ranwid_vars(s, true)``, where the
       literals live in ``fn ranwid_vars``.
+    * the builder passed by path — ``Some(abyssal_baths_damage_vars)``.
     """
     names = set(_TUPLE_HEAD_RE.findall(closure)) | set(re.findall(r'"(\w+)"', closure))
-    for helper in re.findall(r"\b(\w+)\s*\(\s*s\b", closure):
+    helpers = re.findall(r"\b(\w+)\s*\(\s*s\b", closure)
+    # A bare fn path — ``vars_fn: Some(abyssal_baths_damage_vars)`` — is a
+    # helper too; its literals live in its body.
+    if bare := re.fullmatch(r"\s*(\w+)\s*", closure):
+        helpers.append(bare.group(1))
+    for helper in helpers:
         body = re.search(rf"\nfn {helper}\((.*?)\n\}}", source, re.S)
         if body:
             names |= set(_TUPLE_HEAD_RE.findall(body.group(1)))

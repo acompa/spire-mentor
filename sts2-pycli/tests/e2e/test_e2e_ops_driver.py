@@ -693,3 +693,62 @@ def test_held_row_leak_is_quiet_on_the_algo_streams_and_fires_on_a_leak():
     first_overdue = next(r["it"] for r in rows[30:] if r["update"]["rows_overdue"])
     assert all(r["update"]["rows_overdue"] for r in rows if r["it"] >= first_overdue)
     assert _first_alarm(rows) == first_overdue + C.HELD_LEAK_ITERS - 1
+
+
+def test_lr_rule_accepts_a_row_in_the_lr_hold_phase() -> None:
+    import torch
+    from ppo.e2e import algo, learner
+    from ppo.e2e import schedules as S
+
+    cfg = S.ScheduleCfg(lr_hold_decisions=5_000_000)
+    net = torch.nn.ModuleDict({"trunk": torch.nn.Linear(2, 2), "value": torch.nn.Linear(2, 1)})
+    opt = algo.make_optimizer(net, ("value.",), cfg=cfg)
+    for d, held in ((0, True), (5_000_000, False)):
+        s = S.schedule_for(S.Clocks(it=50, decisions=d), 0.0, 1.0, S.EntropyCollapse(), cfg)
+        row = s.log_fields(applied=algo.set_lr(opt, s.lr_frac))
+        assert "decisions" in row
+        cf = learner.closed_form_lr(row, cfg)
+        assert (cf["trunk"] <= 0.0) is held
+        lr = {"trunk": row["lr_trunk"], "value": row["lr_value"]}
+        assert D.lr_problem({"lr": lr, "lr_closed_form": cf}) is None
+
+
+def test_lr_rule_accepts_a_frozen_trunk_with_a_moving_input_group() -> None:
+    """GH #1197 adapt phase: lr_trunk 0, lr_input > 0. The closed form carries the input
+    group, a row matching it passes, and an input lr off its closed form is caught."""
+    import torch
+    from ppo.e2e import algo, learner
+    from ppo.e2e import schedules as S
+
+    cfg = S.ScheduleCfg(lr_trunk=0.0, lr_input=5e-5)
+    net = torch.nn.ModuleDict(
+        {
+            "stem": torch.nn.Linear(2, 2),
+            "trunk": torch.nn.Linear(2, 2),
+            "value": torch.nn.Linear(2, 1),
+        }
+    )
+    opt = algo.make_optimizer(net, ("value.",), cfg=cfg, input_roots=("stem",))
+    s = S.schedule_for(S.Clocks(it=50, decisions=9), 0.0, 1.0, S.EntropyCollapse(), cfg)
+    row = s.log_fields(applied=algo.set_lr(opt, s.lr_frac))
+    cf = learner.closed_form_lr(row, cfg)
+    assert set(cf) == {"input", "trunk", "value"}
+    assert abs(cf["trunk"]) <= 0.0 < cf["input"]
+    lr = {g: row[f"lr_{g}"] for g in cf}
+    assert D.lr_problem({"lr": lr, "lr_closed_form": cf}) is None
+    assert D.lr_problem({"lr": dict(lr, input=lr["input"] * 1.01), "lr_closed_form": cf})
+    assert D.lr_problem({"lr": dict(lr, trunk=1e-9), "lr_closed_form": cf})
+
+
+def test_dev1000_reads_ema0999_from_the_switch_milestone_and_never_requeues_old_pins(camp):
+    """PREREG Amendment 10: a milestone before DEV1000_SWITCH_AT keeps its EMA0.996
+    request; the first one at or after it gets EMA0.999, and old pins get nothing new."""
+    sw = C.DEV1000_SWITCH_AT
+    before, at = sw - 2 * C.PIN_EVERY, sw
+    assert before % C.DEV2000_EVERY and at % C.DEV2000_EVERY  # both DEV-1000 milestones
+    ckpt.pin(camp.save, decisions=before + 64, reason="milestone", data=b"before")
+    ckpt.pin(camp.save, decisions=at + 64, reason="milestone", data=b"at")
+    camp.rows(1, decisions=at + C.PIN_MISSING_AFTER + 1)
+    camp.run()
+    got = sorted((r["decisions"], r["panel"], r["variant"]) for r in camp.queue())
+    assert got == [(before + 64, "DEV-1000", "ema0996"), (at + 64, "DEV-1000", "ema0999")]

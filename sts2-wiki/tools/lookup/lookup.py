@@ -38,8 +38,8 @@ def _version_key(name: str) -> tuple[int, ...]:
 # The game version lookups answer for when STS2_VERSION is unset. Pinned
 # rather than "highest data/ dir": data/v0.111.0 (the beta port, GH #786)
 # lacks the LLM-extracted per-entity folders (monsters/, cards/, ...) these
-# lookups read, and v0.107.1 stays the default until the version flip in
-# docs/plans/2026-10-17-multi-version-v0.111.md (section 7).
+# lookups read, so v0.107.1 stays the default here although the simulator's
+# default build is v0.111.0 (GH #1363). Move it when data/v0.111.0 has them.
 DEFAULT_VERSION = "v0.107.1"
 
 

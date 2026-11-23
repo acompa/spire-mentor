@@ -66,10 +66,12 @@ import re
 from collections.abc import Hashable, Iterable
 from typing import Any
 
+from . import build as _build
+
 #: Share of env steps the e2e env checks (plan §3.5, F9).
 SAMPLE_RATE = 0.01
-#: The build every e2e run must be on.
-EXPECTED_GAME_VERSION = "v0.111.0"
+#: The build every e2e run must be on: the lane build (`ppo.e2e.build`, GH #1535).
+EXPECTED_GAME_VERSION = _build.GAME_VERSION
 #: Ledger tier cadence: one combat call in this many also runs the ledger.
 LEDGER_EVERY = 4
 

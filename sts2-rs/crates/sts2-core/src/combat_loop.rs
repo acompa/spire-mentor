@@ -97,7 +97,13 @@ fn void_form_uids(state: &CombatState) -> smallvec::SmallVec<[crate::PowerUid; 2
 /// `combat_mirror::_undisclosed_power_counters` lists it and the transplant
 /// carries the mirror's accumulation forward. That is what makes the counter
 /// durable where the plain field was not.
+#[inline]
 fn bump_echo_form_series_tally(state: &mut CombatState) {
+    // No EchoForm in the arena (`present_kinds` superset): the uid list below
+    // is empty and this is a no-op; skip building it.
+    if !crate::hooks::power_kind_live(state, crate::powers::PowerKind::EchoForm) {
+        return;
+    }
     for uid in player_power_uids_of_kind(state, crate::powers::PowerKind::EchoForm) {
         if let Some(p) = state.powers.get_mut_by_id(uid.0) {
             p.counter = p.counter.saturating_add(1);
@@ -118,18 +124,32 @@ pub(crate) fn generate_extra_play_count(
     card_uid: crate::CardUid,
     target: Option<CreatureUid>,
 ) -> i32 {
-    let card = state.cards[card_uid.0.get() as usize - 1];
+    // Read the few fields this needs through a borrow rather than copying the
+    // whole 176-byte `Card` (a memcpy per play). `base_replay` is computed
+    // before any dispatch below runs, exactly as the old snapshot did.
+    let card = &state.cards[card_uid.0.get() as usize - 1];
+    let (card_id, card_type, card_tags) = (card.card_id, card.card_type, card.tags);
+    let base_replay =
+        card.base_replay_count.max(0) + crate::enchantment_hooks::enchant_play_count_bonus(card);
     let count_ctx = hooks::CardPlayCountCtx {
         owner: hooks::CreatureRef::Player,
-        card_id: Some(card.card_id),
+        card_id: Some(card_id),
         card_uid: Some(card_uid),
-        card_type: Some(card.card_type),
-        card_tags: card.tags,
+        card_type: Some(card_type),
+        card_tags,
         target,
     };
-    let base_replay =
-        card.base_replay_count.max(0) + crate::enchantment_hooks::enchant_play_count_bonus(&card);
-    let power_extra = hooks::dispatch_modify_card_play_count(state, &count_ctx);
+    // The power fold only walks when `present_kinds` meets
+    // `MODIFY_CARD_PLAY_COUNT_KINDS`, which is exactly the trigger set of
+    // `PowerHook::AfterModifyingCardPlayCount`; that hook's liveness bit is
+    // the same test as one AND, so a clear bit means the fold returns 0.
+    let power_extra =
+        if hooks::power_hook_live(state, hooks::PowerHook::AfterModifyingCardPlayCount) {
+            hooks::dispatch_modify_card_play_count(state, &count_ctx)
+        } else {
+            debug_assert_eq!(hooks::dispatch_modify_card_play_count(state, &count_ctx), 0);
+            0
+        };
     let live = relic_guarded_channel_live(state, GuardedChannel::RelicModifyCardPlayCount);
     let relic_extra = dispatch_if_live(state, live, 0, |state| {
         crate::relic_effects::dispatch_relic_modify_card_play_count(state, &count_ctx)
@@ -137,10 +157,10 @@ pub(crate) fn generate_extra_play_count(
     // Co-op Tag Team adds plays and is spent here (GH #1004).
     let tag_team = crate::coop::tag_team_extra_plays(state, &count_ctx);
     let after_count_ctx = hooks::CardCtx {
-        card_id: Some(card.card_id),
+        card_id: Some(card_id),
         card_uid: Some(card_uid),
-        card_tags: card.tags,
-        card_type: Some(card.card_type),
+        card_tags,
+        card_type: Some(card_type),
     };
     hooks::dispatch_after_modifying_card_play_count(state, &after_count_ctx);
     base_replay + power_extra + relic_extra + tag_team
@@ -199,7 +219,19 @@ fn reset_echo_form_series_tally(state: &mut CombatState) {
 /// close different seams: the carry is exact on the normal reconcile path, the
 /// counters survive a full re-seed where no transplant runs.
 #[must_use]
+#[inline]
 pub fn echo_form_first_in_series_this_turn(state: &CombatState) -> u32 {
+    // No EchoForm in the arena (`present_kinds` superset): no counter is
+    // carried, so the max below is the plain field.
+    if !crate::hooks::power_kind_live(state, crate::powers::PowerKind::EchoForm) {
+        return state.player.cards_first_in_series_this_turn;
+    }
+    echo_form_first_in_series_carried(state)
+}
+
+/// [`echo_form_first_in_series_this_turn`] with an EchoForm in the arena.
+#[inline(never)]
+fn echo_form_first_in_series_carried(state: &CombatState) -> u32 {
     let carried = player_power_uids_of_kind(state, crate::powers::PowerKind::EchoForm)
         .into_iter()
         .filter_map(|uid| state.powers.get_by_id(uid.0).map(|p| p.counter))
@@ -229,7 +261,15 @@ fn bump_void_form_play_tally(state: &mut CombatState) {
 /// from the hand-play path only ([`finish_card_play`], once per play
 /// iteration, like Brilliant Scarf's count) so Hellraiser / Havoc / Mayhem
 /// auto-plays leave it clear (act23 Ironclad seeds 2142 / 2019).
+///
+/// [`crate::RelicStore::owns`] is exactly "some non-melted relic of the kind"
+/// (debug-asserted there), so the scan is skipped only when it would match
+/// nothing.
+#[inline]
 fn bump_paels_eye_played(state: &mut CombatState) {
+    if !state.relics.owns(crate::RelicKind::PaelsEye) {
+        return;
+    }
     for r in &mut state.relics {
         if !r.is_melted && r.kind == crate::RelicKind::PaelsEye {
             r.counter |= 0b10;
@@ -443,7 +483,10 @@ pub fn start_combat(state: &mut CombatState) -> StepResult {
     // default is a structural no-op. Phase 6 splits the eight Python
     // event lists into separate fields and this assignment becomes
     // multi-line.
+    // Dread: the run layer's `IsWeak` note outlives the reset (GH #1346).
+    let dread_weak_encounter = state.combat_log.dread_weak_encounter;
     state.combat_log = crate::TurnEvents::default();
+    state.combat_log.dread_weak_encounter = dread_weak_encounter;
     // The reset above also clears the event log's opt-in flag, so re-assert it
     // for the ONE caller that cannot re-arm per combat: `STS2_COMBAT_LOG=1`.
     // Without this the env switch would print the first combat of a process
@@ -485,7 +528,22 @@ pub fn start_combat(state: &mut CombatState) -> StepResult {
     // primary_player relics). Phase 2 has no active
     // before_combat_start listeners; the dispatcher walks all
     // listeners but every per-listener fn is a no-op default.
+    // Dread (GH #1346): the dominion is the last `AfterRoomEntered`
+    // listener, behind every relic, and that walk precedes the monsters' own
+    // start powers and `BeforeCombatStart` (`CombatRoom.cs:200-234`). So a
+    // Dread combat fires the room-entry relics of the `before_combat_start`
+    // channel here, then the dominion, and the rest of the channel below.
+    let dread = state.dominion.is_some();
+    let dread_marks = dread.then(|| crate::dread::enemy_power_marks(state));
     ringing_triangle_after_room_entered_v0113(state);
+    if let Some(marks) = dread_marks {
+        let _ = crate::relic_effects::dispatch_before_combat_start_where(
+            state,
+            crate::dread::is_room_entry_relic,
+        );
+        crate::dread::after_room_entered_enemies(state, &marks);
+        crate::dread::after_room_entered_player(state);
+    }
     hooks::dispatch_before_combat_start(state, &CombatLifecycleCtx::default());
     // VitalSpark (Infested Prism) `BeforeCombatStart`: taint every player Skill
     // card (bead `…wb8lk.4`). Dedicated pass because the generic
@@ -509,7 +567,9 @@ pub fn start_combat(state: &mut CombatState) -> StepResult {
     // walk; the `relic_effects::*` channel carries the per-relic
     // listener bodies registered by `sts2-content`'s P7 pool beads.
     // Both must fire so future retrofits (bead `sts2-rs-01o`) light up.
-    let _ = crate::relic_effects::dispatch_before_combat_start(state);
+    let _ = crate::relic_effects::dispatch_before_combat_start_where(state, |id| {
+        !dread || !crate::dread::is_room_entry_relic(id)
+    });
     // Co-op: every teammate's own combat start, seated — their deck shuffle,
     // fresh log and orb slots, then their relics' `BeforeCombatStart`.
     crate::coop::each_teammate(state, |state| {
@@ -524,8 +584,21 @@ pub fn start_combat(state: &mut CombatState) -> StepResult {
             state.player.orbs = crate::orbs::OrbSlots::with_default_capacity();
         }
         ringing_triangle_after_room_entered_v0113(state);
-        let _ = crate::relic_effects::dispatch_before_combat_start(state);
+        if dread {
+            let _ = crate::relic_effects::dispatch_before_combat_start_where(
+                state,
+                crate::dread::is_room_entry_relic,
+            );
+            crate::dread::after_room_entered_player(state);
+        }
+        let _ = crate::relic_effects::dispatch_before_combat_start_where(state, |id| {
+            !dread || !crate::dread::is_room_entry_relic(id)
+        });
     });
+    // Dread: the dominion's `BeforeCombatStart` is the last of the first
+    // walk (`DominionModel.cs:82-92`), for each player in turn.
+    crate::dread::before_combat_start(state);
+    crate::coop::each_teammate(state, crate::dread::before_combat_start);
     // C# `Hook.BeforeCombatStart`'s second walk (Hook.cs:455-467, both
     // builds): `BeforeCombatStartLate` on every listener, after EVERY
     // player's `BeforeCombatStart` above (Petrified Toad's Rock lands after
@@ -1213,6 +1286,16 @@ fn spend_card_stars(state: &mut CombatState, idx: usize) -> i32 {
         state.cards[idx].set_combat_var(cards::VarKey::AutoPlayStarX, x + 1);
         return x;
     }
+    // A card with no base star cost spends none: `effective_star_cost_in_combat`
+    // returns 0 at its first test (`effective_star_cost` is 0 when the const
+    // base is). Skip the out-of-line call for the non-Regent majority.
+    if crate::card_base_star_cost(state.cards[idx].card_id) == 0 {
+        debug_assert_eq!(
+            crate::effective_star_cost_in_combat(state, &state.cards[idx]),
+            0
+        );
+        return 0;
+    }
     let star_cost = crate::effective_star_cost_in_combat(state, &state.cards[idx]);
     if star_cost > 0 {
         let _ = state.spend_card_play_stars(star_cost);
@@ -1344,6 +1427,20 @@ pub(crate) fn resume_after_relic_hand_draw_select(
     mut draw_count: i32,
     side_fired: bool,
 ) -> StepResult {
+    // Dread (GH #1346): `KnowledgeDemonDominion.BeforeHandDraw` is the last
+    // listener of the walk the relics just finished. Its Sloth-or-Amnesia
+    // screen parks the draw like a relic's select (Toolbox); the resume
+    // re-enters the relic walk past its end and lands back here.
+    if crate::dread::knowledge_demon_before_hand_draw(state) {
+        let side_fired = fire_side_turn_start_on_setup_pause(state, side_fired);
+        state.pending_relic_hand_draw_resume = Some((draw_count, u8::MAX, side_fired));
+        return setup_pause_or_combat_end(state);
+    }
+    // C# reads `Hook.ModifyHandDraw` only now, after every `BeforeHandDraw`
+    // (`CombatManager.cs:916-950`), so it sees an Amnesia just picked.
+    if crate::dread::knowledge_demon_first_turn(state) {
+        draw_count = turn_start_hand_draw_count(state);
+    }
     // C# `SetupPlayerTurn` reads `Hook.ModifyHandDraw` only AFTER
     // `BeforeHandDraw` returns (v0.111.0 `CombatManager.cs:905-907`, v0.107.1
     // `:654-656`). Rust computes it earlier, which is the same thing unless
@@ -1569,8 +1666,27 @@ pub(crate) fn finish_player_turn_setup(state: &mut CombatState, side_fired: bool
     // DemonForm's `AfterSideTurnStart` fires after the snapshot walk, so it sees
     // freshly-applied powers via the normal dispatch — no re-fire compensation
     // needed.
+    //
+    // Perf: the snapshot is read only by the cluster walk (which acts on
+    // `TURN_START_CLUSTER_KINDS` alone), by `run_auto_pre_play`'s Mayhem
+    // lookup (a cluster kind) and by the resume records the walk, Mayhem or
+    // the relic `AfterPlayerTurnStart` bus park. With no cluster kind anywhere
+    // in the arena (`present_kinds` is a superset of the live kinds) and that
+    // relic channel dead, none of them can see a difference: every snapshot
+    // entry falls through the walk, Mayhem is absent and nothing parks. Skip
+    // the copy then.
     let pre_autoplay_power_uids: smallvec::SmallVec<[crate::PowerUid; 8]> =
-        state.player_power_uids();
+        if crate::hooks::kinds_live(state, crate::hooks::KindGate::TurnStartCluster)
+            || relic_channel_live(state, PlannedChannel::AfterPlayerTurnStart)
+        {
+            state.player_power_uids()
+        } else {
+            debug_assert!(state.player_power_uids().iter().all(|u| state
+                .powers
+                .get_by_id(u.0)
+                .is_none_or(|p| !TURN_START_CLUSTER_KINDS.contains(p.kind))));
+            smallvec::SmallVec::new()
+        };
 
     // The enchantment turn-start channel (Imbued's turn-1 auto-play) is NOT
     // fired here: `Imbued.AfterAutoPrePlayPhaseEntered` (Imbued.cs:20) runs in
@@ -1740,6 +1856,48 @@ fn fire_side_turn_start_listeners(state: &mut CombatState, side: Side) {
     hooks::dispatch_after_side_turn_start_enemies(state, &ctx);
 }
 
+/// Every power kind [`run_after_player_turn_start_cluster`]'s snapshot walk or
+/// [`run_auto_pre_play`]'s Mayhem lookup acts on; the walk's catch-all arm
+/// skips every other kind. Pinned to the walk's arms by
+/// [`is_turn_start_cluster_kind`] and its drift test.
+pub(crate) const TURN_START_CLUSTER_KINDS: crate::PowerKindSet =
+    crate::PowerKindSet::from_kinds(&[
+        crate::PowerKind::Mayhem,
+        crate::PowerKind::Hibernate,
+        crate::PowerKind::RollingBoulder,
+        crate::PowerKind::Entropy,
+        crate::PowerKind::Tyranny,
+        crate::PowerKind::ToolsOfTheTrade,
+        crate::PowerKind::YouAreMine,
+        crate::PowerKind::Amnesia,
+        crate::PowerKind::Ecstasy,
+        crate::PowerKind::GodByrd,
+        crate::PowerKind::Inferno,
+        crate::PowerKind::Loop,
+        crate::PowerKind::SummonNextTurn,
+        crate::PowerKind::CrimsonMantle,
+    ]);
+
+/// The kinds with an arm of their own in the cluster walk's `match` (keep in
+/// step with it): its explicit arms plus the folded `AfterPlayerTurnStart`
+/// kinds.
+fn is_turn_start_cluster_kind(kind: crate::PowerKind) -> bool {
+    use crate::PowerKind as K;
+    matches!(
+        kind,
+        K::Mayhem
+            | K::Hibernate
+            | K::RollingBoulder
+            | K::Entropy
+            | K::Tyranny
+            | K::ToolsOfTheTrade
+            | K::YouAreMine
+            | K::Amnesia
+            | K::Ecstasy
+            | K::GodByrd
+    ) || hooks::is_folded_after_player_turn_start_kind(kind)
+}
+
 /// The `AfterPlayerTurnStart` auto-play cluster (RollingBoulder / Entropy /
 /// Tyranny / Tools / folded Inferno/Loop/SummonNextTurn/CrimsonMantle) + relic
 /// `AfterPlayerTurnStart` + Plasma passive + the `after_side_turn_start` walk +
@@ -1765,7 +1923,7 @@ fn run_after_player_turn_start_cluster(
     snapshot: smallvec::SmallVec<[crate::PowerUid; 8]>,
     start_idx: usize,
     resume_autoplay: Option<crate::PendingAutoplay>,
-    side_turn_start_fired: bool,
+    mut side_turn_start_fired: bool,
     mayhem_resume: Option<crate::PendingAutoplay>,
 ) -> StepResult {
     let ctx = hooks::TurnSideCtx::default();
@@ -1883,6 +2041,30 @@ fn run_after_player_turn_start_cluster(
                         .take(amount as usize)
                         .copied()
                         .collect();
+                    // With interactive turn-start picks (agent mode: the host's
+                    // `STS2_INTERACTIVE_TURN_START_PICKS`, and the game), a hand
+                    // larger than `Amount` is a real screen: the host's
+                    // `SignalledSelection` (and the game, always) raises
+                    // `SignalPlayerChoiceBegun`, which pauses `SetupPlayerTurn`.
+                    // `StartTurn` then runs `AfterSideTurnStart` (Furnace's
+                    // Forge) and Plasma before the pick transforms anything
+                    // (v0.111.0 `CombatManager.cs:779-785`). The options were
+                    // listed before the pause (`CardSelectCmd.cs:839`), hence
+                    // `targets` above. A forge onto a held Sovereign Blade must
+                    // land before Entropy transforms it, or Furnace mints a
+                    // fresh blade (GH #1642, Regent AP1000). `FromHand`'s
+                    // `Count <= MinSelect` fast path opens no screen. Parity mode
+                    // stays as is: the host's `EntropyAfterPlayerTurnStartPrefix`
+                    // auto-takes synchronously, with no pause.
+                    if state.interactive_turn_start_picks
+                        && state.player.hand.len() > amount as usize
+                    {
+                        side_turn_start_fired =
+                            fire_side_turn_start_on_setup_pause(state, side_turn_start_fired);
+                        if combat_is_ending(state) {
+                            return setup_pause_or_combat_end(state);
+                        }
+                    }
                     for t in targets {
                         let _ = crate::card_effects::transform_card_to_random(state, t);
                     }
@@ -2099,6 +2281,12 @@ fn run_after_player_turn_start_cluster(
                     }
                 }
             }
+            // v0.113.0 Dread `YouAreMinePower` / `AmnesiaPower`
+            // `.AfterPlayerTurnStart` (GH #1346).
+            crate::PowerKind::YouAreMine => {
+                crate::dread::you_are_mine_after_player_turn_start(state, uid);
+            }
+            crate::PowerKind::Amnesia => crate::dread::amnesia_after_player_turn_start(state),
             // v0.113.0 `EcstasyPower.AfterPlayerTurnStart`.
             crate::PowerKind::Ecstasy => {
                 let amount = state.powers.get_by_id(uid.0).map_or(0, |p| p.amount);
@@ -2116,7 +2304,7 @@ fn run_after_player_turn_start_cluster(
                     hooks::apply_effects(state, &effects);
                 }
             }
-            _ => {}
+            _ => debug_assert!(!is_turn_start_cluster_kind(kind)),
         }
         i += 1;
     }
@@ -2187,7 +2375,12 @@ pub(crate) fn run_turn_start_relic_tail(
     // still inside `SetupPlayerTurn`, so after the bus above (and after a
     // Gambling Chip pick) and before the side walk. The hook walks nothing
     // once the combat is ending (`Hook.cs:101`).
-    if !combat_is_ending(state) {
+    //
+    // Perf: with no Late listener the dispatch is a no-op, so that (pure)
+    // relic test comes before the (pure) `combat_is_ending` walk.
+    if crate::relic_effects::blood_vial::has_after_player_turn_start_late_listener(state)
+        && !combat_is_ending(state)
+    {
         crate::relic_effects::blood_vial::dispatch_after_player_turn_start_late(state);
     }
 
@@ -2338,20 +2531,25 @@ fn run_auto_pre_play(
     // `Hook.AfterAutoPrePlayPhaseEntered` walks `IterateCombatHookListeners`
     // too (empty once `IsOverOrEnding`, Hook.cs:101), so a turn-start kill
     // also skips the Bombardment and Mayhem auto-plays.
-    if !combat_is_ending(state) {
-        let auto_exhaust: smallvec::SmallVec<[crate::CardUid; 2]> = state
-            .player
-            .exhaust
-            .iter()
-            .copied()
-            .filter(|uid| {
-                let idx = uid.0.get() as usize - 1;
-                state
-                    .cards
-                    .get(idx)
-                    .is_some_and(|c| matches!(c.card_id, cards::CardId::Bombardment))
-            })
-            .collect();
+    //
+    // Perf: the exhaust scan is a pure read, so it runs before the (pure)
+    // `combat_is_ending` test, which only matters when a Bombardment is there
+    // to play. Same plays either way.
+    // A plain push loop rather than a filtered `collect`: the exhaust pile
+    // almost never holds a Bombardment, and `SmallVec::extend`'s
+    // reserve-then-fill prologue ran every turn start for nothing.
+    let mut auto_exhaust: smallvec::SmallVec<[crate::CardUid; 2]> = smallvec::SmallVec::new();
+    for &uid in &state.player.exhaust {
+        let idx = uid.0.get() as usize - 1;
+        if state
+            .cards
+            .get(idx)
+            .is_some_and(|c| matches!(c.card_id, cards::CardId::Bombardment))
+        {
+            auto_exhaust.push(uid);
+        }
+    }
+    if !auto_exhaust.is_empty() && !combat_is_ending(state) {
         for uid in auto_exhaust {
             // `CardCmd.AutoPlay` returns once `IsOverOrEnding` (CardCmd.cs:54),
             // so a lethal Bombardment leaves the next one unplayed.
@@ -2387,32 +2585,43 @@ fn run_auto_pre_play(
     // `StratagemPower.AfterShuffle` grid-select during the auto-play suspends via
     // `mayhem_phase` (after_side_turn_start has already fired, so it is not
     // re-fired on resume).
-    if !combat_is_ending(state) {
-        let mayhem_uid = snapshot.iter().copied().find(|u| {
+    //
+    // Perf: as for Bombardment, the snapshot lookup (a pure read) comes first
+    // and `combat_is_ending` is only evaluated for a live Mayhem.
+    // No Mayhem in the arena (`present_kinds` superset): the snapshot walk
+    // finds none.
+    let mayhem_uid = if crate::hooks::power_kind_live(state, crate::PowerKind::Mayhem) {
+        snapshot.iter().copied().find(|u| {
             state
                 .powers
                 .get_by_id(u.0)
                 .is_some_and(|p| p.kind == crate::PowerKind::Mayhem)
-        });
-        if let Some(mayhem_uid) = mayhem_uid {
-            let amount = state.powers.get_by_id(mayhem_uid.0).map_or(0, |p| p.amount);
-            if amount > 0 {
-                let ap = crate::PendingAutoplay {
-                    remaining: amount,
-                    collected: smallvec::SmallVec::new(),
-                    force_exhaust: false,
-                };
-                if let Some(susp) = auto_play_collect_suspending(state, ap) {
-                    state.pending_cluster_resume = Some(crate::PendingClusterResume {
-                        snapshot,
-                        idx: 0,
-                        autoplay: susp,
-                        side_turn_start_fired: true,
-                        mayhem_phase: true,
-                        relic_start: None,
-                    });
-                    return StepResult::PendingChoice;
-                }
+        })
+    } else {
+        debug_assert!(!snapshot.iter().any(|u| state
+            .powers
+            .get_by_id(u.0)
+            .is_some_and(|p| p.kind == crate::PowerKind::Mayhem)));
+        None
+    };
+    if let Some(mayhem_uid) = mayhem_uid {
+        let amount = state.powers.get_by_id(mayhem_uid.0).map_or(0, |p| p.amount);
+        if amount > 0 && !combat_is_ending(state) {
+            let ap = crate::PendingAutoplay {
+                remaining: amount,
+                collected: smallvec::SmallVec::new(),
+                force_exhaust: false,
+            };
+            if let Some(susp) = auto_play_collect_suspending(state, ap) {
+                state.pending_cluster_resume = Some(crate::PendingClusterResume {
+                    snapshot,
+                    idx: 0,
+                    autoplay: susp,
+                    side_turn_start_fired: true,
+                    mayhem_phase: true,
+                    relic_start: None,
+                });
+                return StepResult::PendingChoice;
             }
         }
     }
@@ -2436,7 +2645,11 @@ fn finish_turn_start_tail(state: &mut CombatState) -> StepResult {
     // the Late-tier Whispering Earring below. Both the cluster path and the
     // Mayhem-resume path reach here exactly once. The walk is empty once the
     // combat is ending (Hook.cs:101).
-    if !combat_is_ending(state) {
+    //
+    // Perf: the dispatch returns at once past turn 1, so test that (a pure
+    // read) before the pure `combat_is_ending`; past turn 1 neither order
+    // does anything.
+    if state.turn_number() <= 1 && !combat_is_ending(state) {
         crate::enchantment_hooks::dispatch_after_player_turn_start(state);
     }
     // An Imbued card's select prompts the player, and C# awaits each Imbued
@@ -2528,6 +2741,20 @@ pub(crate) fn finish_turn_start_after_imbued(state: &mut CombatState) -> StepRes
         state.pending_play_phase_tail = Some(crate::PlayPhaseTail::AfterPlayPhaseStart);
         return StepResult::PendingChoice;
     }
+    // Perf: with the `before_play_phase_start` channel dead nothing ran since
+    // the Step-10 check answered `Advanced` but the phase flip, which that
+    // check does not read. With the player standing and the combat not over,
+    // that `Advanced` came from (or left a state for) its pure fast path, so
+    // the re-check answers `Advanced` again without mutating: skip it.
+    if !live && !state.is_over && state.player.current_hp > 0 {
+        #[cfg(debug_assertions)]
+        if !state.enemy_uids.is_empty() {
+            let mut shadow = state.clone();
+            debug_assert_eq!(check_combat_end(&mut shadow), StepResult::Advanced);
+            debug_assert!(shadow.eq(state), "the skipped re-check mutated the state");
+        }
+        return finish_play_phase_start_after_recheck(state);
+    }
     finish_play_phase_start(state)
 }
 
@@ -2554,7 +2781,12 @@ pub(crate) fn finish_play_phase_start(state: &mut CombatState) -> StepResult {
             end => return end,
         }
     }
+    finish_play_phase_start_after_recheck(state)
+}
 
+/// [`finish_play_phase_start`] past its combat-end re-check: a setup
+/// VoidForm's end-turn request.
+fn finish_play_phase_start_after_recheck(state: &mut CombatState) -> StepResult {
     // A turn-start auto-played VoidForm (Whispering Earring, or a Mayhem
     // AutoPrePlay of the draw-pile top) called `PlayerCmd.EndTurn`
     // (VoidForm.cs:26) during setup: C# marks the player ready to end the
@@ -2810,6 +3042,15 @@ pub(crate) fn resume_player_turn_start_cluster(
 /// inside AutoPostPlay). Extracted from `end_player_turn_phase_one` so the
 /// Stampede stream/targeting tests can drive the exact production body.
 pub(crate) fn run_stampede_auto_post_play(state: &mut CombatState) -> bool {
+    // `present_kinds` is a superset of every live power kind: without a live
+    // Stampede the walks below find none and this returns false.
+    if !state
+        .powers
+        .present_kinds()
+        .contains(crate::PowerKind::Stampede)
+    {
+        return false;
+    }
     let stampede = state
         .player
         .powers
@@ -3062,37 +3303,7 @@ fn end_player_turn_phase_one_after_auto_post_play_stampede(state: &mut CombatSta
     // pile is snapshotted before the loop; force_exhaust=false routes the copy
     // to discard per the card's (empty) keyword set.
     {
-        let howl_exhaust: smallvec::SmallVec<[crate::CardUid; 2]> = state
-            .player
-            .exhaust
-            .iter()
-            .copied()
-            .filter(|uid| {
-                let idx = uid.0.get() as usize - 1;
-                state
-                    .cards
-                    .get(idx)
-                    .is_some_and(|c| matches!(c.card_id, cards::CardId::HowlFromBeyond))
-            })
-            .collect();
-        for uid in howl_exhaust {
-            // `CardCmd.AutoPlay` returns once `IsOverOrEnding` (CardCmd.cs:54,
-            // both builds): a lethal Howl leaves the next one in the exhaust
-            // pile, unplayed and uncounted (Pen Nib). `is_over` is not set
-            // until `check_combat_end` below.
-            if combat_is_ending(state) {
-                break;
-            }
-            if let Some(pos) = state.player.exhaust.iter().position(|&u| u == uid) {
-                // `EnergyValue` is read in the exhaust pile, before the move to
-                // Play (CardCmd.cs:115-126): Void Form leaves it alone there
-                // (loadout Regent 5225 v0.111.0: Intimidating Helmet).
-                stamp_out_of_hand_energy_value(state, uid);
-                state.player.exhaust.remove(pos);
-                state.player.play.push(uid);
-                resolve_auto_played_card(state, uid, /*force_exhaust=*/ false);
-            }
-        }
+        auto_play_howls_from_exhaust(state);
         // A lethal Howl ends combat during AutoPostPlay, before BeforeTurnEnd.
         match check_combat_end(state) {
             StepResult::Advanced => {}
@@ -3425,6 +3636,143 @@ fn run_rest_of_end_turn_chain(state: &mut CombatState) -> StepResult {
     StepResult::Advanced
 }
 
+/// The `HowlFromBeyond.AfterAutoPostPlayPhaseEntered` share of
+/// [`end_player_turn_phase_one`]: every Howl resting in the exhaust pile
+/// auto-plays, in pile order, until the combat is ending. The caller runs
+/// `check_combat_end` after it. Public for the e2e net's end-of-turn preview
+/// (`sts2_wire::emit::end_turn_live`, GH #1197).
+pub fn auto_play_howls_from_exhaust(state: &mut CombatState) {
+    let is_howl = |state: &CombatState, uid: &crate::CardUid| {
+        state
+            .cards
+            .get(uid.0.get() as usize - 1)
+            .is_some_and(|c| matches!(c.card_id, cards::CardId::HowlFromBeyond))
+    };
+    // The usual turn end has no Howl in the exhaust pile: the snapshot below
+    // would be empty and the loop would not run.
+    if !state.player.exhaust.iter().any(|uid| is_howl(state, uid)) {
+        return;
+    }
+    let howl_exhaust: smallvec::SmallVec<[crate::CardUid; 2]> = state
+        .player
+        .exhaust
+        .iter()
+        .copied()
+        .filter(|uid| is_howl(state, uid))
+        .collect();
+    for uid in howl_exhaust {
+        // `CardCmd.AutoPlay` returns once `IsOverOrEnding` (CardCmd.cs:54,
+        // both builds): a lethal Howl leaves the next one in the exhaust
+        // pile, unplayed and uncounted (Pen Nib). `is_over` is not set
+        // until the caller's `check_combat_end`.
+        if combat_is_ending(state) {
+            break;
+        }
+        if let Some(pos) = state.player.exhaust.iter().position(|&u| u == uid) {
+            // `EnergyValue` is read in the exhaust pile, before the move to
+            // Play (CardCmd.cs:115-126): Void Form leaves it alone there
+            // (loadout Regent 5225 v0.111.0: Intimidating Helmet).
+            stamp_out_of_hand_energy_value(state, uid);
+            state.player.exhaust.remove(pos);
+            state.player.play.push(uid);
+            resolve_auto_played_card(state, uid, /*force_exhaust=*/ false);
+        }
+    }
+}
+
+/// The hand cards C# `CombatManager.DoTurnEnd` exhausts as Ethereal, in hand
+/// order: Ethereal (or Hexed under a live Hex) and without a turn-end-in-hand
+/// effect. Public for the e2e net's end-of-turn preview
+/// (`sts2_wire::emit::end_turn_live`, GH #1197).
+#[must_use]
+pub fn turn_end_ethereal_cards(state: &CombatState) -> smallvec::SmallVec<[crate::CardUid; 8]> {
+    turn_end_hand_partition(state).0
+}
+
+/// C# `DoTurnEnd`'s one pass over the hand (v0.107.1 CombatManager.cs:1228-1248,
+/// v0.111.0 :1614-1631): `(ethereal, turn_end_cards)`, each in hand order. A
+/// turn-end-in-hand card goes to the second list only; any other card that is
+/// Ethereal at turn end goes to the first ([`turn_end_ethereal_cards`]).
+fn turn_end_hand_partition(
+    state: &CombatState,
+) -> (
+    smallvec::SmallVec<[crate::CardUid; 8]>,
+    smallvec::SmallVec<[crate::CardUid; 8]>,
+) {
+    // Perf 2026-07-04: `present_kinds` superset gate — no live Hex anywhere
+    // proves the uid walk below could never match (bit-identical skip).
+    let player_has_hex = state.powers.present_kinds().contains(crate::PowerKind::Hex)
+        && state.player.powers.iter().any(|puid| {
+            state
+                .powers
+                .get_by_id(puid.0)
+                .is_some_and(|p| p.kind == crate::PowerKind::Hex && p.amount > 0)
+        });
+
+    let mut ethereal = smallvec::SmallVec::new();
+    let mut turn_end = smallvec::SmallVec::new();
+    for &uid in &state.player.hand {
+        // `state.cards` is a 1-based arena (uid `1` -> index `0`). Some
+        // legacy unit-test fixtures push hand UIDs without a parallel
+        // `state.cards` entry; `.get()` keeps those callers panic-free.
+        let idx = uid.0.get() as usize - 1;
+        let Some(c) = state.cards.get(idx) else {
+            continue;
+        };
+        // GH #806: C# `CombatManager.DoTurnEnd` sorts the hand with
+        // `if (card.HasTurnEndInHandEffect) turnEndCards.Add(card);
+        // else if (Ethereal && ShouldEtherealTrigger) list.Add(card);`
+        // (v0.107.1 CombatManager.cs:1230-1240, v0.111.0 1616-1626).
+        // A turn-end-in-hand card is never swept here even when it is
+        // Ethereal (a Hexed Burn); its `OnTurnEndInHandWrapper` runs
+        // the effect and exhausts it afterwards (Step 3 below).
+        if has_turn_end_in_hand_effect(c.card_id) {
+            turn_end.push(uid);
+            continue;
+        }
+        // Bead `sts2-rs-ad53n`: per-instance `EtherealThisCombat`
+        // slot (set by MusicBox-style clone spawners) takes
+        // priority over the static CardId-keyed registry so a
+        // single Strike clone can be Ethereal without flipping
+        // the global registry for every Strike.
+        //
+        // Bead `sts2-rs-59atd`: `card_ethereal_inst` also honors an
+        // upgrade-aware `keyword_override` on the instance before
+        // falling back to the CardId registry.
+        if crate::card_effects::card_ethereal_inst(c)
+            || c.combat_var(crate::cards::VarKey::EtherealThisCombat) != 0
+            || (player_has_hex && card_is_hexed(c))
+        {
+            ethereal.push(uid);
+        }
+    }
+    (ethereal, turn_end)
+}
+
+/// Exhaust `uids` (from [`turn_end_ethereal_cards`]) as `DoTurnEnd`'s Ethereal
+/// sweep does, each with its exhaust listeners.
+pub fn exhaust_turn_end_ethereals(state: &mut CombatState, uids: &[crate::CardUid]) {
+    for &uid in uids {
+        // Each card is its own `CardCmd.Exhaust`, refused once the combat is
+        // ending (`CardCmd.cs:239`): a listener of an earlier card's exhaust
+        // (Charon's Ashes) can end it mid-sweep.
+        if !exhaust_may_begin(state) {
+            break;
+        }
+        // Move from hand -> exhaust. The unwrap is safe because the uids
+        // come from `turn_end_ethereal_cards` on this state with nothing
+        // run in between.
+        crate::cards::move_card(
+            &mut state.player,
+            uid,
+            crate::cards::PileKind::Hand,
+            crate::cards::PileKind::Exhaust,
+        )
+        .expect("uid was just observed in hand pile");
+        dispatch_ethereal_exhaust(state, uid);
+    }
+}
+
 /// The exhaust listeners for a card the end-of-turn ethereal rule just moved
 /// to the exhaust pile (`CardCmd.Exhaust(card, causedByEthereal: true)`).
 /// Shared by the DoTurnEnd ethereal sweep and the turn-end-in-hand wrapper's
@@ -3470,7 +3818,7 @@ fn dispatch_ethereal_exhaust(state: &mut CombatState, uid: crate::CardUid) {
 
 /// C# `CardModel.HasTurnEndInHandEffect`: the cards that override it to
 /// `true` (identical set in v0.107.1 and v0.111.0, minus the test-only mock).
-pub(crate) const fn has_turn_end_in_hand_effect(id: cards::CardId) -> bool {
+pub const fn has_turn_end_in_hand_effect(id: cards::CardId) -> bool {
     matches!(
         id,
         cards::CardId::Beckon
@@ -3593,16 +3941,6 @@ pub fn end_player_turn_phase_two(state: &mut CombatState) -> StepResult {
     // lives. A card that already carried another affliction (Tainted, Bound,
     // ...) is never Hexed and is not expelled. `HexPower` is a Single-stack
     // Debuff that persists until the applier dies. Source: `HexPower.cs`.
-    // Perf 2026-07-04: `present_kinds` superset gate — no live Hex anywhere
-    // proves the uid walk below could never match (bit-identical skip).
-    let player_has_hex = state.powers.present_kinds().contains(crate::PowerKind::Hex)
-        && state.player.powers.iter().any(|puid| {
-            state
-                .powers
-                .get_by_id(puid.0)
-                .is_some_and(|p| p.kind == crate::PowerKind::Hex && p.amount > 0)
-        });
-
     // Regret counts the hand in `BeforeSideTurnEnd` (Regret.cs:31-42), which
     // C# runs before `DoTurnEnd` exhausts Ethereal cards
     // (CombatManager.cs:1182-1243, same order in v0.111.0). Snapshot before
@@ -3618,84 +3956,18 @@ pub fn end_player_turn_phase_two(state: &mut CombatState) -> StepResult {
         .take()
         .unwrap_or_else(|| i32::try_from(state.player.hand.len()).unwrap_or(i32::MAX));
 
-    // Collect-then-mutate avoids the borrow conflict between iterating
-    // `state.player.hand` and mutating `state.player` via `move_card`.
-    let ethereal: smallvec::SmallVec<[crate::CardUid; 8]> = state
-        .player
-        .hand
-        .iter()
-        .copied()
-        .filter(|_| !do_turn_end_cut)
-        .filter(|uid| {
-            let idx = uid.0.get() as usize - 1;
-            state.cards.get(idx).is_some_and(|c| {
-                // GH #806: C# `CombatManager.DoTurnEnd` sorts the hand with
-                // `if (card.HasTurnEndInHandEffect) turnEndCards.Add(card);
-                // else if (Ethereal && ShouldEtherealTrigger) list.Add(card);`
-                // (v0.107.1 CombatManager.cs:1230-1240, v0.111.0 1616-1626).
-                // A turn-end-in-hand card is never swept here even when it is
-                // Ethereal (a Hexed Burn); its `OnTurnEndInHandWrapper` runs
-                // the effect and exhausts it afterwards (Step 3 below).
-                if has_turn_end_in_hand_effect(c.card_id) {
-                    return false;
-                }
-                // Bead `sts2-rs-ad53n`: per-instance `EtherealThisCombat`
-                // slot (set by MusicBox-style clone spawners) takes
-                // priority over the static CardId-keyed registry so a
-                // single Strike clone can be Ethereal without flipping
-                // the global registry for every Strike.
-                //
-                // Bead `sts2-rs-59atd`: `card_ethereal_inst` also honors an
-                // upgrade-aware `keyword_override` on the instance before
-                // falling back to the CardId registry.
-                crate::card_effects::card_ethereal_inst(c)
-                    || c.combat_var(crate::cards::VarKey::EtherealThisCombat) != 0
-                    || (player_has_hex && card_is_hexed(c))
-            })
-        })
-        .collect();
     // C# sorts the hand into `turnEndCards` and the Ethereal list in ONE
     // pass before any exhaust (v0.107.1 CombatManager.cs:1228-1248, v0.111.0
     // :1614-1631), so a turn-end-in-hand card a listener of an Ethereal
     // exhaust draws (Forgotten Soul kills an enemy -> Gremlin Horn draws a
     // Debt) is not in `turnEndCards`: it is just discarded with the hand.
     // Random-loadout Ironclad v0.111.0 seed 6369.
-    let turn_end_cards: smallvec::SmallVec<[crate::CardUid; 8]> = state
-        .player
-        .hand
-        .iter()
-        .copied()
-        .filter(|_| !do_turn_end_cut)
-        .filter(|uid| {
-            // `state.cards` is a 1-based arena (uid `1` -> index `0`). Some
-            // legacy unit-test fixtures push hand UIDs without a parallel
-            // `state.cards` entry; `.get()` keeps those callers panic-free.
-            let idx = uid.0.get() as usize - 1;
-            state
-                .cards
-                .get(idx)
-                .is_some_and(|card| has_turn_end_in_hand_effect(card.card_id))
-        })
-        .collect();
-    for uid in ethereal {
-        // Each card is its own `CardCmd.Exhaust`, refused once the combat is
-        // ending (`CardCmd.cs:239`): a listener of an earlier card's exhaust
-        // (Charon's Ashes) can end it mid-sweep.
-        if !exhaust_may_begin(state) {
-            break;
-        }
-        // Move from hand -> exhaust. The unwrap is safe because we
-        // collected the uid from the hand pile in this same scope
-        // and no intervening mutation has occurred.
-        crate::cards::move_card(
-            &mut state.player,
-            uid,
-            crate::cards::PileKind::Hand,
-            crate::cards::PileKind::Exhaust,
-        )
-        .expect("uid was just observed in hand pile");
-        dispatch_ethereal_exhaust(state, uid);
-    }
+    let (ethereal, turn_end_cards) = if do_turn_end_cut {
+        (smallvec::SmallVec::new(), smallvec::SmallVec::new())
+    } else {
+        turn_end_hand_partition(state)
+    };
+    exhaust_turn_end_ethereals(state, &ethereal);
 
     // Step 3: turn-end-in-hand effects (BURN / BECKON / BAD_LUCK / DEBT
     // / DECAY / DOUBT / REGRET / SHAME). Bead `sts2-rs-6ynt.3.1` ports
@@ -3995,7 +4267,17 @@ fn end_player_turn_phase_two_before_flush_late(state: &mut CombatState) -> StepR
     //   (d) The retain set is consumed in Step 5 (flush). Cleanup of
     //       both `retain_this_turn` and `pending_retain_count`
     //       happens after the flush.
-    if let Some(player_uid) = state.player.creature_uid {
+    //
+    // Only a pre-v0.111.0 WellLaidPlans adds to the budget (the scan below
+    // matches nothing else), and `present_kinds` is a superset of every live
+    // power kind: without a live WellLaidPlans, or on v0.111.0+, the scan
+    // leaves `pending_retain_count` as it is, so it is skipped.
+    let budget_scan_live = state.game_version < crate::GameVersion::V0_111_0
+        && state
+            .powers
+            .present_kinds()
+            .contains(crate::PowerKind::WellLaidPlans);
+    if let Some(player_uid) = state.player.creature_uid.filter(|_| budget_scan_live) {
         let mut budget: u32 = state.player.pending_retain_count;
         // Bead `sts2-rs-4zxc0`: post-au4l2 (commit 62d8c3ff)
         // `apply_power_to_player` routes through
@@ -4171,20 +4453,19 @@ fn end_player_turn_phase_two_flush_tail(state: &mut CombatState) -> StepResult {
     // rest flush to discard — the flat turn-start draw then lands on top.
     // Resolved per-instance via `card_retain_inst` so an upgrade-applied
     // RETAIN keyword (carried on `Card::keyword_override`) is honored.
-    {
-        let hand_snapshot: smallvec::SmallVec<[crate::CardUid; 16]> =
-            state.player.hand.iter().copied().collect();
-        for uid in hand_snapshot {
-            if retained.contains(&uid) {
-                continue;
-            }
-            // O(1) uid-indexed arena access (uid = index + 1, append-only
-            // arena); `c.uid == uid` filter preserves exact `find` semantics.
-            let idx = uid.0.get() as usize - 1;
-            if let Some(card) = state.cards.get(idx).filter(|c| c.uid == uid) {
-                if crate::card_effects::card_retain_inst(card) {
-                    retained.push(uid);
-                }
+    // The walk reads `hand` only (it pushes to `retained`), so it indexes the
+    // live hand instead of a snapshot.
+    for i in 0..state.player.hand.len() {
+        let uid = state.player.hand[i];
+        if retained.contains(&uid) {
+            continue;
+        }
+        // O(1) uid-indexed arena access (uid = index + 1, append-only
+        // arena); `c.uid == uid` filter preserves exact `find` semantics.
+        let idx = uid.0.get() as usize - 1;
+        if let Some(card) = state.cards.get(idx).filter(|c| c.uid == uid) {
+            if crate::card_effects::card_retain_inst(card) {
+                retained.push(uid);
             }
         }
     }
@@ -4225,22 +4506,7 @@ fn end_player_turn_phase_two_flush_tail(state: &mut CombatState) -> StepResult {
         // `sts2-rs-ymlf`, mirroring the Python pin `combat.py:1039-1043`)
         // was a fabrication vs C#; removed in q6bix coverage-sweep fix
         // (TINGSHA dealt 3/enemy on a bare `end_turn`, seed 249).
-        let to_discard: smallvec::SmallVec<[crate::CardUid; 16]> = state
-            .player
-            .hand
-            .iter()
-            .copied()
-            .filter(|uid| !retained.contains(uid))
-            .collect();
-        for uid in to_discard {
-            crate::cards::move_card(
-                &mut state.player,
-                uid,
-                crate::cards::PileKind::Hand,
-                crate::cards::PileKind::Discard,
-            )
-            .expect("uid was just observed in hand pile");
-        }
+        crate::cards::discard_hand_except(&mut state.player, &retained);
         // After flush: hand is exactly the retain set. Until Phase 6
         // grows the retain flags `retained` is empty, so hand becomes
         // empty — matching Python's `self.hand = list(retained)`.
@@ -4638,7 +4904,7 @@ pub(crate) fn resume_wlp_retain_flush(state: &mut CombatState) -> StepResult {
 /// through `cards::Card`.
 ///
 /// Bead `sts2-rs-6ynt.3.1`.
-fn execute_turn_end_in_hand_effect(
+pub fn execute_turn_end_in_hand_effect(
     state: &mut CombatState,
     card_uid: crate::CardUid,
     card_id: cards::CardId,
@@ -4902,15 +5168,33 @@ pub fn enemy_turn_start(state: &mut CombatState) -> StepResult {
     // when calling the dispatcher (which holds `&CombatState`) mid-walk.
     // Index-based to match the iteration order of `enemy_uids`
     // (canonical insertion order, also used by `iter_power_listeners`).
-    let alive_enemy_indices: smallvec::SmallVec<[usize; 8]> = state
-        .enemy_uids
-        .iter()
-        .filter_map(|uid| {
-            crate::creature_pos(&state.creatures, uid.0)
-                .filter(|&i| state.creatures[i].current_hp > 0)
-        })
-        .collect();
-    for idx in alive_enemy_indices {
+    // Snapshot first (block-clear hooks may change HP / the roster mid-walk),
+    // into a fixed stack buffer while the roster fits (the usual case): no
+    // SmallVec `extend` machinery. Same indices, same order.
+    let mut inline_buf = [0usize; 8];
+    let mut n_alive = 0usize;
+    let mut spill: Vec<usize> = Vec::new();
+    for uid in &state.enemy_uids {
+        if let Some(i) = crate::creature_pos(&state.creatures, uid.0)
+            .filter(|&i| state.creatures[i].current_hp > 0)
+        {
+            if n_alive < inline_buf.len() {
+                inline_buf[n_alive] = i;
+            } else {
+                if spill.is_empty() {
+                    spill.extend_from_slice(&inline_buf);
+                }
+                spill.push(i);
+            }
+            n_alive += 1;
+        }
+    }
+    let alive_enemy_indices: &[usize] = if spill.is_empty() {
+        &inline_buf[..n_alive]
+    } else {
+        &spill
+    };
+    for &idx in alive_enemy_indices {
         // Bead `sts2-rs-2e9q2`-follow-up: tag the cleared creature as this
         // enemy so the player's owner-scoped `after_block_cleared` arms
         // (BlockNextTurn / SelfFormingClay) do NOT fire on an enemy's
@@ -5121,28 +5405,33 @@ pub fn enemy_turn_exec(state: &mut CombatState) -> StepResult {
     // `state.enemy_uids` before the mutable per-enemy perform loop.
     // Iteration order matches `enemy_uids` (canonical insertion order,
     // also used by `iter_power_listeners`).
-    let acting_enemies: smallvec::SmallVec<[(CreatureUid, Option<Intent>); 8]> = state
-        .enemy_uids
-        .iter()
-        .filter_map(|uid| {
-            crate::creature_by_id(&state.creatures, uid.0)
-                .filter(|c| c.current_hp > 0 || is_acting_reattach_corpse(state, c))
-                .and_then(|c| match c.intent {
-                    Some(i) => Some((*uid, Some(i))),
-                    // A move can legitimately telegraph nothing: C# `MoveState`
-                    // takes `params AbstractIntent[]` and `DEAD_MOVE` passes
-                    // none, yet `Creature.TakeTurn` performs it anyway — that
-                    // no-op turn is what carries the corpse from DEAD to
-                    // REATTACH. Admit it on the strength of
-                    // `is_acting_reattach_corpse`, not on a fabricated
-                    // placeholder intent (which would then leak onto the wire).
-                    // An ordinary intent-less creature has simply not rolled a
-                    // move yet and is correctly skipped.
-                    None if is_acting_reattach_corpse(state, c) => Some((*uid, None)),
-                    None => None,
-                })
-        })
-        .collect();
+    // Perf 2026-11-18: a plain push loop instead of `filter_map().collect()`
+    // (the generic `extend` path cost more than the walk). Same entries,
+    // same order.
+    let mut acting_enemies: smallvec::SmallVec<[(CreatureUid, Option<Intent>); 8]> =
+        smallvec::SmallVec::new();
+    for uid in &state.enemy_uids {
+        let Some(c) = crate::creature_by_id(&state.creatures, uid.0) else {
+            continue;
+        };
+        if !(c.current_hp > 0 || is_acting_reattach_corpse(state, c)) {
+            continue;
+        }
+        match c.intent {
+            Some(i) => acting_enemies.push((*uid, Some(i))),
+            // A move can legitimately telegraph nothing: C# `MoveState`
+            // takes `params AbstractIntent[]` and `DEAD_MOVE` passes
+            // none, yet `Creature.TakeTurn` performs it anyway — that
+            // no-op turn is what carries the corpse from DEAD to
+            // REATTACH. Admit it on the strength of
+            // `is_acting_reattach_corpse`, not on a fabricated
+            // placeholder intent (which would then leak onto the wire).
+            // An ordinary intent-less creature has simply not rolled a
+            // move yet and is correctly skipped.
+            None if is_acting_reattach_corpse(state, c) => acting_enemies.push((*uid, None)),
+            None => {}
+        }
+    }
 
     // Step 2.5: IllusionPower revive (sts2-rs-vvi6g). A creature that
     // died while carrying `IllusionPower` does NOT leave combat — C#
@@ -5263,7 +5552,7 @@ pub fn enemy_turn_exec(state: &mut CombatState) -> StepResult {
     // advance live in [`run_enemy_perform_walk`] so a mid-turn blocking player
     // choice (KnowledgeDemon CURSE_OF_KNOWLEDGE) can suspend and resume the
     // walk at the monster it stopped on.
-    run_enemy_perform_walk(state, acting_enemies, 0)
+    run_enemy_perform_walk(state, &acting_enemies, 0)
 }
 
 /// The per-enemy perform walk of [`enemy_turn_exec`], resumable at
@@ -5302,7 +5591,7 @@ pub fn enemy_turn_exec(state: &mut CombatState) -> StepResult {
 /// move as the monster's current move exactly like C#.
 fn run_enemy_perform_walk(
     state: &mut CombatState,
-    acting_enemies: smallvec::SmallVec<[(CreatureUid, Option<Intent>); 8]>,
+    acting_enemies: &[(CreatureUid, Option<Intent>)],
     start_index: usize,
 ) -> StepResult {
     // Step 3: per alive enemy, perform their current intent; check
@@ -5449,7 +5738,7 @@ fn run_enemy_perform_walk(
             // snapshot must stay live for the (possible) next iteration and
             // for the resumed walk. Only paid on suspend.
             state.pending_enemy_exec_resume = Some(crate::PendingEnemyExecResume {
-                acting: acting_enemies.clone(),
+                acting: smallvec::SmallVec::from_slice(acting_enemies),
                 next_index: slot,
             });
             return StepResult::PendingChoice;
@@ -5518,7 +5807,7 @@ pub(crate) fn resume_enemy_turn_exec(state: &mut CombatState) -> StepResult {
     let Some(parked) = state.pending_enemy_exec_resume.take() else {
         return StepResult::Advanced;
     };
-    let walk = run_enemy_perform_walk(state, parked.acting, parked.next_index);
+    let walk = run_enemy_perform_walk(state, &parked.acting, parked.next_index);
     if !matches!(walk, StepResult::Advanced) {
         // Either combat ended mid-walk, or a LATER monster raised its own
         // blocking choice (a second KnowledgeDemon in one roster) and re-parked.
@@ -5902,6 +6191,11 @@ fn perform_intent(
                 .iter_mut()
                 .find(|c| c.id == enemy_uid.0 && c.current_hp > 0)
             {
+                // The escape is the creature's last move: a fled creature
+                // reads apart from a killed one (C# `EscapedCreatures`
+                // membership; `GremlinMercNormal.CalculateGoldProportion`
+                // asks whether the FatGremlin fled, GH #1766).
+                c.intent_history.record(Intent::Escape);
                 c.current_hp = 0;
                 // Bead `sts2-rs-RP15`: count the flee for the combat gold-reward
                 // proportion (C# `CombatState.EscapedCreatures`; the reward is
@@ -6418,6 +6712,56 @@ fn osty_redirect_target(state: &CombatState, props: ValueProps) -> Option<Creatu
     has_die_for_you.then_some(pet_uid)
 }
 
+/// Set the Wuppy relic's combat counter (its saved `CurrentHp`, C#
+/// `DisplayAmount`) to the pet's HP: `Wuppy.AfterCurrentHpChanged`. The run
+/// layer's combat exit flushes the counter into `relic_counters[Wuppy]`.
+pub fn sync_wuppy_relic_counter(state: &mut CombatState, hp: i32) {
+    if let Some(r) = state
+        .relics
+        .iter_mut()
+        .find(|r| r.kind == crate::RelicKind::Wuppy)
+    {
+        r.counter = hp;
+    }
+}
+
+/// v0.113.0 Wuppy pre-block redirect target — C#
+/// `WuppysLoyaltyPower.ModifyPreBlockDamageTarget` (`Powers/WuppysLoyaltyPower.cs`)
+/// folded through `Hook.ModifyPreBlockDamageTarget`, which `CreatureCmd.Damage`
+/// asks BEFORE the target's block is touched (`CreatureCmd.cs:315`, v0.113.1).
+/// A **powered** attack whose original target is the pet's owner goes to a
+/// living Wuppy instead. Returns the Wuppy's index in `state.creatures`.
+///
+/// The owner is the run's own player (seat 0): a co-op teammate seated for
+/// [`hit_allies`] owns no Wuppy here. Only called from
+/// [`apply_damage_to_player`], whose target is always the seated player.
+fn wuppy_redirect_target(state: &CombatState, props: ValueProps) -> Option<usize> {
+    if !props.is_powered() || state.coop.seated != 0 {
+        return None;
+    }
+    // A redirect needs a live `WuppysLoyalty` power; the presence set is a
+    // superset of the live kinds, so a clear bit means the scan finds none.
+    if !hooks::power_kind_live(state, crate::PowerKind::WuppysLoyalty) {
+        debug_assert!(wuppy_redirect_scan(state).is_none());
+        return None;
+    }
+    wuppy_redirect_scan(state)
+}
+
+/// The creature scan behind [`wuppy_redirect_target`].
+fn wuppy_redirect_scan(state: &CombatState) -> Option<usize> {
+    state.creatures.iter().position(|c| {
+        c.species == Some(crate::MonsterKind::Wuppy)
+            && c.current_hp > 0
+            && c.powers.iter().any(|u| {
+                state
+                    .powers
+                    .get_by_id(u.0)
+                    .is_some_and(|p| p.kind == crate::PowerKind::WuppysLoyalty)
+            })
+    })
+}
+
 /// Player-targeted damage application. Mirrors
 /// `damage::apply_damage` (which targets enemies only at this Rust pin)
 /// but writes HP / block to `state.player` instead of a creature in
@@ -6532,9 +6876,11 @@ pub fn preview_damage_to_player(
         target: target_ref,
         props,
     };
-    let previewed = hooks::modify_damage(
+    // `hooks::modify_damage` (relic additive 0), inlined on this per-hit path.
+    let previewed = hooks::modify_damage_with_relic_additive_inline(
         state,
         player_damage_base_after_relic_additive(state, dealer, raw_damage, props, card),
+        0,
         &ctx,
     );
     // C# clamps the telegraph with `Math.Max(0, …)`; a fully-Weakened 1-damage
@@ -6720,13 +7066,18 @@ pub fn apply_damage_to_player(
     // dispatches this hook only from `CreatureCmd.Damage`, never from a
     // preview (`AttackIntent.GetSingleDamage` passes `CardPreviewMode.None` to
     // `ModifyDamage` and dispatches nothing after it).
-    crate::damage::flash_damage_amount_modifiers(
-        state,
-        dealer,
-        target_ref,
-        player_damage_base_after_relic_additive(state, dealer, raw_damage, props, card),
-        props,
-    );
+    // The flashes only feed the event log; skip computing their base (a
+    // second relic-additive pass) when it is not recording —
+    // `flash_damage_amount_modifiers` returns at once in that case anyway.
+    if crate::event_log::armed(state) {
+        crate::damage::flash_damage_amount_modifiers(
+            state,
+            dealer,
+            target_ref,
+            player_damage_base_after_relic_additive(state, dealer, raw_damage, props, card),
+            props,
+        );
+    }
 
     // Step 2: before_damage_received event hook. Bead 3to (P2-2b)
     // promoted the dispatcher to `(state: &mut CombatState, ...)` so
@@ -6734,6 +7085,38 @@ pub fn apply_damage_to_player(
     // reflective `Effect::DealHpLoss` to dealer) which the dispatcher
     // drains internally via `apply_effects`.
     hooks::dispatch_before_damage_received(state, &ctx);
+
+    // Step 2.5 (v0.113.0): Wuppy's pre-block redirect. `CreatureCmd.Damage`
+    // (`CreatureCmd.cs:313-324`, v0.113.1) asks `ModifyPreBlockDamageTarget`
+    // after `BeforeDamageReceived` and before block: a living Wuppy holding
+    // `WuppysLoyaltyPower` takes the whole modified amount as direct HP loss
+    // (`LoseHpInternal`; the `HpLossHookPhase.BeforeWuppy` pass runs no
+    // listener), and only its overkill continues to the player's block and
+    // the rest of the pipeline. Unlike the Osty (Step 4.6), the player's block
+    // is untouched while Wuppy can soak the hit.
+    let damage_remaining = match wuppy_redirect_target(state, props) {
+        Some(idx) => {
+            let wuppy_hp = state.creatures[idx].current_hp;
+            let incoming = final_damage.max(0);
+            let lost = incoming.min(wuppy_hp);
+            state.creatures[idx].current_hp = wuppy_hp - lost;
+            if lost > 0 {
+                // `Wuppy.AfterCurrentHpChanged`: the relic's `CurrentHp` (its
+                // counter) follows the pet.
+                sync_wuppy_relic_counter(state, wuppy_hp - lost);
+            }
+            if wuppy_hp > 0 && wuppy_hp - lost == 0 {
+                // C# kills the pet in the post-batch sweep; it stays in the
+                // fight (`ShouldCreatureBeRemovedFromCombatAfterDeath` is
+                // false for it) and keeps `WuppysLoyaltyPower`. `Hook.AfterDeath`
+                // reaches Melancholy, which counts any creature's death.
+                state.reduce_melancholy_cost_on_death();
+            }
+            // `LoseHpInternal`'s `OverkillDamage`: what is left past its HP.
+            incoming - lost
+        }
+        None => final_damage,
+    };
 
     // Step 3: block absorption against `state.player.block`.
     // Phase-2 unblockable note: `props.UNBLOCKABLE` skips block
@@ -6744,10 +7127,10 @@ pub fn apply_damage_to_player(
     let absorbed = if unblockable {
         0
     } else {
-        final_damage.min(state.player.block).max(0)
+        damage_remaining.min(state.player.block).max(0)
     };
     state.player.block -= absorbed;
-    let unblocked = (final_damage - absorbed).max(0);
+    let unblocked = (damage_remaining - absorbed).max(0);
 
     // Bead `sts2-rs-xsvp9`: track DamageReceivedEntry analogues for the
     // player. C# `Spite.LostHpThisTurn` and `TearAsunder`'s `CalculatedHits`
@@ -6870,7 +7253,10 @@ pub fn apply_damage_to_player(
     // Step 5: write HP loss to the player.
     // C# records this hit's `DamageReceivedEntry` unless combat was already
     // ending (see `emotion_chip::note_player_damage_entry`).
-    let damage_entry_recorded = !combat_is_ending(state);
+    // Only an EmotionChip reads the entry (`note_player_damage_entry` arms
+    // the owned, unmelted chip), so the ending walk runs only when it can.
+    let damage_entry_recorded =
+        state.relics.owns(crate::RelicKind::EmotionChip) && !combat_is_ending(state);
     let hp_before_loss = state.player.current_hp;
     state.player.current_hp -= modified_hp_loss;
     if state.player.current_hp < 0 {
@@ -6936,8 +7322,7 @@ pub fn apply_damage_to_player(
     // syncs so test fixtures that pre-populate Creature rows with
     // independent values aren't stomped. Skipped silently when the
     // player has no creature_uid (pre-d03 fixtures).
-    state.sync_creature_block_from_player();
-    state.sync_creature_current_hp_from_player();
+    state.sync_creature_block_and_hp_from_player();
 
     // Necrobinder NecroMastery reflect, deferred from the Step 4.6 Osty
     // redirect to mirror C#'s post-batch results loop (`CreatureCmd.cs:253-263`),
@@ -7015,11 +7400,14 @@ pub fn apply_damage_to_player(
         damage_entry_recorded,
         was_fully_blocked,
     );
+    // The player's own `DamageResult` totals what reached it: past a Wuppy
+    // redirect, only the overkill (`damage_remaining == final_damage`
+    // without one).
     hooks::dispatch_after_damage_given(
         state,
         &ctx,
         modified_hp_loss,
-        final_damage,
+        damage_remaining,
         was_fully_blocked,
     );
 
@@ -7035,7 +7423,7 @@ pub fn apply_damage_to_player(
             let dg_ctx = crate::relic_effects::DamageGivenCtx {
                 dealer: dealer_uid,
                 target: target_uid,
-                damage: final_damage,
+                damage: damage_remaining,
                 total_damage: absorbed.saturating_add(modified_hp_loss),
                 props,
                 // Player-received path: HandDrill must never fire when the
@@ -7207,61 +7595,68 @@ pub(crate) fn roll_next_enemy_intents(state: &mut CombatState) {
     // A dead Reattach segment keeps rolling its DEAD→REATTACH cycle — C#
     // `StartTurn` calls `PrepareForNextTurn` for EVERY retained enemy with
     // no `IsDead` gate (`CombatManager.cs:395-398`). Bead `sts2-rs-8lwnq`.
-    let alive_indices: smallvec::SmallVec<[usize; 8]> = state
-        .enemy_uids
-        .iter()
-        .filter_map(|uid| {
-            crate::creature_pos(&state.creatures, uid.0).filter(|&i| {
-                let c = &state.creatures[i];
-                c.current_hp > 0 || is_acting_reattach_corpse(state, c)
-            })
-        })
-        .collect();
-    for idx in alive_indices {
-        let next_intent = if state.creatures[idx].ai.is_some() {
+    //
+    // The roster is walked live rather than snapshotted first: a roll only
+    // touches the rolling creature's own AI / intent and the `monster_ai`
+    // stream, so neither `enemy_uids` nor any other creature's survivor
+    // filter (HP, its own AI state, Reattach powers) can change mid-walk.
+    for k in 0..state.enemy_uids.len() {
+        let uid = state.enemy_uids[k];
+        let Some(idx) = crate::creature_pos(&state.creatures, uid.0).filter(|&i| {
+            let c = &state.creatures[i];
+            c.current_hp > 0 || is_acting_reattach_corpse(state, c)
+        }) else {
+            continue;
+        };
+        let next_intent = if let Some(ai) = state.creatures[idx].ai.as_ref() {
             // Bead `sts2-rs-5w76f`: do NOT pre-draw a seed. C#
             // RandomBranchState.GetNextState consumes one
             // `rng.NextFloat(total)` tick ONLY when the AI traverses a
             // RandomBranch transition; Move/ConditionalBranch consume
-            // zero. Take the AI out so we can mutate it while passing
-            // `&mut state.run_rng.monster_ai` through the roll path;
-            // the AI is restored on the same line as the intent read.
+            // zero.
+            //
+            // The roll is planned against `&CombatState` with the AI still
+            // in place, drawing from a copy of the `monster_ai` stream that
+            // is written back before anything else reads it, then committed
+            // to the AI — the same reads and writes as taking the AI out
+            // and rolling it in place, without moving it.
+            //
+            // Bead sts2-rs-msi1: the owning creature uid is threaded into
+            // the plan (and stored on the AI with `set_owner`) so
+            // `ConditionFn::OwnerAware` predicates (e.g. CeremonialBeast
+            // PLOW_CHECK) can read per-creature Power amounts.
             let owner_uid = CreatureUid(state.creatures[idx].id);
-            let mut ai = state.creatures[idx]
-                .ai
-                .take()
-                .expect("just checked is_some");
-            // Bead sts2-rs-msi1: thread the owning creature uid into
-            // the AI so `ConditionFn::OwnerAware` predicates (e.g.
-            // CeremonialBeast PLOW_CHECK) can read per-creature
-            // Power amounts during the upcoming branch resolution.
-            ai.set_owner(owner_uid);
-            // Split borrow: temporarily move MonsterAi RNG out of the
-            // run RNG bundle so we can pass `&mut DotNetRng` alongside
-            // `&CombatState`. `mem::replace` with a sentinel keeps the
-            // `RunRng` shape valid for the brief window; the real RNG
-            // is restored before the borrow ends.
-            let mut local_rng =
-                core::mem::replace(&mut state.run_rng.monster_ai, DotNetRng::placeholder());
-            if !ai.initial_resolved() && !ai.performed_first_move() {
-                // A creature SUMMONED this turn has never had its opening
-                // telegraph resolved against the run stream — `start_combat`
-                // only does that for the encounter's own roster, and the
-                // normal roll below early-returns while the AI has not
-                // performed a move yet. C# has no such gap: `CreatureCmd.Add`
-                // runs the new machine from its initial state, so a branch
-                // initial costs one `Rng.MonsterAi` read HERE, in enemy order,
-                // like every other telegraph. Skipping it left the throwaway
-                // constructor rng's answer standing and the run cursor one
-                // read behind C# for the rest of the combat — every later
-                // intent roll, for every monster, then diverged (GH #544,
-                // TwoTailedRat CALL_FOR_BACKUP).
-                ai.resolve_initial_move_with_combat(&mut local_rng, state);
+            let mut rng = state.run_rng.monster_ai.clone();
+            // A creature SUMMONED this turn has never had its opening
+            // telegraph resolved against the run stream — `start_combat`
+            // only does that for the encounter's own roster, and the normal
+            // roll early-returns while the AI has not performed a move yet.
+            // C# has no such gap: `CreatureCmd.Add` runs the new machine from
+            // its initial state, so a branch initial costs one
+            // `Rng.MonsterAi` read HERE, in enemy order, like every other
+            // telegraph. Skipping it left the throwaway constructor rng's
+            // answer standing and the run cursor one read behind C# for the
+            // rest of the combat — every later intent roll, for every
+            // monster, then diverged (GH #544, TwoTailedRat CALL_FOR_BACKUP).
+            let initial = !ai.initial_resolved() && !ai.performed_first_move();
+            let plan = if initial {
+                ai.plan_initial_move_with_combat(&mut rng, state, Some(owner_uid))
             } else {
-                ai.roll_move_with_combat(&mut local_rng, state);
+                ai.plan_roll_with_combat(&mut rng, state, Some(owner_uid))
+            };
+            state.run_rng.monster_ai = rng;
+            let ai = state.creatures[idx]
+                .ai
+                .as_mut()
+                .expect("just checked is_some");
+            ai.set_owner(owner_uid);
+            if initial {
+                ai.apply_initial_move(plan);
+            } else {
+                ai.apply_roll(plan);
             }
-            state.run_rng.monster_ai = local_rng;
-            let mut intent = ai.current_move().intents.first().copied();
+            let mv = ai.current_move();
+            let mut intent = mv.intents.first().copied();
             // TestSubject MULTI_CLAW escalation: C# `MultiClawTotalCount =>
             // BaseMultiClawCount + ExtraMultiClawCount` (TestSubject.cs:163)
             // with `ExtraMultiClawCount++` after each perform
@@ -7273,7 +7668,7 @@ pub(crate) fn roll_next_enemy_intents(state: &mut CombatState) {
             // MULTI_CLAW is reachable. 2026-07-17 matched-seed gap audit:
             // the static 3-hit telegraph under-predicted late-2nd-form
             // incoming damage by up to 2× (real 10×6 vs modeled 10×3).
-            if ai.current_move().id == "MULTI_CLAW" {
+            if mv.id == "MULTI_CLAW" {
                 if let Some(Intent::MultiAttack { damage, hits }) = intent {
                     let extra = state.creatures[idx]
                         .powers
@@ -7289,7 +7684,6 @@ pub(crate) fn roll_next_enemy_intents(state: &mut CombatState) {
                     }
                 }
             }
-            state.creatures[idx].ai = Some(ai);
             intent
         } else {
             let kind = state.creatures[idx]
@@ -7365,6 +7759,12 @@ pub fn enemy_turn_end(state: &mut CombatState) -> StepResult {
 
     debug_assert_eq!(state.phase, CombatPhase::EnemyTurnEnd);
 
+    // The turn end's participants: C# `EndEnemyTurnInternal` lists
+    // `CreaturesOnCurrentSide` before `BeforeSideTurnEnd`
+    // (CombatManager.cs:1810-1819), so an enemy that walk adds sits out
+    // this turn end's `participants.Contains(Owner)` hooks.
+    state.enemy_turn_end_last_participant = state.creatures.iter().map(|c| c.id).max();
+
     // Step 2: fire before_turn_end(ENEMY).
     hooks::dispatch_before_turn_end(state, &TurnSideCtx { side: Side::Enemy });
 
@@ -7378,7 +7778,10 @@ pub fn enemy_turn_end(state: &mut CombatState) -> StepResult {
     if state.is_over || !state.enemy_uids.is_empty() {
         match check_combat_end(state) {
             StepResult::Advanced => {}
-            end => return end,
+            end => {
+                state.enemy_turn_end_last_participant = None;
+                return end;
+            }
         }
     }
 
@@ -7399,6 +7802,7 @@ pub fn enemy_turn_end(state: &mut CombatState) -> StepResult {
     // effect batch via apply_effects post-walk.
     hooks::dispatch_after_turn_end(state, &TurnSideCtx { side: Side::Enemy });
     hooks::dispatch_after_turn_end_late(state, &TurnSideCtx { side: Side::Enemy });
+    state.enemy_turn_end_last_participant = None;
 
     // (BattlewornDummyTimeLimit ticks inside the walk above, in power
     // order — see `tick_battleworn_dummy_timer`.)
@@ -7535,28 +7939,97 @@ pub fn combat_is_ending(state: &CombatState) -> bool {
 /// no alive primary enemy remains and nothing votes to keep the combat open.
 /// `PowerCmd.Apply`'s guard reads this (and `is_over`) but not the player-HP
 /// half: a player at 0 HP may still be saved by a death-prevention relic.
+#[inline]
 #[must_use]
 pub fn enemy_side_is_ending(state: &CombatState) -> bool {
-    // C# IsEnding: ending once no alive PRIMARY (non-minion) enemy remains,
-    // unless an Adaptable corpse or a not-yet-fired on-death power keeps it
-    // open (ShouldStopCombatFromEnding).
-    let mut any_primary_present = false;
-    let mut alive_primary = 0usize;
-    let mut adaptable_corpse = false;
-    // Presence-summary gates hoisted out of the loop (bit-identical: with no
-    // live Minion / Adaptable power the per-creature scans always miss).
+    // Perf: an alive primary enemy settles `false` (the walk below returns at
+    // the first one), so the common case answers inline without the call.
+    if some_enemy_is_alive_primary(state) {
+        debug_assert!(!enemy_side_is_ending_walk(state));
+        return false;
+    }
+    enemy_side_is_ending_walk(state)
+}
+
+/// Cheap sufficient test for "some enemy is an alive PRIMARY (non-minion)":
+/// no `Minion` power is live anywhere (the maintained `present_kinds`
+/// superset; `PowerKind::Minion` is the only `OwnerIsSecondaryEnemy` power at
+/// this pin, see [`minion_only_survivors`]), so every enemy is primary, and
+/// some enemy, found in its dense arena slot (the first branch of
+/// [`crate::creature_by_id`], so the same creature the walks read), has HP
+/// left. With a `Minion` live it asks the exact [`any_alive_primary_enemy`]
+/// instead, so a minion fight's ongoing-combat checks also answer here rather
+/// than in the callers' full walks (each of which would re-run that same test
+/// first). `false` only means "unknown": the callers then take their full walk.
+#[inline]
+fn some_enemy_is_alive_primary(state: &CombatState) -> bool {
+    if state
+        .powers
+        .present_kinds()
+        .contains(crate::PowerKind::Minion)
+    {
+        return any_alive_primary_enemy(state);
+    }
+    state.enemy_uids.iter().any(|uid| {
+        state
+            .creatures
+            .get(uid.0.get() as usize - 1)
+            .is_some_and(|c| c.id == uid.0 && c.current_hp > 0)
+    })
+}
+
+/// Whether some enemy is alive and not a minion (carries no `Minion` power,
+/// the only `OwnerIsSecondaryEnemy` power at this pin). Exact, unlike
+/// [`some_enemy_is_alive_primary`]. HP is read first, so a corpse costs no
+/// power walk; the minion test only runs on live creatures, and only while a
+/// `Minion` power is live at all (`present_kinds` superset).
+#[inline(never)]
+fn any_alive_primary_enemy(state: &CombatState) -> bool {
     let minion_possible = state
         .powers
         .present_kinds()
         .contains(crate::PowerKind::Minion);
-    let adaptable_possible = state
+    // Back to front: the answer is an order-free `any` over side-effect-free
+    // reads, and in the minion fights the primary is usually listed after
+    // its minions, so this reaches it without walking the minions' powers.
+    state.enemy_uids.iter().rev().any(|uid| {
+        crate::creature_by_id(&state.creatures, uid.0).is_some_and(|c| {
+            c.current_hp > 0
+                && !(minion_possible
+                    && c.powers.iter().any(|puid| {
+                        state
+                            .powers
+                            .get_by_id(puid.0)
+                            .is_some_and(|p| p.kind == crate::PowerKind::Minion)
+                    }))
+        })
+    })
+}
+
+/// The full roster walk behind [`enemy_side_is_ending`].
+#[inline(never)]
+fn enemy_side_is_ending_walk(state: &CombatState) -> bool {
+    // An alive primary settles `false`: the loop below returns `false` on
+    // reaching one and has no side effects, so finding it first (HP before
+    // the minion power walk) gives the same answer for less work.
+    if any_alive_primary_enemy(state) {
+        return false;
+    }
+    // C# IsEnding: ending once no alive PRIMARY (non-minion) enemy remains,
+    // unless an Adaptable corpse or a not-yet-fired on-death power keeps it
+    // open (ShouldStopCombatFromEnding).
+    //
+    // Perf 2026-11-18: one alive primary enemy settles the answer (`false`),
+    // so the walk returns at the first one instead of counting them all, and
+    // the corpse gates are only read when a dead primary is reached. In the
+    // common case (front enemy alive, no Minion power in play) this is one
+    // creature lookup. Same result for every state.
+    let mut any_primary_present = false;
+    let mut adaptable_corpse = false;
+    let minion_possible = state
         .powers
         .present_kinds()
-        .contains(crate::PowerKind::Adaptable);
-    let death_vote_possible = {
-        let kinds = state.powers.present_kinds();
-        DEATH_VOTE_KINDS.iter().any(|k| kinds.contains(*k))
-    };
+        .contains(crate::PowerKind::Minion);
     for uid in &state.enemy_uids {
         let Some(c) = crate::creature_by_id(&state.creatures, uid.0) else {
             continue;
@@ -7571,10 +8044,17 @@ pub fn enemy_side_is_ending(state: &CombatState) -> bool {
         if is_minion {
             continue;
         }
-        any_primary_present = true;
         if c.current_hp > 0 {
-            alive_primary += 1;
-        } else if (adaptable_possible
+            return false;
+        }
+        any_primary_present = true;
+        if adaptable_corpse {
+            continue;
+        }
+        let kinds = state.powers.present_kinds();
+        let adaptable_possible = kinds.contains(crate::PowerKind::Adaptable);
+        let death_vote_possible = DEATH_VOTE_KINDS.iter().any(|k| kinds.contains(*k));
+        if (adaptable_possible
             && c.powers.iter().any(|puid| {
                 state
                     .powers
@@ -7586,7 +8066,7 @@ pub fn enemy_side_is_ending(state: &CombatState) -> bool {
             adaptable_corpse = true;
         }
     }
-    any_primary_present && alive_primary == 0 && !adaptable_corpse
+    any_primary_present && !adaptable_corpse
 }
 
 /// On-death powers whose C# `ShouldStopCombatFromEnding` is `true` and whose
@@ -7696,6 +8176,12 @@ pub(crate) fn minion_only_survivors(
                 .is_some_and(|p| p.kind == crate::PowerKind::Minion)
         })
     };
+    // Perf: `Some` needs every primary dead, so an alive primary (found HP
+    // first, see `any_alive_primary_enemy`) settles `None` without
+    // collecting the minions.
+    if any_alive_primary_enemy(state) {
+        return None;
+    }
     let mut any_primary_present = false;
     let mut alive_primary = 0usize;
     let mut alive_minions: smallvec::SmallVec<[CreatureUid; 4]> = smallvec::SmallVec::new();
@@ -7722,7 +8208,25 @@ pub(crate) fn minion_only_survivors(
 }
 
 /// [`apply`]: crate::apply
+#[inline]
 pub fn check_combat_end(state: &mut CombatState) -> StepResult {
+    // Perf: the ongoing-combat case answers inline. With the combat not over,
+    // the player above 0 HP (the player-death branch needs `<= 0`) and an
+    // alive primary enemy present, the minion collapse finds no survivors to
+    // kill (it needs every primary dead, and `some_enemy_is_alive_primary`
+    // found a live one — exactly, via `any_alive_primary_enemy`, when a
+    // Minion is live) and the all-enemies-dead branch is not taken, so the
+    // full body returns
+    // `Advanced` without mutating anything.
+    if !state.is_over && state.player.current_hp > 0 && some_enemy_is_alive_primary(state) {
+        return StepResult::Advanced;
+    }
+    check_combat_end_full(state)
+}
+
+/// The full body behind [`check_combat_end`].
+#[inline(never)]
+fn check_combat_end_full(state: &mut CombatState) -> StepResult {
     // Idempotency: a second invocation on an already-resolved combat
     // returns the recorded outcome without re-firing the hooks.
     // Critical for Phase-7 listener bodies that increment counters
@@ -8016,10 +8520,19 @@ fn enemy_side_select_possible(state: &CombatState) -> bool {
         || state.after_shuffle_choice_listener_active()
 }
 
+#[inline]
 fn begin_enemy_side_capture(state: &mut CombatState) {
     if state.enemy_side_capture.is_some() || !enemy_side_select_possible(state) {
         return;
     }
+    begin_enemy_side_capture_slow(state);
+}
+
+/// The snapshot half of [`begin_enemy_side_capture`], out of line so the
+/// whole-state clone does not weigh on [`run_end_turn_step`]'s frame.
+#[cold]
+#[inline(never)]
+fn begin_enemy_side_capture_slow(state: &mut CombatState) {
     let snapshot = Box::new(state.clone());
     state.enemy_side_capture = Some(Box::new(crate::EnemySideCapture {
         snapshot,
@@ -8032,7 +8545,25 @@ fn begin_enemy_side_capture(state: &mut CombatState) {
 /// End the enemy side's capture. A select with no answer yet replaces the
 /// state with the one captured at it, so the player sees that select; the
 /// rest of the run, which picked option 0 there, is dropped.
+#[inline]
 fn finish_enemy_side_capture(state: &mut CombatState, result: StepResult) -> StepResult {
+    if state.enemy_side_capture.is_none() {
+        debug_assert!(
+            !matches!(result, StepResult::Advanced)
+                || state
+                    .pending_choice
+                    .as_ref()
+                    .is_none_or(|pc| pc.kind == crate::ChoiceKind::MonsterCurseSelect),
+            "a player select opened in the enemy side without capture mode"
+        );
+        return result;
+    }
+    finish_enemy_side_capture_slow(state, result)
+}
+
+#[cold]
+#[inline(never)]
+fn finish_enemy_side_capture_slow(state: &mut CombatState, result: StepResult) -> StepResult {
     let Some(capture) = state.enemy_side_capture.take() else {
         debug_assert!(
             !matches!(result, StepResult::Advanced)
@@ -8450,11 +8981,18 @@ fn after_card_played_after_relics(state: &mut CombatState, hook_ctx: &CardCtx) {
     // The player's cards listen after the relics (CombatState.cs:101-160):
     // Banshee's Cry reads the played card's live keywords, after a Razor
     // Tooth upgrade (loadout Necrobinder 5451, v0.107.1).
-    let played_is_ethereal = hook_ctx
-        .card_uid
-        .and_then(|u| crate::card_by_uid(&state.cards, u))
-        .is_some_and(|c| card_is_ethereal_at_play(state, c));
-    state.banshees_cry_after_card_played(played_is_ethereal);
+    //
+    // `banshees_cry_after_card_played` walks only Banshee's Cry cards, and
+    // the arena's J02 presence bit for the id is a superset of them
+    // (`CardStore::holds_id`), so without one the Ethereal read and the call
+    // are both no-ops.
+    if state.cards.holds_id(crate::cards::CardId::BansheesCry) {
+        let played_is_ethereal = hook_ctx
+            .card_uid
+            .and_then(|u| crate::card_by_uid(&state.cards, u))
+            .is_some_and(|c| card_is_ethereal_at_play(state, c));
+        state.banshees_cry_after_card_played(played_is_ethereal);
+    }
     hooks::dispatch_after_card_played_other_creatures(state, hook_ctx);
 }
 
@@ -8835,7 +9373,31 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
     }
     let card_uid = state.player.hand[hi];
     let card_idx = card_uid.0.get() as usize - 1;
-    let card = state.cards[card_idx];
+    // The play-start snapshot of the card is taken straight into the tail's
+    // `CardPlayFinish` (the remaining fields are filled in below, before the
+    // tail runs), so the 176-byte `Card` is copied once per play rather than
+    // into a local and then again into the struct.
+    let mut fin = CardPlayFinish {
+        card: state.cards[card_idx],
+        card_idx,
+        card_uid,
+        target_uid: None,
+        resolved_cost: 0,
+        weighted_drain: 0,
+        extra_plays: 0,
+        card_is_ethereal: false,
+        corruption_active_pre_dispatch: false,
+        feral_returns_to_hand: false,
+        echo_form_amount_at_play_start: 0,
+        first_in_series_before: 0,
+        rebound_amount_at_play_start: 0,
+        nostalgia_amount_at_play_start: 0,
+        attacks_skills_at_play_start: 0,
+        imitation_clone: None,
+        card_target: None,
+        resume_at: TailResume::Start,
+    };
+    let card = &fin.card;
 
     // Forensics frame (`damage_trace`) covering the whole play, replays and
     // AfterCardPlayed included — anything the card sets in motion is
@@ -8853,7 +9415,7 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
     // C# `Hook.ShouldPlay` union (Chains/Sloth/Ringing) — shared with the
     // auto-play resolver (`CardCmd.AutoPlay` checks the same hook,
     // `CardCmd.cs:38-46`).
-    if player_should_play_blocked(state, &card) {
+    if player_should_play_blocked(state, card) {
         return StepResult::IllegalPlay;
     }
 
@@ -8886,7 +9448,7 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
     // the untargeted action) instead of rejecting the `target: None` play as an
     // InvalidTarget. `play_shiv` resolves the matching AoE. Shared predicate —
     // GH #335 (see `cards::effective_target_type`).
-    let effective_target_type = cards::effective_target_type(state, &card);
+    let effective_target_type = cards::effective_target_type(state, card);
     let target_uid: Option<CreatureUid> = match effective_target_type {
         TargetType::Enemy => {
             let Some(ti) = target else {
@@ -9060,8 +9622,7 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
         };
     }
 
-    cards::move_card(&mut state.player, card_uid, PileKind::Hand, PileKind::Play)
-        .expect("hand_index validated above");
+    move_hand_card_to_play(state, hi, card_uid);
     // C# `OnPlayWrapper` asks `GetResultLocationForCardPlay` right after the
     // card enters Play (`CardModel.cs:1881`): The Ball's teammate roll.
     crate::coop::roll_result_player(state, card_uid, card.card_id);
@@ -9070,7 +9631,7 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
     // `BeforeCardPlayed` — if the just-committed card is Bound, set
     // the per-turn flag so subsequent Bound plays this turn are
     // rejected by the `ShouldPlay` guard above.
-    chains_note_bound_card_played(state, &card);
+    chains_note_bound_card_played(state, card);
 
     // Bead `sts2-rs-z4jsg` / round-12 reorder: C# `Weighted.OnPlay`
     // (Afflictions/Weighted.cs:8-11) drains `Amount` EXTRA energy
@@ -9155,7 +9716,7 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
     // is active). Uses the same OR-chain as the end-of-turn ethereal expel so a
     // card played under Hex correctly triggers SpiritOfAsh's block grant
     // (necro-player-misc C, seeds 3587/5473). Bead `sts2-rs-4wppb`.
-    let card_is_ethereal = card_is_ethereal_at_play(state, &card);
+    let card_is_ethereal = card_is_ethereal_at_play(state, card);
     hooks::dispatch_before_card_played_powers_for_card(
         state,
         resolved_cost,
@@ -9326,26 +9887,20 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
     // false so the in-flight card is not swept off the Play pile before its own
     // cleanup / replay loop runs (bead `sts2-rs-replay-choice` — replay loops
     // below still rely on the pending_choice being cleared here).
-    let fin = CardPlayFinish {
-        card,
-        card_idx,
-        card_uid,
-        target_uid,
-        resolved_cost,
-        weighted_drain,
-        extra_plays,
-        card_is_ethereal,
-        corruption_active_pre_dispatch,
-        feral_returns_to_hand,
-        echo_form_amount_at_play_start,
-        first_in_series_before,
-        rebound_amount_at_play_start,
-        nostalgia_amount_at_play_start,
-        attacks_skills_at_play_start,
-        imitation_clone,
-        card_target: state.coop.card_target,
-        resume_at: TailResume::Start,
-    };
+    fin.target_uid = target_uid;
+    fin.resolved_cost = resolved_cost;
+    fin.weighted_drain = weighted_drain;
+    fin.extra_plays = extra_plays;
+    fin.card_is_ethereal = card_is_ethereal;
+    fin.corruption_active_pre_dispatch = corruption_active_pre_dispatch;
+    fin.feral_returns_to_hand = feral_returns_to_hand;
+    fin.echo_form_amount_at_play_start = echo_form_amount_at_play_start;
+    fin.first_in_series_before = first_in_series_before;
+    fin.rebound_amount_at_play_start = rebound_amount_at_play_start;
+    fin.nostalgia_amount_at_play_start = nostalgia_amount_at_play_start;
+    fin.attacks_skills_at_play_start = attacks_skills_at_play_start;
+    fin.imitation_clone = imitation_clone;
+    fin.card_target = state.coop.card_target;
 
     // Bead `sts2-rs-mcts-surface-onplay-select`: a TOP-LEVEL player play whose
     // `OnPlay` opened an interactive `pending_choice` (Survivor/DaggerThrow
@@ -9373,7 +9928,7 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
         }
     }
 
-    finish_card_play(state, fin)
+    finish_card_play(state, &mut fin)
 }
 
 /// Run the post-`OnPlay`-dispatch tail of a card play: the combat-wide play
@@ -9391,6 +9946,7 @@ fn play_card_resolved(state: &mut CombatState, hand_index: u8, target: Option<u8
 /// grants Ethereal to each `Hexed` card). Shared by the manual (`play_card`) and auto-play
 /// (`finish_auto_played_card`) SpiritOfAsh gate so both agree with the
 /// end-of-turn ethereal expel. Reads the Hex stack off the mirror+legacy union.
+#[inline]
 pub fn card_is_ethereal_at_play(state: &CombatState, card: &crate::cards::Card) -> bool {
     crate::card_effects::card_ethereal_inst(card)
         || card.combat_var(crate::cards::VarKey::EtherealThisCombat) != 0
@@ -9464,6 +10020,7 @@ enum DrawTopRedirect {
     Rebound,
 }
 
+#[inline]
 fn resolve_draw_top_redirect(
     state: &CombatState,
     is_attack_or_skill: bool,
@@ -9734,6 +10291,7 @@ fn feral_claims_result_location(
 /// and a `TrickShot` that saw an arrow at play start (`TrickShot.cs`
 /// `ArrowCmd.PlayerHasAnyArrows`, read before `OnPlay`; the card handler
 /// records it in [`VarKey::Generic`], set only while the card resolves).
+#[inline]
 fn discard_result_goes_to_hand(card: &cards::Card) -> bool {
     match card.card_id {
         cards::CardId::ParticleWall | cards::CardId::MourningBlow => true,
@@ -9780,7 +10338,60 @@ fn after_result_location(state: &mut CombatState, uid: crate::CardUid) {
     }
 }
 
-pub(crate) fn finish_card_play(state: &mut CombatState, fin: CardPlayFinish) -> StepResult {
+/// Takes the captured play by `&mut` (not by value) so the 176-byte card
+/// snapshot inside it is not copied again on the way in; the tail only takes
+/// the `imitation_clone` box out of it.
+/// The hand play's `Hand -> Play` move: [`cards::move_card`] without the
+/// pile search when the card still sits at the validated `hand_index` (card
+/// uids are unique across the piles, so `move_card`'s first-match search
+/// finds exactly that slot). Falls back to `move_card` otherwise.
+#[inline]
+fn move_hand_card_to_play(state: &mut CombatState, hi: usize, card_uid: crate::CardUid) {
+    if state.player.hand.get(hi) == Some(&card_uid) {
+        #[cfg(debug_assertions)]
+        let expected = {
+            let mut p = state.player.clone();
+            cards::move_card(&mut p, card_uid, PileKind::Hand, PileKind::Play)
+                .expect("hand_index validated above");
+            p
+        };
+        state.player.hand.remove(hi);
+        state.player.play.push(card_uid);
+        #[cfg(debug_assertions)]
+        debug_assert!(state.player == expected, "hand->play fast path diverged");
+        return;
+    }
+    cards::move_card(&mut state.player, card_uid, PileKind::Hand, PileKind::Play)
+        .expect("hand_index validated above");
+}
+
+/// The play's `Play -> Discard` result move: [`cards::move_card`] without the
+/// search and shift when the card is the only one in the Play pile (the
+/// common case — nothing else is in flight). Falls back to `move_card`.
+#[inline]
+fn move_play_card_to_discard(state: &mut CombatState, card_uid: crate::CardUid) {
+    if state.player.play.len() == 1 && state.player.play[0] == card_uid {
+        #[cfg(debug_assertions)]
+        let expected = {
+            let mut p = state.player.clone();
+            let _ = cards::move_card(&mut p, card_uid, PileKind::Play, PileKind::Discard);
+            p
+        };
+        state.player.play.clear();
+        state.player.discard.push(card_uid);
+        #[cfg(debug_assertions)]
+        debug_assert!(state.player == expected, "play->discard fast path diverged");
+        return;
+    }
+    let _ = cards::move_card(
+        &mut state.player,
+        card_uid,
+        PileKind::Play,
+        PileKind::Discard,
+    );
+}
+
+pub(crate) fn finish_card_play(state: &mut CombatState, fin: &mut CardPlayFinish) -> StepResult {
     let outer = std::mem::replace(&mut state.coop.card_target, fin.card_target);
     let result = finish_card_play_tail(state, fin);
     state.coop.card_target = outer;
@@ -9800,7 +10411,24 @@ pub(crate) fn finish_card_play(state: &mut CombatState, fin: CardPlayFinish) -> 
 /// the dupe's `PileType.None` never applies (Regent 5670 v0.107.1). A
 /// still-open choice defers to the result-pile routing (the card stays on
 /// Play until the choice closes).
+#[inline]
 fn shining_strike_on_play_return(
+    state: &mut CombatState,
+    uid: crate::CardUid,
+    force_exhaust: bool,
+) {
+    // Inline guard: the body returns at once from v0.111.0 on or for any
+    // other card; test that here so the common no-op skips the call.
+    if state.game_version >= crate::GameVersion::V0_111_0
+        || state.cards[uid.0.get() as usize - 1].card_id != cards::CardId::ShiningStrike
+    {
+        return;
+    }
+    shining_strike_on_play_return_body(state, uid, force_exhaust);
+}
+
+#[inline(never)]
+fn shining_strike_on_play_return_body(
     state: &mut CombatState,
     uid: crate::CardUid,
     force_exhaust: bool,
@@ -9982,27 +10610,14 @@ pub(crate) fn finish_faulted_card_play(
     check_combat_end(state)
 }
 
-fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepResult {
-    let CardPlayFinish {
-        card,
-        card_idx,
-        card_uid,
-        target_uid,
-        resolved_cost,
-        weighted_drain,
-        extra_plays,
-        card_is_ethereal,
-        corruption_active_pre_dispatch,
-        feral_returns_to_hand,
-        echo_form_amount_at_play_start,
-        first_in_series_before,
-        rebound_amount_at_play_start,
-        nostalgia_amount_at_play_start,
-        attacks_skills_at_play_start,
-        imitation_clone,
-        card_target,
-        resume_at,
-    } = fin;
+fn finish_card_play_tail(state: &mut CombatState, fin: &mut CardPlayFinish) -> StepResult {
+    let imitation_clone = fin.imitation_clone.take();
+    let fin: &CardPlayFinish = fin;
+    // Read the play-start snapshot through `fin` at each use rather than
+    // destructuring it into locals, which the prologue spilled to the stack
+    // (all live across the tail's calls).
+    let card = &fin.card;
+    let card_uid = fin.card_uid;
     // Park the tail on a replay's surfaced choice: everything this play still
     // owes runs when the pick lands, from `resume_at` (GH #1131).
     macro_rules! park_on_choice {
@@ -10011,26 +10626,12 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         }};
         ($resume:expr, $imitation:expr) => {{
             crate::hooks::grant_latched_skittish(state);
+            // `fin.imitation_clone` was taken above, so the clone copies no box.
             state.pending_play = Some(crate::PendingPlay {
                 finish: CardPlayFinish {
-                    card,
-                    card_idx,
-                    card_uid,
-                    target_uid,
-                    resolved_cost,
-                    weighted_drain,
-                    extra_plays,
-                    card_is_ethereal,
-                    corruption_active_pre_dispatch,
-                    feral_returns_to_hand,
-                    echo_form_amount_at_play_start,
-                    first_in_series_before,
-                    rebound_amount_at_play_start,
-                    nostalgia_amount_at_play_start,
-                    attacks_skills_at_play_start,
                     imitation_clone: $imitation,
-                    card_target,
                     resume_at: $resume,
+                    ..fin.clone()
                 },
             });
             return StepResult::PendingChoice;
@@ -10047,7 +10648,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
     let played_ctx = crate::relic_effects::CardEventCtx {
         card_id: card.card_id,
         card_uid: Some(card_uid),
-        target: target_uid,
+        target: fin.target_uid,
         card_tags: card.tags,
         energy_spent: 0,
     };
@@ -10077,13 +10678,13 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
     // `IsLastInSeries` is the iteration at `playCount - 1`. Bead `sts2-rs-8ett`
     // below documents the Echo predicate.
     let echo_this_card =
-        i64::from(first_in_series_before) < i64::from(echo_form_amount_at_play_start);
-    let replays = extra_plays.max(0);
-    match resume_at {
+        i64::from(fin.first_in_series_before) < i64::from(fin.echo_form_amount_at_play_start);
+    let replays = fin.extra_plays.max(0);
+    match fin.resume_at {
         TailResume::Start
         | TailResume::AfterEnchantmentOnPlay
         | TailResume::AfterPlayedRelic(_) => {
-            let relic_from = if let TailResume::AfterPlayedRelic(n) = resume_at {
+            let relic_from = if let TailResume::AfterPlayedRelic(n) = fin.resume_at {
                 Some(usize::from(n))
             } else {
                 // ── Enchantment `OnPlay` (bead `sts2-rs-ench-onplay-order`) ──────────
@@ -10121,7 +10722,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 // Swift / Sown flip their first-play `*_USED_BIT` inside this dispatch, as
                 // C# sets `Status = EnchantmentStatus.Disabled` inside their own `OnPlay`
                 // — so a Music Box clone made in the after-played buses is already spent.
-                if matches!(resume_at, TailResume::Start) {
+                if matches!(fin.resume_at, TailResume::Start) {
                     shining_strike_on_play_return(state, card_uid, false);
                     crate::enchantment_hooks::dispatch_on_card_played(state, card_uid);
                     // The enchantment's own select (Swift's draw auto-played by
@@ -10135,11 +10736,11 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 // Affliction `OnPlay` — the captured Weighted energy drain (bead
                 // `sts2-rs-l65km`), which C# runs immediately AFTER the enchantment leg
                 // (`CardModel.cs:1944-1950`). See the capture site in [`play_card`].
-                if weighted_drain != 0 {
+                if fin.weighted_drain != 0 {
                     state.player.energy = state
                         .player
                         .energy
-                        .saturating_sub(i32::from(weighted_drain))
+                        .saturating_sub(i32::from(fin.weighted_drain))
                         .max(0);
                 }
 
@@ -10181,7 +10782,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 // Cascade / Catastrophe; seeds 5169/5957/4550/3681). HistoryCourse's own
                 // dupe carries `IsDupe` and is filtered, matching C#'s `!e.Card.IsDupe`
                 // scan (seed 5192).
-                stamp_last_attack_skill_played(state, &card, card_uid);
+                stamp_last_attack_skill_played(state, card, card_uid);
 
                 // Record this FINISHED play before the after-played buses. C#
                 // `OnPlayWrapper` calls `History.CardPlayFinished` BEFORE
@@ -10203,7 +10804,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 // `WasEthereal` reads the live `Keywords` (CardPlayFinishedEntry.cs:45), so
                 // a Hexed card counts too (HexPower.TryModifyKeywordsInCombat) — use the
                 // play-time predicate, not the static keyword.
-                if card_is_ethereal_at_play(state, &card) {
+                if card_is_ethereal_at_play(state, card) {
                     note_ethereal_card_played(state);
                 }
 
@@ -10267,9 +10868,9 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         TailResume::AfterReplayOnPlay(i) => {
             replay_after_on_play(
                 state,
-                &card,
+                card,
                 card_uid,
-                weighted_drain,
+                fin.weighted_drain,
                 &played_ctx,
                 &hook_played_ctx,
                 true,
@@ -10277,7 +10878,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
             );
             // The loop breaks once a replay kills the player.
             first_replay = if replay_loop_owner_dead(state) {
-                extra_plays.max(0)
+                fin.extra_plays.max(0)
             } else {
                 i + 1
             };
@@ -10291,15 +10892,15 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         TailResume::AfterEchoOnPlay => {
             replay_after_on_play(
                 state,
-                &card,
+                card,
                 card_uid,
-                weighted_drain,
+                fin.weighted_drain,
                 &played_ctx,
                 &hook_played_ctx,
                 false,
                 true,
             );
-            first_replay = extra_plays.max(0);
+            first_replay = fin.extra_plays.max(0);
             echo_done = true;
         }
     }
@@ -10316,7 +10917,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
     //
     // Combat-end short-circuit: if a replay killed the last enemy,
     // stop replaying to avoid `apply_damage` on an empty board.
-    for i in first_replay..extra_plays.max(0) {
+    for i in first_replay..fin.extra_plays.max(0) {
         // v0.111.0: the play loop breaks at the top of an iteration once combat
         // is over or ending (decomp CardModel.cs:1898). No-op before v0.111.0.
         if multi_play_stops_v0111(state) {
@@ -10339,11 +10940,11 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         let before_played_listeners = state.cards.len();
         let before_hooks_live = replay_before_card_played_live(state);
         if before_hooks_live {
-            dispatch_relic_before_card_played_replay(state, &played_ctx, resolved_cost);
+            dispatch_relic_before_card_played_replay(state, &played_ctx, fin.resolved_cost);
             crate::hooks::dispatch_before_card_played_powers_on_replay(
                 state,
-                replay_resolved_cost(state, card_uid, resolved_cost),
-                card_is_ethereal,
+                replay_resolved_cost(state, card_uid, fin.resolved_cost),
+                fin.card_is_ethereal,
                 card_uid,
             );
             // v0.111.0: Juggling's `BeforeCardPlayed` runs per play iteration
@@ -10352,7 +10953,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
             // `SurroundedPower.BeforeCardPlayed` re-faces toward the target on
             // every play iteration, not only the first (Defect loadout v0.107.1
             // seed 7475: an echoed Uproar).
-            if let Some(t) = target_uid {
+            if let Some(t) = fin.target_uid {
                 hooks::update_surrounded_facing(state, t);
             }
         }
@@ -10374,7 +10975,8 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         // the previous iteration left behind.
         hooks::latch_vigor_at_play_start(state, card_uid);
         crate::fool::latch_stretch_at_play_start(state, card_uid);
-        let _ = crate::card_effects::dispatch_for_card(state, card_uid, card.card_id, target_uid);
+        let _ =
+            crate::card_effects::dispatch_for_card(state, card_uid, card.card_id, fin.target_uid);
         if state.combat_log.card_play_faulted {
             return finish_faulted_card_play(state, card_uid);
         }
@@ -10390,9 +10992,9 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         }
         replay_after_on_play(
             state,
-            &card,
+            card,
             card_uid,
-            weighted_drain,
+            fin.weighted_drain,
             &played_ctx,
             &hook_played_ctx,
             true,
@@ -10450,11 +11052,11 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
             let before_played_listeners = state.cards.len();
             let before_hooks_live = replay_before_card_played_live(state);
             if before_hooks_live {
-                dispatch_relic_before_card_played_replay(state, &played_ctx, resolved_cost);
+                dispatch_relic_before_card_played_replay(state, &played_ctx, fin.resolved_cost);
                 crate::hooks::dispatch_before_card_played_powers_on_replay(
                     state,
-                    replay_resolved_cost(state, card_uid, resolved_cost),
-                    card_is_ethereal,
+                    replay_resolved_cost(state, card_uid, fin.resolved_cost),
+                    fin.card_is_ethereal,
                     card_uid,
                 );
                 // v0.111.0: Juggling's `BeforeCardPlayed` runs per play iteration
@@ -10463,7 +11065,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 // `SurroundedPower.BeforeCardPlayed` re-faces toward the target on
                 // every play iteration, not only the first (Defect loadout v0.107.1
                 // seed 7475: an echoed Uproar).
-                if let Some(t) = target_uid {
+                if let Some(t) = fin.target_uid {
                     hooks::update_surrounded_facing(state, t);
                 }
             }
@@ -10479,8 +11081,12 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 state.discount_stomp_on_attack_played_among(before_played_listeners);
             }
             // Re-run the card effect.
-            let _ =
-                crate::card_effects::dispatch_for_card(state, card_uid, card.card_id, target_uid);
+            let _ = crate::card_effects::dispatch_for_card(
+                state,
+                card_uid,
+                card.card_id,
+                fin.target_uid,
+            );
             if state.combat_log.card_play_faulted {
                 return finish_faulted_card_play(state, card_uid);
             }
@@ -10494,9 +11100,9 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
             }
             replay_after_on_play(
                 state,
-                &card,
+                card,
                 card_uid,
-                weighted_drain,
+                fin.weighted_drain,
                 &played_ctx,
                 &hook_played_ctx,
                 false,
@@ -10543,13 +11149,17 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
     // `corruption_active_pre_dispatch` above), use the Corruption state as it
     // stood at play-START, not the post-dispatch state.
     let corruption_exhausts_skill =
-        card.card_type == cards::CardType::Skill && corruption_active_pre_dispatch;
+        card.card_type == cards::CardType::Skill && fin.corruption_active_pre_dispatch;
     // C# `GetResultPileType()` (`CardModel.cs:1608-1619`): `IsDupe || Power`
     // → `PileType.None` (removed from combat) BEFORE the Exhaust-keyword
     // check; Corruption's hook override (owner Skill → Exhaust) then beats
     // the None. A dupe-flagged card hand-played later (Anger's poisoned
     // clone, sweep seed 5192) therefore VANISHES instead of discarding.
     let played_card_is_dupe = card.combat_var(VarKey::IsDupe) != 0;
+    // The played card's Exhaust keyword, read once for the three routing
+    // tests below: `card` is the immutable play-start snapshot and the
+    // keyword registry is install-once, so every read agrees.
+    let card_exhausts = crate::card_effects::card_exhausts_inst(card);
     // The exhaust disposal defers while a `pending_choice` is open, exactly
     // like the Discard branch below: C# `OnPlayWrapper`'s disposal
     // (`CardModel.cs:1538-1553`) runs strictly after `OnPlay` returns, and
@@ -10566,8 +11176,8 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
     // Corruption's Skill→Exhaust override is disjoint (Skills vs Attacks), so no
     // precedence conflict. The physical move still waits for an open choice to
     // close; the claim is recorded for `flush_played_cards_after_choice`.
-    let feral_moves_to_hand = feral_returns_to_hand && state.pending_choice.is_none();
-    if feral_returns_to_hand && state.pending_choice.is_some() {
+    let feral_moves_to_hand = fin.feral_returns_to_hand && state.pending_choice.is_none();
+    if fin.feral_returns_to_hand && state.pending_choice.is_some() {
         state.combat_log.feral_claimed_in_play = Some(card_uid);
     }
     // Co-op (GH #1017): a result pile that belongs to another player (The
@@ -10589,14 +11199,14 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         && crate::coop::hand_over_played_card(
             state,
             card_uid,
-            feral_returns_to_hand || played_card_is_dupe,
-            crate::card_effects::card_exhausts_inst(&card) || corruption_exhausts_skill,
+            fin.feral_returns_to_hand || played_card_is_dupe,
+            card_exhausts || corruption_exhausts_skill,
         );
     let stays_in_play_at_combat_end = combat_is_ending(state)
         && (feral_moves_to_hand
             || !(card.card_type == cards::CardType::Power
                 || played_card_is_dupe
-                || crate::card_effects::card_exhausts_inst(&card)
+                || card_exhausts
                 || corruption_exhausts_skill));
     if handed_over {
         // Handed over: nothing left to route.
@@ -10642,8 +11252,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 state.player.discard.insert(0, card_uid);
             }
         }
-    } else if ((crate::card_effects::card_exhausts_inst(&card) && !played_card_is_dupe)
-        || corruption_exhausts_skill)
+    } else if ((card_exhausts && !played_card_is_dupe) || corruption_exhausts_skill)
         && state.pending_choice.is_none()
     {
         // The card that exhausts is the one on Play now (a MourningBlow's
@@ -10652,7 +11261,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         let _ = exhaust_from_play(
             state,
             card_uid,
-            target_uid,
+            fin.target_uid,
             moved.card_id,
             moved.tags,
             moved.card_type,
@@ -10710,7 +11319,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         // `played_card_is_dupe` branch above (removed from combat), matching C#'s
         // `IsDupe -> PileType.None` resolving before the override
         // (`CardModel.cs:2071-2083`), so it never reaches here.
-        let is_particle_wall = discard_result_goes_to_hand(&state.cards[card_idx]);
+        let is_particle_wall = discard_result_goes_to_hand(&state.cards[fin.card_idx]);
         if is_shining_strike {
             if let Some(pos) = state.player.play.iter().position(|&u| u == card_uid) {
                 state.player.play.remove(pos);
@@ -10729,9 +11338,9 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
         } else if let Some(which) = resolve_draw_top_redirect(
             state,
             is_attack_or_skill,
-            attacks_skills_at_play_start.saturating_add(1),
-            rebound_amount_at_play_start,
-            nostalgia_amount_at_play_start,
+            fin.attacks_skills_at_play_start.saturating_add(1),
+            fin.rebound_amount_at_play_start,
+            fin.nostalgia_amount_at_play_start,
         ) {
             // Nostalgia or Rebound sends a Discard-bound result to draw-top,
             // whichever the owner picked up first (GH #650), and only that one
@@ -10747,12 +11356,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
                 cards::pin_top(&mut state.player, card_uid);
             }
         } else {
-            let _ = cards::move_card(
-                &mut state.player,
-                card_uid,
-                PileKind::Play,
-                PileKind::Discard,
-            );
+            move_play_card_to_discard(state, card_uid);
         }
     }
     after_result_location(state, card_uid);
@@ -10761,7 +11365,7 @@ fn finish_card_play_tail(state: &mut CombatState, fin: CardPlayFinish) -> StepRe
     // still held in Play across an open choice is cleaned up by
     // `flush_played_cards_after_choice` when it closes.
     if !state.player.play.contains(&card_uid) {
-        clear_when_played_costs(state, card_idx);
+        clear_when_played_costs(state, fin.card_idx);
     }
     // else: the card's OnPlay opened a `pending_choice` (Headbutt's
     // PutBack, Armaments' upgrade-in-hand select, …). C# holds the played
@@ -11120,6 +11724,17 @@ pub fn auto_play_card_from_draw_top(state: &mut CombatState, force_exhaust: bool
 /// is not an I Am Invincible" — so the caller must drop it with
 /// [`cards::drop_sampled_top_pin`] before anything can surface a choice.
 fn auto_play_i_am_invincible_from_draw_top(state: &mut CombatState) -> Option<crate::CardUid> {
+    // Every pile uid indexes the card arena, so an arena with no I Am
+    // Invincible proves the pile walk below finds no listener: nothing is
+    // peeked or played and the answer is `None`. One flat arena scan instead
+    // of the five-pile chained collect on every turn end.
+    if !state
+        .cards
+        .iter()
+        .any(|c| c.card_id == cards::CardId::IAmInvincible)
+    {
+        return None;
+    }
     let listeners: smallvec::SmallVec<[crate::CardUid; 4]> = state
         .player
         .hand
@@ -11597,7 +12212,8 @@ pub(crate) fn resume_collect(
 /// Put `outer` under the resume a collected card just parked: its finish
 /// becomes the frame after the new chain, and its own chain and loop
 /// continuation follow, in their existing order.
-fn nest_outer_resume(state: &mut CombatState, outer: crate::PendingAutoplayResume) {
+fn nest_outer_resume(state: &mut CombatState, outer: Box<crate::PendingAutoplayResume>) {
+    let outer = *outer;
     let next = state
         .pending_autoplay_resume
         .as_mut()
@@ -11737,9 +12353,14 @@ fn chains_note_bound_card_played(state: &mut CombatState, card: &crate::cards::C
 /// seeds 3931/5571: a Ringing/Bound-blocked Cascade/Stampede auto-play
 /// actually resolved in Rust).
 pub fn player_should_play_blocked(state: &CombatState, card: &crate::cards::Card) -> bool {
-    if hooks::relic_should_play_blocked(state) || crate::fool::encore_blocks(state) {
+    // `encore_blocks` needs `encore_plays >= amount > 0`, and `encore_plays`
+    // reads 0 without a Fool state: skip its power lookup then.
+    if hooks::relic_should_play_blocked(state)
+        || (state.player.fool.is_some() && crate::fool::encore_blocks(state))
+    {
         return true;
     }
+    debug_assert!(!crate::fool::encore_blocks(state));
     if matches!(
         card.affliction,
         Some(crate::card_afflictions::CardAffliction {
@@ -11777,7 +12398,14 @@ pub fn player_should_play_blocked(state: &CombatState, card: &crate::cards::Card
     // Both Sloth (`BeforeCardPlayed` counter) and Ringing
     // (`CardPlaysStarted` scan) count STARTED plays — an in-flight parent
     // play (Cascade/Havoc gathering its auto-plays) counts.
-    if let Some(sloth_amount) = state.player.powers.iter().find_map(|puid| {
+    // No Sloth anywhere in the arena (`present_kinds` superset): the walk
+    // below finds none.
+    if !hooks::power_kind_live(state, crate::powers::PowerKind::Sloth) {
+        debug_assert!(!state.player.powers.iter().any(|puid| state
+            .powers
+            .get_by_id(puid.0)
+            .is_some_and(|p| p.kind == crate::powers::PowerKind::Sloth)));
+    } else if let Some(sloth_amount) = state.player.powers.iter().find_map(|puid| {
         state
             .powers
             .get_by_id(puid.0)
@@ -13665,7 +14293,7 @@ fn park_auto_play_finish(state: &mut CombatState, fin: AutoPlayFinish, force_exh
         });
         return;
     }
-    state.pending_autoplay_resume = Some(crate::PendingAutoplayResume {
+    state.pending_autoplay_resume = Some(Box::new(crate::PendingAutoplayResume {
         finish: fin,
         remaining: smallvec::SmallVec::new(),
         force_exhaust,
@@ -13679,7 +14307,7 @@ fn park_auto_play_finish(state: &mut CombatState, fin: AutoPlayFinish, force_exh
         // `OnPlay` (an outer Hellraiser draw arms its marker only after
         // this stash), so it belongs to this card's finish.
         inner_draw: state.pending_draw_resume.take(),
-    });
+    }));
 }
 
 /// The half of an auto-played card's replay that runs after its `OnPlay`
@@ -13790,6 +14418,20 @@ mod tests {
     };
 
     use smallvec::SmallVec;
+
+    /// `TURN_START_CLUSTER_KINDS` (the snapshot-skip gate in
+    /// `finish_player_turn_setup`) holds exactly the kinds the cluster walk
+    /// has an arm for.
+    #[test]
+    fn turn_start_cluster_kinds_drift() {
+        for &k in crate::PowerKind::all() {
+            assert_eq!(
+                TURN_START_CLUSTER_KINDS.contains(k),
+                is_turn_start_cluster_kind(k),
+                "{k:?}"
+            );
+        }
+    }
     use std::num::NonZeroU32;
 
     #[test]
@@ -14039,6 +14681,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14087,6 +14730,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -14181,6 +14825,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14244,6 +14889,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14289,6 +14935,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 8,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14356,6 +15003,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 8,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14492,6 +15140,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 8,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14545,6 +15194,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 8,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14615,6 +15265,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14736,6 +15387,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14804,6 +15456,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14873,6 +15526,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14935,6 +15589,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -14991,6 +15646,7 @@ mod tests {
             card_type: crate::cards::CardType::Skill,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 9,
             combat_vars: crate::cards::CombatVars::new(),
@@ -15041,6 +15697,7 @@ mod tests {
             card_type: crate::cards::CardType::Status,
             target_type: crate::cards::TargetType::None,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -15379,6 +16036,7 @@ mod tests {
                     card_type: crate::cards::CardType::Attack,
                     target_type: crate::cards::TargetType::Enemy,
                     upgraded: false,
+                    extra_upgrades: 0,
                     base_damage: 3,
                     base_block: 0,
                     combat_vars: crate::cards::CombatVars::new(),
@@ -15449,6 +16107,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 3,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -15791,6 +16450,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -15931,6 +16591,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -16014,6 +16675,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -16724,6 +17386,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -16773,6 +17436,7 @@ mod tests {
                 card_type: crate::cards::CardType::Skill,
                 target_type: crate::cards::TargetType::Self_,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 0,
                 base_block: 5,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -16824,6 +17488,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -16895,6 +17560,7 @@ mod tests {
             card_type: crate::cards::CardType::Skill,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -17821,6 +18487,7 @@ mod tests {
             card_type: crate::cards::CardType::Curse,
             target_type: crate::cards::TargetType::None,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -18628,6 +19295,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -18682,6 +19350,7 @@ mod tests {
                 card_type: crate::cards::CardType::Attack,
                 target_type: crate::cards::TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -18749,6 +19418,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -18930,6 +19600,7 @@ mod tests {
                 card_type: crate::cards::CardType::Status,
                 target_type: crate::cards::TargetType::None,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 0,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -22302,6 +22973,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -22906,6 +23578,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -22990,6 +23663,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::AllEnemies,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 4,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -23136,6 +23810,7 @@ mod tests {
             card_type: crate::cards::CardType::Skill,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -24302,6 +24977,7 @@ mod tests {
             card_type: crate::cards::CardType::Skill,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),

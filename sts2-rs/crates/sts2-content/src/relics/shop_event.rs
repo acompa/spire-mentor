@@ -1171,7 +1171,8 @@ pub fn install_pool() {
     //     leaves the player potionless (latch-guarded).
     // `AfterPotionProcured` (-2 Dex when a potion is gained mid-combat) is
     // `CombatState::try_procure_potion` in sts2-core, the one combat-side
-    // procure. `AfterPotionDiscarded` has no combat-side discard to hook. The latch
+    // procure. `AfterPotionDiscarded` is `CombatState::discard_potion` in
+    // sts2-core, the agent-mode potion-popup discard (GH #1606). The latch
     // lives in `relic.counter` (0 = not applied, 1 = applied). Bead
     // `sts2-rs-xu8d6`.
     register_before_combat_start(
@@ -3201,6 +3202,27 @@ fn try_queue_interactive_enchant(
     true
 }
 
+/// C# `CardSelectCmd.FromDeckForEnchantment(player, ench, amount,
+/// CardSelectorPrefs(prompt, count))` followed by `CardCmd.Enchant` on every
+/// pick: an exact-`count` select over the `CanEnchant` pool. Queues `count`
+/// interactive picks when the run surfaces deck card-selects and the pool
+/// holds more than `count` cards; otherwise (`cards.Count <= MinSelect`, or a
+/// non-interactive run) enchants the first `count` eligible cards in deck
+/// order. Returns `true` when picks were queued. Shared by the events that
+/// enchant from the deck (SpiralingWhirlpool, WaterloggedScriptorium).
+pub(crate) fn enchant_from_deck(
+    rs: &mut RunState,
+    ench: sts2_core::cards::EnchantmentId,
+    amount: i32,
+    count: usize,
+) -> bool {
+    if try_queue_interactive_enchant(rs, ench, amount, count, false) {
+        return true;
+    }
+    let _ = enchant_eligible_deck_cards(rs, ench, amount, count);
+    false
+}
+
 /// `GnarledHammer::after_obtained` — enchant up to `GNARLED_HAMMER_CARDS`
 /// eligible deck cards with `Sharp(GNARLED_HAMMER_SHARP)` (Python
 /// `shop_event.py::GnarledHammer.after_obtained`,
@@ -4918,6 +4940,7 @@ fn listener_alchemical_coffer(rs: &mut RunState) -> EffectResult {
             rs.potions_overflow_dropped += 1;
         }
     }
+    rs.settle_waiting_potions();
     EffectResult::Resolved
 }
 
@@ -5416,6 +5439,19 @@ pub const PAELS_FLESH_ENERGY: i32 = 1;
 /// `sts2-rl-agent@01c094d:sts2_env/relics/shop_event.py::PaelsFlesh`).
 /// `u16` matches the engine's `round_no()` type.
 pub const PAELS_FLESH_ROUND_MIN: u16 = 3;
+
+/// The max energy C#'s `PaelsFlesh.ModifyMaxEnergy` adds (`TurnNumber >= 3`)
+/// and the port grants from [`listener_paels_flesh`] instead, so the engine's
+/// stored `max_energy` leaves it out. The wire carries C#'s
+/// `PlayerCombatState.MaxEnergy`, which counts it (GH #1701).
+#[must_use]
+pub fn paels_flesh_max_energy_bonus(state: &CombatState) -> i32 {
+    if state.relics.owns(RelicKind::PaelsFlesh) && state.turn_number() >= PAELS_FLESH_ROUND_MIN {
+        PAELS_FLESH_ENERGY
+    } else {
+        0
+    }
+}
 
 /// `BeltBuckle::DEXTERITY` — +2 / -2 Dex on potion-procurement state
 /// (C# `BeltBuckle.cs` `PowerVar<DexterityPower>(2m)`).
@@ -14280,6 +14316,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: sts2_core::cards::CombatVars::new(),

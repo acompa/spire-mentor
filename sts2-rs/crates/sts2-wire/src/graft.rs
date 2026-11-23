@@ -297,6 +297,60 @@ pub fn set_room_type(rm: &mut RunManager, room_type: &str) -> GraftResult<()> {
     Ok(())
 }
 
+/// Name the fight the run stands in (GH #1477, #1197): the game's
+/// `EncounterModel.Id.Entry`, which is the sim's encounter id. A table
+/// encounter sets `RunState::current_encounter_idx`; an event fight stages its
+/// [`EventCombatRequest`] on `RunState::event_combat` as the event does.
+/// Either way [`crate::emit::run_manager::combat_encounter_id`] then reads
+/// `id` back once the run is in combat — the e2e net's `X_ID_AUX` input.
+///
+/// # Errors
+/// An id that is neither a sim encounter nor one of the sim's event fights
+/// in the run's game build.
+pub fn set_combat_encounter(rm: &mut RunManager, id: &str) -> GraftResult<()> {
+    use sts2_core::events::{BattlewornDummySetting as S, EventCombatRequest, EventEncounter};
+    let id = id.trim().trim_start_matches("ENCOUNTER.");
+    if let Some(def) = sts2_content::encounters::find(id) {
+        rm.run_state.current_encounter_idx = Some(sts2_content::encounters::encounter_index(def));
+        rm.run_state.event_combat = None;
+        return Ok(());
+    }
+    let version = rm.run_state.game_version;
+    let events = [
+        EventEncounter::BattlewornDummy(S::Setting1),
+        EventEncounter::BattlewornDummy(S::Setting2),
+        EventEncounter::BattlewornDummy(S::Setting3),
+        EventEncounter::MysteriousKnight,
+        EventEncounter::FakeMerchant,
+        EventEncounter::DenseVegetation,
+        EventEncounter::PunchOff,
+    ];
+    let encounter = events
+        .into_iter()
+        .find(|&e| crate::emit::names::event_encounter_id_for(e, version) == id)
+        .ok_or_else(|| format!("unknown encounter {id:?} for game build {version:?}"))?;
+    // Only the fight is rebuilt, not the event behind it: the request names
+    // the event's encounter and its parent, with no victory rewards.
+    rm.run_state.event_combat = Some(match encounter {
+        EventEncounter::BattlewornDummy(_) => {
+            EventCombatRequest::resuming(encounter, EventId::BattlewornDummy)
+        }
+        EventEncounter::MysteriousKnight => {
+            EventCombatRequest::no_resume(encounter, EventId::TheLanternKey, Vec::new())
+        }
+        EventEncounter::FakeMerchant => {
+            EventCombatRequest::no_resume(encounter, EventId::FakeMerchant, Vec::new())
+        }
+        EventEncounter::DenseVegetation => {
+            EventCombatRequest::no_resume(encounter, EventId::DenseVegetation, Vec::new())
+        }
+        EventEncounter::PunchOff => {
+            EventCombatRequest::no_resume(encounter, EventId::PunchOff, Vec::new())
+        }
+    });
+    Ok(())
+}
+
 /// `debug_open_card_offer`: open `Phase::CardReward` with `cards` (card
 /// specs). With `bundles` (a list of packs, each a list of card specs or ids
 /// — `card_reward_bundles()`'s shape) the offer is a pack pick and `cards`
@@ -522,6 +576,11 @@ fn card_rarity(id: CardId, version: GameVersion) -> sts2_core::card_rewards::Rew
 /// `"base_price"`. Returns the rows whose displayed price no base maps onto
 /// (`"cards[2]"`, `"removal_cost"`, …) — those keep the displayed value.
 ///
+/// `"fake_merchant": true` opens the Fake Merchant's shop instead (GH
+/// #1607): its displayed prices are the rolled ones (no merchant-price
+/// relic folds in an event room), it has no removal, and the run stands in
+/// its bound event, so leaving ends the event.
+///
 /// Rarity buckets are not on the wire: cards take their spec rarity, relic
 /// slot 2 is the Shop slot, potions read Common. Only The Courier's restock
 /// reads them, and a restock re-rolls off cursors the snapshot moved anyway.
@@ -530,10 +589,19 @@ fn card_rarity(id: CardId, version: GameVersion) -> sts2_core::card_rewards::Rew
 /// A malformed inventory or an unknown id.
 pub fn open_shop(rm: &mut RunManager, inventory: &Value) -> GraftResult<Vec<String>> {
     let version = rm.run_state.game_version;
-    let relics_owned: Vec<RelicId> = rm.run_state.active_relics().into_owned();
     let inv_obj = inventory
         .as_object()
         .ok_or_else(|| format!("inventory must be a dict, got {inventory}"))?;
+    let fake_merchant = inv_obj
+        .get("fake_merchant")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    // No relic discounts the Fake Merchant: invert against none.
+    let relics_owned: Vec<RelicId> = if fake_merchant {
+        Vec::new()
+    } else {
+        rm.run_state.active_relics().into_owned()
+    };
     let rows = |key: &str| -> GraftResult<Vec<serde_json::Map<String, Value>>> {
         match inv_obj.get(key) {
             None | Some(Value::Null) => Ok(Vec::new()),
@@ -642,8 +710,133 @@ pub fn open_shop(rm: &mut RunManager, inventory: &Value) -> GraftResult<Vec<Stri
         .get("removal_used")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    if fake_merchant {
+        inv.fake_merchant = true;
+        inv.removal_used = true;
+        inv.removal_cost = 0;
+        rm.run_state.current_event = Some(sts2_core::events::EventId::FakeMerchant);
+        rm.debug_set_room_type(sts2_core::runstate::RoomType::Event);
+    }
     rm.debug_open_shop(inv);
     Ok(unmatched)
+}
+
+/// `force_add_relic`: add `relic_id` (`RELIC.` prefix tolerated) and fire
+/// its on-obtain hooks, as picking it up would. `false` when the run
+/// already holds it.
+///
+/// # Errors
+/// An unknown relic id.
+pub fn force_add_relic(rm: &mut RunManager, relic_id: &str) -> GraftResult<bool> {
+    let stripped = relic_id.strip_prefix("RELIC.").unwrap_or(relic_id);
+    let rid = resolve_relic_id(stripped, rm.run_state.game_version)
+        .ok_or_else(|| format!("unknown relic id {relic_id:?}"))?;
+    let rs = &mut rm.run_state;
+    if rs.relics.contains(&rid) {
+        return Ok(false);
+    }
+    rs.relics.push(rid);
+    rs.last_obtained_relic = Some(rid);
+    let _ = sts2_core::run_effects::dispatch_after_obtained(rs);
+    rs.last_obtained_relic = None;
+    Ok(true)
+}
+
+/// `debug_set_potion_state`: the belt and the potions waiting on a full
+/// belt, replaced whole (Python potion names).
+///
+/// # Errors
+/// An unknown potion; the run is then partly set.
+pub fn set_potion_state(
+    rm: &mut RunManager,
+    potions: &[String],
+    pending: &[String],
+) -> GraftResult<()> {
+    let parse = |name: &str| {
+        crate::state_dict::potion_kind_from_python_name(name)
+            .ok_or_else(|| format!("unknown potion {name:?}"))
+    };
+    let rs = &mut rm.run_state;
+    rs.potions.clear();
+    for name in potions {
+        rs.potions.push(parse(name)?);
+    }
+    rs.pending_potion_swaps.clear();
+    for name in pending {
+        rs.pending_potion_swaps.push(parse(name)?);
+    }
+    Ok(())
+}
+
+/// `debug_set_rng_counters`: fast-forward each named run RNG stream to its
+/// cursor (`counters`, in order). Returns the names this engine has no
+/// stream for, sorted.
+///
+/// # Errors
+/// No counters (a seed without cursors would rebuild every stream at count
+/// 0), `run_seed` not this run's seed, or a cursor behind its stream.
+pub fn set_rng_counters(
+    rm: &mut RunManager,
+    run_seed: u64,
+    counters: &[(String, u32)],
+) -> GraftResult<Vec<String>> {
+    if counters.is_empty() {
+        return Err("debug_set_rng_counters: empty counters — a seed without \
+             cursors rebuilds every stream at count 0, which destroys \
+             more lineage than it restores. Pass the whole block or none."
+            .into());
+    }
+    // `RunRngSet.Seed`: ≤ u32::MAX in v0.107.1, a full u64 in v0.111.0
+    // (GH #788). The caller passes the unsigned view (a negative 32-bit
+    // seed is normalised by `state_import._rng_block`).
+    let ours = rm.run_state.rng.seed;
+    if run_seed != ours {
+        return Err(format!(
+            "debug_set_rng_counters: run_seed {run_seed} is not this run's \
+             seed ({ours}) — these cursors belong to a different run"
+        ));
+    }
+    let mut ignored: Vec<String> = Vec::new();
+    for (name, target) in counters {
+        let Some(stream) = rm.run_state.rng.stream_mut(name) else {
+            ignored.push(name.clone());
+            continue;
+        };
+        let current = stream.counter();
+        if *target < current {
+            return Err(format!(
+                "debug_set_rng_counters: stream {name:?} is already at \
+                 {current}, cannot rewind to {target}"
+            ));
+        }
+        stream.fast_forward_counter(*target);
+    }
+    ignored.sort();
+    Ok(ignored)
+}
+
+/// `debug_set_neow_offers`: stand on the screen's three Neow offers (two
+/// positive, then the curse), as snake-case relic ids (`RELIC.` tolerated).
+///
+/// # Errors
+/// A name that is not a Neow relic.
+pub fn set_neow_offers(
+    rm: &mut RunManager,
+    positive_1: &str,
+    positive_2: &str,
+    cursed: &str,
+) -> GraftResult<()> {
+    let parse = |name: &str| {
+        let id = name.strip_prefix("RELIC.").unwrap_or(name);
+        sts2_core::NeowRelic::from_snake_case_id(id)
+            .ok_or_else(|| format!("{name:?} is not a Neow relic"))
+    };
+    rm.run_state.neow_offers = Some(sts2_core::NeowOffers {
+        positive_1: parse(positive_1)?,
+        positive_2: parse(positive_2)?,
+        cursed: parse(cursed)?,
+    });
+    Ok(())
 }
 
 #[cfg(test)]

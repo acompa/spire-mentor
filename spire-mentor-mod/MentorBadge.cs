@@ -55,14 +55,14 @@ internal static class MentorBadge
     /// <summary>The mode in one or two words.</summary>
     public static string ModeWord(in BadgeState s) =>
         s.Autopilot
-            ? s.AutopilotEngaged ? "Autopilot" : "Autopilot (waiting)"
+            ? s.AutopilotEngaged ? L10n.T("Autopilot") : L10n.T("Autopilot (waiting)")
             : s.Mode switch
             {
-                MentorMode.Off => "Off",
-                MentorMode.AiPlays => "AI playing",
-                _ when s.Autobattle => "Autobattle",
-                MentorMode.Coach => "Coach",
-                _ => "Hints",
+                MentorMode.Off => L10n.T("Off"),
+                MentorMode.AiPlays => L10n.T("AI playing"),
+                _ when s.Autobattle => L10n.T("Autobattle"),
+                MentorMode.Coach => L10n.T("Coach"),
+                _ => L10n.T("Hints"),
             };
 
     /// <summary>
@@ -77,7 +77,7 @@ internal static class MentorBadge
     {
         if (s.Advisor == AdvisorStatusLite.Building)
         {
-            return $"building the engine {s.BuildElapsed}";
+            return L10n.F("building the engine {0}", s.BuildElapsed);
         }
         if (s.Mode == MentorMode.Off || s.Autopilot)
         {
@@ -85,9 +85,9 @@ internal static class MentorBadge
         }
         return s.Advisor switch
         {
-            AdvisorStatusLite.Thinking => "thinking " + (still ? "…" : DotFrames[Math.Abs(frame) % DotFrames.Length]),
-            AdvisorStatusLite.Launching or AdvisorStatusLite.None => "starting",
-            AdvisorStatusLite.Crashed => "offline",
+            AdvisorStatusLite.Thinking => L10n.F("thinking {0}", still ? "…" : DotFrames[Math.Abs(frame) % DotFrames.Length]),
+            AdvisorStatusLite.Launching or AdvisorStatusLite.None => L10n.T("starting"),
+            AdvisorStatusLite.Crashed => L10n.T("offline"),
             _ => null,
         };
     }
@@ -102,11 +102,11 @@ internal static class MentorBadge
     {
         if (s.Advisor == AdvisorStatusLite.Building)
         {
-            return $"{Name} · Building the engine {s.BuildElapsed}";
+            return L10n.F("{0} · Building the engine {1}", Name, s.BuildElapsed);
         }
         if (s.Hidden)
         {
-            return $"{Name} · hidden (click to show)";
+            return L10n.F("{0} · hidden (click to show)", Name);
         }
         string text = $"{Name} · {ModeWord(s)}";
         string? activity = Activity(s, frame, still);
@@ -122,29 +122,28 @@ internal static class MentorBadge
     {
         if (s.Advisor == AdvisorStatusLite.Building)
         {
-            return "The first start after an update builds the engine, which takes minutes. " +
-                   "Leave the game running: quitting starts it over.";
+            return L10n.T("The first start after an update builds the engine, which takes minutes. Leave the game running: quitting starts it over.");
         }
         if (s.Autopilot)
         {
             return s.AutopilotEngaged
-                ? "Autopilot is playing this run. Pick Coach or Hints to take the controls (F8)."
-                : "Autopilot is waiting for its AI client. Pick Coach or Hints to play yourself (F8).";
+                ? L10n.T("Autopilot is playing this run. Pick Coach or Hints to take the controls (F8).")
+                : L10n.T("Autopilot is waiting for its AI client. Pick Coach or Hints to play yourself (F8).");
         }
         if (s.Mode == MentorMode.Off)
         {
-            return "The AI is off. Pick Coach or Hints for advice while you play.";
+            return L10n.T("The AI is off. Pick Coach or Hints for advice while you play.");
         }
         return s.Advisor switch
         {
-            AdvisorStatusLite.Launching or AdvisorStatusLite.None => "Starting the advisor…",
-            AdvisorStatusLite.Crashed => "Advisor offline. Switch the AI Off and back on to restart it.",
+            AdvisorStatusLite.Launching or AdvisorStatusLite.None => L10n.T("Starting the advisor…"),
+            AdvisorStatusLite.Crashed => L10n.T("Advisor offline. Switch the AI Off and back on to restart it."),
             _ => s.Mode switch
             {
-                MentorMode.AiPlays => "The AI is playing until you stop it (F7).",
-                _ when s.Autobattle => "Autobattle: the AI plays the fights, you make the run's decisions.",
-                MentorMode.Coach => "Coach: nothing shows before you act. Peek (F5) shows the next pick.",
-                _ => "Hints: the AI's opinion shows while you decide.",
+                MentorMode.AiPlays => L10n.T("The AI is playing until you stop it (F7)."),
+                _ when s.Autobattle => L10n.T("Autobattle: the AI plays the fights, you make the run's decisions."),
+                MentorMode.Coach => L10n.T("Coach: nothing shows before you act. Peek (F5) shows the next pick."),
+                _ => L10n.T("Hints: the AI's opinion shows while you decide."),
             },
         };
     }
@@ -153,11 +152,11 @@ internal static class MentorBadge
     /// when the AI is not playing. Autopilot's stop is a takeover (F8).</summary>
     public static string? StopLabel(in BadgeState s) =>
         s.Autopilot
-            ? s.AutopilotEngaged ? "Autopilot is playing — Take over (F8)" : "Autopilot waiting — Take over (F8)"
+            ? s.AutopilotEngaged ? L10n.T("Autopilot is playing — Take over (F8)") : L10n.T("Autopilot waiting — Take over (F8)")
             : s.Mode == MentorMode.AiPlays
-                ? "AI is playing — Stop (F7)"
+                ? L10n.T("AI is playing — Stop (F7)")
                 : s.Autobattle
-                    ? "AI fights — Stop (F7)"
+                    ? L10n.T("AI fights — Stop (F7)")
                     : null;
 }
 

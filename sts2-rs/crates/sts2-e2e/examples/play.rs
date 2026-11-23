@@ -6,6 +6,10 @@
 //! cargo run --release -p sts2-e2e --example play -- WEIGHTS SEED_START N [THREADS] [PY_PANEL.jsonl]
 //! ```
 //!
+//! `STS2_E2E_CHARACTER` (default Ironclad) names the character, as the
+//! Python evaluation's env var does (GH #1197). The tokenizer's "chars" fill
+//! event follows the net's header (`E2eNet::fills`).
+//!
 //! `PY_PANEL.jsonl` is `verify_wr.py`'s output (one row per seed with
 //! `seed`, `won`, `chosen`). Prints one JSON row per seed to stdout and a
 //! summary to stderr: win rate, ms per decision split into env / tokenize /
@@ -17,9 +21,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use sts2_e2e::env::{E2eEnv, Step};
+use sts2_e2e::env::{parse_character_for, CharacterId, E2eEnv, Step};
 use sts2_e2e::net::{E2eNet, PolicyRow};
-use sts2_e2e::tokens::{encode, TokCache};
+use sts2_e2e::tokens::{encode_for, TokCache};
 
 struct RunOut {
     seed: i64,
@@ -31,8 +35,8 @@ struct RunOut {
     net_s: f64,
 }
 
-fn play(net: &E2eNet, seed: i64) -> RunOut {
-    let mut env = E2eEnv::new(seed);
+fn play(net: &E2eNet, seed: i64, character: CharacterId) -> RunOut {
+    let mut env = E2eEnv::new_for(seed, character);
     let mut cache = TokCache::new();
     let (mut env_s, mut tok_s, mut net_s) = (0.0, 0.0, 0.0);
     let mut chosen = Vec::new();
@@ -54,7 +58,7 @@ fn play(net: &E2eNet, seed: i64) -> RunOut {
             }
             Step::Decision(d) => {
                 let t0 = Instant::now();
-                let row: PolicyRow = encode(&d, env.rm(), &mut cache)
+                let row: PolicyRow = encode_for(net, &d, env.rm(), &mut cache)
                     .unwrap_or_else(|e| panic!("seed {seed}: tokenize: {e}"))
                     .into();
                 let t1 = Instant::now();
@@ -101,6 +105,14 @@ fn main() {
     let n: i64 = args[3].parse().expect("n");
     let threads: usize = args.get(4).map_or(8, |s| s.parse().expect("threads"));
     let panel = args.get(5).map(|p| Arc::new(read_panel(p)));
+    // The net's own build: its tables, and the runs it plays (the Fool's
+    // net is v0.113.0's).
+    let build = net.build().expect("weights build");
+    let character = parse_character_for(
+        &std::env::var("STS2_E2E_CHARACTER").unwrap_or_else(|_| "Ironclad".into()),
+        build,
+    )
+    .expect("STS2_E2E_CHARACTER");
 
     let next = Arc::new(AtomicI64::new(start));
     let results = Arc::new(Mutex::new(Vec::<RunOut>::new()));
@@ -108,13 +120,16 @@ fn main() {
     let handles: Vec<_> = (0..threads)
         .map(|_| {
             let (net, next, results) = (Arc::clone(&net), Arc::clone(&next), Arc::clone(&results));
-            std::thread::spawn(move || loop {
-                let seed = next.fetch_add(1, Ordering::Relaxed);
-                if seed >= start + n {
-                    break;
+            std::thread::spawn(move || {
+                let _tables = sts2_e2e::build::Scope::enter(build);
+                loop {
+                    let seed = next.fetch_add(1, Ordering::Relaxed);
+                    if seed >= start + n {
+                        break;
+                    }
+                    let r = play(&net, seed, character);
+                    results.lock().expect("lock").push(r);
                 }
-                let r = play(&net, seed);
-                results.lock().expect("lock").push(r);
             })
         })
         .collect();

@@ -70,9 +70,9 @@ public class SimCombatHandler : IRoomHandler, IHandler
             ct.ThrowIfCancellationRequested();
 
             await WaitHelper.Until(
-                () => IsPlayerInPlayPhase(player) || !CombatManager.Instance.IsInProgress,
+                () => IsPlayerInPlayPhase(player) || CombatManager.Instance.IsOverOrEnding,
                 ct, PlayPhaseWait, $"Player turn {turn} never reached the play phase");
-            if (!CombatManager.Instance.IsInProgress)
+            if (CombatManager.Instance.IsOverOrEnding)
                 break;
 
             SimAutoSlayer.CurrentWatchdog?.Reset($"Combat turn {turn}");
@@ -82,7 +82,7 @@ public class SimCombatHandler : IRoomHandler, IHandler
 
             // Only reachable at the per-turn action cap: the agent never said
             // end_turn, but the turn has to finish somehow.
-            if (!agentEndedTurn && IsPlayerInPlayPhase(player) && CombatManager.Instance.IsInProgress)
+            if (!agentEndedTurn && IsPlayerInPlayPhase(player) && !CombatManager.Instance.IsOverOrEnding)
             {
                 Logger.Log($"[SimCombat] Turn {turn}: {ActionCapPerTurn}-action cap reached, forcing end turn");
                 SimAdvisor.EndTurnAsAi(player);
@@ -97,14 +97,22 @@ public class SimCombatHandler : IRoomHandler, IHandler
 
     /// <summary>
     /// Asks the agent for actions until it ends the turn, the action cap is
-    /// hit, or the player drops out of the play phase. Returns whether the
-    /// agent itself ended the turn. Rejected / errored replies still count as
-    /// an action so a misbehaving agent cannot spin the turn forever.
+    /// hit, the player drops out of the play phase, or the combat is over or
+    /// ending. Returns whether the agent itself ended the turn. Rejected /
+    /// errored replies still count as an action so a misbehaving agent cannot
+    /// spin the turn forever.
+    ///
+    /// <c>IsOverOrEnding</c>, not <c>IsInProgress</c>: a death only marks the
+    /// loss pending (<c>CombatManager.LoseCombat</c>), and the combat stays in
+    /// progress while the play that killed the player finishes. The dead
+    /// player was asked for another move (GH #1287, Ironclad A10 seed 1000:
+    /// Cascade played Blood Wall+ at 1 HP).
     /// </summary>
     private async Task<bool> RunTurnDecisionsAsync(Player player, int turn, CancellationToken ct)
     {
         int actionsTaken = 0;
-        while (actionsTaken < ActionCapPerTurn && IsPlayerInPlayPhase(player))
+        while (actionsTaken < ActionCapPerTurn && IsPlayerInPlayPhase(player)
+            && !CombatManager.Instance.IsOverOrEnding)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -894,6 +902,13 @@ public class SimCombatHandler : IRoomHandler, IHandler
                 ["room_type"] = runState?.CurrentRoom?.RoomType.ToString() ?? "Combat",
                 ["allies"] = SerializeAllies(player, runState, foes),
             };
+
+            // The fight's encounter (ModelId.Entry, e.g. "TUNNELER_WEAK"): the
+            // Instinct student reads it, and without it the advice can differ
+            // from the net's own play (GH #1197).
+            string? encounterId = combatState?.Encounter?.Id?.Entry;
+            if (!string.IsNullOrEmpty(encounterId))
+                state["encounter_id"] = encounterId;
 
             SimStateExtractor.ApplyEnvelope(state, runState, player);
             return state;

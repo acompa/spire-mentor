@@ -31,7 +31,12 @@ row with a non-empty draw pile (STATE's N_DRAW) has PRIV_DRAW tokens: the tokeni
 reads `cs.true_draw_top` or the old `state_to_dict` fallback, so PRIV_DRAW does not
 depend on the fill. Any other fill event not declared leaves no trace: its reserved
 columns are zero and no row has its reserved decision types or action kinds. A
-declared event other than WP-ENG-1 and "chars" has no positive check here (`unchecked`).
+declared event other than WP-ENG-1, "chars" and "fool" has no positive check here
+(`unchecked`).
+"fool" (GH #1535, SCHEMA.md section 13.6) is v0.113.0's event: arrows, melody and the
+Wuppy. Declared: at least `CHAR_MIN` (95%) of the Fool's combat rows have an ARROW token
+(the Fool's own arrow slot always shows, pending or made). Not declared: no row has an
+ARROW or MELODY token, an X_FOOL value or a Wuppy ALLY token.
 
 "chars" (GH #1373, SCHEMA.md section 13) is the characters' event: a row that carries
 it has its character in RUNCTX's X_CHAR. Declared: X_CHAR is set on at least `CHAR_MIN`
@@ -67,6 +72,7 @@ from . import contracts as C
 WP: Final = "WP-ENG-1"
 AUX_MIN: Final = 0.95
 CHARS: Final = C.FILL_CHARS
+FOOL: Final = C.FILL_FOOL
 CHAR_MIN: Final = 0.95
 ENEMY_MIN: Final = 0.5
 MIN_ROWS: Final = 100
@@ -90,6 +96,14 @@ def reserved_cols(event: str) -> tuple[tuple[int, ...], tuple[int, ...]]:
         tuple(C.XC[c.name] for c in C.X_CAT if c.status == status) + tuple(slots.get("cat", ())),
         tuple(C.XF[c.name] for c in C.X_CONT if c.status == status) + tuple(slots.get("cont", ())),
     )
+
+
+def _wuppy_id() -> int:
+    """The Wuppy's content id (`X_ID_MAIN` of its ALLY token); -1 on a vocab without it."""
+    from . import vocab as V
+
+    v = V.load()
+    return int(v.id("monster", "Wuppy")) if v.has("monster", "Wuppy") else -1
 
 
 def _nonzero(cat: np.ndarray, cont: np.ndarray, cols: tuple[tuple[int, ...], ...]) -> np.ndarray:
@@ -199,19 +213,25 @@ def check(rb: Mapping[str, np.ndarray], filled: Iterable[str]) -> FillCheck:
     opt = (rb["tok_flags"] & np.uint8(C.TF_OPTION)) != 0
     for ev in C.FILL_EVENTS:
         if ev in key:
-            if ev not in (WP, CHARS):
+            if ev not in (WP, CHARS, FOOL):
                 unchecked.append(ev)
             continue
         cols = reserved_cols(ev)
         status = f"reserved:{ev}"
-        dts = [d.id for d in C.DECISION_TYPES if d.status == status]
-        aks = [k.id for k in C.ACTION_KINDS if k.status == status]
+        slots = C.FILL_SLOTS.get(ev, {})
+        dts = [d.id for d in C.DECISION_TYPES if d.status == status] + list(slots.get("dtypes", ()))
+        aks = [k.id for k in C.ACTION_KINDS if k.status == status] + list(slots.get("kinds", ()))
         ptok = _nonzero(pcat, pcont, cols)
         if ev == WP:  # PRIV_ENEMY is `cs.peek_intents`, a WP-ENG-1 getter
             ptok |= psec == C.SEC["PRIV_ENEMY"]
         hits = int(_nonzero(cat, cont, cols).sum()) + int(ptok.sum())
         if secs := C.FILL_SLOTS.get(ev, {}).get("sections"):
             hits += int(np.isin(sec, list(secs)).sum())
+        if ev == FOOL:  # the Wuppy rides in "chars"' ALLY section
+            hits += int(((sec == C.SEC["ALLY"]) & (cat[:, C.XC["X_ID_MAIN"]] == _wuppy_id())).sum())
+        if ev == C.FILL_DECK_SELECT:  # a picked card's DECK token
+            picked = (sec == C.SEC["DECK"]) & (cont[:, C.XF["K_PICKED"]] != 0)
+            hits += int(picked.sum())
         hits += int(np.isin(rb["dtype"], dts).sum()) if dts else 0
         hits += int((opt & np.isin(kinds, aks)).sum()) if aks else 0
         if hits:
@@ -244,6 +264,16 @@ def check(rb: Mapping[str, np.ndarray], filled: Iterable[str]) -> FillCheck:
             f"{CHARS} declared but X_CHAR is set on {char_rows}/{n} rows (< {CHAR_MIN:.0%}): "
             "the workers do not tokenize with it (factory.fill_chars)"
         )
+    if FOOL in key and n:
+        fool_rows = comb & (cat[first, C.XC["X_CHAR"]] == C.CHAR_ID["Fool"])
+        arrow = np.zeros(n, bool)
+        arrow[tok_row[sec == C.SEC["ARROW"]]] = True
+        nf, na = int(fool_rows.sum()), int((fool_rows & arrow).sum())
+        if nf and na < CHAR_MIN * nf:
+            problems.append(
+                f"{FOOL} declared but {na}/{nf} Fool combat rows have an ARROW token "
+                f"(< {CHAR_MIN:.0%}): the wheel does not emit $.player.fool"
+            )
     if dead_filled:
         problems.append(f"{dead_filled} dead-enemy token(s) carry {WP} values")
     if draw_missing:

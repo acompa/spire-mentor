@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>spire-mentor documentation</title>
-<meta name="description" content="A bit-exact Rust re-implementation of Slay the Spire 2, an MCTS + PPO AI that plays it, a browser workbench and an in-game mod.">
+<meta name="description" content="A bit-exact Rust re-implementation of Slay the Spire 2, an AI trained on it by reinforcement learning that wins 81% of Ironclad Ascension 10 runs with no search, a browser workbench and an in-game mod.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 9v14l12 7 12-7V9z' fill='%23d9a441'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kreon:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 <script>try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
@@ -48,14 +48,16 @@
   <h1>A fast, bit-exact Slay the Spire 2 engine in Rust, and an AI that plays it</h1>
   <p class="lede">spire-mentor reimplements <em>Slay the Spire 2</em> in Rust,
   checks itself against the game's own code after every action, and runs
-  fast enough to search thousands of futures per decision, with a run-level
-  AI on top. Two front ends show
-  that AI thinking: a browser workbench and a mod for the real game.</p>
+  fast enough to train an AI on billions of its own decisions. That AI,
+  <a href="#instinct">Instinct</a>, is one neural network that plays whole
+  runs with no search and wins 81% of Ironclad runs at Ascension 10 in the
+  simulator. Two front ends show it thinking: a browser workbench and a mod
+  for the real game.</p>
   <figure class="shot wide">
     <img src="img/wb-combat.webp" width="1440" height="900" alt="The browser workbench in the act-3 boss fight (Ironclad vs the Queen): the best card, Dominate+, carries a 95% win badge, and the machine-reasoning panel ranks every legal move by value and visits.">
-    <figcaption>The browser workbench in the act-3 boss fight: the search marks
-    the best card with its win chance, and the machine-reasoning panel ranks
-    every legal move.</figcaption>
+    <figcaption>The browser workbench in the act-3 boss fight, here with the
+    combat search as the advisor: it marks the best card with its win chance,
+    and the machine-reasoning panel ranks every legal move.</figcaption>
   </figure>
 </section>
 
@@ -65,8 +67,8 @@
   <div class="cards">
     <article><h3>Engine</h3><p>Rust, deterministic, the whole game: five characters, ~580 cards, ~300 relics, three acts. Built for speed (1.3 M actions a second on one core, 31 M on a 24-core server; about 1,500× the shipped game's throughput per core), checked against the game's own code after every action, and usable from Python.</p></article>
     <article><h3>Parity harness</h3><p>Runs the game's own assembly headless and checks the engine against it after every single action, plus a fuzzer that hunts for divergences.</p></article>
-    <article><h3>Run AI</h3><p>Chance-node MCTS for fights (it never sees the draw order); a PPO-trained transformer per character for every other decision. In the simulator, at the advisor&#8217;s 4,000 simulations per decision (16,000 in boss fights), the Ironclad champion (<code>cardmods_it850</code>) wins 30% at A10 and beats A9&#8217;s final boss in 56.5% of those runs.</p></article>
-    <article><h3>Workbench</h3><p>The game in your browser, on any platform: rewind and branch, an AI coach, autobattle, post-run blunder review, the MCTS tree, state import from the real game, and SimLab.</p></article>
+    <article><h3>The AI</h3><p><a href="#instinct">Instinct</a>: one transformer that makes every decision of a run, fights included, in a single forward pass with no search. Trained end to end by self-play in the simulator, it wins 81% of Ironclad runs at A10 and plays all six characters. The earlier agent, a chance-node MCTS for fights plus a PPO run policy per character, won 21% on the same test seeds; it remains as an analysis tool and a fallback.</p></article>
+    <article><h3>Workbench</h3><p>The game in your browser, on any platform: rewind and branch, an AI coach, autobattle, post-run blunder review, the combat search tree, state import from the real game, and SimLab.</p></article>
     <article><h3>Spire Mentor</h3><p>A mod that puts the AI inside the real game as a coach, an autopilot and a rewind button.</p></article>
     <article><h3>Extraction &amp; wiki</h3><p><code>just import-game</code> decompiles your copy and extracts data, art and sound; a generator builds a static wiki.</p></article>
   </div>
@@ -74,8 +76,10 @@
 
 <section id="engine">
   <h2>The engine</h2>
-  <p><code>sts2-rs</code> re-implements the game's rules in Rust, pinned to game
-  build <strong>v0.107.1</strong>, with the game's decompiled C# as the
+  <p><code>sts2-rs</code> re-implements the game's rules in Rust, for game
+  build <strong>v0.111.0</strong> by default (the stable v0.111.1 plays
+  identically; the v0.113.0 beta with its sixth character, The Fool, and the
+  older v0.107.1 are also modelled), with the game's decompiled C# as the
   specification for every mechanic. It is not an approximation: the random
   number generator is a hand port of the game's <code>MegaRandom</code> (a
   Xoshiro256** generator with Splitmix64 seeding, which replaced .NET's
@@ -203,10 +207,87 @@
 
 <section id="ai">
   <h2>The AI</h2>
+  <p>The project's AI is now <strong>Instinct</strong>, a single network
+  that plays without search. The agent it replaced, a tree search for the
+  fights plus a learned policy for everything else, is described
+  <a href="#search-agent">further down</a>: it is still in the workbench and
+  the mod as an analysis tool and as Instinct's fallback, but it is no longer
+  the strongest player or the default.</p>
+
+  <h3 id="instinct">Instinct: one network, no search</h3>
+  <p>Instinct is a transformer (4 blocks, width 256, about 6 million
+  parameters) that makes every decision of a run: card plays, potions and
+  targets in a fight, and paths, card rewards, shops, events and rest sites
+  between fights. Each decision is one forward pass. It sees only what the
+  game shows a player, never the draw order or a monster's next roll. It was
+  trained end to end with PPO by self-play over full runs in the simulator;
+  after a short warm start from the earlier nets there is no teacher, no
+  human data and no search in the loop. One net plays Ironclad, Silent,
+  Defect, Regent and Necrobinder on game build v0.111.0; The Fool, new in
+  v0.113.0, has its own net trained on that build. Instinct is the mod's
+  default brain, with the search one key away (Shift+F8), and a brain you
+  can pick in the workbench.</p>
+  <div class="table-wrap fit">
+  <table>
+    <caption>Instinct: simulator win rate at Ascension 10, greedy play, no search</caption>
+    <thead><tr><th>Character</th><th class="num">Shipped net<br><small>2.5 B decisions</small></th><th class="num">Same lane, later<br><small>4.5 B, not shipped yet</small></th></tr></thead>
+    <tbody>
+      <tr><td>Ironclad</td><td class="num">81.2%<br><small>812 / 1,000</small></td><td class="num">79.9%<br><small>799 / 1,000</small></td></tr>
+      <tr><td>Defect</td><td class="num">63.8%<br><small>319 / 500</small></td><td class="num">71.8%<br><small>359 / 500</small></td></tr>
+      <tr><td>Regent</td><td class="num">54.2%<br><small>271 / 500</small></td><td class="num">65.8%<br><small>329 / 500</small></td></tr>
+      <tr><td>Silent</td><td class="num">53.4%<br><small>267 / 500</small></td><td class="num">60.8%<br><small>304 / 500</small></td></tr>
+      <tr><td>Necrobinder</td><td class="num">43.8%<br><small>219 / 500</small></td><td class="num">52.8%<br><small>264 / 500</small></td></tr>
+      <tr><td>The Fool <small>(v0.113.0, own net, 600 M)</small></td><td class="num">50.0%<br><small>250 / 500</small></td><td class="num">–</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">The shipped five-character net is its training lane's
+  2.5-billion-decision milestone (22 November 2026). The lane is still
+  training; the second column is its 4.5-billion milestone, read on 22
+  November on the same seeds and engine build, and not yet shipped. The Fool's net is
+  its own lane's 600-million milestone, trained mostly on Fool runs. Greedy
+  play means the net always takes its top choice. Each lane measured its net
+  with its own evaluation on its DEV seed panel (seeds from 160,000,000,
+  Act 1 rolled between Overgrowth and Underdocks) in the engine it trained
+  on; a cell's 95% interval is about ±4.4 pp (±2.5 pp for Ironclad), so
+  Ironclad has not moved between the two columns and the other four have.
+  The engine has changed a little since training (an out-of-combat potion
+  menu that the shipped hosts leave off, the Fake Merchant as a relic shop,
+  a map-row flag); a 50-seed smoke test per character on the current engine
+  landed within its wide margin of these numbers. Records:
+  <code>sts2-pycli/data/e2e/*.provenance.md</code>.</p>
+
+  <div class="table-wrap fit">
+  <table>
+    <caption>Instinct against the search agent: Ironclad, Ascension 10, the same 4,000 sealed test seeds</caption>
+    <thead><tr><th>Agent</th><th class="num">Wins</th><th class="num">Win rate</th></tr></thead>
+    <tbody>
+      <tr><td>Instinct, Ironclad-only net (9.0 B decisions), no search</td><td class="num">3,255 / 4,000</td><td class="num">81.4%</td></tr>
+      <tr><td>Search agent: run policy <code>cont300_it1150</code> + MCTS, 1,000 simulations (4,000 at bosses)</td><td class="num">846 / 4,000</td><td class="num">21.2%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">The pre-registered, single read of the first Instinct
+  training campaign (4–17 November 2026, 313 hours on one machine with four
+  RTX 3090s, 9.0 billion decisions, game build v0.111.0): 81.38% against
+  21.15%, +60.2 pp paired (95% interval +58.5 to +61.8). The search played
+  at the promotion gates' budget, not the advisor's larger one. An
+  earlier checkpoint of that campaign was the starting point of the
+  five-character lane above.
+  Write-up:
+  <code>docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md</code>.</p>
+  <p class="note"><strong>On the game's own code.</strong> The shipped net
+  also played 300 Ironclad A10 seeds twice: in the Rust engine and through
+  the game's real assembly run headless, with the game's own RNG. It won
+  79.7% in the engine and 78.7% on the real game code (31 seeds differed, 17
+  against 14, p = 0.72), so the simulator's numbers carry over. Write-up:
+  <code>docs/experiments/2026-11-21-spire-bench-paired.md</code>.</p>
+
+  <h3 id="search-agent">The earlier agent: search plus a run policy</h3>
   <div class="two">
     <div>
-      <h3>Fights: chance-node MCTS</h3>
-      <p>Every combat decision is an MCTS search over the engine: 4,000
+      <h4>Fights: chance-node MCTS</h4>
+      <p>In this agent every combat decision is an MCTS search over the engine: 4,000
       simulations per decision (16,000 in boss fights) in the advisor since 24
       October 2026, 1,000 (4,000 at bosses) in training gates. The published
       win rates below were measured at 8,000, except the current Ironclad
@@ -215,20 +296,23 @@
       216-feature evaluation.</p>
     </div>
     <div>
-      <h3>Everything else: PPO</h3>
+      <h4>Everything else: PPO</h4>
       <p>Paths, card rewards, removals, upgrades, transforms, enchantments,
       events, shops, rest sites and relic choices come from a transformer
       policy per character, trained with PPO by self-play over full runs in
       the simulator and served from Rust through ONNX.</p>
     </div>
   </div>
-  <p>Read more: <a href="ai.html">How the AI plays</a> (search, hidden
-  information, the network) and <a href="training.html">How it's trained</a>
-  (PPO, compute, the promotion gate, what didn't work).</p>
+  <p>Read more: <a href="ai.html">How the AI plays</a> (Instinct, the
+  search, hidden information) and <a href="training.html">How it's trained</a>
+  (PPO, compute, the promotion gate, what didn't work). The tables below are
+  this search agent's last published win rates, from October 2026; they were
+  measured on older engines and game build v0.107.1 and are not comparable
+  with Instinct's numbers above.</p>
 
   <div class="table-wrap">
   <table>
-    <caption>Run-AI champions: simulator win rate, mean over Ascension 0–10</caption>
+    <caption>Search agent, October 2026: simulator win rate, mean over Ascension 0–10</caption>
     <thead><tr><th>Character</th><th class="num">Win rate</th><th>Promotion gate (vs previous champion)</th></tr></thead>
     <tbody>
       <tr><td>Ironclad (<code>cardmods_it850</code>)</td><td class="num">not yet measured<br><small>previous champion: 83.6%</small></td><td>A10: +6.4 pp, p = 9e-5 (1,000 paired seeds)</td></tr>
@@ -242,7 +326,7 @@
 
   <div class="table-wrap">
   <table class="heatmap">
-    <caption>Win rate (%) by ascension level, current champions, simulator</caption>
+    <caption>Search agent, October 2026: win rate (%) by ascension level, simulator</caption>
     <thead><tr><th>Character</th><th class="num">A0</th><th class="num">A1</th><th class="num">A2</th><th class="num">A3</th><th class="num">A4</th><th class="num">A5</th><th class="num">A6</th><th class="num">A7</th><th class="num">A8</th><th class="num">A9</th><th class="num">A10</th><th class="num">Mean</th></tr></thead>
     <tbody>
       <tr><th scope="row">Ironclad<br><small><code>cardmods_it850</code>, 4,000/16,000 sims</small></th><td class="num">–</td><td class="num">–</td><td class="num">–</td><td class="num">–</td><td class="num">–</td><td class="num">–</td><td class="num">–</td><td class="num">–</td><td class="num">–</td><td class="num heat" style="--p:56.5">56.5*</td><td class="num heat" style="--p:30">30.0</td><td class="num pooled">–</td></tr>
@@ -312,8 +396,9 @@
   <code>SlayTheSpire2.exe</code>, random seeds, no cheats, 40 runs each at
   <strong>Ascension 8</strong>, with 8,000 simulations per combat decision
   split over 8 root-parallel trees of 1,000 each, which plays weaker than one
-  8,000-simulation tree. These runs used the champions deployed in August 2026; the current ones,
-  above, have not been measured in the real game yet.</p>
+  8,000-simulation tree. These runs used the search agent with the champions deployed in August 2026.
+  Instinct has not been measured through the mod on the live game yet; its
+  check against the game's own code is <a href="#instinct">above</a>.</p>
   <div class="table-wrap fit">
   <table>
     <thead><tr><th>Character</th><th class="num">Wins</th><th class="num">Win rate</th><th class="num">95% CI</th></tr></thead>
@@ -447,7 +532,7 @@
 
   <figure class="shot">
     <img src="img/mod-hud-combat.webp" width="1600" height="900" loading="lazy" alt="The real game with the Spire Mentor advisor panel: Taunt on Haunted Ship ranked first at +0.85 with 87% of 1,000 simulations, estimated win 92%">
-    <figcaption>Combat advice in the real game: MCTS ranks every legal move,
+    <figcaption>Combat advice in the real game, here from the search: MCTS ranks every legal move,
     shows the principal line and estimates the chance to win the fight.</figcaption>
   </figure>
   <figure class="shot">
@@ -462,7 +547,7 @@
   <!-- More mod screenshots go here: <figure class="shot"> blocks with img/mod-*.webp (toolbar, rewind, card reward, autopilot). -->
 
   <div class="cards">
-    <article><h3>Advisor</h3><p>You play. Ranked moves with MCTS statistics and the principal line, card-reward and shop scores, map routes, a win estimate.</p></article>
+    <article><h3>Advisor</h3><p>You play. Instinct ranks the moves, card rewards, shop items and map routes; switch to the search (Shift+F8) for MCTS statistics, the principal line and a win estimate.</p></article>
     <article><h3>AI turns &amp; autopilot</h3><p>Let the AI take one decision or play until you stop it; autopilot plays whole runs unattended and never falls back to random play.</p></article>
     <article><h3>Rewind</h3><p>Every room is snapshotted with its RNG state. Undo a turn, restart a room, or go back to any earlier room, bit-exact.</p></article>
     <article><h3>Workbench link</h3><p>Open the current state in the workbench, browse the live game's tree, and rewind the real game from the page.</p></article>
@@ -490,7 +575,7 @@
 
   <h3>Install</h3>
   <p>Players: subscribe on the <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3821016481">Steam Workshop</a>.
-  To build it yourself: Windows, the game at v0.107.1, the .NET 9 SDK and
+  To build it yourself: Windows, the game at v0.111.1 (stable) or the v0.113.0 beta, the .NET 9 SDK and
   <a href="https://github.com/Alchyr/BaseLib-StS2">BaseLib</a> in the game's
   <code>mods/</code> folder. Then <code>cd spire-mentor-mod &amp;&amp; dotnet build</code>
   builds the mod and installs it into <code>mods/SpireMentor/</code>. Configuration,
@@ -537,7 +622,7 @@ just workbench-local   # → http://127.0.0.1:4173</code></pre>
   <table>
     <thead><tr><th>Path</th><th>What it is</th></tr></thead>
     <tbody>
-      <tr><td><code>sts2-rs/</code></td><td>Rust: engine, content, MCTS, run-AI, CLI, PyO3 bindings, workbench engine (WASM)</td></tr>
+      <tr><td><code>sts2-rs/</code></td><td>Rust: engine, content, Instinct inference (<code>sts2-e2e</code>), MCTS, run-AI, CLI, PyO3 bindings, workbench engine (WASM)</td></tr>
       <tr><td><code>sts2-pycli/</code></td><td>Python, C# and TypeScript: the headless C# oracle, parity suite, PPO training, the workbench web app, the real-game advisor, an MCP server so an LLM can play</td></tr>
       <tr><td><code>spire-mentor-mod/</code></td><td>C#: the Spire Mentor mod</td></tr>
       <tr><td><code>sts2-wiki/</code></td><td>Python / Astro: decompile, extract, generate a static wiki</td></tr>

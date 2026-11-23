@@ -452,6 +452,7 @@ impl<F: Copy + 'static> ChannelRegistry<F> {
         if self.frozen.get().is_some() {
             self.mutated_after_freeze
                 .store(true, std::sync::atomic::Ordering::Relaxed);
+            ALL_FROZEN_CLEAN.store(false, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
@@ -1051,6 +1052,18 @@ relic_hook_channel!(
 );
 
 relic_hook_channel!(
+    ModifyAttackHitCountFn,
+    HOOK_MODIFY_ATTACK_HIT_COUNT,
+    registry_modify_attack_hit_count,
+    register_modify_attack_hit_count,
+    register_many_modify_attack_hit_count,
+    lookup_modify_attack_hit_count,
+    listeners_modify_attack_hit_count,
+    is_empty_modify_attack_hit_count,
+    fn(&CombatState, source_card_type: Option<crate::cards::CardType>, current_hits: i32) -> i32
+);
+
+relic_hook_channel!(
     RelicModifyCardPlayCountFn,
     HOOK_RELIC_MODIFY_CARD_PLAY_COUNT,
     registry_relic_modify_card_play_count,
@@ -1481,12 +1494,17 @@ const READY_BEFORE_SIDE_TURN_START: u16 = 1 << (OWNED_CHANNELS + 2);
 /// order of the `after_card_played` owned channel. Not a [`PlannedChannel`]:
 /// that channel's liveness stays on its owned bits.
 const READY_AFTER_CARD_PLAYED_ORDER: u16 = 1 << (OWNED_CHANNELS + 3);
+/// [`RelicPlan::ready`] / [`RelicPlan::dead`] bit of
+/// [`PlannedChannel::BeforeTurnEndEarly`]: a liveness bit only (the dispatch
+/// keeps its equip-order walk), above [`READY_AFTER_CARD_PLAYED_ORDER`].
+const READY_BEFORE_TURN_END_EARLY: u16 = 1 << (OWNED_CHANNELS + 4);
 /// Every planned channel's [`RelicPlan::ready`] / [`RelicPlan::dead`] bit.
-const ALL_PLANNED: u16 = (1 << (OWNED_CHANNELS + 3)) - 1;
+const ALL_PLANNED: u16 = ((1 << (OWNED_CHANNELS + 3)) - 1) | READY_BEFORE_TURN_END_EARLY;
 
 /// A relic channel whose dispatcher reads the per-combat [`RelicPlan`]: the
-/// eleven [`OwnedChannel`]s, then the three ordered channels. Engine call
-/// sites test [`relic_channel_live`] before dispatching one of these (J01b).
+/// eleven [`OwnedChannel`]s, then the three ordered channels and the
+/// `before_turn_end_early` liveness bit. Engine call sites test
+/// [`relic_channel_live`] before dispatching one of these (J01b).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PlannedChannel {
     AfterCardPlayed,
@@ -1503,9 +1521,29 @@ pub(crate) enum PlannedChannel {
     AfterSideTurnStart,
     AfterPlayerTurnStart,
     BeforeSideTurnStart,
+    BeforeTurnEndEarly,
 }
 
 impl PlannedChannel {
+    /// Every planned channel, in declaration order.
+    pub(crate) const ALL: [Self; 15] = [
+        Self::AfterCardPlayed,
+        Self::BeforeCardPlayed,
+        Self::BeforeTurnEnd,
+        Self::AfterDamageGiven,
+        Self::AfterBlockGained,
+        Self::AfterBlockCleared,
+        Self::ModifyDamageAdditive,
+        Self::ModifyBlockMultiplicative,
+        Self::ModifyDamageMultiplicative,
+        Self::AfterDamageReceived,
+        Self::ModifyHpLost,
+        Self::AfterSideTurnStart,
+        Self::AfterPlayerTurnStart,
+        Self::BeforeSideTurnStart,
+        Self::BeforeTurnEndEarly,
+    ];
+
     /// This channel's bit in [`RelicPlan::ready`] and [`RelicPlan::dead`].
     #[inline]
     const fn bit(self) -> u16 {
@@ -1526,6 +1564,7 @@ impl PlannedChannel {
             Self::AfterSideTurnStart => READY_AFTER_SIDE_TURN_START,
             Self::AfterPlayerTurnStart => READY_AFTER_PLAYER_TURN_START,
             Self::BeforeSideTurnStart => READY_BEFORE_SIDE_TURN_START,
+            Self::BeforeTurnEndEarly => READY_BEFORE_TURN_END_EARLY,
         }
     }
 
@@ -1555,6 +1594,7 @@ impl PlannedChannel {
                 registry_after_player_turn_start().frozen_view().is_some()
             }
             Self::BeforeSideTurnStart => registry_before_side_turn_start().frozen_view().is_some(),
+            Self::BeforeTurnEndEarly => registry_before_turn_end_early().frozen_view().is_some(),
         }
     }
 
@@ -1596,6 +1636,9 @@ impl PlannedChannel {
                 );
                 n
             }
+            Self::BeforeTurnEndEarly => {
+                collect_equip_order_listeners(registry_before_turn_end_early(), state).len()
+            }
         }
     }
 }
@@ -1613,7 +1656,7 @@ impl PlannedChannel {
 /// `false` and assert it calls nothing.
 #[inline]
 pub(crate) fn relic_channel_live(state: &CombatState, channel: PlannedChannel) -> bool {
-    if state.relics.plan().dead & channel.bit() == 0 || !channel.serves_frozen_list() {
+    if state.relics.plan().dead & channel.bit() == 0 || !serves_frozen_planned(channel) {
         return true;
     }
     #[cfg(debug_assertions)]
@@ -1623,6 +1666,39 @@ pub(crate) fn relic_channel_live(state: &CombatState, channel: PlannedChannel) -
         "relic channel {channel:?} planned dead but its generic walk calls a handler"
     );
     false
+}
+
+/// `true` once [`freeze_all_channels`] has frozen every [`PlannedChannel`] and
+/// [`GuardedChannel`] registry, until any registry is mutated after its freeze
+/// (tests only, [`ChannelRegistry::mark_mutated_if_frozen`] clears it for
+/// good). While set, every such channel's `serves_frozen` is `true`: its
+/// `OnceLock` is set (never unset) and its sticky `mutated_after_freeze` flag
+/// is clear.
+///
+/// Perf: the live gates below read this one relaxed flag instead of the
+/// channel's `OnceLock` state and mutation flag behind a per-channel match.
+static ALL_FROZEN_CLEAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// [`PlannedChannel::serves_frozen_list`], answered from
+/// [`ALL_FROZEN_CLEAN`] when it is set.
+#[inline]
+fn serves_frozen_planned(channel: PlannedChannel) -> bool {
+    if ALL_FROZEN_CLEAN.load(std::sync::atomic::Ordering::Relaxed) {
+        debug_assert!(channel.serves_frozen_list());
+        return true;
+    }
+    channel.serves_frozen_list()
+}
+
+/// The [`GuardedChannel`] registry's `serves_frozen`, answered from
+/// [`ALL_FROZEN_CLEAN`] when it is set.
+#[inline]
+fn serves_frozen_guarded(channel: GuardedChannel) -> bool {
+    if ALL_FROZEN_CLEAN.load(std::sync::atomic::Ordering::Relaxed) {
+        debug_assert!(channel.registry().serves_frozen());
+        return true;
+    }
+    channel.registry().serves_frozen()
 }
 
 /// All-registered relic channels (J03). Their dispatchers walk every
@@ -1771,9 +1847,7 @@ impl GuardedChannel {
 pub(crate) fn relic_guarded_channel_live(state: &CombatState, channel: GuardedChannel) -> bool {
     let plan = state.relics.plan();
     let c = channel as usize;
-    if plan.guarded_ready & (1 << c) == 0
-        || plan.guarded[c] != 0
-        || !channel.registry().serves_frozen()
+    if plan.guarded_ready & (1 << c) == 0 || plan.guarded[c] != 0 || !serves_frozen_guarded(channel)
     {
         return true;
     }
@@ -2049,6 +2123,16 @@ impl RelicPlan {
         if let Some(p) = equip_plan(registry_after_card_played(), relics, &mut frozen_seen) {
             plan.after_card_played = p;
             plan.ready |= READY_AFTER_CARD_PLAYED_ORDER;
+        }
+        // Liveness only: the handler set `collect_equip_order_listeners` keeps
+        // (non-melted kinds) is the owned set, empty exactly when no bit is set.
+        if let Some(bits) =
+            owned_plan_bits(registry_before_turn_end_early(), owned, &mut frozen_seen)
+        {
+            plan.ready |= READY_BEFORE_TURN_END_EARLY;
+            if bits == 0 {
+                plan.dead |= READY_BEFORE_TURN_END_EARLY;
+            }
         }
         if let Some(p) = obtain_plan(relics, &mut frozen_seen) {
             plan.before_side_turn_start = p;
@@ -2630,13 +2714,23 @@ fn shadow_skipped_steps<F: Copy, A: Copy + PartialEq + std::fmt::Debug>(
 /// builds) — so Vajra obtained before Oddly Smooth Stone applies Strength
 /// before Dexterity, whatever the registry (`RelicId`) order.
 pub fn dispatch_before_combat_start(state: &mut CombatState) -> EffectResult {
+    dispatch_before_combat_start_where(state, |_| true)
+}
+
+/// [`dispatch_before_combat_start`] for the owned relics `keep` accepts, in
+/// equip order. A Dread combat (GH #1346) walks the channel in two halves
+/// around the dominion: see [`crate::dread::is_room_entry_relic`].
+pub(crate) fn dispatch_before_combat_start_where(
+    state: &mut CombatState,
+    keep: impl Fn(RelicId) -> bool,
+) -> EffectResult {
     if is_empty_before_combat_start() {
         return EffectResult::NotImplemented;
     }
     let listeners = collect_equip_order_listeners(registry_before_combat_start(), state);
     let mut any_resolved = false;
-    for (_idx, _id, f) in listeners {
-        if f(state) == EffectResult::Resolved {
+    for (_idx, id, f) in listeners {
+        if keep(id) && f(state) == EffectResult::Resolved {
             any_resolved = true;
         }
     }
@@ -3204,16 +3298,28 @@ pub fn dispatch_should_die_late(state: &mut CombatState) -> bool {
 }
 
 /// Dispatch `after_combat_victory` to every registered listener.
+///
+/// C# `Hook.AfterCombatVictory` (Hook.cs:496-508, v0.111.0; the same on
+/// v0.107.1) first walks every listener's `AfterCombatVictoryEarly`, then
+/// every `AfterCombatVictory`. Meat on the Bone is the only Early listener,
+/// so it runs here before the registry walk and reads the HP the fight
+/// ended on, not the HP after Burning Blood's heal.
 pub fn dispatch_after_combat_victory(state: &mut CombatState) -> EffectResult {
+    let early = super::meat_on_the_bone::on_after_combat_victory_meat_on_the_bone(state);
     if is_empty_after_combat_victory() {
-        return EffectResult::NotImplemented;
+        return early;
     }
-    walk_guarded_event(
+    let walked = walk_guarded_event(
         registry_after_combat_victory(),
         GuardedChannel::AfterCombatVictory,
         state,
         |f, state| f(state),
-    )
+    );
+    if early == EffectResult::Resolved {
+        early
+    } else {
+        walked
+    }
 }
 
 /// Dispatch `before_turn_end` to the owned relics' listeners in EQUIP order:
@@ -3254,6 +3360,12 @@ pub fn dispatch_before_turn_end(state: &mut CombatState, side: Side) -> EffectRe
 /// exhaust lands before Screaming Flagon checks for an empty hand.
 pub fn dispatch_before_turn_end_early(state: &mut CombatState, side: Side) -> EffectResult {
     if is_empty_before_turn_end_early() {
+        return EffectResult::NotImplemented;
+    }
+    // The plan's dead bit: no owned relic has a handler (the common turn end:
+    // Pael's Eye is the only one), so the list below would be empty.
+    // `relic_channel_live` debug-asserts that against the generic walk.
+    if !relic_channel_live(state, PlannedChannel::BeforeTurnEndEarly) {
         return EffectResult::NotImplemented;
     }
     let listeners = collect_equip_order_listeners(registry_before_turn_end_early(), state);
@@ -3836,6 +3948,34 @@ pub fn dispatch_modify_x_value(state: &CombatState, base_x: i32) -> i32 {
     )
 }
 
+/// Dispatch `modify_attack_hit_count` as a left-to-right fold over the
+/// owner's relics — C# `Hook.ModifyAttackHitCount` (Hook.cs:1495 v0.113.1),
+/// which `AttackCommand.Execute` folds once over the command's
+/// `WithHitCount` value right after `BeforeAttack` (AttackCommand.cs:557).
+/// `source_card_type` is the type of the card the attack comes from
+/// (`ModelSource is CardModel`), `None` for a monster's or a relic's attack.
+/// Only v0.113.0's `Thumbscrew` overrides the hook; no power does.
+///
+/// Unguarded on purpose: a guarded channel adds a `RelicPlan` slot, which
+/// `CombatState`'s size tripwire (lib.rs) forbids, and this one only fires
+/// on a multi-hit card play. Listeners check their own ownership.
+#[must_use]
+pub fn dispatch_modify_attack_hit_count(
+    state: &CombatState,
+    source_card_type: Option<crate::cards::CardType>,
+    base_hits: i32,
+) -> i32 {
+    if is_empty_modify_attack_hit_count() || state.relics.is_empty() {
+        return base_hits;
+    }
+    let listeners = equip_ordered_snapshot(state, listeners_modify_attack_hit_count());
+    let mut current = base_hits;
+    for (_id, f) in listeners {
+        current = f(state, source_card_type, current);
+    }
+    current
+}
+
 /// Dispatch the relic-side `modify_card_play_count` channel as a
 /// saturating sum of per-listener deltas. Mirrors Python's
 /// `relic.modify_card_play_count(owner, count, card)` walk (each Python
@@ -4263,9 +4403,8 @@ pub fn dispatch_before_play_phase_start(state: &mut CombatState) -> EffectResult
 ///   * `ShopPurchase` — bought from the merchant.
 ///   * `Other` — catch-all for synthetic / test / debug adds.
 ///
-/// TODO bead `sts2-rs-01o`: `BingBong`'s body lands here in the umbrella
-/// retrofit; the body checks `ctx.source != AddSource::BingBongDuplicate`
-/// as its primary re-entry guard.
+/// `BingBong`'s listener (`sts2-content` `relics/event_reward.rs`) checks
+/// `ctx.source != AddSource::BingBongDuplicate` as its re-entry guard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AddSource {
     /// Post-combat card-reward pick.
@@ -4458,7 +4597,7 @@ impl<F: Copy + 'static> FreezeControl for ChannelRegistry<F> {
 /// read path — but it is also invisible to [`all_channels_frozen`], so the
 /// `freeze_guard` hot-channel test pins the per-dispatch hot set by name. Keep
 /// alphabetical, mirroring the macro invocations above.
-fn all_channels() -> [&'static dyn FreezeControl; 55] {
+fn all_channels() -> [&'static dyn FreezeControl; 56] {
     [
         registry_after_block_cleared(),
         registry_after_block_gained(),
@@ -4508,6 +4647,7 @@ fn all_channels() -> [&'static dyn FreezeControl; 55] {
         registry_modify_shop_price(),
         registry_modify_vulnerable_multiplier(),
         registry_modify_x_value(),
+        registry_modify_attack_hit_count(),
         registry_on_card_added_to_deck(),
         registry_on_orb_channeled(),
         registry_on_pet_summoned(),
@@ -4532,6 +4672,13 @@ pub fn freeze_all_channels() {
     for channel in all_channels() {
         channel.publish_frozen();
     }
+    // Every gated channel now serves its frozen list, unless one was missing
+    // from `all_channels` or was mutated after an earlier freeze.
+    let clean = PlannedChannel::ALL.iter().all(|c| c.serves_frozen_list())
+        && GuardedChannel::ALL
+            .iter()
+            .all(|c| c.registry().serves_frozen());
+    ALL_FROZEN_CLEAN.store(clean, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// `true` iff every relic hook channel serves its frozen `&'static` read view:
@@ -5044,7 +5191,7 @@ mod plan_tests {
     }
 
     /// Every [`PlannedChannel`].
-    const PLANNED_CHANNELS: [PlannedChannel; 14] = [
+    const PLANNED_CHANNELS: [PlannedChannel; 15] = [
         PlannedChannel::AfterCardPlayed,
         PlannedChannel::BeforeCardPlayed,
         PlannedChannel::BeforeTurnEnd,
@@ -5059,6 +5206,7 @@ mod plan_tests {
         PlannedChannel::AfterSideTurnStart,
         PlannedChannel::AfterPlayerTurnStart,
         PlannedChannel::BeforeSideTurnStart,
+        PlannedChannel::BeforeTurnEndEarly,
     ];
 
     /// J01b live bits: over random layouts (empty, melted relics, duplicated
@@ -5079,8 +5227,8 @@ mod plan_tests {
 
         let mut rng = Lcg(0xD1B5_4A32_D192_ED03);
         let all = RelicKind::ALL;
-        let mut dead_seen = [0usize; 14];
-        let mut live_seen = [0usize; 14];
+        let mut dead_seen = [0usize; 15];
+        let mut live_seen = [0usize; 15];
         let mut melted_only_dead = 0usize;
         for _ in 0..4000 {
             let len = rng.below(23);
@@ -5126,12 +5274,16 @@ mod plan_tests {
             }
         }
         // Non-vacuous: every channel answered both ways (except
-        // `modify_damage_multiplicative`, whose handlers are all content-side,
-        // so it is never live under the core install), and melting alone
+        // `modify_damage_multiplicative` and `before_turn_end_early`, whose
+        // handlers are all content-side, so they are never live under the core
+        // install), and melting alone
         // killed a channel somewhere.
         for (i, channel) in PLANNED_CHANNELS.iter().enumerate() {
             assert!(dead_seen[i] > 0, "{channel:?} never dead");
-            if *channel != PlannedChannel::ModifyDamageMultiplicative {
+            if !matches!(
+                channel,
+                PlannedChannel::ModifyDamageMultiplicative | PlannedChannel::BeforeTurnEndEarly
+            ) {
                 assert!(live_seen[i] > 0, "{channel:?} never live");
             }
         }

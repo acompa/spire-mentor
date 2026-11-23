@@ -28,6 +28,7 @@ zstd when `zstandard` imports and stdlib LZMA otherwise. The codec byte says whi
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import lzma
 import os
@@ -38,6 +39,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from . import build as _build
 
 MAGIC = b"E2L1"
 CODEC_ZSTD = b"z"
@@ -134,7 +137,7 @@ def _stamps() -> dict[str, Any]:
         build = str(sts2_rs.build_git())
     except AttributeError:  # an old wheel without the getter; anything else propagates
         build = "unknown"
-    return {"game_version": "v0.111.0", "wheel_build": build}
+    return {"game_version": _build.GAME_VERSION, "wheel_build": build}
 
 
 def terminal_record(term: Any, *, reason: str, extra: dict[str, Any] | None = None) -> LogRecord:
@@ -207,9 +210,11 @@ class ReplayMismatch(AssertionError):
     pass
 
 
-def replay_capture(seed: int, idx: list[int], capture_steps: int) -> Any:
-    """Rebuild a capture: replay `idx` from `seed` and return the `env.Capture` taken at
-    step `capture_steps`."""
+def replay_capture(
+    seed: int, idx: list[int], capture_steps: int, *, character: str | None = None
+) -> Any:
+    """Rebuild a capture: replay `idx` from `seed` (a run of `character`; None: the
+    process's) and return the `env.Capture` taken at step `capture_steps`."""
     from .env import E2EDecision, E2EEnv, EnvConfig
 
     got: dict[int, Any] = {}
@@ -217,7 +222,7 @@ def replay_capture(seed: int, idx: list[int], capture_steps: int) -> Any:
     def keep(c: Any) -> None:
         got[int(c.steps)] = c
 
-    env = E2EEnv(int(seed), cfg=EnvConfig(on_capture=keep))
+    env = E2EEnv(int(seed), cfg=EnvConfig(on_capture=keep, character=character))
     d = env.reset()
     for ai in idx:
         if not isinstance(d, E2EDecision):
@@ -247,10 +252,21 @@ def _segment_env(h: dict[str, Any]) -> Any:
 
     seg = h["segment"]
     seed = int(h["seed"])
+    # A mix lane's run (GH #1197) names its character in `extra`; else the process's.
+    extra = h.get("extra") or {}
+    character = extra.get("character")
+    cfg = EnvConfig(character=character)
     if seg["kind"] == "run":
-        return E2EEnv(seed)
+        # A forced run (GH #1541) names the card its starting deck gained.
+        forced = extra.get("forced_card")
+        # A human-start run (`ppo.e2e.human`) carries its whole start.
+        start = extra.get("human_start")
+        return E2EEnv(seed, cfg=dataclasses.replace(cfg, forced_card=forced, human_start=start))
     cap = replay_capture(
-        int(seg["parent_seed"]), list(seg["parent_idx"]), int(seg["capture_steps"])
+        int(seg["parent_seed"]),
+        list(seg["parent_idx"]),
+        int(seg["capture_steps"]),
+        character=character,
     )
     rm = start_from_capture(cap, int(seg["reseed"]))
     segment = Segment(
@@ -264,7 +280,7 @@ def _segment_env(h: dict[str, Any]) -> Any:
         reseed=int(seg["reseed"]),
         uid=seg.get("uid"),
     )
-    return E2EEnv(seed, rm=rm, cfg=EnvConfig(), segment=segment)
+    return E2EEnv(seed, rm=rm, cfg=cfg, segment=segment)
 
 
 def _replay_steps(env: Any, rec: LogRecord) -> Any:

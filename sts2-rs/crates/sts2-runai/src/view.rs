@@ -44,6 +44,18 @@ pub struct DeckCard {
     pub upgraded: bool,
 }
 
+impl DeckCard {
+    /// Whether an upgrade pick can still land on this copy, for matching an
+    /// upgrade option (whose ids already come from the engine's upgradable
+    /// subset) to a deck copy: an un-upgraded copy, or an upgraded Dingy
+    /// Dagger, the one card C# lets upgrade again (`MaxUpgradeLevel =>
+    /// 999999999`, GH #1391).
+    #[must_use]
+    pub fn takes_another_upgrade(&self) -> bool {
+        !self.upgraded || self.card_id == CardId::DingyDagger
+    }
+}
+
 /// Pinned act-boss identity — player-visible from the map screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BossView {
@@ -223,6 +235,12 @@ impl VisibleRunView {
             })
             .collect();
 
+        // Prices as the engine charges them: Membership Card / The Courier
+        // discounts included (`merchant_price_with_modifiers`, the same
+        // fold `RunManager`'s affordability gate and the PPO obs use).
+        let shop_relics = rs.active_relics();
+        let price_of =
+            |base: i32| sts2_core::shop::merchant_price_with_modifiers(&shop_relics, base);
         let shop = rm.shop_inventory().map(|inv| ShopView {
             cards: inv
                 .cards
@@ -237,7 +255,7 @@ impl VisibleRunView {
                                 card_id: c.card_id,
                                 upgraded: c.upgraded,
                             },
-                            price: e.price,
+                            price: price_of(e.price),
                         })
                 })
                 .collect(),
@@ -249,7 +267,7 @@ impl VisibleRunView {
                         .filter(|_| sts2_core::shop::is_shop_entry_available(e.price))
                         .map(|relic_id| ShopRelicOffer {
                             relic_id,
-                            price: e.price,
+                            price: price_of(e.price),
                         })
                 })
                 .collect(),
@@ -261,11 +279,11 @@ impl VisibleRunView {
                         .filter(|_| sts2_core::shop::is_shop_entry_available(e.price))
                         .map(|potion_kind| ShopPotionOffer {
                             potion_kind,
-                            price: e.price,
+                            price: price_of(e.price),
                         })
                 })
                 .collect(),
-            removal_cost: inv.removal_cost,
+            removal_cost: price_of(inv.removal_cost),
             removal_used: inv.removal_used,
         });
 
@@ -288,7 +306,11 @@ impl VisibleRunView {
 
         Self {
             character: rm.character_id,
-            ascension: rm.ascension_level,
+            // A rung of the standard ladder (the ranker's `ascension`
+            // feature, the heuristic's per-level term). A Blitz level is
+            // not one (GH #1347): there it is the standard level with the
+            // same fights. Standard and Dread: the run's own ascension.
+            ascension: rs.combat_ascension(),
             // GH #63: normalize the engine's 1-based act_index (1..=3) to
             // 0-based (0..=2) here, the single view chokepoint, so the
             // progress ramps and per-act table lookups are convention-correct.
@@ -449,6 +471,65 @@ mod tests {
         // Fresh run: nothing on screen yet.
         assert!(view.offers.card_rewards.is_empty());
         assert!(view.offers.shop.is_none());
+    }
+
+    /// The shop view carries the prices the engine charges: The Courier's
+    /// and Membership Card's discounts included, as `RunManager`'s
+    /// affordability gate and the PPO shop obs apply them. Base prices made
+    /// the heuristic policies skip discounted items they could afford.
+    #[test]
+    fn shop_view_prices_include_merchant_discounts() {
+        let mut rm = new_run_manager_for_character(7, CharacterId::Ironclad);
+        let inv = sts2_content::cards::spec_index::generate_merchant_inventory(
+            &mut rm.run_state,
+            CharacterId::Ironclad,
+        );
+        rm.run_state.relics.push(RelicId::MembershipCard);
+        rm.run_state.relics.push(RelicId::TheCourier);
+        rm.debug_open_shop(inv.clone());
+        let relics = rm.run_state.active_relics();
+        let price = |base| sts2_core::shop::merchant_price_with_modifiers(&relics, base);
+        let shop = VisibleRunView::from_run_manager(&rm)
+            .offers
+            .shop
+            .expect("shop on screen");
+        let card_prices: Vec<i32> = shop.cards.iter().flatten().map(|o| o.price).collect();
+        let want: Vec<i32> = inv
+            .cards
+            .iter()
+            .chain(inv.colorless_cards.iter())
+            .filter(|e| e.card.is_some() && sts2_core::shop::is_shop_entry_available(e.price))
+            .map(|e| price(e.price))
+            .collect();
+        assert!(!want.is_empty());
+        assert_eq!(card_prices, want);
+        let base: Vec<i32> = inv
+            .cards
+            .iter()
+            .chain(inv.colorless_cards.iter())
+            .filter(|e| e.card.is_some() && sts2_core::shop::is_shop_entry_available(e.price))
+            .map(|e| e.price)
+            .collect();
+        assert_ne!(card_prices, base, "the discounts move the prices");
+        let relic_prices: Vec<i32> = shop.relics.iter().flatten().map(|o| o.price).collect();
+        let want_relics: Vec<i32> = inv
+            .relics
+            .iter()
+            .filter(|e| e.relic_id.is_some() && sts2_core::shop::is_shop_entry_available(e.price))
+            .map(|e| price(e.price))
+            .collect();
+        assert_eq!(relic_prices, want_relics);
+        let potion_prices: Vec<i32> = shop.potions.iter().flatten().map(|o| o.price).collect();
+        let want_potions: Vec<i32> = inv
+            .potions
+            .iter()
+            .filter(|e| {
+                e.potion_kind.is_some() && sts2_core::shop::is_shop_entry_available(e.price)
+            })
+            .map(|e| price(e.price))
+            .collect();
+        assert_eq!(potion_prices, want_potions);
+        assert_eq!(shop.removal_cost, price(inv.removal_cost));
     }
 
     #[test]

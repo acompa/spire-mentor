@@ -180,7 +180,7 @@ internal static class SimCombatUndo
             int turn = 1 + prefix.Count(e =>
                 e.eventType == CombatReplayEventType.GameAction && e.action is NetEndPlayerTurnAction);
             Logger.Log($"[SimCombatUndo] Undo to turn {turn}: replaying {cut}/{events.Count} tape events.");
-            SimActionLog.Note($"Undoing to the start of turn {turn}...");
+            SimActionLog.Note(L10n.F("Undoing to the start of turn {0}...", turn));
 
             Volatile.Write(ref _replaying, 1);
             await SimRestore.ReloadRunFromSave(save);
@@ -230,7 +230,7 @@ internal static class SimCombatUndo
 
             int floor = restored.TotalFloor;
             Logger.Log($"[SimCombatUndo] Undo complete: floor {floor}, start of turn {turn}.");
-            SimActionLog.Note($"Rewound to the start of turn {turn}.");
+            SimActionLog.Note(L10n.F("Rewound to the start of turn {0}.", turn));
             SimAdvisor.Instance.NotifyRunRestored();
             BridgeServer.Instance.SendState(JsonSerializer.Serialize(new Dictionary<string, object?>
             {
@@ -432,7 +432,9 @@ internal static class SimCombatUndo
     private static void Fail(string code, string detail)
     {
         Logger.Log($"[SimCombatUndo] {code}: {detail}");
-        SimActionLog.Note($"Undo failed ({code}): {detail}");
+        // The wire keeps the English detail; the log line reads it in the
+        // player's language where the detail is one of the fixed ones.
+        SimActionLog.Note(L10n.F("Undo failed ({0}): {1}", code, L10n.T(detail)));
         try
         {
             BridgeServer.Instance.SendState(JsonSerializer.Serialize(new Dictionary<string, object?>

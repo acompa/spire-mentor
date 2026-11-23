@@ -171,7 +171,17 @@ def play_fixture(pol: Any, seed: int, out_dir: pathlib.Path, probe: Any = None) 
     out = out_dir / f"{seed}.jsonl.gz"
     n = 0
     with gzip.open(out, "wt", encoding="utf-8") as f:
-        f.write(json.dumps({"seed": seed, "format": "e2e-fixture/1"}) + "\n")
+        from . import factory
+
+        # The Rust gates rebuild the run from these (GH #1197: any character;
+        # "chars" on Ironclad rows when the launch declared it).
+        head = {
+            "seed": seed,
+            "format": "e2e-fixture/1",
+            "character": str(env.rm.character),
+            "chars": factory.fill_chars(),
+        }
+        f.write(json.dumps(head) + "\n")
         while isinstance(d, E2EDecision):
             rb = pol.row(d)
             with torch.no_grad():

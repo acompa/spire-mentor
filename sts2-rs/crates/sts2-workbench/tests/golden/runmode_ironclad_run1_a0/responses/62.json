@@ -991,7 +991,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Blood Wall"
+   ],
    "error": false,
    "floor": 2,
    "id": 20,
@@ -1839,7 +1841,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Flame Barrier"
+   ],
    "error": false,
    "floor": 3,
    "id": 37,
@@ -2182,7 +2186,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Headbutt"
+   ],
    "error": false,
    "floor": 4,
    "id": 45,
@@ -2217,7 +2223,8 @@
    "combat_log": [],
    "decision": "shop",
    "details": [
-    "Gold 130→81"
+    "Gold 130→81",
+    "+Card Body Slam"
    ],
    "error": false,
    "floor": 5,

@@ -275,6 +275,103 @@ class TestTranslateCardSelect:
             assert card["id"] == bridge_card["id"]
 
 
+def _fake_merchant_msg() -> dict[str, Any]:
+    """The mod's Fake Merchant shop (PROTOCOL.md, GH #1607): leave, then the buys."""
+
+    def relic(rid: str, price: int, option: int | None) -> dict[str, Any]:
+        item = {"id": rid, "name": rid.title() + "???", "description": "x", "counter": None}
+        row = {"kind": "buy_relic", "label": rid, "price": price, "stocked": option is not None}
+        if option is not None:
+            row["option"] = option
+        return {**row, "item": item}
+
+    return {
+        "type": "shop",
+        "event_name": "FAKE_MERCHANT",
+        "act": 2,
+        "floor": 30,
+        "options": [
+            {"index": 0, "action": "leave_shop", "label": "Leave", "enabled": True},
+            {
+                "index": 1,
+                "action": "buy_relic",
+                "label": "FAKE_MANGO",
+                "price": 53,
+                "enabled": True,
+            },
+        ],
+        "player_gold": 370,
+        "stock": [relic("FAKE_STRIKE_DUMMY", 48, None), relic("FAKE_MANGO", 53, 1)],
+        "run_state": {"character": "IRONCLAD", "gold": 370, "potions": []},
+    }
+
+
+class TestFakeMerchant:
+    """The mod's Fake Merchant shop as the host's (GH #1287, #1607)."""
+
+    @staticmethod
+    def _game() -> tuple[RealGame, list[dict[str, Any]]]:
+        game = RealGame("127.0.0.1", 1)
+        sent: list[dict[str, Any]] = []
+        game._send = lambda action: sent.append(action) or {}  # type: ignore[method-assign]
+        return game, sent
+
+    def test_shown_as_the_hosts_shop(self) -> None:
+        game, _ = self._game()
+        out = game._translate_shop(_fake_merchant_msg())
+        assert out["decision"] == "shop"
+        assert out["event_name"] == "FAKE_MERCHANT"
+        assert out["context"]["room_type"] == "Event"
+        assert out["cards"] == [] and out["potions"] == []
+        assert out["card_removal_cost"] is None
+        assert [(r["index"], r["id"], r["cost"], r["is_stocked"]) for r in out["relics"]] == [
+            (0, "FAKE_STRIKE_DUMMY", 48, False),
+            (1, "FAKE_MANGO", 53, True),
+        ]
+
+    def test_buy_and_leave_pick_their_options(self) -> None:
+        game, sent = self._game()
+        game._next_decision = lambda msg: msg  # type: ignore[method-assign]
+        game._last_decision_type = "shop"
+        game._translate_shop(_fake_merchant_msg())
+        game.buy_relic(1)
+        game.leave_room()
+        assert sent == [{"action": "choose", "index": 1}, {"action": "choose", "index": 0}]
+
+    def test_a_normal_shop_is_not_named(self) -> None:
+        game, _ = self._game()
+        msg = {k: v for k, v in _fake_merchant_msg().items() if k != "event_name"}
+        out = game._translate_shop(msg)
+        assert "event_name" not in out
+        assert out["context"]["room_type"] == "Shop"
+
+
+class TestSkipSelect:
+    """The host's ``skip_select`` in the bridge's words (GH #1287)."""
+
+    @staticmethod
+    def _sent(raw: dict[str, Any]) -> dict[str, Any]:
+        game = RealGame.__new__(RealGame)
+        game.last_raw = raw
+        sent: list[dict[str, Any]] = []
+        game._send = lambda action: sent.append(action) or {}  # type: ignore[method-assign]
+        game.skip_select()
+        return sent[0]
+
+    def test_up_to_n_screen_chooses_none(self) -> None:
+        # Neow's Fury: "Put up to 2 cards ...". Picking none is legal, but the
+        # screen cannot be cancelled, so the bridge refuses a `skip`.
+        raw = {"type": "card_select", "cancelable": False, "min_select": 0, "max_select": 2}
+        assert self._sent(raw) == {"action": "choose", "indices": []}
+
+    def test_cancelable_screen_skips(self) -> None:
+        raw = {"type": "card_select", "cancelable": True, "min_select": 0, "max_select": 1}
+        assert self._sent(raw) == {"action": "skip"}
+
+    def test_other_screens_skip(self) -> None:
+        assert self._sent({"type": "card_reward"}) == {"action": "skip"}
+
+
 class TestTranslateGameOver:
     def test_defeat(self) -> None:
         game = RealGame.__new__(RealGame)

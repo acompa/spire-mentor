@@ -10,8 +10,8 @@ served a pre-honest-search net (measured clairvoyance rent -22.80pp) until #340
 caught it. Nothing failed loudly: every list was self-consistent and the image
 was valid.
 
-Now nothing globs. The manifest names exact files; Python, the PyInstaller spec
-and the taxonomy view read it; the Rust match arms and the Dockerfile ``COPY``
+Now nothing globs. The manifest names exact files; Python, the advisor
+packaging and the taxonomy view read it; the Rust match arms and the Dockerfile ``COPY``
 block are generated from it by ``scripts/sync_champions.py``. So the tests here
 are no longer "did four humans agree" but:
 

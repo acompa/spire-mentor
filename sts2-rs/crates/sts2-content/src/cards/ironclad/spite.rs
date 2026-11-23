@@ -15,7 +15,7 @@ pub(crate) fn play_spite(state: &mut CombatState, target: Option<CreatureUid>) -
     } else {
         1
     };
-    for _ in 0..hit_count {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits_u32(state, hit_count) {
         let _ = deal_damage_player_to_enemy(state, t, dmg);
     }
     EffectResult::Resolved

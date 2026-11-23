@@ -249,7 +249,17 @@ pub fn classify(kind: PowerKind) -> AfflictionClass {
         // v0.113.0 Fool: `DislikeYouPower` / `EncorePower` are `Type => Debuff`
         // (removed by their own turn-end hooks, not by decay).
         | PowerKind::DislikeYou
-        | PowerKind::Encore => AfflictionClass::debuff_perm(),
+        | PowerKind::Encore
+        // v0.113.0 Dread (GH #1346, closes a GH #1337 item): the five player
+        // powers are `Type => Debuff` (`AeonglassDominionPower.cs:16`,
+        // `InsatiableDominionPower.cs:18`, `LagavulinMatriarchDominionPower
+        // .cs:15`, `YouAreMinePower.cs:19`, `AmnesiaPower.cs:16`), so Artifact
+        // eats their application. Each leaves by its own hook, not by decay.
+        | PowerKind::AeonglassDominion
+        | PowerKind::InsatiableDominion
+        | PowerKind::LagavulinMatriarchDominion
+        | PowerKind::YouAreMine
+        | PowerKind::Amnesia => AfflictionClass::debuff_perm(),
 
         // ---------- Core pipeline buffs (permanent / stat) ----------
         PowerKind::Strength
@@ -264,6 +274,8 @@ pub fn classify(kind: PowerKind) -> AfflictionClass {
         | PowerKind::Metallicize
         | PowerKind::Ritual
         | PowerKind::Barricade
+        // v0.113.0 Dread `ExplosivePower.cs:17`: `Type => Buff`.
+        | PowerKind::Explosive
         | PowerKind::Corruption
         | PowerKind::FeelNoPain
         | PowerKind::Juggernaut

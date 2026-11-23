@@ -1,4 +1,6 @@
+import { Fragment, type ReactNode } from "react";
 import type { CombatLogRow } from "../api";
+import { getLang, t } from "../i18n";
 
 /**
  * The one place a combat-log display row becomes a coloured sentence.
@@ -13,6 +15,15 @@ function sideColor(side: string | null): string {
   return side === "enemy" ? "var(--hp)" : "var(--block)";
 }
 
+/** A translated template with `{name}` slots filled by React nodes (the
+ *  sentence is translated whole, so the slots may move in Chinese). */
+function fill(template: string, nodes: Record<string, ReactNode>): ReactNode[] {
+  return template.split(/(\{\w+\})/g).map((part, i) => {
+    const m = /^\{(\w+)\}$/.exec(part);
+    return <Fragment key={i}>{m && m[1] in nodes ? nodes[m[1]] : part}</Fragment>;
+  });
+}
+
 /** The coloured spans for one row, falling back to its plain `text`. */
 export function LogLine({ row }: { row: CombatLogRow }) {
   const actor = row.actor ? (
@@ -24,55 +35,43 @@ export function LogLine({ row }: { row: CombatLogRow }) {
   const amount = (
     <span style={{ color: "var(--gold)", fontWeight: 700 }}>{row.amount}</span>
   );
-  const source = row.source ? (
-    <>
-      {" using "}
-      <span style={{ color: "var(--gold)" }}>{row.source}</span>
-    </>
-  ) : null;
-  const noun = <span style={{ color: "var(--gold)" }}>{row.noun}</span>;
+  const src = row.source ? <span style={{ color: "var(--gold)" }}>{row.source}</span> : null;
+  const noun = <span style={{ color: "var(--gold)" }}>{row.noun_display ?? row.noun}</span>;
 
   switch (row.kind) {
     case "damage":
       return actor ? (
-        <>{actor} dealt {amount} damage to {target}{source}.</>
+        src
+          ? <>{fill(t("{actor} dealt {amount} damage to {target} using {source}."), { actor, amount, target, source: src })}</>
+          : <>{fill(t("{actor} dealt {amount} damage to {target}."), { actor, amount, target })}</>
       ) : (
-        <>{target} took {amount} damage.</>
+        <>{fill(t("{target} took {amount} damage."), { target, amount })}</>
       );
     case "block":
-      return <>{actor} gained {amount} {noun}.</>;
+      return <>{fill(t("{actor} gained {amount} {noun}."), { actor, amount, noun })}</>;
     case "power":
-      // "applied N X to Y" vs "gained N X" — the server decided which (a
-      // self-applied power has actor === target and still reads "applied").
       return row.verb === "applied" ? (
-        <>{actor} applied {amount} {noun} to {target}.</>
+        <>{fill(t("{actor} applied {amount} {noun} to {target}."), { actor, amount, noun, target })}</>
       ) : (
-        <>{target} gained {amount} {noun}.</>
+        <>{fill(t("{target} gained {amount} {noun}."), { target, amount, noun })}</>
       );
     case "monster_move":
-      return <>{actor} used {noun}.</>;
+      return <>{fill(t("{actor} used {noun}."), { actor, noun })}</>;
     case "potion":
-      return <>{actor} drank {noun}.</>;
+      return <>{fill(t("{actor} drank {noun}."), { actor, noun })}</>;
     case "orb_channeled":
-      return <>{actor} channeled {noun}.</>;
+      return <>{fill(t("{actor} channeled {noun}."), { actor, noun })}</>;
     case "orb_evoked":
-      return <>{actor} evoked {noun}.</>;
-    // A card the engine played on its own (Stampede, Havoc, Mayhem, …). The
-    // step label only ever names the card the player chose, so this line is
-    // where the auto-play shows (GH #1155). `source` is what pulled it.
+      return <>{fill(t("{actor} evoked {noun}."), { actor, noun })}</>;
     case "card_auto_played":
-      return (
-        <>
-          {actor} auto-played {noun}
-          {row.source ? <>{" via "}<span style={{ color: "var(--gold)" }}>{row.source}</span></> : null}.
-        </>
-      );
-    // A card a play moved: Brand's exhaust pick, Survivor's discard, an added
-    // Shiv (GH #1015). The step label names only the card played.
+      return src
+        ? <>{fill(t("{actor} auto-played {noun} via {source}."), { actor, noun, source: src })}</>
+        : <>{fill(t("{actor} auto-played {noun}."), { actor, noun })}</>;
     case "card_exhausted":
     case "card_discarded":
     case "card_generated":
-      return row.actor && row.verb && row.noun ? (
+      // `verb` is an English value; in Chinese the engine's own sentence reads right.
+      return row.actor && row.verb && row.noun && getLang() !== "zh" ? (
         <>{actor} {row.verb} {noun}.</>
       ) : (
         <>{row.text}</>

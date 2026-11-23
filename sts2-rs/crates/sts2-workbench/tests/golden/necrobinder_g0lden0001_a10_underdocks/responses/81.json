@@ -284,6 +284,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/corpse_slug/corpse_slug",
+    "rig_arrow_x": -3.0,
+    "rig_arrow_y": -74.0,
     "rig_bounds_h": 164.0,
     "rig_bounds_w": 232.0,
     "rig_scale": 0.23,
@@ -319,6 +321,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/corpse_slug/corpse_slug",
+    "rig_arrow_x": -3.0,
+    "rig_arrow_y": -74.0,
     "rig_bounds_h": 164.0,
     "rig_bounds_w": 232.0,
     "rig_scale": 0.23,
@@ -388,6 +392,8 @@
    "max_hp": 7,
    "name": "Osty",
    "rig": "https://assets.test/monster_rigs/osty/osty",
+   "rig_arrow_x": -15.0,
+   "rig_arrow_y": -109.0,
    "rig_bounds_h": 204.0,
    "rig_bounds_w": 232.0,
    "rig_scale": 0.26
@@ -600,6 +606,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/necrobinder/necrobinder",
+   "rig_arrow_x": 3.0,
+   "rig_arrow_y": -191.0,
    "rig_bounds_h": 270.0,
    "rig_bounds_w": 210.0,
    "rig_scale": 0.27

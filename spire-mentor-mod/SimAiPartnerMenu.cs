@@ -130,11 +130,11 @@ internal static class SimAiPartnerMenu
     {
         if (button.GetNodeOrNull<MegaLabel>("%Title") is { } title)
         {
-            title.SetTextAutoSize(Title);
+            title.SetTextAutoSize(L10n.T(Title));
         }
         if (button.GetNodeOrNull<MegaRichTextLabel>("%Description") is { } description)
         {
-            description.Text = Description;
+            description.Text = L10n.T(Description);
         }
     }
 
@@ -198,7 +198,7 @@ internal static class SimAiPartnerNames
             {
                 if (p.NetId == playerId)
                 {
-                    __result = p.Character != null ? $"{p.Label} ({p.Character.Title.GetFormattedText()})" : p.Label;
+                    __result = p.Character != null ? $"{p.DisplayName} ({p.Character.Title.GetFormattedText()})" : p.DisplayName;
                     return;
                 }
             }

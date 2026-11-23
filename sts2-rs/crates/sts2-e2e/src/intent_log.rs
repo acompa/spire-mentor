@@ -90,6 +90,35 @@ impl IntentLog {
         }
     }
 
+    /// Follow the enemies through a rebuild that renamed their uids
+    /// (`(uid then, uid now)`, GH #1651): each keeps its history under its
+    /// new uid; an enemy the map does not carry (dead, unaligned) drops out.
+    /// The env never renames (its fights are never rebuilt); a live fight
+    /// mirrored from the game's boards does after every kill.
+    pub fn remap(&mut self, pairs: &[(u32, u32)]) {
+        let key = |uid: u32| pyjson::dumps(&json!(uid));
+        let moved: Vec<_> = pairs
+            .iter()
+            .map(|&(then, now)| {
+                (
+                    key(now),
+                    self.log.remove(&key(then)),
+                    self.species.remove(&key(then)),
+                )
+            })
+            .collect();
+        self.log.clear();
+        self.species.clear();
+        for (now, log, kind) in moved {
+            if let Some(l) = log {
+                self.log.insert(now.clone(), l);
+            }
+            if let Some(k) = kind {
+                self.species.insert(now, k);
+            }
+        }
+    }
+
     /// Per enemy of `snap` (same order): up to [`MAX_HIST`] earlier entries,
     /// most recent first, each `{"lag": .., **intent}`.
     #[must_use]
@@ -137,6 +166,56 @@ impl IntentLog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn snap_of(round: i64, enemies: &[(u32, &str, &str)]) -> Value {
+        json!({"round": round, "enemies": enemies.iter().map(|(uid, kind, intent)| json!({
+            "eid": uid, "kind": kind, "intents": [{"kind": intent}],
+        })).collect::<Vec<_>>()})
+    }
+
+    /// GH #1651: a rebuild after a kill renames the survivors; the log
+    /// follows each to its new uid, and the dead enemy's history is gone.
+    #[test]
+    fn a_renamed_enemy_keeps_its_history() {
+        let mut log = IntentLog::new();
+        log.update(&snap_of(
+            1,
+            &[
+                (2, "Rat", "Attack"),
+                (3, "Rat", "Buff"),
+                (4, "Rat", "Defend"),
+            ],
+        ));
+        log.update(&snap_of(
+            2,
+            &[
+                (2, "Rat", "Buff"),
+                (3, "Rat", "Attack"),
+                (4, "Rat", "Attack"),
+            ],
+        ));
+        // The first rat died; the rebuild numbered the survivors 2 and 3.
+        log.remap(&[(3, 2), (4, 3)]);
+        let now = snap_of(3, &[(2, "Rat", "Defend"), (3, "Rat", "Buff")]);
+        let h = log.observe(now)["ehist"].clone();
+        let kinds = |i: usize| -> Vec<Value> {
+            h[i].as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["kind"].clone())
+                .collect()
+        };
+        assert_eq!(
+            kinds(0),
+            vec![json!("Attack"), json!("Buff")],
+            "the old rat 3"
+        );
+        assert_eq!(
+            kinds(1),
+            vec![json!("Attack"), json!("Defend")],
+            "the old rat 4"
+        );
+    }
 
     fn snap(round: i64, kind: &str, amount: i64) -> Value {
         json!({"round": round, "enemies": [

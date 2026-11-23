@@ -2,44 +2,40 @@
  "graphs": [
   {
    "act": 1,
-   "act_name": "Overgrowth",
-   "floor": 4,
+   "act_name": "Underdocks",
+   "floor": 5,
    "full_map": {
     "boss": {
      "col": 3,
-     "icon": "https://assets.test/run_history/the_kin_boss.png",
-     "id": "THE_KIN_BOSS",
-     "kind": "KinFollower",
-     "name": "The Kin",
+     "icon": "https://assets.test/run_history/lagavulin_matriarch_boss.png",
+     "id": "LAGAVULIN_MATRIARCH_BOSS",
+     "kind": "LagavulinMatriarch",
+     "name": "Lagavulin Matriarch",
      "row": 16,
      "type": "Boss"
     },
     "current_coord": {
      "col": 0,
-     "row": 3
+     "row": 4
     },
     "path_plan": {
      "baseline_col": 0,
      "best_col": 0,
      "columns": [
       {
-       "baseline_score": -2.0363,
+       "baseline_score": -1.8038,
        "can_skip_elite": false,
        "col": 0,
        "is_pick": true,
        "max_elites": 2,
        "min_elites": 1,
        "n_paths": 2,
-       "score": -2.0363
+       "score": -1.8038
       }
      ],
      "diverged": false,
      "first_col": null,
      "route": [
-      {
-       "col": 0,
-       "row": 4
-      },
       {
        "col": 0,
        "row": 5
@@ -276,7 +272,7 @@
         }
        ],
        "col": 0,
-       "current": true,
+       "current": false,
        "icon": "https://assets.test/run_history/monster.png",
        "row": 3,
        "type": "Monster",
@@ -362,11 +358,11 @@
         }
        ],
        "col": 0,
-       "current": false,
+       "current": true,
        "icon": "https://assets.test/run_history/monster.png",
        "row": 4,
        "type": "Monster",
-       "visited": false
+       "visited": true
       },
       {
        "children": [

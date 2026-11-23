@@ -247,3 +247,37 @@ pub fn install_default_registry() {
 pub fn ensure_installed() {
     install_default_registry();
 }
+
+/// Whether a once-per-turn / pending relic will fire on its next trigger —
+/// the "armed" fact a player reads off the relic's glow. `None` for every
+/// relic outside the three that have one; a melted relic (Toy Box) is
+/// never armed, as every hook below skips it.
+///
+/// Reads the same `Relic.counter` latches the hooks write, so the two cannot
+/// drift:
+///   * Emotion Chip — a pulse is pending: a hit stamped with this player
+///     turn (or the last one, not yet consumed at turn start)
+///     ([`emotion_chip::pulse_pending`]; C# `LostHpInPreviousTurn`).
+///   * Mini Regent — not yet used this turn (C# `!UsedThisTurn`,
+///     MiniRegent.cs; the latch is `counter`, see [`mini_regent`]).
+///   * Regalite — not yet used this turn (v0.111.0 `!UsedThisTurn`,
+///     Regalite.cs:39). v0.107.1's Regalite has no latch and fires on every
+///     generated card, so it is always armed there.
+#[must_use]
+pub fn relic_armed(state: &crate::CombatState, relic: &crate::Relic) -> Option<bool> {
+    let kind = relic.kind;
+    if !matches!(
+        kind,
+        crate::RelicKind::EmotionChip | crate::RelicKind::MiniRegent | crate::RelicKind::Regalite
+    ) {
+        return None;
+    }
+    if relic.is_melted {
+        return Some(false);
+    }
+    Some(match kind {
+        crate::RelicKind::EmotionChip => emotion_chip::pulse_pending(relic.counter),
+        crate::RelicKind::Regalite if state.game_version < crate::GameVersion::V0_111_0 => true,
+        _ => relic.counter == 0,
+    })
+}

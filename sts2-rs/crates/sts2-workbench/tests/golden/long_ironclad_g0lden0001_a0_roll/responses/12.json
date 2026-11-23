@@ -1,5 +1,7 @@
 {
- "details": [],
+ "details": [
+  "+Card Bloodletting"
+ ],
  "error": null,
  "label": "Take Bloodletting",
  "step": {

@@ -293,6 +293,22 @@ public static class AdviceMarks
         return "";
     }
 
+    /// <summary>A <see cref="Verdict"/> / <see cref="RowVerdict"/> word in
+    /// the player's language, for display only: the English word stays the
+    /// key that picks colours and counts (SimHud, SimMoveFeedback).</summary>
+    public static string VerdictText(string verdict) =>
+        verdict switch
+        {
+            "Best" => L10n.T("Best"),
+            "Also good" => L10n.T("Also good"),
+            "Then" => L10n.T("Then"),
+            "Okay" => L10n.T("Okay"),
+            "Weak" => L10n.T("Weak"),
+            "Mistake" => L10n.T("Mistake"),
+            "Unlikely" => L10n.T("Unlikely"),
+            _ => verdict,
+        };
+
     /// <summary>
     /// The word for a ranked row that may be a later step of the turn's plan.
     /// A later step is judged at THIS decision, where it is not the move to

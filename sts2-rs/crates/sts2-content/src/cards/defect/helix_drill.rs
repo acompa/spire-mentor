@@ -48,7 +48,10 @@ pub(crate) fn play_helix_drill(
 ) -> EffectResult {
     let t = target.expect("HelixDrill: Enemy-targeted");
     let base = current_card_damage(state);
-    let hits = resolving_preview(state, preview_helix_drill, target);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_helix_drill, target),
+    );
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, base);
     }

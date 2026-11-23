@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import subprocess
+import time
 
 import pytest
 import referee_spike
@@ -23,10 +25,13 @@ OTHER_KEY = "22" * 32
 class Host:
     """A raw headless process, for commands the spike driver does not send."""
 
-    def __init__(self, *, referee: bool, diag: bool = True):
+    def __init__(self, *, referee: bool, diag: bool = True, keyed: bool = False):
         env = os.environ.copy()
         env.pop("STS2_REFEREE", None)
         env.pop("STS2_REFEREE_DIAG", None)
+        env.pop("STS2_KEYED_RNG", None)
+        if keyed:
+            env["STS2_KEYED_RNG"] = "1"
         if referee:
             env["STS2_REFEREE"] = "1"
             if diag:
@@ -191,6 +196,152 @@ def test_the_view_drops_hidden_state_from_a_real_combat_payload():
     assert view["player"]["hp"] == raw["player"]["hp"]
 
 
+def test_an_attack_shows_its_bestiary_base_damage():
+    # GH #1708: the base a player knows from the bestiary, beside the shown
+    # number that floors at 0 under Strength loss.
+    raw = _combat_payload()
+    attacks = [
+        i for e in raw["enemies"] for i in e.get("intents") or [] if i.get("type") == "Attack"
+    ]
+    assert attacks, "the payload has no attack; the test proves nothing"
+    assert all(isinstance(i.get("base_damage"), int) for i in attacks)
+    view = _project(raw)
+    assert view["_unclassified"] == []
+    shown = [
+        i for e in view["enemies"] for i in e.get("intents") or [] if i.get("type") == "Attack"
+    ]
+    assert [i["base_damage"] for i in shown] == [i["base_damage"] for i in attacks]
+
+
+def _in_hand(view: dict, card: str) -> int | None:
+    return next((i for i, c in enumerate(view.get("hand") or []) if c["id"] == card), None)
+
+
+def test_a_card_put_on_top_is_a_known_position_until_drawn(game):
+    # GH #1710: Headbutt puts a discarded card on top of the draw pile; a
+    # player knows it is the next draw, so the view says so.
+    state = game.start(character="Ironclad", seed="KNOWNTOP1710")
+    game.skip_neow(state)
+    r = game.set_player(
+        hp=70, max_hp=80, deck=["HEADBUTT", "BASH", *["DEFEND_IRONCLAD"] * 3], relics=[], potions=[]
+    )
+    assert r.get("type") != "error", r
+    view = game.enter_room("combat", encounter="SHRINKER_BEETLE_WEAK")
+    # A five-card deck is the first hand on every build. A larger one dealt
+    # Headbutt and Bash into different hands on v0.113.0, every turn.
+    assert _in_hand(view, "CARD.HEADBUTT") is not None, view.get("hand")
+    assert _in_hand(view, "CARD.BASH") is not None, view.get("hand")
+    assert not view.get("draw_pile_top"), "nothing placed yet"
+    view = game.play_card(_in_hand(view, "CARD.BASH"), 0)
+    view = game.play_card(_in_hand(view, "CARD.HEADBUTT"), 0)
+    if view.get("decision") == "card_select":
+        pick = next(i for i, c in enumerate(view["cards"]) if c["id"] == "CARD.BASH")
+        view = game.select_cards(str(pick))
+    assert view.get("decision") == "combat_play", view.get("decision")
+    assert [c["id"] for c in view.get("draw_pile_top") or []] == ["CARD.BASH"]
+    assert view["draw_pile"][0]["id"] == "CARD.BASH"
+
+    projected = _project(view)
+    assert projected["_unclassified"] == []
+    assert [c["id"] for c in projected["draw_pile_top"]] == ["CARD.BASH"]
+    assert projected["draw_pile"][0]["id"] == "CARD.BASH", "the known card keeps its index"
+
+    view = game.end_turn()
+    assert _in_hand(view, "CARD.BASH") is not None, "the known top card is drawn"
+    assert not view.get("draw_pile_top"), "and is no longer in the pile"
+
+
+def test_a_random_insert_keeps_the_known_top_card(game):
+    # GH #1797: a card shuffled in at a random spot most likely lands below
+    # the card a player put on top, and the player still plans with it there;
+    # the engine's belief keeps the pin through a random insert, so the
+    # host's does too. Headbutt puts a played Reave on top, then a second
+    # Reave shuffles Souls into the draw pile at random spots.
+    state = game.start(character="Ironclad", seed="KNOWNTOP1797")
+    game.skip_neow(state)
+    r = game.set_player(
+        hp=70,
+        max_hp=80,
+        deck=["HEADBUTT", "REAVE", "REAVE", *["DEFEND_IRONCLAD"] * 2],
+        relics=[],
+        potions=[],
+    )
+    assert r.get("type") != "error", r
+    view = game.enter_room("combat", encounter="SHRINKER_BEETLE_WEAK")
+    view = game.play_card(_in_hand(view, "CARD.REAVE"), 0)
+    view = game.play_card(_in_hand(view, "CARD.HEADBUTT"), 0)
+    if view.get("decision") == "card_select":
+        pick = next(i for i, c in enumerate(view["cards"]) if c["id"] == "CARD.REAVE")
+        view = game.select_cards(str(pick))
+    assert [c["id"] for c in view.get("draw_pile_top") or []] == ["CARD.REAVE"]
+    n_draw = len(view["draw_pile"])
+    view = game.play_card(_in_hand(view, "CARD.REAVE"), 0)
+    assert view.get("decision") == "combat_play", view.get("decision")
+    assert len(view["draw_pile"]) > n_draw, "Reave shuffled nothing in; the test proves nothing"
+    assert [c["id"] for c in view.get("draw_pile_top") or []] == ["CARD.REAVE"]
+    projected = _project(view)
+    assert projected["_unclassified"] == []
+    assert [(c["id"], c["index"]) for c in projected["draw_pile_top"]] == [("CARD.REAVE", 0)]
+    assert projected["draw_pile"][0]["id"] == "CARD.REAVE", "sent at its believed place"
+
+
+def test_a_strike_shows_the_replay_soldiers_stew_gave_it(game):
+    # Soldier's Stew gives every Strike card +1 replay for the fight; the
+    # card shows it, and a board rebuilt without it previews (and plays)
+    # one hit short (Spire Bench seeds 170000026, 170000058).
+    state = game.start(character="Ironclad", seed="STEWREPLAY")
+    game.skip_neow(state)
+    r = game.set_player(
+        hp=70,
+        max_hp=80,
+        deck=["STRIKE_IRONCLAD"] * 3 + ["DEFEND_IRONCLAD"] * 2,
+        relics=[],
+        potions=["SOLDIERS_STEW"],
+    )
+    assert r.get("type") != "error", r
+    view = game.enter_room("combat", encounter="SHRINKER_BEETLE_WEAK")
+    strikes = [c for c in view["hand"] if c["id"] == "CARD.STRIKE_IRONCLAD"]
+    assert strikes and all("base_replay_count" not in c for c in strikes)
+    view = game.use_potion(0)
+    strikes = [c for c in view["hand"] if c["id"] == "CARD.STRIKE_IRONCLAD"]
+    assert strikes and all(c.get("base_replay_count") == 1 for c in strikes), strikes
+    assert all(
+        "base_replay_count" not in c for c in view["hand"] if c["id"] == "CARD.DEFEND_IRONCLAD"
+    )
+    projected = _project(view)
+    assert projected["_unclassified"] == []
+    assert all(
+        c.get("base_replay_count") == 1
+        for c in projected["hand"]
+        if c["id"] == "CARD.STRIKE_IRONCLAD"
+    )
+
+
+def test_the_view_carries_the_hits_the_player_took(game):
+    # GH #1712: Tear Asunder's hit count and Spite's "lost HP this turn" are
+    # history scans a rebuilt board cannot redo; the board sends them.
+    state = game.start(character="Ironclad", seed="SEATHIST1712")
+    game.skip_neow(state)
+    r = game.set_player(hp=70, max_hp=80, deck=["STRIKE_IRONCLAD"] * 10, relics=[], potions=[])
+    assert r.get("type") != "error", r
+    view = game.enter_room("combat", encounter="SHRINKER_BEETLE_WEAK")
+    assert view["player"]["unblocked_hits_this_combat"] == 0
+    hp = view["player"]["hp"]
+    for _ in range(4):
+        view = game.end_turn()
+        if view["player"]["hp"] < hp:
+            break
+    assert view["player"]["hp"] < hp, "the beetle hit the player"
+    assert view["player"]["unblocked_hits_this_combat"] >= 1
+    assert view["player"]["hp_lost_this_turn"] is False, "the hit came on the enemy's turn"
+    projected = _project(view)
+    assert projected["_unclassified"] == []
+    assert (
+        projected["player"]["unblocked_hits_this_combat"]
+        == view["player"]["unblocked_hits_this_combat"]
+    )
+
+
 def test_the_view_does_not_depend_on_the_draw_order():
     raw = _combat_payload()
     assert len({c["id"] for c in raw["draw_pile"]}) > 1, "need a pile whose order is visible"
@@ -220,6 +371,8 @@ def test_a_map_decision_carries_the_whole_act_map():
         for _ in range(40):
             if state.get("decision") == "map_select":
                 break
+            # The player can open the map at any time: Neow, fights, rewards.
+            assert state["map"]["rows"] and state["map"]["boss"], state.get("decision")
             state = host.send(**referee_spike.choose(state, rnd))
     assert state["decision"] == "map_select"
     assert len(state["map"]["rows"]) > 5
@@ -227,6 +380,50 @@ def test_a_map_decision_carries_the_whole_act_map():
     reachable = {(c["col"], c["row"]) for c in state["choices"]}
     on_map = {(n["col"], n["row"]) for row in state["map"]["rows"] for n in row}
     assert reachable <= on_map
+
+
+def _visible(state: dict) -> dict:
+    """What both views show of a position: the player, the hand, the enemies."""
+    player = state.get("player") or {}
+    return {
+        "decision": state.get("decision"),
+        "hp": player.get("hp"),
+        "gold": player.get("gold"),
+        "deck": sorted(str(c.get("id")) for c in player.get("deck") or []),
+        "relics": [r.get("id") for r in player.get("relics") or []],
+        "hand": [c.get("id") for c in state.get("hand") or []],
+        "enemies": [(e.get("id"), e.get("hp")) for e in state.get("enemies") or []],
+        "options": [o.get("text_key") for o in state.get("options") or []],
+        "cards": [c.get("id") for c in state.get("cards") or []],
+    }
+
+
+def test_a_keyed_host_plays_the_referees_game_with_the_full_view():
+    # The paired control arm: same key, same label, same actions -> the same
+    # game, but the keyed host shows the state the referee withholds.
+    with Host(referee=True, diag=False) as ref, Host(referee=False, keyed=True) as full:
+        assert full.ready["keyed_rng"] is True and full.ready["referee"] is False
+        start = {"cmd": "start_run", "character": "Ironclad", "seed": "PAIR1", "ascension": 0}
+        a = ref.send(**start, rng_key=KEY)
+        b = full.send(**start, rng_key=KEY)
+        rnd = referee_spike.random.Random("PAIR1")
+        steps = fights = 0
+        while a.get("decision") not in (None, "game_over") and steps < 300:
+            assert _visible(a) == _visible(b), (steps, _visible(a), _visible(b))
+            if a.get("decision") == "combat_play":
+                fights += 1
+                # The full view keeps what the referee withholds.
+                assert "move_state" in b["enemies"][0] and "move_state" not in a["enemies"][0]
+            cmd = referee_spike.choose_legal(a, rnd)
+            a, b = ref.send(**cmd), full.send(**cmd)
+            steps += 1
+        assert steps > 40 and fights > 5, (steps, fights)
+
+
+def test_a_keyed_host_needs_a_key():
+    with Host(referee=False, keyed=True) as host:
+        got = host.send(cmd="start_run", character="Ironclad", seed="PAIR2", ascension=0)
+    assert got["type"] == "error" and got["code"] == "bad_request"
 
 
 # ── Legal actions and error codes ───────────────────────────────────────────
@@ -358,21 +555,17 @@ def _map_payload(choices: list[dict]) -> dict:
     }
 
 
-def test_the_second_boss_is_not_sent_before_it_is_the_next_node():
+def test_the_second_boss_is_sent_from_act_entry():
+    # GH #1662: the game shows both A10 act-3 bosses from act entry (top bar
+    # and map), so the view names the second before the first falls.
     with Host(referee=True) as host:
         early = host.send(
             cmd="referee_project", payload=_map_payload([{"col": 1, "row": 1, "type": "Monster"}])
         )
-        late = host.send(
-            cmd="referee_project", payload=_map_payload([{"col": 3, "row": 16, "type": "Boss"}])
-        )
-    assert "SECOND" not in early["view"] and "Second" not in early["view"]
     early_map = json.loads(early["view"])["map"]
-    assert "second_boss" not in early_map
-    assert all((n["col"], n["row"]) != (3, 16) for row in early_map["rows"] for n in row)
     assert early_map["boss"]["id"] == "FIRST"
-    # Once the first boss has fallen it is the next node, as on the map screen.
-    assert json.loads(late["view"])["map"]["second_boss"]["id"] == "SECOND"
+    assert early_map["second_boss"]["id"] == "SECOND"
+    assert any((n["col"], n["row"]) == (3, 16) for row in early_map["rows"] for n in row)
 
 
 # ── Where the headless host used to depart from the game ────────────────────
@@ -450,6 +643,111 @@ def test_crystal_sphere_clicks_are_listed_for_fogged_cells_only(monkeypatch):
     fogged = {(c["x"], c["y"]) for c in view["cells"] if c["hidden"]}
     listed = {(a["args"]["x"], a["args"]["y"], a["args"]["tool"]) for a in view["legal_actions"]}
     assert listed == {(x, y, tool) for x, y in fogged for tool in ("big", "small")}
+
+
+SWEEP = [(1, 3), (4, 3), (7, 3), (1, 6), (4, 6), (7, 6)]  # CrystalSphereSweepCenters
+
+
+def _after_the_sphere(state: dict) -> dict:
+    """What the sphere left behind, without the fields that name the moment."""
+    return {k: state.get(k) for k in ("decision", "player", "cards", "rewards", "options")}
+
+
+@pytest.mark.parametrize("option", [0, 1])
+def test_the_old_sweep_as_decisions_pays_what_the_auto_play_pays(monkeypatch, option):
+    # GH #1364: the decision path is the same minigame. The host's own cells,
+    # clicked one by one by the client, leave the run exactly where the
+    # auto-play leaves it: same gold, relics, potions, deck and next screen.
+    def enter(host: Host) -> dict:
+        host.send(cmd="start_run", character="Ironclad", seed="SPHERE1", ascension=0)
+        state = host.send(cmd="enter_room", type="event", event="CRYSTAL_SPHERE")
+        return host.send(
+            cmd="action",
+            action="choose_option",
+            args={"option_index": state["options"][option]["index"]},
+        )
+
+    monkeypatch.delenv("STS2_CRYSTAL_SPHERE_INTERACTIVE", raising=False)
+    with Host(referee=False) as host:
+        auto = enter(host)
+    assert auto["decision"] != "crystal_sphere"
+
+    monkeypatch.setenv("STS2_CRYSTAL_SPHERE_INTERACTIVE", "1")
+    with Host(referee=False) as host:
+        state = enter(host)
+        total = state["divinations_total"]
+        assert total == state["divinations_left"] and total in (3, 6)
+        for x, y in SWEEP[:total]:
+            assert state["decision"] == "crystal_sphere"
+            assert state["divinations_total"] == total
+            state = host.send(
+                cmd="action", action="crystal_sphere_click", args={"x": x, "y": y, "tool": "big"}
+            )
+    assert _after_the_sphere(state) == _after_the_sphere(auto)
+
+
+def test_the_small_tool_clears_one_cell_for_one_divination(monkeypatch):
+    # A choice we would not make is still the client's to make (GH #1364).
+    monkeypatch.setenv("STS2_CRYSTAL_SPHERE_INTERACTIVE", "1")
+    with Host(referee=False) as host:
+        state = _enter_crystal_sphere(host)
+        left = state["divinations_left"]
+        fogged = [(c["x"], c["y"]) for c in state["cells"] if c["hidden"]]
+        # A corner: the last cell any policy of ours would spend a divination on.
+        x, y = max(fogged, key=lambda c: (c[0] + c[1], c))
+        after = host.send(
+            cmd="action", action="crystal_sphere_click", args={"x": x, "y": y, "tool": "small"}
+        )
+        assert after["decision"] == "crystal_sphere"
+        assert after["divinations_left"] == left - 1
+        now_fogged = {(c["x"], c["y"]) for c in after["cells"] if c["hidden"]}
+        assert set(fogged) - now_fogged == {(x, y)}
+
+        bad = host.send(
+            cmd="action", action="crystal_sphere_click", args={"x": 0, "y": 0, "tool": "huge"}
+        )
+        assert bad["type"] == "error"
+
+
+def test_the_reference_driver_plays_the_sphere_to_the_end(monkeypatch):
+    monkeypatch.setenv("STS2_CRYSTAL_SPHERE_INTERACTIVE", "1")
+    rnd = random.Random(0)
+    with Host(referee=False) as host:
+        state = _enter_crystal_sphere(host)
+        clicks = 0
+        while state.get("decision") == "crystal_sphere":
+            cmd = referee_spike.choose(state, rnd)
+            assert cmd["action"] == "crystal_sphere_click"
+            state = host.send(**cmd)
+            assert state["type"] != "error"
+            clicks += 1
+        assert clicks in (3, 6)
+        # On this seed the digger uncovers a card reward on every build (two
+        # on v0.111.0 and v0.113.0). Handing one out
+        # used to block the game thread: no reply to the last click (GH #1364).
+        assert state["decision"] == "card_reward"
+        picks = 0
+        while state["decision"] == "card_reward":
+            deck = len(state["player"]["deck"])
+            state = host.send(cmd="action", action="select_card_reward", args={"card_index": 0})
+            assert state["type"] != "error"
+            assert len(state["player"]["deck"]) == deck + 1
+            picks += 1
+        assert picks >= 1
+
+
+def test_the_referee_view_keeps_the_starting_count_and_lists_both_tools(monkeypatch):
+    # Referee mode refuses enter_room, so the raw state comes from a default
+    # host with the flag referee mode sets, and goes through its projection.
+    monkeypatch.setenv("STS2_CRYSTAL_SPHERE_INTERACTIVE", "1")
+    with Host(referee=False) as host:
+        raw = _enter_crystal_sphere(host)
+    view = _project(raw)
+    assert view["_unclassified"] == []
+    assert view["divinations_total"] == view["divinations_left"] == raw["divinations_total"]
+    fogged = sum(c["hidden"] for c in view["cells"])
+    assert {a["args"]["tool"] for a in view["legal_actions"]} == {"big", "small"}
+    assert len(view["legal_actions"]) == 2 * fogged
 
 
 # ── The reward screen and the potion belt (GH #1282) ────────────────────────
@@ -685,3 +983,50 @@ def test_a_default_host_only_counts_swallowed_errors(monkeypatch):
     sites = run["host_faults"]
     assert [s for s in sites if s.startswith("catch:ForceToMap:")], sites
     assert run["floor"] > 1
+
+
+def test_the_cosmetic_generator_depends_on_the_key_alone():
+    # Rng.Chaotic is wall-clock seeded and drawn on frame timers (VFX). Keyed
+    # as a counted stream it broke 14 of 150 transcript replays through
+    # Trial's entrant number (#1636). Two hosts started in different seconds,
+    # one of them after extra draws, must draw the same values.
+    def draws(key: str, warmup: int) -> list[int]:
+        with Host(referee=True) as host:
+            host.send(cmd="start_run", character="Ironclad", seed="CH1", ascension=0, rng_key=key)
+            if warmup:
+                host.send(cmd="referee_chaotic", count=warmup)
+            return host.send(cmd="referee_chaotic", count=3)["draws"]
+
+    first = draws(KEY, 0)
+    time.sleep(1.1)
+    assert draws(KEY, 5) == first
+    assert len(set(first)) == 1
+    assert draws(OTHER_KEY, 0) != first
+
+
+def test_an_enemy_keeps_its_combat_id_when_another_dies():
+    """GH #1651: `index` shifts after a death, `combat_id` stays with the creature."""
+    shifted = 0
+    with Host(referee=True) as host:
+        state = host.send(
+            cmd="start_run", character="Ironclad", seed="CID1", ascension=0, rng_key=KEY
+        )
+        rnd = referee_spike.random.Random("CID1")
+        seen: dict[int, tuple[int, str]] = {}
+        for _ in range(400):
+            if state.get("type") != "decision" or state.get("decision") == "game_over":
+                break
+            if state.get("decision") == "map_select":
+                seen = {}
+            if state.get("decision") == "combat_play":
+                enemies = state["enemies"]
+                ids = [e["combat_id"] for e in enemies]
+                assert len(set(ids)) == len(ids), ids
+                for e in enemies:
+                    was = seen.get(e["combat_id"])
+                    if was is not None:
+                        assert was[1] == e["id"], "a combat_id names one creature"
+                        shifted += was[0] != e["index"]
+                    seen[e["combat_id"]] = (e["index"], e["id"])
+            state = host.send(**referee_spike.choose(state, rnd))
+    assert shifted > 0, "no death moved an enemy; pick another seed"

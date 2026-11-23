@@ -39,6 +39,7 @@ fn make_card(
         card_type,
         target_type,
         upgraded: false,
+        extra_upgrades: 0,
         base_damage,
         base_block,
         combat_vars: sts2_core::cards::CombatVars::new(),

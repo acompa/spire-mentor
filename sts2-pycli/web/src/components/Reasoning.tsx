@@ -2,6 +2,7 @@ import { Fragment, type CSSProperties } from "react";
 import { UNRESOLVED_TOP2_Q_GAP, type Enemy, type Score, type StepAdvice } from "../api";
 import { enemyLabeller } from "../enemyLabels";
 import { isE2eScores } from "../advisor";
+import { t } from "../i18n";
 
 // q ∈ [-1,1] → red (loss) ⟶ amber ⟶ green (win). Matches the search-tree view.
 function qColor(q: number): string {
@@ -99,26 +100,23 @@ export default function Reasoning({ scores, pv, advice, enemies, heading = true 
     <div>
       {heading && (
         <div className="mono" style={{ fontSize: 10, color: "var(--muted)", borderBottom: "1px solid var(--border)",
-          paddingBottom: 5, marginBottom: 9 }}>Machine reasoning</div>
+          paddingBottom: 5, marginBottom: 9 }}>{t("Machine reasoning")}</div>
       )}
       {scores.length === 0 && !advice?.options?.length &&
-        <div className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>no scores yet — request a recommendation</div>}
+        <div className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>{t("no scores yet — request a recommendation")}</div>}
       {unresolved && (
         <div className="mono"
-          title={`top-2 Q gap ${top2Gap.toFixed(4)}, under ${UNRESOLVED_TOP2_Q_GAP} — inside the `
-            + "search's own cross-seed spread, so a different seed can reorder these. "
-            + "Raise sims if you need it settled."}
+          title={t("top-2 Q gap {gap}, under {limit} — inside the search's own cross-seed spread, so a different seed can reorder these. Raise sims if you need it settled.", { gap: top2Gap.toFixed(4), limit: UNRESOLVED_TOP2_Q_GAP })}
           style={{ fontSize: 10, color: "var(--muted)", border: "1px solid var(--border)",
             borderRadius: 4, padding: "4px 6px", marginBottom: 8 }}>
-          ~ too close to call — top two within {UNRESOLVED_TOP2_Q_GAP} Q
+          {t("~ too close to call — top two within {limit} Q", { limit: UNRESOLVED_TOP2_Q_GAP })}
         </div>
       )}
       {tieBand && (
         <div className="mono" data-testid="tie-band"
-          title={"The search's tie band: these moves score within its tie_eps of the best, "
-            + "so it picks among them by rule rather than by value."}
+          title={t("The search's tie band: these moves score within its tie_eps of the best, so it picks among them by rule rather than by value.")}
           style={{ fontSize: 10, color: "var(--muted)", marginBottom: 8 }}>
-          ≈ about equal: {tieBand.map(rowLabel).join(" ≈ ")}
+          {t("≈ about equal: {moves}", { moves: tieBand.map(rowLabel).join(" ≈ ") })}
           {star?.pick_reason ? ` · ★ ${star.pick_reason}` : ""}
         </div>
       )}
@@ -153,8 +151,8 @@ export default function Reasoning({ scores, pv, advice, enemies, heading = true 
           {scores.map((s) => {
             const pct = (s.prob ?? 0) * 100;
             const label = `${s.is_best ? "★ " : ""}${rowLabel(s)}`;
-            const tip = `${rowLabel(s)} — Instinct gives this move ${pct.toFixed(1)}% `
-              + "(a policy probability, not a win chance)";
+            const tip = t("{move} — Instinct gives this move {pct}% (a policy probability, not a win chance)",
+              { move: rowLabel(s), pct: pct.toFixed(1) });
             return (
               <Fragment key={`${s.stable_idx}:${s.target_index}`}>
                 <span title={tip} style={{ ...LABEL_CELL, fontWeight: s.is_best ? 700 : 400 }}>{label}</span>
@@ -170,7 +168,7 @@ export default function Reasoning({ scores, pv, advice, enemies, heading = true 
       )}
       {e2e && (
         <div className="mono" style={{ fontSize: 10, color: "var(--muted)", marginTop: 7 }}>
-          Instinct · one forward, no search · policy probabilities, not win chances
+          {t("Instinct · one forward, no search · policy probabilities, not win chances")}
         </div>
       )}
       <div className="mono" style={{ ...SCORE_GRID, fontSize: 11 }}>
@@ -180,8 +178,8 @@ export default function Reasoning({ scores, pv, advice, enemies, heading = true 
           if (unsearched) {
             return (
               <Fragment key={`${s.stable_idx}:${s.target_index}`}>
-                <span title={`${label} — the only legal move, not searched`} style={LABEL_CELL}>{label}</span>
-                <span style={{ ...NUM_CELL, gridColumn: "span 4" }}>forced · not searched</span>
+                <span title={t("{move} — the only legal move, not searched", { move: label })} style={LABEL_CELL}>{label}</span>
+                <span style={{ ...NUM_CELL, gridColumn: "span 4" }}>{t("forced · not searched")}</span>
               </Fragment>
             );
           }
@@ -189,25 +187,25 @@ export default function Reasoning({ scores, pv, advice, enemies, heading = true 
           // Binding → Gremlin Nob #2") still clamps, so the label carries the
           // whole line as a tooltip. The numeric cells keep their own, more
           // specific tooltips, which win when you hover them directly.
-          const full = `${label} — Q ${s.q >= 0 ? "+" : ""}${s.q.toFixed(2)} · ${share}% of search visits`
-            + ` · ${s.visits} visits · ${s.wins ?? 0}W/${s.losses ?? 0}L/${s.ties ?? 0}T`
-            + (s.is_best ? " · best" : "");
+          const full = `${label} — Q ${s.q >= 0 ? "+" : ""}${s.q.toFixed(2)} · ${t("{share}% of search visits", { share })}`
+            + ` · ${t("{n} visits", { n: s.visits })} · ${t("{w}W/{l}L/{t}T", { w: s.wins ?? 0, l: s.losses ?? 0, t: s.ties ?? 0 })}`
+            + (s.is_best ? ` · ${t("best")}` : "");
           return (
             <Fragment key={`${s.stable_idx}:${s.target_index}`}>
               <span title={full} style={{ ...LABEL_CELL, fontWeight: s.is_best && !unresolved ? 700 : 400 }}>
                 {label}
               </span>
-              <span title="expected value Q: +1 = sure win, 0 = even, −1 = sure loss"
+              <span title={t("expected value Q: +1 = sure win, 0 = even, −1 = sure loss")}
                 style={{ ...NUM_CELL, color: qColor(s.q) }}>
                 {s.q >= 0 ? "+" : ""}{s.q.toFixed(2)}
               </span>
-              <span title={`${share}% of search visits`}
+              <span title={t("{share}% of search visits", { share })}
                 style={{ width: 40, height: 7, background: "var(--hp-track)",
                   borderRadius: 4, overflow: "hidden" }}>
                 <span style={{ display: "block", height: "100%", width: `${share}%`, background: qColor(s.q) }} />
               </span>
-              <span title={`${share}% of search visits`} style={NUM_CELL}>{share}%</span>
-              <span title="rollout wins / losses / ties" style={{ ...NUM_CELL, fontSize: 10 }}>
+              <span title={t("{share}% of search visits", { share })} style={NUM_CELL}>{share}%</span>
+              <span title={t("rollout wins / losses / ties")} style={{ ...NUM_CELL, fontSize: 10 }}>
                 {s.wins ?? 0}/{s.losses ?? 0}/{s.ties ?? 0}
               </span>
             </Fragment>

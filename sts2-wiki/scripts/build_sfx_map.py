@@ -21,7 +21,10 @@ _MOVE_STATE = re.compile(
     r'new MoveState\(\s*"(?P<name>[A-Z0-9_]+)"\s*,\s*(?P<method>\w+)\s*,\s*'
     r"new (?P<intent>\w+)Intent\((?P<args>[^)]*)\)"
 )
-_METHOD = re.compile(r"private async Task (?P<method>\w+)\(")
+# Any access level: v0.113.0's Snapping Jaxfruit declares its one move
+# `public async Task EnergyOrb(...)`, and a private-only match gave the
+# monster no moves and so no map entry at all.
+_METHOD = re.compile(r"(?:private|protected|internal|public) async Task (?P<method>\w+)\(")
 _ONESHOT = re.compile(r'(?:SfxCmd\.Play|WithAttackerFx)\([^)]*?"(?P<event>event:/[^"]+)"')
 _LOOP = re.compile(r'SfxCmd\.PlayLoop\([^)]*?"(?P<event>event:/[^"]+)"')
 
@@ -1413,21 +1416,25 @@ def _vfx_sources(decomp_root: Path) -> dict[str, str]:
     return out
 
 
-def card_signature_event(source: str, vfx: dict[str, str]) -> str | None:
+def card_signature_event(
+    source: str, vfx: dict[str, str], skip: frozenset[str] = frozenset()
+) -> str | None:
     """A card's own sound: its literal if it has one, else its vfx node's.
 
     The card's own literal wins, so a card that both names an event and
     spawns a vfx node keeps the one it names. Vfx nodes are tried in the order
     they appear in the card source, and a node with no event of its own (most
     of them — `NDamageNumVfx`, `NHitSparkVfx`, …) is simply skipped rather
-    than blocking the ones after it.
+    than blocking the ones after it. So is a node named in `skip`: the melody
+    nodes, whose sounds `cardMelodies` carries (see `load_melody_sfx`).
     """
     own = _first_event(source)
     if own:
         return own
     for m in _VFX_CLASS_REF.finditer(source):
-        node = vfx.get(f"N{m['name']}Vfx")
-        if node is None:
+        name = f"N{m['name']}Vfx"
+        node = vfx.get(name)
+        if node is None or name in skip:
             continue
         event = _first_event(node)
         if event:
@@ -1435,16 +1442,71 @@ def card_signature_event(source: str, vfx: dict[str, str]) -> str | None:
     return None
 
 
-def _cards_by_class(decomp_root: Path, audio_root: Path | None) -> dict[str, str]:
-    """`{class_name: event}` for every card with a resolvable sfx call."""
+# v0.113.0's Fool sings: a Wah, Cho or Ki card calls
+# `MelodyCmd.PlayMelodyVfx(creature, CardTag.Wah)` once per tag it carries,
+# and `PlayMelodyVfx` spawns `NWahVfx`/`NChoVfx`/`NKiVfx` by a switch on the
+# tag (`MelodyCmd.cs`), each of which plays its own syllable. The card source
+# names the TAG, not the node, so following vfx references (above) found the
+# node only where a card happened to list its assets (`ExtraRunAssetPaths =>
+# NWahVfx.AssetPaths`): Ki Verse lists none and stayed silent, and Wah Cho
+# kept only its first syllable of two.
+_MELODY_SWITCH_ARM = re.compile(r"CardTag\.(?P<tag>\w+)\s*=>\s*(?P<node>N\w+Vfx)\.Create\(")
+_MELODY_CALL = re.compile(r"MelodyCmd\.PlayMelodyVfx\([^,()]+,\s*CardTag\.(?P<tag>\w+)\s*\)")
+
+
+def load_melody_sfx(
+    decomp_root: Path, vfx: dict[str, str], audio_root: Path | None = None
+) -> dict[str, tuple[str, str]]:
+    """`{tag: (vfx node, event)}` from `MelodyCmd.PlayMelodyVfx`'s switch.
+
+    Empty for a build without `MelodyCmd` (v0.111.0 and older), and a tag
+    whose node plays nothing, or nothing rendered, drops out.
+    """
+    cmd = decomp_root / "MegaCrit.Sts2.Core.Commands" / "MelodyCmd.cs"
+    if not cmd.is_file():
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    for m in _MELODY_SWITCH_ARM.finditer(cmd.read_text(encoding="utf-8", errors="replace")):
+        event = _resolve(_first_event(vfx.get(m["node"], "")), audio_root)
+        if event:
+            out[m["tag"]] = (m["node"], event)
+    return out
+
+
+def parse_melody_sfx(source: str, melodies: dict[str, tuple[str, str]]) -> list[str]:
+    """The syllables one card sings, in the order its `OnPlay` calls them.
+
+    Wah Cho Ki sings all three, so this is a list, not one event. A tag sung
+    twice is listed once: the web plays a card's sounds together, and the
+    player would debounce the second copy anyway.
+    """
+    out: list[str] = []
+    for m in _MELODY_CALL.finditer(source):
+        entry = melodies.get(m["tag"])
+        if entry and entry[1] not in out:
+            out.append(entry[1])
+    return out
+
+
+def _cards_by_class(
+    decomp_root: Path, audio_root: Path | None
+) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """`({class_name: event}, {class_name: [melody event, ...]})` for every
+    card with a resolvable sfx call, and every card that sings."""
     vfx = _vfx_sources(decomp_root)
+    melodies = load_melody_sfx(decomp_root, vfx, audio_root)
+    melody_nodes = frozenset(node for node, _event in melodies.values())
     cards: dict[str, str] = {}
+    sung: dict[str, list[str]] = {}
     for cs in sorted(decomp_root.glob("MegaCrit.Sts2.Core.Models.Cards*/**/*.cs")):
         source = cs.read_text(encoding="utf-8", errors="replace")
-        event = _resolve(card_signature_event(source, vfx), audio_root)
+        event = _resolve(card_signature_event(source, vfx, melody_nodes), audio_root)
         if event:
             cards[cs.stem] = event
-    return cards
+        syllables = parse_melody_sfx(source, melodies)
+        if syllables:
+            sung[cs.stem] = syllables
+    return cards, sung
 
 
 def _relics_by_class(decomp_root: Path, audio_root: Path | None) -> dict[str, str]:
@@ -1458,6 +1520,67 @@ def _relics_by_class(decomp_root: Path, audio_root: Path | None) -> dict[str, st
         if event:
             relics[cs.stem] = event
     return relics
+
+
+# Generic keys a build has only when its decomp has the vfx node that plays
+# them, so a v0.107.1 map does not name a sound its game never makes.
+#  - `restEvolve`: the Evolve rest option (`EvolveRestSiteOption.OnSelect`)
+#    shows `NByrdEvolutionVfx`, which loops `byrdlett_evolution` for the
+#    length of the animation. The rendered file is that loop once (8 s).
+#  - `arrowDislodge`: `NImpaledArrowVfx.RetrieveAndFree` plays it when an
+#    arrow stuck in an enemy flies back to the Fool's quiver.
+_NODE_GENERIC_SFX: dict[str, str] = {
+    "restEvolve": "NByrdEvolutionVfx",
+    "arrowDislodge": "NImpaledArrowVfx",
+}
+_SFX_CALL = re.compile(r'SfxCmd\.Play(?:Loop)?\(\s*"(?P<event>event:/sfx/[^"]+)"')
+
+
+def load_node_generic_sfx(decomp_root: Path, audio_root: Path | None = None) -> dict[str, str]:
+    """`{generic key: event}` for each `_NODE_GENERIC_SFX` node this build has."""
+    out: dict[str, str] = {}
+    for key, node in _NODE_GENERIC_SFX.items():
+        path = next(decomp_root.glob(f"MegaCrit.Sts2.Core.Nodes.Vfx*/**/{node}.cs"), None)
+        if path is None:
+            continue
+        m = _SFX_CALL.search(path.read_text(encoding="utf-8", errors="replace"))
+        event = _resolve(m["event"], audio_root) if m else None
+        if event:
+            out[key] = event
+    return out
+
+
+# A power that plays a sound and then removes itself in the same hook — God
+# Byrd's Byrdine strike at turn start (`GodByrdPower.AfterPlayerTurnStart`),
+# the Lagavulin Matriarch waking (`AsleepPower`), a louse curling
+# (`CurlUpPower`). The wire shows only the power disappearing, so that is
+# when the workbench plays it. Members are split on the decomp's one-tab
+# member indent.
+_MEMBER_START = re.compile(r"\n\t(?:public|private|protected|internal) ")
+_SFX_PLAY_EVENT = re.compile(r'SfxCmd\.Play\(\s*"(?P<event>event:/[^"]+)"')
+
+
+def parse_power_spent_sfx(source: str) -> str | None:
+    """The sound a power plays in the hook that removes it, or None."""
+    for member in _MEMBER_START.split(source):
+        if "PowerCmd.Remove(this)" not in member:
+            continue
+        m = _SFX_PLAY_EVENT.search(member)
+        if m:
+            return m["event"]
+    return None
+
+
+def _power_spent_by_class(decomp_root: Path, audio_root: Path | None) -> dict[str, str]:
+    """`{class_name: event}` for every power `parse_power_spent_sfx` resolves."""
+    out: dict[str, str] = {}
+    for cs in sorted(decomp_root.glob("MegaCrit.Sts2.Core.Models.Powers*/**/*.cs")):
+        event = _resolve(
+            parse_power_spent_sfx(cs.read_text(encoding="utf-8", errors="replace")), audio_root
+        )
+        if event:
+            out[cs.stem] = event
+    return out
 
 
 def build_map_with_report(
@@ -1481,9 +1604,10 @@ def build_map_with_report(
     monsters_before_aliases = len(monsters)
     _merge_alias_titles(monsters_by_class, monsters, monster_conflicts, MONSTER_TITLE_ALIASES)
 
-    cards_by_class = _cards_by_class(decomp_root, audio_root)
+    cards_by_class, card_melodies_by_class = _cards_by_class(decomp_root, audio_root)
     card_titles = _class_titles(decomp_root, "cards.json")
     cards, card_conflicts = _keyed_by_title(cards_by_class, card_titles)
+    card_melodies, card_melody_conflicts = _keyed_by_title(card_melodies_by_class, card_titles)
 
     relics_by_class = _relics_by_class(decomp_root, audio_root)
     relic_titles = _class_titles(decomp_root, "relics.json")
@@ -1502,6 +1626,12 @@ def build_map_with_report(
         ]
         if unresolved:
             raise ValueError(f"GENERIC_EVENTS keys with no rendered audio file: {unresolved}")
+    generic.update(load_node_generic_sfx(decomp_root, audio_root))
+
+    power_spent_by_class = _power_spent_by_class(decomp_root, audio_root)
+    power_spent, power_spent_conflicts = _keyed_by_title(
+        power_spent_by_class, _power_class_titles(decomp_root)
+    )
 
     doc = {
         "version": version,
@@ -1513,9 +1643,11 @@ def build_map_with_report(
         "generic": generic,
         "powers": load_power_table(decomp_root),
         "powersAllowNegative": load_power_allow_negative_table(decomp_root),
+        "powerSpent": power_spent,
         "characters": load_character_sfx(decomp_root, audio_root),
         "cards": cards,
         "cardHits": card_hits,
+        "cardMelodies": card_melodies,
         "orbs": load_orb_sfx(decomp_root, audio_root),
         "treasure": load_treasure_sfx(decomp_root, audio_root),
         "cardAnims": card_anims,
@@ -1541,6 +1673,18 @@ def build_map_with_report(
             "after": len(card_hits),
             "dropped": len(card_hits_by_class) - len(card_hits),
             "conflicts": sorted(card_hit_conflicts),
+        },
+        "powerSpent": {
+            "before": len(power_spent_by_class),
+            "after": len(power_spent),
+            "dropped": len(power_spent_by_class) - len(power_spent),
+            "conflicts": sorted(power_spent_conflicts),
+        },
+        "cardMelodies": {
+            "before": len(card_melodies_by_class),
+            "after": len(card_melodies),
+            "dropped": len(card_melodies_by_class) - len(card_melodies),
+            "conflicts": sorted(card_melody_conflicts),
         },
         "cardAnims": {
             "before": len(card_anims_by_class),
@@ -1614,6 +1758,7 @@ def main() -> None:
         f"relics={len(doc['relics'])} generic={len(doc['generic'])} "
         f"powers={len(doc['powers'])} characters={len(doc['characters'])} "
         f"cardAnims={len(doc['cardAnims'])} cardHits={len(doc['cardHits'])} "
+        f"cardMelodies={len(doc['cardMelodies'])} powerSpent={len(doc['powerSpent'])} "
         f"orbs={len(doc['orbs'])} treasure={len(doc['treasure'])} "
         f"audioRev={doc.get('audioRev', '-')}"
     )

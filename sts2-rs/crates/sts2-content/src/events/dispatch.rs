@@ -340,17 +340,129 @@ pub fn preview_option_effect(state: &RunState, idx: usize) -> Option<OptionEffec
     let (before_relics, after_relics) = (relics(state), relics(&clone));
     let (before_potions, after_potions) = (potions(state), potions(&clone));
     let (before_cards, after_cards) = (cards(state), cards(&clone));
+    let queued = queued_by_option(state, &clone);
+    // The queued HP, max-HP and gold changes drain through the same calls
+    // the run makes (`RunManager` removal / upgrade / transform settle), in
+    // its order, so Tungsten Rod and the 0 HP floor apply as they will.
+    let _ = clone.lose_hp(queued.removal_hp);
+    if queued.removal_max_hp > 0 {
+        clone.gain_max_hp(queued.removal_max_hp);
+    }
+    clone.gold = clone.gold.saturating_sub(queued.removal_gold);
+    let _ = clone.lose_hp(queued.upgrade_hp);
+    for hp in &queued.transform_hp {
+        let _ = clone.lose_hp(*hp);
+    }
+    let queued_counts = queued.counts;
     Some(OptionEffectDelta {
-        gold_delta: clone.gold - state.gold,
+        gold_delta: clone.gold - state.gold + queued_counts.gold_gain,
         hp_delta: clone.current_hp - state.current_hp,
         max_hp_delta: clone.max_hp - state.max_hp,
-        relics_gained: multiset_added(&before_relics, &after_relics),
+        relics_gained: multiset_added(&before_relics, &after_relics) + queued_counts.relics_gained,
         relics_lost: multiset_added(&after_relics, &before_relics),
-        potions_gained: multiset_added(&before_potions, &after_potions),
-        potions_lost: multiset_added(&after_potions, &before_potions),
-        cards_gained: multiset_added(&before_cards, &after_cards),
-        cards_lost: multiset_added(&after_cards, &before_cards),
+        potions_gained: multiset_added(&before_potions, &after_potions)
+            + queued_counts.potions_gained,
+        potions_lost: multiset_added(&after_potions, &before_potions) + queued_counts.potions_lost,
+        cards_gained: multiset_added(&before_cards, &after_cards) + queued_counts.cards_gained,
+        cards_lost: multiset_added(&after_cards, &before_cards) + queued_counts.cards_lost,
     })
+}
+
+/// What option resolution queued on `clone` behind a later screen, beyond
+/// what `state` already had queued (GH #1540).
+struct Queued {
+    counts: sts2_core::PendingEffectCounts,
+    removal_hp: i32,
+    removal_max_hp: i32,
+    removal_gold: i32,
+    upgrade_hp: i32,
+    /// Each new transform's post-pick damage (WhisperingHollow's Hug).
+    transform_hp: Vec<i32>,
+}
+
+/// The effects option resolution left queued on `clone` (`state` resolved),
+/// minus what was already queued on `state`. Effects the option leaves
+/// behind a later screen (Brain Leech's Share Knowledge, Gorge, Wellspring's
+/// Bathe, Zen Weaver, Field of Man-Sized Holes' Resist, Luminous Choir's
+/// Reach, interactive transforms) are in the clone's `pending_*` queues, not
+/// yet in its deck, gold or HP.
+///
+/// The baseline is `state` plus the pickups of the relics the option grants:
+/// those relics' own queued picks (Neow's Bones' curses, Precise Scissors'
+/// removal, Precarious Shears' damage) are the relic's effect, not the
+/// option's, and the e2e honest preview (`contracts.honest_event_deltas`)
+/// masks them as such. The option's own queued effects stay counted.
+fn queued_by_option(state: &RunState, clone: &RunState) -> Queued {
+    let gained_relics = relics_added(&state.relics, &clone.relics);
+    let baseline: std::borrow::Cow<'_, RunState> = if gained_relics.is_empty() {
+        std::borrow::Cow::Borrowed(state)
+    } else {
+        let mut b = state.clone();
+        for r in &gained_relics {
+            b.obtain_relic(*r);
+        }
+        std::borrow::Cow::Owned(b)
+    };
+    let added = |after: i32, before: i32| after.saturating_sub(before).max(0);
+    // Assumes a granted relic's pickup transforms queue before the option's
+    // own, as the baseline's do; only Hug's transform carries damage today.
+    let transform_hp = clone
+        .pending_deck_transforms
+        .get(baseline.pending_deck_transforms.len()..)
+        .unwrap_or_default()
+        .iter()
+        .map(|t| t.post_hp_loss)
+        .collect();
+    Queued {
+        counts: clone
+            .pending_effect_counts()
+            .added_since(baseline.pending_effect_counts()),
+        removal_hp: added(
+            clone.pending_post_removal_hp_loss,
+            baseline.pending_post_removal_hp_loss,
+        ),
+        removal_max_hp: added(
+            clone.pending_post_removal_max_hp_gain,
+            baseline.pending_post_removal_max_hp_gain,
+        ),
+        removal_gold: added(
+            clone.pending_post_removal_gold_loss,
+            baseline.pending_post_removal_gold_loss,
+        ),
+        upgrade_hp: added(
+            clone.pending_post_upgrade_hp_loss,
+            baseline.pending_post_upgrade_hp_loss,
+        ),
+        transform_hp,
+    }
+}
+
+/// Whether option `idx`'s preview shows only its visible part, because its
+/// payoff is rolled on pick (GH #1035; see `preview_option_effect`).
+/// `false` for an ordinary option, no event or a bad index.
+#[must_use]
+pub fn previews_visible_part_only(state: &RunState, idx: usize) -> bool {
+    let mut clone = state.clone();
+    preview_visible_part(&mut clone, idx) == Some(true)
+}
+
+/// The relics in `after` beyond those in `before` (multiset difference).
+fn relics_added(
+    before: &[sts2_core::RelicId],
+    after: &[sts2_core::RelicId],
+) -> Vec<sts2_core::RelicId> {
+    let mut remaining = before.to_vec();
+    after
+        .iter()
+        .filter(|r| match remaining.iter().position(|x| x == *r) {
+            Some(i) => {
+                remaining.swap_remove(i);
+                false
+            }
+            None => true,
+        })
+        .copied()
+        .collect()
 }
 
 /// Apply only the player-visible part of option `idx` when its payoff is
@@ -361,6 +473,9 @@ fn preview_visible_part(state: &mut RunState, idx: usize) -> Option<bool> {
     let option_id = present(state)?.get(idx)?.option_id;
     Some(match id {
         EventId::CrystalSphere => super::act2_hive::crystal_sphere_apply_visible(state, option_id),
+        EventId::WarHistorianRepy => {
+            super::act3_glory::war_historian_apply_visible(state, option_id)
+        }
         // The LOCKED grab (EndlessConveyor.cs: `GrabSomethingOffTheBelt` is
         // disabled below 40 gold) cannot be taken, so it previews nothing;
         // resolving it would eat the hidden next dish.
@@ -624,7 +739,8 @@ pub fn resume_event_after_combat_callback(
         }
         EventEncounter::MysteriousKnight
         | EventEncounter::FakeMerchant
-        | EventEncounter::DenseVegetation => {}
+        | EventEncounter::DenseVegetation
+        | EventEncounter::PunchOff => {}
     }
 }
 
@@ -889,7 +1005,7 @@ mod tests {
     // ── resolve_event_at_callback (sts2-rs-nzdz1, was sts2-rs-81xxo) ─
 
     #[test]
-    fn resolve_event_at_callback_picks_enters_and_resolves_first_option() {
+    fn resolve_event_at_callback_picks_enters_and_resolves_second_option() {
         // End-to-end: an empty rs (no visited events, no current
         // event) gets driven through pick→enter→resolve, leaving
         // `current_event` cleared (finished-outcome path) and the
@@ -897,8 +1013,11 @@ mod tests {
         let mut rs = RunState::new();
         assert!(rs.current_event.is_none());
         let before_visited = rs.visited_event_ids.len();
+        // Option 1: the first pick on a fresh state is AbyssalBaths, whose
+        // option 0 (Immerse) opens the Linger loop instead of finishing
+        // (GH #1492); Abstain finishes.
 
-        assert!(resolve_event_at_callback(&mut rs, 0));
+        assert!(resolve_event_at_callback(&mut rs, 1));
 
         assert!(
             rs.current_event.is_none(),
@@ -919,8 +1038,8 @@ mod tests {
         // by index). Re-runs must mark the same id visited.
         let mut a = RunState::new();
         let mut b = RunState::new();
-        assert!(resolve_event_at_callback(&mut a, 0));
-        assert!(resolve_event_at_callback(&mut b, 0));
+        assert!(resolve_event_at_callback(&mut a, 1));
+        assert!(resolve_event_at_callback(&mut b, 1));
         assert_eq!(a.visited_event_ids, b.visited_event_ids);
     }
 
@@ -930,11 +1049,11 @@ mod tests {
         // events — `pick_event` filters out already-visited ids, so
         // the second call lands on the next slot in the act pool.
         let mut rs = RunState::new();
-        assert!(resolve_event_at_callback(&mut rs, 0));
+        assert!(resolve_event_at_callback(&mut rs, 1));
         let first_visited: Vec<EventId> = rs.visited_event_ids.iter().copied().collect();
         assert_eq!(first_visited.len(), 1, "{first_visited:?}");
 
-        assert!(resolve_event_at_callback(&mut rs, 0));
+        assert!(resolve_event_at_callback(&mut rs, 1));
         assert_eq!(
             rs.visited_event_ids.len(),
             2,
@@ -1271,5 +1390,36 @@ mod tests {
         let mut rs = RunState::new();
         rs.enter_event_room(EventId::TrashHeap);
         assert!(preview_option_effect(&rs, 99).is_none());
+    }
+
+    /// A granted relic's own pickup queue is the relic's effect and is left
+    /// out; what the option queues itself stays counted (GH #1540).
+    #[test]
+    fn queued_by_option_drops_the_relics_pickup_but_keeps_the_options_own() {
+        crate::relics::dispatch::ensure_installed();
+        let mut state = RunState::new();
+        state.set_agent_decisions();
+        for _ in 0..5 {
+            let mut c = sts2_core::cards::Card::pod_defaults();
+            c.card_id = sts2_core::cards::CardId::StrikeIronclad;
+            state.master_deck.push(c);
+        }
+        // The relic alone queues its removal...
+        let mut relic_only = state.clone();
+        relic_only.obtain_relic(sts2_core::RelicId::PreciseScissors);
+        assert_eq!(
+            relic_only.pending_deck_removals, 1,
+            "pickup queues a removal"
+        );
+        let q = queued_by_option(&state, &relic_only);
+        assert_eq!(q.counts, sts2_core::PendingEffectCounts::default());
+        // ...and an option that also queues a paid removal of its own keeps
+        // that removal and its price.
+        let mut both = relic_only;
+        both.pending_deck_removals += 1;
+        both.pending_post_removal_gold_loss += 50;
+        let q = queued_by_option(&state, &both);
+        assert_eq!(q.counts.cards_lost, 1);
+        assert_eq!(q.removal_gold, 50);
     }
 }

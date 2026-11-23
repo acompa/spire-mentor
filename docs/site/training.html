@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How the AI is trained</title>
-<meta name="description" content="How the spire-mentor run policies are trained with PPO over full simulated runs, and how a new net has to beat the deployed one on a pre-registered paired gate before it ships.">
+<meta name="description" content="How spire-mentor trains its AI: Instinct, one network trained end to end with PPO over billions of simulated decisions, and the earlier per-character run policies with their pre-registered promotion gate.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 9v14l12 7 12-7V9z' fill='%23d9a441'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kreon:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 <script>try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
@@ -30,6 +30,7 @@
 <nav id="toc" class="toc" aria-label="Contents">
   <p class="toc-title">On this page</p>
   <ol>
+    <li><a href="#instinct">Instinct: end to end</a></li>
     <li><a href="#primer">PPO in plain words</a></li>
     <li><a href="#env">The environment</a></li>
     <li><a href="#reward">Reward</a></li>
@@ -47,11 +48,12 @@
 
 <section class="hero">
   <h1>How the AI is trained</h1>
-  <p class="lede">Each character's run policy is a transformer trained with
-  PPO on full runs played in the simulator, with the combat search playing
-  every fight. A new net replaces the deployed one only after beating it on
-  2,200 paired runs it has never seen, under a rule written down before the
-  runs exist.</p>
+  <p class="lede">The current AI, Instinct, is one transformer trained end
+  to end with PPO: it plays whole runs in the simulator, fights included,
+  and learns from billions of its own decisions. The first section covers
+  it. The rest of the page is the earlier recipe: a run policy per character
+  trained with PPO while the combat search played every fight, promoted only
+  after beating the deployed net on 2,200 paired runs it had never seen.</p>
   <p class="note">What the network looks like and how it is used at play
   time is on <a href="ai.html">How the AI plays</a>. The training code is in
   <code>sts2-pycli/python/ppo/</code>; every shipped net has a provenance
@@ -63,8 +65,85 @@
 
 </section>
 
+<section id="instinct">
+  <h2>Instinct: end-to-end training</h2>
+  <p>The earlier recipe taught a network the choices between fights and
+  left the fights to a search. Instinct's training removes the search: one
+  network makes every decision, and a run's outcome is credited to all of
+  them. The first campaign trained an Ironclad net at Ascension 10 on game
+  build v0.111.0 from 4 to 17 November 2026.</p>
+  <ul class="facts">
+    <li><strong>Scale.</strong> 9.0 billion decisions, 11.6 million runs,
+    299 million fights, 313 hours on one machine: an AMD EPYC 7443P (24
+    cores), 40 rollout workers with 32 simulated games each, and four RTX
+    3090s (one for inference, three for updates). Throughput rose from 6,700
+    to 10,300 decisions a second as the rollout loop moved into Rust.</li>
+    <li><strong>Reward.</strong> +1 for winning the run, +0.05 per boss
+    beaten, +0.002 per new floor, 0 for dying. No discounting and no HP
+    shaping.</li>
+    <li><strong>Algorithm.</strong> Asynchronous PPO with a clip of 0.2,
+    generalised advantage estimation (λ 0.95 inside fights, 0.97 across the
+    run, a fight's advantage chaining into the rest of its run), advantages
+    normalised per decision type, a decaying entropy bonus, AdamW, and
+    running averages of the weights (the shipped nets are such averages).</li>
+    <li><strong>A critic that sees more.</strong> The value network, used
+    only in training, also gets the hidden state: the true draw order, the
+    monsters' next moves, the rooms ahead. The policy never does.</li>
+    <li><strong>Warm start, then alone.</strong> For the first 80 million
+    decisions the earlier no-search nets acted and the new net imitated
+    them; a pull towards that teacher decayed to zero by 500 million. From
+    there to 9 billion it is pure self-play. A run from random weights, with
+    no teacher, had to learn before each restart.</li>
+    <li><strong>Practice fights.</strong> Snapshots of the agent's own runs
+    just before elites and bosses are reseeded and replayed, weighted
+    towards the double boss that ends an A10 run, where most runs are
+    lost.</li>
+  </ul>
+  <div class="table-wrap fit">
+  <table>
+    <caption>The Ironclad campaign: win rate at A10 on 2,000 held-out development seeds, greedy, no search</caption>
+    <thead><tr><th class="num">Decisions</th><th class="num">Win rate</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1.0 B</td><td class="num">49.5%</td><td></td></tr>
+      <tr><td class="num">2.0 B</td><td class="num">57.0%</td><td></td></tr>
+      <tr><td class="num">3.0 B</td><td class="num">61.6%</td><td></td></tr>
+      <tr><td class="num">4.0 B</td><td class="num">66.3%</td><td>learning rate halved at 4.08 B</td></tr>
+      <tr><td class="num">5.0 B</td><td class="num">70.7%</td><td>samples per update doubled at 5.29 B</td></tr>
+      <tr><td class="num">6.0 B</td><td class="num">74.5%</td><td>doubled again at 6.09 B</td></tr>
+      <tr><td class="num">7.0 B</td><td class="num">78.1%</td><td>a third doubling at 7.27 B gained nothing</td></tr>
+      <tr><td class="num">8.0 B</td><td class="num">79.3%</td><td>learning rate annealing to zero from 7.77 B</td></tr>
+      <tr><td class="num">9.0 B</td><td class="num">81.4%</td><td>end of the anneal</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Averaged weights (decay 0.999 per update). The search
+  agent won 24.6% on the first 1,000 of these seeds. On the sealed test
+  panel, read once, the final net won 81.38% of 4,000 runs against the search
+  agent's 21.15% on the same seeds. The plan's forecast before the campaign
+  was about 27%. The campaign was pre-registered, with 19 dated amendments;
+  write-up:
+  <code>docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md</code>.</p>
+  <p>Three things moved the plateaus late in the run: twice doubling the
+  number of decisions per update (about +4 pp each; the policy gradient is
+  noisy at this scale), and annealing the learning rate linearly to zero
+  over the last 14% of training (about +3 pp). Averaging the weights was
+  worth +6.7 pp before the anneal and +1.9 pp after it.</p>
+  <h3>All characters</h3>
+  <p>The shipped five-character net continues from an Ironclad checkpoint
+  and trains on an equal share of Ironclad, Silent, Defect, Regent and
+  Necrobinder runs, with no distillation. Its 2.5-billion-decision milestone
+  is the net in the mod and the workbench; the lane is still training, and
+  at 4.5 billion the four newer characters have gained 7 to 12 points while
+  Ironclad has held (<a href="index.html#instinct">table</a>). The Fool has
+  a lane of its own on v0.113.0, 80% Fool runs, shipped at 600 million
+  decisions.</p>
+</section>
+
 <section id="primer">
   <h2>PPO in plain words</h2>
+  <p class="note">From here on the page describes the earlier recipe, the
+  per-character run policies of the search agent. The primer applies to
+  Instinct as well.</p>
   <p>PPO (Proximal Policy Optimization) is a reinforcement-learning method:
   the network learns by playing, not by copying labelled examples. Nobody
   tells it which card was the right pick. It finds out only at the end of a
@@ -355,8 +434,10 @@ shaping = Φ(s′) − Φ(s),   Φ = 0.1 · hp_fraction + 0.035 · upgraded_card
 
 <section id="results">
   <h2>Results</h2>
-  <p>Win rates for every character and ascension level are in the
-  <a href="index.html#ai">main docs</a>: Defect 76.1%, Silent 59.9%, Regent
+  <p>Instinct's results are in <a href="#instinct">its section</a> above
+  and in the <a href="index.html#instinct">main docs</a>. For the search
+  agent, win rates for every character and ascension level are in the
+  <a href="index.html#search-agent">main docs</a>: Defect 76.1%, Silent 59.9%, Regent
   53.8% and Necrobinder 51.7% averaged over A0–A10, in the simulator at 8,000
   simulations per combat decision, measured in the 11–13 October sweep,
   before their combat search got its learned playout nets (21 October); they

@@ -103,7 +103,7 @@ public class SimMapHandler : IScreenHandler, IHandler
 
     /// <summary>
     /// The map points the player can travel to next: row 0 before the first
-    /// move, otherwise the children of the last visited point. Shared with
+    /// move, otherwise the points reachable from the last visited one. Shared with
     /// advisor mode so both lanes offer the same set.
     ///
     /// Only nodes of the act being played: right after an act change the
@@ -131,7 +131,14 @@ public class SimMapHandler : IScreenHandler, IHandler
             return new List<NMapPoint>();
         }
 
-        var next = new HashSet<MapCoord>(here.Point.Children.Select(child => child.coord));
+        // The game's rule (NMapScreen.RecalculateTravelability): the boss
+        // follows the last row through Children; any other point goes through
+        // MapTravel, which opens the whole next row while Winged Boots has
+        // charges (GH #1287, Ironclad seed 1005 was offered only the children).
+        IEnumerable<MapPoint> reachable = current.row >= runState.Map.GetRowCount() - 1
+            ? here.Point.Children
+            : MapTravel.GetTravelablePointsFrom(runState, here.Point);
+        var next = new HashSet<MapCoord>(reachable.Select(point => point.coord));
         return points.Where(p => next.Contains(p.Point.coord)).ToList();
     }
 

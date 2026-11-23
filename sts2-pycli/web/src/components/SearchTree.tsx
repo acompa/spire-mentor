@@ -2,6 +2,7 @@ import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo,
 import type { Enemy, MctsConfig, SearchTree as SearchTreeData, SearchTreeNode } from "../api";
 import NumberInput from "./NumberInput";
 import { enemyLabeller } from "../enemyLabels";
+import { t } from "../i18n";
 
 /**
  * Agent search-tree inspector: a modal node-link view of the MCTS search for
@@ -375,8 +376,8 @@ export default function SearchTree({
   // it resolves.
   function labelOf(r: VisRow): string {
     const nd = byId.get(r.displayId);
-    if (!nd || r.key === ROOT_KEY) return "root";
-    if (isChance(nd)) return nd.chance_action ?? r.edge?.info.label ?? "roll";
+    if (!nd || r.key === ROOT_KEY) return t("root");
+    if (isChance(nd)) return nd.chance_action ?? r.edge?.info.label ?? t("roll");
     const kind = r.edge?.info.kind ?? nd.kind;
     const base = r.edge?.info.label ?? nd.label ?? "?";
     if (kind === "potion" || kind === "drink_potion") {
@@ -423,45 +424,45 @@ export default function SearchTree({
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <div style={{ fontWeight: 700, marginBottom: 2 }}>
           {chance && <span aria-hidden>🎲 </span>}
-          {r.key === ROOT_KEY ? "Current position (root)" : labelOf(r)}
+          {r.key === ROOT_KEY ? t("Current position (root)") : labelOf(r)}
           {tgt != null && <span style={{ color: "var(--muted)" }}> → {enemyName(tgt)}</span>}
         </div>
-        {chance && <div style={{ color: "var(--muted)" }}>chance node — nature resolves a roll</div>}
-        <Row k="Visits" v={visits} hint={`(${sharePct}% of search)`} />
+        {chance && <div style={{ color: "var(--muted)" }}>{t("chance node — nature resolves a roll")}</div>}
+        <Row k={t("Visits")} v={visits} hint={t("({pct}% of search)", { pct: sharePct })} />
         {visits !== n.visits && (
-          <Row k="Visits, all paths" v={n.visits}
-            hint="this position is also reached by another move order; Q and W/T/L pool every path" />
+          <Row k={t("Visits, all paths")} v={n.visits}
+            hint={t("this position is also reached by another move order; Q and W/T/L pool every path")} />
         )}
         {chance ? (
-          <Row k="Expectimax E[V]" v={fmt(n.q)} hint="Σ p·V over outcomes" />
+          <Row k={t("Expectimax E[V]")} v={fmt(n.q)} hint={t("Σ p·V over outcomes")} />
         ) : (
-          <Row k="Win value (Q)" v={fmt(n.q)} hint="−1 loss … +1 win" />
+          <Row k={t("Win value (Q)")} v={fmt(n.q)} hint={t("−1 loss … +1 win")} />
         )}
-        {prob != null && <Row k="Outcome prob p" v={`.${Math.round(prob * 100).toString().padStart(2, "0")}`} hint="visits / chance visits" />}
-        {spread && <Row k="Outcome spread" v={`${fmt(spread.min)} … ${fmt(spread.max)}`} hint="min … max V" />}
-        {dpw && <Row k="Outcomes" v={`${dpw.k} / ${dpw.cap ?? "?"}`} hint={dpw.closed ? "closed" : dpw.truncated ? "truncated" : "(DPW cap)"} />}
+        {prob != null && <Row k={t("Outcome prob p")} v={`.${Math.round(prob * 100).toString().padStart(2, "0")}`} hint={t("visits / chance visits")} />}
+        {spread && <Row k={t("Outcome spread")} v={`${fmt(spread.min)} … ${fmt(spread.max)}`} hint={t("min … max V")} />}
+        {dpw && <Row k={t("Outcomes")} v={`${dpw.k} / ${dpw.cap ?? "?"}`} hint={dpw.closed ? t("closed") : dpw.truncated ? t("truncated") : t("(DPW cap)")} />}
         {dpw && (
           <div style={{ color: "var(--muted)" }}>
-            Sampled {dpw.k} of ≥{dpw.k} outcomes{dpw.cap != null && ` (DPW cap ${dpw.cap})`}
-            {dpw.closed ? "; distribution closed" : dpw.truncated ? "; distribution truncated" : ""}
-            {n.chance_draws != null && ` · ${n.chance_draws} draws`}
+            {t("Sampled {k} of ≥{k} outcomes", { k: dpw.k })}{dpw.cap != null && ` ${t("(DPW cap {cap})", { cap: dpw.cap })}`}
+            {dpw.closed ? t("; distribution closed") : dpw.truncated ? t("; distribution truncated") : ""}
+            {n.chance_draws != null && ` · ${t("{n} draws", { n: n.chance_draws })}`}
           </div>
         )}
-        <Row k="Playouts W/T/L" v={`${n.wins} / ${n.ties} / ${n.losses}`} />
-        {n.proven_win && <div style={{ color: "#3ad17a" }}>✓ Forced win (solved)</div>}
-        {n.proven_loss && <div style={{ color: "#e0566f" }}>✗ Forced loss</div>}
-        {n.is_terminal && <div style={{ color: "var(--muted)" }}>Combat ends here</div>}
+        <Row k={t("Playouts W/T/L")} v={`${n.wins} / ${n.ties} / ${n.losses}`} />
+        {n.proven_win && <div style={{ color: "#3ad17a" }}>{t("✓ Forced win (solved)")}</div>}
+        {n.proven_loss && <div style={{ color: "#e0566f" }}>{t("✗ Forced loss")}</div>}
+        {n.is_terminal && <div style={{ color: "var(--muted)" }}>{t("Combat ends here")}</div>}
         {sm && (
           <>
             <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0 2px", paddingTop: 4, color: "var(--muted)" }}>
-              {r.key === ROOT_KEY ? "Current state:" : "After this action:"}
+              {r.key === ROOT_KEY ? t("Current state:") : t("After this action:")}
             </div>
-            <Row k="Player HP" v={`${sm.player_hp} / ${sm.player_max_hp}`} />
-            {sm.player_block > 0 && <Row k="Block" v={sm.player_block} />}
-            <Row k="Energy" v={sm.energy} />
-            <Row k="Round" v={sm.round} />
+            <Row k={t("Player HP")} v={`${sm.player_hp} / ${sm.player_max_hp}`} />
+            {sm.player_block > 0 && <Row k={t("Block")} v={sm.player_block} />}
+            <Row k={t("Energy")} v={sm.energy} />
+            <Row k={t("Round")} v={sm.round} />
             {sm.enemies.map((e, i) => (
-              <Row key={e.uid} k={`Enemy ${i} HP`} v={`${e.hp} / ${e.max_hp}`} />
+              <Row key={e.uid} k={t("Enemy {i} HP", { i })} v={`${e.hp} / ${e.max_hp}`} />
             ))}
           </>
         )}
@@ -476,7 +477,7 @@ export default function SearchTree({
   const hoverRow = hover ? rowByKey.get(hover.key) : undefined;
 
   return (
-    <div role="dialog" aria-label="Search tree" onClick={onClose}
+    <div role="dialog" aria-label={t("Search tree")} onClick={onClose}
       style={{ position: "fixed", inset: 0, zIndex: 60, background: "oklch(20% 0.02 255 / .55)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()}
@@ -486,96 +487,96 @@ export default function SearchTree({
         {/* header / controls */}
         <div className="mono" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
           padding: "10px 16px", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-          <b>MCTS search tree</b>
+          <b>{t("MCTS search tree")}</b>
           <span style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
             {(["outline", "graph"] as const).map((v) => (
               <button key={v} onClick={() => setView(v)}
                 style={{ padding: "2px 9px", border: "none", cursor: "pointer", font: "inherit",
                   background: view === v ? "var(--accent, #6aa0ff)" : "transparent",
-                  color: view === v ? "#fff" : "var(--text)" }}>{v}</button>
+                  color: view === v ? "#fff" : "var(--text)" }}>{v === "outline" ? t("outline") : t("graph")}</button>
             ))}
           </span>
-          <label title="number of MCTS playouts — more = stronger but slower">sims{" "}
+          <label title={t("number of MCTS playouts — more = stronger but slower")}>{t("sims")}{" "}
             <select value={draft.sims} disabled={busy} onChange={(e) => setK("sims", Number(e.target.value))}>
               {SIM_CHOICES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
-          <label title="UCT exploration constant — higher explores more, lower exploits the best line">explore{" "}
+          <label title={t("UCT exploration constant — higher explores more, lower exploits the best line")}>{t("explore")}{" "}
             <NumberInput min={0} step={0.1} value={draft.c_puct} disabled={busy} width={68}
               onKeyDown={(e) => e.key === "Enter" && dirty && run()}
               onChange={(v) => setK("c_puct", v)} />
           </label>
-          <label title="rollout simulation depth in plies — how far each random playout looks ahead">depth{" "}
+          <label title={t("rollout simulation depth in plies — how far each random playout looks ahead")}>{t("depth")}{" "}
             <NumberInput min={1} max={500} value={draft.depth} disabled={busy} width={72}
               onKeyDown={(e) => e.key === "Enter" && dirty && run()}
               onChange={(v) => setK("depth", v)} />
           </label>
-          <label title="rollout policy — heuristic (expert priorities) or uniform (unbiased random)">rollout{" "}
+          <label title={t("rollout policy — heuristic (expert priorities) or uniform (unbiased random)")}>{t("rollout")}{" "}
             <select value={draft.rollout_policy} disabled={busy}
               onChange={(e) => setK("rollout_policy", e.target.value as MctsConfig["rollout_policy"])}>
-              <option value="heuristic">heuristic</option>
-              <option value="uniform">uniform</option>
+              <option value="heuristic">{t("heuristic")}</option>
+              <option value="uniform">{t("uniform")}</option>
             </select>
           </label>
-          <label title="RNG seed — fixes the determinization draw; change to re-roll">seed{" "}
+          <label title={t("RNG seed — fixes the determinization draw; change to re-roll")}>{t("seed")}{" "}
             <NumberInput min={0} value={draft.seed} disabled={busy} width={72}
               onKeyDown={(e) => e.key === "Enter" && dirty && run()}
               onChange={(v) => setK("seed", v)} />
           </label>
-          <label title="prune move orders the engine proves dominated — e.g. never search Strike-then-Beam-Cell when Beam-Cell-then-Strike is the same turn with more damage">
+          <label title={t("prune move orders the engine proves dominated — e.g. never search Strike-then-Beam-Cell when Beam-Cell-then-Strike is the same turn with more damage")}>
             <input type="checkbox" checked={draft.dominance_pruning ?? false} disabled={busy}
-              onChange={(e) => setK("dominance_pruning", e.target.checked)} />{" "}prune
+              onChange={(e) => setK("dominance_pruning", e.target.checked)} />{" "}{t("prune")}
           </label>
-          <button onClick={() => setK("seed", draft.seed + 1)} disabled={busy} title="re-roll: bump the seed"
+          <button onClick={() => setK("seed", draft.seed + 1)} disabled={busy} title={t("re-roll: bump the seed")}
             style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>🎲</button>
-          <button onClick={run} disabled={busy} title="run the search with these parameters"
+          <button onClick={run} disabled={busy} title={t("run the search with these parameters")}
             style={{ padding: "2px 12px", borderRadius: 4, cursor: busy ? "wait" : "pointer", fontWeight: 600,
               border: `1px solid ${dirty ? "var(--accent, #6aa0ff)" : "var(--border)"}`,
               background: dirty ? "var(--accent, #6aa0ff)" : "transparent",
               color: dirty ? "#fff" : "var(--text)" }}>
-            {busy ? "running…" : dirty ? "run ▶" : "rerun"}
+            {busy ? t("running…") : dirty ? t("run ▶") : t("rerun")}
           </button>
-          <label>top-K{" "}
+          <label>{t("top-K")}{" "}
             <NumberInput min={1} max={12} value={topK} width={60}
               onChange={(v) => setTopK(v)} />
           </label>
-          <label>min visits{" "}
+          <label>{t("min visits")}{" "}
             <NumberInput min={1} value={minVisits} width={68}
               onChange={(v) => setMinVisits(v)} />
           </label>
           <span style={{ display: "inline-flex", gap: 4 }}>
             <button onClick={() => selRow && expandBestLine(selRow, 10)}
-              title="unfold only the best (most-visited) line from the selected node, 10 levels deep"
-              style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>best +10</button>
-            <button onClick={expandAll} title="expand every node"
-              style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>expand all</button>
-            <button onClick={collapseAll} title="collapse to the root"
-              style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>collapse</button>
+              title={t("unfold only the best (most-visited) line from the selected node, 10 levels deep")}
+              style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>{t("best +10")}</button>
+            <button onClick={expandAll} title={t("expand every node")}
+              style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>{t("expand all")}</button>
+            <button onClick={collapseAll} title={t("collapse to the root")}
+              style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>{t("collapse")}</button>
             <button onClick={() => setCollapseChance((v) => !v)}
-              title="fold the chance layer so a decision connects straight to its modal outcome through its action — the tree then reads like the legacy PIMC move line (value stays expectimax E[V])"
+              title={t("fold the chance layer so a decision connects straight to its modal outcome through its action — the tree then reads like the legacy PIMC move line (value stays expectimax E[V])")}
               style={{ padding: "2px 8px", borderRadius: 4, cursor: "pointer",
                 border: `1px solid ${collapseChance ? "var(--accent, #6aa0ff)" : "var(--border)"}`,
                 background: collapseChance ? "var(--accent, #6aa0ff)" : "transparent",
-                color: collapseChance ? "#fff" : "var(--text)" }}>🎲 collapse dice</button>
+                color: collapseChance ? "#fff" : "var(--text)" }}>{t("🎲 collapse dice")}</button>
           </span>
           {view === "graph" && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <button onClick={() => zoomBy(1 / 1.25)} aria-label="zoom out" title="zoom out"
+              <button onClick={() => zoomBy(1 / 1.25)} aria-label={t("zoom out")} title={t("zoom out")}
                 style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>−</button>
               <span style={{ width: 38, textAlign: "center", color: "var(--muted)" }}>{Math.round(scale * 100)}%</span>
-              <button onClick={() => zoomBy(1.25)} aria-label="zoom in" title="zoom in"
+              <button onClick={() => zoomBy(1.25)} aria-label={t("zoom in")} title={t("zoom in")}
                 style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>＋</button>
-              <button onClick={() => setZoom("fit")} title="fit the whole tree in view"
+              <button onClick={() => setZoom("fit")} title={t("fit the whole tree in view")}
                 style={{ padding: "2px 8px", border: `1px solid ${zoom === "fit" ? "var(--accent, #6aa0ff)" : "var(--border)"}`,
-                  borderRadius: 4, cursor: "pointer" }}>fit</button>
+                  borderRadius: 4, cursor: "pointer" }}>{t("fit")}</button>
             </span>
           )}
           <span style={{ color: "var(--muted)", marginLeft: "auto" }}>
-            ●decision ◆chance · color ∝ value · gold = most-visited line · click to expand
+            {t("●decision ◆chance · color ∝ value · gold = most-visited line · click to expand")}
           </span>
-          <button onClick={onClose} aria-label="Close"
+          <button onClick={onClose} aria-label={t("Close")}
             style={{ padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>
-            close (Esc)
+            {t("close (Esc)")}
           </button>
         </div>
 
@@ -585,7 +586,7 @@ export default function SearchTree({
             <div className="mono" style={{ padding: 24, color: "var(--hp)" }}>⚠ {tree.error}</div>
           ) : !built || !tree || tree.nodes.length === 0 ? (
             <div className="mono" style={{ padding: 24, color: "var(--muted)" }}>
-              {busy ? "searching…" : "no tree"}
+              {busy ? t("searching…") : t("no tree")}
             </div>
           ) : view === "outline" ? (
             <div className="mono" style={{ fontSize: 12 }}>
@@ -594,21 +595,21 @@ export default function SearchTree({
                 borderBottom: "1px solid var(--border)", color: "var(--muted)", fontSize: 10,
                 textTransform: "uppercase", letterSpacing: 0.4 }}>
                 <span style={{ width: 12, flexShrink: 0 }} />
-                <span style={{ flex: 1 }}>action</span>
-                <span style={{ width: 70, textAlign: "right" }} title="how many times the search visited this node (more = more confidence)">visits</span>
-                <span style={{ width: 64, textAlign: "right" }} title="expected value Q: +1 = sure win, 0 = even, −1 = sure loss">Q</span>
-                <span style={{ width: 90 }} title="this node's share of all search visits">search&nbsp;%</span>
-                <span style={{ width: 188 }} title="outcome after this action — ♥ player HP (+block) · ⚡ energy · r = round number · then each enemy's HP">outcome</span>
+                <span style={{ flex: 1 }}>{t("action")}</span>
+                <span style={{ width: 70, textAlign: "right" }} title={t("how many times the search visited this node (more = more confidence)")}>{t("visits")}</span>
+                <span style={{ width: 64, textAlign: "right" }} title={t("expected value Q: +1 = sure win, 0 = even, −1 = sure loss")}>Q</span>
+                <span style={{ width: 90 }} title={t("this node's share of all search visits")}>{t("search\u00a0%")}</span>
+                <span style={{ width: 188 }} title={t("outcome after this action — ♥ player HP (+block) · ⚡ energy · r = round number · then each enemy's HP")}>{t("outcome")}</span>
               </div>
               {truncated && (
                 <div style={{ padding: "3px 12px", color: "var(--muted)", fontSize: 11 }}>
-                  showing the first {MAX_ROWS} rows — collapse or raise min visits to see the rest
+                  {t("showing the first {n} rows — collapse or raise min visits to see the rest", { n: MAX_ROWS })}
                 </div>
               )}
               {rows.map((r) =>
                 r.kind === "more" ? (
                   <div key={r.key} style={{ paddingLeft: r.depth * 16 + 26, color: "var(--muted)", fontSize: 11, padding: "1px 0" }}>
-                    ＋{r.count} more (raise top-K)
+                    {t("＋{n} more (raise top-K)", { n: r.count })}
                   </div>
                 ) : (() => {
                   const n = byId.get(r.displayId)!;
@@ -646,10 +647,10 @@ export default function SearchTree({
                           <>
                             {chance && <span aria-hidden>🎲 </span>}
                             {labelOf(r)}
-                            {r.edge?.viaChance != null && <span aria-hidden title="a chance roll was folded into this action"> 🎲</span>}
+                            {r.edge?.viaChance != null && <span aria-hidden title={t("a chance roll was folded into this action")}> 🎲</span>}
                             {dpw && (
                               <span style={{ color: "var(--muted)", fontStyle: "normal" }}> {dpw.k}/{dpw.cap ?? "?"}
-                                {dpw.closed ? " closed" : dpw.truncated ? " trunc" : ""}</span>
+                                {dpw.closed ? ` ${t("closed")}` : dpw.truncated ? ` ${t("trunc")}` : ""}</span>
                             )}
                             {tgt != null && <span style={{ color: "var(--muted)" }}> → {enemyName(tgt)}</span>}
                             {n.proven_win && <span style={{ color: "#3ad17a" }}> ✓</span>}
@@ -658,12 +659,12 @@ export default function SearchTree({
                         )}
                       </span>
                       <span style={{ width: 70, textAlign: "right", color: "var(--muted)", flexShrink: 0 }}
-                        title={visits !== n.visits ? `${visits} via this move · ${n.visits} over every move order reaching this position` : undefined}>
+                        title={visits !== n.visits ? t("{via} via this move · {all} over every move order reaching this position", { via: visits, all: n.visits }) : undefined}>
                         N {visits}{visits !== n.visits ? "*" : ""}</span>
                       <span style={{ width: 64, textAlign: "right", color: qColor(n.q), flexShrink: 0 }}>
                         {chance && <span style={{ color: "var(--muted)" }}>E</span>}{chance ? " " : ""}{n.q >= 0 ? "+" : ""}{n.q.toFixed(2)}
                       </span>
-                      <span title={`${share}% of root visits`} style={{ width: 90, height: 7, flexShrink: 0,
+                      <span title={t("{share}% of root visits", { share })} style={{ width: 90, height: 7, flexShrink: 0,
                         background: "var(--border)", borderRadius: 3, overflow: "hidden" }}>
                         <span style={{ display: "block", height: "100%", width: `${share}%`, background: qColor(n.q) }} />
                       </span>
@@ -785,7 +786,7 @@ export default function SearchTree({
             {selRow && targetOf(selRow) != null && <span style={{ color: "var(--muted)" }}>→ {enemyName(targetOf(selRow)!)}</span>}
             <span>N <b>{selRow ? rowVisits(selRow) : sel.visits}</b>
               {selRow && rowVisits(selRow) !== sel.visits && (
-                <span style={{ color: "var(--muted)" }} title="this position is also reached by another move order; Q and W/T/L pool every path"> ({sel.visits} all paths)</span>
+                <span style={{ color: "var(--muted)" }} title={t("this position is also reached by another move order; Q and W/T/L pool every path")}> {t("({n} all paths)", { n: sel.visits })}</span>
               )}</span>
             <span>{valueKey(sel)} <b style={{ color: qColor(sel.q) }}>{sel.q.toFixed(3)}</b></span>
             {isChance(sel) && (() => {
@@ -793,30 +794,30 @@ export default function SearchTree({
               const dpw = dpwInfo(sel);
               return (
                 <>
-                  {sp && <span style={{ color: "var(--muted)" }} title="min … max V over sampled outcomes">spread {sp.min >= 0 ? "+" : ""}{sp.min.toFixed(2)} … {sp.max >= 0 ? "+" : ""}{sp.max.toFixed(2)}</span>}
-                  <span style={{ color: "var(--muted)" }} title={`sampled ${dpw.k} of ≥${dpw.k} outcomes (DPW cap ${dpw.cap ?? "?"})${dpw.closed ? "; closed" : dpw.truncated ? "; truncated" : ""}`}>
-                    {dpw.k}/{dpw.cap ?? "?"} outcomes{dpw.closed ? " · closed" : dpw.truncated ? " · truncated" : ""}
+                  {sp && <span style={{ color: "var(--muted)" }} title={t("min … max V over sampled outcomes")}>{t("spread")} {sp.min >= 0 ? "+" : ""}{sp.min.toFixed(2)} … {sp.max >= 0 ? "+" : ""}{sp.max.toFixed(2)}</span>}
+                  <span style={{ color: "var(--muted)" }} title={`${t("sampled {k} of ≥{k} outcomes (DPW cap {cap})", { k: dpw.k, cap: dpw.cap ?? "?" })}${dpw.closed ? `; ${t("closed")}` : dpw.truncated ? `; ${t("truncated")}` : ""}`}>
+                    {t("{k}/{cap} outcomes", { k: dpw.k, cap: dpw.cap ?? "?" })}{dpw.closed ? ` · ${t("closed")}` : dpw.truncated ? ` · ${t("truncated")}` : ""}
                   </span>
                 </>
               );
             })()}
             <span style={{ color: "var(--muted)" }}>W/T/L {sel.wins}/{sel.ties}/{sel.losses}</span>
             {selU != null && <span style={{ color: "var(--muted)" }}>U {selU.toFixed(3)}</span>}
-            <span style={{ color: "var(--muted)" }}>children {sel.children.length}</span>
-            {sel.proven_win && <span style={{ color: "#3ad17a" }}>proven win</span>}
-            {sel.proven_loss && <span style={{ color: "#e0566f" }}>proven loss</span>}
-            {sel.is_terminal && <span style={{ color: "var(--muted)" }}>terminal</span>}
+            <span style={{ color: "var(--muted)" }}>{t("children {n}", { n: sel.children.length })}</span>
+            {sel.proven_win && <span style={{ color: "#3ad17a" }}>{t("proven win")}</span>}
+            {sel.proven_loss && <span style={{ color: "#e0566f" }}>{t("proven loss")}</span>}
+            {sel.is_terminal && <span style={{ color: "var(--muted)" }}>{t("terminal")}</span>}
             {sel.summary && (
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 12, alignItems: "center" }}>
-                <span title="player HP (+ block)">
-                  hp <b style={{ color: "var(--hp)" }}>{sel.summary.player_hp}/{sel.summary.player_max_hp}</b>
-                  {sel.summary.player_block > 0 && <span style={{ color: "var(--muted)" }}> +{sel.summary.player_block} blk</span>}
+                <span title={t("player HP (+ block)")}>
+                  {t("hp")} <b style={{ color: "var(--hp)" }}>{sel.summary.player_hp}/{sel.summary.player_max_hp}</b>
+                  {sel.summary.player_block > 0 && <span style={{ color: "var(--muted)" }}> {t("+{n} blk", { n: sel.summary.player_block })}</span>}
                 </span>
-                <span style={{ color: "var(--muted)" }}>energy {sel.summary.energy}</span>
-                <span style={{ color: "var(--muted)" }}>round {sel.summary.round}</span>
+                <span style={{ color: "var(--muted)" }}>{t("energy {n}", { n: sel.summary.energy })}</span>
+                <span style={{ color: "var(--muted)" }}>{t("round {n}", { n: sel.summary.round })}</span>
                 {sel.summary.enemies.length > 0 && (
                   <span style={{ color: "var(--muted)" }}>
-                    enemies {sel.summary.enemies.map((e) => `${e.hp}/${e.max_hp}`).join(", ")}
+                    {t("enemies {list}", { list: sel.summary.enemies.map((e) => `${e.hp}/${e.max_hp}`).join(", ") })}
                   </span>
                 )}
               </span>

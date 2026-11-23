@@ -3,7 +3,7 @@
 //!
 //! Fixtures: `ppo.e2e.export_wb fixtures` writes `<seed>.jsonl.gz` (header,
 //! one line per stored decision, terminal). The directory is `$E2E_FIXTURES`
-//! or `~/runs/e2e-wb/fixtures`; the test skips with a message when it is
+//! or `~/runs/e2e-wb/fixtures-allchar-d2500`; the test skips with a message when it is
 //! absent. Each seed is replayed with the fixture's `chosen` class; at every
 //! decision the env's view must equal the record field for field, and the
 //! run must end with the recorded outcome and decision count.
@@ -18,7 +18,7 @@ fn fixture_dir() -> Option<PathBuf> {
     let dir = std::env::var_os("E2E_FIXTURES").map_or_else(
         || {
             std::env::var_os("HOME")
-                .map(|h| PathBuf::from(h).join("runs/e2e-wb/fixtures"))
+                .map(|h| PathBuf::from(h).join("runs/e2e-wb/fixtures-allchar-d2500"))
                 .unwrap_or_default()
         },
         PathBuf::from,
@@ -70,7 +70,13 @@ fn diff(field: &str, got: &Value, want: &Value) -> String {
 fn replay(path: &Path) -> Result<usize, String> {
     let lines = read_lines(path);
     let seed = lines[0]["seed"].as_i64().ok_or("header without seed")?;
-    let mut env = E2eEnv::new(seed);
+    // An all-character fixture (GH #1197) names its run's character; older
+    // ones are Ironclad's.
+    let character = sts2_e2e::env::parse_character_for(
+        lines[0]["character"].as_str().unwrap_or("Ironclad"),
+        sts2_e2e::build::current(),
+    )?;
+    let mut env = E2eEnv::new_for(seed, character);
     let mut s = env.reset();
     for (n, rec) in lines[1..].iter().enumerate() {
         if rec.get("terminal").is_some() {
@@ -123,7 +129,9 @@ fn replay(path: &Path) -> Result<usize, String> {
 #[test]
 fn env_matches_python_fixtures() {
     let Some(dir) = fixture_dir() else {
-        eprintln!("SKIP: no e2e fixtures (set E2E_FIXTURES or create ~/runs/e2e-wb/fixtures)");
+        eprintln!(
+            "SKIP: no e2e fixtures (set E2E_FIXTURES or create ~/runs/e2e-wb/fixtures-allchar-d2500)"
+        );
         return;
     };
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)

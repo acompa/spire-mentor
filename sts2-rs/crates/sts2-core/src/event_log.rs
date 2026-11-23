@@ -724,6 +724,11 @@ pub fn armed(state: &crate::CombatState) -> bool {
 /// Record `entry` against `state`'s current round/side. No-op when the log is
 /// not recording.
 pub fn record(state: &mut crate::CombatState, entry: EventLogEntry) {
+    // `EventLog::push` returns at once when not recording; test that here so
+    // a disarmed log skips the out-of-line call and the stamp reads.
+    if !armed(state) {
+        return;
+    }
     let (round, side, character) = (state.round, state.side, state.player.character);
     state
         .combat_log

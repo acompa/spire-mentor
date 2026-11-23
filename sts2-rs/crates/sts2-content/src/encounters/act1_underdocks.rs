@@ -152,6 +152,7 @@ pub static ACT1_UNDERDOCKS_ENCOUNTERS: &[EncounterDef] = &[
             MonsterKind::PunchConstruct,
             MonsterSpawnArgs::PunchConstruct {
                 starts_with_fast_punch: false,
+                starting_hp_reduction: 0,
             },
         )],
         tier: EncounterTier::Normal,

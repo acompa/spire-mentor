@@ -29,6 +29,7 @@
 
 use sts2_content::relics::dispatch::install_default_registry;
 use sts2_core::relics::RelicId;
+use sts2_core::GameVersion;
 
 /// Relics implemented inline via direct `RelicKind::X` checks in
 /// `hooks.rs`/`combat_loop.rs`/`run_manager.rs` rather than through a
@@ -43,6 +44,10 @@ const INLINE_HANDLED: &[RelicId] = &[
     // Bookmark's `AfterFlush` is called from the end-of-turn flush, before
     // `EndOfTurnCleanup` (`relic_effects::bookmark::after_flush_bookmark`).
     RelicId::Bookmark,
+    // MeatOnTheBone's `AfterCombatVictoryEarly` runs before the
+    // `after_combat_victory` registry walk, called by name from
+    // `relic_effects::dispatch_after_combat_victory`.
+    RelicId::MeatOnTheBone,
     RelicId::Bread,
     // BowlerHat's `ModifyGoldGained` x1.25 is folded into
     // `RunState::gain_gold` and `card_effects::gain_gold_in_combat`.
@@ -77,6 +82,21 @@ const INLINE_HANDLED: &[RelicId] = &[
     // manager's Courier restock and reward drains, and must suspend on a
     // bought relic's pick, which a RunState-level listener cannot do.
     RelicId::LordsParasol,
+    // v0.113.0 BathTowel's `AfterPlayerTurnStartLate` heal runs in the
+    // `relic_effects::blood_vial::dispatch_after_player_turn_start_late` pass
+    // (`v0113_event::on_after_player_turn_start_late_bath_towel`).
+    RelicId::BathTowel,
+    // v0.113.0 Fertilizer's `AfterCardGeneratedForCombat` (+1 Strength per
+    // generated Sadness) is a `RelicKind::Fertilizer` check in
+    // `card_effects`' card-generated tail.
+    RelicId::Fertilizer,
+    // v0.113.0 Twine's `AfterArrowDislodged` (+4 block) is a
+    // `RelicKind::Twine` check in `fool`'s dislodge path.
+    RelicId::Twine,
+    // v0.113.0 Wuppy (GH #1496): the pet summon, HP sync and attack redirect
+    // are `RelicKind::Wuppy` checks in `combat_loop`, and its Restore rest
+    // option is in the run layer.
+    RelicId::Wuppy,
 ];
 
 /// Relics that are genuinely behaviourless in the authoritative C#
@@ -114,15 +134,18 @@ const BEHAVIORLESS_RELICS: &[RelicId] = &[
 ///
 /// The plan's §"Gaps surfaced" enumerated 8 relics here; all 8 have since
 /// been ported (BeltBuckle/BoneTea/FakeVenerableTeaSet/ReptileTrinket/
-/// PaperPhrog/Byrdpip/PaelsLegion/HistoryCourse), so the list is now
-/// empty. A newly-added unported relic that lands in none of the buckets
+/// PaperPhrog/Byrdpip/PaelsLegion/HistoryCourse). A newly-added unported relic that lands in none of the buckets
 /// trips `every_relic_id_is_accounted_for`; add it here (with its bead)
 /// to acknowledge the gap.
 // Kaleidoscope (v0.107.1 Ancient/Neow positive relic, bead `sts2-rs-utgn4`):
 // `AfterObtained` offers 2 card rewards each drawn from 3 random
 // *other*-character pools — now PORTED (`listener_kaleidoscope`, Niche-shuffled
 // non-owner pools + base-odds Rewards card creation), so it is no longer
-// unported. The list is empty again.
+// unported.
+//
+// The census only covered `RelicId::all()` (the v0.107.1 universe) until GH
+// #1495 widened it to every gated build, which surfaced the v0.113.0 relics
+// below.
 const KNOWN_UNPORTED: &[RelicId] = &[];
 
 /// True iff `id` resolves to at least one registered typed-channel
@@ -180,6 +203,7 @@ fn has_typed_listener(id: RelicId) -> bool {
         || sts2_core::relic_effects::lookup_modify_rewards(id).is_some()
         || sts2_core::relic_effects::lookup_modify_shop_price(id).is_some()
         || sts2_core::relic_effects::lookup_modify_x_value(id).is_some()
+        || sts2_core::relic_effects::lookup_modify_attack_hit_count(id).is_some()
         || sts2_core::relic_effects::lookup_on_card_added_to_deck(id).is_some()
         || sts2_core::relic_effects::lookup_on_orb_channeled(id).is_some()
         || sts2_core::relic_effects::lookup_on_pet_summoned(id).is_some()
@@ -225,8 +249,20 @@ fn has_typed_listener(id: RelicId) -> bool {
 fn every_relic_id_is_accounted_for() {
     install_default_registry();
 
+    // Every gated build's universe, not just `RelicId::all()` (the v0.107.1
+    // one): the v0.111.0- and v0.113.0-only relics live outside it, so the
+    // census never saw Thumbscrew or Wuppy (GH #1495).
+    let mut ids: Vec<RelicId> = Vec::new();
+    for version in GameVersion::ALL {
+        for id in RelicId::all_for(version) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+
     let mut unaccounted: Vec<RelicId> = Vec::new();
-    for &id in RelicId::all() {
+    for id in ids {
         let accounted = has_typed_listener(id)
             || INLINE_HANDLED.contains(&id)
             || BEHAVIORLESS_RELICS.contains(&id)

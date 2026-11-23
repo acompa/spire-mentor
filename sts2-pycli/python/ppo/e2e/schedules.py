@@ -51,6 +51,7 @@ import numpy as np
 __all__ = [
     "ANNEAL_START",
     "CET",
+    "FLOOR_SHARE",
     "LR_LOG_KEYS",
     "Clocks",
     "EntropyCollapse",
@@ -63,10 +64,13 @@ __all__ = [
     "check_lr_row",
     "ent_gate_decisions",
     "entropy_beta",
+    "floor_coef_at",
+    "floor_mask",
     "kl_control_on",
     "lam_ks",
     "lr",
     "lr_frac",
+    "lr_hold",
     "phase",
     "policy_on",
     "schedule_for",
@@ -93,6 +97,19 @@ class ScheduleCfg:
     # Base learning rates of the two AdamW groups (§6 Optimizer).
     lr_trunk: float = 1e-4
     lr_value: float = 3e-4
+    # Base lr of a third group, "input" (`net.INPUT_ROOTS`: the ID table and its gains,
+    # the small-column and section tables, the numeric stem), split off the trunk side.
+    # None: no such group, the input layers train in "trunk" at lr_trunk (as before).
+    # GH #1197's adapt phase sets lr_trunk 0 and lr_input > 0: only the input layers
+    # and the value module train (LP-FT style). m, anneal, warmup and the hold apply alike.
+    lr_input: float | None = None
+    # lr is 0 while decisions < lr_hold_decisions (surgery restarts: Adam's m/v settle on
+    # the new data before any weight moves; the optimizer still steps). 0 = off. Lane sched
+    # of the all-char restart (docs only, not defaults): {"lr_trunk": 5e-5, "lr_value": 1.5e-4,
+    # "lr_hold_decisions": 5000000, "u0_end": 1, "ks_end": 2, "ent_combat": [0.002, 0.002],
+    # "ent_ooc": [0.006, 0.006], "anneal_start": 1798779600, "kl_freeze_at": 1798779600,
+    # "budget_decisions": 1500000000}.
+    lr_hold_decisions: int = 0
     # Linear lr warmup over the first iterations: warmup(it) = min(1, (it + 1) / n).
     lr_warmup_iters: int = 10
     # The first iterations train the value only (V-warm, §7).
@@ -121,11 +138,36 @@ class ScheduleCfg:
     collapse_iters: int = 20
     collapse_boost: float = 1.5
     collapse_max: int = 2
+    # GH #1541: a probability floor per legal option on the run choices that the
+    # global β lets collapse (a card offered 1,700 times and never taken gets no
+    # gradient). On a policy row of a `floor_types` type, every class whose π is
+    # below p = min(floor_p, floor_share / n_classes) adds
+    # floor_coef · ramp · (log p − log π) to the loss. floor_coef 0 (the default) is off.
+    #
+    # Switched on at full strength, the floor flattened every OOC type on the
+    # allchar lane within 3 iterations, the unfloored ones too: the cheapest way
+    # to lift every tiny π is to shrink the shared OOC logits (a temperature), and
+    # a 50% share let SHOP go near-uniform (train win 0.42 -> 0.05). Hence a small
+    # share, no SHOP by default, and a ramp: the coefficient rises linearly from 0
+    # at decision `floor_start` to floor_coef at floor_start + floor_ramp (on the
+    # learner's decision clock; floor_ramp 0 = a step at floor_start).
+    floor_p: float = 0.02
+    floor_coef: float = 0.0
+    floor_types: tuple[str, ...] = ("CARD_REWARD", "CARD_BUNDLE")
+    floor_share: float = 0.1
+    floor_start: int = 0
+    floor_ramp: int = 20_000_000
     # The run stops here. #1081's 1e9 annealed lr to 0 and stopped at 1B.
     budget_decisions: int = 10_000_000_000
 
     def to_dict(self) -> dict[str, Any]:
         return {k: list(v) if isinstance(v, tuple) else v for k, v in asdict(self).items()}
+
+    def base_lrs(self) -> dict[str, float]:
+        """Base lr per optimizer group, in group order: "input" (only with lr_input set),
+        "trunk", "value". Everything that knows the groups iterates this."""
+        out = {} if self.lr_input is None else {"input": float(self.lr_input)}
+        return out | {"trunk": float(self.lr_trunk), "value": float(self.lr_value)}
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> ScheduleCfg:
@@ -133,6 +175,10 @@ class ScheduleCfg:
 
 
 DEFAULT = ScheduleCfg()
+
+#: The default of `ScheduleCfg.floor_share`: the floors of a row's n classes claim at
+#: most this share of its mass (each is floored at most at floor_share / n).
+FLOOR_SHARE = 0.1
 
 
 def _clamp01(x: float) -> float:
@@ -155,14 +201,29 @@ def warmup(it: int, cfg: ScheduleCfg = DEFAULT) -> float:
     return min(1.0, (it + 1) / cfg.lr_warmup_iters)
 
 
-def lr_frac(t_wall: float, it: int, m: float, cfg: ScheduleCfg = DEFAULT) -> float:
-    """The factor every base lr is multiplied by: m · anneal(t_wall) · warmup(it)."""
+def lr_hold(decisions: int, cfg: ScheduleCfg = DEFAULT) -> bool:
+    """True while the lr hold phase is on: decisions < lr_hold_decisions."""
+    return int(decisions) < cfg.lr_hold_decisions
+
+
+def lr_frac(
+    t_wall: float, it: int, m: float, cfg: ScheduleCfg = DEFAULT, decisions: int = 0
+) -> float:
+    """The factor every base lr is multiplied by: m · anneal(t_wall) · warmup(it).
+
+    0.0 while ``decisions`` (the learner's global decision clock) is below
+    ``cfg.lr_hold_decisions``.
+    """
+    if lr_hold(decisions, cfg):
+        return 0.0
     return m * anneal(t_wall, cfg) * warmup(it, cfg)
 
 
-def lr(base: float, t_wall: float, it: int, m: float, cfg: ScheduleCfg = DEFAULT) -> float:
+def lr(
+    base: float, t_wall: float, it: int, m: float, cfg: ScheduleCfg = DEFAULT, decisions: int = 0
+) -> float:
     """The closed-form lr of a group with base lr ``base``."""
-    return base * lr_frac(t_wall, it, m, cfg)
+    return base * lr_frac(t_wall, it, m, cfg, decisions)
 
 
 def policy_on(it: int, cfg: ScheduleCfg = DEFAULT) -> bool:
@@ -319,6 +380,19 @@ class IterSchedule:
     ks_types: np.ndarray = field(repr=False)
     #: Per decision type: 0 while the entropy gate is closed, else the collapse boost.
     ent_gain: np.ndarray = field(repr=False)
+    #: The lr hold phase is on: lr_frac is 0 and the KL factor m does not adapt.
+    lr_hold: bool = False
+    #: The "input" group's base lr (`ScheduleCfg.lr_input`); None: it follows the trunk.
+    lr_base_input: float | None = None
+    #: GH #1541's probability floor: its coefficient (0 = off), nominal floor, and the
+    #: decision types it applies to (bool per type; None: none).
+    floor_coef: float = 0.0
+    floor_p: float = 0.0
+    floor_on: np.ndarray | None = field(default=None, repr=False)
+    floor_share: float = FLOOR_SHARE
+    #: The ramp this coefficient is on (`floor_coef_at`), logged so a row names it.
+    floor_start: int = 0
+    floor_ramp: int = 0
 
     @property
     def lr_trunk(self) -> float:
@@ -328,10 +402,27 @@ class IterSchedule:
     def lr_value(self) -> float:
         return self.lr_base_value * self.lr_frac
 
+    @property
+    def lr_input(self) -> float:
+        """The input layers' lr (the trunk's while there is no "input" group)."""
+        base = self.lr_base_trunk if self.lr_base_input is None else self.lr_base_input
+        return base * self.lr_frac
+
     def beta_rows(self, dtype: np.ndarray, is_combat: np.ndarray) -> np.ndarray:
         """Entropy coefficient per row: gain[dtype] × the row family's β."""
         fam = np.where(np.asarray(is_combat, bool), self.beta_combat, self.beta_ooc)
         return self.ent_gain[np.asarray(dtype, np.int64)] * fam
+
+    def floor_rows(self, dtype: np.ndarray, n_classes: np.ndarray) -> np.ndarray:
+        """The probability floor per row (GH #1541): min(floor_p, floor_share / n_classes)
+        on rows of a floored type, 0 elsewhere and while the floor is off. `floor_coef`
+        is already ramped (`floor_coef_at`)."""
+        dt = np.asarray(dtype, np.int64)
+        if self.floor_coef <= 0.0 or self.floor_p <= 0.0 or self.floor_on is None:
+            return np.zeros(dt.shape, np.float32)
+        nc = np.maximum(np.asarray(n_classes, np.float64), 1.0)
+        p = np.minimum(self.floor_p, self.floor_share / nc)
+        return np.where(self.floor_on[dt], p, 0.0).astype(np.float32)
 
     def ks_rows(self, dtype: np.ndarray, has_teacher: np.ndarray) -> np.ndarray:
         """Kickstarting weight per row: λ_KS of its type, 0 for rows without teacher output."""
@@ -347,6 +438,9 @@ class IterSchedule:
         """
         lr_t = self.lr_trunk if applied is None else float(applied["trunk"])
         lr_v = self.lr_value if applied is None else float(applied["value"])
+        # Without an "input" group the input layers sit in "trunk" and take its lr.
+        lr_i = self.lr_input if applied is None else float(applied.get("input", lr_t))
+        base_i = self.lr_base_trunk if self.lr_base_input is None else self.lr_base_input
         return {
             "it": self.it,
             "decisions": self.decisions,
@@ -359,10 +453,13 @@ class IterSchedule:
             "anneal": self.anneal,
             "warmup": self.warmup,
             "lr_frac": self.lr_frac,
+            "lr_hold": self.lr_hold,
             "lr_base_trunk": self.lr_base_trunk,
             "lr_base_value": self.lr_base_value,
             "lr_trunk": lr_t,
             "lr_value": lr_v,
+            "lr_base_input": base_i,
+            "lr_input": lr_i,
             "lam_ks": self.lam_ks,
             "ks_hold": self.ks_hold,
             "ks_offset": self.ks_offset,
@@ -371,6 +468,11 @@ class IterSchedule:
             "beta_combat": self.beta_combat,
             "beta_ooc": self.beta_ooc,
             "ent_gated_types": int(np.sum(self.ent_gain <= 0.0)),
+            "floor_coef": self.floor_coef,
+            "floor_p": self.floor_p,
+            "floor_share": self.floor_share,
+            "floor_start": self.floor_start,
+            "floor_ramp": self.floor_ramp,
         }
 
 
@@ -389,11 +491,12 @@ class KLControl:
     ) -> float:
         """After the update: adapt m from the last probe KL; return the new m.
 
-        No change in V-warm and U0, from kl_freeze_at on, or for a missing or
-        non-finite KL.
+        No change in V-warm and U0, during the lr hold (lr 0 makes the KL
+        trivially low), from kl_freeze_at on, or for a missing or non-finite KL.
         """
         if (
             not sched.kl_control
+            or sched.lr_hold
             or probe_kl is None
             or not math.isfinite(probe_kl)
             or sched.t_wall >= cfg.kl_freeze_at
@@ -499,6 +602,7 @@ def schedule_for(
     gate_open = (ks_types <= cfg.ent_gate + 1e-9) | collapse.lifted
     ent_gain = np.where(gate_open, collapse.gain(cfg), 0.0)
     a, w = anneal(t_wall, cfg), warmup(it, cfg)
+    held = lr_hold(d, cfg)
     return IterSchedule(
         it=it,
         decisions=d,
@@ -510,9 +614,11 @@ def schedule_for(
         kl_m=float(m),
         anneal=a,
         warmup=w,
-        lr_frac=float(m) * a * w,
+        lr_frac=0.0 if held else float(m) * a * w,
+        lr_hold=held,
         lr_base_trunk=cfg.lr_trunk,
         lr_base_value=cfg.lr_value,
+        lr_base_input=cfg.lr_input,
         lam_ks=lam,
         ks_hold=hold,
         ks_offset=off,
@@ -522,7 +628,43 @@ def schedule_for(
         beta_ooc=entropy_beta(d, False, cfg, offset=off),
         ks_types=ks_types,
         ent_gain=ent_gain,
+        floor_coef=floor_coef_at(d, cfg),
+        floor_p=float(cfg.floor_p),
+        floor_on=floor_mask(cfg.floor_types, n_types),
+        floor_share=float(cfg.floor_share),
+        floor_start=int(cfg.floor_start),
+        floor_ramp=int(cfg.floor_ramp),
     )
+
+
+def floor_coef_at(decisions: int, cfg: ScheduleCfg = DEFAULT) -> float:
+    """The floor's coefficient at `decisions`: 0 before floor_start, then linear to
+    floor_coef over floor_ramp decisions (a step when floor_ramp is 0)."""
+    if cfg.floor_coef <= 0.0:
+        return 0.0
+    if cfg.floor_ramp > 0 and cfg.floor_start <= 0:
+        # A resumed lane is far past decision 0: a ramp from 0 would be a step.
+        raise ValueError(
+            "floor_coef > 0 with a floor_ramp needs floor_start: the decision count the "
+            "ramp starts at (the lane's current one; 1 for a fresh lane)"
+        )
+    if decisions < cfg.floor_start:
+        return 0.0
+    if cfg.floor_ramp <= 0:
+        return float(cfg.floor_coef)
+    return float(cfg.floor_coef) * _clamp01((decisions - cfg.floor_start) / cfg.floor_ramp)
+
+
+def floor_mask(names: Iterable[str], n_types: int) -> np.ndarray:
+    """Bool per decision type: in `names` (`contracts.DT` names; an unknown one raises)."""
+    from .contracts import DT
+
+    out = np.zeros(n_types, bool)
+    for name in names:
+        if name not in DT:
+            raise ValueError(f"floor_types: unknown decision type {name!r}")
+        out[DT[name]] = True
+    return out
 
 
 # ── the ops watchdog's closed-form lr check ──────────────────────────────
@@ -549,22 +691,26 @@ def check_lr_row(
 
     Recomputes anneal(t_wall), warmup(it) and lr_frac = kl_m · anneal · warmup.
     Fractions must match within ``tol``; each group's lr must equal
-    ``base · lr_frac`` within ``tol · base``, with the base taken from ``cfg``.
-    m must lie in [kl_m_min, kl_m_max].
+    ``base · lr_frac`` within ``tol · base``, with the base taken from ``cfg``
+    (`ScheduleCfg.base_lrs`: "input" only with lr_input set, and then its keys must
+    be in the row; a base of 0 must log exactly 0). m must lie in [kl_m_min, kl_m_max].
     """
-    missing = [k for k in LR_LOG_KEYS if k not in row]
+    groups = cfg.base_lrs()
+    need = LR_LOG_KEYS + (("lr_base_input", "lr_input") if "input" in groups else ())
+    missing = [k for k in need if k not in row]
     if missing:
         return [f"missing keys {missing}"]
     errs: list[str] = []
     a = anneal(float(row["t_wall"]), cfg)
     w = warmup(int(row["it"]), cfg)
     m = float(row["kl_m"])
-    frac = m * a * w
+    held = lr_hold(int(row.get("decisions", cfg.lr_hold_decisions)), cfg)
+    frac = 0.0 if held else m * a * w
     for key, want in (("anneal", a), ("warmup", w), ("lr_frac", frac)):
         got = float(row[key])
         if not abs(got - want) <= tol:
             errs.append(f"{key} {got!r} != closed form {want!r}")
-    for g, base in (("trunk", cfg.lr_trunk), ("value", cfg.lr_value)):
+    for g, base in groups.items():
         got_base = float(row[f"lr_base_{g}"])
         if not abs(got_base - base) <= tol * base:
             errs.append(f"lr_base_{g} {got_base!r} != cfg {base!r}")

@@ -1,4 +1,5 @@
 import type { TimelineEntry } from "../api";
+import { t } from "../i18n";
 
 const DECISION_COLOR: Record<string, string> = {
   combat_play: "var(--hp)",
@@ -24,9 +25,9 @@ export default function Timeline({ idx, count, entries, onSeek, marks }: {
   return (
     <div style={{ padding: "11px 18px", borderTop: "1px solid var(--border)" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 9, alignItems: "center" }}>
-        <button className="mono" onClick={() => onSeek(0)} disabled={idx === 0}>⏮ first</button>
-        <button className="mono" onClick={() => onSeek(idx - 1)} disabled={idx === 0}>◀ back</button>
-        <button className="mono" onClick={() => onSeek(idx + 1)} disabled={idx >= count - 1}>fwd ▶▶</button>
+        <button className="mono" onClick={() => onSeek(0)} disabled={idx === 0}>{t("⏮ first")}</button>
+        <button className="mono" onClick={() => onSeek(idx - 1)} disabled={idx === 0}>{t("◀ back")}</button>
+        <button className="mono" onClick={() => onSeek(idx + 1)} disabled={idx >= count - 1}>{t("fwd ▶▶")}</button>
         {here && (
           <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--text)" }}>
             {here.label || here.decision}
@@ -44,7 +45,7 @@ export default function Timeline({ idx, count, entries, onSeek, marks }: {
         ))}
       </div>
       {marks && marks.size > 0 && (
-        <div style={{ display: "flex", gap: 1, height: 4, marginBottom: 6 }} aria-label="coach marks">
+        <div style={{ display: "flex", gap: 1, height: 4, marginBottom: 6 }} aria-label={t("coach marks")}>
           {entries.map((e) => {
             const tone = marks.get(e.idx);
             return (
@@ -60,8 +61,8 @@ export default function Timeline({ idx, count, entries, onSeek, marks }: {
       <input type="range" min={0} max={Math.max(0, count - 1)} value={idx}
         onChange={(e) => onSeek(Number(e.target.value))} style={{ width: "100%" }} />
       <div className="mono" style={{ fontSize: 10, color: "var(--muted)", marginTop: 6 }}>
-        step {idx + 1} / {count}
-        {here?.floor != null ? ` · ${here.act_name ?? `act ${here.act}`} floor ${here.floor}` : ""}
+        {t("step {n} / {count}", { n: idx + 1, count })}
+        {here?.floor != null ? ` · ${(here.act_name ? t(here.act_name) : null) ?? t("act {n}", { n: here.act ?? "?" })} ${t("floor {floor}", { floor: here.floor })}` : ""}
       </div>
     </div>
   );

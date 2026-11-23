@@ -48,8 +48,10 @@ import math
 import os
 import queue
 import signal
+import threading
 import time
 import traceback
+from collections.abc import Callable, Iterable, Iterator
 from multiprocessing import shared_memory
 from types import SimpleNamespace
 from typing import Any
@@ -58,9 +60,11 @@ import numpy as np
 import torch
 
 from . import algo as A
-from . import ckpt
+from . import ckpt, rowstore
+from . import contracts as C
 from . import schedules as S
 from .net import (
+    INPUT_ROOTS,
     E2ENet,
     NetConfig,
     check_prior,
@@ -68,6 +72,7 @@ from .net import (
     net_state,
     save_checkpoint,
     to_batch,
+    to_packed,
 )
 from .rowstore import Chunk, axis_rows, batch_from_shm, take, take_to_shm
 
@@ -81,6 +86,49 @@ NO_BUCKETS = {
     "ppool_buckets": None,
 }
 LEARNER_FORMATS = ("ppo.e2e.learner/3",)
+
+
+def ahead(make: Callable[[Any], Any], items: Iterable[Any], depth: int = 2) -> Iterator[Any]:
+    """`make(item)` for each of `items`, in order, built by one thread up to `depth`
+    results ahead of the consumer (#1550): the update's steps wait on the device,
+    and the host builds the next micro-batches meanwhile instead of in between.
+    An error in `make` is raised where its result would have come. Closing the
+    iterator (or dropping it) ends the thread."""
+    out: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=max(1, depth))
+    stop = threading.Event()
+    done = object()
+
+    def put(x: tuple[bool, Any]) -> bool:
+        while not stop.is_set():
+            try:
+                out.put(x, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def run() -> None:
+        try:
+            for it in items:
+                if not put((True, make(it))):
+                    return
+            put((True, done))
+        except BaseException as e:  # handed to the consumer
+            put((False, e))
+
+    t = threading.Thread(target=run, name="e2e-batch-ahead", daemon=True)
+    t.start()
+    try:
+        while True:
+            ok, x = out.get()
+            if not ok:
+                raise x
+            if x is done:
+                return
+            yield x
+    finally:
+        stop.set()
+        t.join()
 
 
 def upload(x: np.ndarray, dev: torch.device) -> torch.Tensor:
@@ -112,8 +160,15 @@ STAT_SCALARS = (
     "ks_kl",
     "ks_ce",
     "ks_loss",
+    "n_fl",
+    "fl_loss",
+    "fl_below",
 )
-STAT_VECTORS = ("n_pi_t", "ent_t", "kl_t")
+STAT_VECTORS = ("n_pi_t", "ent_t", "kl_t", "n_v_t", "vloss_t")
+#: The update bins its per-type statistics by (character, type), `char * n_types +
+#: type` with the character from each row's X_CHAR (`rowstore.row_chars`), and folds
+#: the bins back to per-type sums: pooled per type, and split by character (GH #1197).
+N_CHARS = len(C.CHARACTERS)
 #: The value module's parameter-name prefix (`E2ENet.value`): the 3e-4 AdamW group.
 VALUE_PREFIXES = ("value.",)
 
@@ -125,6 +180,29 @@ def loss_cfg(cfg: Any) -> A.LossCfg:
         dual_clip=float(cfg.dual_clip),
         vf_coef=float(cfg.vf_coef),
     )
+
+
+def fold_chars(v: Any, n_types: int) -> np.ndarray:
+    """(character, type) bins summed over the characters: the per-type sums."""
+    return np.asarray(v, np.float64).reshape(-1, n_types).sum(0)
+
+
+def char_type_means(
+    s: Any, n: Any, dtypes: tuple[str, ...], n_types: int | None = None
+) -> dict[str, dict[str, float]]:
+    """{character: {type: s / n}} of (character, type) bin sums `s` over counts `n`
+    (`n_types` types per character, default `len(dtypes)`), for the bins with rows;
+    characters without any are left out."""
+    nt = int(n_types or len(dtypes))
+    s2 = np.asarray(s, np.float64).reshape(-1, nt)
+    n2 = np.asarray(n, np.float64).reshape(-1, nt)
+    out = {}
+    with np.errstate(invalid="ignore", divide="ignore"):
+        for c in range(len(s2)):
+            d = type_dict(np.where(n2[c] > 0, s2[c] / n2[c], np.nan), dtypes)
+            if d:
+                out[C.CHARACTERS[c]] = d
+    return out
 
 
 def type_dict(v: np.ndarray, dtypes: tuple[str, ...]) -> dict[str, float]:
@@ -155,13 +233,20 @@ class Rank:
         self.net.train()
         self.algo = A.AlgoState.from_dict(init["algo"])
         self.opt = A.make_optimizer(
-            self.net, VALUE_PREFIXES, cfg=self.algo.cfg, weight_decay=float(cfg.weight_decay)
+            self.net,
+            VALUE_PREFIXES,
+            cfg=self.algo.cfg,
+            input_roots=INPUT_ROOTS,
+            weight_decay=float(cfg.weight_decay),
         )
         if init.get("opt") is not None:
-            self.opt.load_state_dict(init["opt"])
+            # A state saved with or without the "input" group (lr_input) loads either way.
+            A.load_opt_state(
+                self.opt, init["opt"], self.net, VALUE_PREFIXES, input_roots=INPUT_ROOTS
+            )
             # A resume restores the moments, not the saved hyperparameters: the cfg's
             # base lrs (what LrWatch checks) and weight decay hold (review finding LRN-4).
-            base = {"trunk": self.algo.cfg.lr_trunk, "value": self.algo.cfg.lr_value}
+            base = self.algo.cfg.base_lrs()
             for g in self.opt.param_groups:
                 g["base_lr"] = float(base[g["name"]])
                 g["weight_decay"] = float(cfg.weight_decay)
@@ -175,6 +260,7 @@ class Rank:
                 self.ema.load_state_dict(init["ema"])
                 self.ema.copy_from(state)
         self.loss_cfg = loss_cfg(cfg)
+        self._packed: Any = None  # `_fwd_packed`'s forward
         self.params = [p for p in self.net.parameters() if p.requires_grad]
 
     # ── collectives ─────────────────────────────────────────────────────
@@ -217,8 +303,23 @@ class Rank:
 
     # ── one update ──────────────────────────────────────────────────────
 
+    def _batch(self, rows: Chunk, idx: np.ndarray) -> Any:
+        return to_batch(take(rows, idx), self.dev, pin=True, **NO_BUCKETS)
+
     def _fwd(self, rows: Chunk, idx: np.ndarray) -> Any:
-        return self.net(to_batch(take(rows, idx), self.dev, pin=True, **NO_BUCKETS))
+        return self.net(self._batch(rows, idx))
+
+    def _fwd_packed(self, rows: Chunk, idx: np.ndarray) -> Any:
+        """The pre-pass's forward of `idx` on the packed (pad-free) path, compiled
+        once per rank on CUDA as the learner's serving is (`Cfg.compile_serve`)."""
+        if self._packed is None:
+            self._packed = self.net.forward_packed
+            if self.dev.type == "cuda":
+                self._packed = torch.compile(self.net.forward_packed, dynamic=True)
+        return self._packed(self._packed_batch(rows, idx))
+
+    def _packed_batch(self, rows: Chunk, idx: np.ndarray) -> Any:
+        return to_packed(take(rows, idx), self.dev, pin=True)
 
     def update(self, job: dict[str, Any]) -> dict[str, Any]:
         a = self.algo
@@ -294,6 +395,9 @@ class Rank:
         dt_all = np.asarray(table["dtype"], np.int64)
         comb_all = np.asarray(table["is_combat"], bool)
         n_types = a.n_types
+        # GH #1197: the statistics' (character, type) bins (see N_CHARS).
+        n_ct = N_CHARS * n_types
+        ct_all = rowstore.row_chars(rows.rb) * n_types + dt_all
 
         # ── pre-pass ──
         tp = time.time()
@@ -302,46 +406,71 @@ class Rank:
         ent_s = torch.zeros(n_types, device=dev)
         ent_c = torch.zeros(n_types, device=dev)
         ent_n = torch.zeros(n_types, device=dev)  # normalised entropy (stats only)
+        ent_n_ct = torch.zeros(n_ct, device=dev)  # the same by (character, type)
         probe_prox: dict[int, tuple[np.ndarray, torch.Tensor]] = {}
         other = np.flatnonzero(~masks.trained & ~masks.dormant)
         other = other[np.argsort(n_tok[other], kind="stable")]
         step = max(1, int(cfg.fwd_chunk))
         chunks = [other[i : i + step] for i in range(0, len(other), step)]
+        # `packed_prepass` (#1550): the trained rows go through the packed forward in
+        # length-sorted chunks of `fwd_chunk` rows, instead of one padded forward per
+        # stratum (~340 rows): 20 s -> 11 s of the lane's update. Only the probe
+        # strata keep their padded forward, whose logits `_probe_kl` compares with
+        # the same forward after the epoch.
+        packed = bool(getattr(cfg, "packed_prepass", False))
+        fwd = self._fwd_packed if packed else self._fwd
+        if packed:
+            tr = trained_idx[np.argsort(n_tok[trained_idx], kind="stable")]
+            pre = [tr[i : i + step] for i in range(0, len(tr), step)]
+        else:
+            pre = strata
+
+        def absorb(idx: np.ndarray, out: Any) -> None:
+            nonlocal ent_s, ent_c, ent_n, ent_n_ct
+            ti = upload(idx, dev)
+            nc = upload(nc_all[idx], dev)
+            values[ti] = out.value.float()
+            lp_prox[ti] = A.logp_of(out.logits, nc, upload(act_all[idx], dev))
+            es, ec = A.entropy_by_type(
+                out.logits,
+                nc,
+                upload(dt_all[idx], dev),
+                upload(masks.pi[idx], dev),
+                n_types,
+            )
+            ent_s += es
+            ent_c += ec
+            ent_n += normalized_entropy_by_type(out.logits, nc, dt_all[idx], masks.pi[idx], n_types)
+            ent_n_ct += normalized_entropy_by_type(out.logits, nc, ct_all[idx], masks.pi[idx], n_ct)
+
         self.net.eval()
         with torch.no_grad():
-            for j, idx in enumerate(strata):
+            for j, idx in enumerate(pre):
                 if j % world != rank or not len(idx):
                     continue
-                out = self._fwd(rows, idx)
-                ti = upload(idx, dev)
-                nc = upload(nc_all[idx], dev)
-                values[ti] = out.value.float()
-                lp_prox[ti] = A.logp_of(out.logits, nc, upload(act_all[idx], dev))
-                es, ec = A.entropy_by_type(
-                    out.logits,
-                    nc,
-                    upload(dt_all[idx], dev),
-                    upload(masks.pi[idx], dev),
-                    n_types,
-                )
-                ent_s += es
-                ent_c += ec
-                ent_n += normalized_entropy_by_type(
-                    out.logits, nc, dt_all[idx], masks.pi[idx], n_types
-                )
-                if j in probe:
+                out = fwd(rows, idx)
+                absorb(idx, out)
+                if not packed and j in probe:
                     probe_prox[j] = (idx, out.logits.float())
+            if packed:
+                for j in sorted(probe):
+                    if j % world == rank and len(strata[j]):
+                        probe_prox[j] = (strata[j], self._fwd(rows, strata[j]).logits.float())
             for c, idx in enumerate(chunks):
                 if c % world == rank:
-                    values[upload(idx, dev)] = self._fwd(rows, idx).value.float()
+                    values[upload(idx, dev)] = fwd(rows, idx).value.float()
         self.net.train()
-        flat = self._sum(torch.cat([values, lp_prox, ent_s, ent_c, ent_n]))
+        flat = self._sum(torch.cat([values, lp_prox, ent_s, ent_c, ent_n, ent_n_ct]))
         values_np = flat[:n].double().cpu().numpy()
         lp_prox_np = flat[n : 2 * n].cpu().numpy()
         o = 2 * n
         ent_s_np = flat[o : o + n_types].double().cpu().numpy()
         ent_c_np = flat[o + n_types : o + 2 * n_types].double().cpu().numpy()
-        ent_n_np = flat[o + 2 * n_types :].double().cpu().numpy()
+        ent_n_np = flat[o + 2 * n_types : o + 3 * n_types].double().cpu().numpy()
+        ent_n_ct_np = flat[o + 3 * n_types :].double().cpu().numpy()
+        # The pre-pass covers the strata, i.e. the trained rows: their counts per bin.
+        pi_tr = trained_idx[masks.pi[trained_idx]]
+        ent_c_ct_np = np.bincount(ct_all[pi_tr], minlength=n_ct).astype(np.float64)
         prepass_s = time.time() - tp
         nonfinite: list[str] = []
         live = ~masks.dormant
@@ -359,6 +488,12 @@ class Rank:
         has_t = np.asarray(table["has_t"], bool)
         beta = sched.beta_rows(dt_all, comb_all)
         ks = sched.ks_rows(dt_all, has_t)
+        floor_p = sched.floor_rows(dt_all, nc_all)
+        floor_w = None
+        if floor_p.any():
+            floor_w = np.full(n, sched.floor_coef, np.float32)
+        else:
+            floor_p = None
         lp_behav = np.asarray(table["logp_behav"], np.float32)
         target = ret.target
         use_teacher = bool(np.any(sched.ks_types > 0))
@@ -380,31 +515,54 @@ class Rank:
                 v=ret.trained[idx],
                 beta=beta[idx],
                 ks=ks[idx],
-                dtype=dt_all[idx],
+                dtype=ct_all[idx],  # the statistics' bins; the loss itself reads no type
                 teacher=teacher,
+                floor_p=None if floor_p is None else floor_p[idx],
+                floor_w=None if floor_w is None else floor_w[idx],
             )
 
         acc: dict[str, torch.Tensor] = {k: torch.zeros((), device=dev) for k in STAT_SCALARS}
-        acc.update({k: torch.zeros(n_types, device=dev) for k in STAT_VECTORS})
+        acc.update({k: torch.zeros(n_ct, device=dev) for k in STAT_VECTORS})
         gnorms: list[torch.Tensor] = []
         kls: list[float] = []
         steps = epochs_run = 0
         stopped = False
         tu = time.time()
+        # This rank's forwards of the epoch, built ahead of the steps. With
+        # `packed_update` a step's strata go through ONE packed (pad-free)
+        # forward instead of one padded forward each (#1550): the lane's
+        # micro-batches (~340 rows) are small enough that launching their
+        # kernels costs more than computing them, and merged padded strata
+        # would pad every row to the longest. The loss is a sum over rows, so
+        # the step's gradient is the same up to float rounding.
+        merged = bool(getattr(cfg, "packed_update", False))
+        chunk = max(1, int(getattr(cfg, "update_chunk", 3072)))
+
+        def groups(mb: list[list[np.ndarray]]) -> list[np.ndarray]:
+            own = [idx for idx in mb[rank] if len(idx)]
+            if not (merged and own):
+                return own
+            # At most `update_chunk` rows a forward: with fewer ranks a rank gets more
+            # of the step, and one forward of it all does not fit a 24 GB device.
+            rows_ = np.concatenate(own)
+            return np.array_split(rows_, -(-len(rows_) // chunk))
+
+        build = self._packed_batch if merged else self._batch
         for epoch in range(int(cfg.epochs)):
             if not trained_idx.size or nonfinite:
                 break
             mbs = A.epoch_minibatches(
                 strata, seed=cfg.seed, it=it, epoch=epoch, per_mb=per_mb, world=world
             )
+            mine = [idx for mb in mbs for idx in groups(mb)]
+            batches = ahead(lambda idx: build(rows, idx), mine)
             for mb in mbs:
                 denom = float(sum(len(s) for rr in mb for s in rr))
                 if denom == 0:
                     continue
-                for idx in mb[rank]:
-                    if not len(idx):
-                        continue
-                    out = self._fwd(rows, idx)
+                for idx in groups(mb):
+                    batch = next(batches)
+                    out = self.net.forward_packed(batch) if merged else self.net(batch)
                     lo = A.ppo_losses(
                         out.logits,
                         out.value,
@@ -412,7 +570,7 @@ class Rank:
                         policy_on=sched.policy_on,
                         denom=denom,
                         cfg=self.loss_cfg,
-                        n_types=n_types,
+                        n_types=n_ct,
                     )
                     lo.loss.backward()
                     for k, v in lo.stats.items():
@@ -426,6 +584,7 @@ class Rank:
                 gnorms.append(A.clip_and_step(self.opt, float(cfg.grad_clip)).detach())
                 self.opt.zero_grad(set_to_none=True)
                 steps += 1
+            batches.close()
             epochs_run += 1
             kl = self._probe_kl(rows, probe_prox, nc_all, masks.pi)
             kls.append(kl)
@@ -449,6 +608,9 @@ class Rank:
             m = acc[k].numel()
             sums[k] = flat_s[o : o + m].reshape(acc[k].shape).cpu()
             o += m
+        sums_ct = {k: sums[k].numpy() for k in STAT_VECTORS}
+        for k in STAT_VECTORS:
+            sums[k] = fold_chars(sums_ct[k], n_types)
         means = A.stats_means(sums)
         if rank != 0:
             return {"nonfinite": nonfinite}
@@ -479,13 +641,23 @@ class Rank:
         stats.update(ret.stats(table))
         for k, v in means.items():
             if isinstance(v, np.ndarray):
-                if k != "n_pi_t":
+                if k not in ("n_pi_t", "n_v_t"):
                     stats[k] = type_dict(v, self.dtypes)
             else:
                 stats[k] = v
         stats["ent_prox_t"] = type_dict(ent_mean, self.dtypes)
         ent_norm = np.where(ent_c_np > 0, ent_n_np / np.maximum(ent_c_np, 1.0), np.nan)
         stats["ent_norm_t"] = type_dict(ent_norm, self.dtypes)
+        # GH #1197, by character: the same normalised entropy and k3 KL per type, and
+        # the value loss over all types (the learner's `by_char`).
+        dts = self.dtypes
+        stats["ent_norm_ct"] = char_type_means(ent_n_ct_np, ent_c_ct_np, dts, n_types)
+        stats["kl_ct"] = char_type_means(sums_ct["kl_t"], sums_ct["n_pi_t"], dts, n_types)
+        vl_c = sums_ct["vloss_t"].reshape(N_CHARS, n_types).sum(1)
+        nv_c = sums_ct["n_v_t"].reshape(N_CHARS, n_types).sum(1)
+        stats["vloss_c"] = {
+            C.CHARACTERS[c]: float(vl_c[c] / nv_c[c]) for c in range(N_CHARS) if nv_c[c] > 0
+        }
         stats["is_tails"] = is_tails(lp_prox_np, lp_behav, ret.pi, float(cfg.is_cap))
         stats["loss_total"] = float(
             np.nansum([stats.get(k, math.nan) for k in ("vloss", "ploss", "ks_loss")])

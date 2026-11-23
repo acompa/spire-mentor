@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 
 from . import schema
-from .encoder import featurize_row, fine_surface
+from .encoder import featurize_row_py, fine_surface
 from .env import PpoRunEnv, Terminal
 from .net_policy import NetPolicy
 
@@ -296,7 +296,7 @@ def dump(ckpt: str, out: str, seeds: list[int], max_rows: int, asc_seeds: list[i
         env = PpoRunEnv(seed=seed, ascension=ascension)
         out_d = env.reset()
         while not isinstance(out_d, Terminal):
-            feat = featurize_row(out_d.obs, out_d.actions, out_d.metrics)
+            feat = featurize_row_py(out_d.obs, out_d.actions, out_d.metrics)
             probs, value = pol.distribution(out_d.obs, out_d.actions, out_d.metrics)
             fine = fine_surface(out_d.actions)
             # Head of the walk: keep everything (this is what pins the common

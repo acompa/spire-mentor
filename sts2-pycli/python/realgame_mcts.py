@@ -52,10 +52,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from combat_mirror import MirrorDivergence, recognize_card_select, skip_arity_from_world
+from combat_mirror import MirrorDivergence
 from realgame_adapter import (
     UnsupportedGameVersionError,
     character_display_name,
+    combat_wire,
     install_live_unlock_state,
     install_unlock_state_from_wire,
     run_ascension,
@@ -314,11 +315,10 @@ def pick_combat_action_mcts(
 
         headless = to_headless_combat_play(state)
         if mirror is not None:
-            from sts2_hint import adapter
             from sts2_hint.recommender import tags_from_result
 
-            wire = adapter.translate(
-                headless,
+            wire = combat_wire(
+                state,
                 character=call_cfg.character,
                 combat_id=call_cfg.combat_id,
                 seed=call_cfg.seed,
@@ -454,8 +454,6 @@ def pick_card_select_mirrored(
         ``(bridge action, picked option indices)``. The caller applies the
         picks to the mirror only after the game accepts the action.
     """
-    from sts2_hint import adapter
-
     run_state = state.get("run_state") or {}
     character = character_display_name(run_state.get("character")) or cfg.character
     call_cfg = dataclasses.replace(
@@ -465,115 +463,33 @@ def pick_card_select_mirrored(
         call_cfg = dataclasses.replace(call_cfg, sims=sims)
 
     headless = to_headless_combat_play(state["combat"])
-    wire = adapter.translate(
-        headless,
+    wire = combat_wire(
+        state["combat"],
         character=call_cfg.character,
         combat_id=call_cfg.combat_id,
         seed=call_cfg.seed,
         ascension=call_cfg.ascension,
     )
-    mirror.reconcile(wire)
+    import sts2_rs
 
-    parked = mirror.parked_choice()
-    bridge_cards = state.get("cards") or []
-    options = [
-        {
-            "id": adapter.registry_card_id(str(c.get("id")), f"$.cards[{i}]"),
-            "upgraded": bool(c.get("upgraded") or c.get("upgrade_level")),
-        }
-        for i, c in enumerate(bridge_cards)
-    ]
-    # Clamp the arity to what is actually on screen. "Choose any number"
-    # arrives as a sentinel max, which is both meaningless past the option
-    # count and unrepresentable in the engine's u8 arity fields.
-    n = len(options)
-    raw_min = state.get("min_count", state.get("min_select")) or 0
-    raw_max = state.get("max_count", state.get("max_select")) or 1
-    min_select = max(0, min(int(raw_min), n))
-    max_select = max(min_select, min(int(raw_max), n))
-    # A `FromChooseACardScreen` reports min 0 whether or not it may be
-    # declined; the truth is the separate `canSkip` flag the bridge now
-    # captures. Normalize BEFORE the recognition, which keys the Gambling-Chip
-    # mulligan on `min_select == 0`.
-    can_skip, min_select = skip_arity_from_world(
-        cancelable=state.get("cancelable"),
-        source=state.get("source"),
-        min_select=min_select,
-        max_select=max_select,
-    )
-    # The engine's own kind when it derived one; otherwise the recognition
-    # SHARED with the DLL driver (`headless_eval.pick_card_select_mirrored`)
-    # maps the known unparked screens — generative offers, KnowledgeDemon's
-    # curse pick, Gambling Chip's turn-1 mulligan — to their real engine
-    # kinds. A still-unrecognized screen keeps `card_select`, which is NOT a
-    # usable catch-all: `inject_choice` refuses the unlocated deterministic
-    # injection (it would resolve to a silent no-op against the engine's
-    # placeholder arm) and drops the mirror, which the `not mirror.alive`
-    # branch below then handles.
-    kind, turn_start_blocked_on = recognize_card_select(
-        parked=parked,
-        options=options,
-        board=headless,
-        wire=wire,
-        min_select=min_select,
-        source_model=state.get("source_model"),
-        prompt_key=state.get("prompt_key"),
-    )
-    mirror.inject_choice(
-        kind,
-        options,
-        min_select,
-        max_select,
-        can_skip=can_skip,
-        origin={
-            "prompt_key": state.get("prompt_key"),
-            "source": state.get("source"),
-            "source_model": state.get("source_model"),
-        },
-    )
-    if turn_start_blocked_on is not None:
-        # C# `Hook.AfterPlayerTurnStart` AWAITS the screen it opened — Gambling
-        # Chip's turn-1 mulligan, or (GH #355, any turn) Tyranny's exhaust /
-        # Tools of the Trade's discard — so
-        # the wire this mirror was just seeded from is a mid-turn-setup
-        # snapshot: the hand is drawn and energy is reset, but the rest of the
-        # turn-start hook batch has NOT run. Park that batch behind the pick so
-        # resolving the injected choice runs it in C# order — armed BEFORE the
-        # search so the rollouts see the same continuation. Same order as the
-        # DLL driver: inject, arm, then search.
-        mirror.arm_turn_start_resume_for(turn_start_blocked_on)
-
-    def _indices(picked: list[int]) -> list[int]:
-        """Option positions -> the bridge's own ``cards[i]["index"]`` handles."""
-        return [int(bridge_cards[i].get("index", i)) for i in picked]
-
+    # Reconcile, recognize the screen, inject the world's options and arm a
+    # blocked turn start, in Rust (`CombatMirror.prepare_card_select`). The
+    # recognition is shared with the DLL driver
+    # (`headless_eval.pick_card_select_mirrored`); a still-unrecognized screen
+    # keeps `card_select`, whose unlocated injection drops the mirror.
+    n, min_select, max_select = mirror.prepare_card_select(state, wire, headless)
+    cards = state.get("cards") or []
     if not mirror.alive:
         # OBSERVE only: the injection itself diverged and the mirror was
-        # dropped, so there is no state left to search. Take the minimum legal
-        # selection and let the run continue TAGGED — STRICT never reaches
-        # this line, and no clean measurement may come from a run that did.
-        #
-        # Do NOT re-seed here: `wire` is the PRE-choice board and the world is
-        # about to resolve the very screen the mirror could not answer, so a
-        # mirror seeded from it reads the whole resolution as a divergence one
-        # decision later. Stay dropped; `reconcile` seeds from the next
-        # decision's POST-choice wire. (v28wr census: 50 player-side events.)
-        #
-        # Picks are `None`, not `[]`: the caller cannot distinguish an empty
-        # list from a legitimate skip, and would answer it by calling
-        # `advance_through_choice([])` on a mirror that has no choice open —
-        # manufacturing a second, entirely spurious divergence.
-        picked = list(range(min_select))
-        if not picked:
-            return {"action": "skip"}, None
-        return {"action": "choose", "indices": _indices(picked)}, None
+        # dropped, so there is nothing left to search: the minimum legal
+        # selection, and picks `None` (not `[]`, a legitimate skip) so the
+        # caller does not answer a choice the dropped mirror never opened. Do
+        # NOT re-seed here: `wire` is the PRE-choice board.
+        return sts2_rs.card_select_answer(cards, min_select, None)
 
-    # One search per pick: the engine decomposes a multi-pick sequentially, so
-    # each pick is chosen with the previous ones already in the root state.
-    # (A single-pick screen is still exactly one search.) The picks reach the
-    # mirror atomically either way, so state fidelity does not depend on this
-    # — it is a policy-quality change. Same contract as the DLL driver
-    # (`headless_eval.pick_card_select_mirrored`), which calls the same method.
+    # One search per pick (`CombatMirror.search_choice_picks`): the engine
+    # decomposes a multi-pick sequentially. Instinct passes its own picker
+    # (`realgame_instinct`), which answers the SAME parked choice.
     if picker is not None:
         picked = picker(mirror, n_options=n, min_select=min_select, max_select=max_select)
     else:
@@ -584,11 +500,7 @@ def pick_card_select_mirrored(
             min_select=min_select,
             max_select=max_select,
         )
-    if not picked and min_select <= 0:
-        return {"action": "skip"}, []
-    if not picked:
-        picked = [0]
-    return {"action": "choose", "indices": _indices(picked)}, picked
+    return sts2_rs.card_select_answer(cards, min_select, [int(i) for i in picked])
 
 
 def run(

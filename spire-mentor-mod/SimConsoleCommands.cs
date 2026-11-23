@@ -24,7 +24,7 @@ public class SpireMentorConsoleCmd : AbstractConsoleCmd
 
     public override string Args => "[mode off|advisor|hints|coach] [speed <0.1-8.0>] [hud on|off] [log] [bugreport [note...]] [waitmult <f>] [animmult <f>]";
 
-    public override string Description => "Spire Mentor control: show status, switch mode, set game speed / HUD / autopilot multipliers.";
+    public override string Description => L10n.T("Spire Mentor control: show status, switch mode, set game speed / HUD / autopilot multipliers.");
 
     public override bool IsNetworked => false;
 
@@ -48,7 +48,7 @@ public class SpireMentorConsoleCmd : AbstractConsoleCmd
             case "speed":
                 if (!TryParseFloat(value, out float speed))
                 {
-                    return new CmdResult(success: false, "usage: spirementor speed <0.1-8.0>");
+                    return new CmdResult(success: false, L10n.F("usage: {0}", "spirementor speed <0.1-8.0>"));
                 }
                 SimSpeed.Apply(speed);
                 SpireMentorModConfig.RememberSpeed();
@@ -56,40 +56,40 @@ public class SpireMentorConsoleCmd : AbstractConsoleCmd
             case "hud":
                 if (value is not ("on" or "off"))
                 {
-                    return new CmdResult(success: false, "usage: spirementor hud on|off");
+                    return new CmdResult(success: false, L10n.F("usage: {0}", "spirementor hud on|off"));
                 }
                 SimActions.SetHud(value == "on");
                 return new CmdResult(success: true, $"hud -> {value}");
             case "log":
                 SimActions.ToggleLog();
-                return new CmdResult(success: true, "toggled action-log panel");
+                return new CmdResult(success: true, L10n.T("toggled action-log panel"));
             case "bugreport":
                 if (args.Length == 1)
                 {
                     SimActions.ReportBug();
-                    return new CmdResult(success: true, "opened the bug report dialog");
+                    return new CmdResult(success: true, L10n.T("opened the bug report dialog"));
                 }
                 // A note on the command line: send straight away (the action
                 // log says where it went).
                 SimBugReport.SendNow(string.Join(" ", args, 1, args.Length - 1));
                 return new CmdResult(success: true,
-                    SimBugReport.Site != null ? "sending a bug report (see the action log)" : "saving a bug report (see the action log)");
+                    SimBugReport.Site != null ? L10n.T("sending a bug report (see the action log)") : L10n.T("saving a bug report (see the action log)"));
             case "waitmult":
                 if (!TryParseFloat(value, out float wait) || wait <= 0f)
                 {
-                    return new CmdResult(success: false, "usage: spirementor waitmult <positive float>");
+                    return new CmdResult(success: false, L10n.F("usage: {0}", "spirementor waitmult <positive float>"));
                 }
                 SimRuntime.WaitMultiplier = wait;
-                return new CmdResult(success: true, $"waitmult -> {wait:0.###} (applies while Autopilot)");
+                return new CmdResult(success: true, L10n.F("waitmult -> {0:0.###} (applies while Autopilot)", wait));
             case "animmult":
                 if (!TryParseFloat(value, out float anim) || anim <= 0f)
                 {
-                    return new CmdResult(success: false, "usage: spirementor animmult <positive float>");
+                    return new CmdResult(success: false, L10n.F("usage: {0}", "spirementor animmult <positive float>"));
                 }
                 SimRuntime.AnimMultiplier = anim;
-                return new CmdResult(success: true, $"animmult -> {anim:0.###} (applies while Autopilot)");
+                return new CmdResult(success: true, L10n.F("animmult -> {0:0.###} (applies while Autopilot)", anim));
             default:
-                return new CmdResult(success: false, $"unknown subcommand '{sub}'. {Args}");
+                return new CmdResult(success: false, L10n.F("unknown subcommand '{0}'. {1}", sub, Args));
         }
     }
 
@@ -128,7 +128,7 @@ public class SpireMentorConsoleCmd : AbstractConsoleCmd
         // end an autopilot session.
         AdviceStyle? style = CoachStyle.Parse(target);
         string note = (target == "off" || target == "advisor" || style != null) && MainFile.StopAutopilot()
-            ? " (autopilot stopped)"
+            ? L10n.T(" (autopilot stopped)")
             : "";
         if (style is AdviceStyle s)
         {
@@ -146,9 +146,9 @@ public class SpireMentorConsoleCmd : AbstractConsoleCmd
                 return new CmdResult(success: true, $"mode -> Advisor ({SimRuntime.Style}){note}");
             case "autopilot":
                 return new CmdResult(success: false,
-                    "Autopilot cannot be entered at runtime (needs auto_start=true in SpireMentor.conf at launch).");
+                    L10n.T("Autopilot cannot be entered at runtime (needs auto_start=true in SpireMentor.conf at launch)."));
             default:
-                return new CmdResult(success: false, "usage: spirementor mode off|advisor|hints|coach");
+                return new CmdResult(success: false, L10n.F("usage: {0}", "spirementor mode off|advisor|hints|coach"));
         }
     }
 

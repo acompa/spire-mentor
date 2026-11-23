@@ -89,6 +89,8 @@ _DROP_KEYS = frozenset(
         "image",
         "rig",
         "rig_bounds_w",
+        "rig_arrow_x",
+        "rig_arrow_y",
         "rig_bounds_h",
         "rig_scale",
         "description_rich",

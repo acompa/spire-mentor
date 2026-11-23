@@ -8,6 +8,7 @@
  * markdown keep apart.
  */
 import { upperBound95, wilson95, type AttemptResult, type FloorDeaths, type Tally } from "./stats";
+import { getLang, t, tn } from "../i18n";
 
 /** `POST /api/seedcheck/summary`. */
 export interface Summary {
@@ -72,6 +73,7 @@ const ROOM: Record<string, string> = {
 };
 
 function ordinal(n: number): string {
+  if (getLang() === "zh") return `第${n}个`;
   const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
   return `${n}${s}`;
 }
@@ -79,10 +81,10 @@ function ordinal(n: number): string {
 /** Which node to take, in words a player can act on. */
 function whereTo(r: RouteStep): string {
   if (r.room === "Boss") return "";
-  const place = `${ordinal(r.pos)} of ${r.of} from the left`;
-  if (r.dir === null) return `start on the ${place}`;
-  if (r.options <= 1) return `only path (${place})`;
-  return `go ${r.dir} (${place})`;
+  const place = t("{nth} of {of} from the left", { nth: ordinal(r.pos), of: r.of });
+  if (r.dir === null) return t("start on the {place}", { place });
+  if (r.options <= 1) return t("only path ({place})", { place });
+  return t({ left: "go left ({place})", straight: "go straight ({place})", right: "go right ({place})" }[r.dir], { place });
 }
 
 /** The route as one "- " line per floor, grouped by act. */
@@ -93,13 +95,14 @@ export function routeLines(route: RouteStep[]): string[] {
     if (r.act !== act) {
       act = r.act;
       if (out.length) out.push("");
-      out.push(`Act ${act}:`, "");
+      out.push(t("Act {n}:", { n: act }), "");
     }
     const where = whereTo(r);
     const what = [r.name, ...r.notes].filter(Boolean).join("; ");
-    const hp = r.hp !== undefined && r.max_hp !== undefined ? ` (HP ${r.hp}/${r.max_hp})` : "";
-    const base = ROOM[r.room] ?? r.room;
-    const room = r.room === "Unknown" && r.kind ? `${base} (${r.kind})` : base;
+    const hp = r.hp !== undefined && r.max_hp !== undefined ? ` ${t("(HP {hp}/{max})", { hp: r.hp, max: r.max_hp })}` : "";
+    // ROOM values and r.kind ("fight" / "event") are closed sets listed in zh/simlab.ts.
+    const base = ROOM[r.room] ? t(ROOM[r.room]) : r.room;
+    const room = r.room === "Unknown" && r.kind ? `${base} (${t(r.kind)})` : base;
     out.push(`- F${r.floor} ${room}${where ? `, ${where}` : ""}${what ? `: ${what}` : ""}${hp}`);
   }
   return out;
@@ -114,7 +117,7 @@ const ROUTE_HELP =
   "Route: one line per floor. \"Go left/straight/right\" is from the node you stand on; \"Nth of M from the left\" counts that floor's nodes on the map. HP is when leaving the floor.";
 
 function header(seed: string, build: string, c: Conditions): string {
-  return `Seed ${seed} — ${c.character} A${c.ascension}, ${c.version} (simulator, workbench ${build})`;
+  return t("Seed {seed} — {character} A{asc}, {version} (simulator, workbench {build})", { seed, character: c.character, asc: c.ascension, version: c.version, build });
 }
 
 /** 0.0679 → "6.8", 0.18 → "18". */
@@ -129,8 +132,8 @@ function pctUp(x: number): string {
 
 function deathLine(deaths: FloorDeaths[], label: string): string | null {
   if (!deaths.length) return null;
-  const parts = deaths.slice(0, 3).map((d) => `floor ${d.floor} (${d.room ?? "unknown"}, ${d.count})`);
-  return `${label}: ${parts.join(", ")}.`;
+  const parts = deaths.slice(0, 3).map((d) => t("floor {floor} ({room}, {count})", { floor: d.floor, room: d.room ?? t("unknown"), count: d.count }));
+  return t("{label}: {parts}.", { label, parts: parts.join(", ") });
 }
 
 function deckHighlights(deck: string[]): string {
@@ -144,24 +147,24 @@ function deckHighlights(deck: string[]): string {
 
 function winningLine(s: Summary): string[] {
   const out: string[] = [];
-  if (s.neow_pick) out.push(`Neow: ${s.neow_pick}.`);
-  if (s.boss_relics.length) out.push(`Boss relics: ${s.boss_relics.join(", ")}.`);
+  if (s.neow_pick) out.push(t("Neow: {pick}.", { pick: s.neow_pick }));
+  if (s.boss_relics.length) out.push(t("Boss relics: {relics}.", { relics: s.boss_relics.join(", ") }));
   // Events and shops are in the route, floor by floor; without one (an older
   // summary) name them here.
   if (!s.route?.length) {
     if (s.events.length) {
-      out.push(`Events: ${s.events.map((e) => `${e.event} → ${e.option} (floor ${e.floor})`).join("; ")}.`);
+      out.push(t("Events: {events}.", { events: s.events.map((e) => `${e.event} → ${e.option} ${t("(floor {n})", { n: e.floor })}`).join("; ") }));
     }
     const bought = s.shop.filter((x) => x.bought).map((x) => x.bought);
     const removed = s.shop.filter((x) => x.removed).map((x) => x.removed);
     if (bought.length || removed.length) {
-      const bits = [bought.length ? `bought ${bought.join(", ")}` : "", removed.length ? `removed ${removed.join(", ")}` : ""];
-      out.push(`Shops: ${bits.filter(Boolean).join("; ")}.`);
+      const bits = [bought.length ? t("bought {cards}", { cards: bought.join(", ") }) : "", removed.length ? t("removed {cards}", { cards: removed.join(", ") }) : ""];
+      out.push(t("Shops: {bits}.", { bits: bits.filter(Boolean).join("; ") }));
     }
   }
   const deck = deckHighlights(s.deck);
-  if (deck) out.push(`Deck: ${deck}.`);
-  out.push(`Ended with ${s.hp}/${s.max_hp} HP.`);
+  if (deck) out.push(t("Deck: {deck}.", { deck }));
+  out.push(t("Ended with {hp}/{max} HP.", { hp: s.hp, max: s.max_hp }));
   return out;
 }
 
@@ -177,32 +180,33 @@ export function checkVerdict(p: {
   const lines = [header(p.seed, p.build, p.conditions ?? DEFAULT_CONDITIONS)];
   const counted = p.tally.played - p.tally.errored;
   if (p.firstWin) {
-    const how = p.firstWin.temp === 0 ? "greedy" : "sampled";
+    const how = p.firstWin.temp === 0 ? t("greedy") : t("sampled");
     const n = p.tally.played;
     lines.push(
-      `Winnable: the bot won on attempt ${p.firstWin.k} (${how}); ${n} attempt${n === 1 ? "" : "s"} played.`,
+      tn(n, "Winnable: the bot won on attempt {k} ({how}); {n} attempt played.", "Winnable: the bot won on attempt {k} ({how}); {n} attempts played.", { k: p.firstWin.k, how }),
     );
-    if (p.summary) lines.push(`Winning line (overview): ${winningLine(p.summary).join(" ")}`);
+    if (p.summary) lines.push(t("Winning line (overview): {line}", { line: winningLine(p.summary).join(" ") }));
   } else if (counted === 0) {
-    lines.push("No attempt finished, so there is no result for this seed.");
+    lines.push(t("No attempt finished, so there is no result for this seed."));
   } else {
     lines.push(
-      `No win in ${counted} attempts: the bot's chance per attempt is below ${pctUp(upperBound95(counted))}% (95% confidence).`,
+      t("No win in {n} attempts: the bot's chance per attempt is below {pct}% (95% confidence).", { n: counted, pct: pctUp(upperBound95(counted)) }),
     );
-    lines.push(`The best attempt reached floor ${p.tally.bestFloor}.`);
-    const d = deathLine(p.deaths, "Most attempts died on");
+    lines.push(t("The best attempt reached floor {n}.", { n: p.tally.bestFloor }));
+    const d = deathLine(p.deaths, t("Most attempts died on"));
     if (d) lines.push(d);
   }
   const route = p.summary?.route ?? [];
   if (route.length) {
-    lines.push(p.firstWin ? ROUTE_HELP : ROUTE_HELP.replace("Route:", "The best attempt's route:"));
+    // Both forms of ROUTE_HELP are listed in zh/simlab.ts.
+    lines.push(t(p.firstWin ? ROUTE_HELP : ROUTE_HELP.replace("Route:", "The best attempt's route:")));
     lines.push(routeLines(route).join("\n"));
   }
   if (p.tally.errored) {
     const e = p.tally.errored;
-    lines.push(`(${e} attempt${e === 1 ? "" : "s"} ended in an engine error and ${e === 1 ? "is" : "are"} not counted.)`);
+    lines.push(tn(e, "({n} attempt ended in an engine error and is not counted.)", "({n} attempts ended in an engine error and are not counted.)"));
   }
-  lines.push(CAVEAT);
+  lines.push(t(CAVEAT));
   return lines.join("\n\n");
 }
 
@@ -218,11 +222,11 @@ export function rateVerdict(p: {
   const [lo, hi] = wilson95(p.wins, p.n);
   const lines = [
     header(p.seed, p.build, p.conditions ?? DEFAULT_CONDITIONS),
-    `The bot won ${p.wins} of ${p.n} sampled runs (${pct(p.n ? p.wins / p.n : 0)}%, 95% interval ${pct(lo, 0)}–${pct(hi, 0)}%).`,
+    t("The bot won {wins} of {n} sampled runs ({pct}%, 95% interval {lo}–{hi}%).", { wins: p.wins, n: p.n, pct: pct(p.n ? p.wins / p.n : 0), lo: pct(lo, 0), hi: pct(hi, 0) }),
   ];
-  const d = deathLine(p.deaths, "Most losses");
+  const d = deathLine(p.deaths, t("Most losses"));
   if (d) lines.push(d);
-  if (p.errored) lines.push(`(${p.errored} more ended in an engine error and are not counted.)`);
-  lines.push(CAVEAT);
+  if (p.errored) lines.push(t("({n} more ended in an engine error and are not counted.)", { n: p.errored }));
+  lines.push(t(CAVEAT));
   return lines.join("\n\n");
 }

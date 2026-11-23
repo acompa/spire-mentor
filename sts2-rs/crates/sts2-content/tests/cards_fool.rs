@@ -1478,3 +1478,37 @@ fn wah_hammer_does_not_double_violent_chord() {
     assert!(sts2_core::fool::creature_is_impaled(&state, enemy));
     assert_eq!(before - hp_of(&state, enemy), 2 * 9 + 9);
 }
+
+/// `Hook.AfterCardPlayed` walks the owner's powers in application order
+/// (`CombatState.IterateHookListeners`, CombatState.cs:117-137), so a
+/// `TenderPower` applied before `LostLutePower` drains its Strength
+/// (TenderPower.cs:42-51) BEFORE the lute auto-plays the draw pile's top card
+/// (LostLutePower.cs:24-49): the auto-played Strike deals 6 - 1. Applied the
+/// other way round the Strike still deals 6. Rust ran Tender after the whole
+/// ordered walk whatever the order (act23 dread Fool:1000 act2 combat@751:
+/// Cho Barbs -> Arrow Stab, C# 3 damage, Rust 4).
+#[test]
+fn tender_and_lost_lute_fire_in_application_order() {
+    for (tender_first, strike_damage) in [(true, 5), (false, 6)] {
+        let mut s = fool_state();
+        let p = s.player.creature_uid.expect("player");
+        let order = if tender_first {
+            [PowerKind::Tender, PowerKind::LostLute]
+        } else {
+            [PowerKind::LostLute, PowerKind::Tender]
+        };
+        for kind in order {
+            sts2_core::card_effects::apply_power_to_creature(&mut s, p, kind, 1);
+        }
+        push_draw(&mut s, CardId::StrikeFool);
+        let before = enemy_hp(&s);
+        play(&mut s, CardId::ChoBarbsCard, false, None);
+        assert_eq!(
+            before - enemy_hp(&s),
+            strike_damage,
+            "tender_first={tender_first}"
+        );
+        // Both plays (Cho Barbs and the auto-played Strike) drained 1.
+        assert_eq!(player_power(&s, PowerKind::Strength), -2);
+    }
+}

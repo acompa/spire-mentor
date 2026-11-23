@@ -49,6 +49,7 @@ fn push_play(state: &mut CombatState, card_id: CardId, damage: i32, block: i32) 
         card_type: CardType::Skill,
         target_type: TargetType::None,
         upgraded: false,
+        extra_upgrades: 0,
         base_damage: damage,
         base_block: block,
         combat_vars: sts2_core::cards::CombatVars::new(),

@@ -428,7 +428,6 @@ internal static class FrameLink
         ["ai_once"] = () => SimActions.AiOnce("The frame's AI-once button"),
         ["ai_auto"] = () => SimActions.ToggleAutoplay("The frame's AI-auto button"),
         ["autobattle"] = () => SimActions.ToggleAutobattle("The frame's Autobattle button"),
-        ["toggle_brain"] = () => SimActions.ToggleBrain("The frame's brain button"),
         ["partner_go"] = () => SimActions.PartnersGo("The frame's Partner go button"),
         ["speed_down"] = () => SimActions.StepSpeed(-1),
         ["speed_up"] = () => SimActions.StepSpeed(1),

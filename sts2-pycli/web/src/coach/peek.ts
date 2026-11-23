@@ -2,6 +2,7 @@
 // the next action only, never the ranked list or its scores.
 import type { Score } from "../api";
 import { enemyLabeller } from "../enemyLabels";
+import { t } from "../i18n";
 
 interface NamedEnemy {
   index?: number;
@@ -13,7 +14,7 @@ interface NamedEnemy {
 export function peekLabelFromScores(scores: Score[], enemies: NamedEnemy[] = []): string | null {
   const best = scores.find((s) => s.is_best) ?? null;
   if (!best) return null;
-  const label = best.stable_idx === -1 ? "end turn" : best.action;
+  const label = best.stable_idx === -1 ? t("end turn") : best.action;
   if (best.target_index == null || enemies.length < 2) return label;
   const target = enemies.find((e) => e.index === best.target_index);
   if (!target?.name) return label;

@@ -30,10 +30,10 @@ use sts2_wire::emit::run_manager as emit_rm;
 
 use crate::contracts::{self as ct, ak, dt, Selection};
 use crate::env::{
-    action_name, available, classify_surface, combat_to_rm, current_event_name,
+    action_name, available, classify_surface, claws_auto_pick, combat_to_rm, current_event_name,
     ensure_engine_installed, fight_room, is_combat, mask_rejectable, merged_classes, observe,
     round_of, schema, snapshot_of, take_run_action, CombatView, Decision, DecisionKind, OocView,
-    ENCODABLE, MAX_RUN_STEPS,
+    ENCODABLE, FILL_RUN_ACTIONS, MAX_RUN_STEPS,
 };
 use crate::intent_log::IntentLog;
 use crate::pyjson::{as_int, get, truthy};
@@ -330,7 +330,7 @@ impl TrainEnv {
     pub fn new(rm: RunManager, seed: i64, spec: SegmentSpec) -> Self {
         ensure_engine_installed();
         let max_floor = i64::from(rm.run_state.total_floor);
-        let asc = i64::from(rm.run_state.ascension_level);
+        let asc = crate::env::obs_ascension(&rm);
         let f9_rng = PyRandom::new(spec.f9_seed);
         Self {
             rm,
@@ -527,9 +527,12 @@ impl TrainEnv {
             if self.steps >= self.spec.caps.run_steps {
                 return Ok(self.run_terminal("max_steps"));
             }
-            let phase = phase_str(self.rm.phase());
+            let mut phase = phase_str(self.rm.phase());
             if phase == "event" {
                 sts2_content::events::dispatch::bind_pending_event_callback(&mut self.rm.run_state);
+                // The Fake Merchant's page is its shop (GH #1607).
+                self.rm.open_fake_merchant_if_bound();
+                phase = phase_str(self.rm.phase());
             }
             let actions = available(&self.rm);
             if actions.is_empty() {
@@ -539,10 +542,18 @@ impl TrainEnv {
             if is_combat(&actions) {
                 return Ok(RunOut::Combat);
             }
-            if let Some(a) = actions
-                .iter()
-                .find(|a| !ENCODABLE.contains(&action_name(a)))
-            {
+            // Claws' select (GH #1353): the forced pick `E2eEnv` and env.py
+            // take, counted as env.py counts it.
+            if let Some(a) = claws_auto_pick(&self.rm, &actions) {
+                bump(&mut self.forced, ct::dtype_name(dt::CARD_TRANSFORM), 1);
+                self.take(&a)?;
+                self.steps += 1;
+                continue;
+            }
+            if let Some(a) = actions.iter().find(|a| {
+                let n = action_name(a);
+                !ENCODABLE.contains(&n) && !FILL_RUN_ACTIONS.contains(&n)
+            }) {
                 return Err(Fail::runtime(format!(
                     "unencodable action kind {:?} (phase {phase:?})",
                     action_name(a)
@@ -1240,3 +1251,56 @@ fn fine_surface(actions: &[Value]) -> &'static str {
 }
 
 pub use sts2_core::py_random::PyRandom;
+
+#[cfg(test)]
+mod claws_tests {
+    use super::*;
+    use crate::env::new_run;
+    use sts2_core::cards::CardId;
+    use sts2_core::relics::RelicId;
+
+    fn spec() -> SegmentSpec {
+        SegmentSpec {
+            first_ooc: false,
+            capture: false,
+            f9_seed: 0,
+            f9_rate: 0.0,
+            caps: Caps::default(),
+            f9_queue_max: F9_QUEUE_MAX,
+            game_version: None,
+        }
+    }
+
+    /// GH #1197 / #1353: the training env resolves Claws' "up to 6 into
+    /// Maul" select as forced steps, as `E2eEnv` and `ppo/e2e/env.py` do,
+    /// instead of failing with `unencodable action kind
+    /// "confirm_deck_selection"`. Counted `forced/CARD_TRANSFORM` (six picks
+    /// and the confirm), as env.py counts it.
+    #[test]
+    fn the_train_env_forces_the_claws_select() {
+        let mut rm = new_run(7);
+        let deck: Vec<&str> = ["STRIKE_IRONCLAD", "DEFEND_IRONCLAD"].repeat(4);
+        sts2_wire::graft::set_master_deck(&mut rm, &serde_json::json!(deck)).expect("deck");
+        rm.run_state.obtain_relic(RelicId::Claws);
+        assert!(rm.run_state.pending_claws_selection.is_some());
+        let mut env = TrainEnv::new(rm, 7, spec());
+        let step = env.reset().expect("the Claws select must not raise");
+        if let TrainStep::Terminal(t) = &step {
+            panic!(
+                "the segment ended at the Claws select: {:?} {:?}",
+                t.etype, t.error
+            );
+        }
+        assert!(env.rm().run_state.pending_claws_selection.is_none());
+        let ids: Vec<CardId> = env
+            .rm()
+            .run_state
+            .master_deck
+            .iter()
+            .map(|c| c.card_id)
+            .collect();
+        assert_eq!(&ids[..2], &[CardId::StrikeIronclad, CardId::DefendIronclad]);
+        assert!(ids[2..].iter().all(|&c| c == CardId::Maul));
+        assert_eq!(env.final_counts().get("forced/CARD_TRANSFORM"), Some(&7));
+    }
+}

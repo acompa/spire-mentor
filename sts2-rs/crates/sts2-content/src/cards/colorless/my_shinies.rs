@@ -31,7 +31,10 @@ pub(crate) fn play_my_shinies(
 ) -> EffectResult {
     let t = target.expect("MyShinies: Enemy-targeted");
     let base = current_damage(state);
-    let hits = resolving_preview(state, preview_my_shinies, target);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_my_shinies, target),
+    );
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, base);
     }

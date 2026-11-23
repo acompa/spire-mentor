@@ -132,7 +132,9 @@ KNOWN_RESIDUALS: dict[tuple[str, str], str] = {
         "Accept; here the run skips the event for free. The POLICY no longer picks it — "
         "the option is ThatWillKillPlayerIf(_ => true) and both choosers now withhold "
         "will_kill_player options — but this harness takes every option by design, so it "
-        "still sees the drop. Fixing it means modelling the confirm, not adding a guard."
+        "still sees the drop. Fixing it means modelling the confirm, not adding a guard. "
+        "The engine's agent mode no longer offers the option at all "
+        "(RunState::withhold_abandon_run_options, GH #1605); this parity-mode residual stays."
     ),
 }
 

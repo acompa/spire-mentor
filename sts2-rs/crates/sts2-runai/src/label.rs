@@ -280,6 +280,10 @@ pub fn run_label_cell(
         spec.character,
         spec.ascension,
     )
+    // GH #1359: the cell's game build, chained before Neow start as in
+    // `arena::new_arena_run_manager`. No-ops at the default build.
+    .with_game_version(spec.game_version)
+    .with_run_seed(u64::from(spec.seed as u32))
     .with_neow_start();
     // C#-faithful run setup (relic bags + room generation). Without this the
     // labeled training data is relic-less / static-event — the same harness bug
@@ -322,7 +326,8 @@ pub fn run_label_cell(
         seed: spec.seed,
         character: character_token(spec.character).to_string(),
         ascension: spec.ascension,
-        act1: spec.act1.resolved_token(spec.seed),
+        act1: spec.act1.resolved_token(spec.seed, spec.game_version),
+        game_version: spec.game_version,
         policy: label,
         combat_budget: spec.combat.token().to_string(),
         outcome,
@@ -379,6 +384,7 @@ mod tests {
             max_steps: 3000,
             livelock_stall_limit: DEFAULT_LIVELOCK_STALL_LIMIT,
             act1: crate::arena::Act1Choice::Overgrowth,
+            game_version: sts2_core::GameVersion::default(),
             audit: true,
             ablate: None,
         }

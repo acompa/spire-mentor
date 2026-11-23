@@ -14,6 +14,7 @@ import pytest
 import sts2_rs
 from ppo import encoder, vocab
 from ppo.env import assert_encodable, classify_surface
+from wire_parity import build_card_select_both
 from workbench.backends.rust_game import RustGame
 
 EIGHT = ["STRIKE_IRONCLAD", "DEFEND_IRONCLAD"] * 4
@@ -177,9 +178,7 @@ def _claws_screen(n: int, *, selected: int = 0) -> dict[str, Any]:
 
 
 def test_the_ppo_card_select_offers_the_cards_and_a_confirm() -> None:
-    import realgame_ppo
-
-    d = realgame_ppo._build_card_select(_claws_screen(3), None)
+    d = build_card_select_both(_claws_screen(3), None)
     assert d is not None
     assert [a["action"] for a in d.actions] == ["transform_deck_card"] * 3 + [
         "confirm_deck_selection"
@@ -189,9 +188,7 @@ def test_the_ppo_card_select_offers_the_cards_and_a_confirm() -> None:
 
 
 def test_a_full_claws_grid_offers_only_the_confirm() -> None:
-    import realgame_ppo
-
-    d = realgame_ppo._build_card_select(_claws_screen(3, selected=6), None)
+    d = build_card_select_both(_claws_screen(3, selected=6), None)
     assert d is not None
     assert d.actions == [{"action": "confirm_deck_selection"}]
 
@@ -213,7 +210,7 @@ class _ScriptedPolicy:
 def test_the_plan_asks_again_after_each_card_until_the_confirm() -> None:
     import realgame_ppo
 
-    d = realgame_ppo._build_card_select(_claws_screen(4), None)
+    d = build_card_select_both(_claws_screen(4), None)
     assert d is not None
     # Take offer 2, then offer 0, then confirm (the last of three options).
     policy = _ScriptedPolicy([2, 0, 2])
@@ -233,7 +230,7 @@ def test_the_plan_stops_at_the_cap() -> None:
 
     screen = _claws_screen(8)
     screen["max_select"] = 2
-    d = realgame_ppo._build_card_select(screen, None)
+    d = build_card_select_both(screen, None)
     assert d is not None
     policy = _ScriptedPolicy([0, 0])
     cards, *_ = realgame_ppo.plan_optional_picks(policy, d, lambda p, _a: p.index(max(p)))

@@ -30,25 +30,17 @@ use pyo3::types::{PyBytes, PyDict};
 use serde_json::{json, Value};
 
 use sts2_e2e::contracts as ct;
-use sts2_e2e::env::{ApplyKind, Decision, Driver, Next};
+use sts2_e2e::env::{ApplyKind, Driver, Next};
 use sts2_e2e::net::E2eNet;
 use sts2_e2e::tokens::{self, TokCache};
 
 use crate::run_manager::PyRunManager;
 use crate::value_to_py;
 
-/// The only build the student plays (`sts2_e2e::env::GAME_VERSION`).
-pub const GAME_VERSION: &str = sts2_e2e::env::GAME_VERSION;
-
-/// Softmax in f64 (max-subtracted), as the workbench's `e2e::softmax`.
-fn softmax(logits: &[f32]) -> Vec<f64> {
-    let m = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let e: Vec<f64> = logits
-        .iter()
-        .map(|&x| (f64::from(x) - f64::from(m)).exp())
-        .collect();
-    let z: f64 = e.iter().sum();
-    e.into_iter().map(|x| x / z).collect()
+/// The build the student plays: the process's lane build (`sts2_e2e::build`,
+/// GH #1535), v0.111.0 unless `STS2_E2E_GAME_VERSION` names a later one.
+fn game_version() -> &'static str {
+    sts2_e2e::build::game_version()
 }
 
 fn apply_kind_name(kind: ApplyKind) -> &'static str {
@@ -58,56 +50,10 @@ fn apply_kind_name(kind: ApplyKind) -> &'static str {
     }
 }
 
-/// A decision as plain data: its type, its merged classes (each with the
-/// run-action dict of every member, the representative first) and the
-/// selection it is part of.
-fn decision_value(d: &Decision) -> Value {
-    let classes: Vec<Value> = d
-        .members
-        .iter()
-        .enumerate()
-        .map(|(ci, members)| {
-            let actions: Vec<Value> = members
-                .iter()
-                .map(|&ai| d.actions.get(ai).cloned().unwrap_or(Value::Null))
-                .collect();
-            let obs_actions: Vec<Value> = members
-                .iter()
-                .map(|&ai| d.obs_actions.get(ai).cloned().unwrap_or(Value::Null))
-                .collect();
-            let kind = members
-                .first()
-                .and_then(|&ai| d.kinds.get(ai))
-                .map_or("", |&k| ct::kind_name(k));
-            json!({
-                "class": ci,
-                "kind": kind,
-                "actions": actions,
-                "obs_actions": obs_actions,
-            })
-        })
-        .collect();
-    json!({
-        "row": d.row,
-        "kind": d.kind.as_str(),
-        "decision_type": ct::dtype_name(d.dtype),
-        "is_combat": d.is_combat(),
-        "n_classes": d.n_classes(),
-        "classes": classes,
-        "selection": d.sel.to_value(),
-        "event_name": d.event_name,
-        "act": d.act,
-        "floor": d.floor,
-        "turn": d.turn(),
-        "surface": d.ooc.as_ref().and_then(|o| o.surface),
-        "phase": d.ooc.as_ref().map(|o| o.phase),
-    })
-}
-
 /// The student's weights. Immutable after load; shared across threads.
 #[pyclass(name = "E2eStudent", module = "sts2_rs", frozen)]
 pub struct PyE2eStudent {
-    net: Arc<E2eNet>,
+    pub(crate) net: Arc<E2eNet>,
 }
 
 impl std::fmt::Debug for PyE2eStudent {
@@ -131,9 +77,10 @@ impl PyE2eStudent {
         let bytes = std::fs::read(path)?;
         let net = E2eNet::from_bytes(&bytes).map_err(PyValueError::new_err)?;
         if let Some(v) = net.header().game_version.as_deref() {
-            if v != GAME_VERSION {
+            if v != game_version() {
                 return Err(PyValueError::new_err(format!(
-                    "e2e weights are stamped for {v}, the student plays {GAME_VERSION}"
+                    "e2e weights are stamped for {v}, the student plays {}",
+                    game_version()
                 )));
             }
         }
@@ -144,7 +91,14 @@ impl PyE2eStudent {
     #[getter]
     #[allow(clippy::unused_self)]
     fn game_version(&self) -> &'static str {
-        GAME_VERSION
+        game_version()
+    }
+
+    /// Whether the weights carry a win probe (GH #1222): without one,
+    /// `decide` answers `estimate: None`.
+    #[getter]
+    fn has_probe(&self) -> bool {
+        self.net.has_probe()
     }
 
     /// The weights file's provenance stamps (`source`, `variant`, hashes).
@@ -188,8 +142,8 @@ impl PyE2eStudent {
             return Err(PyValueError::new_err("decide: the peek is not a decision"));
         };
         let t0 = Instant::now();
-        let row =
-            tokens::encode(d, &rm.inner, &mut driver.cache).map_err(PyRuntimeError::new_err)?;
+        let row = tokens::encode_for(&self.net, d, &rm.inner, &mut driver.cache)
+            .map_err(PyRuntimeError::new_err)?;
         let t1 = Instant::now();
         let ev = self
             .net
@@ -204,13 +158,38 @@ impl PyE2eStudent {
             py,
             &json!({
                 "class": sts2_e2e::net::argmax(&logits),
-                "probs": softmax(&logits),
+                "probs": sts2_e2e::net::softmax(&logits),
                 "logits": logits,
                 "estimate": estimate,
                 "ms_tokenize": (t1 - t0).as_secs_f64() * 1000.0,
                 "ms_net": (t2 - t1).as_secs_f64() * 1000.0,
             }),
         )
+    }
+
+    /// Tokenize `peek`'s decision at `rm` with `driver`'s per-run cache into
+    /// the row this net reads (the one [`decide`](Self::decide) evaluates):
+    /// the policy row (`ppo.e2e.tokens.encode(d, rare=None, priv=False)`) as
+    /// `{field: bytes}` (little-endian, row-major; `cont` and `pool_w` are
+    /// float16 bit patterns) plus `n_tok`, `sctx_lo`, `n_sctx`, `dtype`,
+    /// `is_combat`. A caller wraps the bytes with `np.frombuffer`.
+    ///
+    /// Raises:
+    ///     ValueError: `peek` is not a decision.
+    ///     RuntimeError: the tokenizer refused the decision.
+    fn encode<'py>(
+        &self,
+        py: Python<'py>,
+        driver: &mut PyE2eDriver,
+        peek: &PyE2ePeek,
+        rm: &PyRunManager,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let Next::Decision(d) = &peek.next else {
+            return Err(PyValueError::new_err("encode: the peek is not a decision"));
+        };
+        let r = tokens::encode_for(&self.net, d, &rm.inner, &mut driver.cache)
+            .map_err(PyRuntimeError::new_err)?;
+        tokrow_dict(py, &r)
     }
 }
 
@@ -238,7 +217,7 @@ impl PyE2ePeek {
     #[getter]
     fn decision<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         match &self.next {
-            Next::Decision(d) => value_to_py(py, &decision_value(d)).map(Some),
+            Next::Decision(d) => value_to_py(py, &d.to_value()).map(Some),
             _ => Ok(None),
         }
     }
@@ -316,8 +295,8 @@ impl PyE2ePeek {
 #[pyclass(name = "E2eDriver", module = "sts2_rs")]
 #[derive(Clone, Debug)]
 pub struct PyE2eDriver {
-    driver: Driver,
-    cache: TokCache,
+    pub(crate) driver: Driver,
+    pub(crate) cache: TokCache,
 }
 
 #[pymethods]
@@ -402,28 +381,6 @@ impl PyE2eDriver {
     fn begin_run(&mut self) {
         self.cache.begin_run();
     }
-
-    /// Tokenize `peek`'s decision at `rm` with this driver's per-run cache:
-    /// the policy row (`ppo.e2e.tokens.encode(d, rare=None, priv=False)`) as
-    /// `{field: bytes}` (little-endian, row-major; `cont` and `pool_w` are
-    /// float16 bit patterns) plus `n_tok`, `sctx_lo`, `n_sctx`, `dtype`,
-    /// `is_combat`. A training worker wraps the bytes with `np.frombuffer`.
-    ///
-    /// Raises:
-    ///     ValueError: `peek` is not a decision.
-    ///     RuntimeError: the tokenizer refused the decision.
-    fn encode<'py>(
-        &mut self,
-        py: Python<'py>,
-        peek: &PyE2ePeek,
-        rm: &PyRunManager,
-    ) -> PyResult<Bound<'py, PyDict>> {
-        let Next::Decision(d) = &peek.next else {
-            return Err(PyValueError::new_err("encode: the peek is not a decision"));
-        };
-        let r = tokens::encode(d, &rm.inner, &mut self.cache).map_err(PyRuntimeError::new_err)?;
-        tokrow_dict(py, &r)
-    }
 }
 
 /// The campaign run the student trained on for `seed` (Ironclad, v0.111.0,
@@ -463,7 +420,6 @@ pub fn e2e_selfplay<'py>(
     let out = py.allow_threads(move || {
         let mut env = E2eEnv::over_run(sts2_e2e::env::new_run(seed), seed);
         let mut cache = TokCache::new();
-        cache.set_chars(net.fills("chars"));
         let mut chosen: Vec<usize> = Vec::new();
         let mut step = env.reset();
         loop {
@@ -480,7 +436,7 @@ pub fn e2e_selfplay<'py>(
                         break json!({"won": false, "outcome": "stopped", "error": null,
                                      "decisions": chosen.len(), "chosen": chosen});
                     }
-                    let class = match tokens::encode(&d, env.rm(), &mut cache)
+                    let class = match tokens::encode_for(&net, &d, env.rm(), &mut cache)
                         .and_then(|row| net.try_logits(&row.into()))
                     {
                         Ok(logits) => sts2_e2e::net::argmax(&logits),

@@ -1,4 +1,5 @@
-//! The `e2e` brain's pure core: the e2e Ironclad student (`sts2-e2e`) as a
+//! The `e2e` brain's pure core: the e2e student (`sts2-e2e`; since GH #1197
+//! the all-character net: Ironclad, Silent, Defect, Regent, Necrobinder) as a
 //! workbench brain — one transformer for every decision of a run, combat
 //! included, no search.
 //!
@@ -16,6 +17,8 @@
 use std::rc::Rc;
 
 use serde_json::{json, Value};
+
+use crate::i18n::trf;
 use sts2_core::run_manager::RunManager;
 pub use sts2_e2e::env::{ApplyKind, Decision, Driver, GrantMark, Next};
 use sts2_e2e::env::{E2eEnv, Step};
@@ -24,9 +27,78 @@ use sts2_e2e::tokens::{self, TokCache};
 
 /// The weights file the host serves under `/e2e/` (the static build copies
 /// `sts2-pycli/data/e2e/<this>`).
-pub const E2E_FILE: &str = "ironclad_e2e_d5250_ema0999.e2ew";
-/// The only character the student plays.
-pub const CHARACTER: &str = "Ironclad";
+pub const E2E_FILE: &str = "allchar_e2e_d2500_ema0999.e2ew";
+/// The Fool's own student (GH #1535): a v0.113.0 net, served beside
+/// [`E2E_FILE`] and fetched only when a Fool run needs it.
+pub const E2E_FOOL_FILE: &str = "fool_e2e_d600_ema0996.e2ew";
+/// The build the Fool's student plays (the Fool is v0.113.0-only).
+pub const FOOL_GAME_VERSION: &str = "v0.113.0";
+pub use sts2_e2e::env::CharacterId;
+
+/// Whether `character` is played by the Fool's net ([`E2E_FOOL_FILE`]).
+#[must_use]
+pub fn is_fool(character: CharacterId) -> bool {
+    character == CharacterId::Fool
+}
+
+/// The weights file that plays `character`.
+#[must_use]
+pub fn file_for(character: CharacterId) -> &'static str {
+    if is_fool(character) {
+        E2E_FOOL_FILE
+    } else {
+        E2E_FILE
+    }
+}
+
+/// The build `character`'s student plays: v0.113.0 for the Fool, else
+/// [`GAME_VERSION`].
+#[must_use]
+pub fn build_for(character: CharacterId) -> sts2_core::GameVersion {
+    if is_fool(character) {
+        sts2_core::GameVersion::V0_113_0
+    } else {
+        sts2_core::GameVersion::V0_111_0
+    }
+}
+
+/// Read `net`'s tables (and build its runs on its build) on this thread
+/// until the guard drops (`sts2_e2e::build::Scope`).
+pub fn tables(net: &E2eNet) -> sts2_e2e::build::Scope {
+    sts2_e2e::build::Scope::enter(net.build().unwrap_or(sts2_core::GameVersion::V0_111_0))
+}
+
+/// The character a request that names none plays.
+pub const DEFAULT_CHARACTER: &str = "Ironclad";
+/// The characters Instinct plays, for messages ("Ironclad, Silent, ...
+/// and Fool"), from `sts2_e2e::env::characters_for` (the Fool's net plays
+/// v0.113.0).
+#[must_use]
+pub fn characters_label() -> String {
+    let names: Vec<&str> = sts2_e2e::env::characters_for(sts2_core::GameVersion::V0_113_0)
+        .iter()
+        .map(|c| sts2_wire::emit::names::character_str(*c))
+        .collect();
+    match names.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => names.join(""),
+    }
+}
+
+/// `character` (any case) as one Instinct plays, or the player-facing reason
+/// it cannot.
+///
+/// # Errors
+///
+/// A character outside `sts2_e2e::env::CHARACTERS`.
+pub fn character(name: &str) -> Result<CharacterId, String> {
+    sts2_e2e::env::parse_character_for(name, sts2_core::GameVersion::V0_113_0).map_err(|_| {
+        trf(
+            "Instinct plays {characters} only (not {name})",
+            &[("characters", &characters_label()), ("name", &name)],
+        )
+    })
+}
 /// The build it was trained on (`sts2_e2e::env::GAME_VERSION`).
 pub const GAME_VERSION: &str = sts2_e2e::env::GAME_VERSION;
 /// Its training ascension, the start path's default.
@@ -46,23 +118,43 @@ pub type MsClock = fn() -> f64;
 ///
 /// # Errors
 ///
-/// A malformed file, or a `game_version` stamp other than [`GAME_VERSION`].
+/// A malformed file, or a `game_version` stamp other than [`GAME_VERSION`]
+/// (the all-character net) or [`FOOL_GAME_VERSION`] (the Fool's).
 pub fn load(bytes: &[u8]) -> Result<Net, String> {
     let net = E2eNet::from_bytes(bytes)?;
     match net.header().game_version.as_deref() {
-        Some(v) if v != GAME_VERSION => Err(format!(
-            "e2e weights are stamped for {v}, the student plays {GAME_VERSION}"
+        Some(v) if v != GAME_VERSION && v != FOOL_GAME_VERSION => Err(format!(
+            "e2e weights are stamped for {v}, the students play {GAME_VERSION} and {FOOL_GAME_VERSION}"
         )),
         _ => Ok(Rc::new(net)),
+    }
+}
+
+/// The file a loaded net is served as: [`E2E_FOOL_FILE`] for a v0.113.0 net.
+#[must_use]
+pub fn file_of(net: &E2eNet) -> &'static str {
+    if net.build().ok() == Some(sts2_core::GameVersion::V0_113_0) {
+        E2E_FOOL_FILE
+    } else {
+        E2E_FILE
     }
 }
 
 /// `no Instinct net loaded: <reason>`.
 #[must_use]
 pub fn missing_net_error(reason: Option<&str>) -> String {
+    missing_net_error_for(E2E_FILE, reason)
+}
+
+/// [`missing_net_error`] for weights file `file`.
+#[must_use]
+pub fn missing_net_error_for(file: &str, reason: Option<&str>) -> String {
     match reason {
-        Some(r) => format!("no Instinct net loaded: {r}"),
-        None => format!("no Instinct net loaded ({E2E_FILE} not fetched yet)"),
+        Some(r) => trf("no Instinct net loaded: {reason}", &[("reason", &r)]),
+        None => trf(
+            "no Instinct net loaded ({file} not fetched yet)",
+            &[("file", &file)],
+        ),
     }
 }
 
@@ -161,8 +253,9 @@ pub fn decide(
     cache: &mut TokCache,
     clock: MsClock,
 ) -> Result<Choice, String> {
+    let _tables = tables(net);
     let t0 = clock();
-    let row = tokens::encode(d, rm, cache)?;
+    let row = tokens::encode_for(net, d, rm, cache)?;
     let t1 = clock();
     let ev = net.evaluate(&row.into())?;
     let t2 = clock();
@@ -196,8 +289,8 @@ fn play(
     clock: MsClock,
     mut pick: impl FnMut(&[f32]) -> usize,
 ) -> Played {
+    let _tables = tables(net);
     let mut cache = TokCache::new();
-    cache.set_chars(net.fills("chars"));
     let mut chosen: Vec<usize> = Vec::new();
     let (mut ms_tok, mut ms_net) = (0.0, 0.0);
     let mut step = env.reset();
@@ -210,7 +303,7 @@ fn play(
                     break ("stopped".into(), false, None, rs.total_floor, rs.act_index);
                 }
                 let t0 = clock();
-                let logits = tokens::encode(&d, env.rm(), &mut cache)
+                let logits = tokens::encode_for(net, &d, env.rm(), &mut cache)
                     .map(|row| (row, clock()))
                     .and_then(|(row, t1)| net.try_logits(&row.into()).map(|l| (l, t1)));
                 match logits {
@@ -248,13 +341,15 @@ fn play(
 #[must_use]
 pub fn selfplay(
     net: &E2eNet,
+    character: CharacterId,
     seed: i64,
     ascension: u8,
     max_decisions: usize,
     clock: MsClock,
 ) -> Value {
     let t_start = clock();
-    let mut env = E2eEnv::over_run(sts2_e2e::env::new_run_at(seed, ascension), seed);
+    let _tables = tables(net);
+    let mut env = E2eEnv::over_run(sts2_e2e::env::new_run_for(seed, character, ascension), seed);
     let p = play(net, &mut env, max_decisions, clock, sts2_e2e::net::argmax);
     let ms_total = clock() - t_start;
     let n = p.chosen.len();
@@ -267,6 +362,7 @@ pub fn selfplay(
     };
     json!({
         "seed": seed,
+        "character": sts2_wire::emit::names::character_str(character),
         "ascension": ascension,
         "won": p.won,
         "outcome": p.outcome,
@@ -405,8 +501,10 @@ pub struct Attempt {
 /// # Errors
 ///
 /// A bad seed (see `sts2_e2e::env::canonical_game_seed`).
+#[allow(clippy::too_many_arguments)]
 pub fn attempt(
     net: &E2eNet,
+    character: CharacterId,
     seed: &str,
     ascension: u8,
     seq: Seq,
@@ -414,7 +512,8 @@ pub fn attempt(
     max_decisions: usize,
     clock: MsClock,
 ) -> Result<Attempt, String> {
-    let rm = sts2_e2e::env::new_run_from_game_seed(seed, ascension)?;
+    let _tables = tables(net);
+    let rm = sts2_e2e::env::new_run_from_game_seed_for(seed, character, ascension)?;
     let master = rm.run_state.rng.seed;
     let mut env = E2eEnv::over_run(rm, 0);
     let temp = attempt_temp(seq, k);
@@ -522,6 +621,7 @@ mod tests {
         let Some(net) = shipped_net() else { return };
         let a = attempt(
             &net,
+            CharacterId::Ironclad,
             "1SNVTCEXKR0Q",
             10,
             Seq::Check,
@@ -532,6 +632,7 @@ mod tests {
         .unwrap();
         let b = attempt(
             &net,
+            CharacterId::Ironclad,
             "1snvtcexkr0q",
             10,
             Seq::Check,
@@ -549,23 +650,83 @@ mod tests {
     /// The shipped net's greedy attempt 0 on the two reference seeds. d1250
     /// (`~/runs/seedcheck/ref/REFERENCE.md`, `ppo.e2e.solve`) won both; the
     /// d2500 avg5 net (2026-11-08) won `1SNVTCEXKR0G` and died to an act-2
-    /// elite on floor 22 of `1SNVTCEXKR0Q`; the d5250 net (2026-11-13) wins
-    /// `1SNVTCEXKR0G` and dies on floor 46 (the act-3 bosses) of
-    /// `1SNVTCEXKR0Q`. Pinned natively (no Python cross-check for this net
-    /// yet): a change means the net or engine moved.
+    /// elite on floor 22 of `1SNVTCEXKR0Q`; the d5250 net (2026-11-13) won
+    /// `1SNVTCEXKR0G` and died on floor 46 (the act-3 bosses) of
+    /// `1SNVTCEXKR0Q`; the all-character d300 net (2026-11-16, GH #1197) and
+    /// d500 net (2026-11-17) win both. Since the per-enemy potion targets
+    /// (GH #1604, 2026-11-20) the d500 net dies on floor 31 of
+    /// `1SNVTCEXKR0Q`: it now picks its potion targets, untrained (1,000
+    /// paired IC A10 seeds: 76.9% -> 75.9%, -1.0 +- 1.0pp). Since each act's
+    /// first MAP row flags its moves (GH #1616, 2026-11-21) it dies on floor
+    /// 46 (the act-3 bosses) of `1SNVTCEXKR0Q`. The d2250 net (2026-11-21)
+    /// and the d2500 net (2026-11-22) win both. Since a live Hex shows its
+    /// Hexed cards Ethereal (2026-11-22) the d2500 net dies on floor 46 (the
+    /// act-3 bosses) of `1SNVTCEXKR0Q`. Pinned natively
+    /// (no Python cross-check for this net yet): a change means the net or
+    /// engine moved.
     #[test]
     fn greedy_attempt_matches_reference() {
         let Some(net) = shipped_net() else { return };
         for (seed, won, floor) in [("1SNVTCEXKR0Q", false, 46), ("1SNVTCEXKR0G", true, 46)] {
-            let a = attempt(&net, seed, 10, Seq::Check, 0, usize::MAX, fallback_ms).unwrap();
+            let a = attempt(
+                &net,
+                CharacterId::Ironclad,
+                seed,
+                10,
+                Seq::Check,
+                0,
+                usize::MAX,
+                fallback_ms,
+            )
+            .unwrap();
             assert_eq!((a.won, a.floor), (won, floor), "{seed}: {}", a.outcome);
             assert_eq!(a.temp, 0.0);
         }
     }
 
     #[test]
+    fn the_refusal_names_every_character_from_the_one_list() {
+        assert_eq!(
+            characters_label(),
+            "Ironclad, Silent, Defect, Regent, Necrobinder and Fool"
+        );
+        let err = character("Watcher").unwrap_err();
+        assert_eq!(
+            err,
+            "Instinct plays Ironclad, Silent, Defect, Regent, Necrobinder and Fool only (not Watcher)"
+        );
+        // The Fool has its own net, on its own build (GH #1535).
+        let fool = character("Fool").unwrap();
+        assert_eq!(file_for(fool), E2E_FOOL_FILE);
+        assert_eq!(build_for(fool), sts2_core::GameVersion::V0_113_0);
+        assert_eq!(file_for(character("Silent").unwrap()), E2E_FILE);
+    }
+
+    /// Every character the net plays runs through the brain's loop (GH #1197).
+    #[test]
+    fn selfplay_plays_every_character() {
+        let Some(net) = shipped_net() else { return };
+        for c in sts2_e2e::env::CHARACTERS {
+            let r = selfplay(&net, c, 160_000_000, 10, 40, fallback_ms);
+            assert_eq!(r["character"], sts2_wire::emit::names::character_str(c));
+            assert!(r["error"].is_null(), "{r}");
+            assert_eq!(r["decisions"], 40, "{r}");
+        }
+    }
+
+    #[test]
     fn bad_seed_is_an_error() {
         let Some(net) = shipped_net() else { return };
-        assert!(attempt(&net, "AB-C", 10, Seq::Check, 0, 10, fallback_ms).is_err());
+        assert!(attempt(
+            &net,
+            CharacterId::Ironclad,
+            "AB-C",
+            10,
+            Seq::Check,
+            0,
+            10,
+            fallback_ms
+        )
+        .is_err());
     }
 }

@@ -26,6 +26,7 @@
 using System;
 using System.Reflection;
 using Godot;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Combat;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 
@@ -48,8 +49,20 @@ internal static class SimTargetHover
     /// <summary>Once per rendered frame (SimHighlights' ProcessFrame hook).</summary>
     public static void Tick(Viewport? viewport)
     {
+        // Not NTargetManager.Instance: that getter is NRun.Instance.GlobalUi...
+        // with no null check, and this runs every frame, main menu included.
+        // On Linux the null dereference kills the game whatever catches it
+        // (GH #1425), so read the same chain with the checks the game left out.
         NTargetManager? manager = null;
-        try { manager = NTargetManager.Instance; } catch (Exception) { /* no run */ }
+        try
+        {
+            NRun? run = NRun.Instance;
+            if (run != null && GodotObject.IsInstanceValid(run))
+            {
+                manager = run.GlobalUi?.TargetManager;
+            }
+        }
+        catch (Exception) { /* no run */ }
         if (viewport == null || manager == null || !GodotObject.IsInstanceValid(manager) ||
             !manager.IsInSelection || SimRuntime.Mode == SimMode.Off)
         {

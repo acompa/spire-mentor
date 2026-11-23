@@ -10,6 +10,7 @@
 
 use serde_json::{json, Map, Value};
 
+use crate::i18n::{tr, tr_dyn, trf};
 use crate::render::py;
 
 /// `{"label": label, "action": action, "args": args, "enabled": enabled}`.
@@ -23,7 +24,45 @@ fn opt(label: Value, action: &str, args: Map<String, Value>, enabled: bool) -> V
 
 /// `f"Option {o.get('index')}"` / `f"Card {cd.get('index')}"` / `f"Pack …"`.
 fn indexed_label(prefix: &str, item: &Value) -> String {
-    format!("{prefix} {}", py::opt_str(py::get_raw(item, "index")))
+    format!(
+        "{} {}",
+        tr_dyn(prefix),
+        py::opt_str(py::get_raw(item, "index"))
+    )
+}
+
+/// A map node's room type (`Monster`, `RestSite`, ...) in the display
+/// language: the game's own map-legend word in Chinese.
+fn room_type_name(node: String) -> String {
+    let key = match node.to_ascii_lowercase().replace('_', "").as_str() {
+        "monster" => "LEGEND_ENEMY.title",
+        "elite" => "LEGEND_ELITE.title",
+        "boss" => "LEGEND_BOSS.title",
+        "shop" | "merchant" => "LEGEND_MERCHANT.title",
+        "restsite" | "rest" => "LEGEND_REST.title",
+        "treasure" => "LEGEND_TREASURE.title",
+        "ancient" => "LEGEND_ANCIENT.title",
+        "unknown" => "LEGEND_UNKNOWN.title",
+        "event" => "EVENT.title",
+        _ => return tr_dyn(&node),
+    };
+    crate::i18n::game_name("map", key, &node)
+}
+
+/// A rest-site option's label: its id (`HEAL`) in English, the game's
+/// option name (`休息`) in Chinese.
+fn rest_option_label(id: Value) -> Value {
+    if !crate::localization::display_zh() {
+        return id;
+    }
+    let Some(raw) = id.as_str() else {
+        return id;
+    };
+    crate::data::zh_tables()
+        .rest_site_ui
+        .get(&format!("OPTION_{}.name", raw.to_ascii_uppercase()))
+        .filter(|s| !s.is_empty())
+        .map_or(id.clone(), |s| Value::String(s.clone()))
 }
 
 /// `d.get("name", f"{prefix} {d.get('index')}")` — the raw `name` slot when
@@ -48,7 +87,10 @@ fn index_args(key: &str, item: &Value) -> Map<String, Value> {
 fn buy_label(item: &Value) -> Value {
     let name = py::opt_str(py::get_raw(item, "name"));
     let cost = py::get_raw(item, "cost").map_or_else(|| "?".to_string(), py::to_str);
-    Value::String(format!("Buy {name} ({cost}g)"))
+    Value::String(trf(
+        "Buy {name} ({cost}g)",
+        &[("name", &name), ("cost", &cost)],
+    ))
 }
 
 /// Return the selectable options for `state`, or `[]` for combat/terminal.
@@ -76,7 +118,9 @@ pub fn normalize_options(state: &Value) -> Vec<Value> {
             .map(|ch| {
                 let col = py::get_raw(ch, "col").cloned().unwrap_or(Value::Null);
                 let row = py::get_raw(ch, "row").cloned().unwrap_or(Value::Null);
-                let node = py::get_raw(ch, "type").map_or_else(|| "Node".to_string(), py::to_str);
+                let node = room_type_name(
+                    py::get_raw(ch, "type").map_or_else(|| "Node".to_string(), py::to_str),
+                );
                 let label = format!("{node} ({},{})", py::to_str(&col), py::to_str(&row));
                 let mut args = Map::new();
                 args.insert("col".to_string(), col);
@@ -98,7 +142,7 @@ pub fn normalize_options(state: &Value) -> Vec<Value> {
                 .collect();
             if py::get_raw(state, "can_skip").is_none_or(py::truthy) {
                 out.push(opt(
-                    Value::from("Skip"),
+                    Value::from(tr("Skip")),
                     "skip_card_reward",
                     Map::new(),
                     true,
@@ -140,8 +184,66 @@ pub fn normalize_options(state: &Value) -> Vec<Value> {
             let one = Value::from(1);
             let min_is_zero = py::eq(py::get_or(state, "min_select", &one), &Value::from(0));
             if min_is_zero || py::truthy_opt(py::get_raw(state, "can_skip")) {
-                out.push(opt(Value::from("Skip"), "skip_select", Map::new(), true));
+                out.push(opt(
+                    Value::from(tr("Skip")),
+                    "skip_select",
+                    Map::new(),
+                    true,
+                ));
             }
+            out
+        }
+
+        // GH #1347: the Blitz merchant. Its wares are the state's own
+        // `options` (the oracle's shape, `action: "blitz_choice"`), each
+        // taken by its listed index; a used or disabled ware stays listed,
+        // greyed.
+        "shop" if py::get_raw(state, "blitz_choices_remaining").is_some_and(|v| !v.is_null()) => {
+            let mut out: Vec<Value> = items("options")
+                .filter(|o| {
+                    py::get_raw(o, "action").and_then(Value::as_str) == Some("blitz_choice")
+                })
+                .map(|o| {
+                    let label = py::get_raw(o, "item")
+                        .and_then(|item| py::get_raw(item, "title"))
+                        .filter(|v| py::truthy(v))
+                        .or_else(|| py::get_raw(o, "label").filter(|v| py::truthy(v)))
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(indexed_label("Ware", o)));
+                    let enabled = py::truthy_opt(py::get_raw(o, "enabled"));
+                    opt(label, "blitz_choice", index_args("index", o), enabled)
+                })
+                .collect();
+            out.push(opt(
+                Value::from(tr("Leave shop")),
+                "leave_room",
+                Map::new(),
+                true,
+            ));
+            out
+        }
+
+        // GH #1347: the Blitz chest, the oracle's `rewards` screen with
+        // `chest_picks_left`: take a relic by the index it was first listed
+        // at, or close the chest. (Any other `rewards` screen keeps the
+        // safety net below.)
+        "rewards" if py::get_raw(state, "chest_picks_left").is_some_and(|v| !v.is_null()) => {
+            let mut out: Vec<Value> = items("rewards")
+                .map(|r| {
+                    opt(
+                        name_or_indexed(r, "Reward"),
+                        "take_reward",
+                        index_args("reward_index", r),
+                        true,
+                    )
+                })
+                .collect();
+            out.push(opt(
+                Value::from(tr("Skip")),
+                "skip_reward",
+                Map::new(),
+                true,
+            ));
             out
         }
 
@@ -178,11 +280,11 @@ pub fn normalize_options(state: &Value) -> Vec<Value> {
                 }
             }
             if let Some(cost) = py::get_raw(state, "card_removal_cost").filter(|c| py::truthy(c)) {
-                let label = format!("Remove a card ({}g)", py::to_str(cost));
+                let label = trf("Remove a card ({cost}g)", &[("cost", &py::to_str(cost))]);
                 out.push(opt(Value::String(label), "remove_card", Map::new(), true));
             }
             out.push(opt(
-                Value::from("Leave shop"),
+                Value::from(tr("Leave shop")),
                 "leave_room",
                 Map::new(),
                 true,
@@ -196,7 +298,7 @@ pub fn normalize_options(state: &Value) -> Vec<Value> {
                 let label = py::get_raw(o, "option_id")
                     .filter(|v| py::truthy(v))
                     .cloned()
-                    .unwrap_or_else(|| name_or_indexed(o, "Option"));
+                    .map_or_else(|| name_or_indexed(o, "Option"), rest_option_label);
                 let enabled = py::get_raw(o, "is_enabled").is_none_or(py::truthy);
                 opt(
                     label,
@@ -224,7 +326,12 @@ pub fn normalize_options(state: &Value) -> Vec<Value> {
             .collect(),
 
         // Safety net: unknown decision -> a single continue button.
-        _ => vec![opt(Value::from("Continue"), "proceed", Map::new(), true)],
+        _ => vec![opt(
+            Value::from(tr("Continue")),
+            "proceed",
+            Map::new(),
+            true,
+        )],
     }
 }
 
@@ -236,6 +343,68 @@ mod tests {
 
     fn action(o: &Value) -> &str {
         o["action"].as_str().unwrap()
+    }
+
+    /// GH #1347: the Blitz merchant's wares, then leave. Twin of
+    /// `test_blitz_shop_lists_wares_then_leave`.
+    #[test]
+    fn test_blitz_shop_lists_wares_then_leave() {
+        let state = json!({
+            "decision": "shop",
+            "cards": [], "relics": [], "potions": [], "card_removal_cost": null,
+            "blitz_choices_remaining": 2,
+            "options": [
+                {"index": 0, "id": "leave_shop", "action": "leave_shop", "label": "leave_shop",
+                 "enabled": true},
+                {"index": 1, "action": "blitz_choice", "label": "blitz:Relic", "enabled": true,
+                 "item": {"blitz_kind": "Relic", "title": "Relic"}},
+                {"index": 2, "action": "blitz_choice", "label": "blitz:Potions", "enabled": false,
+                 "item": {"blitz_kind": "Potions"}},
+            ],
+        });
+        assert_eq!(
+            normalize_options(&state),
+            vec![
+                json!({"label": "Relic", "action": "blitz_choice", "args": {"index": 1},
+                       "enabled": true}),
+                json!({"label": "blitz:Potions", "action": "blitz_choice", "args": {"index": 2},
+                       "enabled": false}),
+                json!({"label": "Leave shop", "action": "leave_room", "args": {},
+                       "enabled": true}),
+            ]
+        );
+    }
+
+    /// GH #1347: the Blitz chest. Twin of
+    /// `test_rewards_lists_each_reward_and_skip`.
+    #[test]
+    fn test_rewards_lists_each_reward_and_skip() {
+        let state = json!({
+            "decision": "rewards",
+            "chest_picks_left": 1,
+            "rewards": [{"index": 1, "type": "relic", "name": "Anchor"}],
+        });
+        assert_eq!(
+            normalize_options(&state),
+            vec![
+                json!({"label": "Anchor", "action": "take_reward", "args": {"reward_index": 1},
+                       "enabled": true}),
+                json!({"label": "Skip", "action": "skip_reward", "args": {}, "enabled": true}),
+            ]
+        );
+    }
+
+    /// Twin of `test_a_rewards_screen_without_chest_picks_keeps_the_safety_net`.
+    #[test]
+    fn test_a_rewards_screen_without_chest_picks_keeps_the_safety_net() {
+        let state = json!({
+            "decision": "rewards",
+            "rewards": [{"index": 0, "type": "gold", "name": "Gold"}],
+        });
+        assert_eq!(
+            normalize_options(&state),
+            vec![json!({"label": "Continue", "action": "proceed", "args": {}, "enabled": true})]
+        );
     }
 
     #[test]

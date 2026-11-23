@@ -1,6 +1,6 @@
 {
  "debug": {
-  "action": "Play Strike → Leaf Slime (S)",
+  "action": "Play Strike → Sludge Spinner",
   "combat_search": {
    "actions": [
     {
@@ -10,70 +10,22 @@
       "target_index": 0
      },
      "bucket": "likely-win",
-     "hp_n": 2,
-     "hp_sd": 4.5,
+     "hp_n": 3,
+     "hp_sd": 2.1602,
      "is_best": true,
      "losses": 0,
      "low_confidence": false,
-     "mean_final_hp": 63.5,
+     "mean_final_hp": 68.0,
      "p_loss": 0.0,
      "p_tie": 0.0,
      "p_win": 1.0,
-     "q": 1.2265,
+     "q": 1.2427,
      "q_saturated": false,
      "ties": 0,
      "value": 1.0,
-     "value_sum": 2.4531,
-     "visits": 2,
-     "wins": 2
-    },
-    {
-     "action": {
-      "action": "play",
-      "card_index": 2,
-      "target_index": 1
-     },
-     "bucket": "likely-win",
-     "hp_n": 2,
-     "hp_sd": 0.5,
-     "is_best": false,
-     "losses": 0,
-     "low_confidence": false,
-     "mean_final_hp": 60.5,
-     "p_loss": 0.0,
-     "p_tie": 0.0,
-     "p_win": 1.0,
-     "q": 1.2158,
-     "q_saturated": false,
-     "ties": 0,
-     "value": 1.0,
-     "value_sum": 2.4316,
-     "visits": 2,
-     "wins": 2
-    },
-    {
-     "action": {
-      "action": "play",
-      "card_index": 2,
-      "target_index": 2
-     },
-     "bucket": "likely-win",
-     "hp_n": 1,
-     "hp_sd": 0.0,
-     "is_best": false,
-     "losses": 0,
-     "low_confidence": false,
-     "mean_final_hp": 59.0,
-     "p_loss": 0.0,
-     "p_tie": 0.0,
-     "p_win": 1.0,
-     "q": 1.2105,
-     "q_saturated": false,
-     "ties": 0,
-     "value": 1.0,
-     "value_sum": 1.2105,
-     "visits": 1,
-     "wins": 1
+     "value_sum": 3.7281,
+     "visits": 3,
+     "wins": 3
     },
     {
      "action": {
@@ -83,7 +35,7 @@
      },
      "bucket": "likely-win",
      "hp_n": 2,
-     "hp_sd": 0.0,
+     "hp_sd": 2.0,
      "is_best": false,
      "losses": 0,
      "low_confidence": false,
@@ -91,7 +43,7 @@
      "p_loss": 0.0,
      "p_tie": 0.0,
      "p_win": 1.0,
-     "q": 1.2176,
+     "q": 1.2177,
      "q_saturated": false,
      "ties": 0,
      "value": 1.0,
@@ -104,22 +56,22 @@
       "action": "end_turn"
      },
      "bucket": "likely-win",
-     "hp_n": 1,
-     "hp_sd": 0.0,
+     "hp_n": 3,
+     "hp_sd": 0.4714,
      "is_best": false,
      "losses": 0,
      "low_confidence": false,
-     "mean_final_hp": 60.0,
+     "mean_final_hp": 68.6667,
      "p_loss": 0.0,
      "p_tie": 0.0,
      "p_win": 1.0,
-     "q": 1.214,
+     "q": 1.2451,
      "q_saturated": false,
      "ties": 0,
      "value": 1.0,
-     "value_sum": 1.214,
-     "visits": 1,
-     "wins": 1
+     "value_sum": 3.7352,
+     "visits": 3,
+     "wins": 3
     }
    ],
    "recommended": {
@@ -131,27 +83,40 @@
   "is_combat": true,
   "phase": "combat",
   "result": "Advanced",
-  "summary": "combat MCTS → Play Strike → Leaf Slime (S)"
+  "summary": "combat MCTS → Play Strike → Sludge Spinner"
  },
  "done": false,
  "error": null,
  "over": false,
  "search": {
-  "action": "Play Strike → Leaf Slime (S)",
+  "action": "Play Strike → Sludge Spinner",
   "enemies": [
    {
     "block": 0,
-    "hp": 8,
+    "hp": 34,
     "index": 0,
     "intents": [
      {
-      "type": "StatusCard"
+      "base_damage": 8,
+      "damage": 6,
+      "modifiers": [
+       {
+        "kind": "power",
+        "mul": [
+         3,
+         4
+        ],
+        "name": "WEAK",
+        "side": "enemy"
+       }
+      ],
+      "type": "Attack"
      }
     ],
-    "kind": "LeafSlimeS",
-    "max_hp": 11,
-    "move_state": "GOOP",
-    "name": "Leaf Slime (S)",
+    "kind": "SludgeSpinner",
+    "max_hp": 37,
+    "move_state": "OIL_SPRAY",
+    "name": "Sludge Spinner",
     "powers": [
      {
       "amount": 1,
@@ -161,106 +126,33 @@
      }
     ],
     "uid": 2
-   },
-   {
-    "block": 0,
-    "hp": 35,
-    "index": 1,
-    "intents": [
-     {
-      "type": "StatusCard"
-     }
-    ],
-    "kind": "LeafSlimeM",
-    "max_hp": 35,
-    "move_state": "STICKY_SHOT",
-    "name": "Leaf Slime (M)",
-    "powers": [],
-    "uid": 3
-   },
-   {
-    "block": 0,
-    "hp": 7,
-    "index": 2,
-    "intents": [
-     {
-      "damage": 4,
-      "type": "Attack"
-     }
-    ],
-    "kind": "TwigSlimeS",
-    "max_hp": 7,
-    "move_state": "BUTT",
-    "name": "Twig Slime (S)",
-    "powers": [],
-    "uid": 4
    }
   ],
   "scores": [
    {
     "action": "Strike",
-    "hp_n": 2,
-    "hp_sd": 4.5,
+    "hp_n": 3,
+    "hp_sd": 2.1602,
     "in_band": false,
     "is_best": true,
     "losses": 0,
     "low_confidence": false,
-    "mean_final_hp": 63.5,
+    "mean_final_hp": 68.0,
     "pick_rank": null,
     "pick_reason": null,
-    "q": 1.2265,
+    "q": 1.2427,
     "q_saturated": false,
     "stable_idx": 2,
     "target_index": 0,
     "ties": 0,
-    "visits": 2,
+    "visits": 3,
     "win_prob": 1.0,
-    "wins": 2
-   },
-   {
-    "action": "Strike",
-    "hp_n": 2,
-    "hp_sd": 0.5,
-    "in_band": false,
-    "is_best": false,
-    "losses": 0,
-    "low_confidence": false,
-    "mean_final_hp": 60.5,
-    "pick_rank": null,
-    "pick_reason": null,
-    "q": 1.2158,
-    "q_saturated": false,
-    "stable_idx": 2,
-    "target_index": 1,
-    "ties": 0,
-    "visits": 2,
-    "win_prob": 1.0,
-    "wins": 2
-   },
-   {
-    "action": "Strike",
-    "hp_n": 1,
-    "hp_sd": 0.0,
-    "in_band": false,
-    "is_best": false,
-    "losses": 0,
-    "low_confidence": false,
-    "mean_final_hp": 59.0,
-    "pick_rank": null,
-    "pick_reason": null,
-    "q": 1.2105,
-    "q_saturated": false,
-    "stable_idx": 2,
-    "target_index": 2,
-    "ties": 0,
-    "visits": 1,
-    "win_prob": 1.0,
-    "wins": 1
+    "wins": 3
    },
    {
     "action": "Defend",
     "hp_n": 2,
-    "hp_sd": 0.0,
+    "hp_sd": 2.0,
     "in_band": false,
     "is_best": false,
     "losses": 0,
@@ -268,7 +160,7 @@
     "mean_final_hp": 61.0,
     "pick_rank": null,
     "pick_reason": null,
-    "q": 1.2176,
+    "q": 1.2177,
     "q_saturated": false,
     "stable_idx": 0,
     "target_index": null,
@@ -279,23 +171,23 @@
    },
    {
     "action": "end turn",
-    "hp_n": 1,
-    "hp_sd": 0.0,
+    "hp_n": 3,
+    "hp_sd": 0.4714,
     "in_band": false,
     "is_best": false,
     "losses": 0,
     "low_confidence": false,
-    "mean_final_hp": 60.0,
+    "mean_final_hp": 68.6667,
     "pick_rank": null,
     "pick_reason": null,
-    "q": 1.214,
+    "q": 1.2451,
     "q_saturated": false,
     "stable_idx": -1,
     "target_index": null,
     "ties": 0,
-    "visits": 1,
+    "visits": 3,
     "win_prob": 1.0,
-    "wins": 1
+    "wins": 3
    }
   ]
  },
@@ -307,7 +199,7 @@
   "idx": 0,
   "meta": {
    "act": 1,
-   "act_name": "Overgrowth",
+   "act_name": "Underdocks",
    "bg_col": 2,
    "bg_row": 1,
    "bg_seed": 2,
@@ -320,8 +212,8 @@
   "source": "live",
   "state": {
    "act": 1,
-   "act1": "overgrowth",
-   "act_name": "Overgrowth",
+   "act1": "underdocks",
+   "act_name": "Underdocks",
    "ascension": 0,
    "bg_col": 2,
    "bg_row": 1,
@@ -526,19 +418,34 @@
    "enemies": [
     {
      "block": 0,
-     "hp": 2,
-     "image": "https://assets.test/monsters/leaf_slime_s.png",
+     "hp": 28,
+     "image": "https://assets.test/monsters/sludge_spinner.png",
      "index": 0,
      "intents": [
       {
-       "intent_image": null,
-       "type": "StatusCard"
+       "base_damage": 8,
+       "damage": 6,
+       "intent_image": "https://assets.test/intent_atlas/attack/intent_attack_2.png",
+       "modifiers": [
+        {
+         "image": "https://assets.test/power_atlas/weak_power.png",
+         "kind": "power",
+         "mul": [
+          3,
+          4
+         ],
+         "name": "WEAK",
+         "side": "enemy",
+         "title": "Weak"
+        }
+       ],
+       "type": "Attack"
       }
      ],
-     "kind": "LeafSlimeS",
-     "max_hp": 11,
-     "move_state": "GOOP",
-     "name": "Leaf Slime (S)",
+     "kind": "SludgeSpinner",
+     "max_hp": 37,
+     "move_state": "OIL_SPRAY",
+     "name": "Sludge Spinner",
      "powers": [
       {
        "amount": 1,
@@ -549,56 +456,13 @@
        "name": "Weak"
       }
      ],
-     "rig": "https://assets.test/monster_rigs/leaf_slime_s/leaf_slime_s",
-     "rig_bounds_h": 102.0,
-     "rig_bounds_w": 154.0,
-     "rig_scale": 0.2734,
+     "rig": "https://assets.test/monster_rigs/sludge_spinner/sludge_spinner",
+     "rig_arrow_x": 0.0,
+     "rig_arrow_y": -175.0,
+     "rig_bounds_h": 246.0,
+     "rig_bounds_w": 192.0,
+     "rig_scale": 0.25,
      "uid": 2
-    },
-    {
-     "block": 0,
-     "hp": 35,
-     "image": "https://assets.test/monsters/leaf_slime_m.png",
-     "index": 1,
-     "intents": [
-      {
-       "intent_image": null,
-       "type": "StatusCard"
-      }
-     ],
-     "kind": "LeafSlimeM",
-     "max_hp": 35,
-     "move_state": "STICKY_SHOT",
-     "name": "Leaf Slime (M)",
-     "powers": [],
-     "rig": "https://assets.test/monster_rigs/leaf_slime_m/leaf_slime_m",
-     "rig_bounds_h": 143.0,
-     "rig_bounds_w": 200.0,
-     "rig_scale": 0.45,
-     "uid": 3
-    },
-    {
-     "block": 0,
-     "hp": 7,
-     "image": "https://assets.test/monsters/twig_slime_s.png",
-     "index": 2,
-     "intents": [
-      {
-       "damage": 4,
-       "intent_image": "https://assets.test/intent_atlas/attack/intent_attack_1.png",
-       "type": "Attack"
-      }
-     ],
-     "kind": "TwigSlimeS",
-     "max_hp": 7,
-     "move_state": "BUTT",
-     "name": "Twig Slime (S)",
-     "powers": [],
-     "rig": "https://assets.test/monster_rigs/twig_slime_s/twig_slime_s",
-     "rig_bounds_h": 106.0,
-     "rig_bounds_w": 140.0,
-     "rig_scale": 0.275,
-     "uid": 4
     }
    ],
    "energy": 0,
@@ -658,70 +522,22 @@
        "target_index": 0
       },
       "bucket": "likely-win",
-      "hp_n": 2,
-      "hp_sd": 4.5,
+      "hp_n": 3,
+      "hp_sd": 2.1602,
       "is_best": true,
       "losses": 0,
       "low_confidence": false,
-      "mean_final_hp": 63.5,
+      "mean_final_hp": 68.0,
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.2265,
+      "q": 1.2427,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
-      "value_sum": 2.4531,
-      "visits": 2,
-      "wins": 2
-     },
-     {
-      "action": {
-       "action": "play",
-       "card_index": 2,
-       "target_index": 1
-      },
-      "bucket": "likely-win",
-      "hp_n": 2,
-      "hp_sd": 0.5,
-      "is_best": false,
-      "losses": 0,
-      "low_confidence": false,
-      "mean_final_hp": 60.5,
-      "p_loss": 0.0,
-      "p_tie": 0.0,
-      "p_win": 1.0,
-      "q": 1.2158,
-      "q_saturated": false,
-      "ties": 0,
-      "value": 1.0,
-      "value_sum": 2.4316,
-      "visits": 2,
-      "wins": 2
-     },
-     {
-      "action": {
-       "action": "play",
-       "card_index": 2,
-       "target_index": 2
-      },
-      "bucket": "likely-win",
-      "hp_n": 1,
-      "hp_sd": 0.0,
-      "is_best": false,
-      "losses": 0,
-      "low_confidence": false,
-      "mean_final_hp": 59.0,
-      "p_loss": 0.0,
-      "p_tie": 0.0,
-      "p_win": 1.0,
-      "q": 1.2105,
-      "q_saturated": false,
-      "ties": 0,
-      "value": 1.0,
-      "value_sum": 1.2105,
-      "visits": 1,
-      "wins": 1
+      "value_sum": 3.7281,
+      "visits": 3,
+      "wins": 3
      },
      {
       "action": {
@@ -731,7 +547,7 @@
       },
       "bucket": "likely-win",
       "hp_n": 2,
-      "hp_sd": 0.0,
+      "hp_sd": 2.0,
       "is_best": false,
       "losses": 0,
       "low_confidence": false,
@@ -739,7 +555,7 @@
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.2176,
+      "q": 1.2177,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
@@ -752,22 +568,22 @@
        "action": "end_turn"
       },
       "bucket": "likely-win",
-      "hp_n": 1,
-      "hp_sd": 0.0,
+      "hp_n": 3,
+      "hp_sd": 0.4714,
       "is_best": false,
       "losses": 0,
       "low_confidence": false,
-      "mean_final_hp": 60.0,
+      "mean_final_hp": 68.6667,
       "p_loss": 0.0,
       "p_tie": 0.0,
       "p_win": 1.0,
-      "q": 1.214,
+      "q": 1.2451,
       "q_saturated": false,
       "ties": 0,
       "value": 1.0,
-      "value_sum": 1.214,
-      "visits": 1,
-      "wins": 1
+      "value_sum": 3.7352,
+      "visits": 3,
+      "wins": 3
      }
     ],
     "recommended": {
@@ -959,6 +775,8 @@
      }
     ],
     "rig": "https://assets.test/character_rigs/silent/silent",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -146.0,
     "rig_bounds_h": 244.0,
     "rig_bounds_w": 244.0,
     "rig_scale": 0.29

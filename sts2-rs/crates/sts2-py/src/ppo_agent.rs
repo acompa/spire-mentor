@@ -48,6 +48,7 @@ pub fn ppo_observe_json(
 ) -> PyResult<String> {
     if phase == "event" {
         sts2_content::events::dispatch::bind_pending_event_callback(&mut rm.inner.run_state);
+        rm.inner.open_fake_merchant_if_bound();
     }
     let mut obs = build_obs(&rm.inner, phase, surface);
     obs.seed = seed;

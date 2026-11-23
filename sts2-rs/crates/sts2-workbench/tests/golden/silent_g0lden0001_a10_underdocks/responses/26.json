@@ -261,6 +261,8 @@
     "name": "Seapunk",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/seapunk/seapunk",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -74.0,
     "rig_bounds_h": 212.0,
     "rig_bounds_w": 200.0,
     "rig_scale": 0.256,
@@ -597,6 +599,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/silent/silent",
+   "rig_arrow_x": 0.0,
+   "rig_arrow_y": -146.0,
    "rig_bounds_h": 244.0,
    "rig_bounds_w": 244.0,
    "rig_scale": 0.29

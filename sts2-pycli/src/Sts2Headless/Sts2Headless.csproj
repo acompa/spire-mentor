@@ -20,8 +20,11 @@
   <!-- Which game build this oracle links against (GH #789). One source tree,
        one build per version:
 
-         dotnet build Sts2Headless.csproj                          (v0.107.1)
-         dotnet build Sts2Headless.csproj -p:GameVersion=v0.111.0
+         dotnet build Sts2Headless.csproj                          (v0.111.0)
+         dotnet build Sts2Headless.csproj -p:GameVersion=v0.107.1
+
+       The default is sts2_client.DEFAULT_GAME_VERSION, the build a run that
+       names none simulates.
 
        The version picks the game DLLs (`lib/<version>/`), the output tree
        (`bin/<version>/<Configuration>/net9.0/`, `obj/<version>/…` so the two
@@ -29,7 +32,7 @@
        API drift between builds (`GAME_V0111`), and the `GameVersion` assembly
        metadata `Program.cs` reads at run time to find `lib/<version>/`. -->
   <PropertyGroup>
-    <GameVersion Condition="'$(GameVersion)' == ''">v0.107.1</GameVersion>
+    <GameVersion Condition="'$(GameVersion)' == ''">v0.111.0</GameVersion>
     <GameLibDir>$(MSBuildThisFileDirectory)..\..\lib\$(GameVersion)\</GameLibDir>
     <!-- Compatibility fallback for a pre-#789 checkout whose DLLs still sit
          flat in lib/ (only ever v0.107.1). The `_WarnLegacyGameLib` target

@@ -253,7 +253,8 @@
      (bottom 26px, 76px tall) are pinned over this sheet and, unlike .gsm-legend,
      are live controls that cannot be pointer-events:none. Without room to
      scroll past them a bottom-corner node sat under a wedge and was
-     unclickable. 190px clears the taller of the two. */
+     unclickable. 190px clears the taller of the two. A phone that leaves the
+     banner out shrinks it (`.gs-map--no-proceed`, below). */
   padding: 30px 46px 190px;
   /* `safe`: a lattice wider than the sheet (a phone in portrait) used to be
      centred with both ends past the box, and you cannot scroll to the left
@@ -275,9 +276,13 @@
   .gsm-parch-body { padding-left: 16px; padding-right: 16px; }
 }
 /* A phone held upright: the act's seven columns have to fit the paper
-   (MapView's `colFit`), so the gutters give them every px they can. */
+   (MapView's `colFit` closes them up to 36 px), but not edge to edge: with
+   4 px gutters the outer column's ink sat on the deckle. The gutters are
+   inside the hide (MapView subtracts `--gsm-sheet-inset` too), and the
+   right one is wider because the art's hide sits left of centre — measured
+   on a 412 px phone, paper from x 41 to 358 in a body from 10 to 401. */
 @media (max-width: 480px) {
-  .gsm-parch-body { padding-left: 4px; padding-right: 4px; }
+  .gsm-parch-body { padding-left: 12px; padding-right: 22px; }
 }
 /* Phone landscape: the scene's 480px floor is taller than the whole screen,
    which put the Proceed banner — pinned to the scene's bottom — below the
@@ -285,6 +290,15 @@
 @media (max-height: 520px) {
   .gs-map--scene { min-height: 0; }
 }
+/* No Proceed banner (a phone, where a banner with nothing to confirm is left
+   out: MapView's `showProceed`, #1443): the 190px above was there to scroll a
+   room out from under it. What is left at the bottom is the torn deckle (the
+   tear's teeth reach ~54px up), so the bottom row of rooms clears that and
+   parks in sight. In the map overlay the red back wedge (bottom 26px, 76px
+   tall) still hangs over the sheet's bottom-left corner, so keep room for it
+   there. */
+.gs-map--no-proceed .gsm-parch-body { padding-bottom: 72px; }
+.gsm-overlay-sheet .gs-map--no-proceed .gsm-parch-body { padding-bottom: 112px; }
 .gsm-parch-body::-webkit-scrollbar-thumb {
   background: rgba(36, 27, 15, 0.32); border-radius: 6px; }
 .gsm-parch-body::-webkit-scrollbar-track { background: transparent; }
@@ -373,6 +387,16 @@
    still swallows the click rather than passing it to the node underneath. */
 .gsm-proceed:disabled { cursor: default; pointer-events: none;
   filter: saturate(0.45) brightness(0.6) drop-shadow(0 8px 14px rgba(0, 0, 0, 0.6)); }
+
+/* A phone: the banner is hung ON the paper, tip included. Pinned 16px from
+   the screen edge it reached across the rock, and since live play always
+   draws it disabled (dimmed; the map is the picker) its dark-red arrowhead
+   vanished into the dark cave — only a headless stub showed on the sheet.
+   The paper's right edge is 11-13% of the width in from the screen's on
+   both phones in both orientations (measured), so this lands the tip on it. */
+@media (hover: none) and (max-width: 480px), (hover: none) and (max-height: 520px) {
+  .gs-map .gsm-proceed { right: calc(12% + 10px); }
+}
 
 /* ------------------------------------------------------- red back wedge */
 /* the game's bottom-left return ribbon (MapOverlay's close button) */

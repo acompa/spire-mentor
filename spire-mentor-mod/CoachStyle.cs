@@ -62,21 +62,21 @@ internal static class CoachStyle
     public static string PowerLabel(SimModeLite mode) =>
         mode switch
         {
-            SimModeLite.Advisor => "AI on",
-            SimModeLite.Autopilot => "Take over",
-            _ => "AI off",
+            SimModeLite.Advisor => L10n.T("AI on"),
+            SimModeLite.Autopilot => L10n.T("Take over"),
+            _ => L10n.T("AI off"),
         };
 
     /// <summary>The toolbar's style button.</summary>
-    public static string StyleLabel(AdviceStyle style) => style == AdviceStyle.Coach ? "Coach" : "Hints";
+    public static string StyleLabel(AdviceStyle style) => style == AdviceStyle.Coach ? L10n.T("Coach") : L10n.T("Hints");
 
     /// <summary>What the mode is called in prose (pill, help, log lines).</summary>
     public static string ModeName(SimModeLite mode, AdviceStyle style) =>
         mode switch
         {
-            SimModeLite.Advisor => style == AdviceStyle.Coach ? "Coach" : "Hints",
-            SimModeLite.Autopilot => "Autopilot",
-            _ => "AI off",
+            SimModeLite.Advisor => style == AdviceStyle.Coach ? L10n.T("Coach") : L10n.T("Hints"),
+            SimModeLite.Autopilot => L10n.T("Autopilot"),
+            _ => L10n.T("AI off"),
         };
 
     /// <summary>The persisted tickbox ("start in Coach style") as a style.</summary>
@@ -175,9 +175,9 @@ internal static class MentorModes
     public static string Label(MentorMode mode, bool autopilot) =>
         mode switch
         {
-            MentorMode.Off => "Off",
-            MentorMode.Coach => "Coach",
-            MentorMode.Hints => "Hints",
-            _ => autopilot ? "Autopilot" : "AI plays",
+            MentorMode.Off => L10n.T("Off"),
+            MentorMode.Coach => L10n.T("Coach"),
+            MentorMode.Hints => L10n.T("Hints"),
+            _ => autopilot ? L10n.T("Autopilot") : L10n.T("AI plays"),
         };
 }

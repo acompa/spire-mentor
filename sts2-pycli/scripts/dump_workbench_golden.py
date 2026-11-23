@@ -346,7 +346,7 @@ def apply_determinism_patches(*, ppo: bool = False) -> dict[str, Any]:
     }
 
 
-def build_app(work: Path):
+def build_app(work: Path, game_version: str | None = None):
     """Create the workbench app rooted in *work* (a fresh temp dir).
 
     Layout: ``<work>/site/public/images/creature_scales.json`` (so the server's
@@ -354,11 +354,22 @@ def build_app(work: Path):
     to the sibling ``sts2-wiki/data``) and ``<work>/logs`` (so saves land in
     ``<work>/saves/workbench``). Art existence comes from the Rust crate's
     ``asset_manifest.json`` — the same bundle the port embeds.
+
+    *game_version* is the build the scenario plays. A build with its own
+    bundle (``data/game/<ver>/``) reads that bundle's manifest and scales,
+    as the port does for a run on that build: they list the build's art
+    overlay (``<ver>/card_atlas/...``), which the default manifest does not,
+    so a scenario that shows overlay art would otherwise diverge by its URLs
+    alone. A scenario on the default build (or one that names none) reads
+    the default bundle, as it always did.
     """
     from workbench.server import create_app
 
-    scales = _RS_WORKBENCH_DATA / "creature_scales.json"
-    manifest = _RS_WORKBENCH_DATA / "asset_manifest.json"
+    bundle = _RS_WORKBENCH_DATA
+    if game_version and (_RS_WORKBENCH_DATA / game_version / "asset_manifest.json").is_file():
+        bundle = _RS_WORKBENCH_DATA / game_version
+    scales = bundle / "creature_scales.json"
+    manifest = bundle / "asset_manifest.json"
     for p in (scales, manifest):
         if not p.is_file():
             raise FileNotFoundError(f"missing data bundle file: {p} (run `just workbench-data`)")
@@ -470,6 +481,18 @@ class Policy:
         return self._fallback(options)
 
     def _on_shop(self, state: dict[str, Any], options: list) -> tuple[str, dict[str, Any]]:
+        if state.get("blitz_choices_remaining") is not None:
+            # GH #1347, the Blitz merchant: the first ware still on offer
+            # while picks remain, then leave. (A ware it refuses for free,
+            # RandomUpgrades with nothing to upgrade, is tried once.)
+            tried = self._shop_done.setdefault(("blitz", state.get("floor")), set())
+            if state["blitz_choices_remaining"] > 0:
+                for opt in options:
+                    key = json.dumps(opt.get("args"), sort_keys=True)
+                    if opt["action"] == "blitz_choice" and opt.get("enabled") and key not in tried:
+                        tried.add(key)
+                        return opt["action"], dict(opt["args"])
+            return "leave_room", {}
         done = self._shop_done.setdefault(state.get("floor"), set())
         by_action: dict[str, dict[str, Any]] = {}
         for opt in options:
@@ -868,7 +891,7 @@ def run_scenario(
     t0 = time.time()
     work = Path(tempfile.mkdtemp(prefix=f"golden-{name}-"))
     try:
-        app = build_app(work)
+        app = build_app(work, scn.get("game_version"))
         with TestClient(app) as client:
             rec = Recorder(
                 client, out_dir, full_steps=full_steps, full=bool(scn.get("full")), work=work
@@ -903,6 +926,10 @@ def run_scenario(
                 # the default build, and these scenarios are recorded on the
                 # one their file says (the legacy build unless it names one).
                 start_body["game_version"] = scn.get("game_version") or LEGACY_BUILD
+                # GH #1347: a Blitz (or Dread) scenario names its mode; a
+                # standard one sends the request it always did.
+                if scn.get("game_mode"):
+                    start_body["game_mode"] = scn["game_mode"]
             status, body = rec.request("POST", start_route, start_body, probe=False)
             if status != 200:
                 raise RuntimeError(f"{name}: {start_route} -> {status}: {body}")
@@ -1246,7 +1273,7 @@ def run_mode_probes(max_steps: int, *, ppo: bool) -> list[dict[str, Any]]:
 
 def scenario_matrix() -> list[dict[str, Any]]:
     """The committed scenario set: 5 chars x 2 seeds x A{0,10} x 2 acts, 3 run-mode,
-    1 on the v0.111.0 build, 3 long."""
+    1 on the v0.111.0 build, 1 Blitz run on v0.113.0, 3 long."""
     out: list[dict[str, Any]] = []
     for character in CHARACTERS:
         for seed_no, seed in enumerate(SEEDS):
@@ -1304,6 +1331,27 @@ def scenario_matrix() -> list[dict[str, Any]]:
             "max_steps": v0111_steps,
             "neow_option": 0,
             "probes": [p for p in standard_probes(v0111_steps) if p["at"] <= v0111_steps],
+        }
+    )
+    # GH #1347: one Blitz run on v0.113.0, so the mode's own screens (Neow's
+    # three of ten, the one-node map, the merchant's wares, the chest's two
+    # rounds), its fight AI (the hint, tree and in-fight probes answer in a
+    # fight) and its 409s on every other AI probe are held to parity on both
+    # hosts.
+    blitz_steps = 400
+    out.append(
+        {
+            "name": f"blitz_ironclad_{SEEDS[0].lower()}_a0_roll",
+            "character": "Ironclad",
+            "seed": SEEDS[0],
+            "ascension": 0,
+            "act1": "roll",
+            "game_version": "v0.113.0",
+            "game_mode": "blitz",
+            "max_steps": blitz_steps,
+            "neow_option": 0,
+            "policy": "survivor",
+            "probes": [p for p in standard_probes(blitz_steps) if p["at"] <= blitz_steps],
         }
     )
     for character in ("Ironclad", "Silent", "Defect"):

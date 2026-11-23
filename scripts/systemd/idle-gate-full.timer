@@ -1,0 +1,15 @@
+# Starts idle-gate-full.service every 30 min (GH #1465). A pass that finds
+# origin/main already tested, or the box busy, exits at once; a timer does not
+# start the service again while a run is still going.
+#
+# Install: see idle-gate-full.service.
+[Unit]
+Description=gate-full on origin/main when the box is idle, checked every 30 min
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=30min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -587,3 +587,38 @@
   /* The plaque would sit under the full-width plates. */
   .gs-neow-lockup { display: none; }
 }
+
+/* ---- the Blitz chest (GH #1347) -------------------------------------------
+   A chest that IS a decision: two relics, taken one per round. It is the
+   reveal's lockup (banner, open chest, the haul under it) as a screen of its
+   own instead of an overlay, with each relic a button. */
+.gs-treasure-pick {
+  grid-template-rows: auto auto auto auto;
+  align-content: center;
+  justify-items: center;
+  gap: clamp(6px, 1.2vh, 16px);
+  padding: clamp(12px, 2.4vh, 28px) 16px clamp(16px, 3vh, 34px);
+  overflow: auto;
+}
+.gs-treasure-rounds {
+  margin: 0; font-family: var(--game-font); font-size: clamp(14px, 1.35vw, 17px);
+  color: #f6e6c4; text-shadow: 0 1px 3px rgba(16, 10, 4, 0.85);
+}
+.gs-treasure-take {
+  width: 100%; padding: 6px 8px; border: 2px solid transparent; border-radius: 9px;
+  background: none; cursor: pointer; text-align: left; color: inherit;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.gs-treasure-take .gs-treasure-plaque { display: block; flex: 1 1 auto; }
+.gs-treasure-take .gs-treasure-relicname, .gs-treasure-take .gs-treasure-relictext { display: block; }
+.gs-treasure-take:not(:disabled):hover,
+.gs-treasure-take:not(:disabled):focus-visible {
+  transform: translateY(-2px); border-color: #e2b466; background: rgba(226, 180, 102, 0.1);
+}
+.gs-treasure-take:focus-visible { outline: 3px solid #e2b466; outline-offset: 2px; }
+.gs-treasure-take:disabled { cursor: default; }
+.gs-treasure-take.is-chosen { border-color: #e2b466; }
+.gs-treasure-dismiss:disabled { cursor: default; opacity: 0.6; }
+@media (prefers-reduced-motion: reduce) {
+  .gs-treasure-take { transition: none; }
+}

@@ -17,7 +17,10 @@ pub(crate) fn preview_radiate(
 }
 
 pub(crate) fn play_radiate(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
-    let hits = resolving_preview(state, preview_radiate, None);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_radiate, None),
+    );
     let dmg = current_damage(state);
     for _ in 0..hits {
         deal_damage_all_enemies(state, dmg);

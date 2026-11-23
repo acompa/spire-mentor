@@ -258,8 +258,9 @@ class RealGame:
         # option index per `discard_slot` (None = decline).
         self._interactive_potion_swap = False
         self._swap_options: dict[int | None, int] = {}
-        # Belt slot of each held potion, in host numbering (GH #1287).
+        # Belt slot and id of each held potion, in host numbering (GH #1287).
         self._potion_slots: list[int | None] = []
+        self._potion_ids: list[str | None] = []
         # Card rewards skipped on the current rewards screen (GH #1287).
         self._skipped_card_rewards = 0
 
@@ -478,6 +479,16 @@ class RealGame:
         return self._send({"action": "choose", "indices": idx_list})
 
     def skip_select(self) -> dict[str, Any]:
+        raw = self.last_raw or {}
+        if (
+            raw.get("type") == "card_select"
+            and raw.get("cancelable") is False
+            and raw.get("min_select") == 0
+        ):
+            # "Up to N" (Neow's Fury): picking none is legal but is not a
+            # cancel, and the bridge refuses `skip` on a screen that cannot be
+            # cancelled. The host's skip there means "none" (GH #1287).
+            return self._send({"action": "choose", "indices": []})
         return self._send({"action": "skip"})
 
     def _potion_slot(self, potion_index: int) -> int:
@@ -926,7 +937,7 @@ class RealGame:
                 # Used up this visit: the host then reports no removal.
                 removal_cost = row.get("price") if stocked else None
         self._shop_map = shop_map
-        return {
+        out: dict[str, Any] = {
             "type": "decision",
             "decision": "shop",
             "context": self._context(msg, room_type="Shop"),
@@ -936,6 +947,12 @@ class RealGame:
             "card_removal_cost": removal_cost,
             "player": self._player_summary(msg.get("run_state") or {}),
         }
+        # The Fake Merchant's shopfront (GH #1607): an event room, named as
+        # the host names it (``RunSimulator.FakeMerchantShopState``).
+        if msg.get("event_name") == "FAKE_MERCHANT":
+            out["event_name"] = "FAKE_MERCHANT"
+            out["context"] = self._context(msg, room_type="Event")
+        return out
 
     def _translate_event(self, msg: dict[str, Any]) -> dict[str, Any]:
         options = msg.get("options") or []
@@ -1152,6 +1169,7 @@ class RealGame:
         # (`Player.Potions` skips empty ones); the bridge addresses belt
         # slots. Remember which slot each position is, for use/discard.
         self._potion_slots = [p.get("slot") for p in held]
+        self._potion_ids = [p.get("id") for p in held]
         return {
             "name": name,
             "hp": run_state.get("hp", 0),

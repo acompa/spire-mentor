@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { characterArt, characterInBuild, characterKey } from "./characters";
+import { characterArt, characterInBuild, characterKey, energyOrbLayers } from "./characters";
 
 describe("characterKey", () => {
   it("accepts the engine lane's bare name", () => {
@@ -42,6 +42,17 @@ describe("later-build characters (the Fool, v0.113.0)", () => {
   it("finds the Fool's art in its build's overlay, everyone else's in the shared tree", () => {
     expect(characterArt("fool", "character_sprites/fool.png")).toBe("v0.113.0/character_sprites/fool.png");
     expect(characterArt("ironclad", "character_sprites/ironclad.png")).toBe("character_sprites/ironclad.png");
+  });
+
+  it("asks only for the energy-orb layers the game has", () => {
+    // Necrobinder and Regent used to request layers 4/5 they do not have:
+    // the 404s became placeholder tiles drawn over the orb.
+    const n = (key: string) => energyOrbLayers(key).map((p) => Number(/_(\d)\.png$/.exec(p)?.[1]));
+    expect(n("necrobinder")).toEqual([1, 2, 3]);
+    expect(n("regent")).toEqual([1, 2, 3, 5, 5]);
+    for (const key of ["ironclad", "silent", "defect", "fool"]) expect(n(key)).toEqual([1, 2, 3, 4, 5]);
+    expect(energyOrbLayers("fool")[0]).toBe("v0.113.0/ui/combat/energy_counters/fool/fool_orb_layer_1.png");
+    expect(energyOrbLayers("silent")[4]).toBe("ui/combat/energy_counters/silent/silent_orb_layer_5.png");
   });
 
   it("offers the Fool only on a build that has it", () => {

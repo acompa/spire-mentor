@@ -43,7 +43,20 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
 /// absolute path (canonical checkout vs worktree) yields the SAME hash, which
 /// is what lets the build-time stamp and the runtime recompute match.
 pub fn hash_crate(crate_dir: &Path, extra: &[(&str, PathBuf)]) -> String {
+    hash_crate_with_dirs(crate_dir, extra, &[])
+}
+
+/// [`hash_crate`] plus every file under each `(label prefix, dir)` of `dirs`,
+/// labelled `<prefix>/<path under dir>`. A missing dir contributes nothing.
+pub fn hash_crate_with_dirs(
+    crate_dir: &Path,
+    extra: &[(&str, PathBuf)],
+    dirs: &[(&str, PathBuf)],
+) -> String {
     let mut records: Vec<(String, Vec<u8>)> = Vec::new();
+    for (prefix, dir) in dirs {
+        collect_dir(dir, prefix, &mut records);
+    }
     collect_dir(&crate_dir.join("src"), "src", &mut records);
     if let Ok(bytes) = std::fs::read(crate_dir.join("Cargo.toml")) {
         records.push(("Cargo.toml".to_string(), bytes));
@@ -105,11 +118,11 @@ pub const PY_DATA_INPUTS: [(&str, &str); 0] = [];
 pub const RUNAI_DATA_INPUTS: [(&str, &str); 1] =
     [("data/runai/heuristic_v.toml", "data/runai/heuristic_v.toml")];
 
-/// Extra out-of-`src` engine inputs for sts2-e2e: the v0.111.0 tables the
+/// Extra out-of-`src` engine inputs for sts2-e2e: the v0.111.0 and v0.113.0 tables the
 /// student's tokenizer bakes in with `include_str!` (`src/vocab.rs`,
 /// `src/sctx.rs`, `src/tactical.rs`). Linked into `sts2_rs` for the mod's
 /// Instinct advisor.
-pub const E2E_DATA_INPUTS: [(&str, &str); 3] = [
+pub const E2E_DATA_INPUTS: [(&str, &str); 6] = [
     (
         "crates/sts2-e2e/data/vocab_v0111.tsv",
         "crates/sts2-e2e/data/vocab_v0111.tsv",
@@ -121,6 +134,19 @@ pub const E2E_DATA_INPUTS: [(&str, &str); 3] = [
     (
         "crates/sts2-e2e/data/hits_v0111.tsv",
         "crates/sts2-e2e/data/hits_v0111.tsv",
+    ),
+    // The v0.113.0 lane's tables (GH #1535, `crate::build` in sts2-e2e).
+    (
+        "crates/sts2-e2e/data/vocab_v0113.tsv",
+        "crates/sts2-e2e/data/vocab_v0113.tsv",
+    ),
+    (
+        "crates/sts2-e2e/data/card_types_v0113.tsv",
+        "crates/sts2-e2e/data/card_types_v0113.tsv",
+    ),
+    (
+        "crates/sts2-e2e/data/hits_v0113.tsv",
+        "crates/sts2-e2e/data/hits_v0113.tsv",
     ),
 ];
 
@@ -168,7 +194,7 @@ pub const MCTS_DATA_INPUTS: [(&str, &str); 6] = [
 /// (the PPO trainer's guard, `wheel-venv.sh`'s keep-the-PGO-wheel path). The
 /// sts2-py test `engine_crates_are_what_sts2_rs_links` checks the list against
 /// `cargo metadata`, so a new dependency cannot be left out again.
-pub const ENGINE_CRATES: [&str; 9] = [
+pub const ENGINE_CRATES: [&str; 11] = [
     "sts2-core",
     "sts2-content",
     "sts2-mcts",
@@ -178,6 +204,8 @@ pub const ENGINE_CRATES: [&str; 9] = [
     "sts2-cli",
     "sts2-vocab",
     "sts2-e2e",
+    "sts2-workbench",
+    "sts2-advisor",
 ];
 
 /// The out-of-`src` inputs of engine crate `krate`, as `(label, path relative
@@ -192,14 +220,33 @@ pub fn data_inputs(krate: &str) -> &'static [(&'static str, &'static str)] {
     }
 }
 
+/// The out-of-`src` input DIRECTORIES of engine crate `krate`, as `(label
+/// prefix, path relative to the sts2-rs root)`: every file under one is an
+/// input. For a data tree whose file list changes (the workbench's game
+/// bundles, one sibling set per game build), where [`data_inputs`] would
+/// have to name each file.
+pub fn data_dirs(krate: &str) -> &'static [(&'static str, &'static str)] {
+    match krate {
+        // `data.rs` `include_str!`s the game bundles staged from `data/game/`
+        // and `data/card_tags.json` (GH #1426: `sts2_rs` links the crate for
+        // the live board import).
+        "sts2-workbench" => &[("data", "crates/sts2-workbench/data")],
+        _ => &[],
+    }
+}
+
 /// [`hash_crate`] of engine crate `krate` in the checkout at `rs_root`, with its
-/// [`data_inputs`].
+/// [`data_inputs`] and [`data_dirs`].
 pub fn hash_engine_crate(rs_root: &Path, krate: &str) -> String {
     let extra: Vec<(&str, PathBuf)> = data_inputs(krate)
         .iter()
         .map(|(label, rel)| (*label, rs_root.join(rel)))
         .collect();
-    hash_crate(&rs_root.join("crates").join(krate), &extra)
+    let dirs: Vec<(&str, PathBuf)> = data_dirs(krate)
+        .iter()
+        .map(|(label, rel)| (*label, rs_root.join(rel)))
+        .collect();
+    hash_crate_with_dirs(&rs_root.join("crates").join(krate), &extra, &dirs)
 }
 
 /// The build-script half of [`hash_engine_crate`], for an engine crate's
@@ -226,6 +273,7 @@ pub fn emit_build_stamp(krate: &str, env_var: &str) {
     );
     let data = data_inputs(krate)
         .iter()
+        .chain(data_dirs(krate))
         .map(|(_, rel)| rerun_watch_path(rs_root, &rs_root.join(rel)));
     for path in [crate_dir.join("src"), crate_dir.join("Cargo.toml")]
         .into_iter()
@@ -384,6 +432,13 @@ mod tests {
         fs::write(root.join("data/runai/heuristic_v.toml"), b"w = 2").unwrap();
         seen.push(recompute_engine_hash(&root));
         fs::write(root.join("data/prior_nets/ironclad.json"), b"{\"meta\":{}}").unwrap();
+        seen.push(recompute_engine_hash(&root));
+        // A data DIRECTORY (`data_dirs`): a new file in it, then an edit to it.
+        let bundle = root.join("crates/sts2-workbench/data/game/v0.113.0");
+        fs::create_dir_all(&bundle).unwrap();
+        fs::write(bundle.join("cards.json"), b"{}").unwrap();
+        seen.push(recompute_engine_hash(&root));
+        fs::write(bundle.join("cards.json"), b"{\"A\":1}").unwrap();
         seen.push(recompute_engine_hash(&root));
         let distinct: std::collections::HashSet<_> = seen.iter().collect();
         assert_eq!(

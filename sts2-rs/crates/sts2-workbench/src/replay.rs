@@ -313,6 +313,7 @@ impl Rebuilt {
             .ok_or_else(|| "this run cannot be resumed (no replayable action line)".to_string())?;
         let mut game = Game::new();
         game.game_version = ident.game_version;
+        game.game_mode = ident.game_mode;
         game.set_record_card_plays(true);
         game.set_record_combat_log(true);
         if ident.run_mode {
@@ -323,12 +324,12 @@ impl Rebuilt {
                 )
             })?;
             if ident.e2e_setup {
-                start_e2e(&mut game, &mode_seed, ident.ascension)?;
+                start_e2e(&mut game, &ident.character, &mode_seed, ident.ascension)?;
             } else {
                 let ModeSeed::Int(seed) = mode_seed else {
                     return Err("a game seed string needs the e2e setup".to_string());
                 };
-                game.start_faithful(&ident.character, seed, ident.ascension)
+                game.start_faithful(&ident.character, seed, ident.ascension, &ident.act1)
                     .map_err(|GameError(m)| m)?;
             }
         } else {
@@ -654,16 +655,21 @@ mod tests {
 }
 
 /// `Game::start_e2e`, or an error in a build without the `e2e` feature.
-fn start_e2e(game: &mut Game, seed: &ModeSeed, ascension: u8) -> Result<(), String> {
+fn start_e2e(
+    game: &mut Game,
+    character: &str,
+    seed: &ModeSeed,
+    ascension: u8,
+) -> Result<(), String> {
     #[cfg(feature = "e2e")]
     {
-        game.start_e2e_seed(seed, ascension)
+        game.start_e2e_seed(character, seed, ascension)
             .map(|_| ())
             .map_err(|GameError(m)| m)
     }
     #[cfg(not(feature = "e2e"))]
     {
-        let _ = (game, seed, ascension);
+        let _ = (game, character, seed, ascension);
         Err("this build has no e2e feature; cannot rebuild an e2e run".to_string())
     }
 }

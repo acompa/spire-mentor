@@ -283,6 +283,7 @@ mod tests {
                 card_type,
                 target_type: target,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: dmg,
                 base_block: 0,
                 combat_vars: sts2_core::cards::CombatVars::new(),

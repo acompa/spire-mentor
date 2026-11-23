@@ -211,7 +211,9 @@ def test_wpa_verify_error_contracts(tmp_path, monkeypatch):
 def test_replay_wpa_review_reports_won_from_terminal_victory(tmp_path):
     # Fix #4: the replay review surfaces the run outcome from the logged
     # ``game_over`` state's ``victory`` (the live path reads it from ``rm``).
-    log = tmp_path / "won_run.jsonl"
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    log = logs / "won_run.jsonl"
     log.write_text(
         "\n".join(
             json.dumps(e)
@@ -227,8 +229,6 @@ def test_replay_wpa_review_reports_won_from_terminal_victory(tmp_path):
     )
     images = tmp_path / "images"
     images.mkdir()
-    logs = tmp_path / "logs"
-    logs.mkdir()
     c = TestClient(create_app(images_root=images, logs_dir=logs))
     assert c.post("/api/load", json={"path": str(log)}).status_code == 200
     body = c.post("/api/wpa-review", json={"config": {"min_swing": 0.05}}).json()

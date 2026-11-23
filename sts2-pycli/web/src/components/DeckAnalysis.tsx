@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DeckAnalysis as Report, TrendPoint } from "../api";
 import { loadArchetypes, deckMembership, type ArchetypeMembership } from "../archetype";
+import { t } from "../i18n";
 
 /**
  * Modal grading the master deck on the three axes — Damage, Block, Velocity —
@@ -17,36 +18,35 @@ import { loadArchetypes, deckMembership, type ArchetypeMembership } from "../arc
 const AXES = [
   {
     key: "damage",
-    label: "Damage",
+    label: t("Damage"),
     color: "var(--hp, oklch(62% 0.2 25))",
-    help: "Average damage your deck deals per turn over a simulated multi-turn fight. Scaling (Strength, per-turn powers), multi-hit and AOE all earn their score by raising this output — nothing is a flat bonus.",
+    help: t("Average damage your deck deals per turn over a simulated multi-turn fight. Scaling (Strength, per-turn powers), multi-hit and AOE all earn their score by raising this output — nothing is a flat bonus."),
   },
   {
     key: "block",
-    label: "Block",
+    label: t("Block"),
     color: "oklch(70% 0.13 240)",
-    help: "Average block your deck gains per turn over the simulation. Block engines (Metallicize, Dexterity, Barricade) show up by compounding over turns.",
+    help: t("Average block your deck gains per turn over the simulation. Block engines (Metallicize, Dexterity, Barricade) show up by compounding over turns."),
   },
   {
     key: "velocity",
-    label: "Velocity",
+    label: t("Velocity"),
     color: "oklch(78% 0.16 95)",
-    help: "Extra card plays your draw/energy engines buy per turn — measured as plays-per-turn above the same deck simulated on raw energy. Doing more with less.",
+    help: t("Extra card plays your draw/energy engines buy per turn — measured as plays-per-turn above the same deck simulated on raw energy. Doing more with less."),
   },
 ] as const;
 
-const SCORE_HELP =
-  "Each axis is a 0-100 index (higher is better) with diminishing returns — NOT raw damage/block. " +
-  "It saturates, so going from 20→40 is a bigger real jump than 80→90. The scores come from simulating " +
-  "the deck over several turns, so scaling, AOE and velocity emerge from actual play. Hover an axis for details.";
+const SCORE_HELP = t(
+  "Each axis is a 0-100 index (higher is better) with diminishing returns — NOT raw damage/block. It saturates, so going from 20→40 is a bigger real jump than 80→90. The scores come from simulating the deck over several turns, so scaling, AOE and velocity emerge from actual play. Hover an axis for details.",
+);
 
 const VEL_LABELS: Record<string, string> = {
-  draw: "card draw",
-  energy: "energy gain",
-  extra_play: "extra plays",
-  tutor: "deck manip",
-  cost_reduction: "cost reduction",
-  exhaust_synergy: "exhaust engine",
+  draw: t("card draw"),
+  energy: t("energy gain"),
+  extra_play: t("extra plays"),
+  tutor: t("deck manip"),
+  cost_reduction: t("cost reduction"),
+  exhaust_synergy: t("exhaust engine"),
 };
 
 function Bar({ label, value, color, help }: { label: string; value: number; color: string; help?: string }) {
@@ -77,7 +77,7 @@ function Radar({ d, b, v }: { d: number; b: number; v: number }) {
   const vals = [d, b, v].map((x) => Math.max(0.02, x / 100));
   const poly = vals.map((f, i) => pt(f, i));
   const path = (pts: number[][]) => pts.map((p) => p.join(",")).join(" ");
-  const labels = ["DMG", "BLK", "VEL"];
+  const labels = [t("DMG"), t("BLK"), t("VEL")];
   return (
     <svg width={140} height={150} aria-hidden style={{ flexShrink: 0 }}>
       <polygon points={path(outer)} fill="none" stroke="var(--border)" />
@@ -124,7 +124,7 @@ function Trend({ points, onSeek }: { points: TrendPoint[]; onSeek?: (idx: number
     points.map((p, i) => `${x(i)},${y(p.scores[k])}`).join(" ");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <b style={{ fontSize: 12 }}>Run trend</b>
+      <b style={{ fontSize: 12 }}>{t("Run trend")}</b>
       <svg width={W} height={H} style={{ background: "var(--panel)", borderRadius: 6 }}>
         {[25, 50, 75].map((g) => (
           <line key={g} x1={padX} x2={W - padX} y1={y(g)} y2={y(g)} stroke="var(--border)" opacity={0.4} />
@@ -136,16 +136,16 @@ function Trend({ points, onSeek }: { points: TrendPoint[]; onSeek?: (idx: number
         {points.map((p, i) => (
           <circle key={i} cx={x(i)} cy={y(p.scores.volume)} r={3} fill="var(--fg)"
             style={{ cursor: onSeek ? "pointer" : "default" }} onClick={() => onSeek?.(p.idx)}>
-            <title>{`floor ${p.floor ?? "?"} · ${p.deck_size} cards · volume ${p.scores.volume}`}</title>
+            <title>{t("floor {floor} · {n} cards · volume {volume}", { floor: p.floor ?? "?", n: p.deck_size, volume: p.scores.volume })}</title>
           </circle>
         ))}
       </svg>
       <div style={{ display: "flex", gap: 12, fontSize: 10, color: "var(--muted)" }}>
-        <span style={{ color: "var(--fg)" }}>● volume</span>
-        <span style={{ color: "var(--hp, oklch(62% 0.2 25))" }}>● damage</span>
-        <span style={{ color: "oklch(70% 0.13 240)" }}>● block</span>
-        <span style={{ color: "oklch(78% 0.16 95)" }}>● velocity</span>
-        <span style={{ marginLeft: "auto" }}>{n} deck changes · click a point to jump</span>
+        <span style={{ color: "var(--fg)" }}>● {t("volume")}</span>
+        <span style={{ color: "var(--hp, oklch(62% 0.2 25))" }}>● {t("damage")}</span>
+        <span style={{ color: "oklch(70% 0.13 240)" }}>● {t("block")}</span>
+        <span style={{ color: "oklch(78% 0.16 95)" }}>● {t("velocity")}</span>
+        <span style={{ marginLeft: "auto" }}>{t("{n} deck changes · click a point to jump", { n })}</span>
       </div>
     </div>
   );
@@ -208,7 +208,7 @@ export default function DeckAnalysis({
     : 1;
 
   return (
-    <div role="dialog" aria-label="Deck Analysis" onClick={onClose}
+    <div role="dialog" aria-label={t("Deck Analysis")} onClick={onClose}
       style={{ position: "fixed", inset: 0, zIndex: 50, background: "oklch(20% 0.02 255 / .55)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div className="mono" onClick={(e) => e.stopPropagation()}
@@ -218,17 +218,17 @@ export default function DeckAnalysis({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
           padding: "12px 16px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0,
           background: "var(--bg)" }}>
-          <b>Deck Analysis{report && !report.empty ? ` (${report.deck_size} cards)` : ""}</b>
-          <button onClick={onClose} aria-label="Close"
+          <b>{t("Deck Analysis")}{report && !report.empty ? ` ${t("({n} cards)", { n: report.deck_size })}` : ""}</b>
+          <button onClick={onClose} aria-label={t("Close")}
             style={{ padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer" }}>
-            close (Esc)
+            {t("close (Esc)")}
           </button>
         </div>
 
         {!report ? (
-          <div style={{ padding: 24, color: "var(--muted)" }}>analyzing…</div>
+          <div style={{ padding: 24, color: "var(--muted)" }}>{t("analyzing…")}</div>
         ) : report.empty ? (
-          <div style={{ padding: 24, color: "var(--muted)" }}>no deck available on this screen</div>
+          <div style={{ padding: 24, color: "var(--muted)" }}>{t("no deck available on this screen")}</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 18, padding: 16 }}>
             {/* Volume + axes */}
@@ -236,9 +236,9 @@ export default function DeckAnalysis({
               <Radar d={report.scores.damage} b={report.scores.block} v={report.scores.velocity} />
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontSize: 28, fontWeight: 700 }} title="Overall deck strength: the three axes multiplied, shown as their geometric mean. A deck weak on one axis can't hide behind the others.">{report.scores.volume}</span>
+                  <span style={{ fontSize: 28, fontWeight: 700 }} title={t("Overall deck strength: the three axes multiplied, shown as their geometric mean. A deck weak on one axis can't hide behind the others.")}>{report.scores.volume}</span>
                   <span style={{ color: "var(--muted)", fontSize: 11 }}>
-                    volume · Damage × Block × Velocity (geometric mean, 0-100)
+                    {t("volume · Damage × Block × Velocity (geometric mean, 0-100)")}
                   </span>
                 </div>
                 {AXES.map((a) => (
@@ -263,8 +263,8 @@ export default function DeckAnalysis({
             {membership.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ fontSize: 12, fontWeight: 600 }}
-                  title="Archetypes your deck is building, and where you sit on each one's measured combat dose-response curve. ⚡ = the next piece turns super-additive.">
-                  Archetypes
+                  title={t("Archetypes your deck is building, and where you sit on each one's measured combat dose-response curve. ⚡ = the next piece turns super-additive.")}>
+                  {t("Archetypes")}
                 </div>
                 {membership.map((m) => {
                   const total = m.archetype.cards.length;
@@ -275,13 +275,13 @@ export default function DeckAnalysis({
                       : "var(--muted)";
                   return (
                     <div key={m.archetype.id} style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <span style={{ color, fontWeight: 600 }}>{m.archetype.label}</span>
+                      <span style={{ color, fontWeight: 600 }}>{t(m.archetype.label)}</span>
                       <span style={{ color: "var(--muted)" }}>
-                        {m.k} of {total} pieces
+                        {t("{k} of {total} pieces", { k: m.k, total })}
                         {m.marginalNext !== 0 && (
                           <>
-                            {" · "}next piece {m.marginalNext > 0 ? "+" : ""}{m.marginalNext.toFixed(1)}
-                            {m.superAdditiveNext ? " ⚡ super-additive" : ""}
+                            {" · "}{t("next piece")} {m.marginalNext > 0 ? "+" : ""}{m.marginalNext.toFixed(1)}
+                            {m.superAdditiveNext ? ` ${t("⚡ super-additive")}` : ""}
                           </>
                         )}
                       </span>
@@ -296,14 +296,14 @@ export default function DeckAnalysis({
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-              <Section title="Damage">
+              <Section title={t("Damage")}>
                 <span style={{ fontSize: 12 }}
-                  title="Simulated average damage dealt per turn over a multi-turn fight — single-target (boss) and vs 3 enemies (hallway). Scaling and AOE are already baked in.">
-                  <b>{report.damage.single_target}</b>/turn single-target ·
-                  {" "}<b>{report.damage.vs_group}</b>/turn vs 3
+                  title={t("Simulated average damage dealt per turn over a multi-turn fight — single-target (boss) and vs 3 enemies (hallway). Scaling and AOE are already baked in.")}>
+                  <b>{report.damage.single_target}</b>{t("/turn single-target")} ·
+                  {" "}<b>{report.damage.vs_group}</b>{t("/turn vs 3")}
                 </span>
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>scaling</span>
-                <Chips items={report.damage.scaling_cards} empty="no damage scaling" />
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("scaling")}</span>
+                <Chips items={report.damage.scaling_cards} empty={t("no damage scaling")} />
                 {report.damage.aoe_attacks.length > 0 && (
                   <>
                     <span style={{ fontSize: 11, color: "var(--muted)" }}>AOE</span>
@@ -312,27 +312,27 @@ export default function DeckAnalysis({
                 )}
               </Section>
 
-              <Section title="Block">
+              <Section title={t("Block")}>
                 <span style={{ fontSize: 12 }}
-                  title="Simulated average block gained per turn (block engines and Dexterity baked in).">
-                  <b>{report.block.per_turn}</b> block/turn
+                  title={t("Simulated average block gained per turn (block engines and Dexterity baked in).")}>
+                  <b>{report.block.per_turn}</b> {t("block/turn")}
                 </span>
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>scaling</span>
-                <Chips items={report.block.scaling_cards} empty="no block engine" />
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("scaling")}</span>
+                <Chips items={report.block.scaling_cards} empty={t("no block engine")} />
               </Section>
 
-              <Section title="Velocity">
+              <Section title={t("Velocity")}>
                 <span style={{ fontSize: 12 }}
-                  title="Simulated cards played per turn, and how many of those your draw/energy engines buy over the same deck on raw energy.">
-                  ≈ <b>{report.velocity.cards_per_turn}</b> cards played/turn
+                  title={t("Simulated cards played per turn, and how many of those your draw/energy engines buy over the same deck on raw energy.")}>
+                  ≈ <b>{report.velocity.cards_per_turn}</b> {t("cards played/turn")}
                   <span style={{ color: "var(--muted)" }}>
-                    {" "}(+{report.velocity.extra_per_turn} from engines)
+                    {" "}{t("(+{n} from engines)", { n: report.velocity.extra_per_turn })}
                   </span>
                 </span>
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>{report.velocity.engine_cards} engine cards</span>
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("{n} engine cards", { n: report.velocity.engine_cards })}</span>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                   {Object.entries(report.velocity.tags).length === 0 ? (
-                    <span style={{ color: "var(--muted)", fontSize: 11 }}>no draw / energy / replay</span>
+                    <span style={{ color: "var(--muted)", fontSize: 11 }}>{t("no draw / energy / replay")}</span>
                   ) : (
                     Object.entries(report.velocity.tags).map(([k, n]) => (
                       <span key={k} style={{ fontSize: 11, padding: "1px 6px", border: "1px solid var(--border)",
@@ -342,14 +342,14 @@ export default function DeckAnalysis({
                 </div>
               </Section>
 
-              <Section title="Composition">
+              <Section title={t("Composition")}>
                 <div style={{ fontSize: 11, display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {Object.entries(report.composition.by_type).map(([t, n]) => (
                     <span key={t}>{t} {n}</span>
                   ))}
                 </div>
                 <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                  dead {report.composition.dead_cards} · unupgraded basics {report.composition.unupgraded_basics}
+                  {t("dead {dead} · unupgraded basics {basics}", { dead: report.composition.dead_cards, basics: report.composition.unupgraded_basics })}
                 </span>
                 {/* energy curve */}
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 48, marginTop: 4 }}>
@@ -366,10 +366,7 @@ export default function DeckAnalysis({
             </div>
 
             <span style={{ fontSize: 10, color: "var(--muted)" }}>
-              From simulating the deck over multiple turns ({report.assumptions.samples} rollouts,
-              {" "}{report.assumptions.energy} energy, {report.assumptions.hand}-card hands). Models attacks,
-              block, Strength/Dex, per-turn powers, draw/energy and exhaust; not yet orbs/poison/summons.
-              Heuristics for learning, not a verdict.
+              {t("From simulating the deck over multiple turns ({samples} rollouts, {energy} energy, {hand}-card hands). Models attacks, block, Strength/Dex, per-turn powers, draw/energy and exhaust; not yet orbs/poison/summons. Heuristics for learning, not a verdict.", { samples: report.assumptions.samples, energy: report.assumptions.energy, hand: report.assumptions.hand })}
             </span>
           </div>
         )}

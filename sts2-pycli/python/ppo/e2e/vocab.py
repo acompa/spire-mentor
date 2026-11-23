@@ -11,7 +11,12 @@ policy trunk, the value module and the content prior.
 * ids from 32 are the registry blocks, in `REGISTRIES` order, each in the
   engine's registry order at creation.
 
-`vocab.tsv` beside this module is the source of truth. It is append-only: a
+`vocab.tsv` beside this module is the source of truth for v0.111.0 lanes. A
+later build's lane (`ppo.e2e.build`, GH #1535) reads its own table,
+`vocab_<build>.tsv` (`vocab_v0113.tsv`): `vocab.tsv`'s rows unchanged, then that
+build's new names, so a v0.111.0 net's rows keep their ids there and a v0.111.0
+lane's `vocab_sha256` never moves. `engine_names(build)` reads each registry's
+every-build universe (`card_any`, `relic_any`, ...) for a later build. It is append-only: a
 later wheel's new names go after the last used id (whatever their registry),
 and no row is ever removed or renumbered. `python -m ppo.e2e.vocab --check`
 compares it with the installed engine; `--append` appends what is new. Both
@@ -33,9 +38,23 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Final
 
+from . import build as _build
 from .contracts import VOCAB_ROWS
 
-TSV_PATH: Final = Path(__file__).with_name("vocab.tsv")
+BASE_TSV_PATH: Final = Path(__file__).with_name("vocab.tsv")
+
+
+def tsv_path(build: str) -> Path:
+    """The table of a lane on `build`: `vocab.tsv` for v0.111.0, else `vocab_<tag>.tsv`
+    (`v0.113.0` -> `vocab_v0113.tsv`)."""
+    if build == _build.DEFAULT_BUILD:
+        return BASE_TSV_PATH
+    major, minor, _patch = build.removeprefix("v").split(".")
+    return BASE_TSV_PATH.with_name(f"vocab_v{major}{minor}.tsv")
+
+
+# The process's lane build's table.
+TSV_PATH: Final = tsv_path(_build.GAME_VERSION)
 
 # Block order. Never reorder; a new registry appends here and in specials.
 REGISTRIES: Final = (
@@ -57,6 +76,8 @@ FIRST_BLOCK_ID: Final = 32
 # `RestSiteOption::option_id` (sts2-core runstate.rs:1030-1041); the engine
 # exposes no registry for it, so the list is pinned here.
 REST_OPTIONS: Final = ("HEAL", "SMITH", "DIG", "LIFT", "COOK", "CLONE", "HATCH", "KINDLE", "MEND")
+# A later build's table also names the options v0.111.0's lacks (EVOLVE, RESTORE).
+REST_OPTIONS_ANY: Final = (*REST_OPTIONS, "EVOLVE", "RESTORE")
 # The event fights' encounters: `list_encounters()` lists the map's encounters
 # only, but `CombatState.encounter_id` names an event's fight by its event
 # encounter (sts2-wire `emit::names::event_encounter_id`, GH #1097). Pinned
@@ -138,26 +159,47 @@ class Row:
     name: str  # the engine's spelling (canonical lookups go through CANON)
 
 
-def engine_names() -> dict[str, list[str]]:
-    """Each registry's names from the installed engine, in registry order."""
+# Per registry: the engine kind a v0.111.0 table reads, and the every-build kind a
+# later build's reads (None: the same kind; `monster` is `monster_species()`).
+_KINDS: Final = {
+    "card": ("card", "card_any"),
+    "relic": ("relic_id", "relic_any"),
+    "potion": ("potion", "potion_any"),
+    "power": ("power_all", "power_any"),
+    "event": ("event", "event_any"),
+}
+
+
+def engine_names(build: str = _build.GAME_VERSION) -> dict[str, list[str]]:
+    """Each registry's names from the installed engine, in registry order: the
+    v0.111.0 universe for a v0.111.0 table, every build's for a later one."""
     import sts2_rs
 
-    def reg(kind: str) -> list[str]:
-        return list(sts2_rs.list_registry_names(kind))
+    later = build != _build.DEFAULT_BUILD
 
-    species = list(sts2_rs.monster_species())
-    moves = [f"{s}.{m['id']}" for s in species for m in sts2_rs.monster_moves(s)]
+    def reg(registry: str) -> list[str]:
+        kinds = _KINDS.get(registry, (registry, registry))
+        return list(sts2_rs.list_registry_names(kinds[1 if later else 0]))
+
+    if later:
+        species = list(sts2_rs.list_registry_names("monster_any"))
+    else:
+        species = list(sts2_rs.monster_species())
+    # Moves of the species with an AI: v0.113.0's Wuppy is the player's pet (an ally
+    # like the Osty), which has none (`monster_moves` would panic).
+    ai = set(sts2_rs.monster_species())
+    moves = [f"{s}.{m['id']}" for s in species if s in ai for m in sts2_rs.monster_moves(s)]
     return {
         "card": reg("card"),
-        "relic": reg("relic_id"),
+        "relic": reg("relic"),
         "potion": reg("potion"),
-        "power": reg("power_all"),
+        "power": reg("power"),
         "monster": species,
         "encounter": [str(e["id"]) for e in sts2_rs.list_encounters()] + list(EVENT_ENCOUNTERS),
         "event": reg("event"),
         "enchantment": reg("enchantment"),
         "orb": reg("orb"),
-        "rest": list(REST_OPTIONS),
+        "rest": list(REST_OPTIONS_ANY if later else REST_OPTIONS),
         "move": moves,
     }
 
@@ -282,17 +324,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     g.add_argument("--check", action="store_true", help="fail if the engine has new names")
     g.add_argument("--append", action="store_true", help="append new engine names")
     g.add_argument("--init", action="store_true", help="write a fresh table (no TSV yet)")
+    ap.add_argument(
+        "--build",
+        default=_build.GAME_VERSION,
+        help="the lane build whose table to check or append (default: the process's)",
+    )
     a = ap.parse_args(argv)
-    names = engine_names()
+    build = _build.resolve(a.build)
+    path = tsv_path(build)
+    names = engine_names(build)
     if a.init:
-        if TSV_PATH.exists():
-            print(f"{TSV_PATH} exists; use --append", file=sys.stderr)
+        if path.exists():
+            print(f"{path} exists; use --append", file=sys.stderr)
+            return 2
+        if path != BASE_TSV_PATH:
+            print(
+                f"a later build's table starts from {BASE_TSV_PATH}; use --append", file=sys.stderr
+            )
             return 2
         rows = build_rows(names)
-        write_tsv(rows)
+        write_tsv(rows, path)
         print(f"wrote {len(rows)} rows, sha256 {sha256(rows)}")
         return 0
-    old = read_tsv()
+    # A later build's first append starts from the v0.111.0 table's rows.
+    old = read_tsv(path if path.exists() else BASE_TSV_PATH)
     try:
         new = build_rows(names, old)
     except ValueError as e:
@@ -304,8 +359,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"new: {r.registry} {r.name}")
         print(f"{len(old)} rows, {len(added)} new, sha256 {sha256(old)}")
         return 1 if added else 0
-    write_tsv(new)
-    print(f"appended {len(added)} rows, sha256 {sha256(new)}")
+    write_tsv(new, path)
+    print(f"appended {len(added)} rows to {path.name}, sha256 {sha256(new)}")
     return 0
 
 

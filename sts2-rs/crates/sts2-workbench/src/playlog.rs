@@ -11,6 +11,7 @@
 
 use serde_json::Value;
 
+use crate::i18n::trf;
 use crate::render::py;
 
 /// Two-space indent + downwards-arrow-with-tip-rightwards.
@@ -33,7 +34,10 @@ pub fn format_play_log(entries: &[Value], name_of: &dyn Fn(&str) -> String) -> V
             name.push('+');
         }
         if py::truthy_opt(py::get_raw(e, "auto_played")) {
-            lines.push(format!("{AUTO}{name} (auto-played)"));
+            lines.push(format!(
+                "{AUTO}{}",
+                trf("{name} (auto-played)", &[("name", &name)])
+            ));
             continue;
         }
         // Only X-cost triggers carry a stamped energy_spent at record time; a
@@ -41,7 +45,10 @@ pub fn format_play_log(entries: &[Value], name_of: &dyn Fn(&str) -> String) -> V
         let suffix = py::get_raw(e, "energy_spent")
             .filter(|s| py::truthy(s))
             .map_or_else(String::new, |s| format!(" (X={})", py::to_str(s)));
-        lines.push(format!("Play {name}{suffix}"));
+        lines.push(trf(
+            "Play {name}{suffix}",
+            &[("name", &name), ("suffix", &suffix)],
+        ));
     }
     lines
 }

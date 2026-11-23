@@ -40,7 +40,7 @@ pub(crate) fn fiend_fire_hits(state: &mut CombatState, packed: u8) {
         return;
     };
     let dmg = current_damage(state);
-    for _ in 0..count {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, i32::from(count)) {
         let _ = deal_damage_player_to_enemy(state, t, dmg);
     }
 }

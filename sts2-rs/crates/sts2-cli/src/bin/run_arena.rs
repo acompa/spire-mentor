@@ -28,6 +28,12 @@
 //! against a rolled one is not a paired act comparison — the delta blends the
 //! act change with per-seed difficulty; `compare` detects that and warns.
 //!
+//! ## Game build (`--game-version`, GH #1359)
+//!
+//! `sweep`, `label-campaign` and `proxy-study` take `--game-version`; absent,
+//! they simulate [`GameVersion::default`] (v0.107.1), as before the flag
+//! existed. A row from a non-default build carries a `game_version` field.
+//!
 //! ## Determinism
 //!
 //! Output rows are sorted by `(seed, character, ascension)`. Everything
@@ -43,6 +49,7 @@ use std::time::{Duration, Instant};
 use clap::{Args, Parser, Subcommand};
 use rayon::prelude::*;
 
+use sts2_core::GameVersion;
 use sts2_runai::arena::{
     character_token, parse_character, policy_label, run_cell, summarize, Act1Choice, ArenaRow,
     CellSpec, CombatBudgetKind, PolicyKind, Summary, DEFAULT_LIVELOCK_STALL_LIMIT,
@@ -54,6 +61,11 @@ use sts2_runai::label::run_label_cell;
 use sts2_runai::panel::{write_panels, Panel, PanelRow};
 use sts2_runai::policy::{AblationSurface, LeafKind};
 use sts2_runai::rollout::{LabelHorizon, ProbeBudget};
+
+/// clap value-parser for `--game-version <build>` (GH #1359).
+fn parse_game_version(s: &str) -> Result<GameVersion, String> {
+    s.parse::<GameVersion>().map_err(|e| e.to_string())
+}
 
 /// clap value-parser for `--ablate <surface>` (E2 importance leg).
 fn parse_ablation(s: &str) -> Result<AblationSurface, String> {
@@ -303,6 +315,14 @@ struct ForkLabelArgs {
 
 #[derive(Debug, Args)]
 struct ProxyStudyArgs {
+    /// The game build to simulate (GH #1359): `v0.107.1` | `v0.111.0` |
+    /// `v0.113.0`. Default: the engine's own default build (v0.107.1), what
+    /// every arena run simulated before this flag existed. Pass the build
+    /// `PpoRunEnv` runs on when comparing against it, or the comparison is
+    /// version skew.
+    #[arg(long, default_value_t = GameVersion::default(), value_parser = parse_game_version)]
+    game_version: GameVersion,
+
     /// Number of self-play seeds (`seed_start..seed_start+N`).
     #[arg(long, default_value_t = 300)]
     seeds: u32,
@@ -414,6 +434,14 @@ struct SweepArgs {
     #[arg(long, default_value = "roll", value_parser = Act1Choice::parse)]
     act1: Act1Choice,
 
+    /// The game build to simulate (GH #1359): `v0.107.1` | `v0.111.0` |
+    /// `v0.113.0`. Default: the engine's own default build (v0.107.1), what
+    /// every arena run simulated before this flag existed. Pass the build
+    /// `PpoRunEnv` runs on when comparing against it, or the comparison is
+    /// version skew.
+    #[arg(long, default_value_t = GameVersion::default(), value_parser = parse_game_version)]
+    game_version: GameVersion,
+
     /// Debug override: non-boss sims (taints the frozen budget — recorded in the policy label).
     #[arg(long)]
     sims: Option<u32>,
@@ -518,6 +546,10 @@ struct OneCellArgs {
     /// Act-1 model (threaded from the parent sweep — see `SweepArgs::act1`).
     #[arg(long, default_value = "roll", value_parser = Act1Choice::parse)]
     act1: Act1Choice,
+    /// Game build (threaded from the parent sweep — see
+    /// `SweepArgs::game_version`).
+    #[arg(long, default_value_t = GameVersion::default(), value_parser = parse_game_version)]
+    game_version: GameVersion,
     #[arg(long)]
     sims: Option<u32>,
     #[arg(long)]
@@ -536,6 +568,14 @@ struct OneCellArgs {
 
 #[derive(Debug, Args)]
 struct LabelCampaignArgs {
+    /// The game build to simulate (GH #1359): `v0.107.1` | `v0.111.0` |
+    /// `v0.113.0`. Default: the engine's own default build (v0.107.1), what
+    /// every arena run simulated before this flag existed. Pass the build
+    /// `PpoRunEnv` runs on when comparing against it, or the comparison is
+    /// version skew.
+    #[arg(long, default_value_t = GameVersion::default(), value_parser = parse_game_version)]
+    game_version: GameVersion,
+
     /// Seed-panel JSON file (rows {seed, ascension, character}).
     #[arg(long, conflicts_with = "seeds")]
     panel: Option<PathBuf>,
@@ -1062,6 +1102,7 @@ fn proxy_study(args: &ProxyStudyArgs) -> std::io::Result<()> {
             // existing probe was recorded against. Add the flag here only if
             // a probe is ever re-run per act.
             act1: Act1Choice::Overgrowth,
+            game_version: args.game_version,
             audit: false,
             ablate: None,
         })
@@ -1140,6 +1181,7 @@ fn one_cell(args: &OneCellArgs) -> std::io::Result<()> {
         max_steps: args.max_steps,
         livelock_stall_limit: args.stall_limit,
         act1: args.act1,
+        game_version: args.game_version,
         audit: args.audit_log.is_some(),
         ablate: args.ablate,
     };
@@ -1184,6 +1226,7 @@ fn build_cells(args: &SweepArgs) -> std::io::Result<Vec<CellSpec>> {
                 max_steps: args.max_steps,
                 livelock_stall_limit: args.stall_limit,
                 act1: args.act1,
+                game_version: args.game_version,
                 audit: args.audit_log.is_some(),
                 ablate: args.ablate,
             })
@@ -1254,11 +1297,12 @@ fn sweep(args: &SweepArgs) -> std::io::Result<()> {
     }
     let cells = build_cells(args)?;
     eprintln!(
-        "run_arena sweep: {} cells, policy={}, combat={}, act1={}, timeout_ms={}, jobs={}",
+        "run_arena sweep: {} cells, policy={}, combat={}, act1={}, game_version={}, timeout_ms={}, jobs={}",
         cells.len(),
         args.policy.token(),
         args.combat.token(),
         args.act1.token(),
+        args.game_version,
         args.timeout_ms,
         if args.jobs == 0 {
             num_threads()
@@ -1439,6 +1483,7 @@ fn label_campaign(args: &LabelCampaignArgs) -> std::io::Result<()> {
                 // label corpus is Overgrowth, and mixing acts inside one
                 // corpus would silently blend two room distributions.
                 act1: Act1Choice::Overgrowth,
+                game_version: args.game_version,
                 audit: true,
                 ablate: None,
             })
@@ -1718,6 +1763,9 @@ fn run_cell_in_child(
         // reported whatever `--act1` asked for.
         .arg("--act1")
         .arg(cell.act1.token())
+        // Same for the build: the child's default is v0.107.1.
+        .arg("--game-version")
+        .arg(cell.game_version.as_str())
         .arg("--max-steps")
         .arg(cell.max_steps.to_string())
         .arg("--stall-limit")
@@ -1815,7 +1863,8 @@ fn failure_row(cell: &CellSpec, outcome: &str, bin: &str, wall_ms: u64) -> Arena
         seed: cell.seed,
         character: character_token(cell.character).to_string(),
         ascension: cell.ascension,
-        act1: cell.act1.resolved_token(cell.seed),
+        act1: cell.act1.resolved_token(cell.seed, cell.game_version),
+        game_version: cell.game_version,
         policy: policy_label(cell),
         combat_budget: cell.combat.token().to_string(),
         outcome: outcome.to_string(),
@@ -1936,6 +1985,48 @@ fn print_summary(summary: &Summary, elapsed: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GH #1359: `--game-version` parses on every run-building subcommand,
+    /// defaults to the engine's default build, and rejects unknown builds.
+    #[test]
+    fn game_version_flag_parses_and_defaults() {
+        let sweep_version = |extra: &[&str]| {
+            let mut argv = vec!["run_arena", "sweep", "--seeds", "1"];
+            argv.extend_from_slice(extra);
+            match Cli::try_parse_from(argv).map(|c| c.command) {
+                Ok(Cmd::Sweep(a)) => Ok(a.game_version),
+                Ok(other) => panic!("parsed as {other:?}"),
+                Err(e) => Err(e),
+            }
+        };
+        assert_eq!(sweep_version(&[]).unwrap(), GameVersion::default());
+        assert_eq!(
+            sweep_version(&["--game-version", "v0.111.0"]).unwrap(),
+            GameVersion::V0_111_0
+        );
+        assert_eq!(
+            sweep_version(&["--game-version", "0.113.0"]).unwrap(),
+            GameVersion::V0_113_0
+        );
+        assert!(sweep_version(&["--game-version", "v0.999.0"]).is_err());
+
+        for sub in [
+            vec!["one-cell", "--seed", "1", "--character", "ironclad"],
+            vec!["label-campaign", "--seeds", "1"],
+            vec!["proxy-study"],
+        ] {
+            let mut argv = vec!["run_arena"];
+            argv.extend(sub.iter().copied());
+            argv.extend(["--game-version", "v0.111.0"]);
+            let got = match Cli::try_parse_from(&argv).unwrap().command {
+                Cmd::OneCell(a) => a.game_version,
+                Cmd::LabelCampaign(a) => a.game_version,
+                Cmd::ProxyStudy(a) => a.game_version,
+                other => panic!("parsed as {other:?}"),
+            };
+            assert_eq!(got, GameVersion::V0_111_0, "{sub:?}");
+        }
+    }
 
     #[test]
     fn label_campaign_parses_horizon() {

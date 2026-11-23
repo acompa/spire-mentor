@@ -23,21 +23,22 @@ use pyo3::types::{PyDict, PyList, PyTuple};
 use smallvec::SmallVec;
 use std::collections::HashSet;
 
+use sts2_advisor::mirror_state::choice_kind_from_python_name;
 use sts2_content::cards::dispatch as card_dispatch;
 use sts2_content::cards::ironclad_basic::ironclad_starter_deck;
 use sts2_content::monster_dispatch::{build_ai_with_ascension, MonsterSpawnArgs, SpawnPosition};
+use sts2_core::cards::Card;
 #[cfg(test)]
 use sts2_core::cards::CardType;
-use sts2_core::cards::{Card, PileKind, VarKey};
 use sts2_core::combat_loop::{start_combat, start_player_turn};
 use sts2_core::{
     apply as core_apply, eval_features as core_eval_features,
     eval_features_wide as core_eval_features_wide,
     evaluate_in_progress_raw as core_evaluate_in_progress_raw, legal_actions as core_legal_actions,
     parity, state_hash as core_state_hash, terminal_value as core_terminal_value, Action, CardUid,
-    ChoiceKind, ChoiceOption, CombatPhase, CombatState as CoreCombatState, Creature, CreatureUid,
-    IntentHistory, MonsterId, MonsterKind, PendingChoice, PlayerCombatState, Side, TurnEvents,
-    EVAL_FEATURE_NAMES, EVAL_FEATURE_NAMES_WIDE, EVAL_FEATURE_WEIGHTS,
+    ChoiceKind, CombatPhase, CombatState as CoreCombatState, Creature, CreatureUid, IntentHistory,
+    MonsterId, MonsterKind, PlayerCombatState, Side, TurnEvents, EVAL_FEATURE_NAMES,
+    EVAL_FEATURE_NAMES_WIDE, EVAL_FEATURE_WEIGHTS,
 };
 use sts2_mcts::{
     hint as mcts_hint, par_search_with_policy, LeafEval, Mcts, MctsConfig, SharedPolicy,
@@ -46,10 +47,26 @@ use sts2_mcts::{
 use sts2_wire::emit::mcts::RecommendParams;
 #[cfg(test)]
 use sts2_wire::emit::names::card_type_python_name;
-use sts2_wire::emit::names::choice_kind_python_name;
 
 // The `#[global_allocator]` (mimalloc) and its purge setting.
+pub mod advisor_mirror;
 pub mod allocator;
+pub mod board_import;
+pub mod card_select;
+pub mod coach;
+mod coach_grader;
+pub mod combat_advice;
+pub mod combat_mirror;
+pub mod display_names;
+pub mod graft;
+pub mod hand_select;
+pub mod instinct;
+mod instinct_advisor;
+mod livetree;
+pub mod mirror;
+mod screen_advice;
+pub mod turn_plan;
+mod workbench_log;
 
 // The bundled `EmbeddingValueNet` policy prior was REMOVED on 2026-08-15.
 //
@@ -309,7 +326,7 @@ fn build_encounter_state(
         relics: Vec::new().into(),
         potions: Vec::new(),
         player,
-        allies: SmallVec::new(),
+        allies: Vec::new(),
         enemy_uids,
         pending_choice: None,
         resolving_card: None,
@@ -327,6 +344,7 @@ fn build_encounter_state(
         pending_autoplay_resume: None,
         autoplay_inline_resolve: false,
         vakuu_selector: false,
+        interactive_turn_start_picks: false,
         pending_curse_choice: None,
         pending_potion_hook_resume: None,
         pending_enemy_exec_resume: None,
@@ -350,11 +368,14 @@ fn build_encounter_state(
         is_boss: false,
         act_index: 1,
         total_floor: 0,
+        game_mode: sts2_core::GameMode::Standard,
+        dominion: None,
         active_attack: None,
         energy_wasted: 0,
         cards_drawn: 0,
         pending_run_gold_loss: 0,
         last_drawn_card: None,
+        enemy_turn_end_last_participant: None,
     };
 
     // Apply on-spawn self-buffs that were skipped because we built
@@ -694,6 +715,33 @@ impl PyCombatState {
             seed,
             intent_damage_known: true,
             encounter_id: None,
+        }
+    }
+
+    /// The state a combat mirror holds, with what the wire it was built from
+    /// said about its seed and intent damage (`state_from_dict`'s fields).
+    pub(crate) const fn from_mirrored(
+        inner: CoreCombatState,
+        seed: u64,
+        intent_damage_known: bool,
+    ) -> Self {
+        Self {
+            inner,
+            seed,
+            intent_damage_known,
+            encounter_id: None,
+        }
+    }
+
+    /// `inner` under this state's seed, intent flag and encounter id: a
+    /// position reached from this one (the turn plan's re-search).
+    #[must_use]
+    pub(crate) const fn with_state(&self, inner: CoreCombatState) -> Self {
+        Self {
+            inner,
+            seed: self.seed,
+            intent_damage_known: self.intent_damage_known,
+            encounter_id: self.encounter_id,
         }
     }
 
@@ -1176,15 +1224,7 @@ impl PyCombatState {
     /// N−1, energy 0 vs the world's refilled 3). The mirror keeps the
     /// carried state instead, exactly as it does for a mid-play card.
     fn has_suspended_walk(&self) -> bool {
-        self.inner.pending_wlp_retain_resume
-            || self.inner.pending_end_turn_resume.is_some()
-            || self.inner.pending_turn_setup_resume
-            || self.inner.pending_cluster_resume.is_some()
-            || self.inner.pending_autoplay_resume.is_some()
-            || self.inner.pending_draw_resume.is_some()
-            || self.inner.pending_hand_draw_resume.is_some()
-            || self.inner.pending_relic_hand_draw_resume.is_some()
-            || self.inner.pending_enemy_exec_resume.is_some()
+        sts2_advisor::mirror_state::has_suspended_walk(&self.inner)
     }
 
     /// `true` when a DRINK is suspended on a player choice — the potion's
@@ -1348,573 +1388,18 @@ impl PyCombatState {
         carry_power_counters: Option<Vec<String>>,
         carry_turn_history: bool,
     ) -> PyResult<()> {
-        let (fresh_draw, carried_draw) = (
-            self.inner.player.draw.len(),
-            carried.inner.player.draw.len(),
-        );
-        let fresh_enemies = self.inner.enemy_uids.len();
-        let slots: Vec<Option<usize>> = if let Some(v) = enemy_slots {
-            if v.len() != fresh_enemies {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "transplant_hidden: enemy_slots has {} entries for {fresh_enemies} enemies",
-                    v.len()
-                )));
-            }
-            v
-        } else {
-            let carried_enemies = carried.inner.enemy_uids.len();
-            if fresh_enemies != carried_enemies {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "transplant_hidden: enemy roster disagrees — carried mirror has \
-                     {carried_enemies}, the reconstruction has {fresh_enemies}, and no \
-                     enemy_slots mapping was supplied to align them"
-                )));
-            }
-            (0..fresh_enemies).map(Some).collect()
-        };
-
-        if carry_rng {
-            self.inner.rng = carried.inner.rng.clone();
-            self.inner.run_rng = carried.inner.run_rng.clone();
-        } else {
-            // The reconstruction's `run_rng` came from the world; only the
-            // search-side legacy stream has no wire representation and still
-            // needs carrying.
-            self.inner.rng = carried.inner.rng.clone();
-        }
-
-        for (slot, carried_slot) in slots.iter().enumerate() {
-            let Some(carried_slot) = *carried_slot else {
-                continue; // a newly-spawned enemy has no history to carry
-            };
-            let Some(&src_uid) = carried.inner.enemy_uids.get(carried_slot) else {
-                continue;
-            };
-            let dst_uid = self.inner.enemy_uids[slot];
-            let Some(src) = carried
-                .inner
-                .creatures
-                .iter()
-                .find(|c| c.id == src_uid.0)
-                .map(|c| (c.intent_history, c.ai.clone()))
-            else {
-                continue;
-            };
-            let (history, src_ai) = src;
-            if let Some(dst) = self.inner.creatures.iter_mut().find(|c| c.id == dst_uid.0) {
-                dst.intent_history = history;
-                // The move machine's per-instance history — `state_log`,
-                // `counter`, the `performed_*` flags, a pending
-                // `SetMoveImmediate` — is not expressible on any wire, so a
-                // rebuilt AI starts blank and mispredicts the very next
-                // telegraph. `current` is NOT carried: it rides the wire as
-                // `move_state`, so reality wins on it.
-                if let (Some(dst_ai), Some(src_ai)) = (dst.ai.as_mut(), src_ai.as_ref()) {
-                    dst_ai.transplant_instance_state_from(src_ai);
-                }
-            }
-        }
-
-        // Pins travel as draw-pile POSITIONS, so they are only translatable
-        // when both sides agree on the pile. When they don't — a reshuffle
-        // between decisions is the common case — the pins are simply
-        // unreconstructable and are dropped. They are the player's own
-        // knowledge of an order that no longer exists, so dropping them loses
-        // nothing real; refusing the whole transplant would also have thrown
-        // away the RNG cursors, which ARE still valid.
-        if fresh_draw == carried_draw {
-            let translate = |pins: &[CardUid]| -> smallvec::SmallVec<[CardUid; 4]> {
-                pins.iter()
-                    .filter_map(|uid| carried.inner.player.draw.iter().position(|d| d == uid))
-                    .map(|idx| self.inner.player.draw[idx])
-                    .collect()
-            };
-            self.inner.player.pinned_top = translate(&carried.inner.player.pinned_top);
-            self.inner.player.pinned_bottom = translate(&carried.inner.player.pinned_bottom);
-        }
-        self.inner.player.deferred_draw_order = carried.inner.player.deferred_draw_order;
-        // First-in-series card plays this turn — EchoForm's `num >= Amount`
-        // gate (GH #368.1). No producer emits it, so the reconstruction always
-        // reads 0 and the gate re-opens on every reconcile. Carried here
-        // rather than derived, because the count includes plays made BEFORE
-        // the EchoForm power existed — Echo Form is itself a power card, so
-        // its own play is the usual such case, and a per-power counter
-        // seeded at apply time cannot see it (that residual was 9 of the 28
-        // remaining positive enemy-HP desyncs on the post-fix DLL sweep).
-        self.inner.player.cards_first_in_series_this_turn =
-            carried.inner.player.cards_first_in_series_this_turn;
-        // Started card plays this turn — the Sloth/Ringing LEGALITY gate
-        // (GH #370). `state_from_dict` already seeded this exactly when a
-        // Sloth power was on the wire (`SlothPower.DisplayAmount` is the live
-        // count), and that reading is authoritative, so only fall back to the
-        // mirror's own accumulation when the wire had no Sloth to disclose it.
-        // Ringing needs the count just as much and has no carrier of its own:
-        // C# scans `History.CardPlaysStarted` and stores nothing on the power.
-        let sloth_disclosed_the_count = self.inner.player.powers.iter().any(|puid| {
-            self.inner
-                .powers
-                .get_by_id(puid.0)
-                .is_some_and(|p| p.kind == sts2_core::powers::PowerKind::Sloth)
-        });
-        if !sloth_disclosed_the_count {
-            self.inner.player.card_plays_started_this_turn =
-                carried.inner.player.card_plays_started_this_turn;
-        }
-        // The rest of the GH #370 accumulator class. Each is a plain per-turn
-        // or per-combat tally that content reads as a gate and no producer
-        // emits, so a rebuild re-zeroes it and the gate re-opens every
-        // reconcile. Audited read-site by read-site against the C#; only the
-        // ones with a LIVE consumer are carried.
-        //
-        //  * `shivs_played_this_turn` — `PhantomBladesPower` gives the FIRST
-        //    Shiv each turn `+Amount` and gates on this being 0
-        //    (`PhantomBladesPower.cs:53-72`, C# `CardPlaysFinished == 0`).
-        //    Rebuilt at 0, EVERY Shiv reads as the first and takes the bonus —
-        //    and Shivs arrive in volume.
-        //  * `generated_cards_this_combat` — Regent's Supermassive scales its
-        //    damage directly off it (`regent/supermassive.rs:24`), so a
-        //    reconstruction hits for the floor.
-        //  * `stars_gained_this_turn` — Regent's Radiate scales off it
-        //    (`regent/radiate.rs:11`); same shape.
-        //
-        // Deliberately NOT carried, each verified rather than assumed:
-        // `powered_hits_this_turn` / `powered_hits_by_target_this_turn` have no
-        // live consumer left — GangUp is `MultiplayerOnly` and C# excludes the
-        // owner's own hits, so the solo body is a flat 5. `skills_played_this_turn`
-        // is documented-dead. The within-a-play scratch fields cannot span a
-        // reconcile at all, because a graded decision never lands mid-play.
-        self.inner.player.shivs_played_this_turn = carried.inner.player.shivs_played_this_turn;
-        self.inner.player.generated_cards_this_combat =
-            carried.inner.player.generated_cards_this_combat;
-        self.inner.player.stars_gained_this_turn = carried.inner.player.stars_gained_this_turn;
-
-        // The Sly / Retain uid lists are NOT carried. They are seeded from the
-        // wire in `state_from_dict` (the `retain_turn` / `sly_turn` / `sly`
-        // card flags, GH #370), and a carried uid could not be honoured
-        // anyway: the rebuild re-allocates every `CardUid` from its own pile
-        // walk, so a uid from the previous mirror names a different card.
-        // Nothing to guard, then — unlike the Sloth counter above, there is no
-        // fallback branch that could fight the derivation.
-        //
-        // `pending_retain_count` is likewise left alone, and here the reason is
-        // that ZERO is already the right answer at every rebuild:
-        //  * outside the end-turn chain it is always 0 — `invariants.rs:446`
-        //    asserts exactly that at each round boundary;
-        //  * inside the chain it is drained from the live `WellLaidPlansPower`
-        //    amount (`combat_loop.rs:2500-2513`), so a rebuilt mirror
-        //    re-derives it from the power rather than needing history;
-        //  * and at the one graded decision the chain can suspend on — the
-        //    Well-Laid-Plans `RetainAtTurnEnd` select — it has just been set
-        //    to 0 (`combat_loop.rs:2580`) because the open choice now
-        //    represents the whole budget. Carrying it would restore a value
-        //    the engine deliberately spent.
-        //
-        // `vigor_latch_card` DOES need carrying. C# `VigorPower.BeforeAttack`
-        // latches `commandToModify` on the first powered attack so that only
-        // that card's later commands keep the bonus; the latch clears when
-        // Vigor is spent. Lost across a rebuild, a second command in the same
-        // play re-takes the additive boost. It names a card in the PLAY pile
-        // (`damage.rs:973` stores `play.last()`), which the wire ships in
-        // order, so translate it by position exactly as the draw-pile pins are
-        // translated above — and drop it when the piles disagree, since a
-        // latch pointing at the wrong card is worse than none.
-        // Length equality alone is a weak guard on a pile this short, so the
-        // card at the translated index must also BE the same card.
-        self.inner.player.vigor_latch_card = carried.inner.player.vigor_latch_card.and_then(|c| {
-            if self.inner.player.play.len() != carried.inner.player.play.len() {
-                return None;
-            }
-            let idx = carried.inner.player.play.iter().position(|p| *p == c)?;
-            let dst = *self.inner.player.play.get(idx)?;
-            let same_card = |s: &Self, uid: sts2_core::CardUid| {
-                s.inner
-                    .cards
-                    .get(uid.0.get() as usize - 1)
-                    .map(|k| k.card_id)
-            };
-            (same_card(self, dst) == same_card(carried, c)).then_some(dst)
-        });
-
-        for name in carry_relic_counters.unwrap_or_default() {
-            let kind = crate::state_dict::relic_kind_from_python_name(&name).ok_or_else(|| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "transplant_hidden: unknown relic {name:?} in carry_relic_counters"
-                ))
-            })?;
-            let Some(counter) = carried
-                .inner
-                .relics
-                .iter()
-                .find(|r| r.kind == kind)
-                .map(|r| r.counter)
-            else {
-                continue; // the carried mirror never had it (a mid-combat pickup)
-            };
-            if let Some(dst) = self.inner.relics.iter_mut().find(|r| r.kind == kind) {
-                dst.counter = counter;
-            }
-        }
-
-        // `state_from_dict` builds every state with `TurnEvents::default()`
-        // and the wire has no representation for it (state_dict.rs "not in
-        // the wire format"), so each reconcile re-zeroed the history counters
-        // C# reads out of `CombatManager.History`. Spite (`LostHpThisTurn`)
-        // and TearAsunder (`1 + DamageReceivedEntry count`) read them as HIT
-        // COUNTS, so the mirror predicted 1 hit forever — 79 of the 252
-        // `$.encounter[*].hp` divergences on the v27wr sweep, with deltas
-        // matching `-(repeat-1) x per_hit` in closed form. The carried
-        // mirror was itself produced by (previous transplant -> exactly one
-        // stepped action), so its log holds the running accumulation and
-        // re-carrying keeps it continuous across the whole combat; the
-        // turn-boundary `reset_per_turn` fires inside whichever step crosses
-        // it, preserving the per-turn/combat-wide split for free.
-        //
-        // Only uid-free state travels: `newly_dead_this_turn`,
-        // `last_attack_skill_played` and `card_play_log` hold uids the
-        // reconstruction has just reallocated, and
-        // `chains_bound_card_played_this_turn` IS on the wire, so reality
-        // must keep winning on it. `unmovable_card_block_plays` is safe
-        // between plays: every finished play's tag is the uid-free
-        // `UNMOVABLE_EARLIER_PLAY` (only a play still resolving holds its
-        // card's uid) — Unmovable rebuilt without it doubled EVERY
-        // block card instead of only the turn's first (30 of the 140
-        // on-play `$.player.block` divergences on the v27wr sweep).
-        {
-            let src = &carried.inner.combat_log;
-            let dst = &mut self.inner.combat_log;
-            dst.cards_drawn_by_effect_this_turn = src.cards_drawn_by_effect_this_turn;
-            dst.status_cards_drawn_this_turn = src.status_cards_drawn_this_turn;
-            dst.doom_applied_by_player_this_turn = src.doom_applied_by_player_this_turn;
-            dst.osty_attacks_this_turn = src.osty_attacks_this_turn;
-            if carry_turn_history {
-                dst.cards_exhausted_this_turn = src.cards_exhausted_this_turn;
-            }
-            dst.hp_lost_this_turn = src.hp_lost_this_turn;
-            dst.unblocked_damage_received_this_combat = src.unblocked_damage_received_this_combat;
-            // PaelsEye / Ambergris extra turns: `turn_number()` = round + this,
-            // and the turn-number gates (BagOfPreparation, Lantern, the
-            // turn-1 Innate floor) read it. Older mods do not send it, so a
-            // rebuild after an extra turn read turn = round (GH #812). Newer
-            // mods do (TurnNumber - RoundNumber), and the count never falls
-            // within a combat, so the larger of wire and mirror is right
-            // either way.
-            dst.extra_turns_taken_this_combat = dst
-                .extra_turns_taken_this_combat
-                .max(src.extra_turns_taken_this_combat);
-            dst.energy_spent_this_turn = src.energy_spent_this_turn;
-            dst.zero_cost_attacks_played_this_turn = src.zero_cost_attacks_played_this_turn;
-            dst.card_plays_finished_this_turn = src.card_plays_finished_this_turn;
-            dst.card_plays_finished_last_player_turn = src.card_plays_finished_last_player_turn;
-            dst.cards_discarded_this_turn = src.cards_discarded_this_turn;
-            dst.lightning_orbs_channeled_this_combat = src.lightning_orbs_channeled_this_combat;
-            // ChainsOfBinding's per-turn Bound budget. C#
-            // `ChainsOfBindingPower.AfterCardDrawn` (`ChainsOfBindingPower.cs:36-45`)
-            // Binds a drawn card only while fewer than `Amount` `CardAfflictedEntry`
-            // Bound entries happened this turn; the engine keeps that count here,
-            // no producer emits it, and the rebuild read 0, so the mirror Bound
-            // the next `Amount` draws of a turn that had already spent its budget
-            // (the PIMC agent had to fall back on every such decision, GH #830).
-            // Its sibling `chains_bound_card_played_this_turn` is NOT carried —
-            // it rides the wire (`bound_card_played_this_turn`).
-            dst.bound_cards_afflicted_by_chains_this_turn =
-                src.bound_cards_afflicted_by_chains_this_turn;
-            dst.player_card_plays_this_combat = src.player_card_plays_this_combat;
-            dst.ethereal_cards_played_this_combat = src.ethereal_cards_played_this_combat;
-            dst.exhaust_sweep_ethereal = src.exhaust_sweep_ethereal;
-            dst.joss_paper_ethereal_count = src.joss_paper_ethereal_count;
-            dst.block_zero_at_turn_end = src.block_zero_at_turn_end;
-            dst.block_before_late_turn_end = src.block_before_late_turn_end;
-            if carry_turn_history {
-                dst.unmovable_card_block_plays
-                    .clone_from(&src.unmovable_card_block_plays);
-            }
-            // The HistoryCourse slots, with the uid component dropped — the
-            // reconstruction reallocated every CardUid, and
-            // `listener_history_course` already falls back to
-            // `card_pod_from_id` for a stale uid, which is exactly why
-            // `None` is safe. Left uncarried, the relic was permanently
-            // inert in the mirror (30 v28wr events — run 1056's world kept
-            // auto-playing last turn's Battle Trance dupe: +3 hand, -3
-            // draw, +NO_DRAW the mirror never saw).
-            dst.last_attack_skill_played = src
-                .last_attack_skill_played
-                .map(|(id, up, _uid)| (id, up, None));
-            dst.prev_round_last_attack_skill_played = src
-                .prev_round_last_attack_skill_played
-                .map(|(id, up, _uid)| (id, up, None));
-        }
-
-        // Per-card hidden `combat_vars`. The C# producers emit no
-        // `combat_vars` at all (0 occurrences across the 1484-record v27wr
-        // forensic log), so every rebuild wiped ThrummingHatchet's
-        // `ReturnIfPlayedRound` stamp (33 records / 64 fields — the largest
-        // named pile signature), Sown/Swift-style first-play marker bits in
-        // `Generic`, `GeneratedInCombat`, `EtherealThisCombat`, and every
-        // scaling accumulator (Rampage / Claw / RitualDagger). Carry them
-        // by pile+position, exactly as the draw-pile pins are: a pile whose
-        // length changed (or whose card at the position changed identity)
-        // is unreconstructable and drops its carries. The energy cost is not
-        // a var at all (`Card::cost`, rebuilt from the wire's cost fields), and
-        // the one wire-owned var, `WitherFakeUpgradeLevel`, is re-derived from
-        // wire `base_damage`. A var the fresh card already carries (the Rust
-        // dialect round-trips `combat_vars`) keeps the wire's value: reality
-        // wins.
-        {
-            const WIRE_OWNED: &[VarKey] = &[VarKey::WitherFakeUpgradeLevel];
-            let pile_pairs = [
-                (&self.inner.player.hand[..], &carried.inner.player.hand[..]),
-                (&self.inner.player.draw[..], &carried.inner.player.draw[..]),
-                (
-                    &self.inner.player.discard[..],
-                    &carried.inner.player.discard[..],
-                ),
-                (
-                    &self.inner.player.exhaust[..],
-                    &carried.inner.player.exhaust[..],
-                ),
-                (&self.inner.player.play[..], &carried.inner.player.play[..]),
-            ];
-            let mut copies: Vec<(CardUid, Vec<(VarKey, i32)>)> = Vec::new();
-            for (fresh_pile, carried_pile) in pile_pairs {
-                if fresh_pile.len() != carried_pile.len() {
-                    continue;
-                }
-                for (&fresh_uid, &carried_uid) in fresh_pile.iter().zip(carried_pile.iter()) {
-                    let Some(src) = carried.inner.cards.iter().find(|c| c.uid == carried_uid)
-                    else {
-                        continue;
-                    };
-                    if src.combat_vars.is_empty() {
-                        continue;
-                    }
-                    let Some(dst) = self.inner.cards.iter().find(|c| c.uid == fresh_uid) else {
-                        continue;
-                    };
-                    if dst.card_id != src.card_id {
-                        continue;
-                    }
-                    let vars: Vec<(VarKey, i32)> = src
-                        .combat_vars
-                        .iter()
-                        .filter(|(k, v)| {
-                            *v != 0 && !WIRE_OWNED.contains(k) && dst.combat_var(*k) == 0
-                        })
-                        // Rampage's own escalation is wire-owned: C# grows
-                        // `Damage.BaseValue` itself (`Rampage.cs:54`), so the
-                        // reconstructed card's `base_damage` already carries
-                        // the growth and re-injecting the var double-counts —
-                        // MCTS planned 37 where the game dealt 23 (v34wr seed
-                        // 1020 act-1 boss, round-4 agent 2). Momentum's stash
-                        // (`MomentumDamage`, GH #1021) lives in C#'s
-                        // enchantment model (never on the wire), so it is
-                        // carried on every card, Rampage included.
-                        .filter(|(k, _)| {
-                            !(*k == VarKey::RampageDamage
-                                && dst.card_id == sts2_core::cards::CardId::Rampage)
-                        })
-                        .collect();
-                    if !vars.is_empty() {
-                        copies.push((fresh_uid, vars));
-                    }
-                }
-            }
-            for (uid, vars) in copies {
-                if let Some(card) = self.inner.cards.iter_mut().find(|c| c.uid == uid) {
-                    for (k, v) in vars {
-                        card.set_combat_var(k, v);
-                    }
-                }
-            }
-        }
-
-        // Power counters the wire structurally cannot disclose. The C#
-        // producers emit `counter` only where a display badge exists; a
-        // power whose accumulator lives in InternalData (Juggling's
-        // attacks-this-turn — 26 v28wr hand records where the 3rd-attack
-        // clone never fired; Possess*'s stolen-stat totals) arrives as
-        // `{name, amount}` and every rebuild re-zeroed it. Same contract as
-        // `carry_relic_counters`: the caller names only the powers the wire
-        // left undisclosed, so a disclosed counter keeps reality's value.
-        // The player's powers are split across the legacy list and the
-        // creature mirror (d03 migration), so read/write the union; enemies
-        // align through the same `slots` mapping as the AI carry.
-        for name in carry_power_counters.unwrap_or_default() {
-            let Some(kind) = crate::state_dict::power_kind_from_python_name(&name) else {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "transplant_hidden: unknown power {name:?} in carry_power_counters"
-                )));
-            };
-            let read = |st: &CoreCombatState, uids: &[sts2_core::PowerUid]| -> Option<i32> {
-                uids.iter().find_map(|pu| {
-                    st.powers
-                        .get_by_id(pu.0)
-                        .filter(|p| p.kind == kind && p.counter != 0)
-                        .map(|p| p.counter)
-                })
-            };
-            let write = |st: &mut CoreCombatState, uids: &[sts2_core::PowerUid], c: i32| {
-                for pu in uids {
-                    if let Some(p) = st.powers.get_mut_by_id(pu.0) {
-                        if p.kind == kind {
-                            p.counter = c;
-                            return;
-                        }
-                    }
-                }
-            };
-            // Player: legacy list + creature mirror, first non-zero wins.
-            let carried_player_uids: Vec<sts2_core::PowerUid> = carried
-                .inner
-                .player
-                .powers
-                .iter()
-                .copied()
-                .chain(
-                    carried
-                        .inner
-                        .player
-                        .creature_uid
-                        .and_then(|cu| carried.inner.creatures.iter().find(|c| c.id == cu.0))
-                        .map(|c| c.powers.clone())
-                        .unwrap_or_default(),
-                )
-                .collect();
-            if let Some(c) = read(&carried.inner, &carried_player_uids) {
-                let fresh_player_uids: Vec<sts2_core::PowerUid> = self
-                    .inner
-                    .player
-                    .powers
-                    .iter()
-                    .copied()
-                    .chain(
-                        self.inner
-                            .player
-                            .creature_uid
-                            .and_then(|cu| self.inner.creatures.iter().find(|cr| cr.id == cu.0))
-                            .map(|cr| cr.powers.clone())
-                            .unwrap_or_default(),
-                    )
-                    .collect();
-                write(&mut self.inner, &fresh_player_uids, c);
-            }
-            // Enemies, through the slot alignment.
-            for (slot, carried_slot) in slots.iter().enumerate() {
-                let Some(carried_slot) = *carried_slot else {
-                    continue;
-                };
-                let (Some(&src_uid), Some(&dst_uid)) = (
-                    carried.inner.enemy_uids.get(carried_slot),
-                    self.inner.enemy_uids.get(slot),
-                ) else {
-                    continue;
-                };
-                let Some(src_powers) = carried
-                    .inner
-                    .creatures
-                    .iter()
-                    .find(|c| c.id == src_uid.0)
-                    .map(|c| c.powers.clone())
-                else {
-                    continue;
-                };
-                if let Some(c) = read(&carried.inner, &src_powers) {
-                    let Some(dst_powers) = self
-                        .inner
-                        .creatures
-                        .iter()
-                        .find(|cr| cr.id == dst_uid.0)
-                        .map(|cr| cr.powers.clone())
-                    else {
-                        continue;
-                    };
-                    write(&mut self.inner, &dst_powers, c);
-                }
-            }
-        }
-
-        // `Power.applier` for the applier-gated debuffs. `state_from_dict`
-        // hardcodes `applier: None` (no wire field carries it), so
-        // Shrink/Hex/Dampen/Constrict's `AfterDeath` removal — gated on
-        // `p.applier == Some(dead)` — could never fire in a reconstruction:
-        // the mirror kept a dead ShrinkerBeetle's permanent Shrink for the
-        // rest of the fight (21 v28wr `$.player.powers` events). Copy the
-        // carried instance's applier onto the fresh player-side power of the
-        // same kind, remapped through the slot alignment; nothing else reads
-        // `applier` on these kinds, so a missing mapping is inert.
-        {
-            use sts2_core::PowerKind as PK;
-            const APPLIER_KINDS: [PK; 4] = [PK::Shrink, PK::Hex, PK::Dampen, PK::Constrict];
-            let mut uid_map: Vec<(sts2_core::CreatureUid, sts2_core::CreatureUid)> = Vec::new();
-            for (slot, carried_slot) in slots.iter().enumerate() {
-                if let Some(cs) = carried_slot {
-                    if let (Some(&src), Some(&dst)) = (
-                        carried.inner.enemy_uids.get(*cs),
-                        self.inner.enemy_uids.get(slot),
-                    ) {
-                        uid_map.push((src, dst));
-                    }
-                }
-            }
-            let carried_player_uids: Vec<sts2_core::PowerUid> = carried
-                .inner
-                .player
-                .powers
-                .iter()
-                .copied()
-                .chain(
-                    carried
-                        .inner
-                        .player
-                        .creature_uid
-                        .and_then(|cu| carried.inner.creatures.iter().find(|c| c.id == cu.0))
-                        .map(|c| c.powers.clone())
-                        .unwrap_or_default(),
-                )
-                .collect();
-            let fresh_player_uids: Vec<sts2_core::PowerUid> = self
-                .inner
-                .player
-                .powers
-                .iter()
-                .copied()
-                .chain(
-                    self.inner
-                        .player
-                        .creature_uid
-                        .and_then(|cu| self.inner.creatures.iter().find(|cr| cr.id == cu.0))
-                        .map(|cr| cr.powers.clone())
-                        .unwrap_or_default(),
-                )
-                .collect();
-            for kind in APPLIER_KINDS {
-                let Some(src_applier) = carried_player_uids.iter().find_map(|pu| {
-                    carried
-                        .inner
-                        .powers
-                        .get_by_id(pu.0)
-                        .filter(|p| p.kind == kind)
-                        .and_then(|p| p.applier)
-                }) else {
-                    continue;
-                };
-                let Some(mapped) = uid_map
-                    .iter()
-                    .find(|(src, _)| *src == src_applier)
-                    .map(|(_, dst)| *dst)
-                else {
-                    continue;
-                };
-                for pu in &fresh_player_uids {
-                    if let Some(p) = self.inner.powers.get_mut_by_id(pu.0) {
-                        if p.kind == kind && p.applier.is_none() {
-                            p.applier = Some(mapped);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
+        sts2_advisor::mirror_state::transplant_hidden(
+            &mut self.inner,
+            &carried.inner,
+            sts2_advisor::mirror_state::Carry {
+                enemy_slots,
+                rng: carry_rng,
+                relic_counters: carry_relic_counters.unwrap_or_default(),
+                power_counters: carry_power_counters.unwrap_or_default(),
+                turn_history: carry_turn_history,
+            },
+        )
+        .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Open a [`PendingChoice`] whose options came from the WORLD rather
@@ -1948,82 +1433,21 @@ impl PyCombatState {
         can_skip: bool,
         replace_parked: bool,
     ) -> PyResult<()> {
-        let mut carried_post = None;
-        if let Some(parked) = &self.inner.pending_choice {
-            if !replace_parked {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "open_injected_choice: a choice is already open — resolve or drop it first",
-                ));
-            }
-            // The caller is a mirror PARKED on its own derived list, swapping
-            // in the world's. That is the plan's normal path ("record the
-            // parked choice's kind and arity … re-open the choice via
-            // open_injected_choice"), and it is only reachable once the mirror
-            // stopped being rebuilt mid-play — before that the rebuild cleared
-            // the choice as a side effect and this could never trigger.
-            //
-            // Clearing the choice alone is the point: `pending_play` (the
-            // suspended rest of the card) must SURVIVE, which is the whole
-            // reason the mirror is still parked here. And the parked choice
-            // itself is half of that suspended tail: `post_effect` is what
-            // runs AFTER the pick (Brand's GainStrength, BurningPact's Draw,
-            // Scavenge's EnergyNextTurn), so swapping the option list must
-            // not amputate it — dropping it here was 60 of the 188
-            // `$.player.powers` divergences on the v27wr sweep (a Brand that
-            // exhausted its card and never granted its Strength).
-            carried_post = parked.post_effect.map(|pe| (parked.kind, pe));
-            self.inner.pending_choice = None;
-        }
-        let kind = choice_kind_from_python_name(kind).ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "open_injected_choice: unknown choice kind {kind:?}"
-            ))
-        })?;
-        // Only the SAME screen keeps the tail — a genuinely different
-        // injected kind must not inherit a foreign card's post-effect.
-        let carried_post = carried_post.and_then(|(pk, pe)| (pk == kind).then_some(pe));
-        if min_select > max_select {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "open_injected_choice: min_select ({min_select}) > max_select ({max_select})"
-            )));
-        }
-
-        let mut parsed: Vec<ChoiceOption> = Vec::with_capacity(options.len());
-        for (i, item) in options.iter().enumerate() {
-            let d = item.downcast::<PyDict>().map_err(|_| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "open_injected_choice: options[{i}] must be a dict"
-                ))
-            })?;
-            parsed.push(self.parse_injected_option(d, i)?);
-        }
-        if usize::from(min_select) > parsed.len() {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "open_injected_choice: min_select ({min_select}) exceeds the {} options offered",
-                parsed.len()
-            )));
-        }
-        // `max_select` gets the same bound. Both drivers clamp before
-        // calling, which is exactly why this has to be checked HERE: this
-        // method is the only thing standing between an unclamped caller and
-        // a choice whose arity the option list cannot satisfy.
-        if usize::from(max_select) > parsed.len() {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "open_injected_choice: max_select ({max_select}) exceeds the {} options offered",
-                parsed.len()
-            )));
-        }
-
-        self.inner.pending_choice = Some(PendingChoice {
+        let options = options
+            .iter()
+            .enumerate()
+            .map(|(i, item)| injected_option_json(&item, i))
+            .collect::<PyResult<Vec<_>>>()?;
+        sts2_advisor::mirror_state::open_injected_choice(
+            &mut self.inner,
             kind,
-            options: parsed,
+            &options,
             min_select,
             max_select,
             can_skip,
-            post_effect: carried_post,
-            picked: smallvec::SmallVec::new(),
-        });
-        Ok(())
+            replace_parked,
+        )
+        .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Mark the OPEN choice as a turn-start screen the world raised from a
@@ -2061,31 +1485,8 @@ impl PyCombatState {
     /// Raises:
     ///     ValueError: `after_relic` is not a known relic id.
     fn arm_turn_start_resume(&mut self, after_relic: &str) -> PyResult<bool> {
-        let kind =
-            crate::state_dict::relic_kind_from_python_name(after_relic).ok_or_else(|| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "arm_turn_start_resume: unknown relic id {after_relic:?}"
-                ))
-            })?;
-        if self.inner.pending_choice.is_none() {
-            return Ok(false);
-        }
-        let Some(idx) = self.inner.relics.iter().position(|r| r.kind == kind) else {
-            return Ok(false);
-        };
-        let next = u8::try_from(idx.saturating_add(1)).unwrap_or(u8::MAX);
-        self.inner.pending_cluster_resume = Some(sts2_core::PendingClusterResume {
-            snapshot: self.inner.player_power_uids(),
-            idx: 0,
-            autoplay: sts2_core::PendingAutoplay::default(),
-            // C# StartTurn runs Hook.AfterSideTurnStart (and the orb queue)
-            // as soon as SetupPlayerTurn pauses on this screen, so the wire the
-            // mirror was seeded from already carries Akabeko / Lantern / Rampart.
-            side_turn_start_fired: true,
-            mayhem_phase: false,
-            relic_start: Some(next),
-        });
-        Ok(true)
+        sts2_advisor::mirror_state::arm_turn_start_resume(&mut self.inner, after_relic)
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// The POWER twin of [`Self::arm_turn_start_resume`] — GH #355.
@@ -2125,36 +1526,25 @@ impl PyCombatState {
     /// Raises:
     ///     ValueError: `after_power` is not a known power id.
     fn arm_turn_start_resume_after_power(&mut self, after_power: &str) -> PyResult<bool> {
-        let kind =
-            crate::state_dict::power_kind_from_python_name(after_power).ok_or_else(|| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "arm_turn_start_resume_after_power: unknown power id {after_power:?}"
-                ))
-            })?;
-        if self.inner.pending_choice.is_none() {
-            return Ok(false);
-        }
-        let snapshot = self.inner.player_power_uids();
-        let Some(idx) = snapshot.iter().position(|uid| {
-            self.inner
-                .powers
-                .get_by_id(uid.0)
-                .is_some_and(|p| p.kind == kind)
-        }) else {
-            return Ok(false);
-        };
-        self.inner.pending_cluster_resume = Some(sts2_core::PendingClusterResume {
-            snapshot,
-            idx,
-            autoplay: sts2_core::PendingAutoplay::default(),
-            // C# StartTurn runs Hook.AfterSideTurnStart (and the orb queue)
-            // as soon as SetupPlayerTurn pauses on this screen, so the wire the
-            // mirror was seeded from already carries Akabeko / Lantern / Rampart.
-            side_turn_start_fired: true,
-            mayhem_phase: false,
-            relic_start: None,
-        });
-        Ok(true)
+        sts2_advisor::mirror_state::arm_turn_start_resume_after_power(&mut self.inner, after_power)
+            .map_err(pyo3::exceptions::PyValueError::new_err)
+    }
+
+    /// `d` (this state's `state_to_dict`) with each dead enemy's attack
+    /// intents re-previewed without the powers C# drops at death, or None
+    /// where nothing changes (GH #1835). The Python env's twin of the Rust
+    /// env's `snapshot::with_corpse_intents`; it calls that function, so the
+    /// two envs cannot drift.
+    fn corpse_intents<'py>(
+        &self,
+        py: Python<'py>,
+        d: &Bound<'py, PyAny>,
+    ) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let d: serde_json::Value = pythonize::depythonize(d)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{e}")))?;
+        sts2_e2e::snapshot::with_corpse_intents(&self.inner, &d)
+            .map(|v| value_to_py(py, &v))
+            .transpose()
     }
 
     /// Read-only attack-damage preview for the live hand.
@@ -2204,6 +1594,59 @@ impl PyCombatState {
     /// better mitigation (GH #520, bug report `wb-b5c453e74f1b80e3`).
     fn card_block_preview(&self) -> Vec<Option<i32>> {
         sts2_wire::emit::card_block_preview(&self.inner)
+    }
+
+    /// Live damage for the live hand (GH #1197): per hand card,
+    /// `{enemy index: (damage per hit, hits)}`
+    /// ([`sts2_wire::emit::card_damage_live`]): calculated attacks, Osty
+    /// attacks dealt by the Osty, live hit counts. An empty dict = no damage
+    /// now. [`Self::card_damage_preview`] is unchanged.
+    fn card_damage_live(&self) -> Vec<std::collections::BTreeMap<usize, (i32, f32)>> {
+        sts2_wire::emit::card_damage_live(&self.inner)
+    }
+
+    /// Live block for the live hand (GH #1197): [`Self::card_block_preview`]
+    /// plus the calculated-block cards ([`sts2_wire::emit::card_block_live`]).
+    fn card_block_live(&self) -> Vec<Option<i32>> {
+        sts2_wire::emit::card_block_live(&self.inner)
+    }
+
+    /// Generated damage for the live hand (GH #1197): per hand card, `None`
+    /// or `(flat, per_energy, kills, by_x)` ([`sts2_wire::emit::card_gen_live`]):
+    /// `{enemy index: damage}` the play adds beyond its own attack (Shivs,
+    /// Knife Trap, orb evokes), `{enemy index: damage per energy}` (Multi-Cast),
+    /// the enemy indexes its Doom kills outright (End of Days), and, by the
+    /// X an X-cost play spends, its whole X damage `{enemy index: damage}`
+    /// when that is not linear in X (Tempest's overflow evokes, Chemical X,
+    /// Heavenly Drill's doubling; empty for every other card).
+    #[allow(clippy::type_complexity)]
+    fn card_gen_live(
+        &self,
+    ) -> Vec<
+        Option<(
+            std::collections::BTreeMap<usize, f64>,
+            std::collections::BTreeMap<usize, f64>,
+            Vec<usize>,
+            Vec<std::collections::BTreeMap<usize, f64>>,
+        )>,
+    > {
+        sts2_wire::emit::card_gen_live(&self.inner)
+            .into_iter()
+            .map(|g| g.map(|g| (g.flat, g.per_energy, g.kills, g.by_x)))
+            .collect()
+    }
+
+    /// The deterministic end of the player's turn (GH #1197):
+    /// `(block, dies, self_loss, buffer, remnant)`
+    /// ([`sts2_wire::emit::end_turn_live`]): the change in the player's block
+    /// before the enemies act, the encounter indexes of the enemies certain
+    /// to die before their move (end-of-turn damage, then Poison at their
+    /// turn start), the HP the player's own turn end costs it, the Buffer
+    /// stacks left and Beating Remnant's HP-loss budget left (`None` without
+    /// the relic).
+    fn end_turn_live(&self) -> (i32, Vec<usize>, i32, i32, Option<i32>) {
+        let e = sts2_wire::emit::end_turn_live(&self.inner);
+        (e.block, e.dies, e.self_loss, e.buffer, e.remnant)
     }
 
     /// Return `(is_terminal, value)` where `value ∈ {-1.0, 0.0, 1.0}`
@@ -2259,16 +1702,6 @@ fn pin_positions(state: &CoreCombatState, pins: &[CardUid]) -> Vec<usize> {
     pins.iter()
         .filter_map(|uid| state.player.draw.iter().position(|d| d == uid))
         .collect()
-}
-
-/// Inverse of [`choice_kind_python_name`]. Built by scanning the forward
-/// table rather than hand-maintaining a second one, so the two cannot
-/// drift as `ChoiceKind` grows.
-fn choice_kind_from_python_name(s: &str) -> Option<ChoiceKind> {
-    ChoiceKind::ALL
-        .iter()
-        .copied()
-        .find(|k| choice_kind_python_name(*k) == s)
 }
 
 /// Does this choice kind present ENGINE-GENERATED content?
@@ -2425,6 +1858,61 @@ fn removable_curse_cards() -> Vec<String> {
         .collect()
 }
 
+/// The Crystal Sphere digger's Big-tool click
+/// (`sts2_content::events::crystal_sphere_digger::pick`), for the real-game
+/// lanes (`crystal_sphere_policy.choose`).
+///
+/// `hidden` is every fogged cell, `shown` every cleared cell showing an item
+/// piece as `(x, y, item)` with `item` one of `relic`, `potion`, `card`,
+/// `curse`, `gold`; `remaining` / `total` are the divinations left and at the
+/// start. `None` when no cell is fogged or no divination is left. Raises
+/// `ValueError` for a cell outside `0..=10` or an unknown item.
+#[pyfunction]
+fn crystal_sphere_pick(
+    hidden: Vec<(i32, i32)>,
+    shown: Vec<(i32, i32, String)>,
+    remaining: u32,
+    total: u32,
+) -> PyResult<Option<(i32, i32)>> {
+    use sts2_content::events::crystal_sphere_digger::{pick, ItemClass, SphereView};
+    let bit = |x: i32, y: i32| -> PyResult<u32> {
+        if (0..11).contains(&x) && (0..11).contains(&y) {
+            Ok((x * 11 + y) as u32)
+        } else {
+            Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "crystal sphere cell ({x},{y}) is outside the 11x11 grid"
+            )))
+        }
+    };
+    let mut fog = 0u128;
+    for (x, y) in hidden {
+        fog |= 1u128 << bit(x, y)?;
+    }
+    let mut pieces = Vec::with_capacity(shown.len());
+    for (x, y, item) in shown {
+        bit(x, y)?;
+        let class = match item.as_str() {
+            "relic" => ItemClass::Relic,
+            "potion" => ItemClass::Potion,
+            "card" => ItemClass::Card,
+            "curse" => ItemClass::Curse,
+            "gold" => ItemClass::Gold,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "crystal sphere item {other:?} is not relic/potion/card/curse/gold"
+                )))
+            }
+        };
+        pieces.push(((x, y), class));
+    }
+    Ok(pick(&SphereView {
+        hidden: fog,
+        shown: pieces,
+        remaining,
+        total,
+    }))
+}
+
 /// Every card's spec-level `(name, type, rarity)`, as canonical UPPER_SNAKE
 /// names (`("INJURY", "CURSE", "CURSE")`).
 ///
@@ -2535,131 +2023,30 @@ fn damage_trace_dropped() -> u32 {
     sts2_core::damage_trace::dropped()
 }
 
-impl PyCombatState {
-    /// Decode one `open_injected_choice` option dict.
-    ///
-    /// `pile` + `index` are the concrete-card locator; they must appear
-    /// together or not at all. A half-specified locator is a driver bug
-    /// that would otherwise silently produce a synthetic option and send
-    /// a pile-select resolver looking for a card that isn't there.
-    fn parse_injected_option(&self, d: &Bound<'_, PyDict>, i: usize) -> PyResult<ChoiceOption> {
-        let err = |msg: String| pyo3::exceptions::PyValueError::new_err(msg);
-        let raw_id: String = d
-            .get_item("id")?
-            .ok_or_else(|| {
-                err(format!(
-                    "open_injected_choice: options[{i}] is missing 'id'"
-                ))
-            })?
-            .extract()
-            .map_err(|_| {
-                err(format!(
-                    "open_injected_choice: options[{i}].id must be a string"
-                ))
-            })?;
-        let card_id = state_dict::card_id_from_python_name(&raw_id).ok_or_else(|| {
-            err(format!(
-                "open_injected_choice: options[{i}].id {raw_id:?} is not a known card"
-            ))
-        })?;
-        let upgraded: bool = match d.get_item("upgraded")? {
-            Some(v) if !v.is_none() => v.extract().map_err(|_| {
-                err(format!(
-                    "open_injected_choice: options[{i}].upgraded must be a bool"
-                ))
-            })?,
-            _ => false,
-        };
-
-        let pile_name: Option<String> = match d.get_item("pile")? {
-            Some(v) if !v.is_none() => Some(v.extract().map_err(|_| {
-                err(format!(
-                    "open_injected_choice: options[{i}].pile must be a string"
-                ))
-            })?),
-            _ => None,
-        };
-        let index: Option<usize> = match d.get_item("index")? {
-            Some(v) if !v.is_none() => Some(v.extract().map_err(|_| {
-                err(format!(
-                    "open_injected_choice: options[{i}].index must be a non-negative integer"
-                ))
-            })?),
-            _ => None,
-        };
-
-        let (pile, index) = match (pile_name, index) {
-            (None, None) => {
-                return Ok(ChoiceOption {
-                    card_id,
-                    upgraded,
-                    card_uid: None,
-                    source_pile: None,
-                })
-            }
-            (Some(p), Some(idx)) => (p, idx),
-            (p, idx) => {
-                return Err(err(format!(
-                    "open_injected_choice: options[{i}] gives {} without {} — a card locator \
-                     needs both",
-                    if p.is_some() { "'pile'" } else { "'index'" },
-                    if idx.is_some() { "'pile'" } else { "'index'" },
-                )))
-            }
-        };
-
-        let (kind, uids) = match pile.as_str() {
-            "hand" => (PileKind::Hand, self.inner.player.hand.as_slice()),
-            "draw" => (PileKind::Draw, self.inner.player.draw.as_slice()),
-            "discard" => (PileKind::Discard, self.inner.player.discard.as_slice()),
-            "exhaust" => (PileKind::Exhaust, self.inner.player.exhaust.as_slice()),
-            "play" => (PileKind::Play, self.inner.player.play.as_slice()),
-            other => {
-                return Err(err(format!(
-                    "open_injected_choice: options[{i}].pile {other:?} must be one of \
-                     hand|draw|discard|exhaust|play"
-                )))
-            }
-        };
-        let uid = *uids.get(index).ok_or_else(|| {
-            err(format!(
-                "open_injected_choice: options[{i}].index {index} is out of range for a \
-                 {}-card {pile} pile",
-                uids.len()
-            ))
-        })?;
-
-        // The locator names a card; that card had better be the card the
-        // option claims to be, or the mirror and the world are pointing at
-        // different boards.
-        //
-        // A uid sitting in a pile but absent from `state.cards` is itself a
-        // broken state — the pile is a list of handles INTO that arena, so a
-        // dangling one means the check silently passes on an option nothing
-        // can resolve. `if let Some(..)` used to do exactly that; be
-        // explicit instead.
-        let Some(card) = self.inner.cards.iter().find(|c| c.uid == uid) else {
-            return Err(err(format!(
-                "open_injected_choice: options[{i}] locates {pile}[{index}] = {uid:?}, which is \
-                 not in the card arena — the mirror's piles reference a card it does not have"
-            )));
-        };
-        if card.card_id != card_id || card.upgraded != upgraded {
-            return Err(err(format!(
-                "open_injected_choice: options[{i}] says {raw_id:?} (upgraded={upgraded}) \
-                 at {pile}[{index}], but the mirror has {:?} (upgraded={}) there",
-                card.card_id.to_python_name(),
-                card.upgraded,
-            )));
+/// One `open_injected_choice` option dict as the JSON
+/// [`sts2_advisor::mirror_state::parse_injected_option`] reads: only the
+/// keys it looks at, so another key holding a non-JSON value is ignored as
+/// before. A value that cannot be JSON becomes `{}`, which fails that key's
+/// type check with the message the old extraction gave.
+fn injected_option_json(item: &Bound<'_, PyAny>, i: usize) -> PyResult<serde_json::Value> {
+    let d = item.downcast::<PyDict>().map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err(format!(
+            "open_injected_choice: options[{i}] must be a dict"
+        ))
+    })?;
+    let mut out = serde_json::Map::new();
+    for key in ["id", "upgraded", "pile", "index"] {
+        if let Some(v) = d.get_item(key)? {
+            let value = if v.is_none() {
+                serde_json::Value::Null
+            } else {
+                pythonize::depythonize(&v)
+                    .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()))
+            };
+            out.insert(key.to_owned(), value);
         }
-
-        Ok(ChoiceOption {
-            card_id,
-            upgraded,
-            card_uid: Some(uid),
-            source_pile: Some(kind),
-        })
     }
+    Ok(serde_json::Value::Object(out))
 }
 
 /// Run `body` with the Python `chooser` (if any) answering the co-op
@@ -3627,6 +3014,8 @@ fn src_hash() -> String {
         sts2_cli::SRC_HASH,
         sts2_vocab::SRC_HASH,
         sts2_e2e::SRC_HASH,
+        sts2_workbench::SRC_HASH,
+        sts2_advisor::SRC_HASH,
         env!("STS2_WORKSPACE_HASH"),
     ])
 }
@@ -4490,6 +3879,7 @@ pub fn sts2_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(potion_swap_is_rule_side, m)?)?;
     m.add_function(wrap_pyfunction!(non_removable_cards, m)?)?;
     m.add_function(wrap_pyfunction!(removable_curse_cards, m)?)?;
+    m.add_function(wrap_pyfunction!(crystal_sphere_pick, m)?)?;
     m.add_function(wrap_pyfunction!(card_kinds, m)?)?;
     m.add_function(wrap_pyfunction!(eternal_granting_enchantments, m)?)?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
@@ -4545,6 +3935,24 @@ pub fn sts2_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // constructor. Returns a `PyCombatState` whose `legal_actions`
     // reflects the injected mid-turn snapshot.
     m.add_function(wrap_pyfunction!(state_from_dict_py, m)?)?;
+    m.add_function(wrap_pyfunction!(board_import::combat_wire_from_bridge, m)?)?;
+    m.add_function(wrap_pyfunction!(board_import::registry_card_id, m)?)?;
+    mirror::register(m)?;
+    combat_mirror::register(m)?;
+    turn_plan::register(m)?;
+    hand_select::register(m)?;
+    coach::register(m)?;
+    combat_advice::register(m)?;
+    card_select::register(m)?;
+    advisor_mirror::register(m)?;
+    screen_advice::register(m)?;
+    coach_grader::register(m)?;
+    instinct_advisor::register(m)?;
+    livetree::register(m)?;
+    workbench_log::register(m)?;
+    graft::register(m)?;
+    instinct::register(m)?;
+    display_names::register(m)?;
     // Parity-fuzz T7: scenario-shaped state constructor matching the C#
     // headless `init_scenario` command (Task 7 of
     // `docs/plans/2026-05-23-parity-fuzz-harness.md`).
@@ -4596,6 +4004,8 @@ pub fn sts2_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // The `OnnxPolicy.distribution` twin: same contract, `tract` instead of
     // `onnxruntime`, so the advisor bundle needs neither it nor `numpy`.
     m.add_class::<crate::ppo_policy::PyPpoNetPolicy>()?;
+    m.add_function(wrap_pyfunction!(crate::ppo_policy::ppo_featurize, m)?)?;
+    m.add_function(wrap_pyfunction!(crate::ppo_policy::ppo_fine_surface, m)?)?;
     // Instinct, the e2e Ironclad student, for the mod's advisor.
     m.add_class::<crate::e2e::PyE2eStudent>()?;
     m.add_class::<crate::e2e::PyE2eDriver>()?;
@@ -4608,6 +4018,14 @@ pub fn sts2_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     m.add_function(wrap_pyfunction!(crate::e2e::e2e_new_run, m)?)?;
     m.add_function(wrap_pyfunction!(crate::e2e::e2e_selfplay, m)?)?;
+    // The characters the e2e student plays (`sts2_e2e::env::CHARACTERS`),
+    // so the Python and web lists can be checked against the one source.
+    m.add(
+        "E2E_CHARACTERS",
+        sts2_e2e::env::CHARACTERS
+            .map(sts2_wire::emit::names::character_str)
+            .to_vec(),
+    )?;
     m.add(
         "PpoBudgetExceeded",
         py.get_type::<ppo_policy::PpoBudgetExceeded>(),
@@ -4899,7 +4317,16 @@ pub struct EncounterInfo {
     pub act_name: &'static str,
     /// Canonical roster as `MonsterKind::python_name()` strings.
     pub monsters: Vec<&'static str>,
+    /// Every roster the encounter can roll (its `randomize`), each sorted,
+    /// the list sorted: what a fight on screen can be matched against.
+    /// One entry, the canonical roster sorted, for a fixed encounter.
+    pub rosters: Vec<Vec<&'static str>>,
 }
+
+/// Rng seeds [`EncounterInfo::rosters`] samples: every randomized roster
+/// is a few independent picks from lists of two or three, so this covers
+/// each one many times over.
+const ROSTER_SAMPLES: i32 = 512;
 
 /// Every encounter across the four act tables, table order.
 ///
@@ -4942,13 +4369,35 @@ pub fn list_encounters_impl() -> Vec<EncounterInfo> {
                     .iter()
                     .map(|(k, _)| k.python_name())
                     .collect(),
+                rosters: possible_rosters(def),
             });
         }
     }
     out
 }
 
-/// Python: `list_encounters() -> [{id, display, tier, act, act_name, monsters}]`.
+fn possible_rosters(def: &sts2_content::encounters::EncounterDef) -> Vec<Vec<&'static str>> {
+    let sorted = |r: &[(
+        sts2_core::MonsterKind,
+        sts2_content::monster_dispatch::MonsterSpawnArgs,
+    )]| {
+        let mut v: Vec<&'static str> = r.iter().map(|(k, _)| k.python_name()).collect();
+        v.sort_unstable();
+        v
+    };
+    let mut out = vec![sorted(&def.canonical_roster())];
+    if def.randomize.is_some() {
+        for seed in 0..ROSTER_SAMPLES {
+            let mut rng = sts2_core::dotnet_rng::Rng::new(seed);
+            out.push(sorted(&def.roster(&mut rng)));
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Python: `list_encounters() -> [{id, display, tier, act, act_name, monsters, rosters}]`.
 #[pyfunction]
 fn list_encounters(py: Python<'_>) -> PyResult<Vec<Py<PyDict>>> {
     let mut out = Vec::new();
@@ -4960,6 +4409,7 @@ fn list_encounters(py: Python<'_>) -> PyResult<Vec<Py<PyDict>>> {
         d.set_item("act", e.act)?;
         d.set_item("act_name", e.act_name)?;
         d.set_item("monsters", e.monsters)?;
+        d.set_item("rosters", e.rosters)?;
         out.push(d.unbind());
     }
     Ok(out)
@@ -5311,6 +4761,7 @@ mod build_info_tests {
 mod tests {
 
     use super::*;
+    use sts2_wire::emit::names::choice_kind_python_name;
 
     // ── search-constant pairing ────────────────────────────────────────
 

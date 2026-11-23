@@ -1,22 +1,22 @@
 {
  "base": {
   "block": 43.5,
-  "damage": 30.6,
+  "damage": 28.8,
   "velocity": 1.8,
-  "volume": 13.4
+  "volume": 13.1
  },
  "candidates": [
   {
    "delta": {
     "block": -1.2,
-    "damage": 5.7,
+    "damage": 5.9,
     "velocity": -1.8,
-    "volume": -13.4
+    "volume": -13.1
    },
    "index": 0,
    "scores": {
     "block": 42.3,
-    "damage": 36.3,
+    "damage": 34.7,
     "velocity": 0.0,
     "volume": 0.0
    }
@@ -31,9 +31,9 @@
    "index": 1,
    "scores": {
     "block": 41.6,
-    "damage": 29.0,
+    "damage": 27.2,
     "velocity": 2.1,
-    "volume": 13.6
+    "volume": 13.3
    }
   }
  ]

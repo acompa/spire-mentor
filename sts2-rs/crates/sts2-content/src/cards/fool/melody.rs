@@ -42,7 +42,10 @@ pub(crate) fn play_harmonic_shield(
 /// `RhythmStrike.cs`: `1 + MelodiesThisTurn` hits of 4 (+1).
 pub(crate) fn play_rhythm_strike(state: &mut CombatState, t: Option<CreatureUid>) -> EffectResult {
     let t = target(t, "RhythmStrike");
-    let hits = 1 + fool::melodies_this_turn(state);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        1 + fool::melodies_this_turn(state),
+    );
     for _ in 0..hits {
         if !state
             .creatures
@@ -85,7 +88,8 @@ pub(crate) fn play_ki_rest(state: &mut CombatState, _t: Option<CreatureUid>) -> 
 pub(crate) fn play_wah_blast(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
     let twice =
         fool::played_this_turn(state, CardTag::Cho) || fool::played_this_turn(state, CardTag::Ki);
-    let hits = if twice { 2 } else { 1 };
+    let hits =
+        sts2_core::card_effects::resolving_card_attack_hits(state, if twice { 2 } else { 1 });
     for _ in 0..hits {
         if sts2_core::combat_loop::combat_is_ending(state) {
             break;

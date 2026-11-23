@@ -99,6 +99,14 @@ pub fn run_action_to_value(a: &RunAction) -> Value {
         RunAction::CollectTreasure => {
             set(&mut d, "action", "collect_treasure");
         }
+        RunAction::BlitzChoice { idx } => {
+            set(&mut d, "action", "blitz_choice");
+            set(&mut d, "idx", *idx);
+        }
+        RunAction::TakeChestRelic { idx } => {
+            set(&mut d, "action", "take_chest_relic");
+            set(&mut d, "idx", *idx);
+        }
         RunAction::SacrificeCardReward => {
             set(&mut d, "action", "sacrifice_card_reward");
         }
@@ -121,6 +129,26 @@ pub fn run_action_to_value(a: &RunAction) -> Value {
         RunAction::PotionSwap { discard_slot } => {
             set(&mut d, "action", "potion_swap");
             set(&mut d, "discard_slot", *discard_slot);
+        }
+        RunAction::UsePotionOutOfCombat { potion_slot } => {
+            set(&mut d, "action", "use_potion_ooc");
+            set(&mut d, "potion_slot", *potion_slot);
+        }
+        RunAction::DiscardPotion { potion_slot } => {
+            set(&mut d, "action", "discard_potion");
+            set(&mut d, "potion_slot", *potion_slot);
+        }
+        // GH #1620: the reward screen.
+        RunAction::TakeReward { idx } => {
+            set(&mut d, "action", "take_reward");
+            set(&mut d, "idx", *idx);
+        }
+        RunAction::SkipReward { idx } => {
+            set(&mut d, "action", "skip_reward");
+            set(&mut d, "idx", *idx);
+        }
+        RunAction::ProceedRewards => {
+            set(&mut d, "action", "proceed_rewards");
         }
         RunAction::Unhandled => {
             set(&mut d, "action", "unhandled");
@@ -234,6 +262,21 @@ pub fn run_action_from_value(v: &Value) -> Result<RunAction, EmitError> {
             idx: req_usize(d, "idx")?,
         },
         "confirm_deck_selection" => RunAction::ConfirmDeckSelection,
+        // GH #1606: the potion popup's Use (out of combat) and Discard.
+        "use_potion_ooc" => RunAction::UsePotionOutOfCombat {
+            potion_slot: req_usize(d, "potion_slot")?,
+        },
+        "discard_potion" => RunAction::DiscardPotion {
+            potion_slot: req_usize(d, "potion_slot")?,
+        },
+        // GH #1620: the reward screen.
+        "take_reward" => RunAction::TakeReward {
+            idx: req_usize(d, "idx")?,
+        },
+        "skip_reward" => RunAction::SkipReward {
+            idx: req_usize(d, "idx")?,
+        },
+        "proceed_rewards" => RunAction::ProceedRewards,
         "enchant_deck_card" => RunAction::EnchantDeckCard {
             idx: req_usize(d, "idx")?,
         },
@@ -247,6 +290,13 @@ pub fn run_action_from_value(v: &Value) -> Result<RunAction, EmitError> {
             idx: req_usize(d, "idx")?,
         },
         "collect_treasure" => RunAction::CollectTreasure,
+        // GH #1347: the Blitz merchant's wares and the Blitz chest's relics.
+        "blitz_choice" => RunAction::BlitzChoice {
+            idx: req_usize(d, "idx")?,
+        },
+        "take_chest_relic" => RunAction::TakeChestRelic {
+            idx: req_usize(d, "idx")?,
+        },
         "sacrifice_card_reward" => RunAction::SacrificeCardReward,
         // Bead `sts2-rs-i6h9i.1`: surface in-combat pending-choice
         // resolution (added to the core RunManager API in `sts2-rs-6dtxp`)
@@ -382,6 +432,11 @@ mod tests {
                 discard_slot: Some(1),
             },
             RunAction::PotionSwap { discard_slot: None },
+            RunAction::UsePotionOutOfCombat { potion_slot: 1 },
+            RunAction::DiscardPotion { potion_slot: 2 },
+            RunAction::TakeReward { idx: 1 },
+            RunAction::SkipReward { idx: 0 },
+            RunAction::ProceedRewards,
             RunAction::Unhandled,
         ]
     }

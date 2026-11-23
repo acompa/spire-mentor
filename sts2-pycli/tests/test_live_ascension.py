@@ -35,15 +35,24 @@ class _Stop(Exception):
 
 @pytest.fixture
 def translated(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """Record the ``ascension`` every ``adapter.translate`` call is given."""
+    """Record the ``ascension`` every board rebuild is given: the Python
+    ``adapter.translate`` and the Rust board import the advisor's lanes use
+    (``sts2_rs.combat_wire_from_bridge``, GH #1426)."""
+    sts2_rs = pytest.importorskip("sts2_rs")
     seen: list[int] = []
     real = adapter.translate
+    real_rust = sts2_rs.combat_wire_from_bridge
 
     def spy(*args: Any, **kwargs: Any) -> dict[str, Any]:
         seen.append(kwargs.get("ascension", 0))
         return real(*args, **kwargs)
 
+    def rust_spy(board: Any, character: str, ascension: int, **kwargs: Any) -> Any:
+        seen.append(ascension)
+        return real_rust(board, character, ascension, **kwargs)
+
     monkeypatch.setattr(adapter, "translate", spy)
+    monkeypatch.setattr(sts2_rs, "combat_wire_from_bridge", rust_spy)
     return seen
 
 
@@ -54,18 +63,13 @@ def test_run_ascension_prefers_the_mod_and_falls_back_to_the_default() -> None:
     assert run_ascension({}) == 0
 
 
-def test_advisor_lane_rebuilds_at_the_run_ascension(
-    monkeypatch: pytest.MonkeyPatch, translated: list[int]
-) -> None:
+def test_advisor_lane_rebuilds_at_the_run_ascension() -> None:
     sts2_rs = pytest.importorskip("sts2_rs")
-
-    def fake_search(*_a: Any, **_k: Any) -> dict[str, Any]:
-        raise _Stop
-
-    monkeypatch.setattr(sts2_rs, "mcts_recommend", fake_search)
-    with pytest.raises(_Stop):
-        ra.compute_combat_advice(_board(10), RecommendConfig(threads=1), 8)
-    assert translated == [10]
+    _advice, cs, call_cfg, _rows = ra.compute_combat_advice(
+        _board(10), RecommendConfig(threads=1), 8
+    )
+    assert call_cfg.ascension == 10
+    assert sts2_rs.state_to_dict(cs)["rng"]["ascension"] == 10
 
 
 def test_mcts_driver_lane_rebuilds_at_the_run_ascension(translated: list[int]) -> None:
@@ -76,7 +80,7 @@ def test_mcts_driver_lane_rebuilds_at_the_run_ascension(translated: list[int]) -
 
 def test_mirrored_card_select_rebuilds_at_the_run_ascension(translated: list[int]) -> None:
     class _Mirror:
-        def reconcile(self, wire: dict[str, Any]) -> None:
+        def prepare_card_select(self, *_a: Any) -> None:
             raise _Stop
 
     state = {"type": "card_select", "run_state": {"ascension": 9}, "combat": _board(9)}

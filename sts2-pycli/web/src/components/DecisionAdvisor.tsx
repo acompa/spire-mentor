@@ -1,5 +1,6 @@
 import type { DecisionAdvisorCandidate } from "../api";
 import type { DecisionAdvisorState } from "./useDecisionAdvisor";
+import { t } from "../i18n";
 
 /**
  * Shared "Analyze options (EV)" advisor for the live non-combat-play decision
@@ -22,10 +23,10 @@ export function DecisionAnalyzeButton({ adv, style }: { adv: DecisionAdvisorStat
       className="mono"
       onClick={adv.run}
       disabled={adv.advising}
-      title="Deep EV analysis: fork the run and play the rest of the act out many times for each option (MCTS in every fight). Slow — a few seconds."
+      title={t("Deep EV analysis: fork the run and play the rest of the act out many times for each option (MCTS in every fight). Slow — a few seconds.")}
       style={{ fontSize: 11, ...style }}
     >
-      {adv.advising ? "analyzing…" : "🎲 analyze options (EV)"}
+      {adv.advising ? t("analyzing…") : t("🎲 analyze options (EV)")}
     </button>
   );
 }
@@ -39,7 +40,7 @@ export function DecisionAnalyzeStatus({ adv }: { adv: DecisionAdvisorState }) {
       {advising && (
         <div className="mono" style={{ marginTop: 10, fontSize: 11, color: "var(--muted)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span>analyzing options…{prog ? ` ${prog.done}/${prog.total} sims` : ""}</span>
+            <span>{prog ? t("analyzing options… {done}/{total} sims", { done: prog.done, total: prog.total }) : t("analyzing options…")}</span>
             <span>{elapsed.toFixed(1)}s</span>
           </div>
           <div style={{ height: 6, background: "var(--field-bg)", borderRadius: 3, overflow: "hidden" }}>
@@ -69,15 +70,15 @@ export function DecisionAnalyzeStatus({ adv }: { adv: DecisionAdvisorState }) {
       )}
       {advice?.error && (
         <div className="mono" style={{ color: "var(--hp)", marginTop: 10, fontSize: 11 }}>
-          advisor unavailable: {advice.error}
+          {t("advisor unavailable: {error}", { error: advice.error })}
         </div>
       )}
       {advice && !advice.error && (
         <div className="mono" style={{ color: "var(--muted)", marginTop: 10, fontSize: 11 }}>
           {adv.anyWin
-            ? `act win-rate over ${advice.candidates[0]?.n ?? "?"} rollouts of the rest of act ${advice.act}`
-            : `depth reached + HP at the boss over ${advice.candidates[0]?.n ?? "?"} rollouts of the rest of act ${advice.act} (no option cleared the act)`}
-          {" "}· ★ = recommended
+            ? t("act win-rate over {n} rollouts of the rest of act {act}", { n: advice.candidates[0]?.n ?? "?", act: advice.act ?? "" })
+            : t("depth reached + HP at the boss over {n} rollouts of the rest of act {act} (no option cleared the act)", { n: advice.candidates[0]?.n ?? "?", act: advice.act ?? "" })}
+          {" "}· {t("★ = recommended")}
         </div>
       )}
     </>
@@ -99,22 +100,22 @@ export function DecisionWinChip({ c, adv }: { c: DecisionAdvisorCandidate; adv: 
   const floors = c.avg_floors_advanced.toFixed(1);
   const hp = c.avg_hp_at_deepest.toFixed(0);
   const headline = adv.anyWin
-    ? `${star}${(c.win_rate * 100).toFixed(0)}% act win`
-    : `${star}~${floors} floors deeper`;
+    ? `${star}${t("{pct}% act win", { pct: (c.win_rate * 100).toFixed(0) })}`
+    : `${star}${t("~{floors} floors deeper", { floors })}`;
   const sub = adv.anyWin
-    ? `Δ ${c.delta >= 0 ? "+" : ""}${(c.delta * 100).toFixed(0)} · ~${floors}f · ${hp} hp`
-    : `${hp} hp at the wall`;
+    ? `Δ ${c.delta >= 0 ? "+" : ""}${(c.delta * 100).toFixed(0)} · ${t("~{floors}f · {hp} hp", { floors, hp })}`
+    : t("{hp} hp at the wall", { hp });
   return (
     <div
       className="mono"
       title={
         (adv.anyWin
-          ? `act win-rate over ${c.n} rollouts of the rest of the act (MCTS in combat). `
-          : `no option cleared the act in ${c.n} rollouts (the act boss is a wall for the ` +
-            `cheap rollout policy), so this shows how far the option got instead. `) +
-        `~${c.avg_floors_advanced.toFixed(1)} floors advanced, ${hp} HP at the deepest room. ` +
-        `Δ is this option's composite value (act-win + depth reached + HP carried) ` +
-        `minus the best other option; ★ = recommended.`
+          ? t("act win-rate over {n} rollouts of the rest of the act (MCTS in combat).", { n: c.n })
+          : t("no option cleared the act in {n} rollouts (the act boss is a wall for the cheap rollout policy), so this shows how far the option got instead.", { n: c.n })) +
+        " " +
+        t("~{floors} floors advanced, {hp} HP at the deepest room.", { floors: c.avg_floors_advanced.toFixed(1), hp }) +
+        " " +
+        t("Δ is this option's composite value (act-win + depth reached + HP carried) minus the best other option; ★ = recommended.")
       }
       style={{ fontSize: 11, marginTop: 5, lineHeight: 1.45, color: col, fontWeight: c.is_best ? 600 : 400 }}
     >

@@ -761,7 +761,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Go for the Eyes"
+   ],
    "error": false,
    "floor": 2,
    "id": 14,
@@ -1585,7 +1587,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Lightning Rod"
+   ],
    "error": false,
    "floor": 3,
    "id": 29,

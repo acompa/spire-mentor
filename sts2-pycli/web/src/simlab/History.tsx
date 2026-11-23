@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { SweepListEntry } from "./api";
 import { card, shortTime } from "./styles";
 import { ProgressBar, StatusInline } from "./widgets";
+import { t, tn } from "../i18n";
 
 // ---------------------------------------------------------------------------
 // SweepList
@@ -22,16 +23,16 @@ function SweepRow({
 }) {
   const positions = s.spec.positions?.length ?? s.spec.start_states?.length ?? 0;
   const encLabel = positions
-    ? `${positions} position${positions === 1 ? "" : "s"}`
+    ? tn(positions, "{n} position", "{n} positions")
     : s.spec.encounters.length === 1
-      ? `${shortEnc(s.spec.encounters[0])}${
+      ? t("{enc} enc", { enc: `${shortEnc(s.spec.encounters[0])}${
           s.spec.ascensions.length === 1 ? `+${s.spec.ascensions[0]}` : ""
-        } enc`
-      : `${s.spec.encounters.length} enc`;
+        }` })
+      : t("{n} enc", { n: s.spec.encounters.length });
   // New specs carry `decks`; legacy ones only `deck_preset` (count as 1).
   const deckCount = s.spec.decks?.length ?? 1;
-  const deckLabel = positions ? "" : ` · ${deckCount} deck${deckCount === 1 ? "" : "s"}`;
-  const summary = `${s.spec.name} · ${encLabel}${deckLabel} · ${s.spec.strategies.length} strats · ${s.spec.n_seeds} ${positions ? "trials" : "seeds"}`;
+  const deckLabel = positions ? "" : ` · ${tn(deckCount, "{n} deck", "{n} decks")}`;
+  const summary = `${s.spec.name} · ${encLabel}${deckLabel} · ${t("{n} strats", { n: s.spec.strategies.length })} · ${positions ? t("{n} trials", { n: s.spec.n_seeds }) : t("{n} seeds", { n: s.spec.n_seeds })}`;
   return (
     <div
       onClick={() => onSelect(s.sweep_id)}
@@ -90,10 +91,10 @@ export default function SweepHistory({
           padding: "2px 8px 6px",
         }}
       >
-        History
+        {t("History")}
       </div>
       {sweeps.length === 0 && (
-        <p style={{ color: "var(--muted)", padding: "0 8px" }}>No sweeps yet.</p>
+        <p style={{ color: "var(--muted)", padding: "0 8px" }}>{t("No sweeps yet.")}</p>
       )}
       {shown.map((s) => (
         <SweepRow
@@ -116,7 +117,7 @@ export default function SweepHistory({
             padding: 0,
           }}
         >
-          {showAll ? "show less" : `show all (${sweeps.length})`}
+          {showAll ? t("show less") : t("show all ({n})", { n: sweeps.length })}
         </button>
       )}
     </div>

@@ -449,12 +449,22 @@ impl CardEnergyCost {
 
     /// C# `EndOfTurnCleanup`: drop the `EndOfTurn` modifiers. `true` if any
     /// was dropped.
+    ///
+    /// Inlined so the per-card `len == 0` fast path (almost every card at
+    /// every turn end) costs no call; the drop itself stays out of line.
+    #[inline]
     pub fn end_of_turn_cleanup(&mut self) -> bool {
-        self.len != 0 && self.retain(|m| m.flags & LocalCostMod::END_OF_TURN == 0)
+        self.len != 0 && self.end_of_turn_cleanup_slow()
+    }
+
+    #[inline(never)]
+    fn end_of_turn_cleanup_slow(&mut self) -> bool {
+        self.retain(|m| m.flags & LocalCostMod::END_OF_TURN == 0)
     }
 
     /// C# `AfterCardPlayedCleanup`: drop the `WhenPlayed` modifiers. `true`
     /// if any was dropped.
+    #[inline]
     pub fn after_card_played_cleanup(&mut self) -> bool {
         self.len != 0 && self.retain(|m| m.flags & LocalCostMod::WHEN_PLAYED == 0)
     }

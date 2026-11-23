@@ -20,6 +20,8 @@
  *    learned by position.
  */
 
+import { t } from "../i18n";
+
 export type CommandGroup = "run" | "analyze";
 
 export interface Command {
@@ -66,6 +68,9 @@ export interface CommandContext {
   replayCount: number;
   /** The `advisors` feature flag: every AI opinion surface hangs off it. */
   advisors: boolean;
+  /** GH #1347: the AI answers this fight and nothing else (a Blitz run), so
+   *  the reviews that ask run-level routes are not offered. */
+  fightOnly?: boolean;
   stateImport: boolean;
   staticMode: boolean;
   /** The deck analyzer lives in the bar only on short screens (else it is a
@@ -82,8 +87,8 @@ export interface CommandContext {
   actions: CommandActions;
 }
 
-const NO_RUN = "no run in progress";
-const COMBAT_ONLY = "only during a combat";
+const NO_RUN = t("no run in progress");
+const COMBAT_ONLY = t("only during a combat");
 
 export function buildCommands(c: CommandContext): Command[] {
   const out: Command[] = [];
@@ -94,74 +99,78 @@ export function buildCommands(c: CommandContext): Command[] {
 
   // ---- run lifecycle ------------------------------------------------------
   if (play) {
-    out.push({ id: "save", group: "run", label: "Save", title: "save this run under a name",
+    out.push({ id: "save", group: "run", label: t("Save"), title: t("save this run under a name"),
       disabledReason: c.hasLive ? undefined : NO_RUN, run: a.save });
-    out.push({ id: "load", group: "run", label: "Load", title: "load a saved run", run: a.load });
+    out.push({ id: "load", group: "run", label: t("Load"), title: t("load a saved run"), run: a.load });
     if (c.stateImport) {
-      out.push({ id: "import-state", group: "run", label: "📋 Import state",
-        title: "paste a state copied out of the live game (SpireMentor: Copy state / Ctrl+Shift+C) and play it from here",
+      out.push({ id: "import-state", group: "run", label: t("📋 Import state"),
+        title: t("paste a state copied out of the live game (SpireMentor: Copy state / Ctrl+Shift+C) and play it from here"),
         run: a.importState });
       if (c.bridgeConnected) {
-        out.push({ id: "import-live", group: "run", label: "🎮 Import from live game",
-          title: "load the position the connected game is at right now and play it from here (no copy-paste)",
+        out.push({ id: "import-live", group: "run", label: t("🎮 Import from live game"),
+          title: t("load the position the connected game is at right now and play it from here (no copy-paste)"),
           run: a.importLive });
       }
     }
-    out.push({ id: "end-run", group: "run", label: "End run", title: "end the current run", danger: true,
+    out.push({ id: "end-run", group: "run", label: t("End run"), title: t("end the current run"), danger: true,
       disabledReason: c.hasLive ? undefined : NO_RUN, run: a.endRun });
   }
   if (replay && c.replayCount > 0 && c.resume) {
     const reason = c.resume.kind === null
-      ? (c.resume.reason ?? "this recording cannot be resumed")
+      ? (c.resume.reason ?? t("this recording cannot be resumed"))
       : c.resume.kind === "combat" && !inCombat
-        ? "this recording is a combat fixture — only its combat steps can be taken over"
+        ? t("this recording is a combat fixture — only its combat steps can be taken over")
         : undefined;
-    out.push({ id: "play-from-here", group: "run", label: "🎮 Play from here",
-      title: "take over the run from this exact point, interactively (branch tree + hints)",
+    out.push({ id: "play-from-here", group: "run", label: t("🎮 Play from here"),
+      title: t("take over the run from this exact point, interactively (branch tree + hints)"),
       disabledReason: reason, busy: c.busy.playFromHere, run: a.playFromHere });
   }
 
   // ---- analyses -------------------------------------------------------------
   if (play && c.analyzeInTopbar) {
-    out.push({ id: "analyze", group: "analyze", label: "📊 analyze deck",
-      title: "grade this deck: damage / block / velocity",
+    out.push({ id: "analyze", group: "analyze", label: t("📊 analyze deck"),
+      title: t("grade this deck: damage / block / velocity"),
       disabledReason: c.hasLive ? undefined : NO_RUN, run: a.analyze });
   }
   if (replay) {
-    out.push({ id: "recommend", group: "analyze", label: "recommend (H)",
-      title: "recompute a fresh MCTS recommendation for the viewed step",
-      disabledReason: c.replayCount === 0 ? "no run loaded" : inCombat ? undefined : COMBAT_ONLY,
+    out.push({ id: "recommend", group: "analyze", label: t("recommend (H)"),
+      title: t("recompute a fresh MCTS recommendation for the viewed step"),
+      disabledReason: c.replayCount === 0 ? t("no run loaded") : inCombat ? undefined : COMBAT_ONLY,
       busy: c.busy.recommend, run: a.recommend });
   }
   if (c.advisors && (play || replay)) {
     const started = play ? c.hasLive : c.replayCount > 0;
-    const notStarted = play ? NO_RUN : "no run loaded";
-    out.push({ id: "regret-review", group: "analyze", label: "📉 regret review",
-      title: "post-combat regret review: diff every move against the MCTS line and surface the costliest plays",
-      disabledReason: started ? undefined : notStarted, run: a.regretReview });
-    out.push({ id: "coach-review", group: "analyze", label: "🎓 coach review",
-      title: "every graded turn and choice — the fight recaps and the death autopsy when the live advisor logged them",
+    const notStarted = play ? NO_RUN : t("no run loaded");
+    if (!c.fightOnly) {
+      out.push({ id: "regret-review", group: "analyze", label: t("📉 regret review"),
+        title: t("post-combat regret review: diff every move against the MCTS line and surface the costliest plays"),
+        disabledReason: started ? undefined : notStarted, run: a.regretReview });
+    }
+    out.push({ id: "coach-review", group: "analyze", label: t("🎓 coach review"),
+      title: t("every graded turn and choice — the fight recaps and the death autopsy when the live advisor logged them"),
       disabledReason: started ? undefined : notStarted, run: a.coachReview });
-    out.push({ id: "run-review", group: "analyze", label: "📈 run review",
-      title: "run review: the AI's outlook curve over the map/card/shop/rest decisions, with the biggest turning points flagged",
-      disabledReason: started ? undefined : notStarted, run: a.runReview });
-    out.push({ id: "search-tree", group: "analyze", label: "🔬 search tree",
-      title: "inspect the MCTS search tree for this combat position",
+    if (!c.fightOnly) {
+      out.push({ id: "run-review", group: "analyze", label: t("📈 run review"),
+        title: t("run review: the AI's outlook curve over the map/card/shop/rest decisions, with the biggest turning points flagged"),
+        disabledReason: started ? undefined : notStarted, run: a.runReview });
+    }
+    out.push({ id: "search-tree", group: "analyze", label: t("🔬 search tree"),
+      title: t("inspect the MCTS search tree for this combat position"),
       disabledReason: inCombat ? undefined : COMBAT_ONLY, run: a.searchTree });
-    if (play && !c.staticMode) {
-      out.push({ id: "simlab-from-here", group: "analyze", label: "🧪 SimLab from here",
-        title: "open this exact position in the SimLab sandbox: edit the hand, piles, enemies and intents, then play it out or compare first moves",
+    if (play && !c.staticMode && !c.fightOnly) {
+      out.push({ id: "simlab-from-here", group: "analyze", label: t("🧪 SimLab from here"),
+        title: t("open this exact position in the SimLab sandbox: edit the hand, piles, enemies and intents, then play it out or compare first moves"),
         disabledReason: inCombat ? undefined : COMBAT_ONLY, busy: c.busy.simlabFromHere, run: a.simlabFromHere });
     }
   }
   if ((replay || c.bridgeDirect) && c.bridgeConnected) {
-    out.push({ id: "bridge-tree", group: "analyze", label: "🌳 Game tree",
-      title: "the LIVE game's run tree — click a save-point node to rewind the real game", run: a.bridgeTree });
-    out.push({ id: "live-search", group: "analyze", label: "🔍 Live search",
-      title: "MCTS search tree over the live game's current combat board", run: a.liveSearch });
+    out.push({ id: "bridge-tree", group: "analyze", label: t("🌳 Game tree"),
+      title: t("the LIVE game's run tree — click a save-point node to rewind the real game"), run: a.bridgeTree });
+    out.push({ id: "live-search", group: "analyze", label: t("🔍 Live search"),
+      title: t("MCTS search tree over the live game's current combat board"), run: a.liveSearch });
     if (replay && c.viewedFloor != null) {
-      out.push({ id: "bridge-seek", group: "analyze", label: `⟲ game → floor ${c.viewedFloor}`,
-        title: "rewind the REAL game to the start of the floor you are viewing (the game saves at room entry)",
+      out.push({ id: "bridge-seek", group: "analyze", label: t("⟲ game → floor {n}", { n: c.viewedFloor }),
+        title: t("rewind the REAL game to the start of the floor you are viewing (the game saves at room entry)"),
         busy: c.busy.bridgeSeek, run: a.bridgeSeek });
     }
   }

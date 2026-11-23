@@ -5,6 +5,34 @@ from __future__ import annotations
 from workbench.render import describe_action, required_stat_vars, resolve_card_text
 
 
+def test_cond_text_value_absent_takes_else_branch() -> None:
+    # Pael's Tooth before it has devoured anything: the bug report showed the
+    # raw ``Upgraded.CardTitles.StringValue`` tail.
+    tmpl = (
+        "add [blue]1[/blue] back [gold]Upgraded[/gold]."
+        "{CardTitles.StringValue:cond:\n\nCards devoured:\n{}|}"
+    )
+    assert resolve_card_text(tmpl, {}) == "add 1 back Upgraded."
+    assert required_stat_vars(tmpl) == set()
+
+
+def test_cond_text_value_present_prints_it() -> None:
+    tmpl = "{CardTitles.StringValue:cond:Cards devoured: {}|none}"
+    assert resolve_card_text(tmpl, {"cardtitles": "Bash, Strike"}) == "Cards devoured: Bash, Strike"
+    assert resolve_card_text(tmpl, {"cardtitles": ""}) == "none"
+
+
+def test_cond_numeric_tests() -> None:
+    tmpl = "{Amount:cond:<0?Decreases|Increases} damage"
+    assert resolve_card_text(tmpl, {"amount": -2}) == "Decreases damage"
+    assert resolve_card_text(tmpl, {"amount": 3}) == "Increases damage"
+    turns = "Lasts{Amount:cond:==1? next turn|>1? for {} turns|}."
+    assert resolve_card_text(turns, {"amount": 1}) == "Lasts next turn."
+    assert resolve_card_text(turns, {"amount": 3}) == "Lasts for 3 turns."
+    assert resolve_card_text(turns, {"amount": 0}) == "Lasts."
+    assert required_stat_vars(turns) == {"amount"}
+
+
 def test_resolve_simple_damage() -> None:
     assert resolve_card_text("Deal {Damage:diff()} damage.", {"damage": 6}) == "Deal 6 damage."
 

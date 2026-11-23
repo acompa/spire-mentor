@@ -564,9 +564,35 @@ def test_declining_an_optional_card_grant_is_a_skip_not_a_card() -> None:
     grid = _GrantGrid(options=15, minimum=0)
     decline = {"action": "grant_deck_card", "idx": 15}
     assert to_workbench_verb(grid, decline) == ("skip_select", {})
-    # A real pick on the same grid is still a pick.
+    # A real pick on the same grid is still a pick, one of several the grid
+    # may take: it keeps the grid open (GH #1361).
     pick = {"action": "grant_deck_card", "idx": 14}
-    assert to_workbench_verb(grid, pick) == ("select_cards", {"indices": "14"})
+    assert to_workbench_verb(grid, pick) == (
+        "select_cards",
+        {"indices": "14", "keep_open": True},
+    )
+
+
+class _EnchantScreen:
+    """The slice of ``RunManager`` an enchant screen shows the translator."""
+
+    def __init__(self, optional: bool) -> None:
+        self.pending_enchant_optional = optional
+
+
+def test_a_pick_on_an_up_to_n_enchant_keeps_the_screen_open() -> None:
+    """Kifuda's "up to 3" enchant: the run env takes one ``enchant_deck_card``
+    per pick until the batch is spent (it offers no early confirm). One pick
+    must not close the screen in the workbench (GH #1361)."""
+    pick = {"action": "enchant_deck_card", "idx": 2}
+    assert to_workbench_verb(_EnchantScreen(optional=True), pick) == (
+        "select_cards",
+        {"indices": "2", "keep_open": True},
+    )
+    assert to_workbench_verb(_EnchantScreen(optional=False), pick) == (
+        "select_cards",
+        {"indices": "2"},
+    )
 
 
 def test_a_mandatory_card_grant_has_no_decline_index() -> None:

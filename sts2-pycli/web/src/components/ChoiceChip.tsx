@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, type ChoiceCheck, type ChoiceGrade } from "../api";
 import { ordinal } from "../coach/coachText";
 import { CHECK_CONFIG, checkSummary } from "./choiceCheck";
+import { t } from "../i18n";
 
 type CheckState =
   | { kind: "idle" }
@@ -18,7 +19,7 @@ export default function ChoiceChip({ grade, onDismiss }: {
   const [check, setCheck] = useState<CheckState>({ kind: "idle" });
   const { verdict, played, top, kind } = grade;
   // Graded against the e2e advisor instead of the PPO run policy.
-  const ai = grade.policy === "e2e" ? "Instinct" : "AI";
+  const ai = grade.policy === "e2e" ? t("Instinct") : "AI";
   const flag = verdict === "flag";
   const tone = flag ? "var(--warn, #c79a3a)" : "var(--accent-strong)";
 
@@ -41,36 +42,36 @@ export default function ChoiceChip({ grade, onDismiss }: {
       color: tone, border: `1px solid ${tone}`, background: "var(--field-bg)",
       fontSize: 11, display: "flex", gap: 8, alignItems: "baseline" }}>
       <div style={{ flex: 1 }}>
-        {verdict === "agree" && <>✓ {ai} agrees — <b>{played.label}</b></>}
+        {verdict === "agree" && <>✓ {t("{ai} agrees", { ai })} — <b>{played.label}</b></>}
         {verdict === "tossup" && (
           <>
-            <div>✓ toss-up — <b>{played.label}</b> · no strong {ai} preference</div>
-            <div>{kind} · {ai}'s top picks: {grade.alternatives.map((a) => a.label).join(", ") || top.label}</div>
+            <div>{t("✓ toss-up")} — <b>{played.label}</b> · {t("no strong {ai} preference", { ai })}</div>
+            <div>{kind} · {t("{ai}'s top picks: {picks}", { ai, picks: grade.alternatives.map((a) => a.label).join(", ") || top.label })}</div>
           </>
         )}
         {flag && (
           <>
-            <div>{kind} · you: <b>{played.label}</b></div>
+            <div>{t(kind)} · {t("you:")} <b>{played.label}</b></div>
             <div>
-              {ai} would take: <b>{top.label}</b> ({grade.strength}) · {played.label} was its {ordinal(played.rank)} choice
+              {t("{ai} would take:", { ai })} <b>{top.label}</b> ({t(grade.strength)}) · {t("{label} was its {ordinal} choice", { label: played.label, ordinal: ordinal(played.rank) })}
             </div>
           </>
         )}
         {grade.checkable && check.kind === "idle" && (
           <button type="button" onClick={runCheck}
-            title="Play the rest of the act out from this position both ways — moves wait until it finishes"
+            title={t("Play the rest of the act out from this position both ways — moves wait until it finishes")}
             style={{ font: "inherit", marginTop: 4, background: "none", color: "inherit",
               border: "1px solid currentColor", borderRadius: 3, cursor: "pointer", padding: "0 6px" }}>
-            check it
+            {t("check it")}
           </button>
         )}
         {check.kind === "running" && (
-          <div style={{ color: "var(--muted)" }}>checking… {check.done}/{check.total}</div>
+          <div style={{ color: "var(--muted)" }}>{t("checking… {done}/{total}", { done: check.done, total: check.total })}</div>
         )}
         {summary && <div style={{ color: "var(--text)" }}>{summary}</div>}
-        {check.kind === "failed" && <div style={{ color: "var(--muted)" }}>check failed: {check.error}</div>}
+        {check.kind === "failed" && <div style={{ color: "var(--muted)" }}>{t("check failed: {error}", { error: check.error })}</div>}
       </div>
-      <button type="button" onClick={onDismiss} aria-label="Dismiss"
+      <button type="button" onClick={onDismiss} aria-label={t("Dismiss")}
         style={{ font: "inherit", background: "none", border: "none", color: "var(--muted)",
           cursor: "pointer" }}>✕</button>
     </div>

@@ -33,6 +33,7 @@ pub fn phase_str_of(phase: Phase) -> &'static str {
         Phase::RestSite => "rest_site",
         Phase::Event => "event",
         Phase::Treasure => "treasure",
+        Phase::Rewards => "rewards",
         Phase::RunOver => "run_over",
     }
 }
@@ -56,15 +57,7 @@ pub fn result_str(r: &ActionResult) -> &'static str {
 /// `"Ironclad"` etc. from a `CharacterId`.
 #[must_use]
 pub fn character_str(c: sts2_core::potions::CharacterId) -> &'static str {
-    use sts2_core::potions::CharacterId;
-    match c {
-        CharacterId::Ironclad => "Ironclad",
-        CharacterId::Silent => "Silent",
-        CharacterId::Defect => "Defect",
-        CharacterId::Regent => "Regent",
-        CharacterId::Necrobinder => "Necrobinder",
-        CharacterId::Fool => "Fool",
-    }
+    emit::names::character_str(c)
 }
 
 /// Parse a character name (`"Ironclad"` / `"ironclad"`).
@@ -324,6 +317,26 @@ pub fn current_room(rm: &RunManager) -> Value {
     emit::run_manager::current_room(rm)
 }
 
+/// `current_dominion`: the Dread dominion in force where the run stands, as
+/// its model entry (`None` outside Dread and in a boss room). GH #1346.
+#[must_use]
+pub fn current_dominion(rm: &RunManager) -> Option<&'static str> {
+    emit::run_manager::current_dominion(rm)
+}
+
+/// `blitz_shop()`: the Blitz merchant while its room is open (GH #1347),
+/// else `Null`. See `emit::run_manager::blitz_shop` for the shape.
+#[must_use]
+pub fn blitz_shop(rm: &RunManager) -> Value {
+    emit::run_manager::blitz_shop(rm)
+}
+
+/// `blitz_chest()`: the relics still in an open Blitz chest, else `Null`.
+#[must_use]
+pub fn blitz_chest(rm: &RunManager) -> Value {
+    emit::run_manager::blitz_chest(rm)
+}
+
 /// `combat_log()` — raw event rows, oldest first (empty outside combat).
 #[must_use]
 pub fn combat_log(rm: &RunManager) -> Vec<Value> {
@@ -374,6 +387,42 @@ pub fn effective_master_deck_indices(rm: &RunManager) -> Vec<usize> {
 #[must_use]
 pub fn master_deck_detailed(rm: &RunManager) -> Vec<(String, bool)> {
     emit::run_manager::master_deck_detailed(rm)
+}
+
+/// Each [`master_deck_detailed`] card's C# `CurrentUpgradeLevel`, index-
+/// aligned with it: above 1 only for a card that upgrades more than once
+/// (v0.113.0's Dingy Dagger, GH #1391).
+#[must_use]
+pub fn master_deck_levels(rm: &RunManager) -> Vec<u8> {
+    emit::run_manager::effective_master_deck_indices(rm)
+        .into_iter()
+        .map(|i| rm.run_state.master_deck[i].upgrade_level())
+        .collect()
+}
+
+/// Each [`master_deck_detailed`] card's enchantment as `(UPPER_SNAKE id,
+/// amount)`, index-aligned with it (GH #1600).
+#[must_use]
+pub fn master_deck_enchantments(rm: &RunManager) -> Vec<Option<(String, i64)>> {
+    emit::run_manager::master_deck_enchantments(rm)
+}
+
+/// Each [`card_removal_options`] card's enchantment, index-aligned with it
+/// (GH #1600).
+#[must_use]
+pub fn card_removal_option_enchantments(rm: &RunManager) -> Vec<Option<(String, i64)>> {
+    emit::run_manager::card_removal_option_enchantments(rm)
+}
+
+/// The current upgrade level of each open Smith option's deck card, index-
+/// aligned with [`smith_options`] (0 where the option maps to no card).
+#[must_use]
+pub fn smith_option_levels(rm: &RunManager) -> Vec<u8> {
+    rm.run_state
+        .card_select_option_deck_indices()
+        .into_iter()
+        .map(|i| i.map_or(0, |i| rm.run_state.master_deck[i].upgrade_level()))
+        .collect()
 }
 
 /// `card_removal_options()` — removable cards in C#'s offer order.
@@ -517,6 +566,13 @@ pub fn card_reward_option_ids(rm: &RunManager) -> Vec<String> {
     emit::run_manager::card_reward_option_ids(rm)
 }
 
+/// `card_reward_option_upgraded()` — per-option upgrade flags, index-aligned
+/// with [`card_reward_option_ids`]; shorter means "not upgraded".
+#[must_use]
+pub fn card_reward_option_upgraded(rm: &RunManager) -> Vec<bool> {
+    emit::run_manager::card_reward_option_upgraded(rm)
+}
+
 /// `card_reward_bundles()`.
 #[must_use]
 pub fn card_reward_bundles(rm: &RunManager) -> Option<Vec<Vec<String>>> {
@@ -527,6 +583,8 @@ pub fn card_reward_bundles(rm: &RunManager) -> Option<Vec<Vec<String>>> {
 /// name it (`LostWisp`).
 pub fn materialize_event(rm: &mut RunManager) -> Option<String> {
     sts2_content::events::dispatch::bind_pending_event_callback(&mut rm.run_state);
+    // The Fake Merchant's page is its shop (GH #1607).
+    rm.open_fake_merchant_if_bound();
     current_event_name(rm)
 }
 

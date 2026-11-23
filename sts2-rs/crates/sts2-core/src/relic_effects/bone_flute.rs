@@ -7,13 +7,10 @@ use super::prelude::*;
 /// Pin shape (`sts2-rl-agent@01c094d:sts2_env/relics/common.py:105
 /// class BoneFlute`): the canonical hook is `after_attack`, keyed on
 /// `attack.attacker.is_osty and attack.attacker.pet_owner is owner`.
-/// The Rust `AttackCtx` (hooks.rs:1233) is a placeholder with no
-/// `attacker` field, so this Rust body keys on the symmetric
-/// `after_damage_given.dealer` (a `CreatureUid` that lets us look up
-/// the dealer's species) — every Osty attack also lands here. Documented
-/// divergence; rewrite to `after_attack` when AttackCtx is fleshed out
-/// (filed as sts2-rs-addbs). Per-relic, freq=0 in fixtures so the
-/// divergence is bench-invisible.
+/// Rust has no `after_attack` channel, so this keys on
+/// `after_damage_given.dealer` (every Osty attack lands here) and only
+/// LATCHES; [`grant_latched_bone_flute`] grants the block once at the
+/// attack command's end, which is C#'s `AfterAttack` timing.
 pub(crate) fn on_after_damage_given_bone_flute(
     state: &mut CombatState,
     ctx: &DamageGivenCtx,

@@ -18,7 +18,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_select",
-   "details": [],
+   "details": [
+    "+Card Ultimate Strike"
+   ],
    "floor": 1,
    "idx": 1,
    "label": "Select Ultimate Strike",
@@ -826,7 +828,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Cloak and Dagger"
+   ],
    "floor": 2,
    "idx": 23,
    "label": "Take Cloak and Dagger",
@@ -1428,7 +1432,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Sucker Punch"
+   ],
    "floor": 3,
    "idx": 39,
    "label": "Take Sucker Punch",
@@ -2186,7 +2192,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Snakebite"
+   ],
    "floor": 5,
    "idx": 59,
    "label": "Take Snakebite",
@@ -2208,7 +2216,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "event_choice",
-   "details": [],
+   "details": [
+    "+Card Spoils Map"
+   ],
    "floor": 6,
    "idx": 61,
    "label": "Choose: Nab the Map",
@@ -3751,7 +3761,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Leading Strike"
+   ],
    "floor": 7,
    "idx": 94,
    "label": "Take Leading Strike",
@@ -3798,7 +3810,8 @@
    "combat_log": [],
    "decision": "shop",
    "details": [
-    "Gold 221→169"
+    "Gold 221→169",
+    "+Card Predator"
    ],
    "floor": 9,
    "idx": 98,
@@ -3836,7 +3849,8 @@
    "combat_log": [],
    "decision": "card_select",
    "details": [
-    "Gold 118→43"
+    "Gold 118→43",
+    "−Card Strike"
    ],
    "floor": 9,
    "idx": 101,
@@ -3895,7 +3909,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_select",
-   "details": [],
+   "details": [
+    "Upgraded Strike → Strike+"
+   ],
    "floor": 11,
    "idx": 106,
    "label": "Upgrade Strike",

@@ -1777,7 +1777,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Leading Strike"
+   ],
    "error": false,
    "floor": 2,
    "id": 38,

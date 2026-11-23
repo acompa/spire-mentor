@@ -70,3 +70,13 @@ export const HintsCtx = createContext<HintsValue>({
 export function useHints(): HintsValue {
   return useContext(HintsCtx);
 }
+
+/** `value` as every advice surface should read it while `quiet` holds:
+ *  nothing unprompted (`on` false) and no grades after you act (`off` true),
+ *  with the stored style itself left alone so it is back the moment `quiet`
+ *  lifts. A Blitz run outside a fight is the case (GH #1347): none of the
+ *  AI routes answer there, so a surface that would ask one stays dark
+ *  instead of asking. In a Blitz fight the fight's own AI answers. */
+export function quietHints(value: HintsValue, quiet: boolean): HintsValue {
+  return quiet ? { ...value, on: false, off: true } : value;
+}

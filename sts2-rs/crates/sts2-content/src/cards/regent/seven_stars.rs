@@ -6,7 +6,7 @@ use super::prelude::*;
 /// targets inside [`deal_damage_all_enemies`].
 pub(crate) fn play_seven_stars(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
     let dmg = current_damage(state);
-    for _ in 0..7 {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 7) {
         deal_damage_all_enemies(state, dmg);
     }
     EffectResult::Resolved

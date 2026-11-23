@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { Relic } from "../api";
 import { NO_DESCRIPTION, useChromeInspect } from "../inspect/useInspect";
 import { usePhone } from "../phone";
+import { t } from "../i18n";
 
 /** Real px of one HUD relic button on a phone (phone.css) plus the tray gap. */
 const PHONE_RELIC_PX = 44;
@@ -122,13 +123,13 @@ export default function RelicTray({ relics, skin, maxShown }: {
       ))}
       {(collapsed || (expanded && overflow)) && (
         <button type="button" className={hud ? "gs-hud-relic gs-hud-relic-more" : undefined}
-          aria-label={collapsed ? `${hidden} more relics` : "fewer relics"}
+          aria-label={collapsed ? t("{n} more relics", { n: hidden }) : t("fewer relics")}
           aria-expanded={!collapsed}
           onClick={(e) => {
             if (collapsed && inspect.enabled) {
               e.stopPropagation();
               inspect.open({
-                key: "relics:more", name: `${hidden} more relics`,
+                key: "relics:more", name: t("{n} more relics", { n: hidden }),
                 list: relics.slice(shown).map((r, i) => ({
                   key: `relic:${shown + i}:${r.name}`, icon: r.image, name: r.name,
                   description: r.description || NO_DESCRIPTION,

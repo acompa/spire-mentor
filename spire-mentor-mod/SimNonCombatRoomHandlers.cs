@@ -75,8 +75,17 @@ internal static class SimRoomNodes
 
     internal static bool MapOpen() => NMapScreen.Instance?.IsOpen ?? false;
 
+    /// <summary>
+    /// The options a click would take. A shared event (every event that can
+    /// start a fight, <c>EventModel.EnterCombatWithoutExitingEvent</c>) does
+    /// not clear its buttons on a pick, it disables them
+    /// (<c>NEventRoom.BeforeOptionChosen</c>), so the page just answered stays
+    /// in the tree, unlocked, until the fight or the next page replaces it.
+    /// </summary>
     internal static List<NEventOptionButton> UnlockedEventOptions(Node room) =>
-        UiHelper.FindAll<NEventOptionButton>(room).Where(b => !b.Option.IsLocked).ToList();
+        UiHelper.FindAll<NEventOptionButton>(room)
+            .Where(b => !b.Option.IsLocked && b.IsEnabled)
+            .ToList();
 }
 
 /// <summary>
@@ -126,8 +135,14 @@ internal static class NonCombatBridgeProtocol
     public const string EventChoiceAction = "event_choice";
     public const string CollectTreasureAction = "collect";
     public const string PickRelicAction = "pick_relic";
+    // The reward screen (SimRewardsScreenHandler): one pick_reward per reward,
+    // in any order, and proceed leaves the rest. The engine plays the same
+    // screen on a `reward_screen` run (GH #1620); the advisor's runs auto-collect,
+    // so its answer here is unchanged.
     public const string PickRewardAction = "pick_reward";
     public const string PotionSwapAction = "potion_swap";
+    // No action for the potion popup (drink out of combat, discard; GH #1606):
+    // the advisor's runs never offer it, so the mod leaves those to the player.
     public const string PickCardBundleAction = "pick_card_bundle";
     public const string DivineCellAction = "divine_cell";
     public const string ProceedAction = "proceed";
@@ -158,6 +173,10 @@ internal static class SimAgentChoice
     /// <param name="rejectAtReply">Re-checks an in-range index when the reply
     /// arrives; a non-null result is the detail of an invalid_index error and
     /// the agent is asked again (e.g. "proceed" no longer enabled).</param>
+    /// <param name="checkReply">Like <paramref name="rejectAtReply"/>, with the
+    /// raw reply too, for a handler that reads more than the index from it
+    /// (the Fake Merchant's <c>relic_index</c>). Runs last; the reply it
+    /// accepts is the one the caller acts on.</param>
     internal static async Task<int> AskAsync(
         Func<RunState?, Player?, Dictionary<string, object>> buildBody,
         int optionCount,
@@ -165,7 +184,8 @@ internal static class SimAgentChoice
         string logTag,
         CancellationToken ct,
         bool negativeMeansFirst = false,
-        Func<int, string?>? rejectAtReply = null)
+        Func<int, string?>? rejectAtReply = null,
+        Func<int, string, string?>? checkReply = null)
     {
         while (true)
         {
@@ -193,7 +213,7 @@ internal static class SimAgentChoice
             }
             if (index >= 0 && index < optionCount)
             {
-                string? rejection = rejectAtReply?.Invoke(index);
+                string? rejection = rejectAtReply?.Invoke(index) ?? checkReply?.Invoke(index, reply);
                 if (rejection == null)
                 {
                     return index;
@@ -710,7 +730,7 @@ public class SimEventRoomHandler : IRoomHandler, IHandler
     private const int MaxDecisionIterations = 50;
     private const int PostCombatSettleMs = 500;
     private static readonly TimeSpan ProceedCloseWait = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ChoiceResultWait = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ChoiceResultWait = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan OptionsLoadWait = TimeSpan.FromSeconds(30);
     private const int OptionsWaitReportEveryPolls = 50;
     private static readonly TimeSpan FakeMerchantProceedWait = TimeSpan.FromSeconds(10);
@@ -768,7 +788,7 @@ public class SimEventRoomHandler : IRoomHandler, IHandler
         {
             ct.ThrowIfCancellationRequested();
 
-            if (!SimRoomNodes.IsLive(room))
+            if (!SimRoomNodes.IsLive(room) || CombatManager.Instance.IsInProgress)
             {
                 Node? resumed = await ResumeAfterEventCombatAsync(random, ct);
                 if (resumed == null)
@@ -820,11 +840,16 @@ public class SimEventRoomHandler : IRoomHandler, IHandler
                 break;
             }
 
+            // The answered page must not count as the result: a shared event
+            // keeps its (now disabled) buttons up while a fight loads, and
+            // asking again there sent the agent the same page twice (#1287,
+            // Battleworn Dummy).
             Node currentRoom = room;
             await WaitHelper.Until(() =>
                     SimRoomNodes.OverlayUp() ||
                     SimRoomNodes.MapOpen() ||
                     !SimRoomNodes.IsLive(currentRoom) ||
+                    CombatManager.Instance.IsInProgress ||
                     SimRoomNodes.UnlockedEventOptions(currentRoom).Count > 0,
                 ct, ChoiceResultWait, "Event showed no result after the chosen option");
 
@@ -885,14 +910,18 @@ public class SimEventRoomHandler : IRoomHandler, IHandler
     }
 
     /// <summary>
-    /// The Fake Merchant (GH #873): a shopfront in an event room, with no
-    /// event buttons. Asked as an <c>event</c> decision in the headless
-    /// engine's option model (<c>act2_hive.rs</c> <c>FAKE_MERCHANT_OPTIONS</c>),
-    /// because that is how the run policy saw it in training: buy (the first
-    /// stocked relic, 50g), throw a Foul Potion (fight for the Rug plus every
-    /// relic still in stock and 300 gold), or leave. Unlike the engine, the
-    /// event stays open after a purchase, so the agent is asked again until
-    /// it throws or leaves.
+    /// The Fake Merchant (GH #873, #1607): a shopfront in an event room, with
+    /// no event buttons. Asked as a <c>shop</c> decision, the shape the engine
+    /// and the headless host both present (<c>FakeMerchant.BeforeEventStarted</c>
+    /// stocks six fake relics at rolled prices): option 0 leaves, options
+    /// 1..n buy a stocked, affordable relic, any number of times. The shop is
+    /// named by <c>event_name</c> <c>FAKE_MERCHANT</c>, which the advisor
+    /// reads to price it as the engine does (no merchant discounts in an
+    /// event room).
+    ///
+    /// Throwing a Foul Potion is not asked: the engine offers it only to
+    /// policies trained on out-of-combat potion use
+    /// (<c>RunState::ooc_potion_actions</c>, GH #1606), and no deployed one is.
     /// </summary>
     private static async Task RunFakeMerchantAsync(NFakeMerchant merchant, Node room, Rng random, CancellationToken ct)
     {
@@ -901,131 +930,93 @@ public class SimEventRoomHandler : IRoomHandler, IHandler
         {
             await WaitForFakeMerchantProceedAsync(merchant, ct);
 
-            Player? me = LocalContext.GetMe(RunManager.Instance.DebugOnlyGetState());
-            NMerchantSlot? buySlot = FakeMerchantBuySlot(merchant);
-            FoulPotion? foul = FakeMerchantFoulPotion(merchant, me);
-            List<Dictionary<string, object?>> options = FakeMerchantOptions(buySlot, foul != null);
+            List<NMerchantSlot> slots = FakeMerchantPurchasable(merchant);
+            if (slots.Count == 0)
+            {
+                await LeaveFakeMerchantAsync(merchant, ct);
+                return;
+            }
+            List<Dictionary<string, object>> options = FakeMerchantShopOptions(slots);
+            List<Dictionary<string, object>> stock = FakeMerchantStock(merchant, slots);
 
             int choice = await SimAgentChoice.AskAsync(
                 (_, player) => new Dictionary<string, object>
                 {
-                    [NonCombatBridgeProtocol.TypeField] = NonCombatBridgeProtocol.EventState,
+                    [NonCombatBridgeProtocol.TypeField] = NonCombatBridgeProtocol.ShopState,
                     ["options"] = options,
                     ["player_gold"] = player?.Gold ?? 0,
-                    ["stock"] = merchant.Inventory.GetAllSlots()
-                        .Select(SimShopRoomHandler.ShopStockRow).ToList(),
+                    ["stock"] = stock,
+                    ["event_name"] = FakeMerchantEventId,
                 },
-                options.Count, NonCombatBridgeProtocol.EventState, "SimEvent", ct,
-                rejectAtReply: i => options[i]["enabled"] is true
-                    ? null
-                    : $"index {i} is not enabled ({options[i]["label"]})");
-            Logger.Log($"[SimEvent] Agent chose FakeMerchant option {options[choice]["text_key"]}");
+                options.Count, NonCombatBridgeProtocol.ShopState, "SimEvent", ct, negativeMeansFirst: true);
 
-            switch (choice)
+            if (choice <= 0)
             {
-                case FakeMerchantBuy:
-                    await BuyFromFakeMerchantAsync(merchant, buySlot!, ct);
-                    break;
-                case FakeMerchantThrowFoul:
-                    if (await ThrowFoulPotionAsync(foul!, room, ct))
-                    {
-                        // No-resume fight (shouldResumeAfterCombat: false): the
-                        // event does not come back, its rewards follow the combat.
-                        await ResumeAfterEventCombatAsync(random, ct);
-                        Logger.Log("[SimEvent] Event finished (FakeMerchant fight)");
-                        return;
-                    }
-                    break;
-                default:
-                    await LeaveFakeMerchantAsync(merchant, ct);
-                    return;
+                await LeaveFakeMerchantAsync(merchant, ct);
+                return;
             }
+            NMerchantSlot slot = slots[choice - 1];
+            Logger.Log($"[SimEvent] Agent bought {SimShopRoomHandler.ShopEntryId(slot)} from the FakeMerchant");
+            await BuyFromFakeMerchantAsync(merchant, slot, ct);
         }
         AutoSlayLog.Warn($"[SimEvent] Hit the FakeMerchant decision cap ({MaxDecisionIterations}); leaving");
         await LeaveFakeMerchantAsync(merchant, ct);
     }
 
-    // Option positions, in the engine's FAKE_MERCHANT_OPTIONS order. The run
-    // policy reads an event option by POSITION, so a disabled option keeps
-    // its slot (enabled: false) rather than shifting the rest up.
-    internal const int FakeMerchantBuy = 0;
-    internal const int FakeMerchantThrowFoul = 1;
-    internal const int FakeMerchantLeave = 2;
     internal const string FakeMerchantEventId = "FAKE_MERCHANT";
 
     /// <summary>
-    /// The three options as sent on the wire. Labels follow the engine's;
-    /// the structured deltas are what <c>preview_option_effect</c> reports
-    /// for the same option in training (the throw's rewards come after the
-    /// fight, so it previews as only losing the potion).
+    /// The relics that can be bought right now, in shopfront order (the
+    /// event's shuffle order). Empty once the fight has started (the merchant
+    /// button is hidden and the shopfront cannot open).
     /// </summary>
-    internal static List<Dictionary<string, object?>> FakeMerchantOptions(NMerchantSlot? buySlot, bool canThrow)
-    {
-        string relic = buySlot == null ? "" : SimShopRoomHandler.ShopEntryId(buySlot);
-        int cost = buySlot?.Entry.Cost ?? 0;
-        return new List<Dictionary<string, object?>>
-        {
-            FakeMerchantOption(FakeMerchantBuy, "BUY", $"Buy a Relic ({cost}g)",
-                buySlot == null ? "Nothing in stock you can afford." : $"Purchase a fake relic: {relic}.",
-                buySlot != null, relic, goldDelta: -cost, relicsGained: 1, potionsLost: 0),
-            FakeMerchantOption(FakeMerchantThrowFoul, "THROW_FOUL", "Throw Foul Potion",
-                canThrow ? "Fight for real rewards." : "No Foul Potion to throw.",
-                canThrow, "", goldDelta: 0, relicsGained: 0, potionsLost: 1),
-            FakeMerchantOption(FakeMerchantLeave, "LEAVE", "Leave", "Leave the merchant.",
-                true, "", goldDelta: 0, relicsGained: 0, potionsLost: 0),
-        };
-    }
-
-    private static Dictionary<string, object?> FakeMerchantOption(
-        int index, string key, string label, string description, bool enabled, string relicId,
-        int goldDelta, int relicsGained, int potionsLost) => new()
-    {
-        ["index"] = index,
-        ["id"] = NonCombatBridgeProtocol.EventChoiceAction,
-        ["action"] = NonCombatBridgeProtocol.EventChoiceAction,
-        ["label"] = label,
-        ["description"] = description,
-        ["enabled"] = enabled,
-        ["event_id"] = FakeMerchantEventId,
-        ["text_key"] = $"{FakeMerchantEventId}.options.{key}",
-        ["relic_id"] = relicId,
-        ["will_kill_player"] = false,
-        ["gold_delta"] = goldDelta,
-        ["hp_delta"] = 0,
-        ["max_hp_delta"] = 0,
-        ["relics_gained"] = relicsGained,
-        ["potions_lost"] = potionsLost,
-    };
-
-    /// <summary>
-    /// The relic "buy" purchases: the first stocked, affordable one in
-    /// inventory order, which is the event's shuffle order -- the same pick
-    /// the engine's <c>fake_merchant_buy</c> makes. Null once the fight has
-    /// started (the merchant button is hidden and the shopfront cannot open).
-    /// </summary>
-    internal static NMerchantSlot? FakeMerchantBuySlot(NFakeMerchant merchant)
+    internal static List<NMerchantSlot> FakeMerchantPurchasable(NFakeMerchant merchant)
     {
         if (merchant.MerchantButton is not { } button || !button.IsVisibleInTree())
         {
-            return null;
+            return new List<NMerchantSlot>();
         }
         return merchant.Inventory.GetAllSlots()
-            .FirstOrDefault(s => s is NMerchantRelic && s.Entry is { IsStocked: true, EnoughGold: true });
+            .Where(s => s is NMerchantRelic && s.Entry is { IsStocked: true, EnoughGold: true })
+            .ToList();
+    }
+
+    /// <summary>Option 0 leaves; option i (1..n) buys <paramref name="slots"/>[i-1].</summary>
+    internal static List<Dictionary<string, object>> FakeMerchantShopOptions(List<NMerchantSlot> slots)
+    {
+        var options = new List<Dictionary<string, object>>
+        {
+            new()
+            {
+                ["index"] = 0,
+                ["id"] = NonCombatBridgeProtocol.LeaveShopAction,
+                ["action"] = NonCombatBridgeProtocol.LeaveShopAction,
+                ["label"] = "Leave",
+                ["enabled"] = true,
+            },
+        };
+        options.AddRange(slots.Select((slot, i) => SimShopRoomHandler.ShopOption(slot, i + 1)));
+        return options;
     }
 
     /// <summary>
-    /// A held Foul Potion the merchant can be hit with right now: the game's
-    /// own usability check, which needs the shopfront closed
-    /// (<c>FoulPotion.GetFoulPotionMerchantTarget</c>).
+    /// Every relic slot, sold or not, each buyable one naming the option that
+    /// buys it (the regular shop's <c>stock</c> shape).
     /// </summary>
-    internal static FoulPotion? FakeMerchantFoulPotion(NFakeMerchant merchant, Player? me)
-    {
-        if (me == null || merchant.MerchantButton is not { } button || !button.IsVisibleInTree())
-        {
-            return null;
-        }
-        return me.Potions.OfType<FoulPotion>().FirstOrDefault(p => p.PassesCustomUsabilityCheck);
-    }
+    internal static List<Dictionary<string, object>> FakeMerchantStock(NFakeMerchant merchant, List<NMerchantSlot> slots) =>
+        merchant.Inventory.GetAllSlots()
+            .Where(s => s is NMerchantRelic)
+            .Select(slot =>
+            {
+                Dictionary<string, object> row = SimShopRoomHandler.ShopStockRow(slot);
+                int at = slots.IndexOf(slot);
+                if (at >= 0)
+                {
+                    row["option"] = at + 1;
+                }
+                return row;
+            })
+            .ToList();
 
     /// <summary>
     /// Open the shopfront the way a player does, buy, and close it again so
@@ -1053,30 +1044,6 @@ public class SimEventRoomHandler : IRoomHandler, IHandler
         }
         await WaitHelper.Until(() => !inventory.IsOpen, ct, FakeMerchantProceedWait,
             "FakeMerchant shopfront did not close");
-    }
-
-    /// <summary>
-    /// Throw the potion at the merchant: what the game enqueues when the
-    /// potion's target is the merchant button (NPotionHolder.cs:614,
-    /// `EnqueueManualUse(null)`). True once the fight has taken over the room;
-    /// false if nothing happened, so the agent is asked again.
-    /// </summary>
-    internal static async Task<bool> ThrowFoulPotionAsync(FoulPotion potion, Node room, CancellationToken ct)
-    {
-        potion.EnqueueManualUse(null);
-        // The merchant's Foul Potion line plays before the fight starts.
-        DateTime deadline = DateTime.UtcNow + FakeMerchantFightWait;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (!SimRoomNodes.IsLive(room) || CombatManager.Instance.IsInProgress)
-            {
-                return true;
-            }
-            SimAutoSlayer.CurrentWatchdog?.Reset("Waiting for the FakeMerchant fight");
-            await Task.Delay(FakeMerchantSettleMs, ct);
-        }
-        AutoSlayLog.Warn("[SimEvent] Threw the Foul Potion but no fight started; asking again");
-        return false;
     }
 
     private static async Task WaitForFakeMerchantProceedAsync(NFakeMerchant merchant, CancellationToken ct) =>

@@ -1419,8 +1419,8 @@ fn state_from_dict_reconstructs_fabricator_bot_slots_from_wire_order() {
         assert_eq!(slot_of(MK::Zapbot), Some(3), "first post-fab bot = bot3");
         assert_eq!(
             slot_of(MK::Fabricator),
-            None,
-            "the Fabricator itself keeps its fixed middle-slot key"
+            Some(2),
+            "the Fabricator holds its own middle slot, as from combat entry (GH #1759)"
         );
     });
 }
@@ -1489,4 +1489,71 @@ fn x_cost_card_ignores_live_display_cost() {
             "fixed-cost card still adopts the live resolved cost (Strike @0)"
         );
     });
+}
+
+/// GH #1816: a rebuilt Aeonglass telegraphs INCREASING_INTENSITY's Strength
+/// as base + the recovered counter (`IncreasingIntensityTotalStrength`), as
+/// the native engine re-telegraphs it after each use: with a level-2 Wither
+/// in the piles it grants two more than with none.
+#[test]
+fn state_from_dict_telegraphs_aeonglass_buff_with_the_counter() {
+    fn buff_amount(wither_level: Option<i64>) -> i32 {
+        Python::with_gil(|py| {
+            let d = make_mid_turn_fixture(py).unwrap();
+            if let Some(level) = wither_level {
+                let wither = make_card(py, "WITHER", 11, false).unwrap();
+                wither.set_item("kind", "curse").unwrap();
+                wither.set_item("base_damage", 3 + 3 * level).unwrap();
+                let deck = d
+                    .get_item("deck")
+                    .unwrap()
+                    .unwrap()
+                    .downcast_into::<PyDict>()
+                    .unwrap();
+                deck.get_item("discard_pile")
+                    .unwrap()
+                    .unwrap()
+                    .downcast_into::<PyList>()
+                    .unwrap()
+                    .append(wither)
+                    .unwrap();
+            }
+            let enc = PyList::empty(py);
+            let boss = PyDict::new(py);
+            boss.set_item("kind", "Aeonglass").unwrap();
+            boss.set_item("uid", 1_i64).unwrap();
+            boss.set_item("hp", 400).unwrap();
+            boss.set_item("max_hp", 512).unwrap();
+            boss.set_item("block", 0).unwrap();
+            boss.set_item("powers", empty_list(py)).unwrap();
+            let intents = PyList::empty(py);
+            let it = PyDict::new(py);
+            it.set_item("kind", "Buff").unwrap();
+            intents.append(it).unwrap();
+            boss.set_item("intents", intents).unwrap();
+            boss.set_item("intent_history", empty_list(py)).unwrap();
+            boss.set_item("is_dead", false).unwrap();
+            boss.set_item("is_escaped", false).unwrap();
+            boss.set_item("move_state", "INCREASING_INTENSITY_MOVE")
+                .unwrap();
+            enc.append(boss).unwrap();
+            d.set_item("encounter", enc).unwrap();
+            let state = state_from_dict(&d).expect("must build");
+            let boss = state
+                .creatures
+                .iter()
+                .find(|c| c.monster_id.0 == "Aeonglass")
+                .expect("Aeonglass reconstructed");
+            let mv = boss.ai.as_ref().expect("ai").current_move();
+            assert_eq!(mv.id, "INCREASING_INTENSITY_MOVE");
+            mv.intents
+                .iter()
+                .find_map(|i| match i {
+                    sts2_core::Intent::Buff { amount, .. } => Some(*amount),
+                    _ => None,
+                })
+                .expect("the move telegraphs a Buff")
+        })
+    }
+    assert_eq!(buff_amount(Some(2)), buff_amount(None) + 2);
 }

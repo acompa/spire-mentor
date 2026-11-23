@@ -21,7 +21,12 @@ Endpoints (all JSON):
                          last complete line; ``?stat=1`` leaves the text out.
                          The bundled workbench's Follow mode mirrors it into
                          the page (it cannot read the file); 404 until the
-                         first message opens a log
+                         first message opens a log. ``?name=<file>`` serves
+                         one log of ``/logs`` instead (400 unless a bare
+                         ``.jsonl`` filename)
+    GET  /logs         — every run log in the logs directory, ``{logs: [{name,
+                         size, mtime}]}`` newest first: the bundled workbench
+                         imports the runs it did not watch live
     POST /restore      — {snapshot_id} or {node_id}; rewinds the live game
     POST /search_tree  — companion MCTS tree over the current combat board
     GET  /api/bugreport, POST /api/bugreport, GET /api/bugreport/<id>
@@ -98,6 +103,29 @@ from urllib.parse import unquote
 
 from realgame_livetree import LiveRunTree
 from realgame_workbench_log import run_log_name
+
+# A filename the bundled page's run store takes (engineRoutes.ts RUN_FILENAME).
+_RUN_LOG_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.jsonl")
+
+
+def _read_log(file: Path, *, stat_only: bool) -> tuple[int, dict[str, Any]]:
+    """A log file as the ``/log`` routes answer it."""
+    try:
+        st = file.stat()
+        raw = b"" if stat_only else file.read_bytes()
+    except OSError as exc:
+        return 404, {"error": "no_log", "detail": str(exc)}
+    # The bundled page stores it under this key (its run store takes a
+    # bare filename, engineRoutes.ts RUN_FILENAME); coach records name
+    # their file by the same rule.
+    name = run_log_name(str(file)) or ""
+    payload: dict[str, Any] = {"name": name, "size": st.st_size, "mtime": st.st_mtime}
+    if not stat_only:
+        # The advisor appends while we read: a torn last record would
+        # fail the page's parse, so it waits for the next poll.
+        payload["text"] = raw[: raw.rfind(b"\n") + 1].decode("utf-8", errors="replace")
+    return 200, payload
+
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +451,7 @@ class ControlPlane:
         self._lock = threading.Lock()
         self._client: Any = None
         self._status: dict[str, Any] = {"connected": False}
+        self._logs_dir: Path | None = None
         self._waiters: dict[str, _Waiter] = {}
         self._last_state: dict[str, Any] | None = None
         self._server: ThreadingHTTPServer | None = None
@@ -470,6 +499,45 @@ class ControlPlane:
     def set_log_path(self, path: str | None) -> None:
         with self._lock:
             self._status["log_path"] = path
+
+    def set_logs_dir(self, path: str | Path | None) -> None:
+        """Where the workbench run logs go, so ``/logs`` lists earlier
+        sessions' runs before this one opens a log."""
+        with self._lock:
+            self._logs_dir = Path(path) if path else None
+
+    def _run_logs_dir(self) -> Path | None:
+        with self._lock:
+            if self._logs_dir is not None:
+                return self._logs_dir
+            path = self._status.get("log_path")
+        return Path(path).parent if path else None
+
+    def run_logs(self) -> dict[str, Any]:
+        """``GET /logs``: every run log in the logs directory, newest first."""
+        rows: list[dict[str, Any]] = []
+        logs_dir = self._run_logs_dir()
+        if logs_dir is not None and logs_dir.is_dir():
+            for p in logs_dir.iterdir():
+                if not _RUN_LOG_NAME.fullmatch(p.name):
+                    continue
+                try:
+                    st = p.stat()
+                except OSError:
+                    continue
+                if p.is_file():
+                    rows.append({"name": p.name, "size": st.st_size, "mtime": st.st_mtime})
+        rows.sort(key=lambda r: r["mtime"], reverse=True)
+        return {"logs": rows}
+
+    def run_log(self, name: str, *, stat_only: bool) -> tuple[int, dict[str, Any]]:
+        """``GET /log?name=``: one log of :meth:`run_logs`, shaped like ``/log``."""
+        if not _RUN_LOG_NAME.fullmatch(name):
+            return 400, {"error": "bad_name", "detail": "name must be a bare .jsonl filename"}
+        logs_dir = self._run_logs_dir()
+        if logs_dir is None:
+            return 404, {"error": "no_log", "detail": "the advisor has no logs directory"}
+        return _read_log(logs_dir / name, stat_only=stat_only)
 
     def on_bridge_message(self, msg: dict[str, Any]) -> None:
         """Route a rewind-lane broadcast from the mod (see BRIDGE_MESSAGE_TYPES)."""
@@ -551,22 +619,7 @@ class ControlPlane:
             path = self._status.get("log_path")
         if not path:
             return 404, {"error": "no_log", "detail": "the advisor has not opened a run log yet"}
-        file = Path(path)
-        try:
-            st = file.stat()
-            raw = b"" if stat_only else file.read_bytes()
-        except OSError as exc:
-            return 404, {"error": "no_log", "detail": str(exc)}
-        # The bundled page stores it under this key (its run store takes a
-        # bare filename, engineRoutes.ts RUN_FILENAME); coach records name
-        # their file by the same rule.
-        name = run_log_name(str(file)) or ""
-        payload: dict[str, Any] = {"name": name, "size": st.st_size, "mtime": st.st_mtime}
-        if not stat_only:
-            # The advisor appends while we read: a torn last record would
-            # fail the page's parse, so it waits for the next poll.
-            payload["text"] = raw[: raw.rfind(b"\n") + 1].decode("utf-8", errors="replace")
-        return 200, payload
+        return _read_log(Path(path), stat_only=stat_only)
 
     # -- HTTP server ---------------------------------------------------
 
@@ -715,8 +768,16 @@ class ControlPlane:
                     else:
                         self._send(200, reply)
                 elif path == "/log":
-                    code, payload = plane.live_log(stat_only="stat=1" in self.path)
+                    query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                    stat_only = query.get("stat") == ["1"]
+                    name = query.get("name")
+                    if name:
+                        code, payload = plane.run_log(name[0], stat_only=stat_only)
+                    else:
+                        code, payload = plane.live_log(stat_only=stat_only)
                     self._send(code, payload)
+                elif path == "/logs":
+                    self._send(200, plane.run_logs())
                 elif path == "/api/bugreport" and plane.bug_reports is not None:
                     self._send(200, plane.bug_reports.probe())
                 elif path.startswith("/api/bugreport/") and plane.bug_reports is not None:

@@ -956,7 +956,7 @@ Who reads the manifest:
 | consumer | how |
 |---|---|
 | `workbench.ppo_policy` (both backends) | reads it at runtime, via `python/champions.py` |
-| `packaging/SimAdvisor.spec` (advisor exe) | reads it; ships it into the bundle |
+| `scripts/stage_advisor.py` (the SimAdvisor binary) | reads it; ships it with every declared net |
 | `synergy/embed_geometry.py` (taxonomy view) | reads it |
 | `sts2-rs/…/ppo/net.rs` `champion_onnx_filename` | **generated** region |
 | `./Dockerfile` `COPY` block | **generated** region |

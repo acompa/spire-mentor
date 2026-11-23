@@ -23,6 +23,12 @@ cs_project := "src/Sts2Headless/Sts2Headless.csproj"
 # `workbench` recipe). Windows venvs keep it under Scripts/.
 venv_python := if os_family() == "windows" { ".venv/Scripts/python.exe" } else { ".venv/bin/python" }
 
+# Prefix of every pytest recipe: runs the command in `.venv-pascal` on a
+# machine whose GPU the locked CUDA 13 torch cannot drive (pre-sm_75, e.g. a
+# Pascal TITAN Xp), as is everywhere else. STS2_PASCAL_VENV=1 / =0 forces it
+# (scripts/pascal-venv.sh).
+torch_env := "bash scripts/pascal-venv.sh --auto"
+
 # Default recipe — show help
 default: help
 
@@ -112,31 +118,30 @@ default_build := "v0.111.0"
 
 # `sts2_client.LEGACY_GAME_VERSION` / Rust's `GameVersion::default()`: what a
 # file that names no build is, and what the engine simulates when it is told
-# none. It never moves. The slow suite and the hint tools run on it (see
-# `test-slow-pr`).
+# none. It never moves. The hint tools (`smoke-hint`, `bench-hint`) run on it.
 engine_default_build := "v0.107.1"
 
 # Run pytest unit tests, excluding `slow` ones (rebuilds C# headless runner first)
 test: build-cs
     @echo "🧪 Running tests ({{default_build}})..."
-    uv run --frozen pytest --game-version {{default_build}}
+    {{torch_env}} uv run --frozen pytest --game-version {{default_build}}
 
 # Run ONLY the slow-marked tests (full-run PPO/parity walks, ~2700 CPU-seconds).
-test-slow: (build-cs engine_default_build)
-    @echo "🐢 Running slow tests..."
-    uv run --frozen pytest -m slow --game-version {{engine_default_build}}
+test-slow: build-cs
+    @echo "🐢 Running slow tests ({{default_build}})..."
+    {{torch_env}} ../scripts/heavy-suite.sh uv run --frozen pytest -m "slow and not training" --game-version {{default_build}}
 
 # Run the whole suite, slow tests included: `test`, then `test-slow`. Two runs
-# because they run on different builds (see `test-slow-pr`).
+# because `test-slow` is long enough to want on its own.
 test-all: test test-slow
 
 # Run tests with verbose output
 test-verbose: build-cs
-    uv run --frozen pytest -v --game-version {{default_build}}
+    {{torch_env}} uv run --frozen pytest -v --game-version {{default_build}}
 
 # Run tests with coverage report
 test-coverage: build-cs
-    uv run --frozen pytest --cov=python --cov-report=term-missing --game-version {{default_build}}
+    {{torch_env}} uv run --frozen pytest --cov=python --cov-report=term-missing --game-version {{default_build}}
 
 # Full regression — 5 games per character, all must complete
 #
@@ -158,16 +163,31 @@ test-coverage: build-cs
 # subprocess with a random policy and never imports `sts2_rs`, so there is no
 # engine to keep fresh. Any recipe that DOES import it (`test`, the parity
 # harness, anything under `python/sts2_hint/`) must keep the sync.
+#
+# Fails (exit 1) if any character completes fewer than 5 runs; every character
+# still runs first, so one failure doesn't hide another. Each run's output is
+# kept in a variable, not `tee /dev/stderr`'d: that truncates a stderr which is
+# redirected to a file (#1334).
 regression-test: build-cs
-    @echo "🎮 Running full regression (this takes a while)..."
-    @for char in Ironclad Silent Defect Regent Necrobinder; do \
-        echo "── $char ──"; \
-        STS2_GAME_VERSION={{default_build}} uv run --frozen --no-sync python python/play_full_run.py 5 "$char" 2>&1 | grep -E "Wins|Completed"; \
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "🎮 Running full regression (this takes a while)..."
+    fail=0
+    for char in Ironclad Silent Defect Regent Necrobinder; do
+        log="$(STS2_GAME_VERSION={{default_build}} uv run --frozen --no-sync python python/play_full_run.py 5 "$char" 2>&1)"
+        out="$(grep -E "Wins|Completed" <<<"$log" || true)"
+        echo "── $char ── $out"
+        if ! grep -q "Completed: 5/5" <<<"$out"; then
+            fail=1
+            echo "❌ $char: expected 'Completed: 5/5'; last 30 lines:"
+            tail -n 30 <<<"$log"
+        fi
     done
+    exit "$fail"
 
 # The game builds the per-PR gate covers. v0.107.1 is still supported, but it
-# is NOT in the per-PR gate any more (2026-11-14): run `just test-107` on
-# demand, or `just gate-full` from the repo root. A game version that ships is
+# left the per-PR gate on 2026-11-14 and gate-full on 2026-11-19 (GH #1572,
+# Steam no longer serves it): run `just test-107` on demand. A game version that ships is
 # an entry here; a build outside the gate rots silently.
 gate_builds := "v0.111.0 v0.113.0"
 
@@ -175,9 +195,15 @@ gate_builds := "v0.111.0 v0.113.0"
 # (`PARITY_SEEDS`; the full sweep, `just test-slow`, is 20).
 gate_parity_seeds := "6"
 
-# The per-PR gate's Python half: static checks, then pytest, the trimmed slow
-# suite and the 5x5 regression on the gated builds. `just gate` at the repo
-# root adds the Rust half.
+# The per-PR gate's Python half: static checks, then the fast pytest suite on
+# `default_build`. `just gate` at the repo root adds the Rust half.
+#
+# Since 2026-11-16 (GH #1416) the per-PR gate leaves out what never failed
+# there for a PR-caused reason in the Oct 17-Nov 16 gate logs and cost most of
+# its wall time: the second build's pass, the slow suite, the 5x5 regression
+# and the `training` tests. `just gate-full` at the repo root (`gate-heavy`
+# here) runs them; run it for a change to the PPO env, the run AI, the arena,
+# training code, or anything build-specific.
 #
 # The per-PR gate, Python half (run `just gate` at the repo root for all of it)
 gate:
@@ -186,9 +212,35 @@ gate:
     @just typecheck
     @just deptry
     @just check-champions
-    @just test-builds
+    @just test-gate
+
+# The fast suite on `default_build`, as the per-PR gate runs it
+test-gate: build-cs
+    @echo "🧪 pytest @ {{default_build}}"
+    {{torch_env}} ../scripts/heavy-suite.sh uv run --frozen pytest tests/ -q --game-version {{default_build}}
+
+# Build or refresh .venv-pascal: the locked env with torch's CUDA 12.6 build,
+# for Pascal GPUs (TITAN Xp, GTX 10xx), which the locked CUDA 13 torch cannot
+# run on. Per checkout, so every worktree builds its own (scripts/pascal-venv.sh)
+pascal-venv:
+    bash scripts/pascal-venv.sh
+
+# Run a command in .venv-pascal, never re-syncing it, e.g. `just pascal pytest tests/e2e/test_net.py`
+pascal *ARGS:
+    bash scripts/pascal-venv.sh uv run {{ARGS}}
+
+# What the per-PR gate leaves out: the fast suite on every gated build, the
+# trimmed slow suite, the training tests and the 5x5 regression
+gate-heavy:
+    @just test-other-builds
     @just test-slow-pr
+    @just test-training
     @just regression-builds
+
+# Run ONLY the training tests (tests/conftest.py `_TRAINING`)
+test-training: build-cs
+    @echo "🏋 Running training tests ({{default_build}})..."
+    {{torch_env}} ../scripts/heavy-suite.sh uv run --frozen pytest -m training -q --game-version {{default_build}}
 
 # Build the C# headless runner for the gated game builds only
 build-cs-gate:
@@ -196,18 +248,28 @@ build-cs-gate:
     set -euo pipefail
     for v in {{gate_builds}}; do just build-cs "$v"; done
 
+# pytest (fast suite) on the gated builds other than `default_build`
+test-other-builds: build-cs-gate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for v in {{gate_builds}}; do
+        [ "$v" = "{{default_build}}" ] && continue
+        echo "🧪 pytest @ $v"
+        {{torch_env}} ../scripts/heavy-suite.sh uv run --frozen pytest tests/ -q --game-version "$v"
+    done
+
 # pytest (fast suite) on every gated game build
 test-builds: build-cs-gate
     #!/usr/bin/env bash
     set -euo pipefail
     for v in {{gate_builds}}; do
         echo "🧪 pytest @ $v"
-        uv run --frozen pytest tests/ -q --game-version "$v"
+        {{torch_env}} ../scripts/heavy-suite.sh uv run --frozen pytest tests/ -q --game-version "$v"
     done
 
 # The slow suite as the per-PR gate runs it: every slow test, but the full-run
 # parity sweeps (tests/test_ppo_env_parity.py, tests/test_ppo_rust_parity.py)
-# walk `gate_parity_seeds` seeds instead of 20. Those two files are 95% of the
+# walk `gate_parity_seeds` seeds instead of 20. Those two files are most of the
 # slow suite's CPU, and every seed checks the same invariant, so the extra
 # seeds buy rare-path coverage, not a different check. It also skips the
 # `soak`-marked tests: the two longest slow tests, which set the suite's wall
@@ -215,21 +277,63 @@ test-builds: build-cs-gate
 # full sweep; run it (or `just gate-full`) for a change to the PPO env, the run
 # AI or the arena.
 #
-# It runs on the ENGINE's default build (v0.107.1), not a gated one, and that
-# is not a choice: the parity sweeps compare `PpoRunEnv` against the `run_arena` binary,
-# which has no build switch and always simulates the default. Under
-# `--game-version v0.113.0` the env moves and the arena does not, so 13 of 18
-# env-parity cells fail on version skew alone (measured 2026-11-14). The suite
-# checks the env / agent / learner plumbing, which is the same on every build.
+# It runs on `default_build`. The env-parity sweep passes the selected build to
+# `run_arena --game-version` as well as to `PpoRunEnv`, so both sides simulate
+# the same game (GH #1359; before the switch they ran on v0.107.1 only).
 #
 # The slow suite, trimmed for the per-PR gate
-test-slow-pr: (build-cs engine_default_build)
-    @echo "🐢 Running slow tests ({{gate_parity_seeds}} parity seeds)..."
-    PARITY_SEEDS={{gate_parity_seeds}} uv run --frozen pytest -m "slow and not soak" -q --game-version {{engine_default_build}}
+test-slow-pr: build-cs
+    @echo "🐢 Running slow tests ({{default_build}}, {{gate_parity_seeds}} parity seeds)..."
+    PARITY_SEEDS={{gate_parity_seeds}} {{torch_env}} ../scripts/heavy-suite.sh uv run --frozen pytest -m "slow and not soak and not training" -q --game-version {{default_build}}
+
+# GH #1500: event EFFECT parity on every gated build — every event of the
+# pinned seeds' pools (both act-1 variants), every page, every character, with
+# no silent skips; fails on a diff, on an event of the build no seed offers,
+# and on a path the floor (`data/parity/event_effect_floor.json`) says matched
+# before. The builds run side by side (single-threaded C# each). Rows land in
+# $GATE_LOG_DIR (default: a temp dir). `--write-floor` after a fix.
+#
+# Event effect parity (C# vs Rust) on every gated build
+event-parity: build-cs-gate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="${GATE_LOG_DIR:-$(mktemp -d)}"
+    uv run --frozen python -c "import sts2_rs"  # sync the wheel once, not per build
+    for v in {{gate_builds}}; do
+        STS2_GAME_VERSION="$v" uv run --frozen python python/event_parity.py --gate \
+            --json "$out/event-parity-$v.json" >"$out/event-parity-$v.log" 2>&1 &
+    done
+    fail=0
+    for job in $(jobs -p); do wait "$job" || fail=1; done
+    for v in {{gate_builds}}; do
+        echo "── $v ($out/event-parity-$v.log)"
+        grep -q '^event effect sweep' "$out/event-parity-$v.log" \
+            && sed -n '/^event effect sweep/,$p' "$out/event-parity-$v.log" \
+            || tail -n 30 "$out/event-parity-$v.log"
+    done
+    exit "$fail"
+
+# Agent-mode parity lane (GH #1610): the C# host with its interactive modes
+# (reward screen, turn-start picks, Double Down, Crystal Sphere) against Rust in
+# agent mode, comparing the OFFERED action sets at every decision, not only the
+# states. Known gaps are allowlisted with their issue (`KNOWN_GAPS` in
+# python/agent_parity.py); `--strict` fails on anything else or on a broken
+# lockstep. Not in a gate (a run walks ~1,000 decisions; 50 runs take ~10 min
+# at -j 10). Rows + summary land in `out`. Examples: `just parity-agent`
+# (20 Ironclad runs, v0.111.0), `just parity-agent 50 all v0.113.0`.
+#
+# Agent-mode parity lane: offered action sets, interactive host vs Rust agent mode
+parity-agent n="20" character="Ironclad" ver=default_build out="" jobs="8": (build-cs ver)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="{{out}}"; out="${out:-$(mktemp -d)}"
+    STS2_GAME_VERSION="{{ver}}" uv run --frozen python python/agent_parity.py \
+        -n {{n}} --character {{character}} -j {{jobs}} --out "$out" --strict
+    echo "agent-parity rows: $out"
 
 # 5 games x 5 characters on every gated game build, all (build, character)
-# pairs at once; fails if any run is incomplete (unlike `regression-test`,
-# which only prints the counts). Each pair is one single-threaded C# process,
+# pairs at once; fails if any run is incomplete (as `regression-test` does for
+# the default build alone). Each pair is one single-threaded C# process,
 # so running them side by side costs nothing: 266 s serial -> the longest pair.
 #
 # 5x5 random-policy regression on every gated game build
@@ -258,11 +362,11 @@ regression-builds: build-cs-gate
     done
     exit "$fail"
 
-# v0.107.1's pytest fast suite and 5x5 regression: no longer in the per-PR gate
+# v0.107.1's pytest fast suite and 5x5 regression: on demand only, in no gate (GH #1572)
 test-107: (build-cs "v0.107.1")
     #!/usr/bin/env bash
     set -euo pipefail
-    uv run --frozen pytest tests/ -q --game-version v0.107.1
+    {{torch_env}} ../scripts/heavy-suite.sh uv run --frozen pytest tests/ -q --game-version v0.107.1
     for char in Ironclad Silent Defect Regent Necrobinder; do
         out="$(STS2_GAME_VERSION=v0.107.1 uv run --frozen --no-sync python python/play_full_run.py 5 "$char" 2>&1 \
             | grep -E "Wins|Completed")"
@@ -286,10 +390,33 @@ build-cs-all:
     @just build-cs v0.111.0
     @just build-cs v0.113.0
 
-# Build the self-contained SimAdvisor.exe (GH #380; Windows only).
-# Dedicated .venv-advisor (no torch), PyInstaller onedir -> dist/SimAdvisor/.
-build-advisor-exe:
-    pwsh -NoProfile -File scripts/build_advisor_exe.ps1
+# Build the native SimAdvisor (GH #1426): the Rust binary staged with its
+# nets and tables into dist/SimAdvisor/ (as SimAdvisor-<os>-<arch>, or
+# SimAdvisor.exe on Windows), then its --smoke self-check. Any OS;
+# package.ps1 -BuildAdvisor runs the Windows twin (scripts/build_advisor.ps1).
+#
+# On Linux the binary is linked against glibc 2.28 (cargo-zigbuild; `uv tool
+# install cargo-zigbuild` brings zig along), so it runs on any distro since
+# ~2018 and on the Steam Deck. A host build needs the build box's glibc (2.43
+# here), which most players lack. Not a static musl build: that measured 40%
+# slower on the search golden, and musl's libm moved a reply.
+advisor-dist:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    target_dir=../sts2-rs/target/release
+    if [ "$(uname -s)" = Linux ] && command -v cargo-zigbuild >/dev/null; then
+        zig="$(uv tool dir)/cargo-zigbuild/lib/python3*/site-packages/ziglang/zig"
+        for z in $zig; do [ -x "$z" ] && export CARGO_ZIGBUILD_ZIG_PATH="${CARGO_ZIGBUILD_ZIG_PATH:-$z}"; done
+        (cd ../sts2-rs && cargo zigbuild --release -p sim-advisor --bin SimAdvisor \
+            --target x86_64-unknown-linux-gnu.2.28)
+        target_dir=../sts2-rs/target/x86_64-unknown-linux-gnu/release
+    else
+        [ "$(uname -s)" = Linux ] && echo "WARNING: no cargo-zigbuild; this binary needs this box's glibc ($(ldd --version | head -1 | awk '{print $NF}')) or newer. uv tool install cargo-zigbuild" >&2
+        (cd ../sts2-rs && cargo build --release -p sim-advisor --bin SimAdvisor)
+    fi
+    exe=$target_dir/SimAdvisor
+    [ -f "$exe.exe" ] && exe="$exe.exe"
+    uv run --no-project python scripts/stage_advisor.py "$exe" --out dist/SimAdvisor --smoke
 
 ## Rust hint backend (sts2_rs PyO3 extension)
 
@@ -703,3 +830,41 @@ _art-into-dist:
 # build; no Python backend). Build first: `just workbench-static`.
 e2e-static:
     cd web && npx playwright test -c playwright.static.config.ts
+
+# The server-backed phone/tablet Playwright suites (~75 min, one worker; in
+# `gate-full`, and required for PRs that change the workbench UI: root
+# CLAUDE.md). Starts the backend and vite on free ports. Spec args replace
+# the default six: `just e2e-phone e2e/phone-fight.spec.ts`. (GH #1440)
+e2e-phone *args:
+    scripts/e2e-phone.sh {{args}}
+
+# Spire Bench gateway (milestone 2): `just bench-serve bench.json [port]`.
+# Config and API: ../spire-bench/PROTOCOL.md, "Gateway".
+bench-serve CONFIG PORT="8640":
+    PYTHONPATH=python {{venv_python}} -m spire_bench.gateway --config {{CONFIG}} --port {{PORT}}
+
+# Spire Bench random bot against a running gateway.
+bench-random-bot TOKEN *ARGS:
+    PYTHONPATH=python {{venv_python}} -m spire_bench.client --token {{TOKEN}} {{ARGS}}
+
+# Replay Spire Bench transcripts once the season key is revealed.
+bench-verify SEASON_KEY +TRANSCRIPTS:
+    PYTHONPATH=python {{venv_python}} -m spire_bench.verify --season-key {{SEASON_KEY}} {{TRANSCRIPTS}}
+
+# Season commit-reveal (milestone 3; ../spire-bench/PROTOCOL.md, "Seasons").
+# Commit before the season: a new secret K, and commitment.json to publish.
+bench-season-commit SEASON DRAND_CHAIN DRAND_ROUND OUT_DIR *ARGS:
+    PYTHONPATH=python {{venv_python}} -m spire_bench.season commit {{SEASON}} {{DRAND_CHAIN}} {{DRAND_ROUND}} {{OUT_DIR}} {{ARGS}}
+
+# Reveal after the season: reveal.json (K, the drand round's randomness, and
+# each agent's episode count). Pass `--state <gateway state_dir>`.
+bench-season-reveal SEASON_DIR *ARGS:
+    PYTHONPATH=python {{venv_python}} -m spire_bench.season reveal {{SEASON_DIR}} {{ARGS}}
+
+# Replay a season's transcripts against its published reveal.
+bench-verify-season REVEAL +TRANSCRIPTS:
+    PYTHONPATH=python {{venv_python}} -m spire_bench.verify --season {{REVEAL}} {{TRANSCRIPTS}}
+
+# The static leaderboard of a season, from verified transcripts only.
+bench-leaderboard REVEAL OUT_DIR +TRANSCRIPTS:
+    PYTHONPATH=python {{venv_python}} -m spire_bench.leaderboard {{REVEAL}} {{OUT_DIR}} {{TRANSCRIPTS}}

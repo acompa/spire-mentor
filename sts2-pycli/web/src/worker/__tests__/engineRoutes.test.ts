@@ -778,6 +778,71 @@ describe("engine routes — the e2e student, fetched on demand", () => {
   });
 });
 
+/** The double with the Fool's own net (GH #1535): a Fool run answers 424
+ *  naming the Fool's file until that net is loaded. */
+class FoolWorkbench extends E2eWorkbench {
+  fool = 0;
+  foolError: string | null = null;
+  call(method: string, route: string, body_json: string): string {
+    if (route === "/api/live/start-faithful") {
+      const b = JSON.parse(body_json);
+      if (b.e2e) this.live = { ...this.live, fool: b.character === "Fool" };
+    }
+    if (route === "/api/live/run-mode-step" && this.live?.fool && !this.fool) {
+      this.calls.push(`${method} ${route} ${body_json}`);
+      return reply(424, { detail: `no Instinct net loaded (fool.e2ew not fetched yet)` });
+    }
+    return super.call(method, route, body_json);
+  }
+  load_e2e(bytes: Uint8Array): string {
+    if (bytes[0] === 9) {
+      this.fool = bytes.length;
+      return reply(200, { ok: true, file: "fool.e2ew" });
+    }
+    return super.load_e2e(bytes);
+  }
+  set_e2e_fool_error(reason: string): void {
+    this.foolError = reason;
+  }
+  has_e2e_fool(): boolean {
+    return this.fool > 0;
+  }
+}
+
+describe("engine routes — the Fool's own net", () => {
+  const fetchBoth = () =>
+    vi.fn(async (file: string) => (file === "fool.e2ew" ? new Uint8Array([9, 9]) : new Uint8Array([1])));
+
+  it("a Fool e2e start fetches only the Fool's net", async () => {
+    const fetchE2e = fetchBoth();
+    const wb = new FoolWorkbench();
+    const engine = createEngine({
+      wb, kv: memoryKv(), saveHeader, e2eFile: "student.e2ew", e2eFoolFile: "fool.e2ew", fetchE2e,
+    });
+    await engine.handle("POST", "/api/live/start-faithful", { e2e: true, character: "Fool", seed: "run_1" });
+    expect(fetchE2e).toHaveBeenCalledTimes(1);
+    expect(fetchE2e).toHaveBeenCalledWith("fool.e2ew");
+    expect(wb.has_e2e_fool()).toBe(true);
+    expect(wb.has_e2e()).toBe(false);
+    expect((await engine.handle("POST", "/api/live/run-mode-step", {})).status).toBe(200);
+  });
+
+  it("a resumed Fool run fetches the Fool's net on its 424 and retries once", async () => {
+    const fetchE2e = fetchBoth();
+    const wb = new FoolWorkbench();
+    const engine = createEngine({
+      wb, kv: memoryKv(), saveHeader, e2eFile: "student.e2ew", e2eFoolFile: "fool.e2ew", fetchE2e,
+    });
+    // `fool`: the double's Fool run (its 424 names the Fool's file).
+    wb.live = { steps: 1, character: "Fool", fool: true };
+    const r = await engine.handle("POST", "/api/live/run-mode-step", {});
+    expect(r.status).toBe(200);
+    expect(fetchE2e).toHaveBeenCalledTimes(1);
+    expect(fetchE2e).toHaveBeenCalledWith("fool.e2ew");
+    expect(wb.calls.filter((c) => c.startsWith("POST /api/live/run-mode-step")).length).toBe(2);
+  });
+});
+
 describe("engine routes — the seed checker", () => {
   it("stores an attempt's log with the run logs, suffixing a clash", async () => {
     const fetchE2e = vi.fn(async () => new Uint8Array([1]));

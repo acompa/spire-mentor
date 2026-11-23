@@ -3,6 +3,7 @@
 // without standing up the whole network-driven app.
 import type { Enemy, LastSearch, Score } from "./api";
 import { isE2eScores } from "./advisor";
+import { t } from "./i18n";
 
 // `LastSearch` is a wire shape, so it is declared in api.ts alongside the rest
 // of them; re-exported here because this module is where it gets interpreted.
@@ -48,7 +49,7 @@ export function reasoningView(opts: {
   // The e2e advisor's rows are a policy's probabilities, not a search: the
   // caption says whose they are.
   if (scores.length > 0) {
-    return { kind: "scores", scores, pv, title: isE2eScores(scores) ? "Instinct" : null, enemies: null };
+    return { kind: "scores", scores, pv, title: isE2eScores(scores) ? t("Instinct") : null, enemies: null };
   }
   if (lastSearch && lastSearch.scores.length > 0) {
     return {
@@ -57,14 +58,16 @@ export function reasoningView(opts: {
       // The agent's step record carries no principal variation — only the
       // root distribution — so there is nothing honest to put here.
       pv: null,
-      title: `${isE2eScores(lastSearch.scores) ? "last Instinct pick" : "last search"} → ${lastSearch.action}`,
+      title: isE2eScores(lastSearch.scores)
+        ? t("last Instinct pick → {action}", { action: lastSearch.action })
+        : t("last search → {action}", { action: lastSearch.action }),
       enemies: lastSearch.enemies,
     };
   }
-  if (autoRunning) return { kind: "message", text: "searching…" };
+  if (autoRunning) return { kind: "message", text: t("searching…") };
   return {
     kind: "message",
-    text: hintBusy || autoHints ? "thinking…" : "press H for a hint",
+    text: hintBusy || autoHints ? t("thinking…") : t("press H for a hint"),
   };
 }
 

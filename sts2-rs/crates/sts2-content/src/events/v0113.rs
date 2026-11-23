@@ -473,9 +473,12 @@ fn wuppy_allowed(state: &RunState) -> bool {
     state.current_hp > 0 && !state.has_event_pet()
 }
 
-/// Obtain Wuppy with `max_hp` (`wuppy.MaxHp = ...`), kept in the relic
-/// counter.
+/// Obtain Wuppy with `max_hp` (`wuppy.MaxHp = ...` before
+/// `RelicCmd.Obtain`). Its `AfterObtained` then sets the unset `CurrentHp`
+/// to `MaxHp`: the relic counter (`CurrentHp`, C# `DisplayAmount`) starts
+/// full, and `RunState::wuppy_max_hp` keeps `MaxHp`.
 fn obtain_wuppy(state: &mut RunState, max_hp: i32) {
+    state.wuppy_max_hp = max_hp;
     state.grant_event_relic(RelicId::Wuppy);
     state.relic_counters.insert(RelicId::Wuppy, max_hp);
 }

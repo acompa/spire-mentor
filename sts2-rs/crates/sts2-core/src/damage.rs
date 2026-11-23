@@ -39,7 +39,7 @@ use crate::{CombatState, CreatureUid};
 // be skipped bit-identically (see the `PowerKindSet` docs in lib.rs).
 // Single-kind gates use `PowerKindSet::contains` (one word test); only the
 // genuinely multi-kind gate below needs a mask + `intersects`.
-const ADAPTABLE_OR_REATTACH_MASK: crate::PowerKindSet =
+pub(crate) const ADAPTABLE_OR_REATTACH_MASK: crate::PowerKindSet =
     crate::PowerKindSet::from_kinds(&[crate::PowerKind::Adaptable, crate::PowerKind::Reattach]);
 
 /// Remove every `Constrict` power whose recorded `applier` is `dead`.
@@ -384,11 +384,7 @@ pub(crate) fn strip_powers_on_adaptable_death(state: &mut CombatState, dead: Cre
     use crate::PowerKind;
     // Perf gate: no live Adaptable/Reattach power ⇒ `has_revive_power` is
     // provably false.
-    if !state
-        .powers
-        .present_kinds()
-        .intersects(&ADAPTABLE_OR_REATTACH_MASK)
-    {
+    if !crate::hooks::kinds_live(state, crate::hooks::KindGate::AdaptableOrReattach) {
         return;
     }
     let Some(creature) = state.creatures.iter().find(|c| c.id == dead.0) else {
@@ -592,7 +588,7 @@ pub fn compute_modified_damage(
     } else {
         0
     };
-    hooks::modify_damage_with_relic_additive(state, raw_damage, relic_additive, &ctx)
+    hooks::modify_damage_with_relic_additive_inline(state, raw_damage, relic_additive, &ctx)
 }
 
 /// [`compute_modified_damage`], plus the `AfterModifyingDamageAmount` flashes
@@ -829,6 +825,9 @@ fn apply_damage_with_final_impl(
         let owner_absorbed = if pet_of_player && !unblockable {
             let a = final_damage.min(state.player.block).max(0);
             state.player.block -= a;
+            // One block in C#: the player's mirror creature loses it too
+            // (F9 block-mirror check, GH #1197).
+            state.sync_creature_block_from_player();
             a
         } else {
             0
@@ -1294,7 +1293,16 @@ fn finish_hit_tail_body(state: &mut CombatState, tail: &HitTail) {
         CreatureRef::Enemy(uid) => state.player.pet_uid == Some(uid),
         _ => false,
     };
-    if players_hit && props.is_powered() && total > 0 {
+    // `each_unseated_holder` only answers for a live `Underworld` power in the
+    // store (`present_kinds` is a superset), so its absence skips the call.
+    if players_hit
+        && props.is_powered()
+        && total > 0
+        && state
+            .powers
+            .present_kinds()
+            .contains(crate::PowerKind::Underworld)
+    {
         crate::coop::each_unseated_holder(state, crate::PowerKind::Underworld, |state, amount| {
             // The owner, now seated, is the applier (`base.Owner`), as for
             // ReaperForm's Doom.
@@ -1555,10 +1563,7 @@ pub fn with_deferred_enemy_deaths<R>(
     state: &mut CombatState,
     body: impl FnOnce(&mut CombatState) -> R,
 ) -> R {
-    let outer_tails = state
-        .combat_log
-        .deferred_hit_tails
-        .replace(smallvec::SmallVec::new());
+    let outer_tails = state.combat_log.deferred_hit_tails.replace(Box::default());
     // Every call kills ITS OWN felled targets at its end, nested or not
     // (CreatureCmd.cs:409 v0.107.1): Outbreak's AoE set off by an outer AoE's
     // Envenom tail kills its victims before the outer tails reach them
@@ -1572,7 +1577,7 @@ pub fn with_deferred_enemy_deaths<R>(
     let out = body(state);
     let tails = std::mem::replace(&mut state.combat_log.deferred_hit_tails, outer_tails)
         .unwrap_or_default();
-    for tail in &tails {
+    for tail in tails.iter() {
         // A fault (see below), here or in a nested call, unwinds the rest.
         if state.combat_log.card_play_faulted {
             break;
@@ -1817,7 +1822,36 @@ pub(crate) fn hp_lost_after_osty(
 /// `BufferPower.ModifyHpLostAfterOstyLate` returns the amount unchanged for a
 /// `BrightestFlame` card source (`BufferPower.cs:26-29`), so that loss is
 /// neither absorbed nor spends a stack.
+#[inline]
 pub(crate) fn hp_lost_after_osty_buffer(
+    state: &mut CombatState,
+    target: CreatureRef,
+    dealer: CreatureRef,
+    props: ValueProps,
+    amount: i32,
+    buffer: bool,
+) -> i32 {
+    // Both stages need a positive amount, the relic fold a live channel and
+    // the Buffer stage a live Buffer power (`decrement_buffer_on_target`'s
+    // own first gate): the common hit answers here without the call.
+    if amount <= 0 {
+        return amount;
+    }
+    let buffer_live = || {
+        buffer
+            && state
+                .powers
+                .present_kinds()
+                .contains(crate::PowerKind::Buffer)
+    };
+    if !relic_channel_live(state, PlannedChannel::ModifyHpLost) && !buffer_live() {
+        return amount;
+    }
+    hp_lost_after_osty_buffer_stages(state, target, dealer, props, amount, buffer)
+}
+
+#[inline(never)]
+fn hp_lost_after_osty_buffer_stages(
     state: &mut CombatState,
     target: CreatureRef,
     dealer: CreatureRef,
@@ -1881,17 +1915,26 @@ pub(crate) fn flash_hardened_shell_on_target(state: &mut CombatState, target: Cr
     flash_hp_lost_cap_power_on_target(state, target, crate::PowerKind::HardenedShell);
 }
 
+#[inline]
 fn flash_hp_lost_cap_power_on_target(
     state: &mut CombatState,
     target: CreatureRef,
     kind: crate::PowerKind,
 ) {
-    if !crate::event_log::armed(state) {
-        return;
+    // Inline the two cheap gates every hit takes (search never arms the
+    // log); the owner walk stays out of line.
+    if crate::event_log::armed(state) && state.powers.present_kinds().contains(kind) {
+        flash_hp_lost_cap_power_on_target_armed(state, target, kind);
     }
-    if !state.powers.present_kinds().contains(kind) {
-        return;
-    }
+}
+
+#[cold]
+#[inline(never)]
+fn flash_hp_lost_cap_power_on_target_armed(
+    state: &mut CombatState,
+    target: CreatureRef,
+    kind: crate::PowerKind,
+) {
     // Collect candidates first — same reasoning as `decrement_buffer_on_target`.
     let candidates: smallvec::SmallVec<[std::num::NonZeroU32; 4]> = state
         .powers
@@ -2713,6 +2756,38 @@ mod tests {
             .find(|c| c.id == osty.0)
             .map(|c| c.current_hp);
         assert_eq!(osty_hp, Some(3));
+    }
+
+    /// The owner's block that absorbs a hit on the pet is the player's ONE
+    /// block (C# has a single `Creature.Block`, CreatureCmd.cs:286-287 at
+    /// v0.111.0): the player's mirror creature must lose it too. GH #1197:
+    /// an Unleash into a Thorns-2 Toadpole left the mirror 2 above
+    /// `player.block` and tripped the F9 block-mirror check
+    /// (Necrobinder seeds 1372800003, 1517600004).
+    #[test]
+    fn pet_damage_keeps_the_players_block_mirror_in_sync() {
+        let mut state = CombatState::default();
+        state.player.current_hp = 50;
+        state.player.max_hp = 50;
+        let player_uid = state.init_player_creature();
+        state.player.block = 10;
+        state.sync_creature_block_from_player();
+        let osty = state.summon_osty(3).expect("osty summoned");
+        apply_damage(
+            &mut state,
+            CreatureRef::Nobody,
+            osty,
+            2,
+            ValueProps::UNPOWERED,
+            None,
+        );
+        assert_eq!(state.player.block, 8, "the owner's block absorbed it");
+        let mirror = state
+            .creatures
+            .iter()
+            .find(|c| c.id == player_uid.0)
+            .map(|c| c.block);
+        assert_eq!(mirror, Some(8), "the player's mirror creature lost it too");
     }
 
     /// **Thorns recursion termination**: even when the attacker also has
@@ -4428,6 +4503,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),

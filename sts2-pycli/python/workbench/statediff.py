@@ -146,6 +146,62 @@ def _resource_lines(prev: dict[str, Any], nxt: dict[str, Any], out: list[str]) -
         out.extend([f"Used {name}"] * n)
 
 
+def _card_label(card: dict[str, Any]) -> str:
+    """``Strike``, ``Strike+``, ``Dingy Dagger+2``: the name with its upgrade."""
+    name = str(card.get("name") or card.get("id") or "?")
+    level = card.get("upgrade_level") or (1 if card.get("upgraded") else 0)
+    if not level:
+        return name
+    return f"{name}+" if level == 1 else f"{name}+{level}"
+
+
+def _enchant_label(card: dict[str, Any]) -> str:
+    """``Adroit 3`` from ``ADROIT`` / 3 (the id title-cased)."""
+    name = str(card.get("enchantment") or "").replace("_", " ").title()
+    amount = card.get("enchantment_amount")
+    return f"{name} {amount}" if amount else name
+
+
+def _deck_key(card: dict[str, Any]) -> tuple[Any, ...]:
+    level = card.get("upgrade_level") or (1 if card.get("upgraded") else 0)
+    return (card.get("id"), level, card.get("enchantment"), card.get("enchantment_amount"))
+
+
+def _deck_lines(prev: dict[str, Any], nxt: dict[str, Any], out: list[str]) -> None:
+    """What a step did to the deck (GH #1596): cards added and removed, an
+    upgrade (the same card leaving at one level and arriving higher), an
+    enchantment (the same card arriving enchanted). Off-combat steps only: a
+    fight's state carries the deck it started with."""
+    if prev.get("enemies") or nxt.get("enemies"):
+        return
+    d0 = (prev.get("player") or {}).get("deck")
+    d1 = (nxt.get("player") or {}).get("deck")
+    if not isinstance(d0, list) or not isinstance(d1, list):
+        return
+    c0 = Counter(_deck_key(c) for c in d0 if isinstance(c, dict))
+    c1 = Counter(_deck_key(c) for c in d1 if isinstance(c, dict))
+    by_key = {_deck_key(c): c for c in [*d0, *d1] if isinstance(c, dict)}
+    added = [by_key[k] for k, n in (c1 - c0).items() for _ in range(n)]
+    removed = [by_key[k] for k, n in (c0 - c1).items() for _ in range(n)]
+    for a in list(added):
+        match = next((r for r in removed if r.get("id") == a.get("id")), None)
+        if match is None:
+            continue
+        removed.remove(match)
+        added.remove(a)
+        if a.get("enchantment") and a.get("enchantment") != match.get("enchantment"):
+            out.append(f"Enchanted {_card_label(a)} with {_enchant_label(a)}")
+        elif _deck_key(a)[1] != _deck_key(match)[1]:
+            out.append(f"Upgraded {_card_label(match)} → {_card_label(a)}")
+        else:
+            out.append(f"Changed {_card_label(match)} → {_card_label(a)}")
+    out.extend(f"+Card {_card_label(c)}" for c in added)
+    out.extend(f"−Card {_card_label(c)}" for c in removed)
+    m0, m1 = (prev.get("player") or {}).get("max_hp"), (nxt.get("player") or {}).get("max_hp")
+    if isinstance(m0, int) and isinstance(m1, int) and m0 != m1:
+        out.append(f"Max HP {m0}→{m1}")
+
+
 def _orb_passive_lines(prev: dict[str, Any], nxt: dict[str, Any], out: list[str]) -> None:
     """Attribute end-of-turn effects to the Defect's orb passives.
 
@@ -200,4 +256,5 @@ def diff_states(prev: dict[str, Any], nxt: dict[str, Any]) -> list[str]:
     _power_lines(prev, nxt, out)
     _spawn_lines(prev, nxt, out)
     _resource_lines(prev, nxt, out)
+    _deck_lines(prev, nxt, out)
     return out

@@ -86,7 +86,17 @@ class TestEnvelopeGameVersion:
     def test_supported_builds_normalize(self, raw: str, want: str) -> None:
         assert envelope_game_version({"game_version": raw}) == want
 
-    @pytest.mark.parametrize("raw", ["v0.112.0", "v0.103.2", "v0.111.0-beta", "banana"])
+    @pytest.mark.parametrize(
+        ("raw", "want"),
+        [("v0.113.1", "v0.113.0"), ("0.113.7", "v0.113.0"), ("v0.111.2", "v0.111.0")],
+    )
+    def test_a_hotfix_plays_on_its_base_build(self, raw: str, want: str) -> None:
+        # v0.113.1 (2026-11-14) was refused outright until hotfixes mapped.
+        assert envelope_game_version({"game_version": raw}) == want
+
+    @pytest.mark.parametrize(
+        "raw", ["v0.112.0", "v0.114.0", "v0.103.2", "v0.107.0", "v0.111.0-beta", "banana"]
+    )
     def test_an_unknown_build_is_refused_by_name(self, raw: str) -> None:
         with pytest.raises(UnsupportedGameVersionError) as info:
             envelope_game_version({"game_version": raw})
@@ -132,6 +142,11 @@ class TestAdapterCarriesTheBuild:
         beta = _wire(_board(fixture, game_version="0.111.0"))
         assert beta.pop("game_version") == "v0.111.0"
         assert beta == stable
+
+    def test_a_hotfix_reaches_the_wire_as_its_base_build(self) -> None:
+        headless = to_headless_combat_play(_board(game_version="v0.113.1"))
+        assert headless["game_version"] == "v0.113.0"
+        assert _wire(_board(game_version="v0.113.1"))["game_version"] == "v0.113.0"
 
     def test_an_unknown_build_never_reaches_the_engine(self) -> None:
         with pytest.raises(UnsupportedGameVersionError):
@@ -417,42 +432,57 @@ class TestCoachCapability:
 
 
 class TestUnsupportedCharacter:
-    """v0.113.0 added The Fool. Until the engine knows a character, a board
-    with one in it is refused with a note the HUD shows -- never searched
-    (the cards and powers are unknown to the engine) and never an
-    "advisor error" on every request."""
+    """v0.113.0 added The Fool, and the engine simulates it from that build
+    on: a Fool board (own seat or ally) is searched. On an older build the
+    engine has no Fool rules, so such a board is refused with a note the HUD
+    shows -- never searched and never an "advisor error"."""
 
-    def _refused(self, msg: dict[str, Any], fake_search: list[dict[str, Any]]) -> dict[str, Any]:
+    def _advise(self, msg: dict[str, Any]) -> dict[str, Any]:
         client, args, log, wlog = _handler_deps()
         ra._handle_advice_request(
             client, ra.RecommendConfig(), args, log, wlog, msg, None, session={}, mirror=_Mirror()
         )
-        assert fake_search == [], "no search may run for a character the engine lacks"
         (reply,) = client.sent
         return reply["advice"]
 
-    def test_playing_an_unknown_character_is_refused_by_name(
-        self, fake_search: list[dict[str, Any]]
+    @pytest.mark.parametrize("build", ["v0.113.0", "v0.113.1"])
+    def test_the_fool_is_searched_on_v0113(
+        self, build: str, fake_search: list[dict[str, Any]]
     ) -> None:
-        msg = _request(game_version="v0.113.0")
+        msg = _request(game_version=build)
         msg["run_state"] = {**(msg.get("run_state") or {}), "character": "FOOL"}
-        advice = self._refused(msg, fake_search)
-        assert advice["unsupported_character"] == "FOOL"
-        assert advice["note"].startswith("The Fool support is coming soon")
-        assert "best" not in advice and "options" not in advice
+        advice = self._advise(msg)
+        assert "unsupported_character" not in advice
+        assert len(fake_search) == 1
 
-    def test_an_unknown_character_as_ally_is_refused(
-        self, fake_search: list[dict[str, Any]]
-    ) -> None:
+    def test_a_fool_ally_is_searched_on_v0113(self, fake_search: list[dict[str, Any]]) -> None:
         msg = _request(game_version="v0.113.0")
         msg["allies"] = [{"hp": 50, "max_hp": 60, "character": "FOOL", "hand": []}]
-        advice = self._refused(msg, fake_search)
+        advice = self._advise(msg)
+        assert "unsupported_character" not in advice
+        assert len(fake_search) == 1
+
+    @pytest.mark.parametrize("where", ["own", "ally"])
+    def test_the_fool_on_an_older_build_is_refused(
+        self, where: str, fake_search: list[dict[str, Any]]
+    ) -> None:
+        msg = _request(game_version="v0.111.0")
+        if where == "own":
+            msg["run_state"] = {**(msg.get("run_state") or {}), "character": "FOOL"}
+        else:
+            msg["allies"] = [{"hp": 50, "max_hp": 60, "character": "FOOL", "hand": []}]
+        advice = self._advise(msg)
+        assert fake_search == [], "no search may run for a character the build lacks"
         assert advice["unsupported_character"] == "FOOL"
+        assert advice["note"] == (
+            "The Fool needs game version v0.113.0 or newer; this game reports v0.111.0, "
+            "so there is no advice for this run."
+        )
+        assert "best" not in advice and "options" not in advice
 
     def test_an_unmapped_character_falls_back_to_card_inference(self) -> None:
-        # A modded / renamed id is not a known-unsupported one: the gate lets
-        # it through so the adapter infers the character from cards, as it
-        # did before the gate existed. Only the named set is refused.
+        # A modded / renamed id is not a build-gated one: the gate lets it
+        # through so the adapter infers the character from cards.
         msg = _request(game_version="v0.111.0")
         msg["allies"] = [{"hp": 50, "max_hp": 60, "character": "SOME_MOD_HERO", "hand": []}]
         msg["run_state"] = {**(msg.get("run_state") or {}), "character": "OTHER_MOD"}
@@ -503,5 +533,5 @@ class TestBetaBuildLabel:
         assert ra.mark_beta_build(err, beta) is err
 
     def test_refusals_are_not_labelled(self, beta: str) -> None:
-        refusal = {"note": "The Fool support is coming soon", "unsupported_character": "FOOL"}
+        refusal = {"note": "The Fool needs game version v0.113.0", "unsupported_character": "FOOL"}
         assert ra.mark_beta_build(refusal, beta) is refusal

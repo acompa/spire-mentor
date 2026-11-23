@@ -120,7 +120,7 @@ internal static class SimBugReport
     {
         if (_busy)
         {
-            SimActionLog.Note("A bug report is already being sent.");
+            SimActionLog.Note(L10n.T("A bug report is already being sent."));
             return;
         }
         Captured captured = Capture();
@@ -163,10 +163,8 @@ internal static class SimBugReport
         SetStatus(site != null
             ? ""
             : siteSettingBad
-                ? "The Bug report site setting is not an http(s) address, so this build cannot send reports. " +
-                  "Save it to a file and attach that instead."
-                : "This build has no bug-report address. Save the report to a file and attach it to your " +
-                  "post (Steam Workshop comments / GitHub).",
+                ? L10n.T("The Bug report site setting is not an http(s) address, so this build cannot send reports. Save it to a file and attach that instead.")
+                : L10n.T("This build has no bug-report address. Save the report to a file and attach it to your post (Steam Workshop comments / GitHub)."),
             site != null ? Colors.White : new Color(1f, 0.8f, 0.55f));
         SetBusy(false);
         float top = (SimToolbar.Instance.BottomY() ?? 60f) + 8f;
@@ -200,7 +198,7 @@ internal static class SimBugReport
         _note?.Unedit();
         _panel?.GetViewport()?.GuiReleaseFocus();
         SetBusy(true);
-        SetStatus(upload ? "Sending…" : "Saving…", Colors.White);
+        SetStatus(upload ? L10n.T("Sending…") : L10n.T("Saving…"), Colors.White);
         _busy = true;
         Start(captured, note, upload);
     }
@@ -314,8 +312,8 @@ internal static class SimBugReport
             if (site == null)
             {
                 string msg = path != null
-                    ? $"Bug report saved to {path}. Attach that file to your report."
-                    : "Could not save the bug report (see godot.log).";
+                    ? L10n.F("Bug report saved to {0}. Attach that file to your report.", path)
+                    : L10n.T("Could not save the bug report (see godot.log).");
                 Done(msg, ok: path != null, sent: false, copy: path);
                 return;
             }
@@ -325,22 +323,22 @@ internal static class SimBugReport
             {
                 string? renamed = path == null ? null : RenameWithId(path, id);
                 Logger.Log($"[SimBugReport] Sent {id} ({json.Length} chars): {url}");
-                Done($"Bug report sent: {id}. The link is on your clipboard -- paste it into your post." +
-                     (renamed != null ? $" (Saved too: {renamed})" : ""), ok: true, sent: true, copy: url);
+                Done(L10n.F("Bug report sent: {0}. The link is on your clipboard -- paste it into your post.", id) +
+                     (renamed != null ? L10n.F(" (Saved too: {0})", renamed) : ""), ok: true, sent: true, copy: url);
             }
             else
             {
                 Logger.Log($"[SimBugReport] Upload to {site} failed: {error}");
                 Done(path != null
-                        ? $"Could not send the bug report ({error}). It is saved to {path} -- attach that file instead."
-                        : $"Could not send or save the bug report ({error}).",
+                        ? L10n.F("Could not send the bug report ({0}). It is saved to {1} -- attach that file instead.", error, path)
+                        : L10n.F("Could not send or save the bug report ({0}).", error),
                     ok: false, sent: false, copy: path);
             }
         }
         catch (Exception ex)
         {
             Logger.Log($"[SimBugReport] Report failed: {ex}");
-            Done($"Bug report failed: {ex.Message}", ok: false, sent: false, copy: null);
+            Done(L10n.F("Bug report failed: {0}", ex.Message), ok: false, sent: false, copy: null);
         }
     }
 
@@ -554,17 +552,17 @@ internal static class SimBugReport
             rows.AddThemeConstantOverride("separation", 6);
 
             var title = new HBoxContainer();
-            Label titleLabel = SimUiKit.SmallLabel("Report a bug", Colors.White, 16);
+            Label titleLabel = SimUiKit.SmallLabel(L10n.T("Report a bug"), Colors.White, 16);
             titleLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             title.AddChild(titleLabel);
-            title.AddChild(SimUiKit.MakeButton("✕", "Close", Close));
+            title.AddChild(SimUiKit.MakeButton("✕", L10n.T("Close"), Close));
             rows.AddChild(title);
 
-            rows.AddChild(SimUiKit.SmallLabel("What went wrong? (optional, Enter sends)", new Color(0.85f, 0.88f, 0.95f)));
+            rows.AddChild(SimUiKit.SmallLabel(L10n.T("What went wrong? (optional, Enter sends)"), new Color(0.85f, 0.88f, 0.95f)));
 
             var note = new LineEdit
             {
-                PlaceholderText = "e.g. the advisor recommended a card I could not play",
+                PlaceholderText = L10n.T("e.g. the advisor recommended a card I could not play"),
                 MaxLength = BugReportDump.MaxNoteChars,
                 SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
                 MouseFilter = Control.MouseFilterEnum.Stop,
@@ -580,9 +578,7 @@ internal static class SimBugReport
             rows.AddChild(note);
 
             Label what = SimUiKit.SmallLabel(
-                "The report carries this position (as when this box opened), the start-of-room save, " +
-                "the advisor's run log, the last lines of the mod, game and advisor logs (your Windows " +
-                "user name is taken out of file paths), and the mod's settings. Nothing else.",
+                L10n.T("The report carries this position (as when this box opened), the start-of-room save, the advisor's run log, the last lines of the mod, game and advisor logs (your Windows user name is taken out of file paths), and the mod's settings. Nothing else."),
                 new Color(0.75f, 0.78f, 0.85f), 13);
             what.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             what.CustomMinimumSize = new Vector2(PanelWidth - 24f, 0f);
@@ -590,11 +586,11 @@ internal static class SimBugReport
 
             var buttons = new HBoxContainer();
             buttons.AddThemeConstantOverride("separation", 8);
-            Button send = SimUiKit.MakeButton("Send report", "Send it to the Spire Mentor developers", () => OnSubmit(upload: true));
-            Button save = SimUiKit.MakeButton("Save to file only", "Write it to a file and send nothing", () => OnSubmit(upload: false));
+            Button send = SimUiKit.MakeButton(L10n.T("Send report"), L10n.T("Send it to the Spire Mentor developers"), () => OnSubmit(upload: true));
+            Button save = SimUiKit.MakeButton(L10n.T("Save to file only"), L10n.T("Write it to a file and send nothing"), () => OnSubmit(upload: false));
             buttons.AddChild(send);
             buttons.AddChild(save);
-            buttons.AddChild(SimUiKit.MakeButton("Open folder", "Show the saved reports",
+            buttons.AddChild(SimUiKit.MakeButton(L10n.T("Open folder"), L10n.T("Show the saved reports"),
                 () => OpenFolder(ReportsDir)));
             rows.AddChild(buttons);
 
@@ -667,7 +663,7 @@ internal static class SimBugReport
         }
         catch (Exception ex)
         {
-            SimActionLog.Note($"Bug reports are in {dir}");
+            SimActionLog.Note(L10n.F("Bug reports are in {0}", dir));
             Logger.Log($"[SimBugReport] Open folder failed: {ex.Message}");
         }
     }

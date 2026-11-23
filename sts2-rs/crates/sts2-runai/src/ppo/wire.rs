@@ -72,6 +72,15 @@ pub struct WireDecision {
     pub responses: Vec<Value>,
     /// Human-readable label per candidate, same order as `actions`.
     pub labels: Vec<String>,
+    /// Who actually decided, when it was not the net (`PpoDecision.source_note`):
+    /// today only the GH #487 off-model event-page guard. Empty otherwise.
+    pub source_note: String,
+    /// How many cards ONE reply names (`PpoDecision.pick_count`): 1 except
+    /// for a deck mutation the world wants answered in one shot.
+    pub pick_count: usize,
+    /// Claws' optional "up to N" pick (GH #1353): how many more cards the
+    /// screen takes (`PpoDecision.optional_room`); 0 elsewhere.
+    pub optional_room: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +276,25 @@ fn card_enchantment(c: &Value) -> super::obs::CardEnchantObs {
     Some((id, amount))
 }
 
+/// The enchantment a `card_select` enchant pick stamps (GH #574), mirroring
+/// `realgame_ppo._wire_pending_enchantment`: the mod's `pending_enchantment`
+/// when the key is present (even as `null`); otherwise, from a mod before the
+/// field, `source_model` when `source_kind` is absent or `"enchantment"`.
+/// Spelled as the registry id the way [`card_enchantment`] spells a card's.
+fn wire_pending_enchantment(state: &Value) -> Option<String> {
+    let raw = if state.get("pending_enchantment").is_some() {
+        opt_s(state, "pending_enchantment")
+    } else if opt_s(state, "source_kind").is_none_or(|k| k.eq_ignore_ascii_case("enchantment")) {
+        opt_s(state, "source_model")
+    } else {
+        None
+    }?;
+    Some(
+        sts2_core::cards::EnchantmentId::from_wire_name(&raw)
+            .map_or(raw, |e| e.python_name().to_string()),
+    )
+}
+
 /// The act-map current coord, with the row-0 guard applied.
 ///
 /// Returns `None` both when there is no map in reach and when `current` sits
@@ -443,8 +471,8 @@ fn base_obs(state: &Value) -> PpoObs {
         card_grant_option_enchantments: None,
         transform_select_deck_indices: None,
         enchant_select_deck_indices: None,
-        // GH #545: same rationale as the deck-mutation selects below — the
-        // bridge has no enchant-pick screen, so this stays unset here too.
+        // Set only on the card-select enchant surface (`build_card_select`,
+        // GH #574); every other screen leaves it unset.
         pending_enchantment: None,
         // The deck-mutation select surfaces (GH #399) are engine-side: the
         // bridge never presents one, so every builder here leaves them unset
@@ -474,6 +502,16 @@ fn base_obs(state: &Value) -> PpoObs {
 /// `surface` is the bridge `state["type"]`: `map_select`, `card_reward`,
 /// `boss_relic`, `rest_site`, `event`, or `shop`. Anything else returns
 /// `None`, matching `_PPO_NONCOMBAT_BUILDERS.get(...)` missing.
+///
+/// The potion popup (drink out of combat, discard; GH #1606) has no surface
+/// here on purpose: no run-PPO champion scores it, the advisor builds its runs
+/// without `ooc_potion_actions`, and the mod never sends it. The player still
+/// uses and discards potions by hand in the real game.
+///
+/// The reward screen (GH #1620) has none either: the mod's `reward_screen`
+/// already lets the player (or the autopilot) take, skip and proceed, and the
+/// engine's `reward_screen` run flag stays off in every run-PPO host, whose
+/// champions auto-take every reward (`policy::mask_rejectable`).
 #[must_use]
 pub fn build_decision(state: &Value, surface: &str) -> Option<WireDecision> {
     match surface {
@@ -483,8 +521,320 @@ pub fn build_decision(state: &Value, surface: &str) -> Option<WireDecision> {
         "rest_site" => build_rest_site(state),
         "event" => build_event(state),
         "shop" => build_shop(state),
+        "card_select" => build_card_select(state, None),
+        "potion_swap" => build_potion_swap(state),
+        "card_bundle" => build_card_bundle(state),
         _ => None,
     }
+}
+
+/// The first full-belt potion reward's `potion_swap` options, decline first
+/// (`sts2_realgame.potion_swap_group`): the options sharing the lowest
+/// `reward_button`, ordered by `discard_slot` with the decline (`null`) first.
+fn potion_swap_group(state: &Value) -> Vec<&Value> {
+    let swaps: Vec<&Value> = arr(state, "options")
+        .iter()
+        .filter(|o| o.get("action").and_then(Value::as_str) == Some("potion_swap"))
+        .collect();
+    let Some(first) = swaps.iter().map(|o| i(o, "reward_button")).min() else {
+        return Vec::new();
+    };
+    let mut group: Vec<&Value> = swaps
+        .into_iter()
+        .filter(|o| i(o, "reward_button") == first)
+        .collect();
+    group.sort_by_key(|o| obj(o, "discard_slot").map_or(-1, |v| v.as_i64().unwrap_or(0)));
+    group
+}
+
+/// A full-belt potion reward -> the "potion-swap" surface (GH #1069,
+/// `realgame_ppo._build_potion_swap`): decline, then discard slot k for each
+/// belt slot. The offered potion goes on the state token.
+fn build_potion_swap(state: &Value) -> Option<WireDecision> {
+    let group = potion_swap_group(state);
+    if group.is_empty() {
+        return None;
+    }
+    let mut obs = base_obs(state);
+    obs.pending_potion_swap = Some(
+        obj(group[0], "reward")
+            .and_then(|r| opt_s(r, "id"))
+            .unwrap_or_default(),
+    );
+    Some(WireDecision {
+        obs,
+        actions: group
+            .iter()
+            .map(|o| ActionDesc::PotionSwap {
+                discard_slot: obj(o, "discard_slot").and_then(Value::as_i64),
+            })
+            .collect(),
+        responses: group.iter().map(|o| choose(i(o, "index"))).collect(),
+        labels: group
+            .iter()
+            .map(|o| opt_s(o, "label").unwrap_or_else(|| "?".to_owned()))
+            .collect(),
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
+    })
+}
+
+/// Scroll Boxes packs, ranked with the obs the engine gives the Rust agent
+/// (`realgame_advisor._build_card_bundle`, GH #978): a card reward whose
+/// options are each pack's FIRST card, plus the whole packs in
+/// `card_reward_bundles`. A champion trained with `card_bundles` reads every
+/// member; any other scores a pack by its first card, as it was trained to.
+fn build_card_bundle(state: &Value) -> Option<WireDecision> {
+    let bundles: Vec<&Value> = arr(state, "options")
+        .iter()
+        .filter(|b| b.is_object())
+        .collect();
+    if bundles.is_empty() {
+        return None;
+    }
+    let mut packs: Vec<Vec<&Value>> = Vec::with_capacity(bundles.len());
+    for bundle in &bundles {
+        let cards: Vec<&Value> = arr(bundle, "cards")
+            .iter()
+            .filter(|c| c.is_object())
+            .collect();
+        if cards.is_empty() {
+            return None;
+        }
+        packs.push(cards);
+    }
+    let mut obs = base_obs(state);
+    obs.card_reward_option_ids = Some(
+        packs
+            .iter()
+            .map(|p| card_id(p[0]).unwrap_or_default())
+            .collect(),
+    );
+    // The engine carries no upgrade state on bundle offerings.
+    obs.card_reward_option_upgraded = Some(Vec::new());
+    obs.card_reward_bundles = Some(Some(
+        packs
+            .iter()
+            .map(|p| p.iter().map(|c| card_id(c).unwrap_or_default()).collect())
+            .collect(),
+    ));
+    let card_label = |c: &Value| {
+        opt_s(c, "name")
+            .or_else(|| opt_s(c, "id"))
+            .unwrap_or_else(|| "None".to_owned())
+    };
+    Some(WireDecision {
+        obs,
+        actions: (0..packs.len())
+            .map(|idx| ActionDesc::PickCardReward {
+                idx: Some(idx as i64),
+            })
+            .collect(),
+        responses: bundles
+            .iter()
+            .enumerate()
+            .map(|(idx, b)| choose(bridge_index(b, idx)))
+            .collect(),
+        labels: packs
+            .iter()
+            .map(|p| {
+                p.iter()
+                    .map(|c| card_label(c))
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            })
+            .collect(),
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
+    })
+}
+
+/// `card_select`'s surface by the message before it, when the screen names
+/// no prompt (`realgame_ppo._CARD_SELECT_SURFACES`).
+const CARD_SELECT_SURFACES: [(&str, &str); 3] = [
+    ("rest_site", "smith"),
+    ("shop", "removal"),
+    ("event", "grant"),
+];
+
+/// `prompt_key` (upper-cased) -> the surface that ranks it
+/// (`realgame_ppo._PROMPT_SURFACES`, which documents each per-source entry).
+const PROMPT_SURFACES: [(&str, &str); 11] = [
+    ("TO_REMOVE", "removal"),
+    ("TO_TRANSFORM", "transform"),
+    ("TO_ENCHANT", "enchant"),
+    ("TO_UPGRADE", "smith"),
+    ("TO_OBTAIN", "grant"),
+    (
+        "BRAIN_LEECH.PAGES.SHARE_KNOWLEDGE.SELECTIONSCREENPROMPT",
+        "grant",
+    ),
+    (
+        "ROOM_FULL_OF_CHEESE.PAGES.GORGE.SELECTIONSCREENPROMPT",
+        "grant",
+    ),
+    ("SEA_GLASS.SELECTIONSCREENPROMPT", "grant"),
+    ("CLAWS.SELECTIONSCREENPROMPT", "transform"),
+    ("BLITZ.NEOW.SELECTIONSCREENPROMPT", "grant"),
+    ("COMBAT_REWARD_CARD_UPGRADE.SELECTIONSCREENPROMPT", "smith"),
+];
+
+/// Claws' select prompt (GH #1353), upper-cased.
+pub const CLAWS_PROMPT: &str = "CLAWS.SELECTIONSCREENPROMPT";
+
+fn lookup(table: &[(&str, &'static str)], key: &str) -> Option<&'static str> {
+    table.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)
+}
+
+/// An integer field that Python reads as `None` when absent or null.
+fn opt_i(v: &Value, key: &str) -> Option<i64> {
+    v.get(key)
+        .filter(|x| !x.is_null())
+        .map(|x| x.as_i64().unwrap_or(0))
+}
+
+/// `card_select` -> the matching deck-mutation surface
+/// (`realgame_ppo._build_card_select`, which carries the history of each
+/// rule): smith / removal / transform / enchant / grant, by the screen's own
+/// `prompt_key` first and the previous message type second.
+///
+/// A multi-pick mutation ("remove 2 cards") is still a ranking over single
+/// cards; `pick_count` says how many of them one reply names. Transform and
+/// enchant name MASTER-DECK positions, recovered by `(id, upgraded,
+/// enchantment)` (then `(id, upgraded)`, then out of range, which reads as
+/// the unknown card).
+#[must_use]
+pub fn build_card_select(state: &Value, prev_msg_type: Option<&str>) -> Option<WireDecision> {
+    let prompt = s(state, "prompt_key").to_uppercase();
+    let surface = lookup(&PROMPT_SURFACES, &prompt)
+        .or_else(|| lookup(&CARD_SELECT_SURFACES, prev_msg_type.unwrap_or("")))?;
+    let cards = arr(state, "cards");
+    if cards.is_empty() {
+        return None;
+    }
+    let field = |a: &str, b: &str| match state.get(a) {
+        Some(v) => (!v.is_null()).then(|| v.as_i64().unwrap_or(0)),
+        None => opt_i(state, b),
+    };
+    let min_n = field("min_count", "min_select");
+    let max_n = field("max_count", "max_select");
+    let mut pick_count: i64 = 1;
+    if max_n.is_some_and(|m| m > 1) {
+        pick_count = min_n.filter(|&m| m != 0).unwrap_or(1).max(1);
+    }
+
+    let mut obs = base_obs(state);
+    let respond = |bridge: i64| {
+        if min_n.is_none() && max_n.is_none() {
+            choose(bridge)
+        } else {
+            serde_json::json!({ "action": "choose", "indices": [bridge] })
+        }
+    };
+    let pair = |c: &Value| (card_id(c), is_upgraded(c));
+    let kind: fn(i64) -> ActionDesc = match surface {
+        "smith" => {
+            obs.smith_options = Some(
+                cards
+                    .iter()
+                    .map(|c| card_id(c).unwrap_or_default())
+                    .collect(),
+            );
+            obs.smith_option_enchantments = Some(cards.iter().map(card_enchantment).collect());
+            |idx| ActionDesc::SmithCard { idx }
+        }
+        "removal" => {
+            obs.card_removal_options = Some(
+                cards
+                    .iter()
+                    .map(|c| (card_id(c).unwrap_or_default(), is_upgraded(c)))
+                    .collect(),
+            );
+            obs.card_removal_option_enchantments =
+                Some(cards.iter().map(card_enchantment).collect());
+            |idx| ActionDesc::RemoveDeckCard { idx }
+        }
+        "transform" | "enchant" => {
+            let deck_ench = obs
+                .deck_enchantments
+                .clone()
+                .unwrap_or_else(|| vec![None; obs.deck.len()]);
+            let missing = obs.deck.len() as i64;
+            let idxs: Vec<i64> = cards
+                .iter()
+                .map(|c| {
+                    let (id, up) = pair(c);
+                    let ench = card_enchantment(c);
+                    let same = |k: usize| {
+                        id.as_deref() == Some(obs.deck[k].0.as_str()) && obs.deck[k].1 == up
+                    };
+                    (0..obs.deck.len())
+                        .find(|&k| same(k) && deck_ench.get(k) == Some(&ench))
+                        .or_else(|| (0..obs.deck.len()).find(|&k| same(k)))
+                        .map_or(missing, |k| k as i64)
+                })
+                .collect();
+            if surface == "transform" {
+                obs.transform_select_deck_indices = Some(idxs);
+                |idx| ActionDesc::TransformDeckCard { idx }
+            } else {
+                obs.enchant_select_deck_indices = Some(idxs);
+                // Which enchantment the pick stamps (GH #574); the key is
+                // present, `null` when unknown, as on the training surface.
+                obs.pending_enchantment = Some(wire_pending_enchantment(state));
+                |idx| ActionDesc::EnchantDeckCard { idx }
+            }
+        }
+        _ => {
+            obs.card_grant_options = Some(
+                cards
+                    .iter()
+                    .map(|c| (card_id(c).unwrap_or_default(), is_upgraded(c)))
+                    .collect(),
+            );
+            obs.card_grant_option_enchantments = Some(cards.iter().map(card_enchantment).collect());
+            |idx| ActionDesc::GrantDeckCard { idx }
+        }
+    };
+    // Claws (GH #1353): "up to N", then confirm; on a grid that already holds
+    // picks only the room left is offered.
+    let claws = prompt == CLAWS_PROMPT && min_n == Some(0);
+    let mut optional_room = 0;
+    if claws {
+        let taken = opt_i(state, "selected_count").unwrap_or(0).max(0);
+        optional_room = (max_n.unwrap_or(cards.len() as i64) - taken).max(0);
+        pick_count = 1;
+    }
+    let mut actions = Vec::new();
+    let mut responses = Vec::new();
+    let mut labels = Vec::new();
+    if !claws || optional_room > 0 {
+        for (i, c) in cards.iter().enumerate() {
+            actions.push(kind(i as i64));
+            responses.push(respond(bridge_index(c, i)));
+            labels.push(
+                opt_s(c, "name")
+                    .or_else(|| opt_s(c, "id"))
+                    .unwrap_or_else(|| "None".to_owned()),
+            );
+        }
+    }
+    if claws {
+        actions.push(ActionDesc::ConfirmDeckSelection);
+        responses.push(serde_json::json!({ "action": "skip" }));
+        labels.push("confirm".to_owned());
+    }
+    Some(WireDecision {
+        obs,
+        actions,
+        responses,
+        labels,
+        source_note: String::new(),
+        pick_count: usize::try_from(pick_count).unwrap_or(1).min(cards.len()),
+        optional_room,
+    })
 }
 
 /// Enabled options only, as `(original_index, value)` pairs — every builder
@@ -517,6 +867,9 @@ fn build_map_select(state: &Value) -> Option<WireDecision> {
         actions,
         responses,
         labels: map_labels(nodes),
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
     })
 }
 
@@ -526,7 +879,8 @@ fn build_map_select(state: &Value) -> Option<WireDecision> {
 /// recovers exactly the words a player would use. The old spelling was the raw
 /// graph coordinate (`Elite@(4,1)`), unreadable next to a map that shows no
 /// coordinates at all.
-fn map_labels(nodes: &[Value]) -> Vec<String> {
+#[must_use]
+pub fn map_labels(nodes: &[Value]) -> Vec<String> {
     let mut by_col: Vec<usize> = (0..nodes.len()).collect();
     by_col.sort_by_key(|&idx| i(&nodes[idx], "col"));
 
@@ -552,7 +906,8 @@ fn map_labels(nodes: &[Value]) -> Vec<String> {
 }
 
 /// `RestSite` → `Rest Site` (the enum name is the only name we get).
-fn pretty_room_type(raw: &str) -> String {
+#[must_use]
+pub fn pretty_room_type(raw: &str) -> String {
     let chars: Vec<char> = raw.chars().collect();
     let mut out = String::with_capacity(raw.len() + 2);
     for (idx, ch) in chars.iter().enumerate() {
@@ -606,6 +961,9 @@ fn build_card_reward(state: &Value) -> Option<WireDecision> {
         actions,
         responses,
         labels,
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
     })
 }
 
@@ -645,6 +1003,9 @@ fn build_boss_relic(state: &Value) -> Option<WireDecision> {
                     .unwrap_or_default()
             })
             .collect(),
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
     })
 }
 
@@ -708,6 +1069,9 @@ fn build_rest_site(state: &Value) -> Option<WireDecision> {
                     .unwrap_or_default()
             })
             .collect(),
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
     })
 }
 
@@ -845,6 +1209,9 @@ fn build_shop(state: &Value) -> Option<WireDecision> {
         actions,
         responses,
         labels,
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
     })
 }
 
@@ -909,6 +1276,9 @@ fn build_event(state: &Value) -> Option<WireDecision> {
     if !survivors.is_empty() {
         offered = survivors;
     }
+    // GH #487 off-model-page guard -- AFTER the lethal filter, deliberately
+    // (see `veto_off_model_page` on Trial's REJECT page).
+    let (offered, source_note) = veto_off_model_page(offered);
 
     // A disabled option keeps its slot, as in the engine's option list: the
     // net reads an option by POSITION, so dropping one would shift every later
@@ -982,6 +1352,9 @@ fn build_event(state: &Value) -> Option<WireDecision> {
             .iter()
             .map(|&idx| option_labels[idx].clone())
             .collect(),
+        source_note,
+        pick_count: 1,
+        optional_room: 0,
     })
 }
 
@@ -1037,6 +1410,9 @@ fn ancient_boss_relic_decision(state: &Value) -> Option<WireDecision> {
             .iter()
             .map(|o| opt_s(o, "label").unwrap_or_default())
             .collect(),
+        source_note: String::new(),
+        pick_count: 1,
+        optional_room: 0,
     })
 }
 
@@ -1250,6 +1626,112 @@ fn is_enum_tail(s: &str) -> bool {
 /// Candidates are tried in wire-authority order; the first that lands in the
 /// vocab wins. If none do, the first candidate is returned so a genuine
 /// unknown still reads as OOV downstream.
+/// Events the engine models past their first page; the off-model guard
+/// leaves them to the net (`realgame_ppo._ENGINE_MODELED_MULTIPAGE`).
+const ENGINE_MODELED_MULTIPAGE: [&str; 8] = [
+    "COLOSSAL_FLOWER",
+    "DOLL_ROOM",
+    "ROUND_TEA_PARTY",
+    "SLIPPERY_BRIDGE",
+    "THE_LANTERN_KEY",
+    "LANTERN_KEY",
+    "TINKER_TIME",
+    "NEOW",
+];
+
+/// The page segment of an option's loc key
+/// (`TABLET_OF_TRUTH.pages.DECIPHER_2.options.DECIPHER` -> `DECIPHER_2`).
+fn option_page_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"\.pages\.([A-Za-z0-9_]+)\.options\.").expect("static regex")
+    })
+}
+
+/// Option-id tails that read as "walk away with what you already have";
+/// `EXIT\w*` covers compounds like AbyssalBaths' `EXIT_BATHS`.
+fn exit_option_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r"^(?:GIVE_UP|LEAVE|EXIT\w*|WALK_AWAY|ABSTAIN|DECLINE|REFUSE|IGNORE|ESCAPE|FLEE|GO_BACK)$",
+        )
+        .expect("static regex")
+    })
+}
+
+/// Whether `option` is the page's walk-away pick, by loc-key tail (else by
+/// its label, snake-cased).
+fn is_exit_option(option: &Value) -> bool {
+    let text_key = s(option, "text_key");
+    let mut tail = text_key
+        .rsplit_once(".options.")
+        .map_or(String::new(), |(_, t)| t.to_owned());
+    if tail.is_empty() {
+        let label = opt_s(option, "label")
+            .or_else(|| opt_s(option, "title"))
+            .unwrap_or_default();
+        let mut snake = String::new();
+        let mut gap = false;
+        for c in label.chars() {
+            if c.is_ascii_alphanumeric() {
+                snake.push(c);
+                gap = false;
+            } else if !gap {
+                snake.push('_');
+                gap = true;
+            }
+        }
+        snake.trim_matches('_').clone_into(&mut tail);
+    }
+    exit_option_re().is_match(&tail.to_uppercase())
+}
+
+/// GH #487: on an event page the engine never models, don't trust the net.
+///
+/// A page is "page 2+" when NO option's loc key says `pages.INITIAL`
+/// (`INITIAL` is the first page across the whole roster; the shared
+/// `pages.ALL` options only stand alone on later pages, while
+/// EndlessConveyor's first page mixes INITIAL and ALL keys, so "some option
+/// says non-INITIAL" would misfire). When the guard fires the walk-away
+/// option is taken instead of the net's ranking: a bounded small loss
+/// instead of an unbounded one. A page with no recognizable walk-away pick
+/// is left to the net; its outcomes are already bounded by the lethal
+/// filter, which must run BEFORE this (on Trial's REJECT page the only
+/// exit-shaped option is Double Down, which the world flags WillKillPlayer).
+///
+/// Returns the surviving options and the note naming the override when it
+/// fired (empty otherwise). `realgame_ppo._veto_off_model_page`.
+fn veto_off_model_page(options: Vec<&Value>) -> (Vec<&Value>, String) {
+    let pages: std::collections::BTreeSet<String> = options
+        .iter()
+        .filter_map(|o| {
+            option_page_re()
+                .captures(&s(o, "text_key"))
+                .map(|c| c[1].to_owned())
+        })
+        .collect();
+    if pages.is_empty() || pages.contains("INITIAL") {
+        return (options, String::new());
+    }
+    let event_id = options
+        .iter()
+        .find_map(|o| opt_s(o, "event_id"))
+        .unwrap_or_default();
+    let name = resolve_event_name(&options, &event_id);
+    if ENGINE_MODELED_MULTIPAGE.contains(&name.to_uppercase().as_str()) {
+        return (options, String::new());
+    }
+    let Some(exit) = options.iter().copied().find(|o| is_exit_option(o)) else {
+        return (options, String::new());
+    };
+    let page = pages.into_iter().collect::<Vec<_>>().join("/");
+    (
+        vec![exit],
+        format!("page {page} of {name} has no engine model (GH #487) -- took the walk-away option"),
+    )
+}
+
 fn resolve_event_name(options: &[&Value], display_name: &str) -> String {
     let mut candidates: Vec<String> = Vec::new();
     let mut add = |raw: &str| {
@@ -1722,6 +2204,35 @@ mod tests {
             ],
             "idx counts within each kind, not the flat option list"
         );
+    }
+
+    /// GH #1607: the mod sends the Fake Merchant as a shop of its relics
+    /// (leave first, then one buy per affordable relic), the engine's shape.
+    #[test]
+    fn the_fake_merchant_is_a_relic_shop() {
+        let s = json!({
+            "type": "shop", "floor": 30, "act": 2, "run_state": run_state(),
+            "event_name": "FAKE_MERCHANT",
+            "options": [
+                {"index": 0, "action": "leave_shop", "label": "Leave"},
+                {"index": 1, "action": "buy_relic", "price": 53, "item": {"id": "FAKE_MANGO"}},
+                {"index": 2, "action": "buy_relic", "price": 44, "item": {"id": "FAKE_ANCHOR"}}
+            ]
+        });
+        let d = build_decision(&s, "shop").expect("decision");
+        let shop = d.obs.shop.as_ref().expect("shop");
+        assert_eq!(shop.relics.len(), 2);
+        assert_eq!(shop.relics[1].price, 44);
+        assert_eq!(shop.removal_cost, 0, "no removal service");
+        assert_eq!(
+            d.actions,
+            [
+                ActionDesc::LeaveShop,
+                ActionDesc::ShopBuyRelic { idx: 0 },
+                ActionDesc::ShopBuyRelic { idx: 1 },
+            ]
+        );
+        assert_eq!(d.responses[2], json!({"action": "choose", "index": 2}));
     }
 
     /// A full belt makes `buy_potion` a guaranteed no-op, and a deterministic

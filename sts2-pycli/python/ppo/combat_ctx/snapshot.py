@@ -52,6 +52,7 @@ options by visible content.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -130,9 +131,21 @@ RELIC_COUNTER_DISPLAY_V0111: dict[str, Callable[[int], int | None] | None] = {
     **{k: v for k, v in RELIC_COUNTER_DISPLAY.items() if k != "DIAMOND_DIADEM"},
     "TOY_BOX": lambda c: c % 3 if c < 15 else None,
 }
+# v0.113.0 (the v0.113.1 decomp, GH #1535): Brilliant Scarf's Cards var is 6
+# (`BrilliantScarf.cs:34`); Byrdpip shows Min(SwoopsPlayed, 6) (`Byrdpip.cs:39`,
+# the engine caps its counter at 6); Wuppy shows the pet's CurrentHp (`Wuppy.cs:37`,
+# the engine syncs its counter to the pet's hp). Every other ShowCounter relic
+# displays as on v0.111.0.
+RELIC_COUNTER_DISPLAY_V0113: dict[str, Callable[[int], int | None] | None] = {
+    **RELIC_COUNTER_DISPLAY_V0111,
+    "BRILLIANT_SCARF": lambda c: c if c < 6 else None,
+    "BYRDPIP": lambda c: min(c, 6),
+    "WUPPY": lambda c: c,
+}
 RELIC_COUNTER_DISPLAY_BY_VERSION: dict[str, dict[str, Callable[[int], int | None] | None]] = {
     "v0.107.1": RELIC_COUNTER_DISPLAY,
     "v0.111.0": RELIC_COUNTER_DISPLAY_V0111,
+    "v0.113.0": RELIC_COUNTER_DISPLAY_V0113,
 }
 
 
@@ -269,6 +282,27 @@ def multiset(cards: list[dict[str, Any]]) -> list[list[Any]]:
     return [groups[k] for k in sorted(groups)]
 
 
+# The powers C# leaves on a creature when it dies (`ShouldPowerBeRemovedAfterOwnerDeath()`
+# is False; `Creature.RemoveAllPowersAfterDeath`). Twin of snapshot.rs `KEPT_AFTER_DEATH`.
+KEPT_AFTER_DEATH = frozenset(
+    ("ADAPTABLE", "DIE_FOR_YOU", "MINION", "PAINFUL_STABS", "REATTACH", "STEAM_ERUPTION")
+)
+#: GH #1791: a dead enemy shows only the powers C# keeps after death. On by default (a
+#: paired eval found it neutral for the d4000 net); `STS2_E2E_CORPSE_POWERS=keep` restores
+#: the engine's form (every power kept).
+STRIP_CORPSE_POWERS = os.environ.get("STS2_E2E_CORPSE_POWERS") != "keep"
+
+
+def _corpse_powers(m: dict[str, Any]) -> list[dict[str, Any]]:
+    """A dead enemy's powers as the game shows them; an Illusion carrier is left alone."""
+    powers = m.get("powers", [])
+    if not (m.get("is_dead") and STRIP_CORPSE_POWERS) or any(
+        p.get("name") == "ILLUSION" for p in powers
+    ):
+        return powers
+    return [p for p in powers if p.get("name") in KEPT_AFTER_DEATH]
+
+
 def _power(p: dict[str, Any]) -> dict[str, Any]:
     return {k: p[k] for k in POWER_KEYS if k in p}
 
@@ -296,7 +330,7 @@ def _enemy(m: dict[str, Any]) -> dict[str, Any]:
         "hp": m.get("hp", 0),
         "max_hp": m.get("max_hp", 1),
         "block": m.get("block", 0),
-        "powers": [_power(p) for p in m.get("powers", [])],
+        "powers": [_power(p) for p in _corpse_powers(m)],
         "intents": [_intent(i) for i in m.get("intents", [])],
         "is_dead": bool(m.get("is_dead")),
         "removed_after_death": bool(m.get("removed_after_death")),
@@ -395,8 +429,9 @@ def honest_snapshot(bv: Any, room: str) -> dict[str, Any]:
     """`snapshot_from_parts` of the four things read from `bv` (and nothing else)."""
     import sts2_rs
 
+    d = sts2_rs.state_to_dict(bv)
     return snapshot_from_parts(
-        sts2_rs.state_to_dict(bv),
+        bv.corpse_intents(d) or d,  # GH #1835, as the Rust env
         bv.card_damage_preview(),
         bv.card_block_preview(),
         bv.pending_choice(),

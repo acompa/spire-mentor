@@ -75,6 +75,7 @@ import argparse
 import functools
 import io
 import json
+import os
 import random
 import sys
 from collections import Counter
@@ -97,12 +98,14 @@ from run_parity import (
     Divergence,
     RunResult,
     Snap,
+    diff_blitz_offers,
+    diff_fake_merchant_offers,
     diff_maps,
     diff_snaps,
     enumerate_choices,
+    game_mode_kwargs,
     map_signature,
     run_signature,
-    rust_finalize_atomic_select,
 )
 from split_trace import explain, suspects
 from sts2_client import add_game_version_arg, apply_game_version_arg
@@ -266,6 +269,10 @@ def diff_nav(cs: Nav, rs: Nav) -> list[str]:
 # Empirically the observed artifact deltas are single-/low-double-digit; this
 # bound leaves wide margin for a self-damage card (Combust/Brutality/Offering)
 # resolving across the snapshot while still catching a persistent real skew.
+# GH #1610: no longer on by default (``--hp-peel`` opts in). A sweep of 200
+# runs (60 all-character, 100 random-loadout, 40 Ironclad A10, v0.111.0) and
+# 100 agent-lane runs peeled nothing: the snapshot-timing gap it covered is
+# gone, so an HP delta is now reported as the divergence it is.
 HP_ARTIFACT_TOLERANCE = 60
 
 # Phases where a small player-HP-only delta is the C# mid-combat snapshot
@@ -302,63 +309,6 @@ def _is_combat_hp_artifact(cs: Snap, rs: Snap, fields: list[str]) -> bool:
 
 def _is_err(view: Any) -> bool:
     return isinstance(view, dict) and (view.get("error") or view.get("type") == "error")
-
-
-# The Fake Merchant (GH #1294) is a SHOP in the C# host and the real game: no
-# event buttons, a merchant page over its six fake relics, Proceed to the map.
-# The Rust engine keeps the option model the run policy was trained on
-# (``act2_hive.rs`` ``FAKE_MERCHANT_OPTIONS``: buy the first stocked relic,
-# throw a Foul Potion, leave), which the live bridge maps onto the real page
-# (``SimNonCombatRoomHandlers.RunFakeMerchantAsync``). The lockstep maps it the
-# same way, instead of reporting the presentation as a ``cs=shop rs=event``
-# split.
-_FAKE_MERCHANT_OPTION_IDS = frozenset({"buy", "throw_foul", "leave"})
-
-
-def _fake_merchant_pair(cs_view: dict[str, Any], rs_view: dict[str, Any]) -> bool:
-    """C# shows the Fake Merchant's shop while Rust shows its option-model event."""
-    if (cs_view.get("decision") or cs_view.get("type")) != "shop":
-        return False
-    if cs_view.get("event_name") != "FAKE_MERCHANT":
-        return False
-    # A disabled option (no Foul Potion, too little gold) is not listed.
-    ids = {o.get("option_id") for o in rs_view.get("options") or []}
-    return (
-        Snap.of(rs_view, "rs").phase == "event"
-        and "leave" in ids
-        and ids <= _FAKE_MERCHANT_OPTION_IDS
-    )
-
-
-def _fake_merchant_option(rs_view: dict[str, Any], option_id: str) -> dict[str, Any] | None:
-    return next((o for o in rs_view.get("options") or [] if o.get("option_id") == option_id), None)
-
-
-def _fake_merchant_choices(
-    cs_view: dict[str, Any], rs_view: dict[str, Any]
-) -> list[tuple[str, dict[str, Any], tuple[str, dict[str, Any]]]]:
-    """The C# shop moves the Rust option model can mirror, each with its Rust move.
-
-    Rust's ``buy`` takes the FIRST stocked relic at its own rolled price, so
-    only that C# slot is mirrored (the next diff compares the relic and the
-    gold paid). ``leave_room`` is ``leave``. Throwing a Foul Potion is a
-    ``use_potion`` the shop enumeration never offers.
-    """
-    out: list[tuple[str, dict[str, Any], tuple[str, dict[str, Any]]]] = []
-    buy = _fake_merchant_option(rs_view, "buy")
-    first = next((r for r in cs_view.get("relics") or [] if r.get("is_stocked", True)), None)
-    if buy is not None and not buy.get("is_locked") and first is not None:
-        out.append(
-            (
-                "buy_relic",
-                {"relic_index": first["index"]},
-                ("choose_option", {"option_index": buy["index"]}),
-            )
-        )
-    leave = _fake_merchant_option(rs_view, "leave")
-    if leave is not None:
-        out.append(("leave_room", {}, ("choose_option", {"option_index": leave["index"]})))
-    return out
 
 
 # Cards the walk plays whenever they are legal, because pinned HP can't save
@@ -439,7 +389,7 @@ def _cs_select_still_pending(g: Any) -> bool:
 def _stale_cs_select_pick(rs_view: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """The pick both engines take at a select C#'s view hid.
 
-    The same option prefix ``rust_finalize_atomic_select`` takes: the first
+    The same option prefix ``run_parity.rust_finalize_atomic_select`` takes: the first
     ``min_select`` options, or ``skip_select`` when the select is optional.
     """
     cards = rs_view.get("cards") or []
@@ -549,6 +499,9 @@ class InvRun:
     # Steps whose ``select_cards`` choices were trimmed to ``MAX_SELECT_INDEX``.
     select_index_caps: int = 0
     event_skips: int = 0
+    # GH #1607: steps compared on the Fake Merchant's shop, and relics bought there.
+    fake_merchant_steps: int = 0
+    fake_merchant_buys: int = 0
     hp_artifacts: int = 0
     max_hp_artifact: int = 0
     # ``--full-state``: the first combat step where the full-state diff
@@ -561,6 +514,11 @@ class InvRun:
     # A one-sided C# reject's ``stack_trace`` (GH #1147): printed by the sweep
     # too, so a sweep-only harness exception names its throwing frame.
     cs_stack: str | None = None
+    # GH #1610: every reconciliation skip by what triggered it
+    # (``cs_alone:<prompt>:<rust phase>``, ``rs_alone:<c# phase>:<context>``,
+    # ``stale_cs_select``, ``architect_victory``, ``hp_peel``), so a sweep shows
+    # which skips still fire and why.
+    skips: Counter = field(default_factory=Counter)
 
 
 @dataclass
@@ -655,8 +613,7 @@ class _RustRecorder:
     """Pass-through over the Rust backend that logs every state-changing call.
 
     ``start``, ``act`` and ``set_player`` are the only calls the lockstep makes
-    that move the Rust run (``rust_finalize_atomic_select`` goes through
-    ``act``); everything else it reads is a query. Replaying the log on a fresh
+    that move the Rust run (every pick goes through ``act``); everything else it reads is a query. Replaying the log on a fresh
     backend rebuilds the same run, because the engine is deterministic.
     """
 
@@ -695,7 +652,10 @@ def checkpoint_name(character: str, seed: str, ascension: int, act: int, parent:
     its parent and branch, e.g. ``Ironclad-1000-a0-act2.b3-act3``."""
     if parent:
         return f"{parent}-act{act}"
-    return f"{character}-{seed}-a{ascension}-act{act}"
+    # A Dread run is its own run (GH #1346); standard names are unchanged.
+    mode = game_mode_kwargs().get("game_mode")
+    suffix = f"-{mode}" if mode else ""
+    return f"{character}-{seed}-a{ascension}{suffix}-act{act}"
 
 
 def write_checkpoint(
@@ -775,7 +735,7 @@ def run_one_invincible(
     max_steps: int = 2500,
     invincible: bool = True,
     verbose: bool = False,
-    peel_hp_artifacts: bool = True,
+    peel_hp_artifacts: bool = False,
     full_state: bool = False,
     full_state_blocking: bool = False,
     trace_split: bool = False,
@@ -835,8 +795,9 @@ def run_one_invincible(
             out.max_act = int(meta["act"])
             saved_acts = {a for a in checkpoint_acts if a <= out.max_act}
         else:
-            cs_view = g.start(character=character, seed=seed, ascension=ascension)
-            rs_view = r.start(character=character, seed=seed, ascension=ascension)
+            mode = game_mode_kwargs()
+            cs_view = g.start(character=character, seed=seed, ascension=ascension, **mode)
+            rs_view = r.start(character=character, seed=seed, ascension=ascension, **mode)
         # The trace segment (one per C# action) current at the last clean
         # full-state check: on a split, ``get_trace`` returns what came after.
         trace_seq = 0
@@ -894,30 +855,24 @@ def run_one_invincible(
                                 f"atomic-select-skip cs:{verb}({kw}) (rust resolved atomically)"
                             )
                         out.atomic_select_skips += 1
+                        prompt = cs_view.get("prompt_key") or cs_view.get("source") or "?"
+                        out.skips[f"cs_alone:{prompt}:{rs_snap.phase}"] += 1
                         cs_view = nxt_cs
                         continue
                 # Could not advance C# alone (no legal pick, or C# rejected its
                 # own choice) — fall through so the state diff reports it rather
                 # than silently masking a stuck select.
 
-            # MIRROR of the atomic-select skip: RUST surfaces a played card's
-            # OnPlay select (or a turn-start power select) that C# resolved
-            # ATOMICALLY, so C# is already back in ``combat`` / has moved on while
-            # Rust is paused at ``card_select``. Drive RUST ALONE to FINALIZE its
-            # select — ``skip_select`` → ``combat_resolve_choice{option: None}``,
-            # the analog of C#'s one-shot ``ResolvePendingByIndices`` — WITHOUT
-            # touching C#, then re-snap. The next iteration compares Rust's
-            # post-select state against C#'s, so a genuinely divergent atomic pick
-            # (Rust's finalize ≠ C#'s resolution) still surfaces there. Gated on
-            # ``cs != card_select`` so a REAL shared card_select (both paused) is
-            # driven normally. Bounded so a select that never clears (finalize
-            # rejected, e.g. unmet ``min_select``) falls through to the diff
-            # instead of wedging. Oracle-artifact "run-combat-cardselect".
+            # A Rust-only select (Rust paused at ``card_select`` while C# moved
+            # on) used to be finalized on Rust alone here. Its last triggers
+            # were engine gaps, fixed by #1623 (a hand select after the combat
+            # ended) and #1624 (a forced deck pick asked on a screen); 0 fires
+            # in 100 random-loadout runs (all characters, v0.111.0) after the
+            # fix, so the skip is retired and such a select is a divergence.
             #
-            # Before that, rule out a C# view that HID its pending select
-            # (``_cs_select_still_pending``): then the select is shared, and
-            # finalizing Rust alone would leave C# to resolve it later with a
-            # different pick. Drive both engines through the same pick.
+            # A C# view that HID its pending select (``_cs_select_still_pending``)
+            # is still probed: the select is then shared, and both engines are
+            # driven through the same pick.
             if (
                 rs_snap.phase == "card_select"
                 and cs_snap.phase == "combat"
@@ -933,64 +888,12 @@ def run_one_invincible(
                             f"stale-cs-select both:{verb}({kw}) (c# view hid its select)"
                         )
                     out.stale_cs_selects += 1
+                    out.skips["stale_cs_select"] += 1
                     cs_view, rs_view = nxt_cs, nxt_rs
                     continue
                 cs_view = nxt_cs if not _is_err(nxt_cs) else cs_view
                 rs_view = nxt_rs if not _is_err(nxt_rs) else rs_view
                 cs_snap, rs_snap = Snap.of(cs_view, "cs"), Snap.of(rs_view, "rs")
-            guard = 0
-            while rs_snap.phase == "card_select" and cs_snap.phase != "card_select" and guard < 8:
-                nxt_rs = rust_finalize_atomic_select(r, rs_view)
-                if _is_err(nxt_rs):
-                    break  # not skippable / min_select unmet — let the diff report it
-                if verbose:
-                    res.trace.append(
-                        f"[{step:04d}] act{out.max_act} "
-                        f"atomic-select-skip rs:skip_select (c# resolved atomically)"
-                    )
-                out.atomic_select_skips += 1
-                rs_view = nxt_rs
-                rs_snap = Snap.of(rs_view, "rs")
-                guard += 1
-
-            # Event-granularity skip: the C# HEADLESS auto-skips Custom-layout
-            # events (FakeMerchant: ``GenerateInitialOptions => Array.Empty`` →
-            # "no options, auto-skipping" → ``EnterRoom(new MapRoom())``), so C# is
-            # already on the ``map`` while Rust correctly surfaces the FakeMerchant
-            # ``event``. Drive RUST ALONE through its no-op ``leave`` option so it
-            # re-aligns to the map, then re-snap. Sound because leaving draws
-            # nothing: FakeMerchant's only shared-RNG reads (6 ``Shops`` price
-            # rolls, ``MerchantRelicEntry.CalcCost``) happen in
-            # ``BeforeEventStarted``, which both engines run on entry; its
-            # inventory shuffle uses a private ``FAKE_MERCHANT`` stream. A
-            # genuine "Rust a room behind" desync still surfaces in the
-            # subsequent map/nav diff. Bead sts2-rs-1hiht.
-            # Fake Merchant: C#'s shop page is Rust's option-model event (see
-            # ``_fake_merchant_pair``). Same room, so compare everything else.
-            fake_merchant = _fake_merchant_pair(cs_view, rs_view)
-            if fake_merchant:
-                rs_snap = replace(rs_snap, phase=cs_snap.phase)
-
-            if rs_snap.phase == "event" and cs_snap.phase == "map":
-                leave = next(
-                    (
-                        o
-                        for o in (rs_view.get("options") or [])
-                        if o.get("option_id") == "leave" and not o.get("is_locked")
-                    ),
-                    None,
-                )
-                if leave is not None:
-                    nxt_rs = r.act("choose_option", option_index=leave["index"])
-                    if not _is_err(nxt_rs):
-                        if verbose:
-                            res.trace.append(
-                                f"[{step:04d}] act{out.max_act} "
-                                f"event-gran-skip rs:leave (c# headless auto-skipped)"
-                            )
-                        out.event_skips += 1
-                        rs_view = nxt_rs
-                        rs_snap = Snap.of(rs_view, "rs")
 
             # Final-victory event granularity: after the act-3 boss C# enters
             # TheArchitect's VICTORY event room — a single-option dialogue chain
@@ -1017,6 +920,7 @@ def run_one_invincible(
                                 f"victory-event-skip cs:{verb}({kw}) (rust ended at the boss)"
                             )
                         out.event_skips += 1
+                        out.skips["architect_victory"] += 1
                         cs_view = nxt_cs
                         continue
 
@@ -1028,6 +932,13 @@ def run_one_invincible(
             cs_nav, rs_nav = Nav.of(cs_view, g), Nav.of(rs_view, r)
 
             fields = diff_snaps(cs_snap, rs_snap)
+            # GH #1347: a Blitz ware / chest relic / reward card the walk
+            # does not take is still compared.
+            fields += diff_blitz_offers(cs_view, rs_view)
+            fields += diff_fake_merchant_offers(cs_view, rs_view)
+            at_fake_merchant = cs_view.get("event_name") == "FAKE_MERCHANT"
+            if at_fake_merchant:
+                out.fake_merchant_steps += 1
             # A WON run ends in C# through ``RunManager.WinRun → OnEnded(isVictory:
             # true) → GuaranteeKillAllPlayers`` (see ``RunSimulator.cs``'s
             # game-over note), so its victory ``game_over`` view reports hp 0
@@ -1068,6 +979,7 @@ def run_one_invincible(
             # genuine divergence.
             if peel_hp_artifacts and fields and _is_combat_hp_artifact(cs_snap, rs_snap, fields):
                 out.hp_artifacts += 1
+                out.skips["hp_peel"] += 1
                 out.max_hp_artifact = max(
                     out.max_hp_artifact, abs((cs_snap.hp or 0) - (rs_snap.hp or 0))
                 )
@@ -1259,11 +1171,6 @@ def run_one_invincible(
             # Pick a choice; on a both-reject (benign illegal move) drop it and
             # re-pick so one bad enumerated move doesn't truncate the run.
             pool = list(choices)
-            rust_move: dict[str, tuple[str, dict[str, Any]]] = {}
-            if fake_merchant:
-                mirrored = _fake_merchant_choices(cs_view, rs_view)
-                pool = [(verb, kw) for verb, kw, _ in mirrored]
-                rust_move = {_canon([verb, kw]): rmove for verb, kw, rmove in mirrored}
             if invincible and survival_policy:
                 pool = _survival_pool(pool, cs_view)
             advanced = False
@@ -1273,14 +1180,11 @@ def run_one_invincible(
                 sidx = _survival_choice(pool, cs_view) if invincible and survival_policy else None
                 idx = sidx if sidx is not None else rng.randrange(len(pool))
                 verb, kw = pool.pop(idx)
-                rs_verb, rs_kw = rust_move.get(_canon([verb, kw]), (verb, kw))
                 nxt_cs = g.act(verb, **kw)
-                nxt_rs = r.act(rs_verb, **rs_kw)
-                if fake_merchant and verb == "buy_relic" and not _is_err(nxt_cs):
-                    # Rust's ``buy`` ends the event; the C# page stays open
-                    # until Proceed, which the purchase already decided.
-                    nxt_cs = g.act("leave_room")
+                nxt_rs = r.act(verb, **kw)
                 cs_err, rs_err = _is_err(nxt_cs), _is_err(nxt_rs)
+                if at_fake_merchant and verb == "buy_relic" and not (cs_err or rs_err):
+                    out.fake_merchant_buys += 1
                 if cs_err and rs_err:
                     out.repicks += 1
                     continue  # both reject => benign, try another choice
@@ -1349,6 +1253,14 @@ class SweepReport:
     full_buckets: dict[str, list[str]] = field(default_factory=dict)
     full_clean: int = 0
     checkpointed: int = 0  # runs that ended at their last checkpoint
+    # GH #1607: runs that reached the Fake Merchant's shop, its compared
+    # steps and the relics bought there.
+    fake_merchant_runs: int = 0
+    fake_merchant_steps: int = 0
+    fake_merchant_buys: int = 0
+    # GH #1610: reconciliation skips across the sweep, by trigger (InvRun.skips).
+    skips: Counter = field(default_factory=Counter)
+    skip_runs: Counter = field(default_factory=Counter)
 
 
 # Frames of a one-sided C# reject's stack trace a sweep prints per run.
@@ -1365,7 +1277,9 @@ def _stack_head(stack: str | None) -> list[str]:
 
 def _worker(
     job: dict[str, Any],
-) -> tuple[str, str, int, str, str | None, int, int, FullSplit | None, list[str]]:
+) -> tuple[
+    str, str, int, str, str | None, int, int, FullSplit | None, list[str], int, int, Counter
+]:
     """Run one sweep job: ``label`` plus ``run_one_invincible`` keyword args."""
     kwargs = dict(job)
     label = kwargs.pop("label")
@@ -1387,6 +1301,9 @@ def _worker(
         out.max_hp_artifact,
         out.full_split,
         _stack_head(out.cs_stack),
+        out.fake_merchant_steps,
+        out.fake_merchant_buys,
+        out.skips,
     )
 
 
@@ -1398,7 +1315,7 @@ def sweep(
     max_steps: int,
     workers: int,
     invincible: bool,
-    peel_hp_artifacts: bool = True,
+    peel_hp_artifacts: bool = False,
     full_state: bool = False,
     full_state_blocking: bool = False,
     trace_split: bool = False,
@@ -1452,8 +1369,27 @@ def sweep(
     with ProcessPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(_worker, j): j["label"] for j in jobs}
         for fut in as_completed(futs):
-            label, sig, max_act, term, div, hp_arts, max_hp_art, split, stack = fut.result()
+            (
+                label,
+                sig,
+                max_act,
+                term,
+                div,
+                hp_arts,
+                max_hp_art,
+                split,
+                stack,
+                fm_steps,
+                fm_buys,
+                skips,
+            ) = fut.result()
             rep.runs += 1
+            rep.skips.update(skips)
+            rep.skip_runs.update(set(skips))
+            if fm_steps:
+                rep.fake_merchant_runs += 1
+                rep.fake_merchant_steps += fm_steps
+                rep.fake_merchant_buys += fm_buys
             rep.act_hist[max_act] += 1
             rep.term_hist[term] += 1
             if max_act >= 2:
@@ -1506,6 +1442,14 @@ def print_report(rep: SweepReport) -> None:
         f"hp-artifacts:    {rep.hp_artifacts} peeled across {rep.hp_artifact_runs} runs "
         f"(max |Δhp|={rep.max_hp_artifact}, tolerance={HP_ARTIFACT_TOLERANCE})"
     )
+    print(
+        f"fake merchant:   {rep.fake_merchant_runs} runs, {rep.fake_merchant_steps} shop steps "
+        f"compared, {rep.fake_merchant_buys} relics bought"
+    )
+    if rep.skips:
+        print("reconciliation skips (count, runs) by trigger:")
+        for k, v in rep.skips.most_common():
+            print(f"    {v:6d} {rep.skip_runs[k]:4d}  {k}")
     print("\n=== BUCKETS (by run_signature) ===")
     for sig, examples in sorted(rep.buckets.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         clean = sig.startswith("clean:")
@@ -1552,15 +1496,24 @@ def main() -> int:
         default=None,
         help="default 0; with --from-checkpoints, default every ascension",
     )
+    ap.add_argument(
+        "--game-mode",
+        choices=["standard", "dread", "blitz"],
+        default=os.environ.get("RUN_PARITY_GAME_MODE", "standard"),
+        help="GH #1346: 'dread' needs --game-version v0.113.0 and forces ascension 10. "
+        "GH #1347: 'blitz' needs v0.113.0 too; --ascension is then the Blitz level 0..5. "
+        "(env: RUN_PARITY_GAME_MODE)",
+    )
     ap.add_argument("-n", "--num", type=int, default=10, help="seeds per character")
     ap.add_argument("--start", type=int, default=1000, help="first seed (ints, stringified)")
     ap.add_argument("--max-steps", type=int, default=2500)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--no-invincible", action="store_true", help="baseline (death-limited) compare")
     ap.add_argument(
-        "--no-hp-peel",
+        "--hp-peel",
         action="store_true",
-        help="do NOT classify out the C# mid-combat-snapshot HP artifact (raw reach, for A/B)",
+        help="classify out a small C# mid-combat-snapshot HP delta (#158). Off since GH "
+        "#1610: it fired 0 times in 200 runs (all characters, random loadouts, IC A10)",
     )
     ap.add_argument(
         "--full-state",
@@ -1630,11 +1583,12 @@ def main() -> int:
     ap.add_argument("--verbose", action="store_true", help="dump per-step trace (single run)")
     add_game_version_arg(ap)
     args = ap.parse_args()
+    os.environ["RUN_PARITY_GAME_MODE"] = args.game_mode
     apply_game_version_arg(args)
 
     assert_wheel_fresh()
     invincible = not args.no_invincible
-    peel = not args.no_hp_peel
+    peel = args.hp_peel
     # With --from-checkpoints, the checkpoints carry their own character and
     # ascension, so an unset --character / --ascension filters nothing.
     # (Defaulting to Ironclad there silently dropped 4 of 5 characters.)
@@ -1692,6 +1646,8 @@ def main() -> int:
             f"stale_cs_selects={out.stale_cs_selects} "
             f"select_index_caps={out.select_index_caps} "
             f"event_skips={out.event_skips} "
+            f"fake_merchant_steps={out.fake_merchant_steps} "
+            f"fake_merchant_buys={out.fake_merchant_buys} "
             f"hp_artifacts={out.hp_artifacts} (max |Δhp|={out.max_hp_artifact})"
         )
         if out.full_split is not None:

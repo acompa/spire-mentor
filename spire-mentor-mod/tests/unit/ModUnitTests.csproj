@@ -18,6 +18,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../GameVersionFormat.cs" Link="GameVersionFormat.cs" />
+    <Compile Include="../../L10n.cs" Link="L10n.cs" />
+    <Compile Include="../../ZhText.*.cs" />
     <Compile Include="../../ChoiceInference.cs" Link="ChoiceInference.cs" />
     <Compile Include="../../CoachStyle.cs" Link="CoachStyle.cs" />
     <Compile Include="../../MentorBadge.cs" Link="MentorBadge.cs" />
@@ -28,6 +30,7 @@
     <Compile Include="../../AutoplayPause.cs" Link="AutoplayPause.cs" />
     <Compile Include="../../Autobattle.cs" Link="Autobattle.cs" />
     <Compile Include="../../SpeedSteps.cs" Link="SpeedSteps.cs" />
+    <Compile Include="../../LerpWeight.cs" Link="LerpWeight.cs" />
     <Compile Include="../../LogPanelPlacement.cs" Link="LogPanelPlacement.cs" />
     <Compile Include="../../EnemyTagText.cs" Link="EnemyTagText.cs" />
     <Compile Include="../../TeammateTargetPick.cs" Link="TeammateTargetPick.cs" />
@@ -36,13 +39,17 @@
     <Compile Include="../../RefusalWatch.cs" Link="RefusalWatch.cs" />
     <Compile Include="../../TravelGuard.cs" Link="TravelGuard.cs" />
     <Compile Include="../../BugReportDump.cs" Link="BugReportDump.cs" />
+    <Compile Include="../../LinuxSignalRules.cs" Link="LinuxSignalRules.cs" />
     <Compile Include="../../CrystalSpherePick.cs" Link="CrystalSpherePick.cs" />
+    <Compile Include="../../CrystalSphereWire.cs" Link="CrystalSphereWire.cs" />
     <Compile Include="../../AdviceColumn.cs" Link="AdviceColumn.cs" />
     <Compile Include="../../RewardSwapLayout.cs" Link="RewardSwapLayout.cs" />
     <Compile Include="../../PartnerCharacters.cs" Link="PartnerCharacters.cs" />
     <Compile Include="../../PartnerVotes.cs" Link="PartnerVotes.cs" />
     <Compile Include="../../CardGridRules.cs" Link="CardGridRules.cs" />
+    <Compile Include="../../CardSelectRules.cs" Link="CardSelectRules.cs" />
     <Compile Include="../../WindowsChildProcess.cs" Link="WindowsChildProcess.cs" />
+    <Compile Include="../../AdvisorChild.cs" Link="AdvisorChild.cs" />
     <Compile Include="../../AdvisorBrainRules.cs" Link="AdvisorBrainRules.cs" />
     <Compile Include="../../PotionSwapAdvice.cs" Link="PotionSwapAdvice.cs" />
     <Compile Include="../../AdviceMarks.cs" Link="AdviceMarks.cs" />

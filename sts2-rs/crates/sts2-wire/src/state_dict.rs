@@ -41,7 +41,7 @@ use std::num::NonZeroU32;
 use smallvec::SmallVec;
 
 use sts2_content::monster_dispatch::{
-    build_ai_for_version, build_ai_with_ascension, MonsterSpawnArgs, SpawnPosition,
+    build_ai_for_mode, build_ai_with_ascension, MonsterSpawnArgs, SpawnPosition,
 };
 use sts2_content::names::resolve_card_name;
 use sts2_core::cards::{Card, CardId, EnchantmentId, VarKey};
@@ -133,7 +133,16 @@ pub const VALID_PHASES: &[&str] = &[
 
 pub const VALID_SIDES: &[&str] = &["Player", "Enemy"];
 
-pub const VALID_CLASSES: &[&str] = &["ironclad", "silent", "defect", "necrobinder", "regent"];
+/// The player classes the wire carries; `fool` is v0.113.0's The Fool, which
+/// [`crate::emit`] has always written for a Fool state.
+pub const VALID_CLASSES: &[&str] = &[
+    "ironclad",
+    "silent",
+    "defect",
+    "necrobinder",
+    "regent",
+    "fool",
+];
 
 pub const VALID_CARD_KINDS: &[&str] = &["card", "status", "curse"];
 
@@ -262,6 +271,40 @@ pub struct ParsedState {
     /// [`sts2_core::GameVersion::V0_107_1`], so every existing producer
     /// keeps its behavior. [`state_to_dict`] emits it only when non-default.
     pub game_version: sts2_core::GameVersion,
+    /// `$.game_mode` (GH #1346): `"dread"` on a Dread fight, `"blitz"` on a
+    /// Blitz one (GH #1347); absent means standard.
+    ///
+    /// On a Blitz fight `$.rng.ascension` is NOT the Blitz level 0..=5: it
+    /// is the standard-ladder number the fight thresholds
+    /// ([`sts2_core::ascension::combat_ascension`]: 0, 8 for ToughEnemies,
+    /// 9 with DeadlyEnemies), which is what `CombatState::ascension` holds
+    /// and what [`state_to_dict`] writes back. A producer that only knows
+    /// the Blitz level converts it first.
+    pub game_mode: sts2_core::GameMode,
+    /// `$.dominion` (GH #1346): the Dread dominion acting on the fight, as
+    /// its `ModelId.Entry` (`"QUEEN_DOMINION"`); absent means none.
+    pub dominion: Option<sts2_core::Dominion>,
+    /// `$.dread_explosive` (GH #1346): the Explosive amount
+    /// `WaterfallGiantDominion` gives in this combat
+    /// ([`sts2_core::TurnEvents::dread_explosive`]); absent means not
+    /// stamped (`0`), and a summon then reads the amount off an enemy that
+    /// holds the power, else off the live roster.
+    pub dread_explosive: u8,
+    /// `$.dread_weak_encounter` (GH #1346): the encounter is C#
+    /// `EncounterModel.IsWeak`
+    /// ([`sts2_core::TurnEvents::dread_weak_encounter`]); absent means
+    /// `false`. A producer building a `WaterfallGiantDominion` board without
+    /// `$.dread_explosive` passes it so that last fallback is right.
+    pub dread_weak_encounter: bool,
+    /// `$.dread_knowledge_choice` (GH #1346): the board stands on
+    /// `KnowledgeDemonDominion`'s turn-1 Sloth-or-Amnesia screen with the
+    /// hand draw parked behind it
+    /// ([`sts2_core::dread::ParkedKnowledgeChoice`]). An object
+    /// `{"draw_count": int >= 0, "side_fired": bool}`, present only on such a
+    /// board and only with `$.dominion` = `KNOWLEDGE_DEMON_DOMINION`; the
+    /// loader re-opens the screen and parks the draw. Every other open
+    /// choice stays off the wire.
+    pub dread_knowledge_choice: Option<sts2_core::dread::ParkedKnowledgeChoice>,
     /// Aggregate of [`ParsedEnemy::intent_damage_known`] across the
     /// encounter (`AND`). `true` only when every enemy's current intent
     /// has trustworthy damage. Surfaced through `PyCombatState` so
@@ -386,6 +429,8 @@ pub struct ParsedPlayer {
     pub orb_slots: Option<u32>,
     pub stars: Option<i32>,
     pub osty: Option<ParsedOsty>,
+    /// The v0.113.0 Wuppy pet (`$.player.wuppy`), in the Osty's shape.
+    pub wuppy: Option<ParsedOsty>,
     pub cards_played_this_turn: Option<[u32; 6]>,
     /// Run gold. Optional — older producers omit it. Gates in-combat relic
     /// hooks (SealOfGold spends 5 gold for +1 energy at every player turn
@@ -432,6 +477,12 @@ fn parse_play_buckets<V: WireValue>(d: &V, path: &str) -> WireResult<Option<[u32
 
 /// The Attack bucket of `buckets`, as an engine counter: C# reads it from
 /// History where the engine keeps a counter (Juggling, Ripple Basin).
+fn cards_this_turn(buckets: Option<[u32; 6]>) -> i32 {
+    buckets.map_or(0, |b| {
+        i32::try_from(b.iter().sum::<u32>()).unwrap_or(i32::MAX)
+    })
+}
+
 fn attacks_this_turn(buckets: Option<[u32; 6]>) -> i32 {
     buckets.map_or(0, |b| {
         i32::try_from(b[sts2_core::cards::CardType::Attack.index()]).unwrap_or(i32::MAX)
@@ -779,6 +830,11 @@ pub struct ParsedEnemy {
     /// (`Intent::None`), which made every multi-enemy hint produce
     /// 100%-Tie rollouts and "LIKELY-LOSS 0%" displays.
     pub intent: Option<Intent>,
+    /// The head attack's BASE damage, before the dealer's and target's
+    /// modifiers (C# `AttackIntent.DamageCalc()`, wire `base_amount`): the
+    /// move-table number a player knows from the bestiary. When present it
+    /// replaces inverting the shown number (GH #1708).
+    pub intent_base_amount: Option<i32>,
     pub intent_history: Vec<i32>,
     pub is_dead: bool,
     pub is_escaped: bool,
@@ -816,6 +872,10 @@ pub struct ParsedEnemy {
     /// mid-fight mirror re-offered curse set 0 (the documented
     /// DISINTEGRATION off-by-one).
     pub curse_of_knowledge_counter: Option<i32>,
+    /// The cards this thief holds (`stolen_cards`: C# `SwipePower.StolenCard`,
+    /// the engine's own emit), as `(card, upgraded)`. Without them a rebuilt
+    /// fight forgot the steal (GH #1693). Unknown ids are dropped.
+    pub stolen_cards: Vec<(CardId, bool)>,
 }
 
 /// An enemy's `ai` object (#1181): the move machine's state that
@@ -1095,6 +1155,74 @@ pub fn parse_state_dict<V: WireValue>(d: &V) -> WireResult<ParsedState> {
         }
         None => sts2_core::GameVersion::default(),
     };
+    let game_mode = match extract_optional(d, "game_mode") {
+        Some(v) => {
+            let raw = v
+                .as_str()
+                .ok_or_else(|| schema_err("$.game_mode", "must be a string"))?;
+            sts2_core::GameMode::parse(&raw)
+                .ok_or_else(|| unsupported("$.game_mode", &format!("unknown game mode {raw:?}")))?
+        }
+        None => sts2_core::GameMode::default(),
+    };
+    let dominion =
+        match extract_optional(d, "dominion") {
+            Some(v) => {
+                let raw = v
+                    .as_str()
+                    .ok_or_else(|| schema_err("$.dominion", "must be a string"))?;
+                Some(sts2_core::Dominion::from_entry(&raw).ok_or_else(|| {
+                    unsupported("$.dominion", &format!("unknown dominion {raw:?}"))
+                })?)
+            }
+            None => None,
+        };
+    let dread_explosive = match extract_optional(d, "dread_explosive") {
+        Some(v) => v
+            .as_i64()
+            .and_then(|n| u8::try_from(n).ok())
+            .ok_or_else(|| schema_err("$.dread_explosive", "must be an integer in 0..=255"))?,
+        None => 0,
+    };
+    let dread_weak_encounter = match extract_optional(d, "dread_weak_encounter") {
+        Some(v) => v
+            .as_bool()
+            .ok_or_else(|| schema_err("$.dread_weak_encounter", "must be a boolean"))?,
+        None => false,
+    };
+    let dread_knowledge_choice = match extract_optional(d, "dread_knowledge_choice") {
+        Some(v) => {
+            let path = "$.dread_knowledge_choice";
+            if dominion != Some(sts2_core::Dominion::KnowledgeDemon) {
+                return Err(schema_err(
+                    path,
+                    "only a KNOWLEDGE_DEMON_DOMINION combat has this choice",
+                ));
+            }
+            let draw_count = v
+                .get("draw_count")
+                .and_then(|n| n.as_i64())
+                .and_then(|n| i32::try_from(n).ok())
+                .filter(|n| *n >= 0)
+                .ok_or_else(|| {
+                    schema_err(
+                        "$.dread_knowledge_choice.draw_count",
+                        "must be an integer >= 0",
+                    )
+                })?;
+            let side_fired = v
+                .get("side_fired")
+                .and_then(|b| b.as_bool())
+                .ok_or_else(|| {
+                    schema_err("$.dread_knowledge_choice.side_fired", "must be a boolean")
+                })?;
+            Some(sts2_core::dread::ParkedKnowledgeChoice {
+                draw_count,
+                side_fired,
+            })
+        }
+        None => None,
+    };
     if let Some(seed) = run_seed {
         if game_version.normalize_seed(seed) != seed {
             return Err(schema_err(
@@ -1187,6 +1315,11 @@ pub fn parse_state_dict<V: WireValue>(d: &V) -> WireResult<ParsedState> {
         rng_counters,
         ascension,
         game_version,
+        game_mode,
+        dominion,
+        dread_explosive,
+        dread_weak_encounter,
+        dread_knowledge_choice,
         intent_damage_known,
         intent_amounts,
         allies,
@@ -1469,10 +1602,15 @@ fn parse_allies<V: WireValue>(d: &V) -> WireResult<Vec<ParsedAlly>> {
 
 /// A seat's Osty (`$.player.osty`, `$.allies[i].osty`), when it has one.
 fn parse_osty<V: WireValue>(d: &V, seat_path: &str) -> WireResult<Option<ParsedOsty>> {
-    let Some(v) = extract_optional(d, "osty") else {
+    parse_pet(d, "osty", seat_path)
+}
+
+/// A seat's pet under `key` (`osty`, or v0.113.0's `wuppy`), when it has one.
+fn parse_pet<V: WireValue>(d: &V, key: &str, seat_path: &str) -> WireResult<Option<ParsedOsty>> {
+    let Some(v) = extract_optional(d, key) else {
         return Ok(None);
     };
-    let path = format!("{seat_path}.osty");
+    let path = format!("{seat_path}.{key}");
     let od = as_dict(&v, &path)?;
     let alive = extract_bool(&od, &path, "alive")?;
     let hp = extract_i32(&od, &path, "hp")?;
@@ -1561,6 +1699,7 @@ fn parse_player<V: WireValue>(d: &V) -> WireResult<ParsedPlayer> {
     };
 
     let osty = parse_osty(d, "$.player")?;
+    let wuppy = parse_pet(d, "wuppy", "$.player")?;
 
     // Optional per-turn play counters (one bucket per CardType, canonical
     // index order). Mid-turn ShouldPlay gates (Ringing's one-card-per-turn,
@@ -1615,6 +1754,7 @@ fn parse_player<V: WireValue>(d: &V) -> WireResult<ParsedPlayer> {
         orb_slots,
         stars,
         osty,
+        wuppy,
         cards_played_this_turn,
         gold,
         bound_card_played_this_turn,
@@ -2142,6 +2282,12 @@ fn parse_enemy<V: WireValue>(d: &V, path: &str) -> WireResult<ParsedEnemy> {
         )?
     };
 
+    let intent_base_amount = intents_list
+        .first()
+        .and_then(|i| extract_optional(i, "base_amount"))
+        .and_then(|v| v.as_i64())
+        .and_then(|n| i32::try_from(n).ok());
+
     let history_val = get_item(d, path, "intent_history")?;
     let history_list = as_list(&history_val, &format!("{path}.intent_history"))?;
     let mut intent_history = Vec::with_capacity(history_list.len());
@@ -2189,6 +2335,22 @@ fn parse_enemy<V: WireValue>(d: &V, path: &str) -> WireResult<ParsedEnemy> {
         None => None,
     };
 
+    let stolen_cards: Vec<(CardId, bool)> =
+        match extract_optional(d, "stolen_cards").and_then(|v| v.as_array()) {
+            Some(list) => list
+                .iter()
+                .filter_map(|c| {
+                    let c = as_dict(c, path).ok()?;
+                    let id = extract_optional(&c, "id")?.as_str()?;
+                    let card = card_id_from_python_name(id.strip_prefix("CARD.").unwrap_or(&id))?;
+                    let up = extract_optional(&c, "upgraded")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    Some((card, up))
+                })
+                .collect(),
+            None => Vec::new(),
+        };
     Ok(ParsedEnemy {
         kind,
         uid,
@@ -2197,6 +2359,7 @@ fn parse_enemy<V: WireValue>(d: &V, path: &str) -> WireResult<ParsedEnemy> {
         block,
         powers,
         intent,
+        intent_base_amount,
         intent_history,
         is_dead,
         is_escaped,
@@ -2205,6 +2368,7 @@ fn parse_enemy<V: WireValue>(d: &V, path: &str) -> WireResult<ParsedEnemy> {
         ai,
         fabricator_last_spawned,
         curse_of_knowledge_counter,
+        stolen_cards,
     })
 }
 
@@ -2443,12 +2607,19 @@ pub fn parse_intent<V: WireValue>(
             }
             Intent::DeathBlow { damage }
         }
-        // Wire kinds with no 1-to-1 Rust enum at this pin. `Hidden` and
-        // `Unknown` are the game's own "you may not see this" telegraphs,
-        // so collapsing them loses nothing; `CardDebuff` has no variant
-        // yet. Surfacing as `Unknown` keeps the enemy turn ticking rather
-        // than sitting inert (the bug `2rp7` fixes).
-        "CardDebuff" | "Hidden" | "Unknown" => Intent::Unknown,
+        // The engine has no `CardDebuff` variant and declares every C#
+        // `CardDebuffIntent` move as `Debuff` (Queen's PUPPET_STRINGS,
+        // VineShambler, LivingFog; `move_intents_match_decomp.rs`), so a
+        // rebuilt board must read it the same way a native one does.
+        "CardDebuff" => Intent::Debuff {
+            kind: PowerKind::Weak,
+            amount: 0,
+        },
+        // `Hidden` and `Unknown` are the game's own "you may not see this"
+        // telegraphs, so collapsing them loses nothing. Surfacing as
+        // `Unknown` keeps the enemy turn ticking rather than sitting inert
+        // (the bug `2rp7` fixes).
+        "Hidden" | "Unknown" => Intent::Unknown,
         other => {
             return Err(schema_err(
                 format!("{path}.kind"),
@@ -2505,14 +2676,21 @@ pub fn monster_kind_from_python_name(s: &str) -> Option<MonsterKind> {
     // form, and the prior strict match dropped 532 of 686 fixtures
     // into the `unknown monster kind` bucket (see
     // `docs/reality-checks/2026-05-16-sts2log-content-gap-report.md`).
-    if let Some(k) = MONSTER_KINDS.iter().copied().find(|k| k.python_name() == s) {
+    //
+    // The v0.113.0-only species (`MonsterKind::V0113_ONLY`, the Wuppy pet)
+    // sit outside `MONSTER_KINDS`, the `"monster"` registry the trained nets
+    // embed; they are chained on last, as the v0.113.0 powers are below.
+    let kinds = || {
+        MONSTER_KINDS
+            .iter()
+            .chain(MonsterKind::V0113_ONLY.iter())
+            .copied()
+    };
+    if let Some(k) = kinds().find(|k| k.python_name() == s) {
         return Some(k);
     }
     let upper = pascal_to_upper_snake(s);
-    MONSTER_KINDS
-        .iter()
-        .copied()
-        .find(|k| pascal_to_upper_snake(k.python_name()) == upper)
+    kinds().find(|k| pascal_to_upper_snake(k.python_name()) == upper)
 }
 
 pub fn power_kind_from_python_name(s: &str) -> Option<PowerKind> {
@@ -2650,6 +2828,34 @@ pub fn registry_names_for(kind: &str) -> Result<Vec<String>, String> {
                 set.insert(k.to_python_name());
             }
         }
+        // Every build's relics / potions / events / monster species, for a
+        // vocabulary that covers a later build (the v0.113.0 e2e lane, GH
+        // #1535) and for checking a carried id -- the `card_any` /
+        // `power_any` of the other content kinds.
+        "relic_any" => {
+            for k in sts2_core::RelicId::all_for(sts2_core::GameVersion::V0_113_0) {
+                set.insert(k.to_python_name());
+            }
+        }
+        "potion_any" => {
+            for k in PotionKind::ALL
+                .iter()
+                .chain(&PotionKind::V0111_ONLY)
+                .chain(&PotionKind::V0113_ONLY)
+            {
+                set.insert(k.python_name());
+            }
+        }
+        "event_any" => {
+            for k in sts2_core::events::EventId::all() {
+                set.insert(k.python_name());
+            }
+        }
+        "monster_any" => {
+            for k in MONSTER_KINDS.iter().chain(MonsterKind::V0113_ONLY) {
+                set.insert(k.python_name());
+            }
+        }
         "orb" => {
             for k in ORB_KINDS {
                 set.insert(orb_python_name(*k));
@@ -2657,7 +2863,7 @@ pub fn registry_names_for(kind: &str) -> Result<Vec<String>, String> {
         }
         other => {
             return Err(format!(
-                "unknown registry kind `{other}` (expected one of: relic, relic_id, card, card_any, monster, power, power_all, power_any, potion, orb, event, boss, enchantment)"
+                "unknown registry kind `{other}` (expected one of: relic, relic_id, relic_any, card, card_any, monster, monster_any, power, power_all, power_any, potion, potion_any, orb, event, event_any, boss, enchantment)"
             ));
         }
     }
@@ -2695,6 +2901,7 @@ fn character_id_from_class(class: &str) -> Option<CharacterId> {
         "defect" => Some(CharacterId::Defect),
         "necrobinder" => Some(CharacterId::Necrobinder),
         "regent" => Some(CharacterId::Regent),
+        "fool" => Some(CharacterId::Fool),
         _ => None,
     }
 }
@@ -2739,7 +2946,19 @@ fn side_from_str(s: &str) -> Side {
 ///
 /// Bead `sts2-rs-osyf` (T2). The status-card path is intentionally
 /// loose so unmodelled card flavors don't crash the adapter.
-fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card> {
+///
+/// Every spec value (type, target, cost, stats, keywords) is the one of the
+/// wire's game build `version`. The registry holds the v0.107.1 spec, so a
+/// card whose metadata changed later (v0.111.0 Outbreak: Power -> Skill,
+/// `Outbreak.cs:23`) rebuilt as its v0.107.1 self on a newer board, and a
+/// Tainted Outbreak from a v0.113 Vital Spark fight was rejected as a
+/// "Power" (GH #1776).
+fn build_card(
+    parsed: &ParsedCard,
+    uid: CardUid,
+    path: &str,
+    version: sts2_core::GameVersion,
+) -> WireResult<Card> {
     // Resolve `card_id` → CardSpec via the content registry. Falls back
     // to a synthetic AscendersBane curse for status/curse paths whose
     // raw_id doesn't resolve (e.g. `status:Burn`).
@@ -2763,6 +2982,8 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
         })?;
         (CardId::AscendersBane, spec)
     };
+    // The spec in the wire's build (identity for v0.107.1).
+    let spec = sts2_content::cards::v0111::spec_for(spec, version);
     // The factory's UPGRADED build, fetched once for every `upgraded: true`
     // card. It serves two fallbacks: the keyword override below (historical),
     // and — since the live-bridge dialect ships NO `stats` block — the base
@@ -2774,8 +2995,10 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
     // (the Defend/Colossus upgrade delta) on 14 of 17 records. Explicit wire
     // stats keep precedence, so DLL wires and native round-trips are
     // unchanged.
+    // In the wire's build, like the spec: `build_card_for_version` is the
+    // plain factory for v0.107.1.
     let upgraded_build = if parsed.upgraded {
-        sts2_core::lookup_card_factory().and_then(|f| f(card_id, true))
+        sts2_core::build_card_for_version(card_id, true, version)
     } else {
         None
     };
@@ -2797,6 +3020,10 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
     // `base_cost: -1` for X-cost cards and keep taking the first arm.
     let registry_x_cost =
         spec.cost == -1 || upgraded_build.as_ref().is_some_and(|b| b.base_cost() == -1);
+    let no_stat_card = matches!(
+        spec.card_type,
+        sts2_core::cards::CardType::Status | sts2_core::cards::CardType::Curse
+    );
     let cost = match (parsed.base_cost, parsed.cost_override) {
         (Some(c), _) => i8::try_from(c).unwrap_or(spec.cost),
         (None, Some(_)) if registry_x_cost => -1,
@@ -2807,6 +3034,7 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
         Some(model) => model,
         None => folded_cost_to_model(path, cost, parsed)?,
     };
+    let block_free = upgraded_build.as_ref().is_none_or(|b| b.base_block == 0);
     let mut card = Card {
         uid,
         card_id,
@@ -2814,6 +3042,7 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
         card_type: spec.card_type,
         target_type: spec.target_type,
         upgraded: parsed.upgraded,
+        extra_upgrades: 0,
         // Prefer the wire's explicit base stats (present for an upgraded /
         // enchanted card whose current base differs from the unupgraded
         // registry spec); then the upgraded factory build for an
@@ -2821,16 +3050,30 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
         // the unupgraded registry spec last. `resolve_card_name` only ever
         // returns the UNUPGRADED spec, so without these an upgraded Strike
         // reconstructs at 6 damage instead of 9 (2026-07-15 audit).
-        base_damage: parsed.base_damage.unwrap_or_else(|| {
-            upgraded_build
-                .as_ref()
-                .map_or(spec.base_damage, |b| b.base_damage)
-        }),
-        base_block: parsed.base_block.unwrap_or_else(|| {
-            upgraded_build
-                .as_ref()
-                .map_or(spec.base_block, |b| b.base_block)
-        }),
+        //
+        // A status or curse the engine gives no attack (Infection, Burn)
+        // keeps 0: the number a C# view reads off its Damage var is its
+        // end-of-turn hit on the player, which the engine models apart
+        // (GH #1674).
+        base_damage: parsed
+            .base_damage
+            .filter(|_| !(no_stat_card && spec.base_damage == 0))
+            .unwrap_or_else(|| {
+                upgraded_build
+                    .as_ref()
+                    .map_or(spec.base_damage, |b| b.base_damage)
+            }),
+        // A card the engine builds with no base block keeps 0 too: the
+        // block a C# view reads off it (Second Wind's per exhausted card,
+        // Mad Science's rider) lives in the engine's own vars (GH #1731).
+        base_block: parsed
+            .base_block
+            .filter(|_| !((no_stat_card || block_free) && spec.base_block == 0))
+            .unwrap_or_else(|| {
+                upgraded_build
+                    .as_ref()
+                    .map_or(spec.base_block, |b| b.base_block)
+            }),
         combat_vars: parsed.combat_vars.iter().copied().collect(),
         // Filled from `parsed.enchantment` right below — the constructor
         // cannot, because an unknown spelling has to fail loud rather than
@@ -2882,6 +3125,15 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
         if build.keyword_override.is_some() {
             card.keyword_override = build.keyword_override;
         }
+    } else if !version.is_default() {
+        // A later build's un-upgraded card carries its keyword change
+        // (v0.111.0 Haze loses Sly) on the override too, as
+        // `Card::normalize_for_version` stamps it on a native card.
+        if let Some(build) = sts2_core::build_card_for_version(card_id, false, version) {
+            if build.keyword_override.is_some() {
+                card.keyword_override = build.keyword_override;
+            }
+        }
     }
 
     // Wire card flags. Parsed and validated since the field landed, but never
@@ -2907,6 +3159,10 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
         };
         for f in &parsed.flags {
             match f.as_str() {
+                // C# HexPower adds Ethereal to every Hexed card's keywords
+                // while it lasts; the engine reads that off the affliction,
+                // so a grant here would outlive the Hex (GH #1707).
+                "ethereal" if parsed.affliction.as_deref() == Some("Hexed") => {}
                 "ethereal" => card.set_combat_var(VarKey::EtherealThisCombat, 1),
                 "free_turn" => card.set_to_free_this_turn(),
                 "free_once" => card.cost.set_until_played(0, false),
@@ -3008,28 +3264,29 @@ fn build_card(parsed: &ParsedCard, uid: CardUid, path: &str) -> WireResult<Card>
                 card.set_combat_var(VarKey::WitherFakeUpgradeLevel, (d - 3) / 3);
             }
         }
+        // The level carries the growth; a native Wither keeps the canonical
+        // base 3 (`wither_card_pod`), which the e2e card token reads (#1713).
+        card.base_damage = 3;
     }
     if let Some(aff) = parsed.affliction.as_deref() {
         // parse_card already validated the wire name.
         let kind = card_affliction_kind_from_wire(aff)
             .ok_or_else(|| unsupported(format!("{path}.affliction"), aff))?;
-        let applied = card.set_affliction(sts2_core::card_afflictions::CardAffliction {
+        // Adopted as the game reports it, past `set_affliction`'s type gate.
+        // That gate is C#'s APPLICATION rule (`CardCmd.Afflict` returns null
+        // when `!affliction.CanAfflict(card)`, CardCmd.cs:671 v0.113.0); a
+        // card that already carries an affliction keeps it, and nothing
+        // re-checks the type. So a board whose card the engine types
+        // differently than the game did is our misreading, not the game's.
+        // Rejecting the board for it left the advisor with no plan for a
+        // whole fight (GH #1776: a v0.113 Skill Outbreak with a Vital Spark
+        // Tainted, which the loader had typed from the v0.107.1 spec as a
+        // Power); dropping the affliction would plan without its effect.
+        card.affliction = Some(sts2_core::card_afflictions::CardAffliction {
             kind,
             stacks: parsed.affliction_stacks,
             applied_exhaust: parsed.affliction_applied_exhaust,
         });
-        // A faithful wire can't carry an affliction the card type
-        // rejects (C# gated the application on CanAfflictCardType);
-        // fail loud rather than silently planning without it.
-        if !applied {
-            return Err(schema_err(
-                path,
-                &format!(
-                    "affliction `{aff}` not allowed on card type {:?}",
-                    card.card_type
-                ),
-            ));
-        }
     }
     Ok(card)
 }
@@ -3132,6 +3389,10 @@ const WIRE_MOVE_STATE_ALIASES: &[(MonsterKind, &str, &str)] = &[
         "REPEATER_2",
     ),
     (MonsterKind::Exoskeleton, "MANDIBLES_MOVE", "MANDIBLE"),
+    // The damage wake: `AsleepPower` stuns the boss into SLASH_MOVE
+    // (GH #1675). Without the alias the rebuild fell back to SLEEP, so the
+    // student's forecast read one more sleeping turn.
+    (MonsterKind::LagavulinMatriarch, "STUNNED", "WAKE_UP_MOVE"),
     (MonsterKind::LeafSlimeS, "TACKLE_MOVE", "BUTT"),
     // C# "POWER_SHIELD_MOVE"; the Rust port names the one-time opener
     // "FIRST_POWER_SHIELD", unreachable by the `_MOVE`-strip matcher — the
@@ -3476,7 +3737,10 @@ fn unbake_wire_intent_at(
     // than the smallest-preimage fallback — this can only move the base up
     // inside the truncation window, never manufacture damage the wire denies.
     let base = engine_base
-        .filter(|b| *b >= 0 && mul.apply(b.saturating_add(strength)) == damage)
+        // C# floors a telegraph at 0 (`Math.Max(0, …)`), so a Strength loss
+        // (Mangle, Dark Shackles) that sinks it reads 0 on the wire and every
+        // base at or under the loss is a preimage: the AI's is the one (#1700).
+        .filter(|b| *b >= 0 && mul.apply(b.saturating_add(strength)).max(0) == damage)
         .unwrap_or_else(|| unbake_intent_damage(damage, strength, mul.num, mul.den));
     Some(match shape {
         AttackShape::Single => Intent::Attack { damage: base },
@@ -3504,6 +3768,17 @@ fn ingest_intent(
 ) -> Option<Intent> {
     if parsed.intent_amounts == IntentAmounts::Base {
         return m.intent;
+    }
+    // The board says the attack's base outright (GH #1708).
+    if let Some(base) = m.intent_base_amount.filter(|b| *b >= 0) {
+        match m.intent {
+            Some(Intent::Attack { .. }) => return Some(Intent::Attack { damage: base }),
+            Some(Intent::MultiAttack { hits, .. }) => {
+                return Some(Intent::MultiAttack { damage: base, hits });
+            }
+            Some(Intent::DeathBlow { .. }) => return Some(Intent::DeathBlow { damage: base }),
+            _ => {}
+        }
     }
     use sts2_core::hooks::{SURROUNDED_FACING_LEFT, SURROUNDED_FACING_RIGHT};
     // This arm back-attacks (wire telegraph bakes ×1.5) iff it sits behind
@@ -3545,14 +3820,28 @@ fn ingest_intent(
 /// by `AttackIntent.GetSingleDamage` at telegraph time. An A0 table at A9+
 /// matched neither the plain nor the boosted candidate, so the facing silently
 /// fell back to the spawn default (GH #840).
-fn wire_base_intent(m: &ParsedEnemy, ascension: u8) -> Option<Intent> {
+///
+/// A Dread fight (GH #1346) reads the Dread table of its own build: ROCKET_CLAW
+/// telegraphs `RocketClawDamage + 5` there (`Rocket.cs:62`, v0.113.0).
+fn wire_base_intent(m: &ParsedEnemy, parsed: &ParsedState) -> Option<Intent> {
     let ms = m.move_state.as_deref()?;
-    let mut ai = build_ai_with_ascension(
-        m.kind,
-        MonsterSpawnArgs::default(),
-        SpawnPosition::default(),
-        ascension,
-    );
+    let mut ai = if parsed.game_mode.is_dread() {
+        build_ai_for_mode(
+            m.kind,
+            MonsterSpawnArgs::default(),
+            SpawnPosition::default(),
+            parsed.ascension,
+            parsed.game_version,
+            parsed.game_mode,
+        )
+    } else {
+        build_ai_with_ascension(
+            m.kind,
+            MonsterSpawnArgs::default(),
+            SpawnPosition::default(),
+            parsed.ascension,
+        )
+    };
     let resolved = wire_move_state_alias(m.kind, ms)
         .is_some_and(|alias| ai.force_current_state_by_name(alias))
         || ai.force_current_state_by_name_relaxed(ms);
@@ -3611,7 +3900,7 @@ fn infer_surrounded_facing(parsed: &ParsedState) -> Option<i32> {
         if m.is_dead || m.hp <= 0 {
             continue;
         }
-        let Some(base_intent) = wire_base_intent(m, parsed.ascension) else {
+        let Some(base_intent) = wire_base_intent(m, parsed) else {
             continue;
         };
         let (Intent::Attack { damage: base } | Intent::MultiAttack { damage: base, .. }) =
@@ -3765,6 +4054,8 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
         ),
         ascension: parsed.ascension,
         game_version: parsed.game_version,
+        game_mode: parsed.game_mode,
+        dominion: parsed.dominion,
         is_elite: parsed.is_elite,
         act_index: parsed.act_index,
         total_floor: parsed.total_floor,
@@ -3990,6 +4281,14 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
     }
     state.combat_log.chains_bound_card_played_this_turn = parsed.player.bound_card_played_this_turn;
     state.combat_log.hp_lost_this_turn = u32::from(parsed.player.hp_lost_this_turn);
+    // `WaterfallGiantDominion`'s per-combat notes (GH #1346).
+    state.combat_log.dread_explosive = parsed.dread_explosive;
+    state.combat_log.dread_weak_encounter = parsed.dread_weak_encounter;
+    // `KnowledgeDemonDominion`'s turn-1 screen (GH #1346): open again, with
+    // the hand draw parked behind it. The parser has checked the dominion.
+    if let Some(parked) = parsed.dread_knowledge_choice {
+        let _ = sts2_core::dread::park_knowledge_choice(&mut state, parked);
+    }
     // Run gold gates in-combat relic hooks (SealOfGold: spend 5 gold, +1
     // energy at every player turn start). The constructors hardcode 0 for
     // states not built through the run loop, so a wire that carries it must
@@ -4045,12 +4344,13 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
     if let Some(slots) = parsed.player.potion_slots {
         state.player.potion_slots = slots;
     }
-    // Potions (None → skip slot; Some(kind) → push).
-    for k in parsed.player.potions.iter().flatten() {
-        if state.player.potions.len() < state.player.potions.capacity() {
-            state.player.potions.push(*k);
-        }
-    }
+    // Potions (None → skip slot; Some(kind) → push). Every potion the wire
+    // lists is on the belt: the list's inline capacity is five, and a belt
+    // can hold more (Alchemical Coffer, Potion Belt), so it spills.
+    state
+        .player
+        .potions
+        .extend(parsed.player.potions.iter().flatten().copied());
 
     // --- relics ---
     // Collected first, then one `extend`: every `RelicStore` write rebuilds
@@ -4075,6 +4375,21 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
         if r.kind == RelicKind::RippleBasin && r.counter.is_none() {
             counter = attacks_this_turn(parsed.player.cards_played_this_turn);
         }
+        // Brilliant Scarf's counter is the turn's card plays; C# hides it
+        // once the free fifth card has been played (`ShowCounter`), so a
+        // wire without it is a turn of five plays or more (GH #1735).
+        if r.kind == RelicKind::BrilliantScarf && r.counter.is_none() {
+            counter = cards_this_turn(parsed.player.cards_played_this_turn);
+        }
+        // Toy Box's counter is the combats it has seen; C# hides it once
+        // they reach `Combats * Relics` (`IsUsedUp`), so a wire without it is
+        // a spent Toy Box. Rebuilt at 0 it showed again and would melt more
+        // wax relics (GH #1738).
+        if r.kind == RelicKind::ToyBox && r.counter.is_none() {
+            let relics = sts2_content::relics::shop_event::toy_box_relics(parsed.game_version);
+            counter = sts2_content::relics::shop_event::TOY_BOX_COMBATS
+                * i32::try_from(relics).unwrap_or(i32::MAX);
+        }
         relics.push(Relic {
             id,
             kind: r.kind,
@@ -4084,8 +4399,10 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
         });
     }
     state.relics.extend(relics);
-
-    // --- cards arena + piles ---
+    // Ghost Seed's Ethereal is the card's own for the fight (C#
+    // `CardCmd.ApplyKeyword`), so a Hexed Basic Strike / Defend keeps it
+    // past the Hex, which the board cannot show apart (GH #1762).
+    let ghost_seed = state.relics.owns(RelicKind::GhostSeed);
     // We allocate CardUids sequentially as we walk each pile in the
     // canonical order. Piles point at the freshly-allocated uids.
     let mut next_card_id: u32 = 1;
@@ -4096,7 +4413,13 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
         let raw = next_card_id;
         next_card_id += 1;
         let uid = CardUid::new(raw).ok_or_else(|| schema_err(path, "uid overflow"))?;
-        let card = build_card(parsed_card, uid, path)?;
+        let mut card = build_card(parsed_card, uid, path, parsed.game_version)?;
+        if ghost_seed
+            && parsed_card.flags.iter().any(|f| f == "ethereal")
+            && sts2_content::relics::neow_relics::is_basic_strike_or_defend(card.card_id)
+        {
+            card.set_combat_var(VarKey::EtherealThisCombat, 1);
+        }
         state.cards.push(card);
         Ok(uid)
     };
@@ -4316,6 +4639,10 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
         next_creature_id += 1;
         let cid = NonZeroU32::new(raw)
             .ok_or_else(|| schema_err(format!("$.encounter[{i}]"), "creature id overflow"))?;
+        // The thief's held cards (GH #1693), on the engine's steal ledger.
+        for &(card, up) in &m.stolen_cards {
+            state.record_swipe_steal(CreatureUid(cid), card, up);
+        }
 
         // Monster powers.
         let mut mpowers: SmallVec<[PowerUid; 8]> = SmallVec::new();
@@ -4450,12 +4777,15 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
             // reconstruction kept the current telegraph (it rides the wire)
             // but hit for the A0 number on every LATER move — at A10, 375 of
             // 463 lockstep probes diverged at the next telegraph.
-            let mut ai = build_ai_for_version(
+            // And at its game mode (GH #1346): a Dread boss's machine has
+            // other numbers, and the Queen's a state of its own.
+            let mut ai = build_ai_for_mode(
                 m.kind,
                 spawn_args,
                 SpawnPosition::default(),
                 parsed.ascension,
                 parsed.game_version,
+                parsed.game_mode,
             );
             // Alias table FIRST: entries are per-monster verified mappings,
             // including CORRECTIVE ones where the generic `_MOVE`-strip
@@ -4565,6 +4895,20 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
                 .max()
                 .unwrap_or(0);
                 ai.set_counter(max_wither_level.max(0));
+            }
+        }
+
+        // BowlbugRock `IsOffBalance` (a private bool the engine keeps on the
+        // AI counter). C# sets it when a headbutt is fully blocked
+        // (`ImbalancedPower.AfterDamageGiven`) and clears it in `DizzyMove`,
+        // so it is true exactly while the rock telegraphs DIZZY: a player
+        // reads it off the Stun intent. Rebuilt at 0, the forecast after the
+        // dizzy turn differed from a native board's.
+        if m.kind == MonsterKind::BowlbugRock {
+            if let Some(ai) = ai.as_mut() {
+                if ai.current_state_id() == "DIZZY" {
+                    ai.set_counter(1);
+                }
             }
         }
 
@@ -4708,6 +5052,25 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
                 forced_next,
             });
         }
+        // Aeonglass telegraphs INCREASING_INTENSITY's Strength as base + the
+        // counter (`IncreasingIntensityTotalStrength`, `Aeonglass.cs:78`; the
+        // engine re-telegraphs it after each use). The counter is rebuilt
+        // above, but the move table keeps the base until re-telegraphed, so a
+        // rebuilt board showed 4 where the game's would grant 5 (GH #1816).
+        if m.kind == MonsterKind::Aeonglass {
+            if let Some(ai) = ai.as_mut() {
+                let base = sts2_content::ascension_scaling::scaled_buff(
+                    parsed.ascension,
+                    parsed.game_version,
+                    MonsterKind::Aeonglass,
+                    "INCREASING_INTENSITY_MOVE",
+                    PowerKind::Strength,
+                    3,
+                );
+                let n = ai.counter();
+                ai.set_buff_amount("INCREASING_INTENSITY_MOVE", PowerKind::Strength, base + n);
+            }
+        }
         state.creatures.push(Creature {
             id: cid,
             // The engine's dead-convention is `current_hp <= 0`; clamp in
@@ -4757,6 +5120,7 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
         .iter()
         .position(|e| e.kind == MonsterKind::Fabricator && !e.is_dead && !e.is_escaped)
     {
+        const FABRICATOR_SLOT: u8 = 2;
         let mut uid_iter = enemy_uids.iter();
         let (mut before, mut after) = (0u8, 0u8);
         for (i, e) in parsed.encounter.iter().enumerate() {
@@ -4766,6 +5130,14 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
             let uid = *uid_iter
                 .next()
                 .expect("enemy_uids is parallel to the non-escaped wire entries");
+            if i == fab_pos {
+                // The Fabricator's own slot, stamped at combat entry natively.
+                // A wire that names no encounter left it slot-unknown: the
+                // first bot was then appended behind it and the third took
+                // slot 2.
+                state.set_enemy_slot(uid, FABRICATOR_SLOT);
+                continue;
+            }
             if e.is_dead || sts2_content::monsters::act3_glory::fabricator_bot_code(e.kind) == 0 {
                 continue;
             }
@@ -4930,6 +5302,11 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
     if let Some(osty) = parsed.player.osty.as_ref() {
         state.restore_osty(osty.hp, osty.max_hp, osty.block);
     }
+    // The v0.113.0 Wuppy pet, after the Osty for the same free-id reason.
+    if let Some(wuppy) = parsed.player.wuppy.as_ref() {
+        let hp = if wuppy.alive { wuppy.hp } else { 0 };
+        state.restore_wuppy(hp, wuppy.max_hp, wuppy.block);
+    }
 
     // Co-op seats. A teammate that came with a hand is a whole player whose
     // remaining plays the engine simulates (`sts2_core::coop`): their powers
@@ -4972,7 +5349,7 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
                 .ok()
                 .and_then(CardUid::new)
                 .ok_or_else(|| schema_err(&path, "uid overflow"))?;
-            let card = build_card(pc, uid, &path)?;
+            let card = build_card(pc, uid, &path, parsed.game_version)?;
             state.cards.push(card);
             state.allies[i].hand.push(uid);
         }
@@ -4990,7 +5367,9 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
                     .ok()
                     .and_then(CardUid::new)
                     .ok_or_else(|| schema_err(&path, "uid overflow"))?;
-                state.cards.push(build_card(pc, uid, &path)?);
+                state
+                    .cards
+                    .push(build_card(pc, uid, &path, parsed.game_version)?);
                 let seat = &mut state.allies[i];
                 match key {
                     "draw_pile" => seat.draw.push(uid),
@@ -5018,11 +5397,9 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
         if !a.potions.is_empty() {
             state.allies[i].potion_slots = u8::try_from(a.potions.len()).unwrap_or(u8::MAX);
         }
-        for k in a.potions.iter().flatten() {
-            if state.allies[i].potions.len() < state.allies[i].potions.capacity() {
-                state.allies[i].potions.push(*k);
-            }
-        }
+        state.allies[i]
+            .potions
+            .extend(a.potions.iter().flatten().copied());
         let mut relics = Vec::with_capacity(a.relics.len());
         for r in &a.relics {
             let raw = state
@@ -5067,6 +5444,8 @@ pub fn state_from_dict_impl(parsed: &ParsedState) -> WireResult<CoreCombatState>
             crate::fool_state::decode(&state, words).map_err(|e| schema_err("$.fool_state", &e))?;
         state.player.fool = Some(Box::new(f));
     }
+    // Buff amounts the engine writes into a move at runtime (GH #1702).
+    sts2_content::monsters::retelegraph_state_dependent_buffs(&mut state);
 
     Ok(state)
 }
@@ -5230,6 +5609,37 @@ mod tests {
     /// Numbers from the 2026-07-13 rung-3.5 fight-replay audit:
     /// Flyconid SMASH base 11, player Vulnerable → wire 16 (= ⌊11·3/2⌋);
     /// the real game dealt 16, the pre-fix engine dealt 24 (= ⌊16·3/2⌋).
+    /// GH #1700: Mangle took 15 Strength off a 12-damage attack; the wire
+    /// shows 0 and the reconstructed AI's 12 is the base, not 0.
+    #[test]
+    fn a_telegraph_floored_at_zero_keeps_the_ais_base() {
+        let strength = ParsedPower {
+            kind: PowerKind::Strength,
+            amount: -15,
+            has_extra: false,
+            display: None,
+            counter: None,
+            applier_seat: None,
+        };
+        let got = unbake_wire_intent(
+            Some(Intent::Attack { damage: 0 }),
+            std::slice::from_ref(&strength),
+            &[],
+            false,
+            Some(12),
+        );
+        assert_eq!(got, Some(Intent::Attack { damage: 12 }));
+        // Without the AI's word the floor is unrecoverable: base 0 stands.
+        let got = unbake_wire_intent(
+            Some(Intent::Attack { damage: 0 }),
+            std::slice::from_ref(&strength),
+            &[],
+            false,
+            None,
+        );
+        assert_eq!(got, Some(Intent::Attack { damage: 0 }));
+    }
+
     #[test]
     fn unbake_wire_intent_inverts_effective_amounts() {
         let vuln = ParsedPower {

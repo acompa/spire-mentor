@@ -113,21 +113,12 @@ internal static class SimHelp
                 // Never let the AI take a run without saying so. This is the
                 // stale-config safety net: installs made before 0.2.1 have
                 // auto_start=true sitting in %LOCALAPPDATA%\SpireMentor.
-                ? "[color=#ff9d5c][b]Spire Mentor: AUTOPILOT IS ARMED[/b] — the AI will play by itself as soon as " +
-                  "the advisor connects. Press [b]F8[/b] to take the controls back, or set " +
-                  "[i]auto_start[/i] to false in SpireMentor.conf. [b]F1[/b] for help.[/color]"
+                ? L10n.T("[color=#ff9d5c][b]Spire Mentor: AUTOPILOT IS ARMED[/b] — the AI will play by itself as soon as the advisor connects. Press [b]F8[/b] to take the controls back, or set [i]auto_start[/i] to false in SpireMentor.conf. [b]F1[/b] for help.[/color]")
                 : SimRuntime.CoachStyleActive
-                    ? $"[color=#9aa3b8]Spire Mentor {MainFile.ModVersion} loaded — [b]Coach[/b]: nothing shows " +
-                      "before you act, [b]F5[/b] peeks at the AI's next pick, and a note afterwards says where " +
-                      "you differed. [b]F8[/b] turns the AI off, the [b]Spire Mentor[/b] badge (top right) switches " +
-                      "Hints / Coach, [b]F1[/b] for help.[/color]"
+                    ? L10n.F("[color=#9aa3b8]Spire Mentor {0} loaded — [b]Coach[/b]: nothing shows before you act, [b]F5[/b] peeks at the AI's next pick, and a note afterwards says where you differed. [b]F8[/b] turns the AI off, the [b]Spire Mentor[/b] badge (top right) switches Hints / Coach, [b]F1[/b] for help.[/color]", MainFile.ModVersion)
                 : SimRuntime.Mode == SimMode.Advisor
-                    ? $"[color=#9aa3b8]Spire Mentor {MainFile.ModVersion} loaded — [b]Hints[/b]: the AI rates " +
-                      "your options while you decide. [b]F8[/b] turns the AI off, the [b]Spire Mentor[/b] badge " +
-                      "(top right) switches Hints / Coach, [b]F1[/b] for help.[/color]"
-                    : $"[color=#9aa3b8]Spire Mentor {MainFile.ModVersion} loaded — click the [b]Spire Mentor[/b] " +
-                      "badge in the top right and pick Coach or Hints to turn the AI coach on, or press [b]F1[/b] " +
-                      "for help.[/color]";
+                    ? L10n.F("[color=#9aa3b8]Spire Mentor {0} loaded — [b]Hints[/b]: the AI rates your options while you decide. [b]F8[/b] turns the AI off, the [b]Spire Mentor[/b] badge (top right) switches Hints / Coach, [b]F1[/b] for help.[/color]", MainFile.ModVersion)
+                    : L10n.F("[color=#9aa3b8]Spire Mentor {0} loaded — click the [b]Spire Mentor[/b] badge in the top right and pick Coach or Hints to turn the AI coach on, or press [b]F1[/b] for help.[/color]", MainFile.ModVersion);
             Reposition();
             _hint.Visible = true;
             Logger.Log($"[SimHelp] Boot hint shown (armed={armed}) at {_hint.Position} " +
@@ -152,82 +143,55 @@ internal static class SimHelp
     {
         string mode = SimRuntime.Mode switch
         {
-            SimMode.Off => "[color=#9aa3b8]Off[/color] — the mod is doing nothing; the game is vanilla",
+            SimMode.Off => L10n.T("[color=#9aa3b8]Off[/color] — the mod is doing nothing; the game is vanilla"),
             SimMode.Advisor when SimRuntime.Style == AdviceStyle.Coach =>
-                "[color=#7fd4e8]Coach[/color] — you play; nothing shows before you act (F5 peeks), " +
-                "and afterwards a note says where your turn or choice differed from the AI's",
-            SimMode.Advisor => "[color=#7fd4e8]Hints[/color] — you play, the AI rates your options while you decide",
+                L10n.T("[color=#7fd4e8]Coach[/color] — you play; nothing shows before you act (F5 peeks), and afterwards a note says where your turn or choice differed from the AI's"),
+            SimMode.Advisor => L10n.T("[color=#7fd4e8]Hints[/color] — you play, the AI rates your options while you decide"),
             _ => SimRuntime.AutopilotEngaged
-                ? "[color=#ff9d5c]Autopilot[/color] — the AI is playing this run"
-                : "[color=#ff9d5c]Autopilot (armed, idle)[/color] — the AI plays as soon as it connects",
+                ? L10n.T("[color=#ff9d5c]Autopilot[/color] — the AI is playing this run")
+                : L10n.T("[color=#ff9d5c]Autopilot (armed, idle)[/color] — the AI plays as soon as it connects"),
         };
 
         var sb = new StringBuilder(1200);
-        sb.Append("[b]Spire Mentor ").Append(MainFile.ModVersion).Append("[/b] — AI coach for Slay the Spire 2\n\n");
-        sb.Append("Mode: ").Append(mode).Append("\n\n");
+        sb.Append(L10n.F("[b]Spire Mentor {0}[/b] — AI coach for Slay the Spire 2", MainFile.ModVersion)).Append("\n\n");
+        sb.Append(L10n.F("Mode: {0}", mode)).Append("\n\n");
 
-        sb.Append("[b]Keys[/b]\n");
-        Row(sb, "F8", "turn the AI on / off (from Autopilot: take the controls back); the badge's Mode switch picks Coach or Hints");
-        Row(sb, "F5", "Coach: peek at the AI's pick for just the next decision (also Peek in the badge's popover)");
-        Row(sb, "F6", "let the AI take just this one decision");
-        Row(sb, "Shift+F6", "co-op: a waiting AI partner plays its turn now");
-        Row(sb, "F7", "let the AI keep playing until you stop it (press again to stop)");
-        Row(sb, "Shift+F7", "autobattle: the AI plays the fights, you make every run-level decision, with a note on what changed since your last one; 1x becomes 2x (again to stop)");
-        Row(sb, "Shift+F8", $"advisor brain: Search (thinks ahead) / Instinct (the end-to-end net, no search; Ironclad on v0.111.0 and the v0.113.0 beta for now)  (now {AdvisorBrainRules.Label(SimAdvisor.CurrentBrain)})");
-        Row(sb, "F4", "show / hide the HUD");
-        Row(sb, "Ctrl+L", "action log — what was played, and what was advised at the time (drag its header to move it; right-click it to put it back under the advice)");
-        Row(sb, "Ctrl+H", "hide everything but the Spire Mentor badge for a quick look; again (or click the badge) to show it");
-        Row(sb, "F9 / F10", $"game speed down / up, 1x-8x  (now {SpeedSteps.Label(SimSpeed.Desired)})");
-        Row(sb, "Ctrl+Z", "undo to the start of this combat turn");
-        Row(sb, "Ctrl+Shift+Z", "rewind to the start of this room");
-        Row(sb, "Ctrl+Shift+C", "copy this position — paste it into the workbench to explore it");
-        Row(sb, "Ctrl+Shift+B", "report a bug — sends this position and the logs, with your note");
-        Row(sb, "F1", "this panel");
+        sb.Append(L10n.T("[b]Keys[/b]\n"));
+        Row(sb, "F8", L10n.T("turn the AI on / off (from Autopilot: take the controls back); the badge's Mode switch picks Coach or Hints"));
+        Row(sb, "F5", L10n.T("Coach: peek at the AI's pick for just the next decision (also Peek in the badge's popover)"));
+        Row(sb, "F6", L10n.T("let the AI take just this one decision"));
+        Row(sb, "Shift+F6", L10n.T("co-op: a waiting AI partner plays its turn now"));
+        Row(sb, "F7", L10n.T("let the AI keep playing until you stop it (press again to stop)"));
+        Row(sb, "Shift+F7", L10n.T("autobattle: the AI plays the fights, you make every run-level decision, with a note on what changed since your last one; 1x becomes 2x (again to stop)"));
+        Row(sb, "F4", L10n.T("show / hide the HUD"));
+        Row(sb, "Ctrl+L", L10n.T("action log — what was played, and what was advised at the time (drag its header to move it; right-click it to put it back under the advice)"));
+        Row(sb, "Ctrl+H", L10n.T("hide everything but the Spire Mentor badge for a quick look; again (or click the badge) to show it"));
+        Row(sb, "F9 / F10", L10n.F("game speed down / up, 1x-8x  (now {0})", SpeedSteps.Label(SimSpeed.Desired)));
+        Row(sb, "Ctrl+Z", L10n.T("undo to the start of this combat turn"));
+        Row(sb, "Ctrl+Shift+Z", L10n.T("rewind to the start of this room"));
+        Row(sb, "Ctrl+Shift+C", L10n.T("copy this position — paste it into the workbench to explore it"));
+        Row(sb, "Ctrl+Shift+B", L10n.T("report a bug — sends this position and the logs, with your note"));
+        Row(sb, "F1", L10n.T("this panel"));
 
-        sb.Append("\n[b]The Spire Mentor badge[/b]\n");
-        sb.Append("[color=#c8ccd4]The badge in the top right, under the game's map / deck / settings buttons, ")
-          .Append("shows the mode by its colour and word — grey Off, cyan Coach, green Hints, amber while the ")
-          .Append("AI plays — and what the advisor is doing (thinking, starting, offline, building the ")
-          .Append("engine). Click it for everything the keys do, with the mouse; click it again, click ")
-          .Append("anywhere else or press Esc to close it. Drag its [b]⠿[/b] grip to move it; double-click ")
-          .Append("the grip to put it back.\n")
-          .Append("[b]Mode[/b]: Off · Coach · Hints · AI plays (the AI plays this run until you stop it, as ")
-          .Append("F7 does). [b]Brain[/b]: Search / Instinct, where Instinct can play. [b]This decision[/b]: ")
-          .Append("Peek, Let AI pick. [b]Autoplay[/b]: Autobattle, AI plays until stopped. [b]Speed[/b]. ")
-          .Append("[b]More[/b]: [b]Rewind ▾[/b] (turn / room / one room back), [b]Panels ▾[/b] (hide all, ")
-          .Append("log, HUD, help, Settings — that one works mid-run — and Report a bug) and ")
-          .Append("[b]Workbench ▾[/b], whose [b]Open workbench[/b] opens the browser view (logs, search ")
-          .Append("tree, run tree) and [b]Copy state[/b] puts this exact position on the clipboard — paste ")
-          .Append("it into the workbench's [b]Import state[/b] to replay it, try other lines, or sweep it ")
-          .Append("in SimLab.\n")
-          .Append("While the AI plays, an amber frame runs round the screen and a [b]Stop[/b] button sits ")
-          .Append("next to the badge; in a co-op fight with AI partners, so does [b]Partner go[/b].[/color]\n");
+        sb.Append(L10n.T("\n[b]The Spire Mentor badge[/b]\n"));
+        sb.Append(L10n.T("[color=#c8ccd4]The badge in the top right, under the game's map / deck / settings buttons, shows the mode by its colour and word — grey Off, cyan Coach, green Hints, amber while the AI plays — and what the advisor is doing (thinking, starting, offline, building the engine). Click it for everything the keys do, with the mouse; click it again, click anywhere else or press Esc to close it. Drag its [b]⠿[/b] grip to move it; double-click the grip to put it back.\n[b]Mode[/b]: Off · Coach · Hints · AI plays (the AI plays this run until you stop it, as F7 does). [b]This decision[/b]: Peek, Let AI pick. [b]Autoplay[/b]: Autobattle, AI plays until stopped. [b]Speed[/b]. [b]More[/b]: [b]Rewind ▾[/b] (turn / room / one room back), [b]Panels ▾[/b] (hide all, log, HUD, help, Settings — that one works mid-run — and Report a bug) and [b]Workbench ▾[/b], whose [b]Open workbench[/b] opens the browser view (logs, search tree, run tree) and [b]Copy state[/b] puts this exact position on the clipboard — paste it into the workbench's [b]Import state[/b] to replay it, try other lines, or sweep it in SimLab.\nWhile the AI plays, an amber frame runs round the screen and a [b]Stop[/b] button sits next to the badge; in a co-op fight with AI partners, so does [b]Partner go[/b].[/color]\n"));
 
-        sb.Append("\n[b]Rewind[/b]\n");
-        sb.Append("[color=#c8ccd4][b]\u27f2 Turn[/b] (More › Rewind ▾) replays this combat to the start of ")
-          .Append("the turn; [b]\u27f2 Room[/b] / [b]\u27f2\u27f2 Back[/b] jump to room-entry saves ")
-          .Append("(same seed, exact state \u2014 a different line afterwards diverges legitimately). ")
-          .Append("The workbench's game tree can rewind to any earlier room \u2014 or any recorded ")
-          .Append("combat turn, replaying that fight's tape \u2014 and shows where lines forked.[/color]\n");
+        sb.Append(L10n.T("\n[b]Rewind[/b]\n"));
+        sb.Append(L10n.T("[color=#c8ccd4][b]⟲ Turn[/b] (More › Rewind ▾) replays this combat to the start of the turn; [b]⟲ Room[/b] / [b]⟲⟲ Back[/b] jump to room-entry saves (same seed, exact state — a different line afterwards diverges legitimately). The workbench's game tree can rewind to any earlier room — or any recorded combat turn, replaying that fight's tape — and shows where lines forked.[/color]\n"));
 
-        sb.Append("\n[b]What the coach draws[/b]\n");
-        sb.Append("[color=#c8ccd4][b]Hints[/b]: a score on each card in hand, a ranked list of the moves it ")
-          .Append("considered, a win-chance bar, and markers on the map for the route it likes. ")
-          .Append("Each of those can be switched off on the settings page.\n")
-          .Append("[b]Coach[/b]: none of that before you act. [b]F5[/b] shows its pick for the next decision ")
-          .Append("only. After a turn that cost HP or win chance — or a choice it clearly disagrees with — ")
-          .Append("a small note shows what it would have done and why (click it to keep it; good turns stay ")
-          .Append("quiet unless you ask for a ✓ in the settings). Both styles get those notes.[/color]\n");
+        sb.Append(L10n.T("\n[b]Who answers[/b]\n"));
+        sb.Append(L10n.T("[color=#c8ccd4][b]Instinct[/b], the end-to-end net, plays every decision on gut feel, no search. Where it cannot play the run or a position yet, the search answers instead (it looks ahead through the fight, and a run net picks on the screens), and the advice says so.[/color]\n"));
 
-        sb.Append("\n[b]Settings[/b]\n");
-        sb.Append("[color=#c8ccd4]Main menu → Options → Mod Configuration → SpireMentor, ")
-          .Append("or the badge's [b]More › Panels ▾ › Settings[/b] — that one works mid-run too.[/color]\n");
+        sb.Append(L10n.T("\n[b]What the coach draws[/b]\n"));
+        sb.Append(L10n.T("[color=#c8ccd4][b]Hints[/b]: a score on each card in hand, a ranked list of the moves it considered, a win-chance bar, and markers on the map for the route it likes. Each of those can be switched off on the settings page.\n[b]Coach[/b]: none of that before you act. [b]F5[/b] shows its pick for the next decision only. After a turn that cost HP or win chance — or a choice it clearly disagrees with — a small note shows what it would have done and why (click it to keep it; good turns stay quiet unless you ask for a ✓ in the settings). Both styles get those notes.[/color]\n"));
 
-        sb.Append("\n[b]Files[/b]\n");
-        sb.Append("[color=#c8ccd4]Config:  %LOCALAPPDATA%\\SpireMentor\\SpireMentor.conf\n")
-          .Append("Logs:    %LOCALAPPDATA%\\SpireMentor\\advisor_stdout.log[/color]\n");
+        sb.Append(L10n.T("\n[b]Settings[/b]\n"));
+        sb.Append(L10n.T("[color=#c8ccd4]Main menu → Options → Mod Configuration → SpireMentor, or the badge's [b]More › Panels ▾ › Settings[/b] — that one works mid-run too.[/color]\n"));
 
-        sb.Append("\n[color=#5b6070]F1 closes this.[/color]");
+        sb.Append(L10n.T("\n[b]Files[/b]\n"));
+        sb.Append(L10n.T("[color=#c8ccd4]Config:  %LOCALAPPDATA%\\SpireMentor\\SpireMentor.conf\nLogs:    %LOCALAPPDATA%\\SpireMentor\\advisor_stdout.log[/color]\n"));
+
+        sb.Append(L10n.T("\n[color=#5b6070]F1 closes this.[/color]"));
         return sb.ToString();
     }
 

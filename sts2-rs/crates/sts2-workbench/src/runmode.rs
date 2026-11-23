@@ -28,6 +28,7 @@ use sts2_runai::policy::{CombatBudget, HeuristicPolicy, MctsCombatPolicy};
 use sts2_wire::emit;
 
 use crate::game::Game;
+use crate::i18n::{tr, trf};
 use crate::rmx;
 
 // ── seeds ─────────────────────────────────────────────────────────────────
@@ -130,6 +131,30 @@ pub fn map_move_options(rm: &RunManager) -> BTreeMap<i64, Value> {
     out
 }
 
+/// `_declines_optional_grant`: `action` confirms an optional card-grant grid
+/// (Sea Glass, min 0) with no pick. The engine spells that `grant_deck_card`
+/// at idx == option count, which is not a card: as `select_cards <count>` the
+/// backend took it as a pick and then sent its own confirm, which the engine
+/// rejected (`invalid_for_phase`).
+fn declines_optional_grant(rm: &RunManager, action: &Value) -> bool {
+    action.get("action").and_then(Value::as_str) == Some("grant_deck_card")
+        && rmx::pending_card_grant_min(rm) == 0
+        && action.get("idx").and_then(Value::as_u64)
+            == Some(rmx::card_grant_options(rm).len() as u64)
+}
+
+/// `_picks_on_an_up_to_n_screen`: `action` is ONE pick on a screen that takes
+/// any number of cards (Sea Glass's grant grid, Kifuda's enchant). The run
+/// env plays those one pick at a time and confirms separately; `keep_open`
+/// tells the backend not to confirm after the pick (GH #1361).
+fn picks_on_an_up_to_n_screen(rm: &RunManager, action: &Value) -> bool {
+    match action.get("action").and_then(Value::as_str) {
+        Some("grant_deck_card") => rmx::pending_card_grant_min(rm) == 0,
+        Some("enchant_deck_card") => rmx::pending_enchant_optional(rm),
+        _ => false,
+    }
+}
+
 /// `to_workbench_verb`: a raw `RunAction` dict → the workbench's C#-shaped
 /// `(verb, args)`. Must run BEFORE `take_action` (the map row / bundle
 /// sub-state are pre-move). A kind with no dedicated verb round-trips as
@@ -194,12 +219,20 @@ pub fn to_workbench_verb(rm: &RunManager, action: &Value) -> (String, Value) {
         "shop_buy_card" => ("buy_card".into(), json!({"card_index": field("idx")})),
         "shop_buy_relic" => ("buy_relic".into(), json!({"relic_index": field("idx")})),
         "shop_buy_potion" => ("buy_potion".into(), json!({"potion_index": field("idx")})),
+        _ if declines_optional_grant(rm, action) => ("skip_select".into(), json!({})),
         "confirm_deck_selection" => ("skip_select".into(), json!({})),
         "smith_card" | "remove_deck_card" => {
             ("select_cards".into(), json!({"indices": indices("idx")}))
         }
         k if PENDING_SELECT_KINDS.contains(&k) => {
-            ("select_cards".into(), json!({"indices": indices("idx")}))
+            if picks_on_an_up_to_n_screen(rm, action) {
+                (
+                    "select_cards".into(),
+                    json!({"indices": indices("idx"), "keep_open": true}),
+                )
+            } else {
+                ("select_cards".into(), json!({"indices": indices("idx")}))
+            }
         }
         "shop_remove_card" => (
             "select_cards".into(),
@@ -581,29 +614,21 @@ pub fn context_diff(prev: Option<&Value>, cur: &Value, autoplayed: u64) -> Value
 
     // `render_lines`: most context-carrying first; unchanged quantities omitted.
     let mut lines: Vec<String> = Vec::new();
-    if !upgraded.is_empty() {
-        lines.push(format!("Upgraded {}", upgraded.join(", ")));
-    }
-    if !added.is_empty() {
-        lines.push(format!("Added {}", added.join(", ")));
-    }
-    if !removed.is_empty() {
-        lines.push(format!("Removed {}", removed.join(", ")));
-    }
-    if !relics_gained.is_empty() {
-        lines.push(format!("Relic {}", relics_gained.join(", ")));
-    }
-    if !relics_lost.is_empty() {
-        lines.push(format!("Lost relic {}", relics_lost.join(", ")));
-    }
-    if !potions_gained.is_empty() {
-        lines.push(format!("Potion {}", potions_gained.join(", ")));
-    }
-    if !potions_lost.is_empty() {
-        lines.push(format!("Used potion {}", potions_lost.join(", ")));
-    }
+    let sep = tr(", ");
+    let mut list = |key: &'static str, names: &[String]| {
+        if !names.is_empty() {
+            lines.push(trf(key, &[("names", &names.join(sep))]));
+        }
+    };
+    list("Upgraded {names}", &upgraded);
+    list("Added {names}", &added);
+    list("Removed {names}", &removed);
+    list("Relic {names}", &relics_gained);
+    list("Lost relic {names}", &relics_lost);
+    list("Potion {names}", &potions_gained);
+    list("Used potion {names}", &potions_lost);
     if let Some(h) = hp {
-        let mut line = format!("HP {h}");
+        let mut line = trf("HP {n}", &[("n", &h)]);
         if let Some(m) = max_hp {
             line.push_str(&format!("/{m}"));
         }
@@ -613,15 +638,18 @@ pub fn context_diff(prev: Option<&Value>, cur: &Value, autoplayed: u64) -> Value
         lines.push(line);
     }
     if let Some(g) = gold {
-        let mut line = format!("Gold {g}");
+        let mut line = trf("Gold {n}", &[("n", &g)]);
         if let Some(d) = gold_delta.filter(|d| *d != 0) {
             line.push_str(&format!(" ({})", signed(d)));
         }
         lines.push(line);
     }
     if autoplayed > 0 {
-        let s = if autoplayed == 1 { "" } else { "s" };
-        lines.push(format!("{autoplayed} decision{s} auto-played"));
+        lines.push(if autoplayed == 1 {
+            trf("{n} decision auto-played", &[("n", &autoplayed)])
+        } else {
+            trf("{n} decisions auto-played", &[("n", &autoplayed)])
+        });
     }
 
     json!({
@@ -660,6 +688,11 @@ pub const WPA_CAVEATS: [&str; 3] = [
     "Judgments are relative to the AI's own play style; a line that is weak for the AI \
      may still be fine for a human plan.",
 ];
+
+/// [`WPA_CAVEATS`] in the display language.
+fn caveats() -> Vec<String> {
+    WPA_CAVEATS.iter().map(|c| crate::i18n::tr_dyn(c)).collect()
+}
 
 /// Python `round(x, 4)`: exact-value rounding, ties to even.
 #[must_use]
@@ -737,18 +770,31 @@ fn turning_points(points: &[WpaPoint], top_k: usize, min_swing: f64) -> Vec<Valu
         if swing.abs() < min_swing {
             continue;
         }
-        let direction = if swing < 0.0 { "dropped" } else { "rose" };
         let where_ = match p.floor.as_i64() {
-            Some(f) => format!("floor {f}"),
-            None if !p.floor.is_null() => format!("floor {}", crate::render::py::to_str(&p.floor)),
-            None => format!("step {}", p.idx),
+            Some(f) => trf("floor {n}", &[("n", &f)]),
+            None if !p.floor.is_null() => {
+                trf("floor {n}", &[("n", &crate::render::py::to_str(&p.floor))])
+            }
+            None => trf("step {n}", &[("n", &p.idx)]),
         };
         let gap = next.idx - p.idx;
-        let span = if gap > 1 {
-            " (spans the fight that followed)"
-        } else {
-            ""
+        let template = match (swing < 0.0, gap > 1) {
+            (true, false) => "{where} ({decision}): after “{label}” your outlook dropped {swing} ({before} → {after})",
+            (false, false) => "{where} ({decision}): after “{label}” your outlook rose {swing} ({before} → {after})",
+            (true, true) => "{where} ({decision}): after “{label}” your outlook dropped {swing} ({before} → {after}) (spans the fight that followed)",
+            (false, true) => "{where} ({decision}): after “{label}” your outlook rose {swing} ({before} → {after}) (spans the fight that followed)",
         };
+        let message = crate::i18n::fill(
+            &crate::i18n::tr_dyn(template),
+            &[
+                ("where", &where_),
+                ("decision", &crate::i18n::tr_dyn(&p.decision)),
+                ("label", &p.taken_label),
+                ("swing", &format!("{swing:+.3}")),
+                ("before", &format!("{:.3}", p.value)),
+                ("after", &format!("{:.3}", next.value)),
+            ],
+        );
         let rounded = round4(swing);
         tps.push((
             rounded,
@@ -763,10 +809,7 @@ fn turning_points(points: &[WpaPoint], top_k: usize, min_swing: f64) -> Vec<Valu
                 "value_before": round4(p.value),
                 "value_after": round4(next.value),
                 "swing": rounded,
-                "message": format!(
-                    "{where_} ({}): after “{}” your outlook {direction} {swing:+.3} ({:.3} → {:.3}){span}",
-                    p.decision, p.taken_label, p.value, next.value
-                ),
+                "message": message,
             }),
         ));
     }
@@ -798,7 +841,7 @@ pub fn wpa_review(
             "points": points.iter().map(WpaPoint::to_value).collect::<Vec<_>>(),
             "turning_points": [],
             "summary": {},
-            "caveats": WPA_CAVEATS,
+            "caveats": caveats(),
         });
     }
     let tps = turning_points(&points, top_k, min_swing);
@@ -820,7 +863,7 @@ pub fn wpa_review(
         "points": points.iter().map(WpaPoint::to_value).collect::<Vec<_>>(),
         "turning_points": tps,
         "summary": summary,
-        "caveats": WPA_CAVEATS,
+        "caveats": caveats(),
     })
 }
 

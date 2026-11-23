@@ -541,7 +541,15 @@ pub(crate) fn fight_colorless_ids(state: &CombatState) -> SmallVec<[CardId; 72]>
             .map(|s| s.id)
             .collect()
     } else {
-        colorless_combat_generatable_ids_in(state.game_version)
+        let mut ids = colorless_combat_generatable_ids_in(state.game_version);
+        // `CardFactory.GetDistinctForCombat` starts with `FilterForRun`
+        // (`CardFactory.cs:118`): a Blitz run generates no
+        // `IsAllowedInBlitz == false` card (GH #1347; of the four, only
+        // MyShinies is in this pool).
+        if state.game_mode.is_blitz() {
+            ids.retain(|id| !sts2_core::blitz::card_not_allowed(*id));
+        }
+        ids
     }
 }
 
@@ -1048,6 +1056,14 @@ pub fn transform_card_to_random_for_hook(
             .filter(|s| s.id != original_id)
             .collect()
     };
+    // `GetFilteredTransformationOptions` ends in `FilterForRun`
+    // (`CardFactory.cs:200`): a Blitz run transforms into none of the
+    // `IsAllowedInBlitz == false` cards (Debt among the curses, MyShinies
+    // among the colorless; GH #1347).
+    let mut pool = pool;
+    if state.game_mode.is_blitz() {
+        pool.retain(|s| !sts2_core::blitz::card_not_allowed(s.id));
+    }
     if pool.is_empty() {
         return None;
     }
@@ -1202,6 +1218,8 @@ pub(crate) fn card_can_be_generated_in_combat(id: CardId) -> bool {
             // v0.113.0 Fool: MythicForm and the Sadness status.
             | CardId::MythicFormCard
             | CardId::Sadness
+            // v0.113.0 Dread: `Amnesia.cs:16`.
+            | CardId::Amnesia
             | CardId::NeowsFury
             | CardId::NotYet
             | CardId::RoyaltiesCard

@@ -2,8 +2,7 @@
 
 Exercises the parser + checkpoint contract end-to-end against a
 synthetic floor + a real ``.run`` file from
-``../sts2_run_scraper/data/files/the-ironclad/``. Driver scaffold is
-sanity-checked (phase-after surface only — full dispatch is W8).
+``../sts2_run_scraper/data/files/the-ironclad/``.
 """
 
 from __future__ import annotations
@@ -17,7 +16,6 @@ import pytest
 from run_files import glob_runs, load_run
 
 from replay.checkpoints import Divergence, DivergenceKind, check_floor
-from replay.driver import DispatchResult, apply_floor
 from replay.scraped import Floor, parse_run
 
 _CORPUS_ROOT = Path(__file__).resolve().parents[3].parent / "sts2_run_scraper" / "data" / "files"
@@ -209,27 +207,3 @@ def test_parse_run_reads_gzipped_run(tmp_path: Path):
         json.dump({"players": [{}], "map_point_history": []}, fh)
     with pytest.raises(ValueError, match="empty map_point_history"):
         parse_run(p)
-
-
-# ── driver scaffold ───────────────────────────────────────────────────
-
-
-class _StubRunManager:
-    """Bare minimum surface the W7 driver scaffold pokes."""
-
-    def __init__(self, phase: str) -> None:
-        self._phase = phase
-
-    def phase(self) -> str:
-        return self._phase
-
-
-def test_driver_apply_floor_returns_phase_after():
-    floor = _floor(map_point_type="event")
-    rm = _StubRunManager(phase="map_choice")
-    result = apply_floor(rm, floor)
-    assert isinstance(result, DispatchResult)
-    assert result.phase_after == "map_choice"
-    # W7 is a scaffold — no actions dispatched yet.
-    assert result.actions == []
-    assert result.results == []

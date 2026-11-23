@@ -717,6 +717,201 @@ const AFTER_DAMAGE_GIVEN_PLAYER_TARGET_LANES: [PowerKind; 2] =
 
 /// `POWER_HOOK_BITS[k]`: the [`PowerHook`] bits a power whose kind has
 /// discriminant `k` makes live, i.e. [`PowerHook::triggers`] inverted.
+/// A constant power-kind mask some hot site tests against `present_kinds`,
+/// answered by one bit of the store's liveness word instead of a multi-word
+/// [`crate::PowerKindSet::intersects`]. Its bits sit above every
+/// [`PowerHook`]'s, from [`KindGate::FIRST_BIT`]; `POWER_HOOK_BITS` sets bit
+/// `g` for every kind in `g.kinds()`, and the store ORs a kind's bits in at
+/// the same three points it inserts the kind into `present_kinds`, so the bit
+/// is set exactly when `present_kinds` meets the mask ([`kinds_live`] asserts
+/// it in debug builds, `kind_gate_bits_follow_their_masks` pins the table).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum KindGate {
+    AdaptableOrReattach,
+    AfterDeathArms,
+    AfterBlockBroken,
+    BeforeDamageReceived,
+    AfterDamageReceived,
+    ModifyDamageAdditive,
+    ModifyDamageMultiplicative,
+    ModifyDamageCap,
+    AfterBlockGained,
+    AfterBlockCleared,
+    ShouldClearBlock,
+    ModifyHpLost,
+    ModifyMaxEnergy,
+    ModifyCardCost,
+    ModifyCardPlayCount,
+    BeforeCardPlayedPowers,
+    BeforeHandDrawArms,
+    AfterCardPlayedOrderedEnemyHit,
+    AfterCardPlayedPlayerPowers,
+    AfterCardPlayedPlayerReact,
+    AfterCardPlayedPending,
+    AfterCardPlayedSnapshot,
+    AfterCardPlayedOtherCreature,
+    BeforeTurnEndArms,
+    AfterTurnEndLate,
+    AfterTurnEndArms,
+    OnTurnEndEnemySide,
+    BeforeSideTurnStart,
+    AfterSideTurnStartWalk,
+    PerCardDraw,
+    AfterCardDrawn,
+    TurnStartCluster,
+}
+
+impl KindGate {
+    /// The liveness-word bit of the first gate.
+    pub(crate) const FIRST_BIT: u32 = 24;
+
+    pub(crate) const ALL: [Self; 32] = [
+        Self::AdaptableOrReattach,
+        Self::AfterDeathArms,
+        Self::AfterBlockBroken,
+        Self::BeforeDamageReceived,
+        Self::AfterDamageReceived,
+        Self::ModifyDamageAdditive,
+        Self::ModifyDamageMultiplicative,
+        Self::ModifyDamageCap,
+        Self::AfterBlockGained,
+        Self::AfterBlockCleared,
+        Self::ShouldClearBlock,
+        Self::ModifyHpLost,
+        Self::ModifyMaxEnergy,
+        Self::ModifyCardCost,
+        Self::ModifyCardPlayCount,
+        Self::BeforeCardPlayedPowers,
+        Self::BeforeHandDrawArms,
+        Self::AfterCardPlayedOrderedEnemyHit,
+        Self::AfterCardPlayedPlayerPowers,
+        Self::AfterCardPlayedPlayerReact,
+        Self::AfterCardPlayedPending,
+        Self::AfterCardPlayedSnapshot,
+        Self::AfterCardPlayedOtherCreature,
+        Self::BeforeTurnEndArms,
+        Self::AfterTurnEndLate,
+        Self::AfterTurnEndArms,
+        Self::OnTurnEndEnemySide,
+        Self::BeforeSideTurnStart,
+        Self::AfterSideTurnStartWalk,
+        Self::PerCardDraw,
+        Self::AfterCardDrawn,
+        Self::TurnStartCluster,
+    ];
+
+    #[inline]
+    #[must_use]
+    pub(crate) const fn bit(self) -> u64 {
+        1u64 << (Self::FIRST_BIT + self as u32)
+    }
+
+    /// The mask this gate answers for.
+    #[must_use]
+    pub(crate) const fn kinds(self) -> crate::PowerKindSet {
+        match self {
+            Self::AdaptableOrReattach => crate::damage::ADAPTABLE_OR_REATTACH_MASK,
+            Self::AfterDeathArms => AFTER_DEATH_ARMS,
+            Self::AfterBlockBroken => AFTER_BLOCK_BROKEN_KINDS,
+            Self::BeforeDamageReceived => BEFORE_DAMAGE_RECEIVED_KINDS,
+            Self::AfterDamageReceived => AFTER_DAMAGE_RECEIVED_KINDS,
+            Self::ModifyDamageAdditive => MODIFY_DAMAGE_ADDITIVE_KINDS,
+            Self::ModifyDamageMultiplicative => MODIFY_DAMAGE_MULTIPLICATIVE_ARMS,
+            Self::ModifyDamageCap => MODIFY_DAMAGE_CAP_KINDS,
+            Self::AfterBlockGained => AFTER_BLOCK_GAINED_KINDS,
+            Self::AfterBlockCleared => AFTER_BLOCK_CLEARED_KINDS,
+            Self::ShouldClearBlock => SHOULD_CLEAR_BLOCK_KINDS,
+            Self::ModifyHpLost => MODIFY_HP_LOST_KINDS,
+            Self::ModifyMaxEnergy => MODIFY_MAX_ENERGY_KINDS,
+            Self::ModifyCardCost => MODIFY_CARD_COST_KINDS,
+            Self::ModifyCardPlayCount => MODIFY_CARD_PLAY_COUNT_KINDS,
+            Self::BeforeCardPlayedPowers => BEFORE_CARD_PLAYED_POWERS_KINDS,
+            Self::BeforeHandDrawArms => BEFORE_HAND_DRAW_ARM_KINDS,
+            Self::AfterCardPlayedOrderedEnemyHit => AFTER_CARD_PLAYED_ORDERED_ENEMY_HIT_KINDS,
+            Self::AfterCardPlayedPlayerPowers => AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS,
+            Self::AfterCardPlayedPlayerReact => AFTER_CARD_PLAYED_PLAYER_REACT_KINDS,
+            Self::AfterCardPlayedPending => AFTER_CARD_PLAYED_PENDING_KINDS,
+            Self::AfterCardPlayedSnapshot => AFTER_CARD_PLAYED_SNAPSHOT_KINDS,
+            Self::AfterCardPlayedOtherCreature => AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS,
+            Self::BeforeTurnEndArms => BEFORE_TURN_END_ARMS,
+            Self::AfterTurnEndLate => AFTER_TURN_END_LATE_POWERS,
+            Self::AfterTurnEndArms => AFTER_TURN_END_ARMS,
+            Self::OnTurnEndEnemySide => ON_TURN_END_ENEMY_SIDE_KINDS,
+            Self::BeforeSideTurnStart => BEFORE_SIDE_TURN_START_KINDS,
+            Self::AfterSideTurnStartWalk => AFTER_SIDE_TURN_START_WALK_ARMS,
+            Self::PerCardDraw => crate::PER_CARD_DRAW_POWERS,
+            Self::AfterCardDrawn => crate::AFTER_CARD_DRAWN_POWERS,
+            Self::TurnStartCluster => crate::combat_loop::TURN_START_CLUSTER_KINDS,
+        }
+    }
+
+    /// The mask's const name, which the hook-source guard reads in bodies.
+    #[cfg(test)]
+    pub(crate) const fn mask_name(self) -> &'static str {
+        match self {
+            Self::AdaptableOrReattach => "ADAPTABLE_OR_REATTACH_MASK",
+            Self::AfterDeathArms => "AFTER_DEATH_ARMS",
+            Self::AfterBlockBroken => "AFTER_BLOCK_BROKEN_KINDS",
+            Self::BeforeDamageReceived => "BEFORE_DAMAGE_RECEIVED_KINDS",
+            Self::AfterDamageReceived => "AFTER_DAMAGE_RECEIVED_KINDS",
+            Self::ModifyDamageAdditive => "MODIFY_DAMAGE_ADDITIVE_KINDS",
+            Self::ModifyDamageMultiplicative => "MODIFY_DAMAGE_MULTIPLICATIVE_ARMS",
+            Self::ModifyDamageCap => "MODIFY_DAMAGE_CAP_KINDS",
+            Self::AfterBlockGained => "AFTER_BLOCK_GAINED_KINDS",
+            Self::AfterBlockCleared => "AFTER_BLOCK_CLEARED_KINDS",
+            Self::ShouldClearBlock => "SHOULD_CLEAR_BLOCK_KINDS",
+            Self::ModifyHpLost => "MODIFY_HP_LOST_KINDS",
+            Self::ModifyMaxEnergy => "MODIFY_MAX_ENERGY_KINDS",
+            Self::ModifyCardCost => "MODIFY_CARD_COST_KINDS",
+            Self::ModifyCardPlayCount => "MODIFY_CARD_PLAY_COUNT_KINDS",
+            Self::BeforeCardPlayedPowers => "BEFORE_CARD_PLAYED_POWERS_KINDS",
+            Self::BeforeHandDrawArms => "BEFORE_HAND_DRAW_ARM_KINDS",
+            Self::AfterCardPlayedOrderedEnemyHit => "AFTER_CARD_PLAYED_ORDERED_ENEMY_HIT_KINDS",
+            Self::AfterCardPlayedPlayerPowers => "AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS",
+            Self::AfterCardPlayedPlayerReact => "AFTER_CARD_PLAYED_PLAYER_REACT_KINDS",
+            Self::AfterCardPlayedPending => "AFTER_CARD_PLAYED_PENDING_KINDS",
+            Self::AfterCardPlayedSnapshot => "AFTER_CARD_PLAYED_SNAPSHOT_KINDS",
+            Self::AfterCardPlayedOtherCreature => "AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS",
+            Self::BeforeTurnEndArms => "BEFORE_TURN_END_ARMS",
+            Self::AfterTurnEndLate => "AFTER_TURN_END_LATE_POWERS",
+            Self::AfterTurnEndArms => "AFTER_TURN_END_ARMS",
+            Self::OnTurnEndEnemySide => "ON_TURN_END_ENEMY_SIDE_KINDS",
+            Self::BeforeSideTurnStart => "BEFORE_SIDE_TURN_START_KINDS",
+            Self::AfterSideTurnStartWalk => "AFTER_SIDE_TURN_START_WALK_ARMS",
+            Self::PerCardDraw => "PER_CARD_DRAW_POWERS",
+            Self::AfterCardDrawn => "AFTER_CARD_DRAWN_POWERS",
+            Self::TurnStartCluster => "TURN_START_CLUSTER_KINDS",
+        }
+    }
+}
+
+const _: () = {
+    assert!(PowerHook::ALL.len() <= KindGate::FIRST_BIT as usize);
+    assert!(KindGate::FIRST_BIT as usize + KindGate::ALL.len() <= 64);
+    let mut g = 0;
+    while g < KindGate::ALL.len() {
+        assert!(
+            KindGate::ALL[g] as usize == g,
+            "KindGate::ALL is out of order"
+        );
+        g += 1;
+    }
+};
+
+/// Whether some live power's kind is in `gate`'s mask: exactly
+/// `present_kinds().intersects(&gate.kinds())`, read off one bit.
+#[inline]
+#[must_use]
+pub(crate) fn kinds_live(state: &CombatState, gate: KindGate) -> bool {
+    let live = state.powers.hook_live() & gate.bit() != 0;
+    debug_assert_eq!(
+        live,
+        state.powers.present_kinds().intersects(&gate.kinds()),
+        "the liveness word disagrees with present_kinds for {gate:?}"
+    );
+    live
+}
+
 static POWER_HOOK_BITS: [u64; crate::PowerKindSet::CAPACITY] = {
     let mut table = [0u64; crate::PowerKindSet::CAPACITY];
     let mut h = 0;
@@ -731,6 +926,19 @@ static POWER_HOOK_BITS: [u64; crate::PowerKindSet::CAPACITY] = {
             k += 1;
         }
         h += 1;
+    }
+    let mut g = 0;
+    while g < KindGate::ALL.len() {
+        let gate = KindGate::ALL[g];
+        let kinds = gate.kinds();
+        let mut k = 0;
+        while k < crate::PowerKindSet::CAPACITY {
+            if kinds.contains_index(k) {
+                table[k] |= gate.bit();
+            }
+            k += 1;
+        }
+        g += 1;
     }
     table
 };
@@ -1120,9 +1328,9 @@ pub enum Effect {
         /// Optional applier uid (the owner that applied the power).
         applier: Option<CreatureUid>,
     },
-    /// Decrement the named power's `amount` by 1. Used by Artifact's
-    /// `try_block_debuff` arm to consume a stack on debuff negation.
-    /// Mirrors Python `ArtifactPower.try_block_debuff:142` (`self.amount -= 1`).
+    /// Decrement the named power's `amount` by 1 (C# `PowerCmd.Decrement`),
+    /// removing it at 0. Emitted for an Artifact stack spent negating a
+    /// debuff and for LightningRod's per-turn charge.
     ConsumePowerStack {
         /// Listener-ref of the power whose stack to consume. Currently only
         /// `ListenerRef::Power(uid)` is meaningful; relics are not stacked
@@ -1230,6 +1438,13 @@ pub enum Effect {
     /// `CompostPower.AfterDeath`. GH #1337.
     GainEnergyEveryPlayer {
         /// Energy each player gains.
+        amount: i32,
+    },
+    /// Deal `amount` unpowered, blockable damage with no dealer to every
+    /// living player ([`crate::dread::explosive_after_death`]): v0.113.0
+    /// `ExplosivePower.AfterDeath`. GH #1346.
+    ExplodeOnPlayers {
+        /// Damage each player takes.
         amount: i32,
     },
     /// Grant the player `amount` Stars. Deferred from read-only listener
@@ -1681,9 +1896,9 @@ pub fn apply_effect(state: &mut CombatState, effect: Effect) {
             // Bead `sts2-rs-2w966`: like `DecrementPowerAmount` above, remove
             // the power once its stack reaches 0. C# `PowerCmd.Decrement`
             // (a `ModifyAmount(-1)`) runs `ShouldRemoveDueToAmount()` after the
-            // decrement; Artifact (the sole emitter, via `try_block_debuff`) is
-            // a non-`AllowNegative` power, so it leaves the creature at 0
-            // rather than lingering as an inert 0-stack instance.
+            // decrement; its emitters' powers (Artifact, LightningRod) are not
+            // `AllowNegative`, so the power leaves the creature at 0 rather
+            // than lingering as an inert 0-stack instance.
             if let ListenerRef::Power(uid) = listener {
                 let mut remove_pid = None;
                 if let Some(power) = state.powers.get_mut_by_id(uid.0) {
@@ -1864,6 +2079,9 @@ pub fn apply_effect(state: &mut CombatState, effect: Effect) {
         }
         Effect::GainEnergyEveryPlayer { amount } => {
             crate::coop::every_player_gains_energy(state, amount);
+        }
+        Effect::ExplodeOnPlayers { amount } => {
+            crate::dread::explosive_after_death(state, amount);
         }
         Effect::GainStars { amount } => {
             // Player stars gain deferred from a read-only listener walk
@@ -2210,7 +2428,24 @@ fn auto_play_hand_card(state: &mut CombatState, chosen: CardUid) {
 /// v0.111.0, for non-Attacks and when no Juggling is live. The per-turn
 /// counter is the power's `counter`, as in v0.107.1 (seeded on apply, reset
 /// by the `after_turn_end` arm).
+#[inline]
 pub fn juggling_before_card_played_v0111(
+    state: &mut CombatState,
+    card_uid: CardUid,
+    card_type: crate::cards::CardType,
+) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if state.game_version >= crate::GameVersion::V0_111_0
+        && card_type == crate::cards::CardType::Attack
+        && power_kind_live(state, PowerKind::Juggling)
+    {
+        juggling_before_card_played_v0111_body(state, card_uid, card_type);
+    }
+}
+
+#[inline(never)]
+fn juggling_before_card_played_v0111_body(
     state: &mut CombatState,
     card_uid: CardUid,
     card_type: crate::cards::CardType,
@@ -2440,7 +2675,9 @@ fn apply_dealhploss(
             };
             // EmotionChip's `DamageReceivedEntry` (WasFullyBlocked =
             // `!Unblockable && (blocked > 0 || Block > 0) && unblocked == 0`).
-            let damage_entry_recorded = !crate::combat_loop::combat_is_ending(state);
+            // Only an owned EmotionChip reads it: skip the ending walk otherwise.
+            let damage_entry_recorded = state.relics.owns(crate::RelicKind::EmotionChip)
+                && !crate::combat_loop::combat_is_ending(state);
             let was_fully_blocked =
                 !unblockable && (absorbed > 0 || state.player.block > 0) && modified == 0;
             crate::relic_effects::emotion_chip::note_player_damage_entry(
@@ -2476,8 +2713,7 @@ fn apply_dealhploss(
             // loss path bypasses `apply_damage_to_player`, so it needs
             // its own sync site or the Phase-2 inversion would see
             // stale HP.
-            state.sync_creature_block_from_player();
-            state.sync_creature_current_hp_from_player();
+            state.sync_creature_block_and_hp_from_player();
             // Bead `sts2-rs-t9xre`: fire `after_damage_received` on the
             // unblocked residual. C# routes Constrict AND Poison self-damage
             // through `CreatureCmd.Damage` (`ConstrictPower.AfterTurnEnd`,
@@ -2754,13 +2990,6 @@ pub struct BlockCtx {
     pub card_source: Option<crate::CardUid>,
 }
 
-/// Context for attack-event hooks (`before_attack`, `after_attack`).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct AttackCtx {
-    // TODO Phase 2: attack record (intent + target + damage info).
-    _placeholder: (),
-}
-
 /// Context for HP-loss-modifier hook (`modify_hp_lost`).
 ///
 /// Mirrors Python's `target, dealer, props` positional triple at
@@ -2894,14 +3123,6 @@ impl Default for CardCostCtx {
     }
 }
 
-/// Context for `on_card_drawn` (which Python invokes via `getattr` and
-/// passes a `from_hand_draw: bool`).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CardDrawnCtx {
-    // TODO Phase 2: card uid, from_hand_draw.
-    _placeholder: (),
-}
-
 /// Context for `after_power_amount_changed`. Fired after a power's amount
 /// changes (typically via `apply_power_to_creature`). Mirrors Python
 /// `after_power_amount_changed(self, owner, target, power_id, amount,
@@ -2977,27 +3198,6 @@ pub struct MaxEnergyCtx {
     _placeholder: (),
 }
 
-/// Context for summon-amount modifier (`modify_summon_amount`).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SummonAmountCtx {
-    // TODO Phase 2: summoner, current amount, source object.
-    _placeholder: (),
-}
-
-/// Context for summon-event hook (`after_summon`).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SummonCtx {
-    // TODO Phase 2: summoner, amount.
-    _placeholder: (),
-}
-
-/// Context for `after_osty_revived`.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OstyRevivedCtx {
-    // TODO Phase 2: revived osty creature.
-    _placeholder: (),
-}
-
 /// Context for turn-side hooks (`before_turn_end`, `after_turn_end`,
 /// `before_side_turn_start`, `after_side_turn_start`).
 ///
@@ -3045,13 +3245,6 @@ pub struct CombatLifecycleCtx {
     // Intentionally empty — Python's matching combat-lifecycle hooks
     // pass no extra args; the struct exists so the channel signatures
     // stay symmetric across the family.
-    _placeholder: (),
-}
-
-/// Context for creature-added hook (`after_creature_added_to_combat`).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CreatureAddedCtx {
-    // TODO Phase 2: added creature uid.
     _placeholder: (),
 }
 
@@ -3218,20 +3411,6 @@ impl PowerAmountCtx {
     }
 }
 
-/// Context for `try_block_debuff`.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct TryBlockDebuffCtx {
-    // TODO Phase 2: PowerId being applied.
-    _placeholder: (),
-}
-
-/// Context for `should_draw`.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DrawCtx {
-    // TODO Phase 2: from_hand_draw flag.
-    _placeholder: (),
-}
-
 // ---------------------------------------------------------------------------
 // HookId
 // ---------------------------------------------------------------------------
@@ -3257,8 +3436,6 @@ pub enum HookId {
     AfterDamageReceived,
     AfterDamageGiven,
     // ── Attack events ──────────────────────────────────────────────
-    BeforeAttack,
-    AfterAttack,
     // ── Block pipeline ─────────────────────────────────────────────
     ModifyBlockAdditive,
     ModifyBlockMultiplicative,
@@ -3268,7 +3445,6 @@ pub enum HookId {
     // ── HP loss ────────────────────────────────────────────────────
     ModifyHpLost,
     // ── Power-application gating ───────────────────────────────────
-    TryBlockDebuff,
     // ── Power-amount modification (bead sts2-rs-47jv, C# canon) ────
     ModifyPowerAmountGiven,
     ModifyPowerAmountReceived,
@@ -3279,9 +3455,6 @@ pub enum HookId {
     ModifyHandDraw,
     ModifyMaxEnergy,
     // ── Summon modifiers / events ──────────────────────────────────
-    ModifySummonAmount,
-    AfterSummon,
-    AfterOstyRevived,
     // ── Card play count ────────────────────────────────────────────
     ModifyCardPlayCount,
     AfterModifyingCardPlayCount,
@@ -3291,14 +3464,12 @@ pub enum HookId {
     ShouldResetEnergy,
     ShouldFlush,
     ShouldPlay,
-    ShouldDraw,
     ShouldTakeExtraTurn,
     // ── Card-event hooks ───────────────────────────────────────────
     BeforeCardPlayed,
     AfterCardPlayed,
     AfterCardExhausted,
     AfterCardDiscarded,
-    OnCardDrawn,
     // ── Turn boundary hooks ────────────────────────────────────────
     BeforeTurnEnd,
     AfterTurnEnd,
@@ -3307,7 +3478,6 @@ pub enum HookId {
     AfterSideTurnStart,
     OnTurnStartOwnSide,
     // ── Creature lifecycle ─────────────────────────────────────────
-    AfterCreatureAddedToCombat,
     // ── Combat lifecycle ───────────────────────────────────────────
     BeforeCombatStart,
     AfterCombatVictory,
@@ -3328,7 +3498,7 @@ impl HookId {
     /// Total number of variants. Hard-coded so [`tests::hook_id_count_matches_python`]
     /// can lock the count against `hooks.py`. **Update this constant if
     /// you add or remove a variant.**
-    pub const COUNT: usize = 55;
+    pub const COUNT: usize = 46;
 
     /// All variants in declaration order. Phase 2's dispatcher uses
     /// this to build its iteration table.
@@ -3339,15 +3509,12 @@ impl HookId {
         HookId::BeforeDamageReceived,
         HookId::AfterDamageReceived,
         HookId::AfterDamageGiven,
-        HookId::BeforeAttack,
-        HookId::AfterAttack,
         HookId::ModifyBlockAdditive,
         HookId::ModifyBlockMultiplicative,
         HookId::AfterBlockGained,
         HookId::AfterBlockCleared,
         HookId::ShouldClearBlock,
         HookId::ModifyHpLost,
-        HookId::TryBlockDebuff,
         HookId::ModifyPowerAmountGiven,
         HookId::ModifyPowerAmountReceived,
         HookId::BeforePowerAmountChanged,
@@ -3355,29 +3522,23 @@ impl HookId {
         HookId::AfterModifyingPowerAmountReceived,
         HookId::ModifyHandDraw,
         HookId::ModifyMaxEnergy,
-        HookId::ModifySummonAmount,
-        HookId::AfterSummon,
-        HookId::AfterOstyRevived,
         HookId::ModifyCardPlayCount,
         HookId::AfterModifyingCardPlayCount,
         HookId::ModifyCardCost,
         HookId::ShouldResetEnergy,
         HookId::ShouldFlush,
         HookId::ShouldPlay,
-        HookId::ShouldDraw,
         HookId::ShouldTakeExtraTurn,
         HookId::BeforeCardPlayed,
         HookId::AfterCardPlayed,
         HookId::AfterCardExhausted,
         HookId::AfterCardDiscarded,
-        HookId::OnCardDrawn,
         HookId::BeforeTurnEnd,
         HookId::AfterTurnEnd,
         HookId::OnTurnEndEnemySide,
         HookId::BeforeSideTurnStart,
         HookId::AfterSideTurnStart,
         HookId::OnTurnStartOwnSide,
-        HookId::AfterCreatureAddedToCombat,
         HookId::BeforeCombatStart,
         HookId::AfterCombatVictory,
         HookId::AfterCombatEnd,
@@ -3402,15 +3563,12 @@ impl HookId {
             HookId::BeforeDamageReceived => "before_damage_received",
             HookId::AfterDamageReceived => "after_damage_received",
             HookId::AfterDamageGiven => "after_damage_given",
-            HookId::BeforeAttack => "before_attack",
-            HookId::AfterAttack => "after_attack",
             HookId::ModifyBlockAdditive => "modify_block_additive",
             HookId::ModifyBlockMultiplicative => "modify_block_multiplicative",
             HookId::AfterBlockGained => "after_block_gained",
             HookId::AfterBlockCleared => "after_block_cleared",
             HookId::ShouldClearBlock => "should_clear_block",
             HookId::ModifyHpLost => "modify_hp_lost",
-            HookId::TryBlockDebuff => "try_block_debuff",
             HookId::ModifyPowerAmountGiven => "modify_power_amount_given",
             HookId::ModifyPowerAmountReceived => "modify_power_amount_received",
             HookId::BeforePowerAmountChanged => "before_power_amount_changed",
@@ -3418,29 +3576,23 @@ impl HookId {
             HookId::AfterModifyingPowerAmountReceived => "after_modifying_power_amount_received",
             HookId::ModifyHandDraw => "modify_hand_draw",
             HookId::ModifyMaxEnergy => "modify_max_energy",
-            HookId::ModifySummonAmount => "modify_summon_amount",
-            HookId::AfterSummon => "after_summon",
-            HookId::AfterOstyRevived => "after_osty_revived",
             HookId::ModifyCardPlayCount => "modify_card_play_count",
             HookId::AfterModifyingCardPlayCount => "after_modifying_card_play_count",
             HookId::ModifyCardCost => "modify_card_cost",
             HookId::ShouldResetEnergy => "should_reset_energy",
             HookId::ShouldFlush => "should_flush",
             HookId::ShouldPlay => "should_play",
-            HookId::ShouldDraw => "should_draw",
             HookId::ShouldTakeExtraTurn => "should_take_extra_turn",
             HookId::BeforeCardPlayed => "before_card_played",
             HookId::AfterCardPlayed => "after_card_played",
             HookId::AfterCardExhausted => "after_card_exhausted",
             HookId::AfterCardDiscarded => "after_card_discarded",
-            HookId::OnCardDrawn => "on_card_drawn",
             HookId::BeforeTurnEnd => "before_turn_end",
             HookId::AfterTurnEnd => "after_turn_end",
             HookId::OnTurnEndEnemySide => "on_turn_end_enemy_side",
             HookId::BeforeSideTurnStart => "before_side_turn_start",
             HookId::AfterSideTurnStart => "after_side_turn_start",
             HookId::OnTurnStartOwnSide => "on_turn_start_own_side",
-            HookId::AfterCreatureAddedToCombat => "after_creature_added_to_combat",
             HookId::BeforeCombatStart => "before_combat_start",
             HookId::AfterCombatVictory => "after_combat_victory",
             HookId::AfterCombatEnd => "after_combat_end",
@@ -3494,23 +3646,6 @@ macro_rules! dispatch_void_hook {
             $(for listener in $iter(state) {
                 $hook(state, listener, ctx);
             })+
-        }
-    };
-}
-
-/// Generate an all-true predicate `dispatch_*` fn: defaults `true`; the
-/// first listener returning `false` short-circuits. Walks in the given
-/// order.
-macro_rules! dispatch_all_hook {
-    ($(#[$attr:meta])* $name:ident, $hook:ident, $ctx:ty, [$($iter:ident),+]) => {
-        $(#[$attr])*
-        pub fn $name(state: &CombatState, ctx: &$ctx) -> bool {
-            $(for listener in $iter(state) {
-                if !$hook(state, listener, ctx) {
-                    return false;
-                }
-            })+
-            true
         }
     };
 }
@@ -4807,10 +4942,6 @@ pub fn after_damage_received(
 
 noop_hook!(after_damage_given, DamageCtx, (), ());
 
-// ── Attack events ─────────────────────────────────────────────────────
-noop_hook!(before_attack, AttackCtx, (), ());
-noop_hook!(after_attack, AttackCtx, (), ());
-
 // ── Block pipeline ────────────────────────────────────────────────────
 /// Per-listener `modify_block_additive` dispatch.
 ///
@@ -5327,13 +5458,12 @@ pub fn modify_hp_lost_additive(
             let Some(power) = state.powers.get_by_id(uid.0) else {
                 return 0;
             };
-            // No Phase-2 power contributes additive HP loss reduction.
-            // TODO bead-Phase-7: TungstenRod-equivalent power arms land here.
+            // No power reduces HP loss additively.
             let _ = power.kind;
             0
         }
-        // No Phase-2 relic-side additive HP-loss modifiers; TungstenRod
-        // (Phase 7) lands here once relic content beads ship.
+        // Relic-side reducers (TungstenRod -1, BeatingRemnant cap) run in
+        // the relic `modify_hp_lost` fold in `combat_loop`, not here.
         ListenerRef::Relic(_) => 0,
     }
 }
@@ -5500,49 +5630,6 @@ fn power_modify_hp_lost_cap(
     }
 }
 
-// ── Power-application gating ──────────────────────────────────────────
-/// Per-listener `try_block_debuff` dispatch (powers-only; relic site does
-/// not exist in Python `hooks.py`).
-///
-/// **Artifact arm (P2-2 sts2-rs-6w8 + P2-2b sts2-rs-3to):** mirrors Python
-/// `sts2_env/powers/common.py::ArtifactPower.try_block_debuff` at
-/// lines 141-145 — returns `true` (debuff blocked) when the listener
-/// exists with `amount > 0`, AND emits an [`Effect::ConsumePowerStack`]
-/// effect into the caller's `effects` accumulator so the stack
-/// decrement (`self.amount -= 1`) fires post-walk.
-///
-/// **Signature growth (P2-2b sts2-rs-3to):** added `effects: &mut SmallVec<[Effect; 4]>`
-/// parameter so the listener can produce side effects without `&mut state`.
-/// The stack-decrement was previously deferred (6w8 docstring); 3to
-/// un-defers via the effect-queue. Repeated invocations now correctly
-/// consume the stack once per blocked debuff; once `amount` falls to 0,
-/// the next debuff passes through.
-#[allow(clippy::needless_pass_by_value)]
-pub fn try_block_debuff(
-    state: &CombatState,
-    listener: ListenerRef,
-    _ctx: &TryBlockDebuffCtx,
-    effects: &mut SmallVec<[Effect; 4]>,
-) -> bool {
-    match listener {
-        ListenerRef::Power(uid) => {
-            let Some(power) = state.powers.get_by_id(uid.0) else {
-                return false;
-            };
-            match power.kind {
-                PowerKind::Artifact if power.amount > 0 => {
-                    // Emit the stack-consume effect so the decrement
-                    // fires post-walk. Python: `self.amount -= 1; return True`.
-                    effects.push(Effect::ConsumePowerStack { listener });
-                    true
-                }
-                _ => false,
-            }
-        }
-        ListenerRef::Relic(_) => false,
-    }
-}
-
 // ── Power-amount modification (bead sts2-rs-47jv, C# canon) ──────────
 //
 // Five channels that fire around `apply_power_to_creature*` in
@@ -5612,6 +5699,11 @@ pub fn modify_hand_draw(state: &CombatState, listener: ListenerRef, _ctx: &HandD
         PowerKind::Ennui if owner_of_listener(state, listener) == Some(CreatureRef::Player) => {
             power.amount
         }
+        // v0.113.0 Dread `AmnesiaPower.ModifyHandDraw` (AmnesiaPower.cs:33-40):
+        // `Math.Max(0, count - 2)` for the owning player, whatever `Amount`
+        // is (`CardsVar(2)`). Additive `-2`, clamped at the draw site like
+        // MindRot's. GH #1346.
+        PowerKind::Amnesia if owner_of_listener(state, listener) == Some(CreatureRef::Player) => -2,
         // C# `MindRotPower.ModifyHandDraw` (MindRotPower.cs:16-23):
         // `Math.Max(0, count - Amount)` for the owning player — draw
         // `amount` FEWER cards. In the additive-fold model this contributes
@@ -5805,11 +5897,6 @@ fn relic_modify_max_energy(state: &CombatState, relic: &crate::Relic) -> i32 {
         _ => 0,
     }
 }
-
-// ── Summon modifiers / events ─────────────────────────────────────────
-noop_hook!(modify_summon_amount, SummonAmountCtx, i32, 0);
-noop_hook!(after_summon, SummonCtx, (), ());
-noop_hook!(after_osty_revived, OstyRevivedCtx, (), ());
 
 // ── Card play count ───────────────────────────────────────────────────
 //
@@ -6424,7 +6511,6 @@ pub fn relic_should_play_blocked(state: &CombatState) -> bool {
     relics_of_kinds(state, SHOULD_PLAY_RELIC_KINDS)
         .any(|relic| !relic_should_play(state, relic, &CardCtx::default()))
 }
-noop_hook!(should_draw, DrawCtx, bool, true);
 /// Per-listener `should_take_extra_turn` predicate. Default `false`,
 /// any-true short-circuits via [`dispatch_should_take_extra_turn`].
 ///
@@ -6493,7 +6579,6 @@ noop_hook!(before_card_played, CardCtx, (), ());
 noop_hook!(after_card_played, CardCtx, (), ());
 noop_hook!(after_card_exhausted, CardCtx, (), ());
 noop_hook!(after_card_discarded, CardCtx, (), ());
-noop_hook!(on_card_drawn, CardDrawnCtx, (), ());
 
 // ── Turn boundary hooks ───────────────────────────────────────────────
 
@@ -6682,12 +6767,14 @@ pub fn before_turn_end(
             // An enemy's tick is C#'s `Decrement`, set to `Players.Count` when
             // the power lands (`PlatingPower.cs:29-36`): 2 a round in a
             // two-player fight (GH #989).
-            let pending_enemy_tick =
-                if creature_ref_side(owner) == Side::Enemy && state.round_no() != 1 {
-                    crate::coop::player_count(state)
-                } else {
-                    0
-                };
+            let pending_enemy_tick = if creature_ref_side(owner) == Side::Enemy
+                && state.round_no() != 1
+                && !plating_skips_tick_this_round(state, power)
+            {
+                crate::coop::player_count(state)
+            } else {
+                0
+            };
             let block_amount = power.amount - pending_enemy_tick;
             let mut effects = SmallVec::new();
             // C# `PlatingPower.cs:65` (`BeforeSideTurnEndEarly`) flashes
@@ -6866,7 +6953,7 @@ pub fn after_turn_end(
         // ends (`participants.Contains(Owner)`).
         PowerKind::Quietus | PowerKind::Encore | PowerKind::KiVerse | PowerKind::ShowOff => {
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -6890,6 +6977,81 @@ pub fn after_turn_end(
                     applier: None,
                 });
             }
+            Some(effects)
+        }
+        // v0.113.0 Dread `AmnesiaPower.AfterSideTurnEnd` (AmnesiaPower.cs:
+        // 42-48): removed when any side but the enemy's ends its turn.
+        PowerKind::Amnesia => {
+            if ctx.side == Side::Enemy {
+                return None;
+            }
+            let mut effects = SmallVec::new();
+            effects.push(Effect::RemovePower { listener });
+            Some(effects)
+        }
+        // v0.113.0 Dread `LagavulinMatriarchDominionPower.AfterSideTurnEnd`
+        // (LagavulinMatriarchDominionPower.cs:28-38): at the player side's
+        // turn end with the owner taking part, `PowerCmd.Apply` Strength
+        // `-Amount`, then Dexterity `-Amount`, then the power removes itself.
+        // A negative Strength / Dexterity is a Debuff for Artifact
+        // (ArtifactPower.cs:24-28, `GetTypeForAmount`), which eats one apply
+        // per stack.
+        PowerKind::LagavulinMatriarchDominion => {
+            if ctx.side != Side::Player {
+                return None;
+            }
+            let owner = owner_of_listener(state, listener)?;
+            if creature_ref_side(owner) != Side::Player {
+                return None;
+            }
+            let owner_powers = if owner == CreatureRef::Player {
+                state.player_power_uids()
+            } else {
+                SmallVec::new()
+            };
+            let artifact = owner_powers
+                .into_iter()
+                .filter_map(|u| Some((u, state.powers.get_by_id(u.0)?)))
+                .find(|(_, p)| p.kind == PowerKind::Artifact && p.amount > 0)
+                .map(|(u, p)| (u, p.amount));
+            let mut artifact_left = artifact.map_or(0, |(_, n)| n);
+            let mut effects = SmallVec::new();
+            for kind in [PowerKind::Strength, PowerKind::Dexterity] {
+                match artifact {
+                    Some((artifact_uid, _)) if artifact_left > 0 => {
+                        artifact_left -= 1;
+                        effects.push(Effect::ConsumePowerStack {
+                            listener: ListenerRef::Power(artifact_uid),
+                        });
+                    }
+                    _ => effects.push(Effect::ApplyPower {
+                        target: owner,
+                        kind,
+                        amount: -power.amount,
+                        applier: None,
+                    }),
+                }
+            }
+            effects.push(Effect::RemovePower { listener });
+            Some(effects)
+        }
+        // v0.113.0 Dread `InsatiableDominionPower.AfterSideTurnEndLate`
+        // (InsatiableDominionPower.cs:47-54): at the owner's turn end, in the
+        // LATE walk ([`dispatch_after_turn_end_late`]), `2 + TurnNumber`
+        // damage (`DamageVar(Unpowered)`, refreshed each player turn start),
+        // which block absorbs. `Amount` stays 1.
+        PowerKind::InsatiableDominion => {
+            let owner = owner_of_listener(state, listener)?;
+            if !is_turn_end_participant(state, owner, ctx) {
+                return None;
+            }
+            let mut effects = SmallVec::new();
+            effects.push(Effect::DealHpLoss {
+                dealer: owner,
+                target: owner,
+                amount: 2 + i32::from(state.turn_number()),
+                props: ValueProps::UNPOWERED,
+            });
             Some(effects)
         }
         // `DislikeYouPower.AfterSideTurnEnd`: removed when the PLAYER side's
@@ -6930,7 +7092,7 @@ pub fn after_turn_end(
             // No `Flash()` on this arm: `ReboundPower` calls it only from
             // `AfterModifyingCardPlayResultPileOrPosition` (GH #637).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -6941,7 +7103,7 @@ pub fn after_turn_end(
             // Python: `if side == owner.side: owner.apply_power(STRENGTH, -self.amount);
             // owner.powers.pop(self.power_id, None)`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -6978,7 +7140,7 @@ pub fn after_turn_end(
             // owner-owned card in `dispatch_after_card_played`). Body in
             // `powers::regent::monologue_strength_undo_on_turn_end`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7004,7 +7166,7 @@ pub fn after_turn_end(
             // Bead: Regent parity (jxz.2 turn-cycle). Body in
             // `powers::regent::conqueror_tick_on_turn_end`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7041,7 +7203,7 @@ pub fn after_turn_end(
             // next turn. Player-owned. The duplication itself is handled in
             // `modify_card_play_count` / `after_modifying_card_play_count`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7054,7 +7216,7 @@ pub fn after_turn_end(
             // never persists past the turn it was played — closing the
             // dangling-power divergence (`player.powers.len` cs1/rs2).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7069,7 +7231,7 @@ pub fn after_turn_end(
             // (one ShadowStep), the buff lasts exactly the turn it was converted
             // in (from `ShadowStepPower` at that turn's start).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7102,7 +7264,7 @@ pub fn after_turn_end(
             // end — owner-side gated like SetupStrike. Without this the
             // observable FlankingPower lingers (monsters[N].powers.len cs0/rs1).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7117,7 +7279,7 @@ pub fn after_turn_end(
             // `invoke_card_drawn_for_newly_drawn`); removes itself at the
             // player's turn end. Silent's CorrosiveWave.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7132,7 +7294,7 @@ pub fn after_turn_end(
             // EscapeArtist(5) and ticks 5→4 at the end of its first turn.
             // Bead `sts2-rs-ybtmu`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             if power.amount > 1 {
@@ -7155,7 +7317,7 @@ pub fn after_turn_end(
             // `after_turn_end(Enemy)` walk already sees the power). Bead
             // `sts2-rs-z4jsg`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7329,7 +7491,7 @@ pub fn after_turn_end(
             // (an exact-0 result is pruned by that arm). Bead `sts2-rs-ybtmu`
             // (Group C).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let restore = power.counter;
@@ -7360,7 +7522,7 @@ pub fn after_turn_end(
             // potion-drink time (`drink_flex_potion`). Mirrors the
             // SetupStrike pattern above. Bead `sts2-rs-97fkc`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7398,7 +7560,7 @@ pub fn after_turn_end(
             // (`listener_reptile_trinket`). Mirrors the FlexPotion arm
             // above. Bead `sts2-rs-ji7m7`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7435,7 +7597,7 @@ pub fn after_turn_end(
             // potion-drink time (`drink_speed_potion`). Mirrors the
             // FlexPotion arm above. Bead `sts2-rs-3unld`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7472,7 +7634,7 @@ pub fn after_turn_end(
             // (`play_anticipate`). Same shape as the SpeedPotion arm
             // above. Bead `sts2-rs-a5y3i`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7509,7 +7671,7 @@ pub fn after_turn_end(
             // SpeedPotion / Anticipate arms but routes through Focus.
             // Bead `sts2-rs-ko4nm`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7548,7 +7710,7 @@ pub fn after_turn_end(
             // applier stamps the attribute itself (`BeforeApplied`); this arm
             // is only the turn-end revert. Both kinds exist only in v0.111.0.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let (attribute, revert) = if power.kind == PowerKind::Fade {
@@ -7603,7 +7765,7 @@ pub fn after_turn_end(
             // reverts -amount Focus at owner-side AfterTurnEnd.
             // Bead `sts2-rs-tgnb1`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7631,7 +7793,7 @@ pub fn after_turn_end(
             // `IsPositive=true`) — folds +amount Dex on apply, reverts
             // -amount Dex at owner-side AfterTurnEnd. Bead `sts2-rs-i09du`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7666,7 +7828,7 @@ pub fn after_turn_end(
             // reverts +amount Strength at owner-side AfterTurnEnd.
             // Bead `sts2-rs-na2z4`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7702,7 +7864,7 @@ pub fn after_turn_end(
             // Supersedes the unused `dying_star_strength_delta_on_turn_end`
             // helper in powers/regent.rs. Bead `sts2-rs-na2z4`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7737,7 +7899,7 @@ pub fn after_turn_end(
             // reverts +amount Strength at owner-side AfterTurnEnd.
             // Bead `sts2-rs-g4ekc`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7774,7 +7936,7 @@ pub fn after_turn_end(
             // owner-(target-)side turn end. Mirrors the EnfeeblingTouch arm.
             // Bead: Regent parity (jxz.2).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7809,7 +7971,7 @@ pub fn after_turn_end(
             // reverts -amount Strength at owner-side AfterTurnEnd.
             // Bead `sts2-rs-5cry8`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7844,7 +8006,7 @@ pub fn after_turn_end(
             // reverts -amount Strength at owner-side AfterTurnEnd.
             // Bead `sts2-rs-ay9kr`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7880,7 +8042,7 @@ pub fn after_turn_end(
             // at owner-side AfterTurnEnd, removes the power and applies
             // +amount Strength to revert. Bead `sts2-rs-jtju7`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7916,7 +8078,7 @@ pub fn after_turn_end(
             // power and applies +amount Strength to revert.
             // Bead `sts2-rs-5aack`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7952,7 +8114,7 @@ pub fn after_turn_end(
             // power and applies +amount Strength to revert.
             // Bead `sts2-rs-zt05u`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -7985,7 +8147,7 @@ pub fn after_turn_end(
             // C# `FocusedStrikePower : TemporaryFocusPower` — same
             // turn-end revert shape as Hotfix. Bead `sts2-rs-55zqz`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8030,7 +8192,7 @@ pub fn after_turn_end(
             // pre-existing positive Strength from enemies that had it before
             // Mangle was played (e.g. FrogKnight after FOR_THE_QUEEN).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             if power.amount == 0 {
@@ -8086,7 +8248,7 @@ pub fn after_turn_end(
             // a 1-stack Territorial ramps the owner +1 Strength every turn.
             // Sole source at this pin is Byrdonis (on-spawn Territorial(1)).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8121,7 +8283,7 @@ pub fn after_turn_end(
             // pin; the SlitheringStrangler is the only source and is typically
             // alive across a short combat).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             if power.amount <= 0 {
@@ -8145,7 +8307,7 @@ pub fn after_turn_end(
             // is a Counter stack and never decrements. Round-6 PowderedDemise:
             // monster retained 112 HP instead of 103 (a missing 9 tick).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8182,7 +8344,7 @@ pub fn after_turn_end(
             // CURSE_OF_KNOWLEDGE (the headless harness's index-0 card pick
             // is always Disintegration). Bead `sts2-rs-ybtmu`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             if power.amount <= 0 {
@@ -8229,7 +8391,7 @@ pub fn after_turn_end(
             // then removes itself at the player's turn end. `AfterRemoved`
             // (clearing the Entangled cards) runs inside `Effect::RemovePower`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8256,7 +8418,7 @@ pub fn after_turn_end(
             // affliction is not parity-tracked, so a plain RemovePower suffices
             // (mirrors the Tangled arm above). Bead `sts2-rs-ringing-eot`.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8279,7 +8441,7 @@ pub fn after_turn_end(
             // turn it was played, so the power removes itself at the owner's
             // (player's) turn end. Mirrors the Tangled removal above.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8295,7 +8457,7 @@ pub fn after_turn_end(
             // summon trigger lives in `dispatch_after_damage_given`). Mirrors
             // the Tangled / BorrowedTime owner-side removal above.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8340,7 +8502,7 @@ pub fn after_turn_end(
             // the `modify_damage_multiplicative` arms) only checks presence, so a
             // depleted Debilitate stops amplifying once removed.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             if power.amount <= 0 {
@@ -8357,7 +8519,7 @@ pub fn after_turn_end(
             // Python `JugglingPower.after_turn_end`: reset attacks-played
             // counter on owner-side turn end.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             if power.counter == 0 {
@@ -8374,7 +8536,7 @@ pub fn after_turn_end(
             // Power is single-turn — remove on owner-side turn end so it
             // does not leak into the next turn's first Attack.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8388,7 +8550,7 @@ pub fn after_turn_end(
             // Rage is single-turn — without removal it persists across
             // turns and grants block on every attack played forever.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8456,7 +8618,7 @@ pub fn after_turn_end(
             // `end_player_turn_phase_two` reads the still-positive amount
             // BEFORE this decrement fires (flush precedes `after_turn_end`).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8486,7 +8648,7 @@ pub fn after_turn_end(
             // `if side == Owner.Side { PowerCmd.Remove(this); }`. Single-turn
             // debuff applied to a monster; removed at the monster's turn end.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8499,7 +8661,7 @@ pub fn after_turn_end(
             // PowerCmd.Remove(this); }`. Duplicator potion's "play next card
             // twice" — removed at owner turn end.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8520,8 +8682,12 @@ pub fn after_turn_end(
             // the flag and skip the Strength grant, matching C#'s `if
             // (WasJustAppliedByEnemy) { reset; return; }`. Without this Rust
             // granted Strength on the turn Ritual was applied.
+            //
+            // The guard is `participants.Contains(Owner)`
+            // (v0.113.0 RitualPower.cs:51): an enemy added during the enemy
+            // `BeforeSideTurnEnd` keeps its skip for the next enemy turn end.
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8564,7 +8730,7 @@ pub fn after_turn_end(
                 return None;
             }
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             Some(
@@ -8614,7 +8780,7 @@ pub fn after_turn_end(
                 return None;
             }
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             let mut effects = SmallVec::new();
@@ -8635,7 +8801,7 @@ pub fn after_turn_end(
             // (initial state — owner played Panache card but hasn't gotten any
             // further `AfterCardPlayed` calls yet).
             let owner = owner_of_listener(state, listener)?;
-            if creature_ref_side(owner) != ctx.side {
+            if !is_turn_end_participant(state, owner, ctx) {
                 return None;
             }
             // counter == 5 → already at max, no-op; counter == -1 → initial
@@ -8649,6 +8815,14 @@ pub fn after_turn_end(
         }
         _ => None,
     }
+}
+
+/// An enemy's Plating that landed during this round's enemy turn (a Dread
+/// Kaiser Crab dominion summon, `dread::after_enemy_added_to_combat`): C#'s
+/// turn-start tick ran before it existed, so this turn's end grants the full
+/// amount as block and does not tick it.
+fn plating_skips_tick_this_round(state: &CombatState, power: &crate::Power) -> bool {
+    power.counter != 0 && power.counter == i32::from(state.round_no())
 }
 
 /// Per-listener `on_turn_end_enemy_side` dispatch. Returns
@@ -8695,6 +8869,22 @@ pub fn on_turn_end_enemy_side(
         return None;
     };
     let power = state.powers.get_by_id(uid.0)?;
+    on_turn_end_enemy_side_effect(state, listener, power).map(|e| {
+        let mut effects = SmallVec::new();
+        effects.push(e);
+        effects
+    })
+}
+
+/// The body of [`on_turn_end_enemy_side`] for power `listener` (`power` is its
+/// row): every arm emits at most one [`Effect`], so it returns that one
+/// directly and the enemy-side walk pushes it without a per-listener buffer.
+#[inline]
+fn on_turn_end_enemy_side_effect(
+    state: &CombatState,
+    listener: ListenerRef,
+    power: &crate::Power,
+) -> Option<Effect> {
     match power.kind {
         // Bead `sts2-rs-j0ek`: V/W/F use the skip-aware tick. A power
         // freshly applied this turn (apply_power_to_creature set
@@ -8704,12 +8894,10 @@ pub fn on_turn_end_enemy_side(
         // `common.py:75-129` and prevents Doubt/Shame's freshly-
         // applied Weak/Frail from ticking at the same enemy-turn-end.
         PowerKind::Vulnerable | PowerKind::Weak | PowerKind::Frail => {
-            let mut effects = SmallVec::new();
-            effects.push(Effect::TickPowerOrSkip {
+            Some(Effect::TickPowerOrSkip {
                 listener,
                 delta: -1,
-            });
-            Some(effects)
+            })
         }
         PowerKind::Colossus | PowerKind::Plating => {
             // Mirror Python `self.amount -= 1` — duration tick-down.
@@ -8732,7 +8920,9 @@ pub fn on_turn_end_enemy_side(
             // Player-owned Plating (NeutronAegis) and Colossus tick normally.
             let enemy_plating = power.kind == PowerKind::Plating
                 && owner_of_listener(state, listener).map(creature_ref_side) == Some(Side::Enemy);
-            if enemy_plating && state.round_no() == 1 {
+            if enemy_plating
+                && (state.round_no() == 1 || plating_skips_tick_this_round(state, power))
+            {
                 return None;
             }
             // An enemy's Plating sheds `Decrement` = `Players.Count`
@@ -8742,9 +8932,7 @@ pub fn on_turn_end_enemy_side(
             } else {
                 -1
             };
-            let mut effects = SmallVec::new();
-            effects.push(Effect::DecrementPowerAmount { listener, delta });
-            Some(effects)
+            Some(Effect::DecrementPowerAmount { listener, delta })
         }
         _ => None,
     }
@@ -9783,6 +9971,22 @@ fn creature_ref_side(r: CreatureRef) -> Side {
     }
 }
 
+/// C# `participants.Contains(Owner)` in an `AfterSideTurnEnd` hook: the
+/// owner is on the side whose turn ends and, on the enemy side, was already
+/// in combat when `EndEnemyTurnInternal` took its participant list
+/// (`CombatManager.cs:1810-1819`, see
+/// [`CombatState::enemy_turn_end_last_participant`]). An enemy added during
+/// `BeforeSideTurnEnd` (a Doom kill's Infested Wrigglers) is not one.
+fn is_turn_end_participant(state: &CombatState, owner: CreatureRef, ctx: &TurnSideCtx) -> bool {
+    if creature_ref_side(owner) != ctx.side {
+        return false;
+    }
+    match (owner, state.enemy_turn_end_last_participant) {
+        (CreatureRef::Enemy(uid), Some(last)) => uid.0 <= last,
+        _ => true,
+    }
+}
+
 // ── After-death (cross-creature power witness) ─────────────────────────
 //
 // C# `PowerModel.AfterDeath(choiceContext, creature, wasRemovalPrevented,
@@ -9871,6 +10075,20 @@ pub fn after_death(
         {
             let mut effects = SmallVec::new();
             effects.push(Effect::GainEnergyEveryPlayer {
+                amount: power.amount,
+            });
+            Some(effects)
+        }
+        // v0.113.0 Dread `ExplosivePower.AfterDeath` (ExplosivePower.cs:21-32):
+        // `creature == Owner && !wasRemovalPrevented` -> every living player
+        // takes `Amount` (`Unpowered | SkipHurtAnim`, no dealer). GH #1346.
+        PowerKind::Explosive => {
+            let owner = owner_of_listener(state, listener)?;
+            if owner.to_creature_uid(state)? != ctx.dead || power.amount <= 0 {
+                return None;
+            }
+            let mut effects = SmallVec::new();
+            effects.push(Effect::ExplodeOnPlayers {
                 amount: power.amount,
             });
             Some(effects)
@@ -10125,21 +10343,35 @@ pub fn dispatch_after_death_player_powers(state: &mut CombatState, ctx: &AfterDe
 
 /// [`dispatch_after_death_player_powers`] for the seated player.
 fn dispatch_after_death_player_powers_seated(state: &mut CombatState, ctx: &AfterDeathCtx) {
-    let enemy_powers: SmallVec<[PowerUid; 16]> = if state.coop.seat_pass {
-        SmallVec::new()
-    } else {
-        state
-            .enemy_uids
-            .iter()
-            .filter_map(|uid| crate::creature_by_id(&state.creatures, uid.0))
-            .flat_map(|c| c.powers.iter().copied())
-            .collect()
-    };
-    let listeners: SmallVec<[ListenerRef; 16]> = iter_power_listeners(state)
-        .filter(|l| !matches!(l, ListenerRef::Power(uid) if enemy_powers.contains(uid)))
-        .collect();
-    dispatch_after_death_listeners(state, &listeners, ctx);
-    if ctx.dead_side == Side::Enemy && state.powers.present_kinds().contains(PowerKind::ShowOff) {
+    // `present_kinds` gate: [`after_death`] returns `None` for every power
+    // outside [`AFTER_DEATH_ARMS`] (and for every relic), and
+    // `apply_effects` of no effects is a no-op, so with no such kind live
+    // the listener walk below changes nothing.
+    if after_death_kinds_live(state, ctx) {
+        let enemy_powers: SmallVec<[PowerUid; 16]> = if state.coop.seat_pass {
+            SmallVec::new()
+        } else {
+            state
+                .enemy_uids
+                .iter()
+                .filter_map(|uid| crate::creature_by_id(&state.creatures, uid.0))
+                .flat_map(|c| c.powers.iter().copied())
+                .collect()
+        };
+        let listeners: SmallVec<[ListenerRef; 16]> = iter_power_listeners(state)
+            .filter(|l| !matches!(l, ListenerRef::Power(uid) if enemy_powers.contains(uid)))
+            .collect();
+        dispatch_after_death_listeners(state, &listeners, ctx);
+    }
+    // `ShowOffPower.AfterDeath` acts only on a death that triggers Fatal:
+    // `target.Powers.All(p => p.ShouldOwnerDeathTriggerFatal())`
+    // (`ShowOffPower.cs`, v0.113.0). A Minion's death, or a Decimillipede
+    // segment's while another stands, leaves the power and the card's Aim
+    // alone.
+    if ctx.dead_side == Side::Enemy
+        && state.powers.present_kinds().contains(PowerKind::ShowOff)
+        && crate::card_effects::should_owner_death_trigger_fatal(state, ctx.dead)
+    {
         crate::fool::show_off_after_death(state);
     }
 }
@@ -10167,6 +10399,11 @@ pub fn dispatch_after_death_enemy_powers(
     ctx: &AfterDeathCtx,
     owner: CreatureUid,
 ) {
+    // Same `present_kinds` gate as the player side: no [`AFTER_DEATH_ARMS`]
+    // power live means every one of this owner's listeners returns `None`.
+    if !after_death_kinds_live(state, ctx) {
+        return;
+    }
     let Some(c) = crate::creature_by_id(&state.creatures, owner.0) else {
         return;
     };
@@ -10176,6 +10413,46 @@ pub fn dispatch_after_death_enemy_powers(
     let listeners: SmallVec<[ListenerRef; 16]> =
         c.powers.iter().copied().map(ListenerRef::Power).collect();
     dispatch_after_death_listeners(state, &listeners, ctx);
+}
+
+/// Every [`PowerKind`] [`after_death`] mentions (the mask drift guard
+/// requires the listener's mentions to sit inside it).
+const AFTER_DEATH_KINDS: crate::PowerKindSet = crate::PowerKindSet::from_kinds(&[
+    PowerKind::Compost,
+    PowerKind::Explosive,
+    PowerKind::CrabRage,
+    PowerKind::Ravenous,
+    PowerKind::Surrounded,
+    PowerKind::Strength,
+    PowerKind::BackAttackLeft,
+    PowerKind::BackAttackRight,
+]);
+
+/// The kinds with an arm in [`after_death`]: every other power (and every
+/// relic) returns `None` there. Strength is only applied (CrabRage,
+/// Ravenous) and the BackAttacks only read (Surrounded): none is a trigger.
+/// The drift guard holds this equal to the arm heads.
+const AFTER_DEATH_ARMS: crate::PowerKindSet = AFTER_DEATH_KINDS.without(&[
+    PowerKind::Strength,
+    PowerKind::BackAttackLeft,
+    PowerKind::BackAttackRight,
+]);
+
+/// Whether any [`AFTER_DEATH_ARMS`] power is live (`present_kinds` is a
+/// maintained superset of the live kinds). When it is not, debug builds walk
+/// every power listener and require [`after_death`] to return `None`.
+#[inline]
+fn after_death_kinds_live(state: &CombatState, ctx: &AfterDeathCtx) -> bool {
+    let live = kinds_live(state, KindGate::AfterDeathArms);
+    #[cfg(debug_assertions)]
+    if !live {
+        debug_assert_skipped_power_walk(state, "after_death", |listener| {
+            after_death(state, listener, ctx).is_none()
+        });
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = ctx;
+    live
 }
 
 /// Run [`after_death`] over `listeners`, then apply the collected effects.
@@ -10290,11 +10567,7 @@ const AFTER_BLOCK_BROKEN_KINDS: crate::PowerKindSet =
 /// depletes it (C# `WasBlockBroken`).
 pub fn dispatch_after_block_broken(state: &mut CombatState, ctx: &AfterBlockBrokenCtx) {
     let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_BLOCK_BROKEN_KINDS)
-    {
+    if kinds_live(state, KindGate::AfterBlockBroken) {
         for listener in iter_power_listeners(state) {
             if let Some(listener_effects) = after_block_broken(state, listener, ctx) {
                 effects.extend(listener_effects);
@@ -10339,9 +10612,6 @@ fn after_block_broken_hand_drill_v0111(state: &mut CombatState, ctx: &AfterBlock
         2,
     );
 }
-
-// ── Creature lifecycle ────────────────────────────────────────────────
-noop_hook!(after_creature_added_to_combat, CreatureAddedCtx, (), ());
 
 // ── Combat lifecycle ──────────────────────────────────────────────────
 noop_hook!(before_combat_start, CombatLifecycleCtx, (), ());
@@ -10598,15 +10868,15 @@ pub fn iter_power_listeners(state: &CombatState) -> impl Iterator<Item = Listene
         .iter()
         .any(|uid| !creature_powers.contains(uid));
     let player_powers = if legacy_extra {
-        let mut merged: SmallVec<[crate::PowerUid; 16]> = creature_powers.iter().copied().collect();
-        merged.extend(
-            state
-                .player
-                .powers
-                .iter()
-                .copied()
-                .filter(|uid| !creature_powers.contains(uid)),
-        );
+        // Perf: block-copy the mirror list, then push the legacy extras one
+        // by one; the same uids as the old collect + filtered extend, and the
+        // sort fixes the final order either way.
+        let mut merged: SmallVec<[crate::PowerUid; 16]> = SmallVec::from_slice(creature_powers);
+        for &uid in &state.player.powers {
+            if !creature_powers.contains(&uid) {
+                merged.push(uid);
+            }
+        }
         merged.sort_by_key(|u| u.0);
         PlayerPowerWalk::Merged(merged.into_iter())
     } else {
@@ -10631,6 +10901,74 @@ pub fn iter_power_listeners(state: &CombatState) -> impl Iterator<Item = Listene
         .chain(ally_powers)
         .chain(enemy_powers)
         .map(ListenerRef::Power)
+}
+
+/// [`iter_power_listeners`] as an internal walk: `visit` sees every power uid
+/// in the same order, walked over the power slices directly. The turn-end
+/// collectors use it instead of driving the `Chain`/`FlatMap` iterator, whose
+/// per-item state machine (and the moves of its inline `Merged` buffer) cost
+/// more than the walk itself. Same sources, same order: the player's mirror
+/// list (or both surfaces merged by `PowerUid` when the legacy list holds an
+/// extra), then each ally's powers, then each enemy's (none in a co-op seat
+/// pass).
+#[inline]
+pub(crate) fn for_each_power_listener(state: &CombatState, mut visit: impl FnMut(PowerUid)) {
+    let creature_powers: &[crate::PowerUid] = match state
+        .player
+        .creature_uid
+        .and_then(|uid| crate::creature_by_id(&state.creatures, uid.0))
+    {
+        Some(c) => c.powers.as_slice(),
+        None => &[],
+    };
+    if state
+        .player
+        .powers
+        .iter()
+        .any(|uid| !creature_powers.contains(uid))
+    {
+        let mut merged: SmallVec<[crate::PowerUid; 16]> = SmallVec::from_slice(creature_powers);
+        for &uid in &state.player.powers {
+            if !creature_powers.contains(&uid) {
+                merged.push(uid);
+            }
+        }
+        merged.sort_by_key(|u| u.0);
+        for &uid in &merged {
+            visit(uid);
+        }
+    } else {
+        for &uid in creature_powers {
+            visit(uid);
+        }
+    }
+    for ally in &state.allies {
+        for &uid in &ally.powers {
+            visit(uid);
+        }
+    }
+    if !state.coop.seat_pass {
+        for uid in &state.enemy_uids {
+            if let Some(c) = crate::creature_by_id(&state.creatures, uid.0) {
+                for &puid in &c.powers {
+                    visit(puid);
+                }
+            }
+        }
+    }
+}
+
+/// [`iter_power_listeners`] collected into a buffer through
+/// [`for_each_power_listener`]. Debug builds check it against the iterator.
+#[inline]
+pub(crate) fn collect_power_listeners(state: &CombatState) -> SmallVec<[ListenerRef; 16]> {
+    let mut out: SmallVec<[ListenerRef; 16]> = SmallVec::new();
+    for_each_power_listener(state, |uid| out.push(ListenerRef::Power(uid)));
+    debug_assert!(
+        out.iter().copied().eq(iter_power_listeners(state)),
+        "for_each_power_listener drifted from iter_power_listeners"
+    );
+    out
 }
 
 /// The player's half of [`iter_power_listeners`]: the mirror list as is, or
@@ -10936,11 +11274,7 @@ pub fn collect_before_damage_received(
     ctx: &DamageCtx,
 ) -> SmallVec<[Effect; 4]> {
     let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&BEFORE_DAMAGE_RECEIVED_KINDS)
-    {
+    if kinds_live(state, KindGate::BeforeDamageReceived) {
         for listener in iter_power_listeners(state) {
             if let Some(listener_effects) = before_damage_received(state, listener, ctx) {
                 effects.extend(listener_effects);
@@ -11513,11 +11847,7 @@ pub fn collect_after_damage_received(
     ctx: &DamageCtx,
 ) -> SmallVec<[Effect; 4]> {
     let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_DAMAGE_RECEIVED_KINDS)
-    {
+    if kinds_live(state, KindGate::AfterDamageReceived) {
         for listener in iter_power_listeners(state) {
             if let Some(listener_effects) = after_damage_received(state, listener, ctx) {
                 effects.extend(listener_effects);
@@ -12130,27 +12460,6 @@ fn react_monarchs_gaze(state: &mut CombatState, ctx: &DamageCtx) {
     }
 }
 
-dispatch_void_hook!(
-    /// Fire `before_attack` on every relic listener.
-    ///
-    /// Perf (sts2-rs-05mjm / #51): the per-listener `before_attack` body is a
-    /// `noop_hook!` no-op — no `PowerKind` subscribes — so the per-power walk
-    /// contributed nothing while iterating every player/ally/enemy power on this
-    /// hot (per-attack) channel. The relic loop is retained as the stable call
-    /// site for the relic-side bus; add a power walk back here (ideally
-    /// present-kinds gated) when a real power body lands.
-    dispatch_before_attack, before_attack, AttackCtx, [iter_relic_listeners]
-);
-
-dispatch_void_hook!(
-    /// Fire `after_attack` on every relic listener.
-    ///
-    /// Perf (sts2-rs-05mjm / #51): `after_attack` is a `noop_hook!` no-op on the
-    /// power side — the dead per-power walk is dropped, the relic loop kept as
-    /// the stable call site. See [`dispatch_before_attack`].
-    dispatch_after_attack, after_attack, AttackCtx, [iter_relic_listeners]
-);
-
 // ---------------------------------------------------------------------------
 // Top-level pipeline composers (P2-1 sts2-rs-58w)
 //
@@ -12609,6 +12918,64 @@ impl DamageParts {
     }
 }
 
+/// `num.div_euclid(den)` for `den > 0`, without the `__divti3` libcall when
+/// both operands fit in `i64` — every real hit does (an `i32` base times a
+/// handful of small composed multipliers). Floor division of the same two
+/// integers gives the same quotient in either width, so this is exactly
+/// `i128::div_euclid`; operands outside `i64` take that path unchanged.
+#[inline]
+#[must_use]
+fn floor_div_i128(num: i128, den: i128) -> i128 {
+    match (i64::try_from(num), i64::try_from(den)) {
+        // `den > 0` here (`DamageMul::den` is constructed positive), so the
+        // `i64::MIN / -1` overflow case cannot arise.
+        (Ok(n), Ok(d)) if d > 0 => {
+            let r = i128::from(n.div_euclid(d));
+            debug_assert_eq!(r, num.div_euclid(den));
+            r
+        }
+        _ => num.div_euclid(den),
+    }
+}
+
+/// `floor(parts.value_frac(base_damage))`, saturated to `i32`.
+///
+/// Without an enchantment multiplier (`value_frac`'s first branch) the value
+/// is `(base + additive) * mul.num / mul.den`; an identity multiplier
+/// (`num == den`, `den > 0`) leaves `base + additive` exact, and a product
+/// that fits `i64` floors with one `i64::div_euclid`, which is the same
+/// quotient the `i128` path computes. Everything else takes that path.
+#[inline]
+fn damage_parts_floor(parts: &DamageParts, base_damage: i32) -> i32 {
+    let general = || {
+        let (num, den) = parts.value_frac(base_damage);
+        let r = floor_div_i128(num, den);
+        i32::try_from(r).unwrap_or(if r > 0 { i32::MAX } else { i32::MIN })
+    };
+    let e = parts.enchant_mul;
+    if !(e.num == 0 || e == DamageMul::ONE) {
+        return general();
+    }
+    let after_add = base_damage.saturating_add(parts.additive);
+    let m = parts.mul;
+    debug_assert!(m.den > 0, "DamageMul::den is constructed positive");
+    let fast = if m.num == m.den {
+        Some(after_add)
+    } else {
+        i64::from(after_add)
+            .checked_mul(m.num)
+            .map(|n| n.div_euclid(m.den))
+            .and_then(|q| i32::try_from(q).ok())
+    };
+    match fast {
+        Some(v) => {
+            debug_assert_eq!(v, general(), "damage floor fast path disagrees");
+            v
+        }
+        None => general(),
+    }
+}
+
 #[must_use]
 pub fn modify_damage(state: &CombatState, base_damage: i32, ctx: &DamageCtx) -> i32 {
     modify_damage_with_relic_additive(state, base_damage, 0, ctx)
@@ -12628,18 +12995,29 @@ pub fn modify_damage_with_relic_additive(
     relic_additive: i32,
     ctx: &DamageCtx,
 ) -> i32 {
-    let mut parts = modify_damage_parts(state, ctx);
+    modify_damage_with_relic_additive_inline(state, base_damage, relic_additive, ctx)
+}
+
+/// [`modify_damage_with_relic_additive`], forced inline into the two per-hit
+/// callers (`damage::compute_modified_damage`,
+/// `combat_loop::preview_damage_to_player`).
+#[allow(clippy::inline_always)]
+#[inline(always)]
+#[must_use]
+pub(crate) fn modify_damage_with_relic_additive_inline(
+    state: &CombatState,
+    base_damage: i32,
+    relic_additive: i32,
+    ctx: &DamageCtx,
+) -> i32 {
+    let mut parts = modify_damage_parts_inline(state, ctx);
     parts.additive = parts.additive.saturating_add(relic_additive);
     let cap = parts.cap;
 
     // Steps 1-3: additive (Strength, Vigor, ...) and multiplicative, with the
     // card enchantment's stage first, then a single floor at the end via
     // div_euclid (matches math.floor).
-    let (num, den) = parts.value_frac(base_damage);
-    let after_mul = {
-        let r = num.div_euclid(den);
-        i32::try_from(r).unwrap_or(if r > 0 { i32::MAX } else { i32::MIN })
-    };
+    let after_mul = damage_parts_floor(&parts, base_damage);
 
     // Step 4: cap (Intangible's `min(damage, 1)`-ish).
     let after_cap = after_mul.min(cap);
@@ -12655,6 +13033,15 @@ pub fn modify_damage_with_relic_additive(
 #[must_use]
 #[inline]
 pub fn modify_damage_parts(state: &CombatState, ctx: &DamageCtx) -> DamageParts {
+    modify_damage_parts_inline(state, ctx)
+}
+
+/// [`modify_damage_parts`], forced inline into the per-hit
+/// [`modify_damage_with_relic_additive`] so the parts never round-trip
+/// through memory there.
+#[allow(clippy::inline_always)]
+#[inline(always)]
+fn modify_damage_parts_inline(state: &CombatState, ctx: &DamageCtx) -> DamageParts {
     // Single-pass listener fold. The additive sum, the multiplicative
     // composition, and the cap-min are three independent accumulators,
     // so we walk `iter_power_listeners` / `iter_relic_listeners` ONCE
@@ -12678,16 +13065,16 @@ pub fn modify_damage_parts(state: &CombatState, ctx: &DamageCtx) -> DamageParts 
     // below is gated separately (relics are not tracked by present_kinds).
     // Same drift safety as [`MODIFY_DAMAGE_ADDITIVE_KINDS`] — the masks are
     // the per-stage dispatchers' arm masks, which the drift guard holds to
-    // the listeners' `match` arms.
-    let pk = state.powers.present_kinds();
+    // the listeners' `match` arms. Each gate is read off the liveness word
+    // ([`kinds_live`]).
     // Per-channel gates: when a channel's mask has no live kind, EVERY power
     // listener returns that channel's identity default (0 / ONE / MAX), so
     // skipping just that channel's arm calls is bit-identical — the same
     // argument that lets the per-stage dispatchers
     // (`dispatch_modify_damage_additive` etc.) gate on their own masks.
-    let run_add = pk.intersects(&MODIFY_DAMAGE_ADDITIVE_KINDS);
-    let run_mul = pk.intersects(&MODIFY_DAMAGE_MULTIPLICATIVE_ARMS);
-    let run_cap = pk.intersects(&MODIFY_DAMAGE_CAP_KINDS);
+    let run_add = kinds_live(state, KindGate::ModifyDamageAdditive);
+    let run_mul = kinds_live(state, KindGate::ModifyDamageMultiplicative);
+    let run_cap = kinds_live(state, KindGate::ModifyDamageCap);
     #[cfg(debug_assertions)]
     {
         if !run_mul {
@@ -12749,7 +13136,24 @@ pub fn modify_damage_parts(state: &CombatState, ctx: &DamageCtx) -> DamageParts 
     let mut card_mul = DamageMul::ONE;
     if dealt_by_player_or_osty {
         if let Some(card) = crate::card_effects::resolving_card_inst(state) {
-            {
+            // An unenchanted card (the usual case) contributes the identities:
+            // every term of `enchant_damage_additive_for` reads an enchantment
+            // stack, which is 0, and `enchant_damage_multiplicative_x100` is
+            // 100 without Favored / Instinct / Corrupted.
+            debug_assert!(
+                !card.enchantments.is_empty()
+                    || (crate::enchantment_hooks::enchant_damage_additive_for(
+                        card,
+                        ctx.props.is_powered(),
+                        state.game_version,
+                    ) == 0
+                        && crate::enchantment_hooks::enchant_damage_multiplicative_x100(
+                            card,
+                            ctx.props.is_powered(),
+                        ) == 100),
+                "an unenchanted card moved the enchantment damage stage"
+            );
+            if !card.enchantments.is_empty() {
                 let powered = ctx.props.is_powered();
                 enchant_additive = crate::enchantment_hooks::enchant_damage_additive_for(
                     card,
@@ -13455,12 +13859,7 @@ fn after_block_gained_listeners(state: &mut CombatState, ctx: &BlockGainedCtx) {
     // deferred effects and apply post-walk, mirroring the collect-then-
     // drain pattern used by `dispatch_after_turn_end`.
     let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-    if !powers_empty
-        && state
-            .powers
-            .present_kinds()
-            .intersects(&AFTER_BLOCK_GAINED_KINDS)
-    {
+    if !powers_empty && kinds_live(state, KindGate::AfterBlockGained) {
         for listener in iter_power_listeners(state) {
             if let Some(listener_effects) = after_block_gained(state, listener, ctx) {
                 effects.extend(listener_effects);
@@ -13555,11 +13954,7 @@ pub fn dispatch_after_block_cleared(state: &mut CombatState, ctx: &BlockClearedC
 /// is set.
 fn dispatch_after_block_cleared_body(state: &mut CombatState, ctx: &BlockClearedCtx) {
     let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_BLOCK_CLEARED_KINDS)
-    {
+    if kinds_live(state, KindGate::AfterBlockCleared) {
         for listener in iter_power_listeners(state) {
             if let Some(listener_effects) = after_block_cleared(state, listener, ctx) {
                 effects.extend(listener_effects);
@@ -13609,11 +14004,7 @@ const AFTER_BLOCK_CLEARED_KINDS: crate::PowerKindSet = crate::PowerKindSet::from
 /// found is unchanged.
 #[must_use]
 pub fn block_clear_preventer(state: &CombatState, ctx: &BlockClearedCtx) -> Option<ListenerRef> {
-    if !state
-        .powers
-        .present_kinds()
-        .intersects(&SHOULD_CLEAR_BLOCK_KINDS)
-    {
+    if !kinds_live(state, KindGate::ShouldClearBlock) {
         return None;
     }
     iter_power_listeners(state).find(|&listener| !should_clear_block(state, listener, ctx))
@@ -13790,11 +14181,7 @@ fn modify_hp_lost_inner(
     // `include_buffer` filter only ever *removes* the Buffer compose, so it
     // cannot widen the gate's kind set). See [`MODIFY_DAMAGE_ADDITIVE_KINDS`]
     // on drift safety.
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&MODIFY_HP_LOST_KINDS)
-    {
+    if kinds_live(state, KindGate::ModifyHpLost) {
         // One walk over the target's rows, each stage's arm only for the
         // kinds it has an arm for — bit-identical, see
         // [`hp_lost_power_stage`].
@@ -13845,41 +14232,6 @@ const MODIFY_HP_LOST_MULTIPLICATIVE_ARMS: crate::PowerKindSet = MODIFY_HP_LOST_K
 /// these.
 const MODIFY_HP_LOST_CAP_ARMS: crate::PowerKindSet =
     MODIFY_HP_LOST_KINDS.without(&[PowerKind::Buffer]);
-
-/// `try_block_debuff` predicate: *any-true short-circuits* (Artifact).
-/// Powers-only (no relic site exists in Python — see hooks.py:186).
-///
-/// **Bead sts2-rs-3to (P2-2b)**: takes `&mut CombatState` and applies the
-/// stack-consume effect ([`Effect::ConsumePowerStack`]) post-walk. Returns
-/// the short-circuit `bool` (`true` if the debuff was blocked).
-///
-/// **Short-circuit semantics**: matches Python — the FIRST Artifact stack
-/// in iteration order to return `true` consumes ITS stack and short-circuits
-/// the rest of the walk. Subsequent Artifacts (or other listeners) are not
-/// invoked. At most one `ConsumePowerStack` effect fires per dispatcher
-/// invocation.
-#[must_use]
-pub fn dispatch_try_block_debuff(state: &mut CombatState, ctx: &TryBlockDebuffCtx) -> bool {
-    let (blocked, effects) = collect_try_block_debuff(state, ctx);
-    apply_effects(state, &effects);
-    blocked
-}
-
-/// Read-only variant of [`dispatch_try_block_debuff`]: walks listeners and
-/// returns the short-circuit bool + collected effects, without applying.
-#[must_use]
-pub fn collect_try_block_debuff(
-    state: &CombatState,
-    ctx: &TryBlockDebuffCtx,
-) -> (bool, SmallVec<[Effect; 4]>) {
-    let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-    for listener in iter_power_listeners(state) {
-        if try_block_debuff(state, listener, ctx, &mut effects) {
-            return (true, effects);
-        }
-    }
-    (false, effects)
-}
 
 // ── Power-amount modification dispatchers (bead `sts2-rs-47jv`) ─────
 //
@@ -13960,6 +14312,7 @@ dispatch_void_hook!(
 const MODIFY_HAND_DRAW_KINDS: crate::PowerKindSet = crate::PowerKindSet::from_kinds(&[
     PowerKind::Clarity,
     PowerKind::Ennui,
+    PowerKind::Amnesia,
     PowerKind::Demesne,
     PowerKind::MindRot,
     PowerKind::Tyranny,
@@ -14091,11 +14444,7 @@ fn dispatch_after_energy_spent_body(state: &mut CombatState, amount: i32) {
 #[must_use]
 pub fn dispatch_modify_max_energy(state: &CombatState, ctx: &MaxEnergyCtx) -> i32 {
     let mut acc: i32 = 0;
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&MODIFY_MAX_ENERGY_KINDS)
-    {
+    if kinds_live(state, KindGate::ModifyMaxEnergy) {
         for listener in iter_power_listeners(state) {
             acc = acc.saturating_add(modify_max_energy(state, listener, ctx));
         }
@@ -14149,11 +14498,15 @@ pub fn brilliant_scarf_free_after(version: crate::GameVersion) -> i32 {
 /// returns before the global hooks for `_base < 0` and `CostsX`.
 #[must_use]
 pub fn brilliant_scarf_makes_free(state: &CombatState, card_uid: CardUid) -> bool {
-    state.relics.iter().any(|r| {
-        !r.is_melted
-            && r.kind == crate::RelicKind::BrilliantScarf
-            && r.counter == brilliant_scarf_free_after(state.game_version)
-    }) && (state.player.hand.contains(&card_uid) || state.player.play.contains(&card_uid))
+    // `owns` is the O(1) owned-kind bit, a superset of the scan below (a
+    // non-melted BrilliantScarf must exist for `any` to hold).
+    state.relics.owns(crate::RelicKind::BrilliantScarf)
+        && state.relics.iter().any(|r| {
+            !r.is_melted
+                && r.kind == crate::RelicKind::BrilliantScarf
+                && r.counter == brilliant_scarf_free_after(state.game_version)
+        })
+        && (state.player.hand.contains(&card_uid) || state.player.play.contains(&card_uid))
 }
 
 /// Run the `modify_card_cost` chain (bead `sts2-rs-zlx.5`). Folds
@@ -14206,6 +14559,16 @@ pub fn dispatch_modify_card_cost(state: &CombatState, ctx: &CardCostCtx) -> i32 
     {
         return 0;
     }
+    // v0.113.0 `EnsemblePower.TryModifyEnergyCostInCombatLate`: a teammate's
+    // Ensemble zeroes our Hand / Play cards the same way.
+    if ctx.base_cost >= 0
+        && ctx.owner == CreatureRef::Player
+        && ctx
+            .card_uid
+            .is_some_and(|uid| crate::coop::ensemble_makes_free(state, uid))
+    {
+        return 0;
+    }
     // Perf 2026-07-04: single presence-mask early-out. This dispatcher is
     // on the `legal_actions` per-hand-card path (via `effective_card_cost`),
     // so it runs several times per rollout step.
@@ -14227,17 +14590,26 @@ pub fn dispatch_modify_card_cost(state: &CombatState, ctx: &CardCostCtx) -> i32 
             .and_then(|uid| crate::card_by_uid(&state.cards, uid))
             .is_some_and(crate::cards::Card::is_x_cost)
     });
-    if !state
-        .powers
-        .present_kinds()
-        .intersects(&MODIFY_CARD_COST_KINDS)
-    {
+    if !kinds_live(state, KindGate::ModifyCardCost) {
         return card_self_cost(state, ctx.card_id, ctx.base_cost.max(0) + relic_add);
     }
+    fold_modify_card_cost(state, ctx, iter_power_listeners(state), relic_add)
+}
 
+/// The listener fold of [`dispatch_modify_card_cost`] (past its scarf,
+/// relic and presence steps) over `listeners`, which must be
+/// [`iter_power_listeners`] in order — or that sequence minus listeners for
+/// which [`modify_card_cost`] returns `None` for this ctx (a `None` changes
+/// neither the running cost nor the override).
+fn fold_modify_card_cost(
+    state: &CombatState,
+    ctx: &CardCostCtx,
+    listeners: impl IntoIterator<Item = ListenerRef>,
+    relic_add: i32,
+) -> i32 {
     let mut add_acc: i32 = ctx.base_cost;
     let mut override_min: Option<i32> = None;
-    for listener in iter_power_listeners(state) {
+    for listener in listeners {
         // C# threads ONE running cost through the early pass
         // (`Hook.ModifyEnergyCostInCombat`, Hook.cs:1727-1743): each
         // listener's `originalCost` is the previous one's `modifiedCost`.
@@ -14372,10 +14744,7 @@ pub fn effective_card_cost(state: &CombatState, card_uid: CardUid) -> i32 {
 #[inline]
 #[must_use]
 pub fn modify_card_cost_listeners_present(state: &CombatState) -> bool {
-    state
-        .powers
-        .present_kinds()
-        .intersects(&MODIFY_CARD_COST_KINDS)
+    kinds_live(state, KindGate::ModifyCardCost)
 }
 
 #[must_use]
@@ -14413,7 +14782,10 @@ pub fn effective_card_cost_inst_with_mask(
     // card's cost after every other hook; `CardEnergyCost.GetWithModifiers`
     // never reaches the global hooks for an X-cost or negative base.
     let base = card.base_cost();
-    if base >= 0 && brilliant_scarf_makes_free(state, card_uid) {
+    if base >= 0
+        && (brilliant_scarf_makes_free(state, card_uid)
+            || crate::coop::ensemble_makes_free(state, card_uid))
+    {
         return 0;
     }
     // An X-cost card has no modified cost at all: `GetWithModifiers` returns
@@ -14456,22 +14828,119 @@ pub fn effective_card_cost_inst_with_mask(
     dispatch_modify_card_cost(state, &ctx)
 }
 
-dispatch_fold_hook!(
-    /// Run the summon-amount modifier chain. Sums each listener's delta.
-    #[must_use]
-    dispatch_modify_summon_amount, modify_summon_amount, SummonAmountCtx, i32,
-    init: 0, fold: saturating_add
-);
+/// The card-independent inputs of [`effective_card_cost_inst_with_mask`] for
+/// cards that sit in the player's HAND, evaluated once per hand walk
+/// (`legal_actions`). Perf 2026-11-18: per card, the scarf relic scan and the
+/// Spiked Gauntlets ownership test were the bulk of the cost call on the
+/// dominant no-modifier path.
+pub(crate) struct HandCostEnv {
+    /// [`modify_card_cost_listeners_present`].
+    mods_present: bool,
+    /// [`brilliant_scarf_makes_free`] for any uid in the hand: its relic half
+    /// does not read the uid, and its pile half (`hand.contains(uid)`) is
+    /// true for every hand card.
+    scarf_free: bool,
+    /// `state.relics.owns(SpikedGauntlets)` — the relic test of
+    /// [`relic_card_cost_add`].
+    spiked_gauntlets: bool,
+    /// When `mods_present`: the [`iter_power_listeners`] sequence kept to
+    /// the listeners [`modify_card_cost`] can answer for a player hand card
+    /// — a live power whose kind is in [`MODIFY_CARD_COST_KINDS`] (every
+    /// other kind hits its `_ => None` arm) owned by the player (its owner
+    /// check). Both tests read no card, so the filter is per enumeration;
+    /// the dropped listeners all fold `None`. Empty otherwise.
+    cost_listeners: SmallVec<[ListenerRef; 4]>,
+}
 
-dispatch_void_hook!(
-    /// Fire `after_summon` on every listener.
-    dispatch_after_summon, after_summon, SummonCtx, [iter_power_listeners, iter_relic_listeners]
-);
+impl HandCostEnv {
+    #[inline]
+    pub(crate) fn new(state: &CombatState) -> Self {
+        let mods_present = modify_card_cost_listeners_present(state);
+        let mut cost_listeners = SmallVec::new();
+        if mods_present {
+            cost_listeners.extend(iter_power_listeners(state).filter(|&listener| {
+                let ListenerRef::Power(uid) = listener else {
+                    return false;
+                };
+                state
+                    .powers
+                    .get_by_id(uid.0)
+                    .is_some_and(|p| MODIFY_CARD_COST_KINDS.contains(p.kind))
+                    && owner_of_listener(state, listener) == Some(CreatureRef::Player)
+            }));
+        }
+        Self {
+            mods_present,
+            cost_listeners,
+            // `owns` is the O(1) owned-kind bit (a superset test of the scan
+            // below: a non-melted BrilliantScarf must exist for `any` to
+            // hold), so a miss skips the relic scan.
+            scarf_free: state.relics.owns(crate::RelicKind::BrilliantScarf)
+                && state.relics.iter().any(|r| {
+                    !r.is_melted
+                        && r.kind == crate::RelicKind::BrilliantScarf
+                        && r.counter == brilliant_scarf_free_after(state.game_version)
+                })
+                // A teammate's Ensemble frees every hand card the same way
+                // (`coop::ensemble_makes_free`, the hand half).
+                || crate::coop::teammate_holds_ensemble(state),
+            spiked_gauntlets: state.relics.owns(crate::RelicKind::SpikedGauntlets),
+        }
+    }
+}
 
-dispatch_void_hook!(
-    /// Fire `after_osty_revived` on every listener.
-    dispatch_after_osty_revived, after_osty_revived, OstyRevivedCtx, [iter_power_listeners, iter_relic_listeners]
-);
+/// [`effective_card_cost_inst_with_mask`] for a card in the player's hand,
+/// with the card-independent inputs pre-evaluated in `env` (built by
+/// [`HandCostEnv::new`] from this exact `state`). Same steps, same order, same
+/// result; the `mods_present` path defers to the general function.
+#[inline]
+pub(crate) fn effective_hand_card_cost(
+    state: &CombatState,
+    card: &crate::cards::Card,
+    card_uid: CardUid,
+    env: &HandCostEnv,
+) -> i32 {
+    debug_assert!(state.player.hand.contains(&card_uid));
+    let base = card.base_cost();
+    if base >= 0 && env.scarf_free {
+        return 0;
+    }
+    if card.is_x_cost() {
+        return 0;
+    }
+    let base_cost = card.local_cost();
+    if base_cost < 0 && base >= 0 {
+        return 0;
+    }
+    // `relic_card_cost_add` with its ownership test pre-evaluated; its
+    // `!is_x_cost()` conjunct is already known true here.
+    let relic_add = i32::from(
+        card.card_type == crate::cards::CardType::Power && base_cost >= 0 && env.spiked_gauntlets,
+    );
+    let cost = if env.mods_present {
+        // `dispatch_modify_card_cost` for this card: its scarf step cannot
+        // fire (a non-negative base with a live scarf returned above, and a
+        // negative non-X base keeps a negative local cost), its relic add is
+        // `relic_add`, and its presence gate holds; the fold runs over the
+        // pre-filtered listeners.
+        let ctx = CardCostCtx {
+            owner: CreatureRef::Player,
+            card_id: Some(card.card_id),
+            card_uid: Some(card_uid),
+            card_type: Some(card.card_type),
+            card_tags: card.tags,
+            base_cost,
+        };
+        fold_modify_card_cost(state, &ctx, env.cost_listeners.iter().copied(), relic_add)
+    } else {
+        card_self_cost(state, Some(card.card_id), base_cost.max(0) + relic_add)
+    };
+    debug_assert_eq!(
+        cost,
+        effective_card_cost_inst_with_mask(state, card, card_uid, env.mods_present)
+    );
+    cost
+}
 
 dispatch_fold_hook!(
     /// Run the card-play-count modifier chain (`EchoForm` = 2x). Sums each
@@ -14521,11 +14990,7 @@ fn dispatch_after_modifying_card_play_count_body(state: &mut CombatState, ctx: &
         // Duplication / OneTwoPunch / SignalBoost — same kinds as the
         // modifier channel), so the walk is skipped when none is live. See
         // [`MODIFY_DAMAGE_ADDITIVE_KINDS`] on drift safety.
-        if read_state
-            .powers
-            .present_kinds()
-            .intersects(&MODIFY_CARD_PLAY_COUNT_KINDS)
-        {
+        if kinds_live(read_state, KindGate::ModifyCardPlayCount) {
             for listener in iter_power_listeners(read_state) {
                 if let Some(effects) = after_modifying_card_play_count(read_state, listener, ctx) {
                     pending.extend(effects);
@@ -14582,12 +15047,6 @@ pub fn dispatch_should_play(state: &CombatState, ctx: &CardCtx) -> bool {
     relics_of_kinds(state, SHOULD_PLAY_RELIC_KINDS)
         .all(|relic| relic_should_play(state, relic, ctx))
 }
-
-dispatch_all_hook!(
-    /// `should_draw` predicate. Powers-then-relics, *first false short-circuits*.
-    #[must_use]
-    dispatch_should_draw, should_draw, DrawCtx, [iter_power_listeners, iter_relic_listeners]
-);
 
 /// `should_take_extra_turn` predicate. Relic-only (hooks.py:310).
 /// Defaults false, *first true short-circuits*.
@@ -14780,7 +15239,17 @@ pub fn latch_gigantification(state: &mut CombatState) {
 /// `FromCombatPile` select (`SeekerStrike.cs:33-41`), during which
 /// `AfterSideTurnStart` lets Prep Time apply Vigor. That Vigor post-dates the
 /// `AttackCommand`, so C# never latches or consumes it.
+#[inline]
 pub fn latch_vigor_at_play_start(state: &mut CombatState, card: CardUid) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if state.player.vigor_latch_card.is_none() && power_kind_live(state, PowerKind::Vigor) {
+        latch_vigor_at_play_start_body(state, card);
+    }
+}
+
+#[inline(never)]
+fn latch_vigor_at_play_start_body(state: &mut CombatState, card: CardUid) {
     if state.player.vigor_latch_card.is_some() || !power_kind_live(state, PowerKind::Vigor) {
         return;
     }
@@ -14848,6 +15317,11 @@ pub fn end_player_attack_command(state: &mut CombatState, card: CardUid) {
 /// (the counter is on the wire and in the encoder).
 pub fn release_vigor_latch(state: &mut CombatState) {
     state.player.vigor_latch_card = None;
+    // Perf: `present_kinds` is a superset of every live power's kind, so with
+    // no Vigor in the arena the walk below writes nothing.
+    if !power_kind_live(state, PowerKind::Vigor) {
+        return;
+    }
     for uid in state.player_power_uids() {
         if let Some(p) = state.powers.get_mut_by_id(uid.0) {
             if p.kind == PowerKind::Vigor {
@@ -14953,11 +15427,7 @@ fn dispatch_before_card_played_powers_body(
     // only reacts to kinds in [`BEFORE_CARD_PLAYED_POWERS_KINDS`]; when none
     // is live the function mutates nothing — skip it (and the player power
     // union build) entirely. Fires once per card play. Bit-identical.
-    if !state
-        .powers
-        .present_kinds()
-        .intersects(&BEFORE_CARD_PLAYED_POWERS_KINDS)
-    {
+    if !kinds_live(state, KindGate::BeforeCardPlayedPowers) {
         return;
     }
     // Two player-owned `BeforeCardPlayed` block reactors share this `&mut` lane,
@@ -15503,9 +15973,32 @@ pub(crate) fn dispatch_deferred_before_hand_draw_powers(state: &mut CombatState,
     let _ = dispatch_before_hand_draw_arms(state, deferred);
 }
 
+/// The power kinds [`dispatch_before_hand_draw_arms`]'s union walk notes an
+/// arm for. Kept equal to that walk's `match power.kind` heads by
+/// `before_hand_draw_arm_kinds_match_the_walk`.
+const BEFORE_HAND_DRAW_ARM_KINDS: crate::PowerKindSet = crate::PowerKindSet::from_kinds(&[
+    PowerKind::CallOfTheVoid,
+    PowerKind::SentryMode,
+    PowerKind::InfiniteBlades,
+    PowerKind::ForegoneConclusion,
+    PowerKind::SpectrumShift,
+    PowerKind::CreativeAi,
+    PowerKind::HelloWorld,
+    PowerKind::Nightmare,
+    PowerKind::Ennui,
+    PowerKind::MythicForm,
+    PowerKind::AeonglassDominion,
+]);
+
 /// Body of [`dispatch_before_hand_draw_powers`], restricted to the arms whose
 /// [`BeforeHandDrawArm::bit`] is in `only`.
 fn dispatch_before_hand_draw_arms(state: &mut CombatState, only: u16) -> u16 {
+    // Every arm is keyed on one of these kinds on the player; with none live
+    // (`present_kinds` is a superset of the live kinds) the walk notes no arm,
+    // the arm loop runs nothing, and the answer is 0.
+    if !kinds_live(state, KindGate::BeforeHandDrawArms) {
+        return 0;
+    }
     // Sum each power's amount across the player's mirror+legacy power union
     // (Counter stack type — normally one instance, but summing is robust). Built
     // without a character guard up front: SentryMode generates a fixed token and
@@ -15633,6 +16126,8 @@ fn dispatch_before_hand_draw_arms(state: &mut CombatState, only: u16) -> u16 {
                         mythic_total = mythic_total.saturating_add(power.amount);
                         mythic_upgraded = mythic_upgraded.saturating_add(power.counter);
                     }
+                    // v0.113.0 Dread (GH #1346).
+                    PowerKind::AeonglassDominion => note(BeforeHandDrawArm::AeonglassDominion),
                     _ => {}
                 }
             }
@@ -15642,6 +16137,11 @@ fn dispatch_before_hand_draw_arms(state: &mut CombatState, only: u16) -> u16 {
     for (i, &arm) in order.iter().enumerate() {
         match arm {
             BeforeHandDrawArm::Ennui => crate::fool::ennui_before_hand_draw(state, ennui_sadness),
+            // One Wither per hand draw: the power is a Counter (one instance)
+            // and its hook ignores `Amount`.
+            BeforeHandDrawArm::AeonglassDominion => {
+                crate::dread::aeonglass_dominion_before_hand_draw(state);
+            }
             BeforeHandDrawArm::MythicForm => {
                 crate::fool::mythic_form_before_hand_draw(state, mythic_total, mythic_upgraded);
             }
@@ -15928,6 +16428,7 @@ enum BeforeHandDrawArm {
     Nightmare(usize),
     Ennui,
     MythicForm,
+    AeonglassDominion,
 }
 
 impl BeforeHandDrawArm {
@@ -15945,6 +16446,7 @@ impl BeforeHandDrawArm {
             Self::Nightmare(_) => 1 << 7,
             Self::Ennui => 1 << 8,
             Self::MythicForm => 1 << 9,
+            Self::AeonglassDominion => 1 << 10,
         }
     }
 }
@@ -16314,6 +16816,9 @@ const AFTER_CARD_PLAYED_ORDERED_ENEMY_HIT_KINDS: crate::PowerKindSet =
         PowerKind::Lullaby,
         PowerKind::Motif,
         PowerKind::LostLute,
+        // Tender's Strength drain is read by a later power's auto-played
+        // attack (Lost Lute), so it walks in application order too.
+        PowerKind::Tender,
     ]);
 
 /// C# `SkittishPower.AfterAttack`
@@ -16337,7 +16842,22 @@ const AFTER_CARD_PLAYED_ORDERED_ENEMY_HIT_KINDS: crate::PowerKindSet =
 /// [`dispatch_after_turn_end`] (player-side turn end, since Skittish only
 /// ever lives on a monster). The power is NOT removed — unlike CurlUp it
 /// re-arms every turn.
+#[inline]
 pub fn grant_latched_skittish(state: &mut CombatState) {
+    // Inline fast path for the near-universal no-op: the body below does
+    // nothing unless Bone Flute latched a block (`bone_flute_latched`, which
+    // `grant_latched_bone_flute` only ever takes back to `false`) or a
+    // Skittish power exists (its own `power_kind_live` gate). Both early
+    // returns of the body only skip that same work, so testing these first
+    // changes nothing.
+    if !state.combat_log.bone_flute_latched && !power_kind_live(state, PowerKind::Skittish) {
+        return;
+    }
+    grant_latched_skittish_body(state);
+}
+
+#[inline(never)]
+fn grant_latched_skittish_body(state: &mut CombatState) {
     // Inside an Osty `AttackCommand` the boundary has not been reached yet: a
     // reaction between its hits (Reaper Form's Doom -> Sleight of Flesh) runs
     // before `Hook.AfterAttack` (AttackCommand.cs:551-673). Keep the latches;
@@ -16403,6 +16923,25 @@ pub fn dispatch_after_card_played(state: &mut CombatState, ctx: &CardCtx) {
     dispatch_after_card_played_impl(state, ctx, true);
 }
 
+/// The body of the `PowerKind::Tender` arm of
+/// [`dispatch_after_card_played_ordered_enemy_hits`]
+/// (`TenderPower.AfterCardPlayed`, TenderPower.cs:42-51). Its own function so
+/// the walk names only the kinds it dispatches on (`power_kind_mask_drift`).
+fn tender_after_card_played(state: &mut CombatState, tender: crate::PowerUid) {
+    let Some(player_uid) = state.player.creature_uid else {
+        return;
+    };
+    if let Some(power) = state.powers.get_mut_by_id(tender.0) {
+        power.counter = power.counter.saturating_add(1);
+    }
+    // C# `TenderPower.cs:49` flashes inside this same guard, before the
+    // Strength/Dexterity drain. Tender is applied to the PLAYER, so flash the
+    // player directly.
+    crate::event_log::flash_player_power(state, PowerKind::Tender);
+    crate::card_effects::apply_signed_attr_power(state, player_uid, PowerKind::Strength, -1);
+    crate::card_effects::apply_signed_attr_power(state, player_uid, PowerKind::Dexterity, -1);
+}
+
 /// The seated player's remaining power lanes, after the ordered enemy-hitting
 /// walk ([`dispatch_after_card_played_ordered_enemy_hits`]). The card-play
 /// pipeline (`combat_loop::dispatch_after_card_played_buses`) runs that walk,
@@ -16412,6 +16951,7 @@ pub fn dispatch_after_card_played(state: &mut CombatState, ctx: &CardCtx) {
 /// creature's powers, THEN that player's relics, so Serpent Form's random hit
 /// draws `CombatTargets` before Kusarigama's (Silent full-tier seed:5469) and
 /// Storm channels before Game Piece draws (Ironclad-6155-a0-act3#b3).
+#[inline]
 pub fn dispatch_after_card_played_player_lanes(state: &mut CombatState, ctx: &CardCtx) {
     dispatch_after_card_played_player_powers(state, ctx, false);
 }
@@ -16419,7 +16959,19 @@ pub fn dispatch_after_card_played_player_lanes(state: &mut CombatState, ctx: &Ca
 /// The ordered player-power walk of `Hook.AfterCardPlayed` that mutates
 /// enemies — SerpentForm / Haunt (random single-target `CombatTargets` hits)
 /// and Panache (AoE). Runs in player-power application order.
+/// Inline front of [`dispatch_after_card_played_ordered_enemy_hits_body`]: tests the body's own opening
+/// `present_kinds` gate here, so the common nothing-live play skips the
+/// call and the large body's prologue. The body re-tests it.
+#[inline]
 pub fn dispatch_after_card_played_ordered_enemy_hits(state: &mut CombatState, ctx: &CardCtx) {
+    if !kinds_live(state, KindGate::AfterCardPlayedOrderedEnemyHit) {
+        return;
+    }
+    dispatch_after_card_played_ordered_enemy_hits_body(state, ctx);
+}
+
+#[inline(never)]
+fn dispatch_after_card_played_ordered_enemy_hits_body(state: &mut CombatState, ctx: &CardCtx) {
     // ── React (ordered): player powers that hit enemies ─────────────────
     // C# `Hook.AfterCardPlayed` (Hook.cs:181) fans out to
     // `combatState.IterateHookListeners()` (CombatState.cs:521), which walks
@@ -16452,11 +17004,7 @@ pub fn dispatch_after_card_played_ordered_enemy_hits(state: &mut CombatState, ct
     //
     // Perf 2026-07-04: absence-gated on the three kinds this walk
     // discriminates on — when none is live the walk matches nothing.
-    if !state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_CARD_PLAYED_ORDERED_ENEMY_HIT_KINDS)
-    {
+    if !kinds_live(state, KindGate::AfterCardPlayedOrderedEnemyHit) {
         return;
     }
     let is_soul = ctx.card_id == Some(crate::cards::CardId::Soul);
@@ -16473,6 +17021,22 @@ pub fn dispatch_after_card_played_ordered_enemy_hits(state: &mut CombatState, ct
                 let amount = state.powers.get_by_id(uid.0).map_or(0, |p| p.amount);
                 crate::fool::after_card_played_power(state, k, amount, ctx.card_tags);
             }
+            // Tender (HunterKiller TENDERIZING_GOOP debuff): C#
+            // `TenderPower.AfterCardPlayed` (TenderPower.cs:42-51) — when the
+            // PLAYER plays a card, increment `CardsPlayedThisTurn` and apply
+            // Strength -1 / Dexterity -1 to the owner (silent). The drain is
+            // restored at the player's turn end (`+CardsPlayedThisTurn` each;
+            // the `Tender` arm in [`after_turn_end`]), so Tender's only
+            // observable is a within-turn escalating penalty. The hook fires
+            // AFTER the card body resolves, so the turn's first card is
+            // unweakened. The cards-played count lives in the power's
+            // per-instance `counter`. Bead `sts2-rs-ybtmu` (Group C).
+            //
+            // It walks here, in application order, because a later power can
+            // read the drained Strength in this same hook: a Lost Lute applied
+            // after Tender auto-plays its attack one Strength down
+            // (LostLutePower.cs:24-49; act23 dread Fool:1000 act2 combat@751).
+            PowerKind::Tender => tender_after_card_played(state, uid),
             // `BlackHolePower.AfterCardPlayed` (BlackHolePower.cs:21-27): the
             // stars this play spent in `SpendResources` deal the AoE now, in
             // the player's power order — a Calamity applied earlier adds its
@@ -16713,11 +17277,78 @@ fn dispatch_after_card_played_impl(state: &mut CombatState, ctx: &CardCtx, run_o
 /// Piece draws (Ironclad-6155-a0-act3#b3) and Tender drains Strength before a
 /// Game Piece draw is auto-played (Ironclad-6195-a0-act2#b1). Enemy-owned and
 /// teammate lanes live in [`dispatch_after_card_played_other_creatures`].
+/// Every kind [`dispatch_after_card_played_player_powers`] reacts to: its
+/// `power_kind_live` lanes (PaleBlueDot, MasterPlanner, Smoggy, Afterimage,
+/// Monologue) and [`AFTER_CARD_PLAYED_PLAYER_REACT_KINDS`], the gate of the
+/// player power uid list every other lane walks. With none live, the
+/// dispatcher reduces to [`after_card_played_player_powers_residual`].
+/// `player_powers_mask_covers_its_lanes` holds the list to the body.
+const AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS: crate::PowerKindSet =
+    AFTER_CARD_PLAYED_PLAYER_REACT_KINDS.union(crate::PowerKindSet::from_kinds(&[
+        PowerKind::PaleBlueDot,
+        PowerKind::MasterPlanner,
+        PowerKind::Smoggy,
+        PowerKind::Afterimage,
+        PowerKind::Monologue,
+    ]));
+
+/// What [`dispatch_after_card_played_player_powers`] still does when no kind
+/// of [`AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS`] is live, in its order: every
+/// lane is then a no-op (the uid list is empty, so the pending, snapshot and
+/// Vigor-reset loops visit nothing) except the Shiv tally, the Fool Stretch
+/// release, the Vigor latch release and the self-gated ordered walk. The
+/// read-only relic walk calls a no-op hook.
+fn after_card_played_player_powers_residual(
+    state: &mut CombatState,
+    ctx: &CardCtx,
+    run_ordered_walk: bool,
+) {
+    let vigor_latched_here =
+        ctx.card_uid.is_some() && state.player.vigor_latch_card == ctx.card_uid;
+    if ctx.card_tags.contains(crate::cards::CardTag::Shiv) {
+        state.player.shivs_played_this_turn = state.player.shivs_played_this_turn.saturating_add(1);
+    }
+    if state.player.fool.is_some() {
+        crate::fool::release_stretch(state, ctx.card_uid);
+    }
+    if vigor_latched_here && state.player.vigor_latch_card.is_some() {
+        state.player.vigor_latch_card = None;
+    }
+    if run_ordered_walk {
+        dispatch_after_card_played_ordered_enemy_hits(state, ctx);
+    }
+}
+
+/// Inline front of [`dispatch_after_card_played_player_powers_body`]: its
+/// whole-dispatcher gate, tested here so the common play with none of the
+/// reacting kinds runs the small residual without entering the large body's
+/// frame. The body re-tests it.
+#[inline]
 fn dispatch_after_card_played_player_powers(
     state: &mut CombatState,
     ctx: &CardCtx,
     run_ordered_walk: bool,
 ) {
+    if !kinds_live(state, KindGate::AfterCardPlayedPlayerPowers) {
+        after_card_played_player_powers_residual(state, ctx, run_ordered_walk);
+        return;
+    }
+    dispatch_after_card_played_player_powers_body(state, ctx, run_ordered_walk);
+}
+
+#[inline(never)]
+fn dispatch_after_card_played_player_powers_body(
+    state: &mut CombatState,
+    ctx: &CardCtx,
+    run_ordered_walk: bool,
+) {
+    // Whole-dispatcher gate: `present_kinds` is a superset of every live
+    // kind, so with none of the kinds a lane below reacts to, only the
+    // residual's ungated steps can change anything.
+    if !kinds_live(state, KindGate::AfterCardPlayedPlayerPowers) {
+        after_card_played_player_powers_residual(state, ctx, run_ordered_walk);
+        return;
+    }
     // ── Read-only listener walk ─────────────────────────────────────────
     // Listener bodies are `() -> ()` no-ops at this pin (`noop_hook!`). Perf
     // (sts2-rs-05mjm / #51): the per-power walk over every player/ally/enemy
@@ -16795,32 +17426,25 @@ fn dispatch_after_card_played_player_powers(
     // only. Exactly the prior `mirror.clone()` + dedup-against-`mirror`
     // sequence (same order, same duplicate semantics) minus one SmallVec
     // clone per card play.
-    let player_power_uids: SmallVec<[crate::PowerUid; 8]> = if state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_CARD_PLAYED_PLAYER_REACT_KINDS)
-    {
-        let mut v: SmallVec<[crate::PowerUid; 8]> = state
-            .player
-            .creature_uid
-            .and_then(|uid| crate::creature_by_id(&state.creatures, uid.0))
-            .map(|c| c.powers.clone())
-            .unwrap_or_default();
-        let mirror_len = v.len();
-        for uid in state.player.powers.iter().copied() {
-            if !v[..mirror_len].contains(&uid) {
-                v.push(uid);
+    let player_power_uids: SmallVec<[crate::PowerUid; 8]> =
+        if kinds_live(state, KindGate::AfterCardPlayedPlayerReact) {
+            let mut v: SmallVec<[crate::PowerUid; 8]> = state
+                .player
+                .creature_uid
+                .and_then(|uid| crate::creature_by_id(&state.creatures, uid.0))
+                .map(|c| c.powers.clone())
+                .unwrap_or_default();
+            let mirror_len = v.len();
+            for uid in state.player.powers.iter().copied() {
+                if !v[..mirror_len].contains(&uid) {
+                    v.push(uid);
+                }
             }
-        }
-        v
-    } else {
-        SmallVec::new()
-    };
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_CARD_PLAYED_PENDING_KINDS)
-    {
+            v
+        } else {
+            SmallVec::new()
+        };
+    if kinds_live(state, KindGate::AfterCardPlayedPending) {
         for uid in player_power_uids.iter().copied() {
             if let Some(power) = state.powers.get_by_id(uid.0) {
                 match power.kind {
@@ -16917,11 +17541,7 @@ fn dispatch_after_card_played_player_powers(
     // card is a Power; ALWAYS disarm so the transient never leaks past the play
     // (a non-Power play disarms here without channeling, matching C#'s Power-only
     // `BeforeCardPlayed` record).
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_CARD_PLAYED_SNAPSHOT_KINDS)
-    {
+    if kinds_live(state, KindGate::AfterCardPlayedSnapshot) {
         for uid in player_power_uids.iter().copied() {
             if let Some(power) = state.powers.get_mut_by_id(uid.0) {
                 // Storm (channel Lightning) and Subroutine (gain energy) share
@@ -17200,54 +17820,9 @@ fn dispatch_after_card_played_player_powers(
     // above — see the `PowerKind::Juggling` arm of
     // [`dispatch_after_card_played_ordered_enemy_hits`].
 
-    // Tender (HunterKiller TENDERIZING_GOOP debuff): C#
-    // `TenderPower.AfterCardPlayed` (TenderPower.cs:42-51) — when the PLAYER
-    // plays a card, increment `CardsPlayedThisTurn` and apply Strength -1 /
-    // Dexterity -1 to the owner (silent). The drained Str/Dex is restored at
-    // the player's turn end (`+CardsPlayedThisTurn` each), so Tender's only
-    // observable is a within-turn escalating penalty: each successive card
-    // this turn deals less damage / blocks less. `dispatch_after_card_played`
-    // already fires AFTER the card body resolves, so the FIRST card of the
-    // turn is unweakened (its -1 lands after it) — matching C#'s
-    // after-resolution AfterCardPlayed timing. The cards-played count lives in
-    // the power's per-instance `counter`; the restore + reset is the `Tender`
-    // arm in [`after_turn_end`]. Bead `sts2-rs-ybtmu` (Group C).
-    // Perf 2026-07-04: absence-gated — no live Tender means the find below
-    // provably yields `None`.
-    let tender_uid = if power_kind_live(state, PowerKind::Tender) {
-        player_power_uids.iter().copied().find(|uid| {
-            state
-                .powers
-                .iter()
-                .any(|p| p.id == uid.0 && p.kind == PowerKind::Tender)
-        })
-    } else {
-        None
-    };
-    if let Some(uid) = tender_uid {
-        if let Some(player_uid) = state.player.creature_uid {
-            if let Some(power) = state.powers.get_mut_by_id(uid.0) {
-                power.counter = power.counter.saturating_add(1);
-            }
-            // C# `TenderPower.cs:49` flashes inside this same guard, before
-            // the Strength/Dexterity drain. Tender is applied to the PLAYER
-            // (matching the `player_uid`-targeted drain below, not
-            // `owner_of_listener`), so flash the player directly.
-            crate::event_log::flash_player_power(state, PowerKind::Tender);
-            crate::card_effects::apply_signed_attr_power(
-                state,
-                player_uid,
-                PowerKind::Strength,
-                -1,
-            );
-            crate::card_effects::apply_signed_attr_power(
-                state,
-                player_uid,
-                PowerKind::Dexterity,
-                -1,
-            );
-        }
-    }
+    // Tender (`TenderPower.AfterCardPlayed`) fires in the ordered walk
+    // above — see the `PowerKind::Tender` arm of
+    // [`dispatch_after_card_played_ordered_enemy_hits`].
 
     // ── React: Monologue (Regent power) ────────────────────────────────
     // C# `MonologuePower.AfterCardPlayed` (MonologuePower.cs:63-72): for every
@@ -17320,7 +17895,47 @@ fn dispatch_after_card_played_player_powers(
 /// the listener walk reaches after the seated player's relics — enemies, and
 /// the co-op teammates waiting in their seats (Sneaky). Card-owned listeners
 /// (enchantments) run after this, in the play pipeline.
+/// Every kind a lane of [`dispatch_after_card_played_other_creatures`] gates
+/// on with `power_kind_live`. The lanes are its whole body apart from the
+/// trailing [`grant_latched_skittish`], so with none of these in the arena's
+/// presence set every lane is a no-op and the dispatcher skips straight to
+/// that call. `other_creatures_mask_covers_its_lane_gates` holds the list to
+/// the body.
+const AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS: crate::PowerKindSet =
+    crate::PowerKindSet::from_kinds(&[
+        PowerKind::Sneaky,
+        PowerKind::Ensemble,
+        PowerKind::Galvanic,
+        PowerKind::VitalSpark,
+        PowerKind::WitheringPresence,
+        PowerKind::Slow,
+        PowerKind::Enrage,
+        PowerKind::Oblivion,
+        PowerKind::Strangle,
+        PowerKind::CurlUp,
+    ]);
+
+/// Inline front of [`dispatch_after_card_played_other_creatures_body`]: tests the body's own opening
+/// `present_kinds` gate here, so the common nothing-live play skips the
+/// call and the large body's prologue. The body re-tests it.
+#[inline]
 pub fn dispatch_after_card_played_other_creatures(state: &mut CombatState, ctx: &CardCtx) {
+    if !kinds_live(state, KindGate::AfterCardPlayedOtherCreature) {
+        grant_latched_skittish(state);
+        return;
+    }
+    dispatch_after_card_played_other_creatures_body(state, ctx);
+}
+
+#[inline(never)]
+fn dispatch_after_card_played_other_creatures_body(state: &mut CombatState, ctx: &CardCtx) {
+    // Whole-dispatcher gate: `present_kinds` is a superset of every live
+    // kind, and each lane below is gated on one of these kinds, so none can
+    // act. The only other statement, `played_galvanized`, is a pure read.
+    if !kinds_live(state, KindGate::AfterCardPlayedOtherCreature) {
+        grant_latched_skittish(state);
+        return;
+    }
     // ── React: Sneaky (co-op) ──────────────────────────────────────────
     // C# `SneakyPower.AfterCardPlayed` (SneakyPower.cs:22-25): when ANOTHER
     // player plays an Attack, the owner gains `Amount` Unpowered block. The
@@ -17332,6 +17947,12 @@ pub fn dispatch_after_card_played_other_creatures(state: &mut CombatState, ctx: 
         crate::coop::each_unseated_holder(state, PowerKind::Sneaky, |state, amount| {
             let _ = crate::card_effects::gain_block_player_unpowered(state, amount);
         });
+    }
+    // ── React: Ensemble (co-op) ────────────────────────────────────────
+    // v0.113.0 `EnsemblePower.AfterCardPlayed`: a card ANOTHER player plays
+    // spends one stack of the owner's Ensemble.
+    if power_kind_live(state, PowerKind::Ensemble) {
+        crate::coop::spend_teammates_ensemble(state);
     }
 
     // Galvanic (GlobeHead act-3 spawn-power): C# `GalvanicPower`
@@ -18000,16 +18621,6 @@ pub fn dispatch_after_card_discarded(state: &mut CombatState, ctx: &CardCtx) {
     let _ = crate::relic_effects::dispatch_after_card_discarded(state, ctx);
 }
 
-/// Fire `on_card_drawn` on every listener (Python invokes this via
-/// `getattr` at hooks.py:367 — powers-only, no relic site).
-pub fn dispatch_on_card_drawn(state: &CombatState, ctx: &CardDrawnCtx) {
-    // Perf (sts2-rs-05mjm / #51): `on_card_drawn` is a `noop_hook!` no-op on the
-    // power side and has no relic listeners, so walking every power per card
-    // drawn was pure overhead on a very hot channel. Intentionally empty until a
-    // real per-listener body lands (then re-add a present-kinds-gated walk).
-    let _ = (state, ctx);
-}
-
 /// Fire `before_turn_end` on every listener and apply any deferred
 /// [`Effect`]s post-walk. **Bead `sts2-rs-rnv6`**: signature growth from
 /// `&CombatState` to `&mut CombatState` so `HailstormPower`'s per-enemy
@@ -18072,11 +18683,7 @@ const fn is_before_turn_end_early(kind: PowerKind) -> bool {
 /// [`crate::coop::seat_pass`].
 fn dispatch_before_turn_end_seated(state: &mut CombatState, ctx: &TurnSideCtx, pass: TurnEndPass) {
     power_hook_dispatch(state, PowerHook::BeforeTurnEnd, |state| {
-        if !state
-            .powers
-            .present_kinds()
-            .intersects(&BEFORE_TURN_END_ARMS)
-        {
+        if !kinds_live(state, KindGate::BeforeTurnEndArms) {
             if pass == TurnEndPass::Normal {
                 let effects = collect_before_turn_end(state, ctx);
                 apply_effects(state, &effects);
@@ -18090,7 +18697,7 @@ fn dispatch_before_turn_end_seated(state: &mut CombatState, ctx: &TurnSideCtx, p
         // TheBombPower.cs:39-59; Defect full seed 2328). Resolve and apply one
         // listener at a time instead of collecting the whole walk up front,
         // re-collecting the listeners per pass.
-        let listeners: SmallVec<[ListenerRef; 16]> = iter_power_listeners(state).collect();
+        let listeners = collect_power_listeners(state);
         for listener in listeners {
             let early = match listener {
                 ListenerRef::Power(uid) => state
@@ -18145,16 +18752,12 @@ const BEFORE_TURN_END_ARMS: crate::PowerKindSet =
 #[must_use]
 pub fn collect_before_turn_end(state: &CombatState, ctx: &TurnSideCtx) -> SmallVec<[Effect; 4]> {
     let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&BEFORE_TURN_END_ARMS)
-    {
-        for listener in iter_power_listeners(state) {
-            if let Some(listener_effects) = before_turn_end(state, listener, ctx) {
+    if kinds_live(state, KindGate::BeforeTurnEndArms) {
+        for_each_power_listener(state, |uid| {
+            if let Some(listener_effects) = before_turn_end(state, ListenerRef::Power(uid), ctx) {
                 effects.extend(listener_effects);
             }
-        }
+        });
     } else {
         #[cfg(debug_assertions)]
         debug_assert_skipped_power_walk(state, "before_turn_end", |listener| {
@@ -18614,6 +19217,11 @@ fn tick_flutter_and_maybe_stun(state: &mut CombatState, creature_uid: CreatureUi
 /// `PowerKind::` over the [`after_turn_end`] fn body when arms change.
 /// [`AFTER_TURN_END_ARMS`], derived from it, gates the power walk.
 const AFTER_TURN_END_KINDS: crate::PowerKindSet = crate::PowerKindSet::from_kinds(&[
+    // v0.113.0-only (Dread, GH #1346).
+    PowerKind::Amnesia,
+    PowerKind::LagavulinMatriarchDominion,
+    PowerKind::InsatiableDominion,
+    PowerKind::Artifact,
     // v0.113.0-only (The Fool).
     PowerKind::Quietus,
     PowerKind::Encore,
@@ -18710,14 +19318,20 @@ const AFTER_TURN_END_ARMS: crate::PowerKindSet = AFTER_TURN_END_KINDS.without(&[
     PowerKind::Strength,
     PowerKind::FreeCard,
     PowerKind::Thorns,
+    PowerKind::Artifact,
 ]);
 
-/// `true` for an `AfterSideTurnEndLate` listener (DisintegrationPower.cs:19),
-/// which [`dispatch_after_turn_end_late`] runs instead of the main walk.
+/// `true` for an `AfterSideTurnEndLate` listener (DisintegrationPower.cs:19;
+/// v0.113.0 Dread InsatiableDominionPower.cs:47), which
+/// [`dispatch_after_turn_end_late`] runs instead of the main walk.
 fn is_after_turn_end_late_listener(state: &CombatState, listener: ListenerRef) -> bool {
     matches!(listener, ListenerRef::Power(u)
-        if state.powers.get_by_id(u.0).is_some_and(|p| p.kind == PowerKind::Disintegration))
+        if state.powers.get_by_id(u.0).is_some_and(|p| AFTER_TURN_END_LATE_POWERS.contains(p.kind)))
 }
+
+/// The kinds with an `AfterSideTurnEndLate` hook.
+const AFTER_TURN_END_LATE_POWERS: crate::PowerKindSet =
+    crate::PowerKindSet::from_kinds(&[PowerKind::Disintegration, PowerKind::InsatiableDominion]);
 
 /// C# `Hook.AfterTurnEnd`'s second walk, `AfterSideTurnEndLate`
 /// (Hook.cs:1428 v0.107.1; same in v0.111.0): it starts only after every
@@ -18735,17 +19349,21 @@ pub fn dispatch_after_turn_end_late(state: &mut CombatState, ctx: &TurnSideCtx) 
 }
 
 fn dispatch_after_turn_end_late_seated(state: &mut CombatState, ctx: &TurnSideCtx) {
-    if !state
-        .powers
-        .present_kinds()
-        .contains(PowerKind::Disintegration)
-        || crate::combat_loop::combat_is_ending(state)
+    if !kinds_live(state, KindGate::AfterTurnEndLate) || crate::combat_loop::combat_is_ending(state)
     {
         return;
     }
-    let listeners: SmallVec<[ListenerRef; 4]> = iter_power_listeners(state)
-        .filter(|&l| is_after_turn_end_late_listener(state, l))
-        .collect();
+    let mut listeners: SmallVec<[ListenerRef; 4]> = SmallVec::new();
+    for_each_power_listener(state, |uid| {
+        let l = ListenerRef::Power(uid);
+        if is_after_turn_end_late_listener(state, l) {
+            listeners.push(l);
+        }
+    });
+    debug_assert!(listeners
+        .iter()
+        .copied()
+        .eq(iter_power_listeners(state).filter(|&l| is_after_turn_end_late_listener(state, l))));
     // One listener at a time: C# awaits each `AfterSideTurnEndLate` only
     // until it pauses on a pick (Hook.cs:1428-1435 v0.107.1), so a
     // Disintegration hit whose Centennial Puzzle draw opens a Stratagem pick
@@ -18852,15 +19470,43 @@ fn dispatch_after_turn_end_body(state: &mut CombatState, ctx: &TurnSideCtx) {
         && !state.coop.seat_pass
         && (power_kind_live(state, PowerKind::Slumber)
             || power_kind_live(state, PowerKind::Asleep));
-    if dark_embrace_live
-        || dummy_timer_live
-        || consuming_shadow_live
-        || sleep_live
-        || state
-            .powers
-            .present_kinds()
-            .intersects(&AFTER_TURN_END_ARMS)
-    {
+    let mutating_lanes =
+        dark_embrace_live || dummy_timer_live || consuming_shadow_live || sleep_live;
+    if !mutating_lanes && kinds_live(state, KindGate::AfterTurnEndArms) {
+        // No lane below that acts mid-walk is live, so the walk only reads
+        // `state` (each arm defers its effect): visit the listeners in place
+        // instead of snapshotting them. Same listeners in the same order, the
+        // same skips (late listeners, kinds without an arm) and the same
+        // buckets as the snapshot walk below.
+        let player_uids = if ctx.side == Side::Player {
+            state.player_power_uids()
+        } else {
+            SmallVec::new()
+        };
+        let st: &CombatState = state;
+        for_each_power_listener(st, |uid| {
+            let listener = ListenerRef::Power(uid);
+            if !st
+                .powers
+                .get_by_id(uid.0)
+                .is_some_and(|p| AFTER_TURN_END_ARMS.contains(p.kind))
+                || is_after_turn_end_late_listener(st, listener)
+            {
+                debug_assert!(
+                    is_after_turn_end_late_listener(st, listener)
+                        || after_turn_end(st, listener, ctx).is_none()
+                );
+                return;
+            }
+            if let Some(listener_effects) = after_turn_end(st, listener, ctx) {
+                if player_uids.contains(&uid) || ctx.side != Side::Player {
+                    effects.extend(listener_effects);
+                } else {
+                    others.extend(listener_effects);
+                }
+            }
+        });
+    } else if mutating_lanes || kinds_live(state, KindGate::AfterTurnEndArms) {
         let player_uids = if ctx.side == Side::Player {
             state.player_power_uids()
         } else {
@@ -18872,7 +19518,7 @@ fn dispatch_after_turn_end_body(state: &mut CombatState, ctx: &TurnSideCtx) {
         // and, on both builds, Regen's heal (Necrobinder v0.107.1 5777: Constrict
         // hit, then Regen healed). `iter_power_listeners` merges the mirror and
         // legacy surfaces by PowerUid, which is that order.
-        let listeners: SmallVec<[ListenerRef; 16]> = iter_power_listeners(state).collect();
+        let listeners = collect_power_listeners(state);
         // Set by the first Dark Embrace draw: each power listener's kind just
         // before it. Power ids are `max + 1`, so a power the draw removes can
         // hand its uid to one the draw creates; a listener whose kind changed
@@ -19019,6 +19665,14 @@ fn dispatch_after_turn_end_body(state: &mut CombatState, ctx: &TurnSideCtx) {
                     }
                 }
             }
+            // Only the kinds in `AFTER_TURN_END_ARMS` have an arm (see the gate
+            // above); any other power answers `None`.
+            if !matches!(listener, ListenerRef::Power(u)
+                if state.powers.get_by_id(u.0).is_some_and(|p| AFTER_TURN_END_ARMS.contains(p.kind)))
+            {
+                debug_assert!(after_turn_end(state, listener, ctx).is_none());
+                continue;
+            }
             if let Some(listener_effects) = after_turn_end(state, listener, ctx) {
                 let is_own = matches!(listener, ListenerRef::Power(u) if player_uids.contains(&u));
                 if is_own || ctx.side != Side::Player {
@@ -19109,7 +19763,8 @@ fn dispatch_after_turn_end_body(state: &mut CombatState, ctx: &TurnSideCtx) {
     // In a co-op seat pass the walk yields only the seated teammate's
     // listeners, so their Weak / Vulnerable / Frail tick here like ours.
     if ctx.side == Side::Enemy {
-        let effects = collect_on_turn_end_enemy_side(state, &TurnSelfCtx::default());
+        let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
+        push_on_turn_end_enemy_side(state, &TurnSelfCtx::default(), &mut effects);
         apply_effects(state, &effects);
     }
     // (Slumber and Asleep tick inside the walk above, at their listener
@@ -19137,21 +19792,40 @@ pub fn collect_on_turn_end_enemy_side(
     ctx: &TurnSelfCtx,
 ) -> SmallVec<[Effect; 4]> {
     let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
+    push_on_turn_end_enemy_side(state, ctx, &mut effects);
+    effects
+}
+
+/// [`collect_on_turn_end_enemy_side`] appending to `effects`, so the
+/// after-turn-end dispatcher fills its own buffer instead of moving one back.
+fn push_on_turn_end_enemy_side(
+    state: &CombatState,
+    ctx: &TurnSelfCtx,
+    effects: &mut SmallVec<[Effect; 4]>,
+) {
     // present_kinds gate (perf-gates sweep 2026-07-04): the
     // [`on_turn_end_enemy_side`] power arms only react to kinds in
     // [`ON_TURN_END_ENEMY_SIDE_KINDS`] (relics return `None` up front), so
     // the walk is skipped when none is live. See
     // [`MODIFY_DAMAGE_ADDITIVE_KINDS`] on drift safety.
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&ON_TURN_END_ENEMY_SIDE_KINDS)
-    {
-        for listener in iter_power_listeners(state) {
-            if let Some(listener_effects) = on_turn_end_enemy_side(state, listener, ctx) {
-                effects.extend(listener_effects);
+    if kinds_live(state, KindGate::OnTurnEndEnemySide) {
+        // Only the kinds in the set have an arm; the rest return `None` after
+        // the same power lookup, so they are skipped here.
+        for_each_power_listener(state, |uid| {
+            let listener = ListenerRef::Power(uid);
+            let effect = state
+                .powers
+                .get_by_id(uid.0)
+                .filter(|p| ON_TURN_END_ENEMY_SIDE_KINDS.contains(p.kind))
+                .and_then(|p| on_turn_end_enemy_side_effect(state, listener, p));
+            debug_assert_eq!(
+                effect.map(|e| SmallVec::<[Effect; 2]>::from_elem(e, 1)),
+                on_turn_end_enemy_side(state, listener, ctx)
+            );
+            if let Some(effect) = effect {
+                effects.push(effect);
             }
-        }
+        });
     }
     // No relic walk: [`on_turn_end_enemy_side`] returns `None` for every
     // `ListenerRef::Relic` before it reads anything, so relic rows never added
@@ -19160,7 +19834,6 @@ pub fn collect_on_turn_end_enemy_side(
     debug_assert_skipped_relic_walk(state, "on_turn_end_enemy_side", |listener| {
         on_turn_end_enemy_side(state, listener, ctx).is_none()
     });
-    effects
 }
 
 /// Every [`PowerKind`] referenced in [`on_turn_end_enemy_side`] (the
@@ -19213,11 +19886,7 @@ pub fn collect_before_side_turn_start(
     // [`BEFORE_SIDE_TURN_START_KINDS`] (relics return `None` up front), so
     // the walk is skipped when none is live. See
     // [`MODIFY_DAMAGE_ADDITIVE_KINDS`] on drift safety.
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&BEFORE_SIDE_TURN_START_KINDS)
-    {
+    if kinds_live(state, KindGate::BeforeSideTurnStart) {
         for listener in iter_power_listeners(state) {
             if let Some(listener_effects) = before_side_turn_start(state, listener, ctx) {
                 effects.extend(listener_effects);
@@ -19285,17 +19954,24 @@ enum SideTurnStartOwners {
 /// [`dispatch_after_side_turn_start_enemies`].
 pub fn dispatch_after_side_turn_start_allies(state: &mut CombatState, ctx: &TurnSideCtx) {
     power_hook_dispatch(state, PowerHook::AfterSideTurnStart, |state| {
-        let effects =
-            collect_after_side_turn_start_owned(state, ctx, Some(SideTurnStartOwners::Allies));
-        apply_effects(state, &effects);
+        dispatch_after_side_turn_start_allies_body(state, ctx);
     });
     crate::coop::seat_pass(state, ctx, |state, ctx| {
         power_hook_dispatch(state, PowerHook::AfterSideTurnStart, |state| {
-            let effects =
-                collect_after_side_turn_start_owned(state, ctx, Some(SideTurnStartOwners::Allies));
-            apply_effects(state, &effects);
+            dispatch_after_side_turn_start_allies_body(state, ctx);
         });
     });
+}
+
+/// The body of [`dispatch_after_side_turn_start_allies`], run when its
+/// liveness bit is set. Out of line (perf): the hook is usually dead, and the
+/// inlined walk's effect buffers gave the gate a large frame to set up on
+/// every call.
+#[inline(never)]
+fn dispatch_after_side_turn_start_allies_body(state: &mut CombatState, ctx: &TurnSideCtx) {
+    let effects =
+        collect_after_side_turn_start_owned(state, ctx, Some(SideTurnStartOwners::Allies));
+    apply_effects(state, &effects);
 }
 
 /// The `Enemies` half of [`dispatch_after_side_turn_start`]: every enemy's
@@ -19308,7 +19984,8 @@ pub fn dispatch_after_side_turn_start_enemies(state: &mut CombatState, ctx: &Tur
 }
 
 /// The body of [`dispatch_after_side_turn_start_enemies`], run when its
-/// liveness bit is set.
+/// liveness bit is set. Out of line (perf), as for the allies' body.
+#[inline(never)]
 fn dispatch_after_side_turn_start_enemies_body(state: &mut CombatState, ctx: &TurnSideCtx) {
     let effects =
         collect_after_side_turn_start_owned(state, ctx, Some(SideTurnStartOwners::Enemies));
@@ -19428,36 +20105,41 @@ fn collect_after_side_turn_start_owned(
     // the walk skips the folded kinds), so skipping the whole walk when none
     // is live is bit-identical. See [`MODIFY_DAMAGE_ADDITIVE_KINDS`] on drift
     // safety.
-    if state
-        .powers
-        .present_kinds()
-        .intersects(&AFTER_SIDE_TURN_START_WALK_ARMS)
-    {
-        for listener in iter_power_listeners(state) {
+    if kinds_live(state, KindGate::AfterSideTurnStartWalk) {
+        for_each_power_listener(state, |uid| {
+            let listener = ListenerRef::Power(uid);
             // Folded `AfterPlayerTurnStart` powers (Inferno / Loop / SummonNextTurn /
             // CrimsonMantle) are dispatched by `combat_loop` in the auto-play
             // cluster over the pre-auto-play snapshot — skip them here so they
             // don't fire twice (and so a mid-cluster Mayhem-applied instance never
             // fires this turn). See `is_folded_after_player_turn_start_kind`.
-            if let ListenerRef::Power(uid) = listener {
-                if state
-                    .powers
-                    .get_by_id(uid.0)
-                    .is_some_and(|p| is_folded_after_player_turn_start_kind(p.kind))
-                {
-                    continue;
-                }
-                if let Some(owners) = owners {
-                    let enemy = is_enemy_owned_power(state, uid);
-                    if enemy != (owners == SideTurnStartOwners::Enemies) {
-                        continue;
-                    }
+            // `AFTER_SIDE_TURN_START_WALK_ARMS` leaves the folded kinds out, and
+            // every other kind outside it answers `None`, so one kind test
+            // skips both before the owner scan.
+            if !state
+                .powers
+                .get_by_id(uid.0)
+                .is_some_and(|p| AFTER_SIDE_TURN_START_WALK_ARMS.contains(p.kind))
+            {
+                debug_assert!(
+                    state
+                        .powers
+                        .get_by_id(uid.0)
+                        .is_some_and(|p| is_folded_after_player_turn_start_kind(p.kind))
+                        || after_side_turn_start(state, listener, ctx).is_none()
+                );
+                return;
+            }
+            if let Some(owners) = owners {
+                let enemy = is_enemy_owned_power(state, uid);
+                if enemy != (owners == SideTurnStartOwners::Enemies) {
+                    return;
                 }
             }
             if let Some(listener_effects) = after_side_turn_start(state, listener, ctx) {
                 effects.extend(listener_effects);
             }
-        }
+        });
     } else {
         #[cfg(debug_assertions)]
         debug_assert_skipped_power_walk(state, "after_side_turn_start", |listener| {
@@ -19576,11 +20258,6 @@ pub fn collect_folded_after_player_turn_start_one(
     }
     after_side_turn_start(state, ListenerRef::Power(uid), ctx)
 }
-
-dispatch_void_hook!(
-    /// Fire `after_creature_added_to_combat` on every listener.
-    dispatch_after_creature_added_to_combat, after_creature_added_to_combat, CreatureAddedCtx, [iter_power_listeners, iter_relic_listeners]
-);
 
 dispatch_void_hook!(
     /// Fire `before_combat_start` on every listener.
@@ -19901,7 +20578,14 @@ pub fn dispatch_after_power_applied(state: &mut CombatState, ctx: &PowerAppliedC
             // mirror/legacy split as [`crate::card_effects::existing_power_uid_unioned`].
             // Bead `sts2-rs-vicious-union`.
             let mut draw_count = 0i32;
-            for puid in state.player_power_uids() {
+            // No Vicious in the arena (`present_kinds` superset): the walk
+            // adds nothing, so skip building the uid list.
+            let puids = if power_kind_live(state, PowerKind::Vicious) {
+                state.player_power_uids()
+            } else {
+                SmallVec::new()
+            };
+            for puid in puids {
                 if let Some(power) = state.powers.get_by_id(puid.0) {
                     if power.kind == PowerKind::Vicious && power.amount > 0 {
                         draw_count = draw_count.saturating_add(power.amount);
@@ -20053,6 +20737,16 @@ fn sleight_of_flesh_react(
     kind: PowerKind,
     delta: i32,
 ) {
+    // No SleightOfFlesh in the arena (`present_kinds` superset): the walk
+    // below collects nothing, so nothing (Skittish included) happens.
+    if !power_kind_live(state, PowerKind::SleightOfFlesh) {
+        debug_assert!(!state
+            .player_power_uids()
+            .into_iter()
+            .filter_map(|puid| state.powers.get_by_id(puid.0))
+            .any(|p| p.kind == PowerKind::SleightOfFlesh));
+        return;
+    }
     if delta == 0
         || !crate::afflictions::is_debuff_for_amount(kind, delta)
         || crate::afflictions::is_temporary_power_debuff(kind)
@@ -20340,7 +21034,13 @@ mod tests {
         // `on_stars_spent` (Python `combat.spend_stars` fires this on
         // every power and relic; the channel landed inert in the Rust
         // port until ChildOfTheStars / MiniRegent bodies wire to it) → 55.
-        const EXPECTED_PYTHON_PLUS_CSHARP_DIVERGENCE: usize = 55;
+        // → 55. Then nine channels nothing listened to were removed:
+        // before/after_attack, try_block_debuff, modify_summon_amount,
+        // after_summon, after_osty_revived, should_draw, on_card_drawn,
+        // after_creature_added_to_combat (their C# behaviour lives in
+        // dedicated code: Artifact in card_effects, the draw gate in
+        // `CombatState`, enchantment `on_card_drawn`, …) → 46.
+        const EXPECTED_PYTHON_PLUS_CSHARP_DIVERGENCE: usize = 46;
         assert_eq!(HookId::COUNT, EXPECTED_PYTHON_PLUS_CSHARP_DIVERGENCE);
         assert_eq!(HookId::ALL.len(), EXPECTED_PYTHON_PLUS_CSHARP_DIVERGENCE);
     }
@@ -20442,10 +21142,6 @@ mod tests {
             0
         );
         assert_eq!(
-            modify_summon_amount(&state, listener, &SummonAmountCtx::default()),
-            0
-        );
-        assert_eq!(
             modify_card_play_count(&state, listener, &CardPlayCountCtx::default()),
             0
         );
@@ -20483,7 +21179,6 @@ mod tests {
             &CombatLifecycleCtx::default()
         ));
         assert!(should_play(&state, listener, &CardCtx::default()));
-        assert!(should_draw(&state, listener, &DrawCtx::default()));
 
         // Boolean (false = "do not opt in")
         assert!(!should_take_extra_turn(
@@ -20491,20 +21186,8 @@ mod tests {
             listener,
             &CombatLifecycleCtx::default()
         ));
-        // P2-2b sts2-rs-3to: try_block_debuff now takes a &mut SmallVec for
-        // emitted ConsumePowerStack effects.
-        let mut effects: SmallVec<[Effect; 4]> = SmallVec::new();
-        assert!(!try_block_debuff(
-            &state,
-            listener,
-            &TryBlockDebuffCtx::default(),
-            &mut effects,
-        ));
-        assert!(effects.is_empty(), "no Artifact → no effect");
 
         // Unit-returning event hooks (smoke-test one of each ctx family).
-        before_attack(&state, listener, &AttackCtx::default());
-        after_attack(&state, listener, &AttackCtx::default());
         // P2-2b sts2-rs-3to: before/after_damage_received now return
         // Option<SmallVec<[Effect; 2]>>; we drop the result here since the
         // smoke test only verifies the listener fn doesn't panic.
@@ -20513,8 +21196,6 @@ mod tests {
         after_damage_given(&state, listener, &DamageCtx::default());
         let _ = after_block_gained(&state, listener, &BlockGainedCtx::default());
         after_block_cleared(&state, listener, &BlockClearedCtx::default());
-        after_summon(&state, listener, &SummonCtx::default());
-        after_osty_revived(&state, listener, &OstyRevivedCtx::default());
         // sts2-rs-76t5: after_modifying_card_play_count now returns
         // Option<SmallVec<[Effect; 2]>>; we drop the result here.
         let _ = after_modifying_card_play_count(&state, listener, &CardCtx::default());
@@ -20522,7 +21203,6 @@ mod tests {
         after_card_played(&state, listener, &CardCtx::default());
         after_card_exhausted(&state, listener, &CardCtx::default());
         after_card_discarded(&state, listener, &CardCtx::default());
-        on_card_drawn(&state, listener, &CardDrawnCtx::default());
         // sts2-rs-rnv6: before_turn_end now returns Option<SmallVec<[Effect; 4]>>.
         let _ = before_turn_end(&state, listener, &TurnSideCtx::default());
         // sts2-rs-6ynt.6.1: after_turn_end now returns Option<SmallVec<[Effect; 2]>>.
@@ -20536,7 +21216,6 @@ mod tests {
         // P2-2b sts2-rs-3to: after_side_turn_start now returns Option<SmallVec<[Effect; 2]>>.
         let _ = after_side_turn_start(&state, listener, &TurnSideCtx::default());
         on_turn_start_own_side(&state, listener, &TurnSelfCtx::default());
-        after_creature_added_to_combat(&state, listener, &CreatureAddedCtx::default());
         before_combat_start(&state, listener, &CombatLifecycleCtx::default());
         after_combat_victory(&state, listener, &CombatLifecycleCtx::default());
         after_combat_end(&state, listener, &CombatLifecycleCtx::default());
@@ -21584,6 +22263,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: crate::cards::TargetType::AllEnemies,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 5,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -21615,6 +22295,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 13,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -21729,10 +22410,8 @@ mod tests {
         // `HookId::COUNT` by exactly 2 — the HP-loss split. Hoisted up here
         // to avoid `clippy::items_after_statements`.
         // Bead `sts2-rs-47jv` adds 5 new dispatchers for the C#-canon
-        // `modify_power_amount_*` channel family (inserted between
-        // power-application gating and hand-draw modifiers below).
-        const TOUCHED_DISPATCHERS: usize =
-            6 + 2 + 5 + 3 + 1 + 2 + 5 + 3 + 2 + 1 + 5 + 5 + 6 + 1 + 7 + 1 + 1 + 1;
+        // `modify_power_amount_*` channel family.
+        const TOUCHED_DISPATCHERS: usize = 6 + 5 + 3 + 2 + 5 + 2 + 1 + 4 + 4 + 6 + 7 + 1 + 1 + 1;
         const HP_LOSS_DISPATCHER_SPLIT: usize = 2;
 
         let mut state = CombatState::default();
@@ -21768,10 +22447,6 @@ mod tests {
         // &mut state + a damage parameter to feed the Envenom arm.
         dispatch_after_damage_given(&mut state, &DamageCtx::default(), 0, 0, false);
 
-        // Attack events (2).
-        dispatch_before_attack(&state, &AttackCtx::default());
-        dispatch_after_attack(&state, &AttackCtx::default());
-
         // Block pipeline (5).
         assert_eq!(
             dispatch_modify_block_additive(&state, &BlockCtx::default()),
@@ -21805,13 +22480,6 @@ mod tests {
         // Top-level pipeline: 0 listeners → identity (0).
         assert_eq!(modify_hp_lost(&state, 0, &HpLostCtx::default()), 0);
 
-        // Power-application gating (1, powers-only).
-        // P2-2b sts2-rs-3to: dispatch_try_block_debuff now takes &mut state.
-        assert!(!dispatch_try_block_debuff(
-            &mut state,
-            &TryBlockDebuffCtx::default()
-        ));
-
         // Hand-draw / energy modifiers (2).
         assert_eq!(
             dispatch_modify_hand_draw(&state, &HandDrawCtx::default()),
@@ -21821,14 +22489,6 @@ mod tests {
             dispatch_modify_max_energy(&state, &MaxEnergyCtx::default()),
             0
         );
-
-        // Summon (3).
-        assert_eq!(
-            dispatch_modify_summon_amount(&state, &SummonAmountCtx::default()),
-            0
-        );
-        dispatch_after_summon(&state, &SummonCtx::default());
-        dispatch_after_osty_revived(&state, &OstyRevivedCtx::default());
 
         // Card play count (2).
         assert_eq!(
@@ -21855,7 +22515,6 @@ mod tests {
             &CombatLifecycleCtx::default()
         ));
         assert!(dispatch_should_play(&state, &CardCtx::default()));
-        assert!(dispatch_should_draw(&state, &DrawCtx::default()));
         assert!(!dispatch_should_take_extra_turn(
             &state,
             &CombatLifecycleCtx::default()
@@ -21874,7 +22533,6 @@ mod tests {
         // &mut state to apply Reflex's on-discard "draw 2" body after
         // the walk.
         dispatch_after_card_discarded(&mut state, &CardCtx::default());
-        dispatch_on_card_drawn(&state, &CardDrawnCtx::default());
 
         // Turn boundary (5; the no-op `on_turn_start_own_side` walk is gone).
         // sts2-rs-rnv6: dispatch_before_turn_end now takes &mut state.
@@ -21887,9 +22545,6 @@ mod tests {
         dispatch_before_side_turn_start(&mut state, &TurnSideCtx::default());
         // P2-2b sts2-rs-3to: dispatch_after_side_turn_start now takes &mut state.
         dispatch_after_side_turn_start(&mut state, &TurnSideCtx::default());
-
-        // Creature lifecycle (1).
-        dispatch_after_creature_added_to_combat(&state, &CreatureAddedCtx::default());
 
         // Combat lifecycle (7).
         dispatch_before_combat_start(&state, &CombatLifecycleCtx::default());
@@ -21910,9 +22565,8 @@ mod tests {
         dispatch_after_forge(&state, &ForgeCtx::default());
 
         // Sanity: `HookId::ALL` length matches Python's listener-method
-        // count (48 post-zlx.5); the touched dispatchers exceed it by the
-        // HP-loss split (additive + multiplicative + cap = 3 dispatchers
-        // vs 1 HookId). 6+2+5+3+1+2+3+2+1+5+5+6+1+7+1 = 50 = 48 + 2.
+        // count; the touched dispatchers exceed it by the HP-loss split
+        // (additive + multiplicative + cap = 3 dispatchers vs 1 HookId).
         assert_eq!(
             TOUCHED_DISPATCHERS,
             HookId::COUNT + HP_LOSS_DISPATCHER_SPLIT
@@ -22165,6 +22819,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -22204,6 +22859,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 12,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -22255,6 +22911,7 @@ mod tests {
             card_type,
             target_type: TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -22310,6 +22967,7 @@ mod tests {
             card_type,
             target_type: TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -22379,18 +23037,14 @@ mod tests {
         );
     }
 
-    /// Bead `sts2-rs-5x2ng`: `dispatch_modify_summon_amount` and
-    /// `dispatch_modify_card_play_count` are saturating-additive folds
+    /// Bead `sts2-rs-5x2ng`: `dispatch_modify_card_play_count` is a
+    /// saturating-additive fold
     /// (identity 0) over power+relic listeners. On a default
     /// CombatState (no listeners) the chain must return 0. Sibling to
     /// 84vgz (hand_draw + max_energy) and o39zh (power_amount).
     #[test]
-    fn dispatch_modify_summon_amount_and_card_play_count_empty_bus_zero() {
+    fn dispatch_modify_card_play_count_empty_bus_zero() {
         let state = CombatState::default();
-        assert_eq!(
-            dispatch_modify_summon_amount(&state, &SummonAmountCtx::default()),
-            0
-        );
         assert_eq!(
             dispatch_modify_card_play_count(&state, &CardPlayCountCtx::default()),
             0
@@ -22849,31 +23503,6 @@ mod tests {
         );
     }
 
-    /// **`try_block_debuff` is powers-only and any-true short-circuits**:
-    /// mirrors Python `hooks.py:180-191` — Artifact (a power) returns
-    /// `True` to abort further iteration. Defaults `false` (no power
-    /// blocks); once a single power returns `true`, the dispatcher
-    /// returns `true` immediately without walking relics (Python skips
-    /// relics for this hook entirely).
-    #[test]
-    fn try_block_debuff_powers_only_default_false() {
-        let mut state = CombatState::default();
-        state.player.powers.push(power_uid(1));
-        state.relics.push(Relic {
-            id: NonZeroU32::new(10).unwrap(),
-            kind: RelicKind::BurningBlood,
-            counter: 0,
-            is_wax: false,
-            is_melted: false,
-        });
-        // No listener returns true → dispatcher returns false (default).
-        // P2-2b sts2-rs-3to: dispatch_try_block_debuff now takes &mut state.
-        assert!(!dispatch_try_block_debuff(
-            &mut state,
-            &TryBlockDebuffCtx::default()
-        ));
-    }
-
     /// **Damage cap dispatcher takes the running min**: mirrors Python
     /// `hooks.py:93-104`. With no listeners emitting a finite cap the
     /// result is `i32::MAX` (the no-cap sentinel; Python's
@@ -22888,8 +23517,8 @@ mod tests {
     }
 
     /// **Side-effect dispatchers are fire-and-forget**: `before_damage_received`,
-    /// `after_damage_received`, `after_damage_given`, `before_attack`,
-    /// `after_attack`, `after_block_gained`, `after_block_cleared` all
+    /// `after_damage_received`, `after_damage_given`, `after_block_gained`,
+    /// `after_block_cleared` all
     /// return `()` and walk every listener (no short-circuit). With no-op
     /// bodies they are observable only by their side effects (none yet).
     /// We smoke-test that they accept a populated state without panic.
@@ -22910,8 +23539,6 @@ mod tests {
         dispatch_after_damage_received(&mut state, &DamageCtx::default(), 0);
         // Bead `sts2-rs-zlx.3`: dispatch_after_damage_given now &mut + damage.
         dispatch_after_damage_given(&mut state, &DamageCtx::default(), 0, 0, false);
-        dispatch_before_attack(&state, &AttackCtx::default());
-        dispatch_after_attack(&state, &AttackCtx::default());
         dispatch_after_block_gained(&mut state, &BlockGainedCtx::default());
         dispatch_after_block_cleared(&mut state, &BlockClearedCtx::default());
     }
@@ -23164,6 +23791,7 @@ mod tests {
             card_type: crate::cards::CardType::Attack,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -24092,48 +24720,6 @@ mod tests {
         // floor(99 * 3/2) = 148, then min(148, 1) = 1.
         // (Single power state — Intangible alone — cap is 1.)
         assert_eq!(modify_damage(&state, 7, &ctx), 1);
-    }
-
-    /// **Artifact (P2-2b sts2-rs-3to):** `dispatch_try_block_debuff` returns
-    /// `true` while `power.amount > 0` AND emits a `ConsumePowerStack`
-    /// effect that decrements the stack. With Artifact(1) on the player, the
-    /// first call returns true and decrements to 0; the second call returns
-    /// false (no stacks left).
-    #[test]
-    fn artifact_blocks_debuff_application_and_consumes_stack() {
-        let (mut state, uid) = state_with_player_power(PowerKind::Artifact, 1);
-        // First invocation: amount=1 → blocks, then ConsumePowerStack drives
-        // it to 0. Bead `sts2-rs-2w966`: at 0 the power is removed (C#
-        // `ShouldRemoveDueToAmount`), so no Artifact instance remains.
-        assert!(dispatch_try_block_debuff(
-            &mut state,
-            &TryBlockDebuffCtx::default()
-        ));
-        assert!(
-            state.powers.iter().all(|p| p.id != uid.0),
-            "Artifact removed once its stack is consumed to 0"
-        );
-        // Second invocation: no Artifact instance → does not block.
-        assert!(!dispatch_try_block_debuff(
-            &mut state,
-            &TryBlockDebuffCtx::default()
-        ));
-    }
-
-    /// **Artifact with amount=0 does not block:** the listener arm checks
-    /// `amount > 0` per the Python source — no block, no stack consumption.
-    #[test]
-    fn artifact_with_no_stacks_does_not_block() {
-        let (mut state, uid) = state_with_player_power(PowerKind::Artifact, 0);
-        assert!(!dispatch_try_block_debuff(
-            &mut state,
-            &TryBlockDebuffCtx::default()
-        ));
-        assert_eq!(
-            state.powers.get_by_id(uid.0).unwrap().amount,
-            0,
-            "no consume happens when amount=0"
-        );
     }
 
     /// **Thorns wiring sanity (P2-2b sts2-rs-3to):** Thorns is reachable
@@ -27705,6 +28291,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -27757,6 +28344,7 @@ mod tests {
                 card_type: CardType::Attack,
                 target_type: TargetType::Enemy,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 6,
                 base_block: 0,
                 combat_vars: crate::cards::CombatVars::new(),
@@ -28043,6 +28631,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -31095,6 +31684,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -32106,6 +32696,7 @@ mod tests {
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -32666,8 +33257,20 @@ mod power_kind_mask_drift {
     ///   over the hp-lost trio;
     /// * `BEFORE_CARD_PLAYED_POWERS_KINDS` gates the whole
     ///   `dispatch_before_card_played_powers_body` (an early return), which
-    ///   also arms Storm/Subroutine via the `arm_storm_snapshot` helper.
+    ///   also arms Storm/Subroutine via the `arm_storm_snapshot` helper;
+    /// * `BEFORE_HAND_DRAW_ARM_KINDS` gates the whole
+    ///   `dispatch_before_hand_draw_arms` (an early return).
     const GATED_LISTENERS: &[(&str, PowerKindSet, &[&str])] = &[
+        (
+            "BEFORE_HAND_DRAW_ARM_KINDS",
+            super::BEFORE_HAND_DRAW_ARM_KINDS,
+            &["dispatch_before_hand_draw_arms"],
+        ),
+        (
+            "AFTER_DEATH_KINDS",
+            super::AFTER_DEATH_KINDS,
+            &["after_death"],
+        ),
         (
             "AFTER_BLOCK_BROKEN_KINDS",
             super::AFTER_BLOCK_BROKEN_KINDS,
@@ -32791,7 +33394,7 @@ mod power_kind_mask_drift {
         (
             "ON_TURN_END_ENEMY_SIDE_KINDS",
             super::ON_TURN_END_ENEMY_SIDE_KINDS,
-            &["on_turn_end_enemy_side"],
+            &["on_turn_end_enemy_side_effect"],
         ),
         (
             "BEFORE_SIDE_TURN_START_KINDS",
@@ -32812,12 +33415,16 @@ mod power_kind_mask_drift {
 
     /// The four `dispatch_after_card_played` lane masks, handled by their own
     /// structural test below (the dispatcher is a sequence of inline lanes,
-    /// not a single per-listener `match`).
+    /// not a single per-listener `match`), and the other-creatures
+    /// dispatcher's whole-body gate, held by
+    /// `other_creatures_mask_covers_its_lane_gates`.
     const AFTER_CARD_PLAYED_MASKS: &[&str] = &[
         "AFTER_CARD_PLAYED_PLAYER_REACT_KINDS",
         "AFTER_CARD_PLAYED_PENDING_KINDS",
         "AFTER_CARD_PLAYED_SNAPSHOT_KINDS",
         "AFTER_CARD_PLAYED_ORDERED_ENEMY_HIT_KINDS",
+        "AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS",
+        "AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS",
     ];
 
     /// Kinds `dispatch_after_card_played` only ever APPLIES to a creature
@@ -33045,6 +33652,77 @@ mod power_kind_mask_drift {
         out
     }
 
+    /// `dispatch_after_card_played_other_creatures` returns early (straight to
+    /// its trailing Skittish grant) when no kind of
+    /// `AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS` is live, so every lane it
+    /// self-gates with `power_kind_live` must be in that mask, and so must
+    /// every kind the body discriminates on.
+    #[test]
+    fn other_creatures_mask_covers_its_lane_gates() {
+        let src = sanitize(SRC);
+        let body = fn_body(&src, "dispatch_after_card_played_other_creatures_body");
+        let gates = self_gates(body);
+        assert!(gates.len() >= 9, "lane gates not found: {}", gates.len());
+        for (kind, _) in gates {
+            assert!(
+                super::AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS.contains(kind),
+                "MASK DRIFT: dispatch_after_card_played_other_creatures gates a lane \
+                 on PowerKind::{kind:?}, which AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS \
+                 lacks: the whole-dispatcher early return would skip it."
+            );
+        }
+        for kind in kind_mentions(body) {
+            assert!(
+                super::AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS.contains(kind)
+                    || AFTER_CARD_PLAYED_APPLIED_ONLY.contains(kind),
+                "MASK DRIFT: dispatch_after_card_played_other_creatures mentions \
+                 PowerKind::{kind:?}, which AFTER_CARD_PLAYED_OTHER_CREATURE_KINDS lacks."
+            );
+        }
+    }
+
+    /// `dispatch_after_card_played_player_powers` hands off to its residual
+    /// when no kind of `AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS` is live, so
+    /// every lane it self-gates with `power_kind_live`, every kind it names
+    /// and every mask it intersects must be inside that mask.
+    #[test]
+    fn player_powers_mask_covers_its_lanes() {
+        let src = sanitize(SRC);
+        let body = fn_body(&src, "dispatch_after_card_played_player_powers_body");
+        let mask = super::AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS;
+        let gates = self_gates(body);
+        assert!(gates.len() >= 5, "lane gates not found: {}", gates.len());
+        for (kind, _) in gates {
+            assert!(
+                mask.contains(kind),
+                "MASK DRIFT: dispatch_after_card_played_player_powers gates a lane on \
+                 PowerKind::{kind:?}, which AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS lacks."
+            );
+        }
+        for kind in kind_mentions(body) {
+            assert!(
+                mask.contains(kind) || AFTER_CARD_PLAYED_APPLIED_ONLY.contains(kind),
+                "MASK DRIFT: dispatch_after_card_played_player_powers mentions \
+                 PowerKind::{kind:?}, which AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS lacks."
+            );
+        }
+        for (name, set) in [
+            (
+                "AFTER_CARD_PLAYED_PENDING_KINDS",
+                super::AFTER_CARD_PLAYED_PENDING_KINDS,
+            ),
+            (
+                "AFTER_CARD_PLAYED_SNAPSHOT_KINDS",
+                super::AFTER_CARD_PLAYED_SNAPSHOT_KINDS,
+            ),
+        ] {
+            assert!(
+                set.is_subset_of(&mask),
+                "{name} has a kind outside AFTER_CARD_PLAYED_PLAYER_POWERS_KINDS"
+            );
+        }
+    }
+
     /// For every gated per-listener channel: each `PowerKind` the listener
     /// fn(s) mention must be in the gate mask, or the gate silently drops
     /// the kind's behavior whenever no *other* mask kind is live.
@@ -33080,9 +33758,9 @@ mod power_kind_mask_drift {
         // `dispatch_after_card_played_other_creatures`.
         let body_owned = format!(
             "{}\n{}\n{}",
-            fn_body(&src, "dispatch_after_card_played_player_powers"),
-            fn_body(&src, "dispatch_after_card_played_other_creatures"),
-            fn_body(&src, "dispatch_after_card_played_ordered_enemy_hits")
+            fn_body(&src, "dispatch_after_card_played_player_powers_body"),
+            fn_body(&src, "dispatch_after_card_played_other_creatures_body"),
+            fn_body(&src, "dispatch_after_card_played_ordered_enemy_hits_body")
         );
         let body = body_owned.as_str();
         let union = super::AFTER_CARD_PLAYED_PLAYER_REACT_KINDS;
@@ -33117,18 +33795,18 @@ mod power_kind_mask_drift {
 
         // (b) Each sub-gated region only discriminates on kinds its sub-mask
         // contains. The pending/snapshot passes are the if-blocks right after
-        // their `intersects(&…)` gates; the ordered walk is the for-loop over
+        // their `kinds_live(…, KindGate::…)` gates; the ordered walk is the for-loop over
         // the gate-assigned `ordered_walk_uids` binding.
         for (sub_name, sub, needle) in [
             (
                 "AFTER_CARD_PLAYED_PENDING_KINDS",
                 super::AFTER_CARD_PLAYED_PENDING_KINDS,
-                "intersects(&AFTER_CARD_PLAYED_PENDING_KINDS)",
+                "KindGate::AfterCardPlayedPending)",
             ),
             (
                 "AFTER_CARD_PLAYED_SNAPSHOT_KINDS",
                 super::AFTER_CARD_PLAYED_SNAPSHOT_KINDS,
-                "intersects(&AFTER_CARD_PLAYED_SNAPSHOT_KINDS)",
+                "KindGate::AfterCardPlayedSnapshot)",
             ),
             (
                 "AFTER_CARD_PLAYED_ORDERED_ENEMY_HIT_KINDS",
@@ -33249,6 +33927,12 @@ mod power_kind_mask_drift {
     /// `MODIFY_BLOCK_UNPOWERED_ARMS` and `AFTER_SIDE_TURN_START_WALK_ARMS`
     /// have their own checks.
     const ARM_GATES: &[(&str, PowerKindSet, PowerKindSet, &[(&str, &str)])] = &[
+        (
+            "AFTER_DEATH_ARMS",
+            super::AFTER_DEATH_ARMS,
+            super::AFTER_DEATH_KINDS,
+            &[("after_death", "None")],
+        ),
         (
             "AFTER_BLOCK_BROKEN_KINDS",
             super::AFTER_BLOCK_BROKEN_KINDS,
@@ -33385,7 +34069,7 @@ mod power_kind_mask_drift {
             "ON_TURN_END_ENEMY_SIDE_KINDS",
             super::ON_TURN_END_ENEMY_SIDE_KINDS,
             super::ON_TURN_END_ENEMY_SIDE_KINDS,
-            &[("on_turn_end_enemy_side", "None")],
+            &[("on_turn_end_enemy_side_effect", "None")],
         ),
         (
             "BEFORE_SIDE_TURN_START_KINDS",
@@ -33512,6 +34196,35 @@ mod power_kind_mask_drift {
     /// Each gate is exactly its listeners' arm heads (both directions) and
     /// sits inside its mention set; each listener ends in a terminal `_ =>`
     /// returning the channel's identity.
+    /// [`super::BEFORE_HAND_DRAW_ARM_KINDS`] gates
+    /// `dispatch_before_hand_draw_arms`, so it must be exactly the kinds its
+    /// union walk's `match power.kind` notes an arm for.
+    #[test]
+    fn before_hand_draw_arm_kinds_match_the_walk() {
+        let src = sanitize(SRC);
+        let body = fn_body(&src, "dispatch_before_hand_draw_arms");
+        let at = body
+            .find("match power.kind {")
+            .expect("the union walk's `match power.kind {`");
+        let block = brace_matched(&body[at + "match power.kind ".len()..]);
+        let mut heads = PowerKindSet::EMPTY;
+        for (i, _) in block.match_indices("PowerKind::") {
+            let rest = &block[i + "PowerKind::".len()..];
+            let ident: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if rest[ident.len()..].trim_start().starts_with("=>") {
+                heads = heads.union(PowerKindSet::from_kinds(&[kind_by_ident(&ident)]));
+            }
+        }
+        assert_eq!(
+            heads,
+            super::BEFORE_HAND_DRAW_ARM_KINDS,
+            "BEFORE_HAND_DRAW_ARM_KINDS drifted from dispatch_before_hand_draw_arms' arms"
+        );
+    }
+
     #[test]
     fn gates_equal_their_listeners_arm_heads() {
         let src = sanitize(SRC);
@@ -33661,6 +34374,19 @@ mod power_kind_mask_drift {
             (name, gate, is_identity)
         }
         vec![
+            swept("AFTER_DEATH_ARMS", super::AFTER_DEATH_ARMS, |s, l, p| {
+                let dead = match p.a {
+                    CreatureRef::Enemy(uid) => uid,
+                    // Another creature (uid 2, absent from the sweep state),
+                    // so the CrabRage / Ravenous ally arms can fire too.
+                    _ => CreatureUid::new(2).expect("non-zero"),
+                };
+                let ctx = super::AfterDeathCtx {
+                    dead,
+                    dead_side: p.side,
+                };
+                super::after_death(s, l, &ctx).is_none()
+            }),
             swept(
                 "AFTER_BLOCK_BROKEN_KINDS",
                 super::AFTER_BLOCK_BROKEN_KINDS,
@@ -33884,6 +34610,7 @@ mod power_kind_mask_drift {
             card_type: CardType::Skill,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 5,
             combat_vars: crate::cards::CombatVars::new(),
@@ -34792,7 +35519,7 @@ mod power_hook_liveness {
     use super::power_kind_mask_drift::{fn_body, kind_mentions, sanitize, sweep_state};
     use super::{
         BlockClearedCtx, BlockGainedCtx, CardCtx, CombatLifecycleCtx, CreatureRef, DamageCtx,
-        HpLostCtx, PowerHook, TurnSideCtx, ValueProps,
+        HpLostCtx, KindGate, PowerHook, TurnSideCtx, ValueProps, POWER_HOOK_BITS,
     };
     use crate::cards::CardType;
     use crate::{CardUid, CombatState, CreatureUid, PowerKind, PowerKindSet, Side};
@@ -35030,6 +35757,18 @@ mod power_hook_liveness {
     fn intersected_gates(body: &str) -> Vec<String> {
         const CALL: &str = "intersects(&";
         let mut out = Vec::new();
+        for gate in KindGate::ALL {
+            let needle = format!("KindGate::{gate:?}");
+            let named = body.match_indices(&needle).any(|(at, _)| {
+                !body[at + needle.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            });
+            if named {
+                out.push(gate.mask_name().to_string());
+            }
+        }
         let mut rest = body;
         while let Some(pos) = rest.find(CALL) {
             rest = &rest[pos + CALL.len()..];
@@ -35120,6 +35859,25 @@ mod power_hook_liveness {
     /// The table inverts the trigger sets, and a store's word is the OR of
     /// its powers' bits through push, retain and clear. `Debug` leaves the
     /// derived word out.
+    /// Every [`KindGate`]'s bit in the per-kind table is exactly its mask,
+    /// and no gate bit collides with a [`PowerHook`] bit.
+    #[test]
+    fn kind_gate_bits_follow_their_masks() {
+        let hook_bits = PowerHook::ALL.iter().fold(0u64, |w, h| w | h.bit());
+        for gate in KindGate::ALL {
+            assert_eq!(gate.bit() & hook_bits, 0, "{gate:?}");
+        }
+        for (i, bits) in POWER_HOOK_BITS.iter().enumerate() {
+            for gate in KindGate::ALL {
+                assert_eq!(
+                    bits & gate.bit() != 0,
+                    gate.kinds().contains_index(i),
+                    "{gate:?} / discriminant {i}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn hook_bits_follow_the_arena() {
         for &kind in PowerKind::all() {
@@ -35429,6 +36187,7 @@ mod power_hook_liveness {
             card_type: CardType::Skill,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: amount,
             combat_vars: crate::cards::CombatVars::new(),
@@ -35755,6 +36514,7 @@ mod owner_scoped_power_folds {
             card_type,
             target_type: crate::cards::TargetType::Self_,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 5,
             combat_vars: crate::cards::CombatVars::new(),

@@ -196,6 +196,7 @@ def observe(
         # over-offers and shifts every option after the first curse. Ship the
         # engine's own offer map, like transform/enchant above.
         obs["upgrade_select_deck_indices"] = rm.upgrade_select_deck_indices()
+        _drop_deck_select_picks(rm, obs)
     elif surface == "shop":
         obs["shop"] = rm.shop_inventory()
     elif surface == "event":
@@ -215,6 +216,31 @@ def observe(
         # unanswerable — the encoder puts it on the state token. GH #252/#379.
         obs["pending_potion_swap"] = rm.pending_potion_swap
     return obs
+
+
+# The offer lists of an open pick-N deck select's kind (GH #1790), whose `idx`
+# indexes the offer minus the picks made so far.
+_DECK_SELECT_OFFERS: dict[str, tuple[str, ...]] = {
+    "removal": ("card_removal_options", "card_removal_option_enchantments"),
+    "upgrade": ("upgrade_select_deck_indices",),
+    "transform": ("transform_select_deck_indices",),
+    "enchant": ("enchant_select_deck_indices",),
+}
+
+
+def _drop_deck_select_picks(rm: Any, obs: dict[str, Any]) -> None:
+    """On a `deck_select_screens` run with a pick-N deck select picked into
+    (GH #1790): the open kind's offer lists lose the picked positions, as the
+    pick actions index them, and `deck_select_picked_deck` names the picked
+    master-deck cards (their DECK tokens carry K_PICKED). A no-op otherwise, so
+    every other run's observation is unchanged."""
+    kind = getattr(rm, "deck_select_picked_kind", None)
+    if not kind:
+        return
+    picked = set(rm.deck_select_picked)
+    for key in _DECK_SELECT_OFFERS[kind]:
+        obs[key] = [x for i, x in enumerate(obs[key]) if i not in picked]
+    obs["deck_select_picked_deck"] = list(rm.deck_select_picked_deck_indices)
 
 
 def _potion_swap_is_rule_side() -> bool:
@@ -276,7 +302,8 @@ def assert_encodable(actions: list[dict[str, Any]], *, phase: str | None = None)
 
 
 def mask_rejectable(rm: Any, phase: str, actions: list[dict]) -> list[dict]:
-    """Drop shop actions the engine accepts but silently no-ops.
+    """Drop shop actions the engine accepts but silently no-ops, and the deck
+    select cancel of a `deck_select_screens` run (GH #1790).
 
     The engine already filters unaffordable/sold-out buys out of
     `available_actions()`, but a belt-full `shop_buy_potion` is a
@@ -286,6 +313,12 @@ def mask_rejectable(rm: Any, phase: str, actions: list[dict]) -> list[dict]:
     burned to max_steps in shop potion loops). Expert mode is
     unaffected — the deployed agent never picks it.
     """
+    if getattr(rm, "deck_select_cancelable", False):
+        # GH #1790: Smith's and Cook's select are cancelable on a
+        # `deck_select_screens` run; the cancel leaves the campfire as it was,
+        # so the student is never offered it (no kind names it).
+        masked = [a for a in actions if a.get("action") != "confirm_deck_selection"]
+        return masked or actions
     if phase != "shop":
         return actions
     if len(rm.potions()) < int(rm.max_potion_slots()):
@@ -598,6 +631,7 @@ class PpoRunEnv:
             # just a coverage gap.
             if phase == "event":
                 rm.materialize_event()
+                phase = rm.phase()  # the Fake Merchant opens as a shop (GH #1607)
             actions = rm.available_actions()
             if not actions:
                 return self._terminal("no_actions")

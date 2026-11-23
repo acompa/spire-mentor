@@ -171,3 +171,45 @@ def test_no_orb_passive_for_non_defect_turn():
     pre = {"decision": "combat_play", "round": 1, "player": {"hp": 70}, "enemies": []}
     post = {"decision": "combat_play", "round": 2, "player": {"hp": 70}, "enemies": []}
     assert all("orb passive" not in line for line in diff_states(pre, post))
+
+
+def _shop(deck, max_hp=80):
+    return {"decision": "shop", "player": {"hp": 70, "max_hp": max_hp, "deck": deck}}
+
+
+def _card(cid, name, upgraded=False, **extra):
+    return {"id": cid, "name": name, "upgraded": upgraded, **extra}
+
+
+def test_deck_lines_name_upgrades_gains_removals_and_enchants():
+    # GH #1596: Blitz's Random Upgrades changed two cards and said nothing.
+    pre = _shop(
+        [
+            _card("STRIKE", "Strike"),
+            _card("DEFEND", "Defend"),
+            _card("BASH", "Bash"),
+            _card("BODY_SLAM", "Body Slam"),
+        ]
+    )
+    post = _shop(
+        [
+            _card("STRIKE", "Strike", upgraded=True),
+            _card("BODY_SLAM", "Body Slam", enchantment="VIGOROUS", enchantment_amount=5),
+            _card("BASH", "Bash"),
+            _card("IRON_WAVE", "Iron Wave"),
+        ],
+        max_hp=84,
+    )
+    assert diff_states(pre, post) == [
+        "Upgraded Strike → Strike+",
+        "Enchanted Body Slam with Vigorous 5",
+        "+Card Iron Wave",
+        f"{_MINUS}Card Defend",
+        "Max HP 80→84",
+    ]
+
+
+def test_deck_lines_skip_fight_states():
+    pre = {**_shop([_card("STRIKE", "Strike")]), "enemies": [_enemy(0, "Beetle", 38)]}
+    post = {**_shop([]), "enemies": [_enemy(0, "Beetle", 38)]}
+    assert all("Card" not in line for line in diff_states(pre, post))

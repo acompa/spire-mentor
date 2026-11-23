@@ -138,31 +138,21 @@ from . import vocab
 # BudgetExceededError` resolving to the same class.
 from .errors import BudgetExceededError
 
+# The optional encoder features live in `ppo.features` (numpy-free, for the
+# advisor); re-exported here so `schema.CARD_BUNDLES` etc. keep resolving.
+from .features import (
+    CARD_BUNDLES,
+    CARD_KIND,
+    CARD_MODS,
+    KNOWN_FEATURES,
+    REWARD_UPGRADE,
+    parse_features,
+)
+
 # Section ids.
 SEC_STATE, SEC_DECK, SEC_RELIC, SEC_POTION, SEC_MAPNODE = 0, 1, 2, 3, 4
 SEC_PATH, SEC_CARD, SEC_FIXED, SEC_RELIC_OPT, SEC_POTION_OPT, SEC_EVENT_OPT = 5, 6, 7, 8, 9, 10
 N_SECTION = 11
-
-#: Candidate encoder inputs, off by default. See the module docstring.
-REWARD_UPGRADE = "reward_upgrade"
-CARD_MODS = "card_mods"
-CARD_BUNDLES = "card_bundles"
-CARD_KIND = "card_kind"
-KNOWN_FEATURES: frozenset[str] = frozenset({REWARD_UPGRADE, CARD_MODS, CARD_BUNDLES, CARD_KIND})
-
-
-def parse_features(spec: str) -> frozenset[str]:
-    """``"foo,bar"`` → ``{"foo", "bar"}``; raises on an unknown name.
-
-    Failing loud on a typo is the point: a misspelled feature would otherwise
-    screen as a null and be recorded as "this idea does not help".
-    """
-    names = frozenset(t.strip() for t in spec.split(",") if t.strip())
-    unknown = names - KNOWN_FEATURES
-    if unknown:
-        raise ValueError(f"unknown STS2_PPO_FEATURES entries {sorted(unknown)}")
-    return names
-
 
 ACTIVE_FEATURES = parse_features(os.environ.get("STS2_PPO_FEATURES", ""))
 

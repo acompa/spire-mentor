@@ -239,7 +239,7 @@ internal sealed class SimCoachPanel
         if (section.LogIdx is int step)
         {
             var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
-            Button open = SimUiKit.MakeButton("open in workbench", "",
+            Button open = SimUiKit.MakeButton(L10n.T("open in workbench"), "",
                 () => Guard(() => SimWorkbenchLink.Open(logName, step)));
             open.AddThemeFontSizeOverride("font_size", 11);
             open.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;

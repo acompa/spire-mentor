@@ -174,3 +174,85 @@ export function handInsets(mode: PhoneMode): { left: number; right: number } | n
   if (mode === "landscape") return { left: PHONE_LS_LEFT, right: PHONE_LS_RIGHT };
   return null;
 }
+
+/** The fan is TIGHT when a covered card shows less than this share of its
+ *  width. The name banner is centred on the card, so below this the next card
+ *  covers it and a resting card shows only its cost gem and a sliver of art.
+ *  On a phone that is where a covered card gets a spine (see `spineLength`)
+ *  and where copies of a card start to stack (see `handStacks`). */
+export const SPINE_STEP_F = 0.62;
+
+/** Whether an n-card flat fan is tight at this card width and room. */
+export function fanIsTight(n: number, cw: number, availW: number): boolean {
+  if (n < 2) return false;
+  const step = cw - fanLayout(n, cw, availW, -1, { flat: true })[1].overlap;
+  return step < cw * SPINE_STEP_F;
+}
+
+/** Where the spine starts below the card's top edge, as a share of its width:
+ *  just under the energy orb (card.tscn's EnergyIcon ends 48 of 422 units
+ *  down, 0.16 of the 300-unit width) with a little air. */
+export const SPINE_TOP_F = 0.19;
+
+/** The spine's width, as a share of the card's (`.gs-card-spine`). It stays
+ *  inside the fan's narrowest step, 0.18. */
+export const SPINE_W_F = 0.17;
+
+/** How wide a badge on a covered card is, in REAL px: the stack count, the
+ *  advice's step number. */
+export const COUNT_BADGE_W = 26;
+export const STEP_BADGE_W = 30;
+
+/** Whether a badge `badgeW` real px wide fits between the spine and the next
+ *  card (the fan's `step`, design px, at stage zoom `k`). Where it does not,
+ *  the badge goes INSIDE the spine, ahead of the name: stood under the spine
+ *  instead, it cost a 9-letter name its last half. */
+export function badgeBesideSpine(step: number, cw: number, k: number, badgeW: number): boolean {
+  return (step - cw * SPINE_W_F) * k >= badgeW + 2;
+}
+
+/** How long a covered card's spine runs, in design px: from under the orb to
+ *  the bottom of the strip the stage leaves showing (`show`), less a few px
+ *  of air (`air`). */
+export function spineLength(cw: number, show: number, air: number): number {
+  return Math.max(0, show - cw * SPINE_TOP_F - air);
+}
+
+/** One fan slot when copies stack: the card it shows and plays (`card`, the
+ *  first copy in hand order) and every card it stands for (`cards`). */
+export type HandStack<C> = { card: C; cards: C[] };
+
+/** Fold copies of a card into one slot each, in order of first appearance.
+ *
+ *  `key` says which cards are copies; it returns `null` for a card that must
+ *  never stack (Hand keys on everything the card shows, plus its advice mark,
+ *  so a Strike the plan numbers stays its own slot). Two cards stack only if
+ *  they would draw identically, so tapping the stack and getting the first
+ *  copy is the same play as getting any other. */
+export function handStacks<C>(cards: C[], key: (c: C) => string | null): HandStack<C>[] {
+  const out: HandStack<C>[] = [];
+  const byKey = new Map<string, HandStack<C>>();
+  for (const c of cards) {
+    const k = key(c);
+    const hit = k == null ? undefined : byKey.get(k);
+    if (hit) { hit.cards.push(c); continue; }
+    const s = { card: c, cards: [c] };
+    out.push(s);
+    if (k != null) byKey.set(k, s);
+  }
+  return out;
+}
+
+/** The spine's font size: as large as 0.105 of the card's width (13px on the
+ *  phone's 124px card), shrunk so the name fits the band, down to 0.08 (10px)
+ *  or `minPx`, whichever is larger, where a long name is cut with an ellipsis
+ *  instead. CardFrame passes 10 real px (the small phone's 108px card would
+ *  otherwise go to 8.6). Kreon's bold letters
+ *  average ~0.58em of advance (measured on the phone: 0.52 cut "Iron Wave"). */
+export function spineFontPx(label: string, len: number, width: number, minPx = 0): number {
+  // `label` counts what the spine holds besides the name too (an inline badge
+  // is ~2 characters long).
+  const fit = len / (Math.max(1, label.length) * 0.58);
+  const lo = Math.max(width * 0.08, minPx);
+  return Math.max(lo, Math.min(Math.max(width * 0.105, lo), fit));
+}

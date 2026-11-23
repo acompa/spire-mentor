@@ -3,6 +3,7 @@ import type { Step } from "../api";
 import { assetUrl } from "../api";
 import { characterArt, characterKey } from "../characters";
 import "../skins/runend.css";
+import { t } from "../i18n";
 
 type Tone = "victory" | "defeat" | "ended";
 
@@ -57,14 +58,16 @@ export function RunEndScene({ step, heading, tone, primaryAction, secondaryActio
   // Neutral, data-backed epitaph — character + act, no invented lore. The
   // floor number is deliberately NOT repeated here: it already lives in the
   // tally row and the metadata caption.
-  const act = meta.act_name ?? (s.act != null ? `Act ${s.act}` : meta.act != null ? `Act ${meta.act}` : null);
-  const where = act ? ` in ${act}` : "";
-  const epitaph = name
+  // act_name / player.name stay English in the payload (scenes and art key
+  // on them); the game's names for them translate here, for display only.
+  const act = s.act_display_name ?? (meta.act_name ? t(meta.act_name) : null) ?? (s.act != null ? t("Act {n}", { n: s.act }) : meta.act != null ? t("Act {n}", { n: meta.act }) : null);
+  const shownName = s.player?.display_name ?? (name ? t(name) : name);
+  const epitaph = shownName
     ? tone === "victory"
-      ? `The ${name} triumphed${where}.`
+      ? act ? t("The {name} triumphed in {act}.", { name: shownName, act }) : t("The {name} triumphed.", { name: shownName })
       : tone === "defeat"
-        ? `The ${name} fell${where}.`
-        : `The ${name} abandoned the climb${where}.`
+        ? act ? t("The {name} fell in {act}.", { name: shownName, act }) : t("The {name} fell.", { name: shownName })
+        : act ? t("The {name} abandoned the climb in {act}.", { name: shownName, act }) : t("The {name} abandoned the climb.", { name: shownName })
     : null;
   const rows = tallyRows(step);
   return (
@@ -80,11 +83,11 @@ export function RunEndScene({ step, heading, tone, primaryAction, secondaryActio
         {/* run identity, parked in the frame's corner like the game's build
             stamp — small, warm, and clear of the body and the tally. */}
         <div className="gs-runend-meta">
-          <span>{name}</span>
+          <span>{shownName}</span>
           {s.ascension != null && <span>· A{s.ascension}</span>}
-          {meta.act_name && <span>· {meta.act_name}</span>}
-          {floor != null && <span>· floor {floor}</span>}
-          {s.player?.hp != null && <span>· {s.player.hp}/{s.player.max_hp} HP</span>}
+          {meta.act_name && <span>· {s.act_display_name ?? t(meta.act_name)}</span>}
+          {floor != null && <span>· {t("floor {n}", { n: floor })}</span>}
+          {s.player?.hp != null && <span>· {t("{hp}/{max} HP", { hp: s.player.hp, max: s.player.max_hp ?? "?" })}</span>}
         </div>
         <div className="gs-runend-banner">
           <img src={assetUrl("ui/reward_screen/reward_banner.png")} alt="" aria-hidden="true" />
@@ -96,10 +99,11 @@ export function RunEndScene({ step, heading, tone, primaryAction, secondaryActio
             {rows.map((r) => (
               <div key={r.label} className="gs-runend-row">
                 <img src={assetUrl(r.icon)} alt="" aria-hidden="true" />
-                <span className="gs-runend-rowlabel">{r.label}:</span>
+                {/* Runtime keys: the tallyRows label / unit constants (listed in i18n/zh/screens.ts). */}
+                <span className="gs-runend-rowlabel">{t(r.label)}:</span>
                 <span className="gs-runend-rowvalue">
                   {r.value}
-                  {r.unit && <span className="gs-runend-rowunit">{r.unit}</span>}
+                  {r.unit && <span className="gs-runend-rowunit">{t(r.unit)}</span>}
                 </span>
               </div>
             ))}
@@ -130,25 +134,25 @@ export default function GameOver({ step, onNewRun, onReviewReplay, onCoachReview
   return (
     <RunEndScene
       step={step}
-      heading={victory ? "Victory!" : "Defeat"}
+      heading={victory ? t("Victory!") : t("Defeat")}
       tone={victory ? "victory" : "defeat"}
       secondaryActions={(onReviewReplay || onCoachReview) && (
         <>
           {onReviewReplay && (
             <button className="gs-runend-btn gs-runend-btn--secondary" onClick={onReviewReplay}>
-              <span className="gs-runend-btnface">Review replay</span>
+              <span className="gs-runend-btnface">{t("Review replay")}</span>
             </button>
           )}
       {onCoachReview && (
         <button className="gs-runend-btn gs-runend-btn--secondary" onClick={onCoachReview}>
-          <span className="gs-runend-btnface">Coach review</span>
+          <span className="gs-runend-btnface">{t("Coach review")}</span>
         </button>
       )}
         </>
       )}
       primaryAction={onNewRun && (
         <button className="gs-runend-btn gs-runend-btn--primary" onClick={onNewRun}>
-          <span className="gs-runend-btnface">New run</span>
+          <span className="gs-runend-btnface">{t("New run")}</span>
         </button>
       )}
     />

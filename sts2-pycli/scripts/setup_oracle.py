@@ -41,8 +41,12 @@ LIB_ROOT = PYCLI / "lib"
 PATCHER = PYCLI / "tools" / "IlPatcher" / "IlPatcher.csproj"
 HARNESS = PYCLI / "src" / "Sts2Headless" / "Sts2Headless.csproj"
 
-# Mirrors sts2_client.SUPPORTED_GAME_VERSIONS and the csproj's version check.
-DEFAULT_VERSION = "v0.107.1"
+# Mirrors sts2_client.DEFAULT_GAME_VERSION / LEGACY_GAME_VERSION /
+# SUPPORTED_GAME_VERSIONS and the csproj's version check (stdlib only, so the
+# values are copied, not imported).
+DEFAULT_VERSION = "v0.111.0"
+# The build whose DLLs pre-#789 checkouts keep flat in lib/.
+LEGACY_VERSION = "v0.107.1"
 SUPPORTED_VERSIONS = ("v0.107.1", "v0.111.0", "v0.113.0")
 
 # Files the C# harness links against or loads at run time.
@@ -231,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"No game data dir given - using the vendored lib/{version}/ DLLs (already IL-patched)."
         )
-    elif version == DEFAULT_VERSION and (LIB_ROOT / "sts2.dll").is_file():
+    elif version == LEGACY_VERSION and (LIB_ROOT / "sts2.dll").is_file():
         print(
             f"No game data dir given - using the LEGACY flat lib/ DLLs; move them to lib/{version}/ "
             "(GH #789). This fallback will be removed."

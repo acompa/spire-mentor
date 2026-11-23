@@ -1327,6 +1327,7 @@ mod tests {
             cards_drawn: 100,
             pending_run_gold_loss: 0,
             last_drawn_card: None,
+            enemy_turn_end_last_participant: None,
             ..CombatState::default()
         };
         let v = eval_features_wide(&s);

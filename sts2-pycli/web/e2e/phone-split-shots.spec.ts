@@ -1,6 +1,6 @@
 import { test, type Page } from "@playwright/test";
 import {
-  PHONES, openPreview, phoneContext, reachCombat, realStageContext, settledDrawnHeight, tapSlot, type PhoneSize,
+  PHONES, fireStep, openPreview, phoneContext, reachCombat, realStageContext, settledDrawnHeight, tapSlot, type PhoneSize,
 } from "./phoneHarness";
 
 /**
@@ -58,12 +58,11 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
     test.use(realStageContext(size));
 
     test("a hit on the band", async ({ page }) => {
-      await openPreview(page, "enemies=2&hit=4000");
+      await openPreview(page, "enemies=2&hit=manual");
       await settledDrawnHeight(page);
-      // The hit fires 4000 ms after load; openPreview already waited ~800 ms
-      // plus the settle, so wait out the rest of the 4300 ms frame.
-      const since = await page.evaluate(() => performance.now());
-      await page.waitForTimeout(Math.max(0, 4300 - since));
+      // The frame 300 ms into the hit.
+      await fireStep(page, "hit");
+      await page.waitForTimeout(300);
       await shot(page, size, "hit");
     });
 

@@ -88,6 +88,18 @@ async function tapSlot(page: Page, i: number): Promise<void> {
   await page.touchscreen.tap(pt.x, pt.y);
 }
 
+/** The first hand slot holding a card of `type` ("Attack" / "Skill"), read
+ *  off its type plaque. The opening hand's order is the seed's shuffle, which
+ *  moves with the engine: these tests once tapped slot 0 as "Bash" and slot 2
+ *  as "Defend", and silently tested a Defend as the attack once the shuffle
+ *  changed (the run opened Defend, Defend, Strike, Defend, Strike). */
+async function slotOfType(page: Page, type: "Attack" | "Skill"): Promise<number> {
+  const i = await page.evaluate((t) => Array.from(document.querySelectorAll(".gs-handslot")).findIndex((sl) =>
+    sl.querySelector(".gs-card-plaque")?.textContent?.trim().toLowerCase() === t.toLowerCase()), type);
+  expect(i, `an ${type} in the opening hand`).toBeGreaterThanOrEqual(0);
+  return i;
+}
+
 /** Zoom card `i` and read what the placement rules care about, in real px. */
 async function zoomed(page: Page, i: number) {
   await tapSlot(page, i);
@@ -118,11 +130,11 @@ async function deselect(page: Page, zoom: R, stage: R): Promise<void> {
   await expect(page.locator(".gs-zoomcard")).toHaveCount(0);
 }
 
-/** Every rule the zoom keeps in landscape, for the attack (Bash, slot 0) and a
- *  skill (Defend, slot 2) of the Ironclad's opening hand. */
+/** Every rule the zoom keeps in landscape, for an attack (Strike / Bash) and a
+ *  skill (Defend) of the Ironclad's opening hand. */
 async function checkZoom(page: Page, minW: number, label: string): Promise<void> {
-  for (const [slot, attack] of [[0, true], [2, false]] as const) {
-    const g = await zoomed(page, slot);
+  for (const attack of [true, false]) {
+    const g = await zoomed(page, await slotOfType(page, attack ? "Attack" : "Skill"));
     const w = g.zoom.right - g.zoom.left;
     console.log(`[phone-fight] ${label} ${attack ? "attack" : "skill"}: stage ${(g.stage.bottom - g.stage.top).toFixed(0)} px, zoom ${w.toFixed(1)} px`);
     expect(g.armed).toBe(attack);
@@ -167,7 +179,8 @@ for (const size of ["large", "small"] as PhoneSize[]) {
       // No double-tap zoom on what is tapped twice in a row: `manipulation`,
       // and `none` on the hand, which also keeps the browser from taking a
       // thumb drag across the cards as a scroll (drag-browse, 2026-11-13).
-      await tapSlot(page, 2);
+      // Any card will do; slot 2 is not always there (copies stack into one slot).
+      await tapSlot(page, await slotOfType(page, "Skill"));
       for (const [sel, want] of [[".gs-handslot-hit", "none"], [".gs-zoomcard", "manipulation"], [".gs-hud-relic", "manipulation"]]) {
         expect(await page.locator(sel).first().evaluate((el) => getComputedStyle(el).touchAction), sel)
           .toBe(want);
@@ -223,7 +236,7 @@ for (const size of ["large", "small"] as PhoneSize[]) {
       test("with an attack armed, a relic tap still explains the relic; the attack stays armed", async ({ page }) => {
         test.setTimeout(240_000);
         await reachCombat(page);
-        await tapSlot(page, 0); // Bash, the opening hand's attack
+        await tapSlot(page, await slotOfType(page, "Attack"));
         await expect(page.locator(".gs-zoomcard")).toHaveCount(1, { timeout: 5000 });
         await expect(page.locator(".gs-board[data-armed]")).toBeVisible();
         const relic = page.locator(".gs-hud-relic:not(.gs-hud-relic-more)").first();

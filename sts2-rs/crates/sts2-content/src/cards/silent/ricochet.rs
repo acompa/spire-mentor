@@ -14,7 +14,10 @@ use super::prelude::*;
 /// is alive (matches Python's `if not alive: break`).
 pub(crate) fn play_ricochet(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
     let base = current_card_damage(state);
-    let hits = if current_card_upgraded(state) { 5 } else { 4 };
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        if current_card_upgraded(state) { 5 } else { 4 },
+    );
     for _ in 0..hits {
         let Some(t) = state.get_random_enemy() else {
             break;

@@ -1,5 +1,6 @@
 {
  "coverage": [
+  "card_select:enchant",
   "card_select:none",
   "card_select:remove",
   "card_select:remove|upgrade",
@@ -8,6 +9,7 @@
   "decision:card_select",
   "decision:combat_play",
   "decision:event_choice",
+  "decision:game_over",
   "decision:map_select",
   "decision:rest_site",
   "decision:shop",
@@ -52,12 +54,12 @@
   "status:409"
  ],
  "engine": {
-  "src_hash": "60cab7da25b2ee48",
+  "src_hash": "6effe22e5a79f136",
   "version": "0.0.1"
  },
  "final_act": 1,
  "final_floor": 12,
- "full_responses": 58,
+ "full_responses": 60,
  "full_steps": 0,
  "patches": {
   "assets_base_url": "https://assets.test",
@@ -65,8 +67,8 @@
   "saved_at": "2026-01-01T00:00:00Z"
  },
  "python": "3.13",
- "reached_game_over": false,
- "requests": 211,
+ "reached_game_over": true,
+ "requests": 207,
  "scenario": {
   "act1": "underdocks",
   "ascension": 0,
@@ -229,5 +231,5 @@
   ],
   "seed": "G0LDEN0001"
  },
- "steps_played": 150
+ "steps_played": 146
 }

@@ -9,6 +9,7 @@ export interface Preview {
   neow: string[];
   act1: string;
   bosses: string[][];
+  character?: string;
   ascension: number;
 }
 
@@ -23,15 +24,20 @@ async function post<T>(route: string, body: unknown): Promise<T> {
   return j as T;
 }
 
+/** Every route takes the run's `character` last (the engine's default:
+ *  Ironclad). */
 export interface SeedCheckApi {
-  preview(seed: string, ascension: number): Promise<Preview>;
-  summary(seed: string, ascension: number, classes: number[]): Promise<Summary>;
-  saveLog(seed: string, ascension: number, classes: number[], seq: Seq, k: number): Promise<{ path: string }>;
+  preview(seed: string, ascension: number, character?: string): Promise<Preview>;
+  summary(seed: string, ascension: number, classes: number[], character?: string): Promise<Summary>;
+  saveLog(
+    seed: string, ascension: number, classes: number[], seq: Seq, k: number, character?: string,
+  ): Promise<{ path: string }>;
 }
 
 export const seedCheckApi: SeedCheckApi = {
-  preview: (seed, ascension) => post("/api/seedcheck/preview", { seed, ascension }),
-  summary: (seed, ascension, classes) => post("/api/seedcheck/summary", { seed, ascension, classes }),
-  saveLog: (seed, ascension, classes, seq, k) =>
-    post("/api/seedcheck/log", { seed, ascension, classes, seq, k }),
+  preview: (seed, ascension, character) => post("/api/seedcheck/preview", { seed, ascension, character }),
+  summary: (seed, ascension, classes, character) =>
+    post("/api/seedcheck/summary", { seed, ascension, classes, character }),
+  saveLog: (seed, ascension, classes, seq, k, character) =>
+    post("/api/seedcheck/log", { seed, ascension, classes, seq, k, character }),
 };

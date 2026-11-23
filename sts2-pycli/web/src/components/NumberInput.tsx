@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { t } from "../i18n";
 
 /**
  * A compact numeric field with its own stepper buttons.
@@ -95,9 +96,9 @@ export default function NumberInput({
       />
       <span className="numinput-steppers">
         <button type="button" tabIndex={-1} disabled={disabled || (max !== undefined && value >= max)}
-          aria-label="increment" onClick={() => bump(1)}>▲</button>
+          aria-label={t("increment")} onClick={() => bump(1)}>▲</button>
         <button type="button" tabIndex={-1} disabled={disabled || (min !== undefined && value <= min)}
-          aria-label="decrement" onClick={() => bump(-1)}>▼</button>
+          aria-label={t("decrement")} onClick={() => bump(-1)}>▼</button>
       </span>
     </span>
   );

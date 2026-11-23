@@ -8,6 +8,7 @@ enables it.
 
 from __future__ import annotations
 
+import logging
 import random
 import re
 from pathlib import Path
@@ -27,14 +28,31 @@ def _fresh_hidden() -> list[tuple[int, int]]:
     return [(x, y) for x in range(n) for y in range(n) if min(x, n - 1 - x) + min(y, n - 1 - y) > 2]
 
 
-def _message(hidden: list[tuple[int, int]], *, proceed: bool = False) -> dict[str, Any]:
+def _message(
+    hidden: list[tuple[int, int]],
+    *,
+    proceed: bool = False,
+    left: int | None = None,
+    total: int | None = None,
+    revealed: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Old shape by default; ``left`` / ``total`` / ``revealed`` add the
+    digger's wire fields (``divinations_left``, ``divinations_total``,
+    ``revealed``)."""
     options: list[dict[str, Any]] = [
         {"index": i, "action": "divine_cell", "x": x, "y": y, "enabled": True}
         for i, (x, y) in enumerate(hidden)
     ]
     if proceed:
         options.append({"index": len(hidden), "action": "proceed", "enabled": True})
-    return {"type": "crystal_sphere", "options": options}
+    msg: dict[str, Any] = {"type": "crystal_sphere", "options": options}
+    if left is not None:
+        msg["divinations_left"] = left
+    if total is not None:
+        msg["divinations_total"] = total
+    if revealed is not None:
+        msg["revealed"] = revealed
+    return msg
 
 
 def _divine(hidden: list[tuple[int, int]], x: int, y: int) -> list[tuple[int, int]]:
@@ -151,6 +169,84 @@ class TestRule:
             assert totals["rule"] > totals["random"] > totals["first"], (divs, totals)
 
 
+class TestDigger:
+    """With the digger's wire fields, the wheel's ``crystal_sphere_pick``
+    decides; an old-shape message, or anything the digger cannot answer,
+    gets the #872 rule (``TestRule``) instead."""
+
+    def test_new_shape_message_gets_the_digger(self) -> None:
+        hidden = _fresh_hidden()
+        action = csp.choose(_message(hidden, left=6, total=6, revealed=[]))
+        assert action is not None
+        assert action["annotations"]["policy"] == csp.DIGGER_POLICY_NAME == "crystal_sphere_digger"
+        assert _cell(action, hidden) in hidden
+
+    def test_digger_matches_the_wheel(self) -> None:
+        sts2_rs = pytest.importorskip("sts2_rs")
+        hidden = _fresh_hidden()
+        action = csp.choose(_message(hidden, left=6, total=6, revealed=[]))
+        assert action is not None
+        assert _cell(action, hidden) == sts2_rs.crystal_sphere_pick(hidden, [], 6, 6)
+
+    def test_old_shape_message_gets_the_rule(self) -> None:
+        hidden = _fresh_hidden()
+        action = csp.choose(_message(hidden))
+        assert action is not None
+        assert action["annotations"]["policy"] == csp.POLICY_NAME == "crystal_sphere_rule"
+        assert _cell(action, hidden) == (3, 2)
+
+    def test_proceed_wins_when_offered(self) -> None:
+        hidden = _fresh_hidden()
+        action = csp.choose(_message(hidden, proceed=True, left=0, total=6, revealed=[]))
+        assert action is not None
+        assert action["index"] == len(hidden)
+
+    # A digger cell that is not offered (the digger misbehaving) falls back to
+    # the rule: `sts2_advisor::crystal_sphere`'s
+    # `a_digger_cell_that_is_not_offered_falls_back_to_the_rule`, which can
+    # stand a misbehaving digger in.
+
+    def test_bad_revealed_item_falls_back(self) -> None:
+        hidden = _fresh_hidden()
+        msg = _message(hidden, left=6, total=6, revealed=[{"x": 5, "y": 5, "item": "banana"}])
+        action = csp.choose(msg)
+        assert action is not None
+        assert _cell(action, hidden) == (3, 2)
+        assert action["annotations"]["policy"] == csp.POLICY_NAME
+        assert "fell back" in action["annotations"]["note"]
+
+    def test_digger_fallback_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        # The fields were there, the digger did not answer: a warning, so a
+        # rule pick never passes silently for the digger's.
+        hidden = _fresh_hidden()
+        msg = _message(hidden, left=6, total=6, revealed=[{"x": 5, "y": 5, "item": "banana"}])
+        with caplog.at_level(logging.WARNING, logger=csp.__name__):
+            action = csp.choose(msg)
+        assert action is not None
+        assert action["annotations"]["policy"] == csp.POLICY_NAME
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "digger did not answer" in warnings[0].getMessage()
+        assert "fell back" in warnings[0].getMessage()
+
+    def test_no_warning_without_the_fields_or_when_the_digger_answers(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # An older mod's message is the rule's by design, not a failure.
+        hidden = _fresh_hidden()
+        with caplog.at_level(logging.WARNING, logger=csp.__name__):
+            assert csp.choose(_message(hidden)) is not None
+            assert csp.choose(_message(hidden, left=6, total=6, revealed=[])) is not None
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    def test_zero_left_without_proceed_returns_none_or_rule(self) -> None:
+        hidden = _fresh_hidden()
+        action = csp.choose(_message(hidden, left=0, total=6, revealed=[]))
+        assert action is not None
+        assert _cell(action, hidden) == (3, 2)
+        assert action["annotations"]["policy"] == csp.POLICY_NAME
+
+
 class TestDriverLane:
     def test_the_driver_answers_with_the_rule_and_names_it(self) -> None:
         hidden = _fresh_hidden()
@@ -179,3 +275,89 @@ def test_the_mod_twin_plays_the_same_order() -> None:
     assert block, "Centers array not found"
     pairs = [(int(a), int(b)) for a, b in re.findall(r"\((\d+),\s*(\d+)\)", block.group(1))]
     assert tuple(pairs) == csp.CENTERS
+
+
+# ── The headless host's shape (referee mode, GH #1325 / #1364) ──────────────
+
+
+def _host_state(
+    clear: dict[tuple[int, int], str | None] | None = None, left: int = 3, total: int | None = 3
+) -> dict[str, Any]:
+    """A host ``crystal_sphere`` decision: all fogged but ``clear`` (cell -> kind)."""
+    clear = clear or {}
+    cells: list[dict[str, Any]] = []
+    for y in range(csp.GRID_SIZE):
+        for x in range(csp.GRID_SIZE):
+            cell: dict[str, Any] = {"x": x, "y": y, "hidden": (x, y) not in clear}
+            if clear.get((x, y)):
+                cell["item"] = {"kind": clear[x, y], "part_x": 0, "part_y": 0}
+            cells.append(cell)
+    state: dict[str, Any] = {"decision": "crystal_sphere", "divinations_left": left, "cells": cells}
+    if total is not None:
+        state["divinations_total"] = total
+    return state
+
+
+class TestHostClick:
+    def test_the_host_shape_gets_the_same_cell_as_the_mod_shape(self) -> None:
+        clear = {(5, 5): "crystal_sphere_relic", (5, 6): None, (0, 0): "crystal_sphere_big_gold"}
+        state = _host_state(clear, left=5, total=6)
+        hidden = [(c["x"], c["y"]) for c in state["cells"] if c["hidden"]]
+        mod_answer = csp.choose(
+            {
+                "options": [
+                    {"index": i, "action": "divine_cell", "x": x, "y": y}
+                    for i, (x, y) in enumerate(hidden)
+                ],
+                "divinations_left": 5,
+                "divinations_total": 6,
+                "revealed": [
+                    {"x": 5, "y": 5, "item": "relic"},
+                    {"x": 0, "y": 0, "item": "gold"},
+                ],
+            }
+        )
+        assert mod_answer is not None
+        assert mod_answer["annotations"]["policy"] == csp.DIGGER_POLICY_NAME
+        click = csp.host_click(state)
+        assert click is not None
+        assert (click["x"], click["y"]) == hidden[mod_answer["index"]]
+        assert click["tool"] == "big"
+
+    @pytest.mark.parametrize(
+        ("kind", "cls"),
+        [
+            ("crystal_sphere_relic", "relic"),
+            ("crystal_sphere_rare_potion", "potion"),
+            ("crystal_sphere_common_potion", "potion"),
+            ("crystal_sphere_rare_card_reward", "card"),
+            ("crystal_sphere_curse", "curse"),
+            ("crystal_sphere_gold", "gold"),
+            ("crystal_sphere_big_gold", "gold"),
+        ],
+    )
+    def test_every_texture_name_maps_to_a_digger_class(self, kind: str, cls: str) -> None:
+        assert csp._host_item_class(kind) == cls
+
+    def test_without_the_starting_count_the_rule_answers(self) -> None:
+        click = csp.host_click(_host_state(total=None))
+        assert click == {"x": csp.CENTERS[0][0], "y": csp.CENTERS[0][1], "tool": "big"}
+
+    def test_the_click_is_always_a_fogged_cell(self) -> None:
+        state = _host_state({c: None for c in csp.CENTERS}, left=2, total=3)
+        click = csp.host_click(state)
+        assert click is not None
+        fogged = {(c["x"], c["y"]) for c in state["cells"] if c["hidden"]}
+        assert (click["x"], click["y"]) in fogged
+
+    def test_no_fogged_cell_is_no_click(self) -> None:
+        clear = {(x, y): None for x in range(csp.GRID_SIZE) for y in range(csp.GRID_SIZE)}
+        assert csp.host_click(_host_state(clear, left=1)) is None
+
+    def test_the_reference_driver_clicks_the_sphere(self) -> None:
+        import referee_spike
+
+        state = _host_state()
+        cmd = referee_spike.choose(state, random.Random(0))
+        assert cmd["action"] == "crystal_sphere_click"
+        assert cmd["args"] == csp.host_click(state)

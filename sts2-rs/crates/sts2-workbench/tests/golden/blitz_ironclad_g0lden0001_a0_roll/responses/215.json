@@ -1,0 +1,81 @@
+{
+ "assumptions": {
+  "energy": 3,
+  "hand": 5,
+  "samples": 200
+ },
+ "block": {
+  "per_turn": 9.9,
+  "scaling_cards": [
+   "Feel No Pain"
+  ]
+ },
+ "composition": {
+  "by_rarity": {
+   "Basic": 10,
+   "Common": 8,
+   "Uncommon": 1
+  },
+  "by_type": {
+   "Attack": 11,
+   "Power": 1,
+   "Skill": 7
+  },
+  "dead_cards": 0,
+  "energy_curve": {
+   "0": 1,
+   "1": 17,
+   "2": 1
+  },
+  "unupgraded_basics": 9
+ },
+ "damage": {
+  "aoe_attacks": [
+   "Breakthrough"
+  ],
+  "attack_count": 11,
+  "per_turn": 19.6,
+  "scaling_cards": [
+   "Bash",
+   "Molten Fist",
+   "Body Slam"
+  ],
+  "single_target": 17.3,
+  "vs_group": 21.8
+ },
+ "deck_size": 19,
+ "lenses": {
+  "boss": 34.5,
+  "hallway": 36.2,
+  "scaling": 33.7
+ },
+ "scores": {
+  "block": 39.2,
+  "damage": 38.7,
+  "velocity": 25.6,
+  "volume": 33.9
+ },
+ "velocity": {
+  "bottleneck": "energy",
+  "cards_per_turn": 3.1,
+  "dilution": 0.79,
+  "draw_limited_turns": 0.0,
+  "energy_limited_turns": 7.0,
+  "engine_cards": 2,
+  "extra_per_turn": 0.0,
+  "tags": {
+   "cost_reduction": 1,
+   "exhaust_synergy": 1
+  }
+ },
+ "warnings": [
+  {
+   "severity": "info",
+   "text": "Energy-limited — cards stranded in hand; more energy helps, more draw won't."
+  },
+  {
+   "severity": "warn",
+   "text": "Deck clogged with basics/curses — prioritise removals."
+  }
+ ]
+}

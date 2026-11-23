@@ -26,6 +26,7 @@ pub const fn phase_str(p: Phase) -> &'static str {
         Phase::RestSite => "rest_site",
         Phase::Event => "event",
         Phase::Treasure => "treasure",
+        Phase::Rewards => "rewards",
         Phase::RunOver => "run_over",
     }
 }
@@ -210,6 +211,7 @@ pub const fn event_encounter_id(e: EventEncounter) -> &'static str {
         EventEncounter::MysteriousKnight => "MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER",
         EventEncounter::FakeMerchant => "FAKE_MERCHANT_EVENT_ENCOUNTER",
         EventEncounter::DenseVegetation => "DENSE_VEGETATION_EVENT_ENCOUNTER",
+        EventEncounter::PunchOff => "PUNCH_OFF_EVENT_ENCOUNTER",
     }
 }
 

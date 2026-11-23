@@ -13,18 +13,29 @@
 //! Everything — placement, the rewards' rolls — runs on the event's own Rng,
 //! in the order below.
 //!
-//! **Choices.** Live, a human picks the tool and the cells. The C# parity
-//! oracle has no screen to click, so it plays a fixed policy
-//! (`RunSimulator.PlayCrystalSphereHeadless`: Big tool, then the centres in
-//! [`HEADLESS_SWEEP_CENTERS`]) and presents no decision. The harness drives
-//! the Rust engine off the oracle's choices, so the Rust event plays the same
-//! policy and offers no per-cell choice either; [`CrystalSphereMinigame`]
-//! itself takes any tool and cell, so an interactive host can drive it.
+//! **Choices.** Live, a human picks the tool and the cells. The Rust event
+//! presents no per-cell decision; it plays one of two policies, both with the
+//! Big tool:
+//!
+//! - **Parity mode** (the default) plays the C# parity oracle's fixed sweep
+//!   (`RunSimulator.PlayCrystalSphereHeadless`: the centres in
+//!   [`HEADLESS_SWEEP_CENTERS`]). The oracle has no screen to click, and the
+//!   harness drives the Rust engine off the oracle's choices, so the two must
+//!   play the same cells.
+//! - **Agent mode** ([`RunState::crystal_sphere_digger`], set by
+//!   [`RunState::set_agent_decisions`]) plays the digger
+//!   ([`super::crystal_sphere_digger::pick`]), which clicks the way a player
+//!   reading the screen would: it sees only the fog, the item classes
+//!   showing and the divinations left.
+//!
+//! [`CrystalSphereMinigame`] itself takes any tool and cell, so an
+//! interactive host can drive it.
 
 use sts2_core::cards::{Card, CardId};
 use sts2_core::dotnet_rng::Rng;
 use sts2_core::{PotionKind, PotionRarity, RelicId, RunState};
 
+use super::crystal_sphere_digger::{pick, ItemClass, SphereView};
 use crate::cards::CardRarity;
 
 /// `_defaultWidth` / `_defaultHeight` (`CrystalSphereMinigame.cs:28-30`).
@@ -81,6 +92,19 @@ impl CrystalSphereItemKind {
             Self::Potion(_) => (1, 3),
             Self::Gold { big: true } => (2, 1),
             Self::Gold { big: false } => (1, 1),
+        }
+    }
+
+    /// The item's class: what a cleared cell showing a piece of it looks
+    /// like on screen, whatever its rarity or size.
+    #[must_use]
+    pub const fn class(self) -> ItemClass {
+        match self {
+            Self::Relic => ItemClass::Relic,
+            Self::Potion(_) => ItemClass::Potion,
+            Self::CardReward(_) => ItemClass::Card,
+            Self::Curse => ItemClass::Curse,
+            Self::Gold { .. } => ItemClass::Gold,
         }
     }
 }
@@ -332,6 +356,32 @@ impl CrystalSphereMinigame {
     pub fn is_hidden(&self, x: i32, y: i32) -> bool {
         self.hidden[x as usize][y as usize]
     }
+
+    /// What the screen shows, for the digger: the fog, each cleared cell
+    /// that shows an item piece (x-major) with the item's class, the
+    /// divinations left, and `total`, the divinations the minigame started
+    /// with (the caller's to supply: the minigame does not keep it).
+    #[must_use]
+    pub fn view(&self, total: u32) -> SphereView {
+        let mut hidden = 0u128;
+        let mut shown = Vec::new();
+        for x in 0..GRID_SIZE {
+            for y in 0..GRID_SIZE {
+                let (ux, uy) = (x as usize, y as usize);
+                if self.hidden[ux][uy] {
+                    hidden |= 1u128 << (x * GRID_SIZE + y);
+                } else if let Some(index) = self.item_at[ux][uy] {
+                    shown.push(((x, y), self.items[usize::from(index)].kind.class()));
+                }
+            }
+        }
+        SphereView {
+            hidden,
+            shown,
+            remaining: self.divinations,
+            total,
+        }
+    }
 }
 
 /// `GetHorizontalCells`: x-1 then x+1, in bounds.
@@ -377,8 +427,9 @@ pub(super) fn add_curse_to_deck(state: &mut RunState, curse: CardId) {
     }
 }
 
-/// Play the minigame with the oracle's headless policy, then grant the
-/// rewards. `rng` is the event Rng, already past `CalculateVars`.
+/// Play the minigame, then grant the rewards. `rng` is the event Rng, already
+/// past `CalculateVars`. Agent mode ([`RunState::crystal_sphere_digger`])
+/// clicks the digger's cells; parity mode plays the oracle's headless sweep.
 ///
 /// `UncoverFuture` / `PaymentPlan` (`CrystalSphere.cs:66-80`) build the
 /// minigame after paying, and `PlayMinigame` → `CompleteMinigame` →
@@ -387,19 +438,33 @@ pub(super) fn add_curse_to_deck(state: &mut RunState, curse: CardId) {
 pub(super) fn play_headless_and_offer(state: &mut RunState, rng: &mut Rng, divinations: u32) {
     let mut game = CrystalSphereMinigame::new(rng, divinations);
     game.set_tool(CrystalSphereTool::Big);
-    for (cx, cy) in HEADLESS_SWEEP_CENTERS {
-        if game.divinations() == 0 {
-            break;
+    if state.crystal_sphere_digger {
+        while game.divinations() > 0 {
+            let Some((cx, cy)) = pick(&game.view(divinations)) else {
+                break;
+            };
+            click(state, &mut game, cx, cy);
         }
-        for kind in game.cell_clicked(cx, cy) {
-            // `CrystalSphereCurse.RevealItem`: `AddCurseToDeck<Doubt>` on
-            // reveal, not as a reward.
-            if kind == CrystalSphereItemKind::Curse {
-                add_curse_to_deck(state, CardId::Doubt);
+    } else {
+        for (cx, cy) in HEADLESS_SWEEP_CENTERS {
+            if game.divinations() == 0 {
+                break;
             }
+            click(state, &mut game, cx, cy);
         }
     }
     offer_rewards(state, rng, game.revealed());
+}
+
+/// One played click, with `RevealItem`'s side effect.
+fn click(state: &mut RunState, game: &mut CrystalSphereMinigame, x: i32, y: i32) {
+    for kind in game.cell_clicked(x, y) {
+        // `CrystalSphereCurse.RevealItem`: `AddCurseToDeck<Doubt>` on
+        // reveal, not as a reward.
+        if kind == CrystalSphereItemKind::Curse {
+            add_curse_to_deck(state, CardId::Doubt);
+        }
+    }
 }
 
 /// A reward between `ToReward` and selection.

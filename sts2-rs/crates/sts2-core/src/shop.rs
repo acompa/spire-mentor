@@ -383,6 +383,14 @@ pub struct ShopInventory {
     /// `true` iff the remove-card slot has been consumed this shop
     /// visit. Mirrors Python `ShopInventory.removal_used`.
     pub removal_used: bool,
+    /// The Fake Merchant event's shop (GH #1607): six fake relics in an
+    /// EventRoom, not a `MerchantRoom`. `MerchantEntry.Cost` folds
+    /// `Hook.ModifyMerchantPrice` only in a `MerchantRoom`, and
+    /// `ShouldRefillMerchantEntry` (TheCourier) is asked only there
+    /// (`MerchantEntry.cs`), so this shop charges the rolled price and never
+    /// restocks; a thrown Foul Potion starts its fight instead of paying 100
+    /// gold (`FoulPotion.OnUse`). It has no card row, potion row or removal.
+    pub fake_merchant: bool,
 }
 
 impl ShopInventory {
@@ -399,6 +407,19 @@ impl ShopInventory {
             potions: Vec::new(),
             removal_cost: CARD_REMOVAL_BASE_COST,
             removal_used: false,
+            fake_merchant: false,
+        }
+    }
+
+    /// `MerchantEntry.Cost` of an entry rolled at `base`: the merchant-price
+    /// relics' discount ([`merchant_price_with_modifiers`]) in a merchant
+    /// room, the bare roll in the Fake Merchant's event room.
+    #[must_use]
+    pub fn cost(&self, relics: &[crate::relics::RelicId], base: i32) -> i32 {
+        if self.fake_merchant {
+            base
+        } else {
+            merchant_price_with_modifiers(relics, base)
         }
     }
 }
@@ -771,7 +792,7 @@ pub fn purchase_card_removal(
     // `MerchantCardRemovalEntry : MerchantEntry`, so its `.Cost` getter also
     // folds `Hook.ModifyMerchantPrice` (Courier / MembershipCard) over the
     // rolled base; `inv.removal_cost` stays the undiscounted base.
-    let cost = merchant_price_with_modifiers(&run_state.active_relics(), inv.removal_cost);
+    let cost = inv.cost(&run_state.active_relics(), inv.removal_cost);
     if run_state.gold < cost {
         return PurchaseCardRemovalResult::InsufficientGold;
     }
@@ -794,8 +815,10 @@ pub fn purchase_card_removal(
     let card = run_state.master_deck.remove(deck_idx);
     run_state.card_shop_removals_used = run_state.card_shop_removals_used.saturating_add(1);
     inv.removal_used = true;
-    inv.removal_cost =
-        card_removal_cost(run_state.card_shop_removals_used, run_state.ascension_level);
+    inv.removal_cost = card_removal_cost(
+        run_state.card_shop_removals_used,
+        run_state.shop_ascension(),
+    );
     PurchaseCardRemovalResult::Removed { card, gold_spent }
 }
 
@@ -951,7 +974,7 @@ fn buy_card_impl(
     let price = if ignore_cost {
         0
     } else {
-        merchant_price_with_modifiers(&run_state.active_relics(), entry.price)
+        inv.cost(&run_state.active_relics(), entry.price)
     };
     if run_state.gold < price {
         return ShopPurchaseOutcome::CannotAfford;
@@ -1028,7 +1051,7 @@ fn buy_relic_impl(
     let price = if ignore_cost {
         0
     } else {
-        merchant_price_with_modifiers(&run_state.active_relics(), entry.price)
+        inv.cost(&run_state.active_relics(), entry.price)
     };
     if run_state.gold < price {
         return ShopPurchaseOutcome::CannotAfford;
@@ -1100,7 +1123,7 @@ fn buy_potion_impl(
     let price = if ignore_cost {
         0
     } else {
-        merchant_price_with_modifiers(&run_state.active_relics(), entry.price)
+        inv.cost(&run_state.active_relics(), entry.price)
     };
     if run_state.gold < price {
         return ShopPurchaseOutcome::CannotAfford;

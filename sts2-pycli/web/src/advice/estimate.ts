@@ -3,14 +3,15 @@
 // move from here, so the text says so.
 
 import type { InstinctEstimate } from "../api";
+import { t } from "../i18n";
 
 const pct = (p: number) => `${Math.round(Math.max(0, Math.min(1, p)) * 100)}%`;
 
 /** `−9 HP`, `+3 HP` (a heal), `±0 HP`: the fight's HP change, signed from the player's side. */
 export function hpDelta(loss: number): string {
   const v = Math.round(loss);
-  if (v === 0) return "±0 HP";
-  return v > 0 ? `−${v} HP` : `+${-v} HP`;
+  if (v === 0) return t("±0 HP");
+  return v > 0 ? t("−{n} HP", { n: v }) : t("+{n} HP", { n: -v });
 }
 
 /** One line, or "" without an estimate. Combat:
@@ -19,10 +20,10 @@ export function hpDelta(loss: number): string {
 export function estimateText(e: InstinctEstimate | null | undefined): string {
   if (!e || typeof e.p_run !== "number") return "";
   const parts: string[] = [];
-  if (e.p_fight != null) parts.push(`fight ${pct(e.p_fight)}`);
+  if (e.p_fight != null) parts.push(t("fight {pct}", { pct: pct(e.p_fight) }));
   if (e.hp_loss) parts.push(hpRangeText(e.hp_loss));
-  parts.push(`run ${pct(e.p_run)}`);
-  return `If Instinct plays on: ${parts.join(" · ")}`;
+  parts.push(t("run {pct}", { pct: pct(e.p_run) }));
+  return t("If Instinct plays on: {parts}", { parts: parts.join(" · ") });
 }
 
 export type EstimateTone = "good" | "mid" | "bad";
@@ -52,5 +53,5 @@ export function hpRangeText(hp: { q10: number; q50: number; q90: number } | null
   if (!hp) return "";
   const lo = hpDelta(hp.q10);
   const hi = hpDelta(hp.q90);
-  return lo === hi ? hpDelta(hp.q50) : `${hpDelta(hp.q50)} (${lo} to ${hi})`;
+  return lo === hi ? hpDelta(hp.q50) : t("{mid} ({lo} to {hi})", { mid: hpDelta(hp.q50), lo, hi });
 }

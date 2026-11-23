@@ -619,6 +619,9 @@ pub const V0111_ONLY_SPECS: &[fn() -> CardSpec] = &[
     crate::cards::colorless::mighty_weapon::spec,
     crate::cards::colorless::mighty_shield::spec,
     crate::cards::colorless::god_byrd::spec,
+    // v0.113.0 Dread token (`TokenCardPool`): offered only by
+    // `KnowledgeDemonDominion`'s choice (GH #1346).
+    crate::cards::status::amnesia::spec,
     // v0.113.0 The Fool (`crate::cards::fool`): every Fool card, so the
     // id-keyed lookups resolve. Pool membership is `fool::FOOL_POOL_V0113`.
     fs::all_is_well,
@@ -973,7 +976,7 @@ where
             // LENGTH, so even an unpicked extra entry (Tank in the IC rare
             // pool) shifts which card the same draw resolves to (RP6
             // ArcaneScroll: cs=MANGLE rs=NOTYET, adjacent indices).
-            if predicate(&spec) && !is_multiplayer_only(spec.id) {
+            if predicate(&spec) && RunCardFilter::of(rs).allows(spec.id) {
                 matching.push(spec.id);
             }
         }
@@ -1044,7 +1047,7 @@ pub fn roll_transform_replacement_basic(
     character: CharacterId,
     original_id: CardId,
 ) -> Option<CardId> {
-    let pool = transform_replacement_pool(character, original_id, rs.game_version);
+    let pool = transform_replacement_pool(character, original_id, RunCardFilter::of(rs));
     if pool.is_empty() {
         return None;
     }
@@ -1067,7 +1070,7 @@ pub fn roll_transform_replacement_basic_niche(
     character: CharacterId,
     original_id: CardId,
 ) -> Option<CardId> {
-    let pool = transform_replacement_pool(character, original_id, rs.game_version);
+    let pool = transform_replacement_pool(character, original_id, RunCardFilter::of(rs));
     if pool.is_empty() {
         return None;
     }
@@ -1099,7 +1102,7 @@ pub fn roll_transform_replacement_event_stream(
     stream_name: &str,
     skip_reads: u32,
 ) -> Option<CardId> {
-    let pool = transform_replacement_pool(character, original_id, rs.game_version);
+    let pool = transform_replacement_pool(character, original_id, RunCardFilter::of(rs));
     if pool.is_empty() {
         return None;
     }
@@ -1179,7 +1182,7 @@ fn roll_filtered_character_reward_id(
             false,
             reward_rarity_to_card_rarity(rarity),
             predicate,
-            rs.game_version,
+            RunCardFilter::of(rs),
         );
         if !c.is_empty() {
             break c;
@@ -1334,7 +1337,12 @@ fn roll_noncombat_card_reward_slate(
                     .filter(|&id| rarity_for_card_id_in(id, version) == Some(cr))
                     .collect()
             } else {
-                eligible_ids_for_rarity_in(&character_ids, opts.include_colorless, cr, version)
+                eligible_ids_for_rarity_in(
+                    &character_ids,
+                    opts.include_colorless,
+                    cr,
+                    RunCardFilter::of(rs),
+                )
             };
             candidates.retain(|id| !chosen.contains(id));
             if !candidates.is_empty() {
@@ -1510,7 +1518,7 @@ pub fn roll_uniform_pool_cards(
     // C# `GetPossibleCards(player)` (rarity-filtered char pool), in
     // `GenerateAllCards` order — the same pool `eligible_ids_for_rarity`
     // serves the (parity-clean) regular reward path.
-    let pool = eligible_ids_for_rarity_in(&[character], false, rarity, rs.game_version);
+    let pool = eligible_ids_for_rarity_in(&[character], false, rarity, RunCardFilter::of(rs));
     let mut chosen_ids: Vec<CardId> = Vec::new();
     let mut out: Vec<sts2_core::cards::Card> = Vec::new();
     for _ in 0..count {
@@ -1652,7 +1660,12 @@ fn roll_uniform_rarity_reward_cards_with(
             .filter(|&id| rarity_for_card_id_in(id, version) == Some(rarity))
             .collect()
     } else {
-        eligible_ids_for_rarity_in(&opts.character_ids, opts.include_colorless, rarity, version)
+        eligible_ids_for_rarity_in(
+            &opts.character_ids,
+            opts.include_colorless,
+            rarity,
+            RunCardFilter::of(rs),
+        )
     };
     let upgrade_rarity = match rarity {
         CardRarity::Rare => RewardRarity::Rare,
@@ -1755,7 +1768,7 @@ fn roll_reward_cards_base_odds(
                 character_ids,
                 include_colorless,
                 reward_rarity_to_card_rarity(rarity),
-                rs.game_version,
+                RunCardFilter::of(rs),
             );
             candidates.retain(|id| !chosen.contains(id));
             if !candidates.is_empty() {
@@ -1834,8 +1847,12 @@ const CURSE_CARD_POOL: &[CardId] = &[
 fn transform_replacement_pool(
     _character: CharacterId,
     original_id: CardId,
-    version: sts2_core::GameVersion,
+    run: impl Into<RunCardFilter>,
 ) -> Vec<CardId> {
+    // `CardFactory.GetFilteredTransformationOptions` ends in
+    // `FilterForRun(original.Owner.RunState, source)` (CardFactory.cs:200).
+    let run: RunCardFilter = run.into();
+    let version = run.version;
     // Resolve the original card's own pool, mirroring C# `original.Pool`
     // (CardModel.cs:273-281) + the Event/Ancient/Token/Quest → ColorlessCardPool
     // override (CardFactory.cs:126-131).
@@ -1851,7 +1868,7 @@ fn transform_replacement_pool(
         return CURSE_CARD_POOL
             .iter()
             .copied()
-            .filter(|&id| id != original_id)
+            .filter(|&id| id != original_id && run.allows(id))
             .collect();
     }
     let forces_colorless = matches!(
@@ -1874,7 +1891,7 @@ fn transform_replacement_pool(
             matches!(
                 s.rarity,
                 CardRarity::Common | CardRarity::Uncommon | CardRarity::Rare
-            ) && !is_multiplayer_only(s.id)
+            ) && run.allows(s.id)
                 && s.id != original_id
         })
         .map(|s| s.id)
@@ -1906,8 +1923,8 @@ pub fn random_card_from_rarity(
 /// (`player.Character.CardPool`), not the cross-character union — so a
 /// Defect run can never be granted a Silent-only Ancient like WraithForm;
 /// (2) the `ArchaicTooth.TranscendenceCards` upgrades
-/// ({Break, Suppress, Protector, MeteorShower, Quadcast},
-/// `ArchaicTooth.cs:26-50`) are excluded. Both are required so the single
+/// ({Break, Suppress, Protector, MeteorShower, Quadcast, DivineShot},
+/// `ArchaicTooth.cs:26-51`) are excluded. Both are required so the single
 /// `Rewards` `NextItem` draw indexes the SAME candidate list C# does (the
 /// list length matters: the shared cursor must resolve identically for
 /// the rest of the run). Consumes exactly one `Rewards` read, preserving
@@ -1918,14 +1935,17 @@ pub fn random_ancient_card_for_dusty_tome(
     character: CharacterId,
 ) -> Option<CardId> {
     // `ArchaicTooth.TranscendenceCards` = `TranscendenceUpgrades.Values`
-    // (`ArchaicTooth.cs:26-50`): Break, Suppress, Protector, MeteorShower,
-    // Quadcast. Excluded from the DustyTome Ancient candidate list.
-    const TRANSCENDENCE_CARDS: [CardId; 5] = [
+    // (`ArchaicTooth.cs:26-51`): Break, Suppress, Protector, MeteorShower,
+    // Quadcast, and (v0.113.0, The Fool) DivineShot. Excluded from the
+    // DustyTome Ancient candidate list. DivineShot is only in the Fool's
+    // pool, so listing it changes nothing on the earlier builds.
+    const TRANSCENDENCE_CARDS: [CardId; 6] = [
         CardId::Break,
         CardId::Suppress,
         CardId::Protector,
         CardId::MeteorShower,
         CardId::Quadcast,
+        CardId::DivineShot,
     ];
     sample_card(rs, Some(character), |s| {
         s.rarity == CardRarity::Ancient && !TRANSCENDENCE_CARDS.contains(&s.id)
@@ -2038,7 +2058,7 @@ pub fn sample_distinct_cards_of_rarity(
     // sibling pool builders [`eligible_ids_for_rarity`] /
     // [`generate_scroll_box_bundles`] already apply.
     let mut pool: Vec<CardId> = specs_in(specs_for_character(character), rs.game_version)
-        .filter_map(|s| (s.rarity == rarity && !is_multiplayer_only(s.id)).then_some(s.id))
+        .filter_map(|s| (s.rarity == rarity && RunCardFilter::of(rs).allows(s.id)).then_some(s.id))
         .collect();
     let take = n.min(pool.len());
     let rng = &mut rs.rng.rewards;
@@ -2142,6 +2162,50 @@ pub fn is_multiplayer_only(id: CardId) -> bool {
             | CardId::SelfDeprecate
             | CardId::Yoga
     )
+}
+
+/// What C# `CardFactory.FilterForRun` (`CardFactory.cs:25-29`, v0.113.0:
+/// `options.Where(c => c.IsAllowedInRun(runState))`) reads of the run when it
+/// narrows a generated card pool: the game build and the game mode.
+///
+/// A bare [`sts2_core::GameVersion`] converts to the standard-mode filter,
+/// which is the single-player [`is_multiplayer_only`] test every pool applied
+/// before Blitz (GH #1347). In a Blitz run the four `IsAllowedInBlitz ==
+/// false` cards are dropped too ([`sts2_core::blitz::card_not_allowed`],
+/// `CardModel.cs:1209`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RunCardFilter {
+    /// The run's game build.
+    pub version: sts2_core::GameVersion,
+    /// The run's game mode.
+    pub mode: sts2_core::GameMode,
+}
+
+impl RunCardFilter {
+    /// The filter of run `rs`.
+    #[must_use]
+    pub fn of(rs: &RunState) -> Self {
+        Self {
+            version: rs.game_version,
+            mode: rs.game_mode,
+        }
+    }
+
+    /// C# `CardModel.IsAllowedInRun(runState)` for a single-player run.
+    #[must_use]
+    pub fn allows(self, id: CardId) -> bool {
+        let banned_in_blitz = self.mode.is_blitz() && sts2_core::blitz::card_not_allowed(id);
+        !is_multiplayer_only(id) && !banned_in_blitz
+    }
+}
+
+impl From<sts2_core::GameVersion> for RunCardFilter {
+    fn from(version: sts2_core::GameVersion) -> Self {
+        Self {
+            version,
+            mode: sts2_core::GameMode::Standard,
+        }
+    }
 }
 
 #[must_use]
@@ -2603,12 +2667,14 @@ fn eligible_ids_for_rarity(
 
 /// [`eligible_ids_for_rarity`] in game build `version` (GH #793): the
 /// build's rarities, minus the cards it deleted, in pool order.
-fn eligible_ids_for_rarity_in(
+pub(crate) fn eligible_ids_for_rarity_in(
     character_ids: &[CharacterId],
     include_colorless: bool,
     rarity: CardRarity,
-    version: sts2_core::GameVersion,
+    run: impl Into<RunCardFilter>,
 ) -> Vec<CardId> {
+    let run: RunCardFilter = run.into();
+    let version = run.version;
     let mut out: Vec<CardId> = Vec::new();
     for c in character_ids {
         for spec in specs_in(specs_for_character(*c), version) {
@@ -2620,14 +2686,14 @@ fn eligible_ids_for_rarity_in(
             // `NextItem`-indexed pick (e.g. Ironclad `DemonicShield`, an
             // MP-only uncommon, desynced the whole uncommon slate).
             // (sts2-rs-jenwp M4)
-            if spec.rarity == rarity && !is_multiplayer_only(spec.id) {
+            if spec.rarity == rarity && run.allows(spec.id) {
                 out.push(spec.id);
             }
         }
     }
     if include_colorless {
         for spec in specs_in(COLORLESS_SPECS, version) {
-            if spec.rarity == rarity && !is_multiplayer_only(spec.id) {
+            if spec.rarity == rarity && run.allows(spec.id) {
                 out.push(spec.id);
             }
         }
@@ -2661,19 +2727,21 @@ fn eligible_ids_for_rarity_filtered_in(
     include_colorless: bool,
     rarity: CardRarity,
     predicate: fn(&CardSpec) -> bool,
-    version: sts2_core::GameVersion,
+    run: impl Into<RunCardFilter>,
 ) -> Vec<CardId> {
+    let run: RunCardFilter = run.into();
+    let version = run.version;
     let mut out: Vec<CardId> = Vec::new();
     for c in character_ids {
         for spec in specs_in(specs_for_character(*c), version) {
-            if spec.rarity == rarity && !is_multiplayer_only(spec.id) && predicate(&spec) {
+            if spec.rarity == rarity && run.allows(spec.id) && predicate(&spec) {
                 out.push(spec.id);
             }
         }
     }
     if include_colorless {
         for spec in specs_in(COLORLESS_SPECS, version) {
-            if spec.rarity == rarity && !is_multiplayer_only(spec.id) && predicate(&spec) {
+            if spec.rarity == rarity && run.allows(spec.id) && predicate(&spec) {
                 out.push(spec.id);
             }
         }
@@ -2795,7 +2863,7 @@ pub fn roll_card_reward_cards(
                 .filter(|&id| rarity_for_card_id_in(id, version) == Some(cr))
                 .collect()
         } else {
-            eligible_ids_for_rarity_in(&character_ids, include_colorless, cr, version)
+            eligible_ids_for_rarity_in(&character_ids, include_colorless, cr, RunCardFilter::of(rs))
         };
         candidates.retain(|id| !chosen_ids.contains(id));
         if candidates.is_empty() {
@@ -3430,7 +3498,7 @@ pub fn generate_merchant_inventory(
     use sts2_core::PotionRarity;
 
     let mut inv = ShopInventory::empty();
-    inv.removal_cost = card_removal_cost(rs.card_shop_removals_used, rs.ascension_level);
+    inv.removal_cost = card_removal_cost(rs.card_shop_removals_used, rs.shop_ascension());
     let mut chosen: std::collections::BTreeSet<CardId> = std::collections::BTreeSet::new();
 
     if rs.game_version >= sts2_core::GameVersion::V0_113_0 {
@@ -3750,6 +3818,29 @@ mod tests {
             assert!(
                 !pool.contains(&mp_rare),
                 "{character:?}: MP-only Rare {mp_rare:?} must be excluded"
+            );
+        }
+    }
+
+    /// v0.113.0 added `FoolishShot -> DivineShot` to
+    /// `ArchaicTooth.TranscendenceUpgrades` (`ArchaicTooth.cs:47-50`), so
+    /// `DustyTome.SetupForPlayer` (`DustyTome.cs:53-55`) drops DivineShot from
+    /// the Fool's Ancient candidates. The Fool pool's Ancient cards are
+    /// {DivineShot, LostLute} (`FoolCardPool.cs`), which leaves exactly
+    /// {LostLute}: the grant is deterministic whatever the `Rewards` draw.
+    /// act23 lockstep Fool:1001 A10 (C# LostLute+, Rust DivineShot+).
+    #[test]
+    fn dusty_tome_never_grants_the_fools_transcendence_card() {
+        use sts2_core::potions::CharacterId;
+        let mut rs = RunState::new();
+        rs.game_version = sts2_core::GameVersion::V0_113_0;
+        // Each call advances the shared `Rewards` cursor, so 32 calls sample
+        // 32 different draws.
+        for draw in 0..32 {
+            assert_eq!(
+                random_ancient_card_for_dusty_tome(&mut rs, CharacterId::Fool),
+                Some(CardId::LostLuteCard),
+                "draw {draw}: DivineShot is a transcendence upgrade and must be excluded"
             );
         }
     }

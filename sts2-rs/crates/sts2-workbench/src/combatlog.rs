@@ -33,6 +33,7 @@ use std::fmt;
 
 use serde_json::{Map, Value};
 
+use crate::i18n::{tr, trf};
 use crate::render::py;
 
 /// Row kinds hidden unless `verbose`, or named individually in `keep`. The
@@ -181,7 +182,14 @@ fn source_name(source: Option<&Value>, names: &LogNames) -> Option<String> {
             name
         });
     }
-    Some((names.move_)(&id_or_q(source, "move_id")))
+    let mv = id_or_q(source, "move_id");
+    if crate::localization::display_zh() {
+        let monster = crate::display_maps::pascal_to_screaming_snake(&id_or_q(source, "monster"));
+        if let Some(zh) = move_zh(&monster, &mv) {
+            return Some(zh);
+        }
+    }
+    Some((names.move_)(&mv))
 }
 
 /// The raw, joinable identity of the card or move a row came from.
@@ -369,6 +377,127 @@ impl Row {
     }
 }
 
+/// A power row's power as a reader sees it. Its `noun` stays the name the
+/// page matches against the state's powers (English); in Chinese the row
+/// also carries `noun_display`, the game's Chinese title, which its `text`
+/// uses. English rows are unchanged.
+fn shown_power(base: &mut Row, row: &Value, noun: &str) -> String {
+    if !crate::localization::display_zh() {
+        return noun.to_string();
+    }
+    let shown = crate::display_maps::power_display_name(&id_or_q(row, "power"));
+    base.put("noun_display", Value::String(shown.clone()));
+    shown
+}
+
+/// The game's Chinese title of `monster`'s (SCREAMING_SNAKE) move `mv`:
+/// `<MONSTER>.moves.<MV>.title`, else the one move of that monster whose
+/// loc id and `mv` differ only by a `PREFIX_` (the engine's `SLICE` is the
+/// table's `HESITANT_SLICE`, its `FIRST_ACID_GOOP` the table's `ACID_GOOP`).
+fn move_zh(monster: &str, mv: &str) -> Option<String> {
+    // The engine spells some move ids in Pascal case (`ThrashMove`) or with a
+    // variant number (`ZOOM_MOVE_2`): try the table's plain id too.
+    let snake = crate::display_maps::pascal_to_screaming_snake(mv);
+    let plain = snake
+        .trim_end_matches(|c: char| c.is_ascii_digit())
+        .trim_end_matches('_')
+        .to_string();
+    if plain != mv {
+        if let Some(t) = move_zh_exact(monster, &plain) {
+            return Some(t);
+        }
+    }
+    move_zh_exact(monster, mv).or_else(|| move_zh_anywhere(plain.trim_end_matches("_MOVE")))
+}
+
+/// A move the monster's own table lacks (Twig Slime's `CLUMP_SHOT` is
+/// Leaf Slime's; `STUN` is `GENERIC.STUNNED`): the move id looked up across
+/// every monster, exact first, then by prefix; only when every match names
+/// it the same way.
+fn move_zh_anywhere(mv: &str) -> Option<String> {
+    let rows = crate::data::zh_tables().extra.get("monsters")?;
+    let ids = |exact: bool| -> std::collections::BTreeSet<&String> {
+        rows.iter()
+            .filter(|(_, v)| !v.is_empty())
+            .filter_map(|(k, v)| {
+                let (_, rest) = k.split_once(".moves.")?;
+                let id = rest.strip_suffix(".title")?;
+                let hit = if exact {
+                    id == mv
+                } else {
+                    id.len() > mv.len() && id.starts_with(mv)
+                };
+                hit.then_some(v)
+            })
+            .collect()
+    };
+    for exact in [true, false] {
+        let titles = ids(exact);
+        if titles.len() == 1 {
+            return titles.into_iter().next().cloned();
+        }
+        if !titles.is_empty() {
+            return None;
+        }
+    }
+    None
+}
+
+fn move_zh_exact(monster: &str, mv: &str) -> Option<String> {
+    // The engine's `SPIKEN_MOVE` / `THRASHMOVE` is the table's `SPIKEN` / `THRASH`.
+    if let Some(bare) = mv
+        .strip_suffix("_MOVE")
+        .or_else(|| mv.strip_suffix("MOVE"))
+        .filter(|b| !b.is_empty())
+    {
+        if let Some(t) = move_zh_exact(monster, bare) {
+            return Some(t);
+        }
+    }
+    let zh = crate::data::zh_tables();
+    if let Some(t) = zh.get("monsters", &format!("{monster}.moves.{mv}.title")) {
+        return Some(t.to_string());
+    }
+    // Moves every monster shares (`STUNNED`) live under `GENERIC.moves`.
+    if let Some(t) = zh.get("monsters", &format!("GENERIC.moves.{mv}.title")) {
+        return Some(t.to_string());
+    }
+    let prefix = format!("{monster}.moves.");
+    let tail = format!("_{mv}");
+    let mut hits = zh
+        .extra
+        .get("monsters")?
+        .iter()
+        .filter(|(_, v)| !v.is_empty())
+        .filter_map(|(k, v)| {
+            let id = k.strip_prefix(&prefix)?.strip_suffix(".title")?;
+            // `SLICE` ~ `HESITANT_SLICE`, `FIRST_ACID_GOOP` ~ `ACID_GOOP`,
+            // `SHRINK` ~ `SHRINKER`: one id extends the other.
+            (id.ends_with(&tail)
+                || mv.ends_with(&format!("_{id}"))
+                || (id.len() > mv.len() && id.starts_with(mv)))
+            .then_some(v)
+        });
+    let first = hits.next()?;
+    hits.next().is_none().then(|| first.clone())
+}
+
+/// A monster move as a reader sees it: [`shown_power`]'s rule, from the
+/// game's `monsters` table (`<MONSTER>.moves.<MOVE>.title`) in Chinese.
+fn shown_move(base: &mut Row, row: &Value, noun: &str) -> String {
+    if !crate::localization::display_zh() {
+        return noun.to_string();
+    }
+    let monster = py::get(row, "monster").map_or_else(|| "?".to_string(), |m| id_or_q(m, "id"));
+    let snake = crate::display_maps::pascal_to_screaming_snake(&monster);
+    let mv = id_or_q(row, "move_id");
+    let Some(shown) = move_zh(&snake, &mv) else {
+        return noun.to_string();
+    };
+    base.put("noun_display", Value::String(shown.clone()));
+    shown
+}
+
 /// Render one engine row, or `None` for a kind we do not display.
 fn format_row(
     row: &Value,
@@ -453,18 +582,31 @@ fn format_row(
                 "verb",
                 verb_str(if dealer.is_none() { "took" } else { "dealt" }),
             );
+            let target_s = show(target.as_ref());
             let text = match &dealer {
-                None => format!("{} took {amount} damage.", show(target.as_ref())),
-                Some(dealer) => {
-                    let using = match &source {
-                        Some(s) if !s.is_empty() => format!(" using {s}"),
-                        _ => String::new(),
-                    };
-                    format!(
-                        "{dealer} dealt {amount} damage to {}{using}.",
-                        show(target.as_ref())
-                    )
-                }
+                None => trf(
+                    "{target} took {amount} damage.",
+                    &[("target", &target_s), ("amount", &amount)],
+                ),
+                Some(dealer) => match &source {
+                    Some(s) if !s.is_empty() => trf(
+                        "{actor} dealt {amount} damage to {target} using {source}.",
+                        &[
+                            ("actor", dealer),
+                            ("amount", &amount),
+                            ("target", &target_s),
+                            ("source", s),
+                        ],
+                    ),
+                    _ => trf(
+                        "{actor} dealt {amount} damage to {target}.",
+                        &[
+                            ("actor", dealer),
+                            ("amount", &amount),
+                            ("target", &target_s),
+                        ],
+                    ),
+                },
             };
             base.put("text", text_str(text));
         }
@@ -474,11 +616,19 @@ fn format_row(
             let amount = amount("amount");
             base.put_actor(actor.clone(), side, actor_uid);
             base.put("amount", Value::from(amount));
-            base.put("noun", verb_str("Block"));
+            let noun = tr("Block");
+            base.put("noun", verb_str(noun));
             base.put("verb", verb_str("gained"));
             base.put(
                 "text",
-                text_str(format!("{} gained {amount} Block.", show(actor.as_ref()))),
+                text_str(trf(
+                    "{actor} gained {amount} {noun}.",
+                    &[
+                        ("actor", &show(actor.as_ref())),
+                        ("amount", &amount),
+                        ("noun", &noun),
+                    ],
+                )),
             );
         }
 
@@ -488,9 +638,13 @@ fn format_row(
             base.put_target(target.clone(), target_side, target_uid);
             base.put("noun", verb_str(&power));
             base.put("verb", verb_str("triggered"));
+            let shown = shown_power(&mut base, row, &power);
             base.put(
                 "text",
-                text_str(format!("{}'s {power} triggered.", show(target.as_ref()))),
+                text_str(trf(
+                    "{target}'s {noun} triggered.",
+                    &[("target", &show(target.as_ref())), ("noun", &shown)],
+                )),
             );
         }
 
@@ -514,6 +668,7 @@ fn format_row(
             base.put_target(target.clone(), target_side, target_uid);
             base.put("amount", Value::from(amount));
             base.put("noun", verb_str(&power));
+            let power = shown_power(&mut base, row, &power);
             base.put(
                 "verb",
                 verb_str(if applier.is_none() {
@@ -522,14 +677,21 @@ fn format_row(
                     "applied"
                 }),
             );
+            let target_s = show(target.as_ref());
             let text = match &applier {
-                None => format!("{} gained {amount} {power}.", show(target.as_ref())),
-                Some(applier) => {
-                    format!(
-                        "{applier} applied {amount} {power} to {}.",
-                        show(target.as_ref())
-                    )
-                }
+                None => trf(
+                    "{target} gained {amount} {noun}.",
+                    &[("target", &target_s), ("amount", &amount), ("noun", &power)],
+                ),
+                Some(applier) => trf(
+                    "{actor} applied {amount} {noun} to {target}.",
+                    &[
+                        ("actor", applier),
+                        ("amount", &amount),
+                        ("noun", &power),
+                        ("target", &target_s),
+                    ],
+                ),
             };
             base.put("text", text_str(text));
         }
@@ -540,9 +702,13 @@ fn format_row(
             base.put_actor(actor.clone(), side, actor_uid);
             base.put("noun", verb_str(&mv));
             base.put("verb", verb_str("used"));
+            let mv = shown_move(&mut base, row, &mv);
             base.put(
                 "text",
-                text_str(format!("{} used {mv}.", show(actor.as_ref()))),
+                text_str(trf(
+                    "{actor} used {noun}.",
+                    &[("actor", &show(actor.as_ref())), ("noun", &mv)],
+                )),
             );
         }
 
@@ -551,7 +717,13 @@ fn format_row(
             base.put_actor(Some(player.clone()), Some("player"), None);
             base.put("noun", verb_str(&potion));
             base.put("verb", verb_str("drank"));
-            base.put("text", text_str(format!("{player} drank {potion}.")));
+            base.put(
+                "text",
+                text_str(trf(
+                    "{actor} drank {noun}.",
+                    &[("actor", &player), ("noun", &potion)],
+                )),
+            );
         }
 
         "card_generated" => {
@@ -559,7 +731,13 @@ fn format_row(
             base.put_actor(Some(player.clone()), Some("player"), None);
             base.put("noun", verb_str(&name));
             base.put("verb", verb_str("generated"));
-            base.put("text", text_str(format!("{player} generated {name}.")));
+            base.put(
+                "text",
+                text_str(trf(
+                    "{actor} generated {noun}.",
+                    &[("actor", &player), ("noun", &name)],
+                )),
+            );
         }
 
         "orb_channeled" | "orb_evoked" => {
@@ -572,7 +750,18 @@ fn format_row(
             base.put_actor(Some(player.clone()), Some("player"), None);
             base.put("noun", verb_str(&orb));
             base.put("verb", verb_str(verb));
-            base.put("text", text_str(format!("{player} {verb} {orb}.")));
+            let text = if kind == "orb_channeled" {
+                trf(
+                    "{actor} channeled {noun}.",
+                    &[("actor", &player), ("noun", &orb)],
+                )
+            } else {
+                trf(
+                    "{actor} evoked {noun}.",
+                    &[("actor", &player), ("noun", &orb)],
+                )
+            };
+            base.put("text", text_str(text));
         }
 
         "card_auto_played" => {
@@ -587,42 +776,50 @@ fn format_row(
                 "card_upgraded",
                 Value::Bool(py::truthy_opt(py::get(row, "upgraded"))),
             );
-            let via = match &source {
-                Some(s) if !s.is_empty() => format!(" via {s}"),
-                _ => String::new(),
+            let text = match &source {
+                Some(s) if !s.is_empty() => trf(
+                    "{actor} auto-played {noun} via {source}.",
+                    &[("actor", &player), ("noun", &name), ("source", s)],
+                ),
+                _ => trf(
+                    "{actor} auto-played {noun}.",
+                    &[("actor", &player), ("noun", &name)],
+                ),
             };
-            base.put(
-                "text",
-                text_str(format!("{player} auto-played {name}{via}.")),
-            );
+            base.put("text", text_str(text));
         }
 
         // ── verbose-only kinds ──────────────────────────────────────────────
         "card_play_started" | "card_play_finished" => {
             let name = card_name();
-            let verb = if kind == "card_play_finished" {
-                "played"
+            let vars: &[(&str, &dyn fmt::Display)] = &[("actor", &player), ("noun", &name)];
+            let (verb, text) = if kind == "card_play_finished" {
+                ("played", trf("{actor} played {noun}.", vars))
             } else {
-                "started playing"
+                (
+                    "started playing",
+                    trf("{actor} started playing {noun}.", vars),
+                )
             };
             base.put_actor(Some(player.clone()), Some("player"), None);
             base.put("noun", verb_str(&name));
             base.put("verb", verb_str(verb));
-            base.put("text", text_str(format!("{player} {verb} {name}.")));
+            base.put("text", text_str(text));
         }
 
         "card_drawn" | "card_discarded" | "card_exhausted" => {
             let name = card_name();
             // "drew", not C#'s copy-pasted "discarded" — see the module docs.
-            let verb = match kind {
-                "card_drawn" => "drew",
-                "card_discarded" => "discarded",
-                _ => "exhausted",
+            let vars: &[(&str, &dyn fmt::Display)] = &[("actor", &player), ("noun", &name)];
+            let (verb, text) = match kind {
+                "card_drawn" => ("drew", trf("{actor} drew {noun}.", vars)),
+                "card_discarded" => ("discarded", trf("{actor} discarded {noun}.", vars)),
+                _ => ("exhausted", trf("{actor} exhausted {noun}.", vars)),
             };
             base.put_actor(Some(player.clone()), Some("player"), None);
             base.put("noun", verb_str(&name));
             base.put("verb", verb_str(verb));
-            base.put("text", text_str(format!("{player} {verb} {name}.")));
+            base.put("text", text_str(text));
         }
 
         "energy_spent" => {
@@ -630,7 +827,13 @@ fn format_row(
             base.put_actor(Some(player.clone()), Some("player"), None);
             base.put("amount", Value::from(amount));
             base.put("verb", verb_str("spent"));
-            base.put("text", text_str(format!("{player} spent {amount} Energy.")));
+            base.put(
+                "text",
+                text_str(trf(
+                    "{actor} spent {amount} Energy.",
+                    &[("actor", &player), ("amount", &amount)],
+                )),
+            );
         }
 
         // An unknown kind is a newer engine talking to an older workbench.
@@ -1215,5 +1418,31 @@ mod tests {
         assert_eq!(prettify("bug-sting"), "Bug Sting");
         assert_eq!(prettify("__A__b_"), "A B");
         assert_eq!(prettify(""), "");
+    }
+}
+
+#[cfg(test)]
+mod move_name_tests {
+    #[test]
+    fn moves_kept_under_another_monster_resolve() {
+        if !crate::data::zh_tables().is_present() {
+            return;
+        }
+        assert_eq!(
+            super::move_zh("TWIG_SLIME_M", "CLUMP_SHOT").as_deref(),
+            Some("团块射击")
+        );
+        assert_eq!(
+            super::move_zh("LEAF_SLIME_S", "BUTT").as_deref(),
+            Some("顶撞")
+        );
+        assert_eq!(
+            super::move_zh("TERROR_EEL", "STUN_MOVE").as_deref(),
+            Some("晕眩")
+        );
+        assert_eq!(
+            super::move_zh("TERROR_EEL", "ThrashMove").as_deref(),
+            Some("撕扯")
+        );
     }
 }

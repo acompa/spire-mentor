@@ -89,7 +89,9 @@ pub struct Workbench {
 
 #[wasm_bindgen]
 impl Workbench {
-    /// `config_json`: `{"assets_base": "https://…"}` (defaults to `/assets`).
+    /// `config_json`: `{"assets_base": "https://…", "lang": "zh"}`
+    /// (`assets_base` defaults to `/assets`; `lang` to English — `"zh"`
+    /// shows game text in Simplified Chinese when the bundle carries it).
     #[wasm_bindgen(constructor)]
     pub fn new(config_json: &str) -> Result<Workbench, JsError> {
         console_error_panic_hook::set_once();
@@ -103,6 +105,10 @@ impl Workbench {
         if let Some(base) = cfg.get("assets_base").and_then(Value::as_str) {
             config.assets_base = base.to_string();
         }
+        // Before anything builds a display map (they are cached on first use).
+        sts2_workbench::localization::set_display_language(
+            cfg.get("lang").and_then(Value::as_str).unwrap_or("en"),
+        );
         config.now_ms = Some(js_now_ms);
         config.perf_ms = Some(js_perf_ms);
         Ok(Self {
@@ -274,6 +280,24 @@ impl Workbench {
     #[must_use]
     pub fn has_e2e(&self) -> bool {
         self.inner.has_e2e()
+    }
+
+    /// The Fool's student's weights filename (`/e2e/<file>`, v0.113.0),
+    /// fetched only when a Fool run needs it. `load_e2e` takes its bytes too.
+    #[must_use]
+    pub fn e2e_fool_file() -> String {
+        sts2_workbench::api::Workbench::e2e_fool_file().to_string()
+    }
+
+    /// Record why the page could not fetch the Fool's weights.
+    pub fn set_e2e_fool_error(&mut self, reason: &str) {
+        self.inner.set_e2e_fool_error(reason);
+    }
+
+    /// Whether the Fool's student is loaded.
+    #[must_use]
+    pub fn has_e2e_fool(&self) -> bool {
+        self.inner.has_e2e_fool()
     }
 
     /// Whether a run is live (cheap probe for the worker).

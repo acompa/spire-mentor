@@ -8,7 +8,10 @@ use super::prelude::*;
 pub(crate) fn play_dismantle(state: &mut CombatState, target: Option<CreatureUid>) -> EffectResult {
     let t = target.expect("Dismantle: Enemy-targeted");
     let dmg = current_damage(state);
-    let hits = if enemy_vulnerable(state, t) > 0 { 2 } else { 1 };
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        if enemy_vulnerable(state, t) > 0 { 2 } else { 1 },
+    );
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, dmg);
     }

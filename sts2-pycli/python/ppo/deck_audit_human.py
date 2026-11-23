@@ -123,7 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=DEFAULT_ROOT)
     ap.add_argument("--character", default="Ironclad")
-    ap.add_argument("--build", default="v0.107.1")
+    ap.add_argument(
+        "--build",
+        default="v0.107.1",
+        help="corpus build (the human corpus's largest build slice, which past studies used; not the simulator's default build)",
+    )
     ap.add_argument("--ascension", type=int, nargs="+", default=list(range(11)))
     ap.add_argument("--procs", type=int, default=32)
     ap.add_argument("--out", required=True)

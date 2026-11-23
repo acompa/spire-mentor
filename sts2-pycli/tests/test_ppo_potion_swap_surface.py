@@ -29,6 +29,7 @@ row opportunistically; this pins the branch outright. The Rust twin lives in
 from __future__ import annotations
 
 import pytest
+import sts2_client
 from ppo import encoder, env, vocab
 
 # Two potions on the belt and a third being offered. Registry spellings are
@@ -180,7 +181,14 @@ def test_pad_indices_did_not_move():
     assert len(vocab.FIXED_KINDS) == vocab.N_FIXED, "no spare fixed row left"
 
 
-COVER_SEEDS = (2, 6, 14, 22)
+#: Known cover seeds per game build. The seed streams differ per build
+#: (GH #788), so a seed that swaps on one build need not swap on another
+#: (GH #1359).
+COVER_SEEDS: dict[str, tuple[int, ...]] = {
+    "v0.107.1": (5, 12, 13, 15),
+    "v0.111.0": (2, 6, 14, 22),
+    "v0.113.0": (6, 8, 9, 10),
+}
 
 
 @pytest.mark.slow
@@ -208,11 +216,11 @@ def test_live_path_carries_the_offer_into_the_state_token(monkeypatch):
     `oc_env.is_some()`, so an OC table would resolve the swap rule-side and
     never yield it as a decision — the exact set this test needs to inspect.
 
-    `COVER_SEEDS` are known cover seeds: with the flag on, each produces at
-    least one full-belt potion reward at A0. Re-censused 2026-11-14 over
-    0..39: 2, 6, 14, 22, 26, 39 swap. The 2026-11-12 set (GH #1301: 5, 12,
-    13, 15, 27, 31, 36, 38) was empty on main at 5a96d6647, after v0.111.0
-    became the default build (#1358). Seed 17, the
+    `COVER_SEEDS` are known cover seeds, per game build: with the flag on,
+    each produces at least one full-belt potion reward at A0 on the selected
+    build. v0.107.1 re-censused 2026-11-12 over 0..39 (GH #1301): 5, 12, 13,
+    15, 27, 31, 36, 38 swap. v0.111.0 and v0.113.0 censused 2026-11-14 over
+    0..39 (GH #1359): v0.111.0 2, 6, 14, 22, 26, 39; v0.113.0 6, 8, 9, 10, 11, 12, 14, 34, 37. Seed 17, the
     previous single cover seed, had lost its swap by then (most likely to
     act 1 rolling from the seed, `7320dbe99`); 15 and 5 had each drifted
     out earlier and drifted back in. A
@@ -229,9 +237,13 @@ def test_live_path_carries_the_offer_into_the_state_token(monkeypatch):
     monkeypatch.setenv("STS2_RUNAI_POTION_SWAP", "1")
     monkeypatch.delenv("STS2_RUNAI_POTION_OC", raising=False)
 
-    out = next((o for seed in COVER_SEEDS if (o := _first_potion_swap(seed))), None)
+    build = sts2_client.GAME_VERSION
+    seeds = COVER_SEEDS.get(build)
+    if seeds is None:
+        pytest.fail(f"no cover seeds for {build}: census potion_swap over seeds 0..39 and add them")
+    out = next((o for seed in seeds if (o := _first_potion_swap(seed))), None)
     if out is None:
-        pytest.fail(f"no cover seed in {COVER_SEEDS} produces a potion swap — re-derive them")
+        pytest.fail(f"no {build} cover seed in {seeds} produces a potion swap — re-derive them")
 
     offered = out.obs.get("pending_potion_swap")
     belt = out.obs.get("potions")

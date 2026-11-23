@@ -32,6 +32,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+import crystal_sphere_policy
 import sts2_client
 
 CHARACTERS = ["Ironclad", "Silent", "Defect", "Regent", "Necrobinder"]
@@ -87,6 +88,11 @@ def choose(state: dict[str, Any], rnd: random.Random) -> dict[str, Any]:
         return _act("leave_room")
     if decision == "potion_swap":
         return _act("potion_swap")  # no discard_slot = decline the potion
+    if decision == "crystal_sphere":
+        # The one screen with a real policy: `proceed` is not an answer here.
+        click = crystal_sphere_policy.host_click(state)
+        if click is not None:
+            return _act("crystal_sphere_click", **click)
     if decision == "rewards" and state.get("rewards"):
         # Take everything, as the host used to (GH #1282).
         return _act("take_reward", reward_index=state["rewards"][0]["index"])

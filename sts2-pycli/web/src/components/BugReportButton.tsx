@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { BugReportResult } from "./BugReportToast";
+import { t } from "../i18n";
 
 /** Freeze the current workbench moment to a bug-report dump. `mode` is the
  *  SPA's view mode ("replay" | "play" | "mcts"); it is translated to the API's
@@ -30,7 +31,7 @@ export default function BugReportButton({
 
   async function capture() {
     setBusy(true);
-    const note = window.prompt("Describe the bug (optional):") ?? null;
+    const note = window.prompt(t("Describe the bug (optional):")) ?? null;
     const apiMode = mode === "replay" ? "replay" : "live";
     try {
       const res = await api.captureBugReport({
@@ -42,7 +43,7 @@ export default function BugReportButton({
       });
       onCaptured(res);
     } catch (e) {
-      onFailed(e instanceof Error ? e.message : "capture failed");
+      onFailed(e instanceof Error ? e.message : t("capture failed"));
     } finally {
       setBusy(false);
     }
@@ -50,8 +51,8 @@ export default function BugReportButton({
 
   return (
     <span className="bugreport">
-      <button type="button" onClick={capture} disabled={busy} title="Capture a bug report">
-        🐞 Report
+      <button type="button" onClick={capture} disabled={busy} title={t("Capture a bug report")}>
+        {t("🐞 Report")}
       </button>
     </span>
   );

@@ -412,3 +412,39 @@ fn an_ovicopter_fight_rebuilds_with_its_egg_slots() {
         .collect();
     assert_eq!(slots, [Some(3), Some(4), Some(5)]);
 }
+
+/// `FabricatorNormal.Slots = [bot1, bot2, fabricator, bot3, bot4]`: a
+/// rebuilt Fabricator holds slot 2, as it does from combat entry, also when
+/// the wire names no encounter (the Spire Bench referee view). Left
+/// slot-unknown, its first bot was appended behind it and its third took
+/// slot 2 (Spire Bench seed 170000159: mirror `[Fabricator, Zapbot]`, game
+/// `[Zapbot, Fabricator]`).
+#[test]
+fn a_fabricator_fight_rebuilds_with_the_fabricators_slot() {
+    sts2_content::cards::dispatch::ensure_installed();
+    let mut value = small_fight(&["STRIKE_IRONCLAD"]);
+    let enemy = |kind: &str, uid: i32, mv: &str| {
+        serde_json::json!({"kind": kind, "uid": uid, "hp": 20, "max_hp": 20, "block": 0,
+            "powers": [], "intents": [], "intent_history": [], "move_state": mv,
+            "is_dead": false, "is_escaped": false})
+    };
+    value["encounter"] = serde_json::json!([enemy("Fabricator", 1, "FABRICATE_MOVE")]);
+    let lone = state_from_json_str(&value.to_string()).expect("rebuilds");
+    assert_eq!(lone.enemy_slot(lone.enemy_uids[0]), Some(2));
+    assert_eq!(lone.first_free_enemy_slot(5), Some(0));
+
+    value["encounter"] = serde_json::json!([
+        enemy("Zapbot", 1, "ZAP_MOVE"),
+        enemy("Stabbot", 2, "STAB_MOVE"),
+        enemy("Fabricator", 3, "FABRICATE_MOVE")
+    ]);
+    let state = state_from_json_str(&value.to_string()).expect("rebuilds");
+    let slots: Vec<Option<u8>> = state
+        .enemy_uids
+        .iter()
+        .map(|uid| state.enemy_slot(*uid))
+        .collect();
+    assert_eq!(slots, [Some(0), Some(1), Some(2)]);
+    // The next bot takes bot3, not the Fabricator's own slot.
+    assert_eq!(state.first_free_enemy_slot(5), Some(3));
+}

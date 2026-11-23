@@ -2,6 +2,7 @@
 // the component file so it exports only components (react-refresh/only-export-
 // components).
 import { useState } from "react";
+import { t } from "../i18n";
 import type { CombatLogRow } from "../api";
 
 const DETAIL_KEY = "wb.history.detail";
@@ -48,7 +49,7 @@ export function turnChips(rows: CombatLogRow[], details: string[]): string[] {
   const out: string[] = [];
   if (dealt) out.push(`⚔ ${dealt}`);
   if (block) out.push(`🛡 ${block}`);
-  if (taken) out.push(`−${taken} HP`);
+  if (taken) out.push(t("−{n} HP", { n: taken }));
   if (kills) out.push(`☠ ${kills}`);
   return out;
 }

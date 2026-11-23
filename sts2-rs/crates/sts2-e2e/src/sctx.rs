@@ -10,7 +10,6 @@
 //! (`ppo.e2e.tokens.luts`).
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 use serde_json::Value;
 
@@ -22,6 +21,7 @@ use crate::schema::{
 use crate::vocab::{self, Reg};
 
 const CARD_TYPES_TSV: &str = include_str!("../data/card_types_v0111.tsv");
+const CARD_TYPES_TSV_V0113: &str = include_str!("../data/card_types_v0113.tsv");
 
 /// `static_tables.CARD_TYPES`.
 const CARD_TYPES: [&str; 6] = ["Attack", "Skill", "Power", "Status", "Curse", "Quest"];
@@ -230,7 +230,23 @@ pub struct SctxVocab {
     card_type_canon: HashMap<String, &'static str>,
 }
 
+/// `combat_ctx.tokens._kinds`: a later lane build reads every build's
+/// universe (`card_any`, ...) for the content tables.
+fn reg_kind(kind: &str) -> &str {
+    if !crate::build::later() {
+        return kind;
+    }
+    match kind {
+        "card" => "card_any",
+        "potion" => "potion_any",
+        "relic" => "relic_any",
+        "power" => "power_any",
+        other => other,
+    }
+}
+
 fn reg_names(kind: &str) -> Vec<String> {
+    let kind = reg_kind(kind);
     sts2_wire::state_dict::registry_names_for(kind)
         .unwrap_or_else(|e| panic!("registry {kind}: {e}"))
 }
@@ -255,8 +271,14 @@ impl SctxVocab {
     fn build() -> Self {
         let cards = reg_names("card");
         let potions = reg_names("potion");
+        let later_species: &[sts2_core::MonsterKind] = if crate::build::later() {
+            sts2_core::MonsterKind::V0113_ONLY
+        } else {
+            &[]
+        };
         let mut species: Vec<String> = sts2_core::MonsterKind::ALL_KNOWN
             .iter()
+            .chain(later_species)
             .map(|k| k.python_name().to_owned())
             .collect();
         species.sort_unstable();
@@ -286,7 +308,12 @@ impl SctxVocab {
         }
         let mut card_type = HashMap::new();
         let mut card_type_canon = HashMap::new();
-        for line in CARD_TYPES_TSV.lines() {
+        let card_types_tsv = if crate::build::later() {
+            CARD_TYPES_TSV_V0113
+        } else {
+            CARD_TYPES_TSV
+        };
+        for line in card_types_tsv.lines() {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
@@ -334,11 +361,11 @@ impl SctxVocab {
     }
 }
 
-/// The S_ctx tables, built once.
+/// The current build's S_ctx tables, built once per build.
 #[must_use]
 pub fn vocab() -> &'static SctxVocab {
-    static V: OnceLock<SctxVocab> = OnceLock::new();
-    V.get_or_init(SctxVocab::build)
+    static V: crate::build::PerBuild<SctxVocab> = crate::build::PerBuild::new();
+    V.get(SctxVocab::build)
 }
 
 /// The content slots `luts` covers, with their e2e registries.
@@ -355,8 +382,8 @@ pub const ID_SLOTS: [(usize, Reg); 6] = [
 /// -> NONE, UNK -> `UNK_<registry>`), indexed by S_ctx slot.
 #[must_use]
 pub fn luts() -> &'static [Vec<u16>; SCTX_N_CAT] {
-    static L: OnceLock<[Vec<u16>; SCTX_N_CAT]> = OnceLock::new();
-    L.get_or_init(|| {
+    static L: crate::build::PerBuild<[Vec<u16>; SCTX_N_CAT]> = crate::build::PerBuild::new();
+    L.get(|| {
         let tv = vocab();
         let v = vocab::load();
         let mut out: [Vec<u16>; SCTX_N_CAT] = Default::default();

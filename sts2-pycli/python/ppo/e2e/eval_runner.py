@@ -21,6 +21,12 @@ It does three things:
    deploy starts a new arm instead of failing ``evaluate``'s config check.
    An ops panel (``DEV-1000``, ``DEV-2000``) is a slice of the runner panel
    ``DEV``. The runner never plays a sealed panel (TEST).
+   A request with a ``character`` (GH #1197, ``scripts/e2e_allchar_evalq.py``)
+   plays that character with the "chars" event declared: ``evaluate`` gets
+   ``--set-env STS2_E2E_CHARACTER=<character> --set-env STS2_E2E_CHARS=1`` (its
+   clean env keeps nothing else), and step 3 reads the arm as that character's.
+   A request with ``"env": "human"`` plays the held-out human starts instead of
+   fresh runs (``ppo.e2e.human.eval_env``: DEV seed i plays held-out start i).
 3. Reads the arm with ``ppo.e2e.evaluate``'s DEV report and writes
    ``OUT/result.json``: ``wins`` and ``runs`` (the finished runs, which
    exclude error and timeout rows) plus the report. The learner adds that
@@ -97,13 +103,18 @@ def default_evals() -> str:
     return os.environ.get("E2E_EVALS") or str(Path.home() / "runs" / "e2e" / "evals")
 
 
-def read_report(evals: Path, panel: P.Panel, arm: str) -> dict[str, Any]:
-    """``ppo.e2e.evaluate report --json`` of one arm, in-process."""
+def read_report(
+    evals: Path, panel: P.Panel, arm: str, character: str | None = None
+) -> dict[str, Any]:
+    """``ppo.e2e.evaluate report --json`` of one arm, in-process; its rows must be
+    ``character``'s (default: ``score_test.CHARACTER``)."""
     from . import evaluate as E
     from . import score_test
 
     try:
-        a = score_test.load_arm(evals, panel, arm, sealed_rules=False)
+        a = score_test.load_arm(
+            evals, panel, arm, sealed_rules=False, character=character or score_test.CHARACTER
+        )
     except score_test.ReadStopped as e:
         raise RunnerError(f"integrity: {e}") from None
     return E.report([a.rows[s] for s in sorted(a.rows)])
@@ -141,7 +152,7 @@ def run_request(
     policy: str = DEFAULT_POLICY,
     extra: Sequence[str] = (),
     run: Callable[..., Any] = subprocess.run,
-    report: Callable[[Path, P.Panel, str], dict[str, Any]] = read_report,
+    report: Callable[..., dict[str, Any]] = read_report,
 ) -> dict[str, Any]:
     """Run one request; returns (and writes to ``out/result.json``) the result."""
     from . import ckpt
@@ -172,6 +183,28 @@ def run_request(
         export_variant(str(state), variant, str(student))
     arm = arm_name(req, sha, stack_id(pin, device, policy))
     procs = max(1, min(int(req.get("max_procs") or OC.EVAL_MAX_PROCS), OC.EVAL_MAX_PROCS))
+    character = str(req.get("character") or "")
+    if character:
+        from .factory import CHARACTER_ENV, CHARACTERS, CHARS_ENV
+
+        if character not in CHARACTERS:
+            raise RunnerError(f"{request}: character {character!r} not in {CHARACTERS}")
+        extra = [
+            "--set-env",
+            f"{CHARACTER_ENV}={character}",
+            "--set-env",
+            f"{CHARS_ENV}=1",
+            *extra,
+        ]
+    if str(req.get("env") or "") == "human":
+        # The held-out human starts (`ppo.e2e.human`): DEV seed i plays held-out start i.
+        from .human import BANK_ENV, EVAL_ENV
+
+        extra = ["--env", EVAL_ENV, *extra]
+        if os.environ.get(BANK_ENV):
+            extra = ["--set-env", f"{BANK_ENV}={os.environ[BANK_ENV]}", *extra]
+    elif req.get("env"):
+        raise RunnerError(f"{request}: unknown env {req['env']!r} (known: human)")
     argv = evaluate_argv(
         arm,
         panel,
@@ -192,7 +225,7 @@ def run_request(
     rc = run(argv, env=env).returncode
     if rc != 0:
         raise RunnerError(f"ppo.e2e.evaluate run exited {rc}")
-    rep = report(evals, panel, arm)
+    rep = report(evals, panel, arm, character) if character else report(evals, panel, arm)
     res = {
         "wins": int(rep["wins"]),
         "runs": int(rep["scored"]),
@@ -204,6 +237,8 @@ def run_request(
         "state_sha256": sha,
         "report": rep,
     }
+    if character:
+        res["character"] = character
     OC.atomic_write_text(out / RESULT, json.dumps(res, indent=1, sort_keys=True) + "\n")
     return res
 

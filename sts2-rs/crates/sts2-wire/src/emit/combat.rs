@@ -102,6 +102,11 @@ pub fn card_to_value(state: &CombatState, card: &Card) -> Value {
     };
     set(&mut d, "kind", kind);
     set(&mut d, "upgraded", card.upgraded);
+    // GH #1391: a card that upgrades more than once (Dingy Dagger) carries
+    // its level; every other card's dict is unchanged.
+    if card.max_upgrade_level() > 1 && card.upgraded {
+        set(&mut d, "upgrade_level", i32::from(card.upgrade_level()));
+    }
     set(
         &mut d,
         "cost_override",
@@ -142,6 +147,31 @@ pub fn card_to_value(state: &CombatState, card: &Card) -> Value {
     if card.base_replay_count != 0 {
         set(&mut d, "base_replay_count", card.base_replay_count);
     }
+    // GH #1197: the star half of the cost, for the cards that have one.
+    // `base_star_cost` is the printed cost in the state's build (C#
+    // `CanonicalStarCost`); `star_cost_live` is what a play would spend now
+    // (C# `GetStarCostWithModifiers`: the free-this-turn / this-combat
+    // riders, Void Form, Brilliant Scarf). Star-X (Stardust, `HasStarCostX`)
+    // reads -1 in both. Absent on every card without a star cost — read as 0.
+    //
+    // Deliberately NOT the existing `star_cost` key: the C# producers send
+    // that as `CurrentStarCost` (no hooks) and the parse turns a 0 there into
+    // a free-this-turn rider, so a Void-Form 0 under that name would survive
+    // a round trip as a permanent discount. The parse ignores both keys.
+    if card.card_id == sts2_core::cards::CardId::Stardust {
+        set(&mut d, "star_cost_live", -1);
+        set(&mut d, "base_star_cost", -1);
+    } else {
+        let printed = sts2_core::card_printed_star_cost(card.card_id, state.game_version);
+        if printed > 0 {
+            set(
+                &mut d,
+                "star_cost_live",
+                sts2_core::effective_star_cost_in_combat(state, card),
+            );
+            set(&mut d, "base_star_cost", printed);
+        }
+    }
     // Base damage / block let display consumers fill the `{Damage}` /
     // `{Block}` template vars in card descriptions. Additive (not in
     // REQUIRED_CARDSPEC_KEYS); 0 for cards that deal/block neither.
@@ -176,9 +206,11 @@ pub fn card_to_value(state: &CombatState, card: &Card) -> Value {
     // divergences as fresh desyncs. Worth doing deliberately, not as a side
     // effect of this change.
     //
-    // The Sly/Retain trio is emitted only for cards IN HAND, because that is
-    // where the adapter computes flags — the C# producers ship keywords on
-    // pile cards too, but `_flags_for_card` is called for the hand alone. An
+    // The Sly/Retain trio is emitted in `flags` only for cards IN HAND (every
+    // other pile carries it under the separate `pile_flags` key, GH #1197),
+    // because that is where the adapter computes flags — the C# producers
+    // ship keywords on pile cards too, but `_flags_for_card` is called for
+    // the hand alone. An
     // asymmetric emit here would manufacture a per-decision desync on every
     // Well-Laid-Plans / Hand-Trick / MasterPlanner card, which is exactly the
     // failure the paragraph above records for the free riders. GH #370.
@@ -203,8 +235,13 @@ pub fn card_to_value(state: &CombatState, card: &Card) -> Value {
         //
         // Symmetric emit/parse is the invariant here; see the sibling note on
         // the free riders below.
+        //   * A live Hex on a Hexed card (C# `HexPower.TryModifyKeywordsInCombat`):
+        //     the game's board shows it, and the parse leaves it to the
+        //     affliction (GH #1707), so the round trip holds.
         if sts2_core::card_effects::card_ethereal_inst(card)
             || card.combat_var(VarKey::EtherealThisCombat) == 1
+            || (sts2_core::combat_loop::card_is_hexed(card)
+                && state.player_power_amount(sts2_core::PowerKind::Hex) > 0)
         {
             flags.push("ethereal");
         }
@@ -214,28 +251,37 @@ pub fn card_to_value(state: &CombatState, card: &Card) -> Value {
         if sts2_core::card_effects::card_innate_inst(card) {
             flags.push("innate");
         }
+        // Mirrors the adapter: keyword first, then the single-turn halves
+        // with the keyword subtracted, so a card that is BOTH intrinsically
+        // Sly and Hand-Tricked emits `sly` alone — as C# does, since
+        // `IsSlyThisTurn` short-circuits on the keyword. Intrinsic Sly is
+        // read in the state's build (`card_sly_in`: v0.111.0 Haze lost
+        // it), the same predicate the parse uses to tell intrinsic from
+        // granted; a version-blind emit wrote `sly` on every v0.111.0
+        // Haze and the parse read that back as a MasterPlanner grant.
+        let mut sly_retain: Vec<&str> = Vec::new();
+        let sly_keyword = sts2_core::card_effects::card_sly_in(card.card_id, state.game_version)
+            || state.player.sly_this_combat.contains(&card.uid);
+        if sly_keyword {
+            sly_retain.push("sly");
+        } else if state.player.sly_this_turn.contains(&card.uid) {
+            sly_retain.push("sly_turn");
+        }
+        if !sts2_core::card_effects::card_retain_inst(card)
+            && state.player.retain_this_turn.contains(&card.uid)
+        {
+            sly_retain.push("retain_turn");
+        }
         if state.player.hand.contains(&card.uid) {
-            // Mirrors the adapter: keyword first, then the single-turn halves
-            // with the keyword subtracted, so a card that is BOTH intrinsically
-            // Sly and Hand-Tricked emits `sly` alone — as C# does, since
-            // `IsSlyThisTurn` short-circuits on the keyword. Intrinsic Sly is
-            // read in the state's build (`card_sly_in`: v0.111.0 Haze lost
-            // it), the same predicate the parse uses to tell intrinsic from
-            // granted; a version-blind emit wrote `sly` on every v0.111.0
-            // Haze and the parse read that back as a MasterPlanner grant.
-            let sly_keyword =
-                sts2_core::card_effects::card_sly_in(card.card_id, state.game_version)
-                    || state.player.sly_this_combat.contains(&card.uid);
-            if sly_keyword {
-                flags.push("sly");
-            } else if state.player.sly_this_turn.contains(&card.uid) {
-                flags.push("sly_turn");
-            }
-            if !sts2_core::card_effects::card_retain_inst(card)
-                && state.player.retain_this_turn.contains(&card.uid)
-            {
-                flags.push("retain_turn");
-            }
+            flags.extend(sly_retain);
+        } else if !sly_retain.is_empty() {
+            // GH #1197: the same trio for a card in any OTHER pile (a Master
+            // Planner Sly card that was discarded, drawn or shuffled), under
+            // its own key so `flags` — which the mirror's `_card_key` diffs
+            // and the C# producers name on hand cards only — stays exactly
+            // what it was. Read `flags` on hand cards and `pile_flags` on
+            // every other card for the full picture.
+            set(&mut d, "pile_flags", sly_retain);
         }
         if !flags.is_empty() {
             set(&mut d, "flags", flags);
@@ -540,6 +586,7 @@ pub fn bare_intent_to_value(intent: Intent) -> Value {
 /// A power uid with no entry in `arena` — the state failed its own
 /// `assert_invariants` before we got here.
 pub fn powers_to_value(
+    state: &CombatState,
     uids: &[PowerUid],
     arena: &[Power],
     seats: &[(std::num::NonZeroU32, u8)],
@@ -567,6 +614,25 @@ pub fn powers_to_value(
             // here — the energy the power GRANTS — made the mirror's own wire
             // disagree with the world's on a field the diff compares.
             PowerKind::Orbit => 4 - pow.counter.rem_euclid(4),
+            // C# `ImpaledPower.DisplayAmount => HitCounter`: the hits left
+            // before the next arrow dislodges (3 on a fresh impale). The
+            // engine keeps `amount` at 1 and the HitCounter in `counter`, so
+            // emitting `amount` showed "1" where the game shows "3".
+            PowerKind::Impaled => pow.counter,
+            // C# `MonologuePower.DisplayAmount => StrengthApplied`
+            // (MonologuePower.cs:43, every build): the Strength granted so
+            // far this turn, which the engine accumulates on `counter`.
+            PowerKind::Monologue => pow.counter,
+            // v0.111.0 `PaleBlueDotPower.DisplayAmount => Math.Max(0, 5 -
+            // AttacksPlayedThisTurn)` (PaleBlueDotPower.cs:27), where that
+            // count is EVERY finished play of the owner this turn — the
+            // lambda filters on turn and player, not on card type — i.e.
+            // `card_plays_finished_this_turn`. v0.107.1's Pale Blue Dot has
+            // no override and shows `amount`. Player-only power.
+            PowerKind::PaleBlueDot if state.game_version >= sts2_core::GameVersion::V0_111_0 => {
+                let left = 5_u32.saturating_sub(state.combat_log.card_plays_finished_this_turn);
+                i32::try_from(left).unwrap_or(0)
+            }
             _ => pow.amount,
         };
         set(&mut d, "display_amount", display_amount);
@@ -600,6 +666,88 @@ fn osty_to_value(state: &CombatState, seat: &sts2_core::PlayerCombatState) -> Op
     set(&mut osty, "max_hp", emitted_max_hp);
     set(&mut osty, "block", c.block.max(0));
     Some(Value::Object(osty))
+}
+
+/// The v0.113.0 Wuppy pet (`$.player.wuppy`) in the `ParsedOsty` shape, or
+/// `None` without one. A dead Wuppy stays in the fight, so it is emitted
+/// `alive: false`.
+fn wuppy_to_value(state: &CombatState) -> Option<Value> {
+    let c = state
+        .creatures
+        .iter()
+        .find(|c| c.species == Some(sts2_core::MonsterKind::Wuppy))?;
+    let emitted_max_hp = c.max_hp.max(1);
+    let mut wuppy = obj();
+    set(&mut wuppy, "alive", c.current_hp > 0);
+    set(&mut wuppy, "hp", c.current_hp.clamp(0, emitted_max_hp));
+    set(&mut wuppy, "max_hp", emitted_max_hp);
+    set(&mut wuppy, "block", c.block.max(0));
+    Some(Value::Object(wuppy))
+}
+
+/// The v0.113.0 Fool mechanics (`$.player.fool`; `sts2_core::fool`), for the
+/// e2e tokenizers' "fool" fill event. Absent before v0.113.0 and on a board no
+/// Fool mechanic has touched, so every other board emits as before.
+///
+/// * `arrows`: one `[status, quietus]` per arrow slot in gain order; status 1
+///   ready (`Retrieved`), 2 away (`Away`), 3 destroyed; quietus 1 when the
+///   arrow is destroyed after impaling (`DestroyAfterImpaled`).
+/// * `pending`: a Shoot card's slot not yet created (`shoot_slot_pending`),
+///   which counts as one more ready arrow.
+/// * `next`: the slot the next shot uses (the LAST ready one), or -1.
+/// * `melody`: `[Wah, Cho, Ki, melody cards]` finished this turn.
+/// * `impaled`: `[encounter index, arrows]` per impaled enemy.
+fn fool_to_value(state: &CombatState) -> Option<Value> {
+    use sts2_core::cards::CardTag;
+    use sts2_core::fool;
+    if !fool::enabled(state) {
+        return None;
+    }
+    let pending = fool::shoot_slot_pending(state);
+    let f = fool::fool(state);
+    if f.is_none() && !pending {
+        return None;
+    }
+    let mut out = obj();
+    let arrows: Vec<Value> = f
+        .map(|f| {
+            f.arrows
+                .iter()
+                .map(|a| {
+                    let status = match a.status {
+                        fool::ArrowStatus::Retrieved => 1,
+                        fool::ArrowStatus::Away => 2,
+                        fool::ArrowStatus::Destroyed => 3,
+                    };
+                    serde_json::json!([status, i32::from(a.destroy_after_impaled)])
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.insert("arrows".to_owned(), Value::Array(arrows));
+    set(&mut out, "pending", pending);
+    let next = fool::next_arrow(state).map_or(-1, |i| i as i64);
+    set(&mut out, "next", next);
+    let melody = [
+        fool::finished_this_turn(state, CardTag::Wah),
+        fool::finished_this_turn(state, CardTag::Cho),
+        fool::finished_this_turn(state, CardTag::Ki),
+        fool::melody_cards_played_this_turn(state),
+    ];
+    out.insert("melody".to_owned(), serde_json::json!(melody));
+    let impaled: Vec<Value> = f
+        .map(|f| {
+            f.impaled
+                .iter()
+                .filter_map(|(uid, slots)| {
+                    let i = state.enemy_uids.iter().position(|u| u == uid)?;
+                    Some(serde_json::json!([i, slots.len()]))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.insert("impaled".to_owned(), Value::Array(impaled));
+    Some(Value::Object(out))
 }
 
 /// A seat's combat-history counters (`state_dict::SeatHistory`), each only
@@ -844,6 +992,11 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
         if r.is_melted {
             set(&mut rd, "is_melted", true);
         }
+        // GH #1197: Emotion Chip / Mini Regent / Regalite say whether they
+        // will fire on their next trigger. Only those three carry the key.
+        if let Some(armed) = sts2_core::relic_effects::relic_armed(state, r) {
+            set(&mut rd, "armed", armed);
+        }
         relics_list.push(Value::Object(rd));
     }
     player.insert("relics".to_owned(), Value::Array(relics_list));
@@ -887,6 +1040,7 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
     player.insert(
         "powers".to_owned(),
         powers_to_value(
+            state,
             &player_power_uids,
             &state.powers,
             &state.coop.power_seat,
@@ -938,6 +1092,29 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
     if state.combat_log.hp_lost_this_turn > 0 {
         set(&mut player, "hp_lost_this_turn", true);
     }
+    // GH #1197: per-turn counters the net reads directly. Each only when
+    // non-zero, so a board without them emits the wire it always did; a
+    // missing key means 0. `discards_this_turn` is C#'s `CardDiscardedEntry`
+    // count (MementoMori's multiplier); the type counts are the
+    // `cards_played_this_turn` Attack / Skill buckets.
+    for (key, n) in [
+        (
+            "discards_this_turn",
+            u32::from(state.combat_log.cards_discarded_this_turn),
+        ),
+        (
+            "attacks_played_this_turn",
+            state.player.cards_played_this_turn[CardType::Attack.index()],
+        ),
+        (
+            "skills_played_this_turn",
+            state.player.cards_played_this_turn[CardType::Skill.index()],
+        ),
+    ] {
+        if n > 0 {
+            set(&mut player, key, n);
+        }
+    }
     emit_seat_history(
         state,
         &mut player,
@@ -954,6 +1131,17 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
     // knows the species is Osty.
     if let Some(osty) = osty_to_value(state, &state.player) {
         player.insert("osty".to_owned(), osty);
+    }
+    // v0.113.0 Wuppy pet (`$.player.wuppy`, same shape as the Osty). Like
+    // the Osty it is not in `enemy_uids`; its `WuppysLoyaltyPower` is
+    // implied. Absent without one, so every other board emits as before.
+    if let Some(wuppy) = wuppy_to_value(state) {
+        player.insert("wuppy".to_owned(), wuppy);
+    }
+    // v0.113.0 Fool mechanics (`$.player.fool`): arrows, melody, impaled
+    // enemies. Absent unless a Fool mechanic has touched the board.
+    if let Some(f) = fool_to_value(state) {
+        player.insert("fool".to_owned(), f);
     }
 
     // Defect orbs. Mirror the C# `CombatPlayState` shape (RunSimulator.cs:
@@ -1091,6 +1279,7 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
         m.insert(
             "powers".to_owned(),
             powers_to_value(
+                state,
                 &c.powers,
                 &state.powers,
                 &state.coop.power_seat,
@@ -1225,11 +1414,8 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
         // be re-attached to its thief here or a display consumer sees only a
         // bare "Swipe 1" and cannot say WHICH card left the deck.
         //
-        // Emission-only, like `move_state` / `is_dead` above: `parse_enemy`
-        // drops the key, and `state_from_dict` rebuilds with an empty
-        // `swipe_stolen`. That is not a fidelity loss for search — the ledger
-        // is read at `exit_combat` (deck removal) and on thief death, both
-        // outside a hint-time combat rebuild.
+        // `parse_enemy` reads it back onto the rebuilt fight's ledger
+        // (GH #1693): the student reads the thief's held card.
         //
         // Reclaimed entries (thief died → `SwipePower.BeforeDeath` gave the
         // card back) are omitted: the card is the player's again, and the
@@ -1270,6 +1456,7 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
                 m.insert(
                     "powers".to_owned(),
                     powers_to_value(
+                        state,
                         &state.coop.stash[i].powers,
                         &state.powers,
                         &state.coop.power_seat,
@@ -1386,6 +1573,40 @@ pub fn combat_state_to_value(state: &CombatState) -> Result<Value, EmitError> {
             "game_version".to_owned(),
             Value::String(state.game_version.to_string()),
         );
+    }
+    // Game mode and Dread dominion (GH #1346): only when set, so every
+    // standard wire is unchanged.
+    if !state.game_mode.is_default() {
+        d.insert(
+            "game_mode".to_owned(),
+            Value::String(state.game_mode.as_str().to_owned()),
+        );
+    }
+    if let Some(dominion) = state.dominion {
+        d.insert(
+            "dominion".to_owned(),
+            Value::String(dominion.entry().to_owned()),
+        );
+    }
+    // `WaterfallGiantDominion`'s per-combat notes (GH #1346), state a summon
+    // reads: only when set.
+    if state.combat_log.dread_explosive != 0 {
+        d.insert(
+            "dread_explosive".to_owned(),
+            Value::from(state.combat_log.dread_explosive),
+        );
+    }
+    if state.combat_log.dread_weak_encounter {
+        d.insert("dread_weak_encounter".to_owned(), Value::Bool(true));
+    }
+    // `KnowledgeDemonDominion`'s turn-1 screen with the hand draw parked
+    // behind it (GH #1346): the one open choice the wire carries, because
+    // the engine derives all of it. Only while that screen is open.
+    if let Some(parked) = sts2_core::dread::parked_knowledge_choice(state) {
+        let mut m = serde_json::Map::new();
+        m.insert("draw_count".to_owned(), Value::from(parked.draw_count));
+        m.insert("side_fired".to_owned(), Value::Bool(parked.side_fired));
+        d.insert("dread_knowledge_choice".to_owned(), Value::Object(m));
     }
 
     Ok(Value::Object(d))
@@ -1746,6 +1967,999 @@ pub fn card_block_preview(state: &CombatState) -> Vec<Option<i32>> {
     out
 }
 
+/// Live damage for the live hand, for the e2e net: per hand card, the
+/// damage each living enemy would take, as `target index -> (damage per hit
+/// after modifiers, hits)`.
+///
+/// Unlike [`card_damage_preview`] (which reads the card's stored
+/// `base_damage`, so misses cards that calculate damage at play time and
+/// applies the player's modifiers to Osty attacks), this reads
+/// [`sts2_content::cards::live::live_attack`]: calculated attacks (Body Slam,
+/// Perfected Strike, ...), Osty attacks dealt by the Osty, and hit counts.
+/// The base then runs the same modifier chain as the preview, against
+/// [`staged_for_play`]. Indexes are the full encounter-array indexes the
+/// preview uses; unhittable enemies ([`CombatState::is_hittable_enemy`]) are
+/// omitted, and an empty map means the card deals no damage now. [`card_damage_preview`] is unchanged.
+#[must_use]
+pub fn card_damage_live(state: &CombatState) -> Vec<BTreeMap<usize, (i32, f32)>> {
+    state
+        .player
+        .hand
+        .iter()
+        .map(|card_uid| damage_live_of(state, *card_uid))
+        .collect()
+}
+
+/// [`card_damage_live`] of one hand card.
+fn damage_live_of(state: &CombatState, card_uid: CardUid) -> BTreeMap<usize, (i32, f32)> {
+    let mut entry = BTreeMap::new();
+    let Some(card_id) = state
+        .cards
+        .iter()
+        .find(|c| c.uid == card_uid)
+        .map(|c| c.card_id)
+    else {
+        return entry;
+    };
+    let staged = staged_for_play(state, card_uid);
+    for (idx, enemy_uid) in staged.enemy_uids.iter().enumerate() {
+        if !staged.is_hittable_enemy(*enemy_uid) {
+            continue;
+        }
+        let Some(la) = sts2_content::cards::live::live_attack(state, card_uid, *enemy_uid) else {
+            break;
+        };
+        let dmg = sts2_core::damage::compute_modified_damage(
+            &staged,
+            la.dealer,
+            *enemy_uid,
+            la.base,
+            sts2_core::hooks::ValueProps::MOVE,
+            Some(card_id),
+        );
+        entry.insert(idx, (dmg, la.hits));
+    }
+    entry
+}
+
+/// Live block for the live hand, for the e2e net: [`card_block_preview`] plus
+/// the block that card has no `base_block` for. Sovereign Blade grants its
+/// Parry amount as powered block (`CalculatedBlockVar` x `ParryPower`), and
+/// the `CalculatedBlockVar` cards (Demonic Shield, Mirage, Sacrifice, Stack,
+/// Expect a Fight) calculate theirs at play time. `None` when the card grants
+/// none. [`card_block_preview`] is unchanged.
+#[must_use]
+pub fn card_block_live(state: &CombatState) -> Vec<Option<i32>> {
+    let mut out = card_block_preview(state);
+    for (slot, card_uid) in out.iter_mut().zip(&state.player.hand) {
+        if slot.is_some() {
+            continue;
+        }
+        let Some(card) = state.cards.iter().find(|c| c.uid == *card_uid) else {
+            continue;
+        };
+        let staged = staged_for_play(state, *card_uid);
+        *slot = if card.card_id == sts2_core::cards::CardId::SovereignBlade {
+            let parry = state.player_power_amount(sts2_core::powers::PowerKind::Parry);
+            (parry > 0).then(|| {
+                let stretched = sts2_core::fool::stretch_preview_state(&staged, *card_uid);
+                sts2_core::card_effects::modify_player_block_move(
+                    stretched.as_ref().unwrap_or(&staged),
+                    parry,
+                )
+            })
+        } else {
+            sts2_content::cards::preview::calculated_block(&staged, card, None).filter(|b| *b > 0)
+        };
+    }
+    out
+}
+
+/// The damage a hand card's play deals beyond its own attack, for the e2e
+/// net's live damage bound (GH #1197): what [`card_gen_live`] returns per card.
+///
+/// Indexes are the full encounter-array indexes [`card_damage_live`] uses;
+/// only living enemies appear and only positive values are kept.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GenLive {
+    /// Target index -> damage the play adds at once: the Shivs it creates
+    /// (each playable at any enemy), Knife Trap's Shivs, the orbs it evokes.
+    pub flat: BTreeMap<usize, f64>,
+    /// Target index -> damage per energy spent (Multi-Cast's evokes).
+    pub per_energy: BTreeMap<usize, f64>,
+    /// Target indexes the play's Doom kills outright (End of Days).
+    pub kills: Vec<usize>,
+    /// By the energy an X-cost play spends (index 0 ..= the player's energy;
+    /// the stars for Stardust): target index -> the play's whole X damage at
+    /// that X, when it is not linear in X (Tempest's overflow evokes; an X
+    /// modifier such as Chemical X on the X attacks, Multi-Cast and Stardust;
+    /// Heavenly Drill's doubling, see `x_table`). It replaces the attack x X
+    /// and `per_energy` terms. Empty for every other card.
+    pub by_x: Vec<BTreeMap<usize, f64>>,
+}
+
+impl GenLive {
+    fn is_empty(&self) -> bool {
+        self.flat.is_empty()
+            && self.per_energy.is_empty()
+            && self.kills.is_empty()
+            && self.by_x.iter().all(BTreeMap::is_empty)
+    }
+
+    fn add(&mut self, row: &BTreeMap<usize, f64>, times: f64) {
+        for (j, v) in row {
+            let x = v * times;
+            if x > 0.0 {
+                *self.flat.entry(*j).or_insert(0.0) += x;
+            }
+        }
+    }
+}
+
+/// The hittable enemies (C# `CombatState.HittableEnemies`,
+/// [`CombatState::is_hittable_enemy`]) as `(encounter index, uid, hp)`.
+fn living_enemies(state: &CombatState) -> Vec<(usize, CreatureUid, i32)> {
+    state
+        .enemy_uids
+        .iter()
+        .enumerate()
+        .filter(|(_, uid)| state.is_hittable_enemy(**uid))
+        .filter_map(|(i, uid)| {
+            sts2_core::creature_by_id(&state.creatures, uid.0).map(|c| (i, *uid, c.current_hp))
+        })
+        .collect()
+}
+
+/// One Shiv's damage on each living enemy (Shiv.cs: `DamageVar(4)`, +2
+/// upgraded), after modifiers. Accuracy (`AccuracyPower.ModifyDamageAdditive`,
+/// Shiv-tagged powered attacks) is added to the base, where the additive
+/// stage would put it: the modifier chain reads the resolving card off the
+/// Play pile, and no Shiv is there yet.
+fn shiv_row(staged: &CombatState, upgraded: bool) -> BTreeMap<usize, f64> {
+    let base = if upgraded { 6 } else { 4 }
+        + staged.player_power_amount(sts2_core::powers::PowerKind::Accuracy);
+    living_enemies(staged)
+        .into_iter()
+        .map(|(i, uid, _)| {
+            let d = sts2_core::damage::compute_modified_damage(
+                staged,
+                sts2_core::hooks::CreatureRef::Player,
+                uid,
+                base,
+                sts2_core::hooks::ValueProps::MOVE,
+                Some(sts2_core::cards::CardId::Shiv),
+            );
+            (i, f64::from(d.max(0)))
+        })
+        .filter(|(_, d)| *d > 0.0)
+        .collect()
+}
+
+/// One evoke of `orb` per living enemy, after the target's modifiers (an
+/// evoke is unpowered: no Strength, no Vulnerable). Lightning hits a random
+/// enemy (`LightningOrb.ApplyLightningDamage`), counted as each enemy's share
+/// like a random-target attack in [`card_damage_live`]; Dark hits the weakest
+/// (`DarkOrb.Evoke`, the engine's first lowest-HP enemy); Glass hits all.
+/// Values as the wire's `orbs` (Focus, Infused Core).
+fn evoke_row(staged: &CombatState, orb: sts2_core::orbs::Orb) -> BTreeMap<usize, f64> {
+    use sts2_core::orbs::{
+        focus_bonus, focus_scaled, lightning_orb_bonus, Orb, DARK_ORB_BASE_EVOKE,
+    };
+    let living = living_enemies(staged);
+    let focus = focus_bonus(staged);
+    let hit = |uid: CreatureUid, v: i32| -> f64 {
+        f64::from(
+            sts2_core::damage::compute_modified_damage(
+                staged,
+                sts2_core::hooks::CreatureRef::Player,
+                uid,
+                v,
+                sts2_core::hooks::ValueProps::UNPOWERED,
+                None,
+            )
+            .max(0),
+        )
+    };
+    let mut row = BTreeMap::new();
+    match orb {
+        Orb::Lightning => {
+            let v = focus_scaled(8, focus) + lightning_orb_bonus(staged);
+            #[allow(clippy::cast_precision_loss)]
+            let n = living.len().max(1) as f64;
+            for (i, uid, _) in &living {
+                row.insert(*i, hit(*uid, v) / n);
+            }
+        }
+        Orb::Dark { stored } => {
+            let v = stored.saturating_add(DARK_ORB_BASE_EVOKE).max(0);
+            if let Some((i, uid, _)) = living.iter().min_by_key(|(_, _, hp)| *hp) {
+                row.insert(*i, hit(*uid, v));
+            }
+        }
+        Orb::Glass { current_passive } => {
+            let v = focus_scaled(current_passive, focus).saturating_mul(2);
+            if v > 0 {
+                for (i, uid, _) in &living {
+                    row.insert(*i, hit(*uid, v));
+                }
+            }
+        }
+        Orb::Frost | Orb::Plasma | Orb::Empty => {}
+    }
+    row.retain(|_, v| *v > 0.0);
+    row
+}
+
+/// The orbs `card`'s play channels (v0.111.0 `OnPlay`), in order, from the
+/// engine's shared table ([`sts2_core::card_mechanics::resolve_channels`]):
+/// `Some` freshly channelled orb, `None` for a random one (Chaos). `x` is the X
+/// an X-cost play resolves (Tempest: `ResolveEnergyXValue()`, the +1 upgrade is
+/// in the table); Voltaic's count comes from the combat's Lightning history
+/// (Voltaic.cs:30-34), Chill's from the hittable enemies (Chill.cs).
+fn channel_seq(state: &CombatState, card: &Card, x: i32) -> Vec<Option<sts2_core::orbs::Orb>> {
+    use sts2_core::card_mechanics::{resolve_channels, ORB_KIND_ORDER};
+    use sts2_core::orbs::{Orb, OrbKind};
+    let hittable = u32::try_from(living_enemies(state).len()).unwrap_or(u32::MAX);
+    let ch = resolve_channels(state, card, x, hittable);
+    let mut seq = Vec::new();
+    for (kind, n) in ORB_KIND_ORDER.iter().zip(ch.by_kind) {
+        let orb = match kind {
+            OrbKind::Lightning => Orb::lightning(),
+            OrbKind::Frost => Orb::frost(),
+            OrbKind::Dark => Orb::dark(),
+            OrbKind::Plasma => Orb::plasma(),
+            OrbKind::Glass => Orb::glass(),
+            OrbKind::Empty => continue,
+        };
+        seq.extend(std::iter::repeat_n(Some(orb), n as usize));
+    }
+    seq.extend(std::iter::repeat_n(None, ch.random as usize));
+    seq
+}
+
+/// What channelling `seq` one orb at a time into the seated player's belt
+/// evokes, per channel (an empty row where it evokes nothing or an orb of
+/// random kind). `OrbCmd.Channel` (OrbCmd.cs:68-92): a character with no base
+/// slots gets one on an empty zero-slot belt (the engine's `channel_orb`: an
+/// unsized Defect fixture belt gets the Defect base), a belt still at zero
+/// channels nothing, and a full belt evokes its front orb before the new one
+/// is enqueued at the back, so a long enough play evokes the orbs it
+/// channelled itself.
+fn overflow_rows(
+    staged: &CombatState,
+    seq: &[Option<sts2_core::orbs::Orb>],
+) -> Vec<BTreeMap<usize, f64>> {
+    let mut slots = staged.player.orbs.clone();
+    if slots.capacity() == 0 {
+        if staged.player.character == Some(sts2_core::potions::CharacterId::Defect) {
+            slots.ensure_defect_base();
+        } else {
+            slots.add_slots(1);
+        }
+    }
+    let cap = slots.capacity();
+    let mut queue: std::collections::VecDeque<Option<sts2_core::orbs::Orb>> = slots
+        .slots
+        .iter()
+        .filter(|o| !o.is_empty())
+        .map(|o| Some(*o))
+        .collect();
+    let mut out = Vec::with_capacity(seq.len());
+    for orb in seq {
+        if cap == 0 {
+            out.push(BTreeMap::new());
+            continue;
+        }
+        let row = if queue.len() >= cap {
+            queue
+                .pop_front()
+                .flatten()
+                .map_or_else(BTreeMap::new, |front| evoke_row(staged, front))
+        } else {
+            BTreeMap::new()
+        };
+        out.push(row);
+        queue.push_back(*orb);
+    }
+    out
+}
+
+/// Ignition's Plasma lands on the target teammate (Ignition.cs:33,
+/// `OrbCmd.Channel<PlasmaOrb>(cardPlay.Target.Player)`): per enemy, the most
+/// any living teammate's overflow evoke deals there, priced from that seat
+/// (its belt, its Focus). Solo there is no teammate, and the card is
+/// unplayable (`CardModel.CanPlay`'s `AnyAlly` gate).
+fn ignition_row(staged: &CombatState) -> BTreeMap<usize, f64> {
+    let mut best: BTreeMap<usize, f64> = BTreeMap::new();
+    for (i, ally) in staged.allies.iter().enumerate() {
+        if ally.current_hp <= 0 {
+            continue;
+        }
+        let mut seated = staged.clone();
+        sts2_core::coop::swap_seat(&mut seated, i);
+        for row in overflow_rows(&seated, &[Some(sts2_core::orbs::Orb::plasma())]) {
+            for (j, v) in row {
+                let b = best.entry(j).or_insert(0.0);
+                if v > *b {
+                    *b = v;
+                }
+            }
+        }
+    }
+    best.retain(|_, v| *v > 0.0);
+    best
+}
+
+/// The X-cost plays whose damage is not linear in the X resource spent, as a
+/// table by that amount (index 0 ..= the energy, or the stars for Stardust,
+/// available now): what [`GenLive::by_x`] carries for them. X is
+/// `ResolveEnergyXValue()` / `ResolveStarXValue()`, the amount spent folded
+/// through `Hook.ModifyXValue` (CardModel.cs:1117-1146; Chemical X +2).
+///
+/// - Whirlwind, Skewer, Eradicate, Volley, Repeat Shot hit X times
+///   (`WithHitCount(ResolveEnergyXValue())`); Stardust X times on stars.
+///   [`card_damage_live`] reports one hit per energy for these (Stardust: X
+///   hits at all the stars), exact for the knapsack's linear term unless an X
+///   modifier shifts X, so the table exists only then.
+/// - Heavenly Drill hits X times, doubled once X reaches 4
+///   (HeavenlyDrill.cs:32-37): also a table whenever the doubling at the
+///   energy available differs from the doubling at some smaller spend.
+/// - Multi-Cast evokes the front orb X times, +1 upgraded (MultiCast.cs:22-29):
+///   a table when an X modifier shifts X (the table then carries the upgrade
+///   evoke too).
+///
+/// `None` when the linear term is exact or the play deals nothing.
+fn x_table(
+    state: &CombatState,
+    card: &Card,
+    staged: &CombatState,
+    front: Option<sts2_core::orbs::Orb>,
+) -> Option<Vec<BTreeMap<usize, f64>>> {
+    use sts2_core::cards::CardId;
+    let id = card.card_id;
+    let on_stars = id == CardId::Stardust;
+    let avail = if on_stars {
+        i32::from(state.player.stars)
+    } else {
+        state.player.energy
+    }
+    .max(0);
+    let x_of = |k: i32| sts2_core::relic_effects::dispatch_modify_x_value(state, k);
+    let shifted = (0..=avail).any(|k| x_of(k) != k);
+    let drill = |x: i32| if x >= 4 { 2 } else { 1 };
+    // `rows`: the play's damage per unit of `count(k)`.
+    let (rows, count): (BTreeMap<usize, f64>, Box<dyn Fn(i32) -> i32 + '_>) = match id {
+        CardId::Whirlwind
+        | CardId::Skewer
+        | CardId::Eradicate
+        | CardId::Volley
+        | CardId::RepeatShot
+        | CardId::Stardust => {
+            if !shifted {
+                return None;
+            }
+            // Stardust's live hits are X at all the stars: per unit of X.
+            let unit = if on_stars {
+                f64::from(x_of(avail))
+            } else {
+                1.0
+            };
+            if unit <= 0.0 {
+                return None;
+            }
+            let rows = damage_live_of(state, card.uid)
+                .into_iter()
+                .map(|(j, (d, h))| (j, f64::from(d.max(0)) * f64::from(h) / unit))
+                .collect();
+            (rows, Box::new(x_of))
+        }
+        CardId::HeavenlyDrill => {
+            let at_avail = drill(x_of(avail));
+            if !shifted && (0..=avail).all(|k| drill(x_of(k)) == at_avail) {
+                return None;
+            }
+            let unit = f64::from(at_avail);
+            let rows = damage_live_of(state, card.uid)
+                .into_iter()
+                .map(|(j, (d, h))| (j, f64::from(d.max(0)) * f64::from(h) / unit))
+                .collect();
+            (rows, Box::new(move |k| x_of(k) * drill(x_of(k))))
+        }
+        CardId::MultiCast => {
+            if !shifted {
+                return None;
+            }
+            let up = i32::from(card.upgraded);
+            (
+                front.map_or_else(BTreeMap::new, |o| evoke_row(staged, o)),
+                Box::new(move |k| x_of(k) + up),
+            )
+        }
+        _ => return None,
+    };
+    let table: Vec<BTreeMap<usize, f64>> = (0..=avail)
+        .map(|k| {
+            let n = f64::from(count(k).max(0));
+            rows.iter()
+                .map(|(j, v)| (*j, v * n))
+                .filter(|(_, v)| *v > 0.0)
+                .collect()
+        })
+        .collect();
+    (!table.iter().all(BTreeMap::is_empty)).then_some(table)
+}
+
+/// Generated damage for the live hand, for the e2e net (GH #1197): per hand
+/// card, the deterministic damage its play adds beyond its own attack
+/// ([`card_damage_live`]), or `None` when it adds none.
+///
+/// - Shivs: Blade Dance (3, +1 upgraded), Cloak and Dagger (1, +1), Up My
+///   Sleeve (3, +1) each create Shivs, 0-cost attacks, so the play is worth
+///   every Shiv that fits in the hand ([`sts2_core::cards::HAND_LIMIT`]; the
+///   rest go to the discard pile) at the Shiv's damage after modifiers.
+/// - Knife Trap autoplays every Shiv in the exhaust pile at its target
+///   (upgraded: upgrades them first).
+/// - Dualcast (2), Quadcast (4), Multi-Cast (X, +1 upgraded) evoke the front
+///   orb.
+/// - A channel into a full belt evokes the front orb first (`OrbCmd.Channel`),
+///   the play's own orbs too once the belt's are gone (`overflow_rows`),
+///   for every channelling card of the engine's table. Tempest's X Lightning
+///   (+1 upgraded) is not linear in X: its damage goes into `by_x`, by the
+///   energy spent (X through the relics' `ModifyXValue`, Chemical X). Voltaic
+///   channels the combat's Lightning count so far; Ignition evokes the
+///   target teammate's front orb (`ignition_row`).
+/// - End of Days applies 29 Doom (37 upgraded) to every enemy, then kills the
+///   doomed (`DoomPower.DoomKill`); `kills` lists the enemies that dies to.
+///
+/// Random effects stay out (a random orb's own value, random cards).
+#[must_use]
+pub fn card_gen_live(state: &CombatState) -> Vec<Option<GenLive>> {
+    use sts2_core::cards::{CardId, CardTag, HAND_LIMIT};
+    let mut out = Vec::with_capacity(state.player.hand.len());
+    for card_uid in &state.player.hand {
+        let Some(card) = state.cards.iter().find(|c| c.uid == *card_uid) else {
+            out.push(None);
+            continue;
+        };
+        let up = card.upgraded;
+        let shivs = match card.card_id {
+            CardId::BladeDance | CardId::UpMySleeve => 3 + usize::from(up),
+            CardId::CloakAndDagger => 1 + usize::from(up),
+            _ => 0,
+        };
+        let evokes = match card.card_id {
+            CardId::Dualcast => 2,
+            CardId::Quadcast => 4,
+            _ => 0,
+        };
+        let mech = sts2_core::card_mechanics::card_mechanics(card.card_id, up);
+        let per_x = matches!(mech.rule, sts2_core::card_mechanics::ChannelRule::PerX);
+        let channels = if card.card_id == CardId::Ignition || per_x {
+            Vec::new()
+        } else {
+            channel_seq(state, card, 0)
+        };
+        let relevant = shivs > 0
+            || evokes > 0
+            || !channels.is_empty()
+            || per_x
+            || matches!(
+                card.card_id,
+                CardId::KnifeTrap
+                    | CardId::MultiCast
+                    | CardId::EndOfDays
+                    | CardId::Ignition
+                    | CardId::Whirlwind
+                    | CardId::Skewer
+                    | CardId::Eradicate
+                    | CardId::Volley
+                    | CardId::RepeatShot
+                    | CardId::Stardust
+                    | CardId::HeavenlyDrill
+            );
+        if !relevant {
+            out.push(None);
+            continue;
+        }
+        let staged = staged_for_play(state, *card_uid);
+        let mut g = GenLive::default();
+        if shivs > 0 {
+            let room = HAND_LIMIT.saturating_sub(staged.player.hand.len());
+            #[allow(clippy::cast_precision_loss)]
+            g.add(&shiv_row(&staged, false), shivs.min(room) as f64);
+        }
+        if card.card_id == CardId::KnifeTrap {
+            for u in &state.player.exhaust {
+                if let Some(c) = state.cards.iter().find(|c| c.uid == *u) {
+                    if c.tags.contains(CardTag::Shiv) {
+                        g.add(&shiv_row(&staged, up || c.upgraded), 1.0);
+                    }
+                }
+            }
+        }
+        let belt: Vec<sts2_core::orbs::Orb> = state
+            .player
+            .orbs
+            .slots
+            .iter()
+            .copied()
+            .filter(|o| !o.is_empty())
+            .collect();
+        if let Some(front) = belt.first() {
+            let row = evoke_row(&staged, *front);
+            if evokes > 0 {
+                g.add(&row, f64::from(evokes));
+            }
+            if card.card_id == CardId::MultiCast {
+                g.per_energy = row.clone();
+                if up {
+                    g.add(&row, 1.0);
+                }
+            }
+        }
+        for row in overflow_rows(&staged, &channels) {
+            g.add(&row, 1.0);
+        }
+        if card.card_id == CardId::Ignition {
+            g.add(&ignition_row(&staged), 1.0);
+        }
+        if per_x {
+            // Index k: the play spends k energy, X = `ModifyXValue(k)`.
+            let energy = state.player.energy.max(0);
+            let x_of = |k: i32| sts2_core::relic_effects::dispatch_modify_x_value(state, k);
+            let seq = channel_seq(state, card, x_of(energy));
+            let rows = overflow_rows(&staged, &seq);
+            g.by_x = (0..=energy)
+                .map(|k| {
+                    let n = channel_seq(state, card, x_of(k)).len();
+                    let mut acc = GenLive::default();
+                    for row in rows.iter().take(n) {
+                        acc.add(row, 1.0);
+                    }
+                    acc.flat
+                })
+                .collect();
+            if g.by_x.iter().all(BTreeMap::is_empty) {
+                g.by_x.clear();
+            }
+        }
+        if card.card_id == CardId::EndOfDays {
+            g.kills = doom_kills(&staged, if up { 37 } else { 29 });
+        }
+        if let Some(table) = x_table(state, card, &staged, belt.first().copied()) {
+            // The table is the play's whole X damage: Multi-Cast's linear
+            // evokes (and its upgrade evoke) move into it.
+            if card.card_id == CardId::MultiCast {
+                g.per_energy.clear();
+                g.flat.clear();
+            }
+            g.by_x = table;
+        }
+        out.push((!g.is_empty()).then_some(g));
+    }
+    out
+}
+
+/// The living enemies `doom` more Doom would kill (`EndOfDays.OnPlay`): the
+/// Doom applied as the play would (Artifact blocks it), then
+/// `DoomPower.IsOwnerDoomed` (`CurrentHp <= Amount`).
+fn doom_kills(staged: &CombatState, doom: i32) -> Vec<usize> {
+    let mut after = staged.clone();
+    for (_, uid, _) in living_enemies(staged) {
+        sts2_core::card_effects::apply_power_to_enemy(
+            &mut after,
+            uid,
+            sts2_core::powers::PowerKind::Doom,
+            doom,
+        );
+    }
+    living_enemies(staged)
+        .into_iter()
+        .filter(|(_, uid, hp)| {
+            let d: i32 = after
+                .creatures
+                .iter()
+                .find(|c| c.id == uid.0)
+                .map_or(0, |c| {
+                    c.powers
+                        .iter()
+                        .filter_map(|pu| after.powers.iter().find(|p| p.id == pu.0))
+                        .filter(|p| p.kind == sts2_core::powers::PowerKind::Doom)
+                        .map(|p| p.amount)
+                        .sum()
+                });
+            d > 0 && *hp <= d
+        })
+        .map(|(i, _, _)| i)
+        .collect()
+}
+
+/// What the end of the player's turn does before the enemies act, for the e2e
+/// net's end-of-turn HP loss (GH #1197): what [`end_turn_live`] returns.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EndTurnLive {
+    /// The change in the player's block between ending the turn and the
+    /// enemies' moves: the gains less what the turn end's self-damage ate.
+    /// Negative when it ate block the player had.
+    pub block: i32,
+    /// Encounter indexes of the living enemies certain to die before their
+    /// move resolves.
+    pub dies: Vec<usize>,
+    /// HP the player loses (net of heals, at least 0) before the enemies act:
+    /// Burn-type cards in hand, Constrict, Disintegration.
+    pub self_loss: i32,
+    /// The player's Buffer stacks left for the enemies' hits.
+    pub buffer: i32,
+    /// Beating Remnant's HP-loss budget left for this turn
+    /// (`MaxHpLoss - DamageReceivedThisTurn`); `None` without the relic.
+    pub remnant: Option<i32>,
+}
+
+/// How many encounter enemies C# `CombatState.HittableEnemies` lists
+/// ([`CombatState::is_hittable_enemy`]), as the engine resolves it everywhere
+/// (`Effect::DealDamageToHittableEnemies`, the orbs' random target).
+fn hittable_count(state: &CombatState) -> usize {
+    state
+        .enemy_uids
+        .iter()
+        .filter(|uid| state.is_hittable_enemy(**uid))
+        .count()
+}
+
+/// Drop the last channelled orb without its evoke (`OrbCmd.EvokeLast`'s slot
+/// handling, as [`sts2_core::orbs::evoke_last`] does it).
+fn drop_last_orb(state: &mut CombatState) {
+    if let Some(idx) = state.player.orbs.slots.iter().rposition(|o| !o.is_empty()) {
+        state.player.orbs.slots.remove(idx);
+        state.player.orbs.slots.push(Orb::Empty);
+    }
+}
+
+/// The deterministic part of the end of the player's turn and of the enemies'
+/// turn start, for the e2e net (GH #1197), in the v0.111.0 order
+/// (`CombatManager.EndPlayerTurnPhaseOneInternal`, `DoTurnEnd`,
+/// `EndPlayerTurnPhaseTwoInternal`, `StartTurn`), run by the engine's own
+/// hooks on a clone:
+///
+/// 1. `AfterAutoPostPlayPhaseEntered`: every Howl from Beyond in the exhaust
+///    pile auto-plays. Stampede and Simpleton (random hand cards) and
+///    I Am Invincible (the hidden top of the draw pile) are left out.
+/// 2. `BeforeSideTurnEnd`, Early then normal, powers then relics: Plating,
+///    Orichalcum / Fake Orichalcum (latched on 0 block), Cloak Clasp, Ripple
+///    Basin, Hailstorm, The Bomb, Screaming Flagon, Stone Calendar, the
+///    player's Doom.
+/// 3. `DoTurnEnd`: every orb's passive front to back, the front one twice
+///    under Gold-Plated Cables (Lightning hits a random enemy, so it counts
+///    only while exactly one is hittable); the Ethereal exhausts (Feel No
+///    Pain); then the turn-end-in-hand cards (Burn, Decay, Infection, Toxic,
+///    Wither through block; Beckon, Bad Luck, Regret unblockable).
+/// 4. `AfterSideTurnEnd`: Consuming Shadow evokes the last orb `Amount` times
+///    (Frost block, Glass all, Lightning only with one hittable enemy, Dark
+///    the weakest unless a random zap was skipped before it), then the other
+///    powers (Constrict), Parrying Shield (6 at 10+ block, only with one
+///    hittable enemy), then the late powers (Disintegration).
+/// 5. The enemies' turn start: Hardened Shell's budget resets
+///    (`BeforeSideTurnStart`), then Poison ticks `min(Amount, 1 + Accelerant)`
+///    times (`PoisonPower.Trigger`) before any enemy moves.
+///
+/// The walk stops where the combat ends or a choice opens (a choice already
+/// open on `state` is dropped first). The damage runs through the engine's
+/// pipeline, so block, Intangible, Hardened Shell, Buffer, Beating Remnant and
+/// the like apply as in the game. A random hit the walk skips can only add
+/// damage. When a listener on a bus the walk runs rolls a combat RNG stream
+/// anyway (Juggernaut, Obsidian Vice, an exhaust or Howl listener), the walk
+/// is repeated with the hidden streams reseeded (`END_TURN_RESEEDS` walks) and only
+/// what every walk agrees on is kept, so `dies` lists certain deaths only.
+/// Consuming Shadow runs ahead of the other `AfterSideTurnEnd` powers rather
+/// than in its application order.
+#[must_use]
+pub fn end_turn_live(state: &CombatState) -> EndTurnLive {
+    let (mut out, deterministic) = end_turn_read(state, &end_turn_walk(state, None));
+    if !deterministic {
+        for n in 1..END_TURN_RESEEDS {
+            out = merge_end_turn(out, end_turn_read(state, &end_turn_walk(state, Some(n))).0);
+        }
+    }
+    out
+}
+
+/// The walks [`end_turn_live`] runs when the first one read a combat RNG
+/// stream: the first, then this many less one with the hidden streams reseeded
+/// (`RunRngSet::reseed_combat_streams`). Two equally likely random targets
+/// agree across all of them with probability `2^-(END_TURN_RESEEDS - 1)`.
+const END_TURN_RESEEDS: u32 = 8;
+
+/// The certain part of two walks' results: the deaths both list, the lesser
+/// block, Buffer and Remnant budget, the greater self-damage.
+fn merge_end_turn(a: EndTurnLive, b: EndTurnLive) -> EndTurnLive {
+    EndTurnLive {
+        block: a.block.min(b.block),
+        dies: a.dies.into_iter().filter(|j| b.dies.contains(j)).collect(),
+        self_loss: a.self_loss.max(b.self_loss),
+        buffer: a.buffer.min(b.buffer),
+        remnant: match (a.remnant, b.remnant) {
+            (Some(x), Some(y)) => Some(x.min(y)),
+            (x, y) => x.or(y),
+        },
+    }
+}
+
+/// [`EndTurnLive`] from the walked clone `sim` of `state`, and whether the walk
+/// read no RNG (its outcome is then the only one).
+fn end_turn_read(state: &CombatState, sim: &CombatState) -> (EndTurnLive, bool) {
+    let dies = state
+        .enemy_uids
+        .iter()
+        .enumerate()
+        .filter(|(_, uid)| alive(state, **uid) && !alive(sim, **uid))
+        .map(|(i, _)| i)
+        .collect();
+    let remnant = sim
+        .relics
+        .iter()
+        .find(|r| r.kind == sts2_core::RelicKind::BeatingRemnant && !r.is_melted)
+        // `BeatingRemnant.MaxHpLoss` (20) less `DamageReceivedThisTurn`.
+        .map(|r| (20 - r.counter).max(0));
+    let deterministic = sim.run_rng == state.run_rng && sim.rng == state.rng;
+    (
+        EndTurnLive {
+            block: sim.player.block - state.player.block,
+            dies,
+            self_loss: (state.player.current_hp - sim.player.current_hp).max(0),
+            buffer: sim.player_power_amount(PowerKind::Buffer).max(0),
+            remnant,
+        },
+        deterministic,
+    )
+}
+
+/// One walk of [`end_turn_live`] on a clone of `state`; `reseed` names the
+/// outcome stream the hidden combat RNG is reseeded to first.
+fn end_turn_walk(state: &CombatState, reseed: Option<u32>) -> CombatState {
+    use sts2_core::combat_loop::{
+        auto_play_howls_from_exhaust, combat_is_ending, execute_turn_end_in_hand_effect,
+        exhaust_turn_end_ethereals, has_turn_end_in_hand_effect, turn_end_ethereal_cards,
+    };
+    use sts2_core::hooks::{self, CreatureRef, TurnEndPass, TurnSideCtx, ValueProps};
+    use sts2_core::orbs::trigger_orb_passive_at;
+    use sts2_core::{relic_effects, RelicKind, Side};
+
+    let halted = |s: &CombatState| s.is_over || s.pending_choice.is_some() || combat_is_ending(s);
+    let side = TurnSideCtx { side: Side::Player };
+    let mut sim = state.clone();
+    // A choice already open is the state's, not one the walk opened.
+    sim.pending_choice = None;
+    if let Some(n) = reseed {
+        let base = 0x1197_e2e0;
+        sim.run_rng.reseed_combat_streams(base, n);
+        sim.rng = sts2_core::dotnet_rng::Rng::from_search_seed(
+            sts2_core::run_rng_set::outcome_stream_seed_u64(base, n, 0x1197),
+        );
+    }
+    'walk: {
+        // 1. AfterAutoPostPlayPhaseEntered.
+        auto_play_howls_from_exhaust(&mut sim);
+        if halted(&sim) {
+            break 'walk;
+        }
+        // 2. BeforeSideTurnEnd.
+        sim.combat_log.block_zero_at_turn_end = sim.player.block == 0;
+        hooks::dispatch_before_turn_end_pass(&mut sim, &side, TurnEndPass::Early);
+        let _ = relic_effects::dispatch_before_turn_end_early(&mut sim, Side::Player);
+        hooks::dispatch_before_turn_end_pass(&mut sim, &side, TurnEndPass::Normal);
+        let _ = relic_effects::dispatch_before_turn_end(&mut sim, Side::Player);
+        if halted(&sim) {
+            break 'walk;
+        }
+        let hand_count = i32::try_from(sim.player.hand.len()).unwrap_or(i32::MAX);
+        // 3. DoTurnEnd: the orb passives.
+        let cables = sim.relics.owns(RelicKind::GoldPlatedCables);
+        let filled: Vec<usize> = sim
+            .player
+            .orbs
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| !o.is_empty())
+            .map(|(i, _)| i)
+            .collect();
+        let mut random_skipped = false;
+        for (n, &idx) in filled.iter().enumerate() {
+            let triggers = if cables && n == 0 { 2 } else { 1 };
+            for _ in 0..triggers {
+                match sim.player.orbs.slots.get(idx).copied() {
+                    Some(Orb::Lightning) if hittable_count(&sim) != 1 => random_skipped = true,
+                    Some(Orb::Empty) | None => {}
+                    Some(_) => trigger_orb_passive_at(&mut sim, idx),
+                }
+            }
+        }
+        if halted(&sim) {
+            break 'walk;
+        }
+        // The Ethereal exhausts, then the turn-end-in-hand cards, both sorted
+        // from the hand before either runs.
+        let turn_end_cards: Vec<CardUid> = sim
+            .player
+            .hand
+            .iter()
+            .copied()
+            .filter(|uid| {
+                sim.cards
+                    .get(uid.0.get() as usize - 1)
+                    .is_some_and(|c| has_turn_end_in_hand_effect(c.card_id))
+            })
+            .collect();
+        let ethereal = turn_end_ethereal_cards(&sim);
+        exhaust_turn_end_ethereals(&mut sim, &ethereal);
+        for uid in turn_end_cards {
+            if halted(&sim) {
+                break 'walk;
+            }
+            if !sim.player.hand.contains(&uid) {
+                continue;
+            }
+            let id = sim.cards[uid.0.get() as usize - 1].card_id;
+            let _ = execute_turn_end_in_hand_effect(&mut sim, uid, id, hand_count);
+        }
+        if halted(&sim) {
+            break 'walk;
+        }
+        // 4. AfterSideTurnEnd: Consuming Shadow here, then the engine's walk
+        // with its stacks spent.
+        let shadow = sim.player_power_amount(PowerKind::ConsumingShadow);
+        consuming_shadow(&mut sim, shadow, random_skipped);
+        let shadow_uids: Vec<PowerUid> = sim
+            .player_power_uids()
+            .into_iter()
+            .filter(|u| {
+                sim.powers
+                    .get_by_id(u.0)
+                    .is_some_and(|p| p.kind == PowerKind::ConsumingShadow)
+            })
+            .collect();
+        for u in shadow_uids {
+            if let Some(p) = sim.powers.get_mut_by_id(u.0) {
+                p.amount = 0;
+            }
+        }
+        if halted(&sim) {
+            break 'walk;
+        }
+        sim.combat_log.block_before_late_turn_end = sim.player.block;
+        hooks::dispatch_after_turn_end(&mut sim, &side);
+        if halted(&sim) {
+            break 'walk;
+        }
+        let parry = sim
+            .relics
+            .iter()
+            .any(|r| r.kind == RelicKind::ParryingShield && !r.is_melted);
+        if parry && sim.combat_log.block_before_late_turn_end >= 10 && hittable_count(&sim) == 1 {
+            if let Some(&target) = sim.enemy_uids.iter().find(|uid| alive(&sim, **uid)) {
+                let _ = sts2_core::damage::apply_damage(
+                    &mut sim,
+                    CreatureRef::Player,
+                    target,
+                    6,
+                    ValueProps::UNPOWERED,
+                    None,
+                );
+            }
+        }
+        if halted(&sim) {
+            break 'walk;
+        }
+        hooks::dispatch_after_turn_end_late(&mut sim, &side);
+        if halted(&sim) {
+            break 'walk;
+        }
+        // 5. The enemies' turn start.
+        reset_hardened_shells(&mut sim);
+        tick_poison(&mut sim);
+    }
+    sim
+}
+
+/// `true` while the creature `uid` names has HP left.
+fn alive(state: &CombatState, uid: CreatureUid) -> bool {
+    state
+        .creatures
+        .iter()
+        .any(|c| c.id == uid.0 && c.current_hp > 0)
+}
+
+/// `ConsumingShadowPower.AfterSideTurnEnd`: evoke the last orb `stacks` times,
+/// keeping only what is certain. Frost and Glass evoke as the engine does; a
+/// Lightning evoke hits a random enemy, so it runs only with one hittable
+/// enemy (else the orb is dropped and later random-dependent evokes skip); a
+/// Dark evoke hits the weakest enemy, unknown once a random hit was skipped.
+fn consuming_shadow(sim: &mut CombatState, stacks: i32, mut random_skipped: bool) {
+    use sts2_core::orbs::evoke_last;
+    for _ in 0..stacks.max(0) {
+        if sim.is_over {
+            break;
+        }
+        let Some(last) = sim
+            .player
+            .orbs
+            .slots
+            .iter()
+            .rev()
+            .find(|o| !o.is_empty())
+            .copied()
+        else {
+            break;
+        };
+        match last {
+            Orb::Lightning if hittable_count(sim) != 1 => {
+                random_skipped = true;
+                drop_last_orb(sim);
+            }
+            Orb::Dark { .. } if random_skipped => drop_last_orb(sim),
+            Orb::Frost | Orb::Glass { .. } | Orb::Lightning | Orb::Dark { .. } => evoke_last(sim),
+            _ => drop_last_orb(sim),
+        }
+    }
+}
+
+/// `HardenedShellPower.BeforeSideTurnStart`: `damageReceivedThisTurn = 0` at
+/// every side's turn start (the engine keeps it in the power's `counter`).
+fn reset_hardened_shells(sim: &mut CombatState) {
+    let shells: Vec<PowerUid> = sim
+        .enemy_uids
+        .iter()
+        .filter_map(|uid| sim.creatures.iter().find(|c| c.id == uid.0))
+        .flat_map(|c| c.powers.iter().copied())
+        .filter(|u| {
+            sim.powers
+                .get_by_id(u.0)
+                .is_some_and(|p| p.kind == PowerKind::HardenedShell)
+        })
+        .collect();
+    for u in shells {
+        if let Some(p) = sim.powers.get_mut_by_id(u.0) {
+            p.counter = 0;
+        }
+    }
+}
+
+/// The enemies' `AfterSideTurnStart` Poison: `min(Amount, 1 + Accelerant)`
+/// ticks of `Amount - i` HP loss, unblockable (`PoisonPower.Trigger`).
+fn tick_poison(sim: &mut CombatState) {
+    use sts2_core::hooks::{apply_effect, CreatureRef, Effect, ValueProps};
+    let accel = sts2_core::coop::players_power_amount(sim, PowerKind::Accelerant).max(0);
+    let uids: Vec<CreatureUid> = sim.enemy_uids.to_vec();
+    for uid in uids {
+        let amount = sim
+            .creatures
+            .iter()
+            .find(|c| c.id == uid.0 && c.current_hp > 0)
+            .map_or(0, |c| {
+                c.powers
+                    .iter()
+                    .filter_map(|p| sim.powers.get_by_id(p.0))
+                    .filter(|p| p.kind == PowerKind::Poison)
+                    .map(|p| p.amount)
+                    .sum()
+            });
+        for i in 0..amount.min(1 + accel) {
+            apply_effect(
+                sim,
+                Effect::DealHpLoss {
+                    dealer: CreatureRef::Nobody,
+                    target: CreatureRef::Enemy(uid),
+                    amount: amount - i,
+                    props: ValueProps::UNBLOCKABLE.union(ValueProps::UNPOWERED),
+                },
+            );
+            if !alive(sim, uid) {
+                break;
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Read-only getters beside the wire (GH #1097)
 // ---------------------------------------------------------------------------
@@ -2087,5 +3301,1440 @@ mod tests {
             target: None,
         });
         assert_eq!(v["orb"], "Lightning");
+    }
+
+    // --- live damage / block (GH #1197) -------------------------------------
+
+    mod live {
+        use super::*;
+        use smallvec::SmallVec;
+        use sts2_core::cards::CardId;
+        use sts2_core::{
+            CardUid, Creature, GameVersion, IntentHistory, MonsterId, MonsterKind, Power,
+            PowerKind, PowerUid,
+        };
+
+        fn push_creature(state: &mut CombatState, hp: i32) -> CreatureUid {
+            let raw = u32::try_from(state.creatures.len() + 1).expect("fits");
+            let id = NonZeroU32::new(raw).expect("non-zero");
+            state.creatures.push(Creature {
+                id,
+                current_hp: hp,
+                max_hp: 50,
+                block: 0,
+                powers: SmallVec::new(),
+                species: Some(MonsterKind::Nibbit),
+                intent: None,
+                intent_history: IntentHistory::default(),
+                monster_id: MonsterId("Nibbit"),
+                ai: None,
+            });
+            CreatureUid(id)
+        }
+
+        /// A v0.111.0 board with one living enemy; returns it.
+        fn board() -> (CombatState, CreatureUid) {
+            sts2_content::cards::dispatch::ensure_installed();
+            let mut state = CombatState {
+                game_version: GameVersion::V0_111_0,
+                ..CombatState::default()
+            };
+            state.player.current_hp = 80;
+            state.player.max_hp = 80;
+            let p = push_creature(&mut state, 80);
+            state.player.creature_uid = Some(p);
+            let e = push_creature(&mut state, 50);
+            state.enemy_uids.push(e);
+            (state, e)
+        }
+
+        fn hand(state: &mut CombatState, id: CardId) -> CardUid {
+            let mut card =
+                sts2_content::cards::v0111::card_pod_for(id, false, GameVersion::V0_111_0)
+                    .expect("spec exists");
+            let uid = CardUid::new(u32::try_from(state.cards.len() + 1).expect("fits"))
+                .expect("non-zero");
+            card.uid = uid;
+            state.cards.push(card);
+            state.player.hand.push(uid);
+            uid
+        }
+
+        fn give_power(state: &mut CombatState, who: CreatureUid, kind: PowerKind, amount: i32) {
+            let pid = PowerUid::new(u32::try_from(state.powers.len() + 1).expect("fits"))
+                .expect("non-zero");
+            state.powers.push(Power {
+                id: pid.0,
+                kind,
+                amount,
+                counter: 0,
+                applier: None,
+                skip_next_tick: false,
+            });
+            let c = state
+                .creatures
+                .iter_mut()
+                .find(|c| c.id == who.0)
+                .expect("creature");
+            c.powers.push(pid);
+        }
+
+        fn player(state: &CombatState) -> CreatureUid {
+            state.player.creature_uid.expect("player creature")
+        }
+
+        fn summon_osty(state: &mut CombatState, hp: i32) {
+            let osty = push_creature(state, hp);
+            state.player.pet_uid = Some(osty);
+        }
+
+        #[test]
+        fn damage_live_osty_strength_not_player() {
+            let (mut s, _) = board();
+            let p = player(&s);
+            give_power(&mut s, p, PowerKind::Strength, 3);
+            summon_osty(&mut s, 10);
+            hand(&mut s, CardId::Poke);
+            // Poke is an Osty attack: the player's Strength does not apply.
+            assert_eq!(card_damage_live(&s), vec![BTreeMap::from([(0, (6, 1.0))])]);
+        }
+
+        #[test]
+        fn damage_live_calcify_applies() {
+            let (mut s, _) = board();
+            let p = player(&s);
+            give_power(&mut s, p, PowerKind::Calcify, 4);
+            summon_osty(&mut s, 10);
+            hand(&mut s, CardId::Poke);
+            assert_eq!(card_damage_live(&s), vec![BTreeMap::from([(0, (10, 1.0))])]);
+        }
+
+        /// The live values target what C# `Creature.IsHittable` admits
+        /// (Creature.cs:286-298): a reviving Illusion corpse (0 HP, still in
+        /// the encounter) is not hittable, nor is a living creature outside
+        /// the encounter (the Osty).
+        #[test]
+        fn live_values_skip_unhittable_enemies() {
+            use sts2_core::orbs::Orb;
+            let (mut s, e0) = board();
+            let corpse = second_enemy(&mut s, 0);
+            give_power(&mut s, corpse, PowerKind::Illusion, 1);
+            summon_osty(&mut s, 10);
+            let osty = s.player.pet_uid.expect("osty");
+            assert!(s.is_hittable_enemy(e0));
+            assert!(!s.is_hittable_enemy(corpse));
+            assert!(!s.is_hittable_enemy(osty));
+            hand(&mut s, CardId::StrikeIronclad);
+            hand(&mut s, CardId::Zap);
+            assert_eq!(card_damage_live(&s)[0], BTreeMap::from([(0, (6, 1.0))]));
+            // Zap into a full Lightning belt: the evoke's random target is the
+            // one hittable enemy, so it takes the whole 8.
+            belt(&mut s, 1, &[Orb::Lightning]);
+            assert_eq!(
+                card_gen_live(&s)[1].clone().expect("zap").flat,
+                BTreeMap::from([(0, 8.0)])
+            );
+        }
+
+        #[test]
+        fn damage_live_osty_dead_empty() {
+            let (mut s, _) = board();
+            summon_osty(&mut s, 0);
+            hand(&mut s, CardId::Poke);
+            assert_eq!(card_damage_live(&s), vec![BTreeMap::new()]);
+        }
+
+        #[test]
+        fn damage_live_body_slam_nonzero() {
+            let (mut s, _) = board();
+            s.player.block = 12;
+            hand(&mut s, CardId::BodySlam);
+            // The stored `base_damage` is 0, so the old preview is empty.
+            assert_eq!(card_damage_preview(&s), vec![BTreeMap::new()]);
+            assert_eq!(card_damage_live(&s), vec![BTreeMap::from([(0, (12, 1.0))])]);
+        }
+
+        #[test]
+        fn damage_live_perfected_strike_vulnerable() {
+            let (mut s, e) = board();
+            hand(&mut s, CardId::PerfectedStrike);
+            for _ in 0..4 {
+                hand(&mut s, CardId::StrikeIronclad);
+            }
+            give_power(&mut s, e, PowerKind::Vulnerable, 2);
+            // 6 + 2 x 5 Strike-tagged = 16, x1.5 Vulnerable = 24.
+            assert_eq!(card_damage_live(&s)[0], BTreeMap::from([(0, (24, 1.0))]));
+        }
+
+        #[test]
+        fn block_live_parry_blade() {
+            let (mut s, _) = board();
+            let p = player(&s);
+            give_power(&mut s, p, PowerKind::Parry, 6);
+            give_power(&mut s, p, PowerKind::Dexterity, 2);
+            hand(&mut s, CardId::SovereignBlade);
+            assert_eq!(card_block_preview(&s), vec![None]);
+            assert_eq!(card_block_live(&s), vec![Some(8)]);
+        }
+
+        #[test]
+        fn block_live_calculated_block_card() {
+            let (mut s, _) = board();
+            hand(&mut s, CardId::Stack);
+            hand(&mut s, CardId::DefendIronclad);
+            let live = card_block_live(&s);
+            // Stack's block is its discard pile size: empty, so none.
+            assert_eq!(live[0], None);
+            // A plain Defend is the old preview's answer.
+            assert_eq!(live[1], card_block_preview(&s)[1]);
+            assert_eq!(live[1], Some(5));
+            // Fill the discard pile: Stack then grants one Block per card.
+            hand(&mut s, CardId::StrikeIronclad);
+            let strike = s.player.hand.pop().expect("strike");
+            s.player.discard.push(strike);
+            assert_eq!(card_block_live(&s)[0], Some(1));
+        }
+
+        #[test]
+        fn preview_unchanged_golden() {
+            let (mut s, e) = board();
+            let p = player(&s);
+            give_power(&mut s, p, PowerKind::Strength, 3);
+            give_power(&mut s, e, PowerKind::Vulnerable, 1);
+            summon_osty(&mut s, 10);
+            hand(&mut s, CardId::StrikeIronclad);
+            hand(&mut s, CardId::Poke);
+            hand(&mut s, CardId::DefendIronclad);
+            hand(&mut s, CardId::SovereignBlade);
+            give_power(&mut s, p, PowerKind::Parry, 6);
+            // Strike (6 + 3) x 1.5 = 13. The preview also scores Poke with the
+            // player's Strength (6 + 3) x 1.5 = 13 and Sovereign Blade
+            // (10 + 3) x 1.5 = 19: values `card_damage_live` corrects.
+            assert_eq!(
+                card_damage_preview(&s),
+                vec![
+                    BTreeMap::from([(0, 13)]),
+                    BTreeMap::from([(0, 13)]),
+                    BTreeMap::new(),
+                    BTreeMap::from([(0, 19)]),
+                ]
+            );
+            assert_eq!(card_block_preview(&s), vec![None, None, Some(5), None]);
+        }
+
+        // --- generated damage (`card_gen_live`) ---------------------------
+
+        fn second_enemy(state: &mut CombatState, hp: i32) -> CreatureUid {
+            let e = push_creature(state, hp);
+            state.enemy_uids.push(e);
+            e
+        }
+
+        fn belt(state: &mut CombatState, cap: usize, orbs: &[sts2_core::orbs::Orb]) {
+            let mut b = sts2_core::OrbSlots::with_capacity(cap);
+            for o in orbs {
+                b.channel(*o);
+            }
+            state.player.orbs = b;
+        }
+
+        fn upgraded(state: &mut CombatState, uid: CardUid) {
+            let c = state.cards.iter_mut().find(|c| c.uid == uid).expect("card");
+            c.upgraded = true;
+        }
+
+        #[test]
+        fn gen_live_plain_cards_have_none() {
+            let (mut s, _) = board();
+            hand(&mut s, CardId::StrikeIronclad);
+            hand(&mut s, CardId::DefendIronclad);
+            assert_eq!(card_gen_live(&s), vec![None, None]);
+        }
+
+        /// Blade Dance: three Shivs, each 4 + Strength 2 + Accuracy 3 = 9,
+        /// on every enemy (each Shiv picks its own target).
+        #[test]
+        fn gen_live_blade_dance_shivs() {
+            let (mut s, _) = board();
+            second_enemy(&mut s, 30);
+            let p = player(&s);
+            give_power(&mut s, p, PowerKind::Strength, 2);
+            give_power(&mut s, p, PowerKind::Accuracy, 3);
+            hand(&mut s, CardId::BladeDance);
+            let g = card_gen_live(&s)[0].clone().expect("generates");
+            assert_eq!(g.flat, BTreeMap::from([(0, 27.0), (1, 27.0)]));
+            assert!(g.per_energy.is_empty() && g.kills.is_empty());
+            // Upgraded: four Shivs. Cloak and Dagger: one.
+            let bd = s.player.hand[0];
+            upgraded(&mut s, bd);
+            hand(&mut s, CardId::CloakAndDagger);
+            let gl = card_gen_live(&s);
+            assert_eq!(gl[0].clone().expect("bd").flat[&0], 36.0);
+            assert_eq!(gl[1].clone().expect("cad").flat[&0], 9.0);
+        }
+
+        /// Shivs past the hand limit go to the discard pile, unplayable now.
+        #[test]
+        fn gen_live_shivs_capped_by_hand_limit() {
+            let (mut s, _) = board();
+            hand(&mut s, CardId::BladeDance);
+            for _ in 0..8 {
+                hand(&mut s, CardId::DefendSilent);
+            }
+            // Nine cards; Blade Dance leaves eight, so two Shivs fit.
+            assert_eq!(card_gen_live(&s)[0].clone().expect("gen").flat[&0], 8.0);
+        }
+
+        /// Knife Trap replays every Shiv in the exhaust pile at its target;
+        /// upgraded, it upgrades them first (6 damage).
+        #[test]
+        fn gen_live_knife_trap() {
+            let (mut s, _) = board();
+            hand(&mut s, CardId::KnifeTrap);
+            assert_eq!(card_gen_live(&s), vec![None]);
+            for _ in 0..2 {
+                let u = hand(&mut s, CardId::Shiv);
+                s.player.hand.retain(|x| *x != u);
+                s.player.exhaust.push(u);
+            }
+            assert_eq!(card_gen_live(&s)[0].clone().expect("gen").flat[&0], 8.0);
+            let kt = s.player.hand[0];
+            upgraded(&mut s, kt);
+            assert_eq!(card_gen_live(&s)[0].clone().expect("gen").flat[&0], 12.0);
+        }
+
+        /// Dualcast evokes the front orb twice; Quadcast four times; Multi-Cast
+        /// X times (+1 upgraded). A Lightning evoke hits a random enemy (its
+        /// share), a Dark one the weakest, Frost none.
+        #[test]
+        fn gen_live_evoke_cards() {
+            use sts2_core::orbs::Orb;
+            let (mut s, _) = board();
+            second_enemy(&mut s, 30);
+            let p = player(&s);
+            give_power(&mut s, p, PowerKind::Focus, 1);
+            // Unpowered: Strength does not touch an evoke.
+            give_power(&mut s, p, PowerKind::Strength, 5);
+            belt(&mut s, 3, &[Orb::Lightning, Orb::Dark { stored: 4 }]);
+            hand(&mut s, CardId::Dualcast);
+            hand(&mut s, CardId::Quadcast);
+            let mc = hand(&mut s, CardId::MultiCast);
+            let g = card_gen_live(&s);
+            // Lightning 8 + 1 Focus = 9, split over two enemies.
+            assert_eq!(
+                g[0].clone().expect("dc").flat,
+                BTreeMap::from([(0, 9.0), (1, 9.0)])
+            );
+            assert_eq!(
+                g[1].clone().expect("qc").flat,
+                BTreeMap::from([(0, 18.0), (1, 18.0)])
+            );
+            let m = g[2].clone().expect("mc");
+            assert!(m.flat.is_empty());
+            assert_eq!(m.per_energy, BTreeMap::from([(0, 4.5), (1, 4.5)]));
+            upgraded(&mut s, mc);
+            assert_eq!(card_gen_live(&s)[2].clone().expect("mc").flat[&1], 4.5);
+            // Dark in front: 6 + 4 stored, all on the weakest (enemy 1, 30 HP).
+            belt(&mut s, 3, &[Orb::Dark { stored: 4 }, Orb::Lightning]);
+            assert_eq!(
+                card_gen_live(&s)[0].clone().expect("dc").flat,
+                BTreeMap::from([(1, 20.0)])
+            );
+            // Frost in front: no damage.
+            belt(&mut s, 3, &[Orb::Frost, Orb::Lightning]);
+            assert_eq!(card_gen_live(&s)[0], None);
+            // No orbs.
+            belt(&mut s, 3, &[]);
+            assert_eq!(card_gen_live(&s)[0], None);
+        }
+
+        /// A channel into a full belt evokes the front orb first.
+        #[test]
+        fn gen_live_overflow_evoke() {
+            use sts2_core::orbs::Orb;
+            let (mut s, _) = board();
+            belt(&mut s, 2, &[Orb::Lightning]);
+            hand(&mut s, CardId::Zap);
+            hand(&mut s, CardId::Glacier);
+            // One free slot: Zap evokes nothing, Glacier's second Frost evokes
+            // the Lightning.
+            let g = card_gen_live(&s);
+            assert_eq!(g[0], None);
+            assert_eq!(
+                g[1].clone().expect("glacier").flat,
+                BTreeMap::from([(0, 8.0)])
+            );
+            // Full belt: Zap evokes the front Lightning, Glacier both orbs.
+            belt(
+                &mut s,
+                2,
+                &[Orb::Lightning, Orb::Glass { current_passive: 3 }],
+            );
+            let g = card_gen_live(&s);
+            assert_eq!(g[0].clone().expect("zap").flat, BTreeMap::from([(0, 8.0)]));
+            assert_eq!(
+                g[1].clone().expect("glacier").flat,
+                BTreeMap::from([(0, 14.0)])
+            );
+        }
+
+        /// Channels past a full belt evoke the orbs the play itself channelled
+        /// once the belt's own are gone (`OrbCmd.Channel` evokes the front, then
+        /// enqueues at the back), and a non-Defect's empty zero-slot belt grows
+        /// one slot first (OrbCmd.cs:74-77).
+        #[test]
+        fn gen_live_overflow_evokes_the_plays_own_orbs() {
+            use sts2_core::orbs::Orb;
+            let (mut s, _) = board();
+            // Rainbow on a 0-slot non-Defect belt: Lightning gets the new slot,
+            // Frost evokes it (8), Dark evokes the Frost (0).
+            belt(&mut s, 0, &[]);
+            hand(&mut s, CardId::Rainbow);
+            assert_eq!(
+                card_gen_live(&s)[0].clone().expect("rainbow").flat,
+                BTreeMap::from([(0, 8.0)])
+            );
+            // Ice Lance (3 Frost) on a full 1-slot Lightning belt: only the
+            // Lightning hits; the evoked Frosts deal nothing.
+            belt(&mut s, 1, &[Orb::Lightning]);
+            s.player.hand.clear();
+            hand(&mut s, CardId::IceLance);
+            assert_eq!(
+                card_gen_live(&s)[0].clone().expect("ice lance").flat,
+                BTreeMap::from([(0, 8.0)])
+            );
+        }
+
+        /// Voltaic channels one Lightning per Lightning channelled earlier this
+        /// combat (Voltaic.cs:30-34, :47-51, read before it channels).
+        #[test]
+        fn gen_live_voltaic_overflow() {
+            use sts2_core::orbs::Orb;
+            let (mut s, _) = board();
+            belt(&mut s, 2, &[Orb::Glass { current_passive: 3 }]);
+            hand(&mut s, CardId::Voltaic);
+            // None channelled yet: Voltaic channels nothing.
+            assert_eq!(card_gen_live(&s)[0], None);
+            // 3: the first fills the free slot, the second evokes the Glass
+            // (3 x 2), the third the first new Lightning (8).
+            s.combat_log.lightning_orbs_channeled_this_combat = 3;
+            assert_eq!(
+                card_gen_live(&s)[0].clone().expect("voltaic").flat,
+                BTreeMap::from([(0, 14.0)])
+            );
+        }
+
+        /// Tempest channels X Lightning, +1 upgraded (Tempest.cs:29-37): not
+        /// linear in X, so the play's damage is a table by the energy spent.
+        #[test]
+        fn gen_live_tempest_by_x() {
+            use sts2_core::orbs::Orb;
+            let (mut s, _) = board();
+            s.player.energy = 3;
+            belt(&mut s, 2, &[Orb::Lightning]);
+            let t = hand(&mut s, CardId::Tempest);
+            let g = card_gen_live(&s)[0].clone().expect("tempest");
+            assert!(g.flat.is_empty() && g.per_energy.is_empty());
+            let row = |v: f64| {
+                if v > 0.0 {
+                    BTreeMap::from([(0, v)])
+                } else {
+                    BTreeMap::new()
+                }
+            };
+            // X=0, 1: into the free slot; X=2 evokes the belt's Lightning, X=3
+            // the first one Tempest channelled.
+            assert_eq!(g.by_x, vec![row(0.0), row(0.0), row(8.0), row(16.0)]);
+            upgraded(&mut s, t);
+            let g = card_gen_live(&s)[0].clone().expect("tempest+");
+            assert_eq!(g.by_x, vec![row(0.0), row(8.0), row(16.0), row(24.0)]);
+            // Free slots for every channel: nothing.
+            belt(&mut s, 5, &[]);
+            assert_eq!(card_gen_live(&s)[0], None);
+            // Other cards carry no table.
+            belt(&mut s, 1, &[Orb::Lightning]);
+            hand(&mut s, CardId::Zap);
+            assert!(card_gen_live(&s)[1].clone().expect("zap").by_x.is_empty());
+        }
+
+        /// Tempest's X is `ResolveEnergyXValue()`, folded through
+        /// `Hook.ModifyXValue`: Chemical X channels 2 more Lightning at every
+        /// energy spent (ChemicalX.cs:31-38 `ModifyXValue`: `+ Increase`, 2).
+        #[test]
+        fn gen_live_tempest_by_x_chemical_x() {
+            use sts2_core::orbs::Orb;
+            sts2_content::relics::dispatch::ensure_installed();
+            sts2_core::relic_effects::ensure_installed();
+            let (mut s, _) = board();
+            s.player.energy = 2;
+            belt(&mut s, 2, &[Orb::Lightning]);
+            hand(&mut s, CardId::Tempest);
+            s.relics.push(sts2_core::Relic {
+                id: std::num::NonZeroU32::new(1).expect("non-zero"),
+                kind: sts2_core::RelicKind::ChemicalX,
+                counter: 0,
+                is_wax: false,
+                is_melted: false,
+            });
+            let g = card_gen_live(&s)[0].clone().expect("tempest");
+            // X = k + 2: 2 channels fill the free slot then evoke the belt's
+            // Lightning (8); each further one evokes a Lightning Tempest
+            // channelled (8 more).
+            let row = |v: f64| BTreeMap::from([(0, v)]);
+            assert_eq!(g.by_x, vec![row(8.0), row(16.0), row(24.0)]);
+        }
+
+        fn chemical_x(s: &mut CombatState) {
+            sts2_content::relics::dispatch::ensure_installed();
+            sts2_core::relic_effects::ensure_installed();
+            let id = u32::try_from(s.relics.len() + 1).expect("fits");
+            s.relics.push(sts2_core::Relic {
+                id: std::num::NonZeroU32::new(id).expect("non-zero"),
+                kind: sts2_core::RelicKind::ChemicalX,
+                counter: 0,
+                is_wax: false,
+                is_melted: false,
+            });
+        }
+
+        /// `(damage per hit, hits)` of hand card `i` on enemy 0.
+        fn dmg0(s: &CombatState, i: usize) -> (i32, f32) {
+            card_damage_live(s)[i][&0]
+        }
+
+        /// Energy-X attacks hit `ResolveEnergyXValue()` times
+        /// (Whirlwind.cs:33/42, Skewer.cs:28, Eradicate.cs:28, Volley.cs:24),
+        /// folded through `Hook.ModifyXValue`: Chemical X adds 2 hits at every
+        /// energy spent, so the play's damage is a table by the energy spent
+        /// (`by_x`). Without an X modifier the knapsack's linear term is exact
+        /// and no table is emitted.
+        #[test]
+        fn gen_live_x_attacks_chemical_x() {
+            for id in [
+                CardId::Whirlwind,
+                CardId::Skewer,
+                CardId::Eradicate,
+                CardId::Volley,
+            ] {
+                let (mut s, _) = board();
+                s.player.energy = 2;
+                hand(&mut s, id);
+                assert_eq!(card_gen_live(&s)[0], None, "{id:?} without Chemical X");
+                chemical_x(&mut s);
+                let (per_hit, hits) = dmg0(&s, 0);
+                let one = f64::from(per_hit) * f64::from(hits);
+                let gen = card_gen_live(&s)[0].clone().expect("x attack");
+                let want: Vec<_> = (0..=2)
+                    .map(|k| BTreeMap::from([(0, one * f64::from(k + 2))]))
+                    .collect();
+                assert_eq!(gen.by_x, want, "{id:?}");
+                assert!(gen.flat.is_empty() && gen.per_energy.is_empty());
+            }
+        }
+
+        /// Heavenly Drill: `num = ResolveEnergyXValue(); if (num >= 4) num *= 2`
+        /// (HeavenlyDrill.cs:32-37). The doubling is judged at the X the play
+        /// gets, not at the energy available now: a table whenever the energy
+        /// available crosses the threshold (or an X modifier shifts it).
+        #[test]
+        fn gen_live_heavenly_drill_by_x() {
+            let (mut s, _) = board();
+            s.player.energy = 3;
+            hand(&mut s, CardId::HeavenlyDrill);
+            assert_eq!(card_gen_live(&s)[0], None, "below the threshold: linear");
+            s.player.energy = 5;
+            let (d, h) = dmg0(&s, 0);
+            assert!((h - 2.0).abs() < f32::EPSILON, "doubled per energy at 5");
+            let d = f64::from(d);
+            let hits = [0.0, 1.0, 2.0, 3.0, 8.0, 10.0];
+            let g = card_gen_live(&s)[0].clone().expect("drill");
+            let want: Vec<BTreeMap<usize, f64>> = hits
+                .iter()
+                .map(|n| {
+                    if *n > 0.0 {
+                        BTreeMap::from([(0, d * n)])
+                    } else {
+                        BTreeMap::new()
+                    }
+                })
+                .collect();
+            assert_eq!(g.by_x, want);
+            // Chemical X at 2 energy: X = 2, 3, 4 -> 2, 3, 8 hits.
+            s.player.energy = 2;
+            chemical_x(&mut s);
+            let g = card_gen_live(&s)[0].clone().expect("drill");
+            let want: Vec<_> = [2.0, 3.0, 8.0]
+                .iter()
+                .map(|n| BTreeMap::from([(0, d * n)]))
+                .collect();
+            assert_eq!(g.by_x, want);
+        }
+
+        /// Multi-Cast evokes `ResolveEnergyXValue()` times, +1 upgraded
+        /// (MultiCast.cs:22-29): with Chemical X the evokes are a table by the
+        /// energy spent, which carries the upgrade's evoke too.
+        #[test]
+        fn gen_live_multi_cast_chemical_x() {
+            use sts2_core::orbs::Orb;
+            let (mut s, _) = board();
+            s.player.energy = 1;
+            belt(&mut s, 3, &[Orb::Lightning]);
+            let mc = hand(&mut s, CardId::MultiCast);
+            chemical_x(&mut s);
+            let row = |v: f64| BTreeMap::from([(0, v)]);
+            let g = card_gen_live(&s)[0].clone().expect("mc");
+            assert_eq!(g.by_x, vec![row(16.0), row(24.0)]);
+            assert!(g.flat.is_empty() && g.per_energy.is_empty());
+            upgraded(&mut s, mc);
+            let g = card_gen_live(&s)[0].clone().expect("mc+");
+            assert_eq!(g.by_x, vec![row(24.0), row(32.0)]);
+            assert!(g.flat.is_empty() && g.per_energy.is_empty());
+        }
+
+        /// Stardust hits `ResolveStarXValue()` times (Stardust.cs:24): with
+        /// Chemical X, a table by the stars spent.
+        #[test]
+        fn gen_live_stardust_chemical_x() {
+            let (mut s, _) = board();
+            s.player.stars = 2;
+            hand(&mut s, CardId::Stardust);
+            assert_eq!(card_gen_live(&s)[0], None, "without Chemical X");
+            chemical_x(&mut s);
+            let (d, h) = dmg0(&s, 0);
+            // live_attack already reads X = 2 + 2 hits at all the stars.
+            assert!((h - 4.0).abs() < f32::EPSILON);
+            let d = f64::from(d);
+            let g = card_gen_live(&s)[0].clone().expect("stardust");
+            let want: Vec<_> = [2.0, 3.0, 4.0]
+                .iter()
+                .map(|n| BTreeMap::from([(0, d * n)]))
+                .collect();
+            assert_eq!(g.by_x, want);
+        }
+
+        /// Ignition channels its Plasma on the target teammate
+        /// (Ignition.cs:33): a full teammate belt evokes that seat's front orb.
+        /// Solo, there is no teammate (and the card is unplayable).
+        #[test]
+        fn gen_live_ignition_evokes_the_teammates_front_orb() {
+            use sts2_core::orbs::Orb;
+            let (mut s, _) = board();
+            belt(&mut s, 1, &[Orb::Lightning]);
+            hand(&mut s, CardId::Ignition);
+            // Solo: the player's own full belt is not touched.
+            assert_eq!(card_gen_live(&s)[0], None);
+            let mut ally_belt = sts2_core::OrbSlots::with_capacity(1);
+            ally_belt.channel(Orb::Dark { stored: 4 });
+            s.allies.push(sts2_core::PlayerCombatState {
+                current_hp: 70,
+                max_hp: 70,
+                orbs: ally_belt,
+                ..sts2_core::PlayerCombatState::default()
+            });
+            // The teammate's Dark (6 + 4) on the weakest enemy.
+            assert_eq!(
+                card_gen_live(&s)[0].clone().expect("ignition").flat,
+                BTreeMap::from([(0, 10.0)])
+            );
+            // A dead teammate is no target.
+            s.allies[0].current_hp = 0;
+            assert_eq!(card_gen_live(&s)[0], None);
+        }
+
+        /// End of Days' Doom kills where Doom reaches HP; Artifact blocks it.
+        #[test]
+        fn gen_live_end_of_days_doom_kill() {
+            let (mut s, e0) = board();
+            let e1 = second_enemy(&mut s, 29);
+            let e2 = second_enemy(&mut s, 10);
+            give_power(&mut s, e0, PowerKind::Doom, 21);
+            give_power(&mut s, e2, PowerKind::Artifact, 1);
+            let eod = hand(&mut s, CardId::EndOfDays);
+            // e0: 50 HP, 21 + 29 = 50 Doom; e1: 29; e2: blocked.
+            let g = card_gen_live(&s)[0].clone().expect("eod");
+            assert_eq!(g.kills, vec![0, 1]);
+            assert!(g.flat.is_empty());
+            s.creatures
+                .iter_mut()
+                .find(|c| c.id == e1.0)
+                .expect("e1")
+                .current_hp = 30;
+            assert_eq!(card_gen_live(&s)[0].clone().expect("eod").kills, vec![0]);
+            // Upgraded: 37 Doom.
+            upgraded(&mut s, eod);
+            assert_eq!(card_gen_live(&s)[0].clone().expect("eod").kills, vec![0, 1]);
+        }
+
+        // --- end of turn (`end_turn_live`) ---------------------------------
+
+        mod end_turn {
+            use super::*;
+            use sts2_core::orbs::Orb;
+            use sts2_core::{Relic, RelicKind};
+
+            fn end_board() -> (CombatState, CreatureUid) {
+                sts2_content::relics::dispatch::ensure_installed();
+                sts2_core::relic_effects::ensure_installed();
+                board()
+            }
+
+            fn relic(state: &mut CombatState, kind: RelicKind, counter: i32) {
+                let id = NonZeroU32::new(u32::try_from(state.relics.len() + 1).expect("fits"))
+                    .expect("non-zero");
+                state.relics.push(Relic {
+                    id,
+                    kind,
+                    counter,
+                    is_wax: false,
+                    is_melted: false,
+                });
+            }
+
+            fn set_enemy(state: &mut CombatState, e: CreatureUid, hp: i32, block: i32) {
+                let c = state
+                    .creatures
+                    .iter_mut()
+                    .find(|c| c.id == e.0)
+                    .expect("enemy");
+                c.current_hp = hp;
+                c.block = block;
+            }
+
+            /// `PoisonPower.CalculateTotalDamageNextTurn`: Unblockable, so the
+            /// enemy's block does not save it.
+            #[test]
+            fn end_live_poison_lethal() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 20, 10);
+                give_power(&mut s, e, PowerKind::Poison, 20);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                set_enemy(&mut s, e, 21, 0);
+                assert_eq!(end_turn_live(&s).dies, Vec::<usize>::new());
+            }
+
+            /// Accelerant: `min(Amount, 1 + Accelerant)` ticks of `Amount - i`.
+            #[test]
+            fn end_live_poison_accelerant() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 9, 0);
+                give_power(&mut s, e, PowerKind::Poison, 5);
+                assert!(end_turn_live(&s).dies.is_empty());
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Accelerant, 1);
+                // 5 + 4.
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                set_enemy(&mut s, e, 10, 0);
+                assert!(end_turn_live(&s).dies.is_empty());
+            }
+
+            /// Glass hits every hittable enemy through its block; Gold-Plated
+            /// Cables triggers the front orb again, 1 lower (`_passiveVal - 1`).
+            #[test]
+            fn end_live_glass_kills_all() {
+                let (mut s, e0) = end_board();
+                let e1 = second_enemy(&mut s, 5);
+                set_enemy(&mut s, e0, 4, 0);
+                set_enemy(&mut s, e1, 5, 2);
+                belt(&mut s, 3, &[Orb::Glass { current_passive: 4 }]);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                relic(&mut s, RelicKind::GoldPlatedCables, 0);
+                // 4 + 3 = 7 = 5 HP + 2 block.
+                assert_eq!(end_turn_live(&s).dies, vec![0, 1]);
+                // An Intangible enemy loses 1 per hit.
+                give_power(&mut s, e0, PowerKind::Intangible, 1);
+                assert_eq!(end_turn_live(&s).dies, vec![1]);
+                // The state itself is untouched.
+                assert_eq!(s.player.orbs.slots[0], Orb::Glass { current_passive: 4 });
+            }
+
+            /// Lightning's passive picks a random hittable enemy: certain only
+            /// when there is one.
+            #[test]
+            fn end_live_lightning_single_enemy() {
+                let (mut s, e0) = end_board();
+                set_enemy(&mut s, e0, 3, 0);
+                belt(&mut s, 3, &[Orb::Lightning]);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                let e1 = second_enemy(&mut s, 3);
+                set_enemy(&mut s, e1, 3, 0);
+                assert!(end_turn_live(&s).dies.is_empty());
+                // A dead enemy is not hittable.
+                set_enemy(&mut s, e1, 0, 0);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+            }
+
+            /// Frost passives before the enemies act; Gold-Plated Cables gives
+            /// the front orb one more trigger, whatever its type.
+            #[test]
+            fn end_live_gold_plated_cables_double_frost() {
+                let (mut s, _) = end_board();
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Focus, 1);
+                belt(&mut s, 3, &[Orb::Frost, Orb::Frost]);
+                assert_eq!(end_turn_live(&s).block, 6);
+                relic(&mut s, RelicKind::GoldPlatedCables, 0);
+                assert_eq!(end_turn_live(&s).block, 9);
+                belt(&mut s, 3, &[Orb::Lightning, Orb::Frost]);
+                assert_eq!(end_turn_live(&s).block, 3);
+            }
+
+            /// Plating (Early), Orichalcum / Fake Orichalcum (latched on 0
+            /// block VeryEarly), Cloak Clasp (1 per hand card), Ripple Basin
+            /// (no Attack this turn). Unpowered: Dexterity does not apply.
+            #[test]
+            fn end_live_plating_orichalcum_cloak_clasp() {
+                let (mut s, _) = end_board();
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Plating, 4);
+                give_power(&mut s, p, PowerKind::Dexterity, 3);
+                relic(&mut s, RelicKind::Orichalcum, 0);
+                relic(&mut s, RelicKind::FakeOrichalcum, 0);
+                relic(&mut s, RelicKind::CloakClasp, 0);
+                relic(&mut s, RelicKind::RippleBasin, 0);
+                for _ in 0..3 {
+                    hand(&mut s, CardId::StrikeIronclad);
+                }
+                assert_eq!(end_turn_live(&s).block, 4 + 6 + 3 + 3 + 4);
+                s.player.block = 5;
+                assert_eq!(end_turn_live(&s).block, 4 + 3 + 4);
+                // Ripple Basin's counter: Attacks played this turn.
+                let rb = s
+                    .relics
+                    .iter_mut()
+                    .find(|r| r.kind == RelicKind::RippleBasin)
+                    .expect("rb");
+                rb.counter = 1;
+                assert_eq!(end_turn_live(&s).block, 4 + 3);
+            }
+
+            /// Consuming Shadow evokes the last orb `Amount` times after the
+            /// passives: the Frost evoke is block, the Glass evoke (decayed by
+            /// its passive) damage.
+            #[test]
+            fn end_live_consuming_shadow() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 4, 0);
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::ConsumingShadow, 2);
+                belt(&mut s, 3, &[Orb::Glass { current_passive: 2 }, Orb::Frost]);
+                // Glass passive 2, Frost passive 2; evokes: Frost 5, Glass 1 x 2.
+                let r = end_turn_live(&s);
+                assert_eq!(r.block, 7);
+                assert_eq!(r.dies, vec![0]);
+                set_enemy(&mut s, e, 5, 0);
+                assert!(end_turn_live(&s).dies.is_empty());
+            }
+
+            /// Consuming Shadow's Dark evoke hits the weakest enemy, unless a
+            /// random Lightning zap was skipped before it.
+            #[test]
+            fn end_live_consuming_shadow_dark_after_random_zap() {
+                let (mut s, e0) = end_board();
+                set_enemy(&mut s, e0, 15, 0);
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::ConsumingShadow, 1);
+                // Dark passive: 0 + 6 stored, evoke 6 + 6 = 12.
+                belt(&mut s, 3, &[Orb::Lightning, Orb::Dark { stored: 0 }]);
+                // One enemy: Lightning 3, then the Dark 12 on it.
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                // Two: the zap is random, so the weakest is unknown.
+                set_enemy(&mut s, e0, 12, 0);
+                second_enemy(&mut s, 50);
+                assert!(end_turn_live(&s).dies.is_empty());
+                // No zap before it: the Dark evoke finds the weakest.
+                belt(&mut s, 3, &[Orb::Dark { stored: 0 }]);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+            }
+
+            /// The telegraph already carries Intangible's `ModifyDamageCap`:
+            /// `hp_loss_live` lets block and the Osty see the capped hit.
+            #[test]
+            fn end_live_intangible_caps_the_telegraph() {
+                let (mut s, e) = end_board();
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Intangible, 1);
+                let v = intent_to_value(Intent::Attack { damage: 10 }, &s, e);
+                assert_eq!(v["effective_amount"], serde_json::json!(1));
+            }
+
+            /// Hailstorm needs a Frost orb when the turn ends.
+            #[test]
+            fn end_live_hailstorm() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 6, 0);
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Hailstorm, 6);
+                assert!(end_turn_live(&s).dies.is_empty());
+                belt(&mut s, 3, &[Orb::Frost]);
+                // Hailstorm (`BeforeSideTurnEnd`) wins the fight before the
+                // Frost passive (`DoTurnEnd`) runs.
+                assert_eq!(
+                    end_turn_live(&s),
+                    EndTurnLive {
+                        block: 0,
+                        dies: vec![0],
+                        ..EndTurnLive::default()
+                    }
+                );
+                second_enemy(&mut s, 50);
+                assert_eq!(
+                    end_turn_live(&s),
+                    EndTurnLive {
+                        block: 2,
+                        dies: vec![0],
+                        ..EndTurnLive::default()
+                    }
+                );
+            }
+
+            /// Glass and poison add up: 3 through the block, then 4 poison.
+            #[test]
+            fn end_live_damage_then_poison() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 7, 2);
+                give_power(&mut s, e, PowerKind::Poison, 4);
+                belt(&mut s, 3, &[Orb::Glass { current_passive: 5 }]);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                set_enemy(&mut s, e, 8, 2);
+                assert!(end_turn_live(&s).dies.is_empty());
+            }
+
+            /// A power with its `counter` set (The Bomb's damage, Hardened
+            /// Shell's damage taken this turn).
+            fn counted(
+                s: &mut CombatState,
+                who: CreatureUid,
+                kind: PowerKind,
+                amount: i32,
+                n: i32,
+            ) {
+                give_power(s, who, kind, amount);
+                let id = NonZeroU32::new(u32::try_from(s.powers.len()).expect("fits"))
+                    .expect("non-zero");
+                s.powers.get_mut_by_id(id).expect("power").counter = n;
+            }
+
+            fn to_exhaust(s: &mut CombatState, id: CardId) {
+                let uid = hand(s, id);
+                s.player.hand.retain(|u| *u != uid);
+                s.player.exhaust.push(uid);
+            }
+
+            /// `TheBombPower.BeforeSideTurnEnd`: at `Amount == 1` its Damage
+            /// (Unpowered) hits every hittable enemy; above 1 it only ticks.
+            #[test]
+            fn end_live_the_bomb() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 40, 0);
+                let p = player(&s);
+                counted(&mut s, p, PowerKind::TheBomb, 2, 40);
+                assert!(end_turn_live(&s).dies.is_empty());
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 40, 0);
+                counted(&mut s, p, PowerKind::TheBomb, 1, 40);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                set_enemy(&mut s, e, 41, 0);
+                assert!(end_turn_live(&s).dies.is_empty());
+            }
+
+            /// Screaming Flagon (20 to all on an empty hand) and Stone Calendar
+            /// (52 to all on turn 7), both `BeforeSideTurnEnd`.
+            #[test]
+            fn end_live_flagon_and_calendar() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 20, 0);
+                relic(&mut s, RelicKind::ScreamingFlagon, 0);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                hand(&mut s, CardId::StrikeIronclad);
+                assert!(end_turn_live(&s).dies.is_empty());
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 52, 0);
+                relic(&mut s, RelicKind::StoneCalendar, 0);
+                s.round = 6;
+                assert!(end_turn_live(&s).dies.is_empty());
+                s.round = 7;
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+            }
+
+            /// `HowlFromBeyond.AfterAutoPostPlayPhaseEntered`: a Howl in the
+            /// exhaust pile auto-plays (18 to every enemy) as the turn ends.
+            #[test]
+            fn end_live_howl_from_exhaust() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 18, 0);
+                to_exhaust(&mut s, CardId::HowlFromBeyond);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                set_enemy(&mut s, e, 19, 0);
+                assert!(end_turn_live(&s).dies.is_empty());
+            }
+
+            /// `ParryingShield.AfterSideTurnEnd`: 6 to a random enemy at 10+
+            /// block, certain only with one hittable enemy.
+            #[test]
+            fn end_live_parrying_shield() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 6, 0);
+                relic(&mut s, RelicKind::ParryingShield, 0);
+                s.player.block = 9;
+                assert!(end_turn_live(&s).dies.is_empty());
+                s.player.block = 10;
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                let e1 = second_enemy(&mut s, 6);
+                set_enemy(&mut s, e1, 6, 0);
+                assert!(end_turn_live(&s).dies.is_empty());
+            }
+
+            /// Turn-end-in-hand cards after the block gains (`DoTurnEnd`):
+            /// Burn (Unpowered|Move) eats block, Beckon is Unblockable.
+            #[test]
+            fn end_live_burn_and_beckon() {
+                let (mut s, _) = end_board();
+                relic(&mut s, RelicKind::Orichalcum, 0);
+                hand(&mut s, CardId::Burn);
+                let r = end_turn_live(&s);
+                assert_eq!((r.block, r.self_loss), (6 - 2, 0));
+                hand(&mut s, CardId::Beckon);
+                let r = end_turn_live(&s);
+                assert_eq!((r.block, r.self_loss), (6 - 2, 6));
+                assert_eq!(s.player.current_hp, 80);
+            }
+
+            /// `ConstrictPower.AfterSideTurnEnd`: Unpowered self-damage through
+            /// the block left after the turn end.
+            #[test]
+            fn end_live_constrict() {
+                let (mut s, _) = end_board();
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Constrict, 3);
+                let r = end_turn_live(&s);
+                assert_eq!((r.block, r.self_loss), (0, 3));
+                s.player.block = 5;
+                let r = end_turn_live(&s);
+                assert_eq!((r.block, r.self_loss), (-3, 0));
+            }
+
+            /// Beating Remnant's budget (20 less this turn's HP loss) and the
+            /// Buffer stacks left after the self-damage.
+            #[test]
+            fn end_live_remnant_and_buffer() {
+                let (mut s, _) = end_board();
+                relic(&mut s, RelicKind::BeatingRemnant, 15);
+                assert_eq!(end_turn_live(&s).remnant, Some(5));
+                hand(&mut s, CardId::Beckon);
+                let r = end_turn_live(&s);
+                assert_eq!((r.self_loss, r.remnant), (5, Some(0)));
+                let (mut s, _) = end_board();
+                assert_eq!(end_turn_live(&s).remnant, None);
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Buffer, 2);
+                hand(&mut s, CardId::Beckon);
+                let r = end_turn_live(&s);
+                assert_eq!((r.self_loss, r.buffer), (0, 1));
+            }
+
+            /// `HardenedShellPower.BeforeSideTurnStart` resets its budget at the
+            /// enemies' turn start, before Poison ticks.
+            #[test]
+            fn end_live_hardened_shell_resets_before_poison() {
+                let (mut s, e) = end_board();
+                set_enemy(&mut s, e, 12, 0);
+                counted(&mut s, e, PowerKind::HardenedShell, 10, 10);
+                give_power(&mut s, e, PowerKind::Poison, 12);
+                // Capped at 10 this turn, not 0.
+                assert!(end_turn_live(&s).dies.is_empty());
+                set_enemy(&mut s, e, 10, 0);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+            }
+
+            /// Block multipliers apply to the turn-end gains as the engine
+            /// grants them: Shadowmeld doubles every block.
+            #[test]
+            fn end_live_shadowmeld_doubles_orichalcum() {
+                let (mut s, _) = end_board();
+                relic(&mut s, RelicKind::Orichalcum, 0);
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Shadowmeld, 1);
+                assert_eq!(end_turn_live(&s).block, 12);
+            }
+
+            /// The `DoTurnEnd` ethereal exhaust fires Feel No Pain.
+            #[test]
+            fn end_live_ethereal_feel_no_pain() {
+                let (mut s, _) = end_board();
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::FeelNoPain, 3);
+                hand(&mut s, CardId::Dazed);
+                assert_eq!(end_turn_live(&s).block, 3);
+            }
+
+            /// A choice already open on the state is not one the walk opened:
+            /// the turn end still counts.
+            #[test]
+            fn end_live_with_a_choice_open() {
+                let (mut s, _) = end_board();
+                relic(&mut s, RelicKind::Orichalcum, 0);
+                let uid = hand(&mut s, CardId::StrikeIronclad);
+                s.request_card_choice(
+                    sts2_core::ChoiceKind::CardSelect,
+                    vec![sts2_core::ChoiceOption {
+                        card_id: CardId::StrikeIronclad,
+                        upgraded: false,
+                        card_uid: Some(uid),
+                        source_pile: Some(sts2_core::cards::PileKind::Hand),
+                    }],
+                    1,
+                    1,
+                    false,
+                );
+                assert!(s.pending_choice.is_some());
+                assert_eq!(end_turn_live(&s).block, 6);
+            }
+
+            /// A random listener on a bus the walk runs (Juggernaut's hit on a
+            /// random enemy when the turn end grants block) counts only when
+            /// every reseeded walk agrees: with one enemy it is certain.
+            #[test]
+            fn end_live_random_listener_not_certain() {
+                let (mut s, e0) = end_board();
+                set_enemy(&mut s, e0, 5, 0);
+                relic(&mut s, RelicKind::Orichalcum, 0);
+                let p = player(&s);
+                give_power(&mut s, p, PowerKind::Juggernaut, 5);
+                assert_eq!(end_turn_live(&s).dies, vec![0]);
+                let e1 = second_enemy(&mut s, 5);
+                set_enemy(&mut s, e1, 5, 0);
+                assert!(end_turn_live(&s).dies.is_empty());
+            }
+
+            #[test]
+            fn end_live_plain_board_is_empty() {
+                let (mut s, _) = end_board();
+                hand(&mut s, CardId::StrikeIronclad);
+                assert_eq!(end_turn_live(&s), EndTurnLive::default());
+            }
+        }
+    }
+
+    // --- state facts for the shared net (GH #1197) --------------------------
+
+    mod facts {
+        use super::*;
+        use sts2_core::cards::CardId;
+        use sts2_core::{GameVersion, Power, PowerKind, PowerUid, Relic, RelicKind};
+
+        fn board(version: GameVersion) -> CombatState {
+            sts2_content::cards::dispatch::ensure_installed();
+            sts2_content::relics::dispatch::ensure_installed();
+            sts2_core::relic_effects::ensure_installed();
+            let mut state = CombatState {
+                game_version: version,
+                ..CombatState::default()
+            };
+            state.player.current_hp = 80;
+            state.player.max_hp = 80;
+            state
+        }
+
+        fn add_card(state: &mut CombatState, id: CardId) -> CardUid {
+            let mut card =
+                sts2_content::cards::v0111::card_pod_for(id, false, GameVersion::V0_111_0)
+                    .expect("spec exists");
+            let uid = CardUid::new(u32::try_from(state.cards.len() + 1).expect("fits"))
+                .expect("non-zero");
+            card.uid = uid;
+            state.cards.push(card);
+            uid
+        }
+
+        fn player_power(state: &mut CombatState, kind: PowerKind, amount: i32, counter: i32) {
+            let pid = PowerUid::new(u32::try_from(state.powers.len() + 1).expect("fits"))
+                .expect("non-zero");
+            state.powers.push(Power {
+                id: pid.0,
+                kind,
+                amount,
+                counter,
+                applier: None,
+                skip_next_tick: false,
+            });
+            state.player.powers.push(pid);
+        }
+
+        fn relic(state: &mut CombatState, kind: RelicKind, counter: i32) {
+            let id = NonZeroU32::new(u32::try_from(state.relics.len() + 1).expect("fits"))
+                .expect("non-zero");
+            state.relics.push(Relic {
+                id,
+                kind,
+                counter,
+                is_wax: false,
+                is_melted: false,
+            });
+        }
+
+        fn power_display(v: &Value, name: &str) -> Value {
+            v["player"]["powers"]
+                .as_array()
+                .expect("powers")
+                .iter()
+                .find(|p| p["name"] == name)
+                .expect("power present")["display_amount"]
+                .clone()
+        }
+
+        fn relic_dict(v: &Value, id: &str) -> Value {
+            v["player"]["relics"]
+                .as_array()
+                .expect("relics")
+                .iter()
+                .find(|r| r["id"] == id)
+                .expect("relic present")
+                .clone()
+        }
+
+        /// Master Planner made a Skill Sly (`sly_this_combat`), and the card
+        /// was then discarded: the pile card still carries the fact, under
+        /// `pile_flags` so the hand-only `flags` contract is untouched.
+        #[test]
+        fn pile_cards_keep_sly_flag() {
+            let mut s = board(GameVersion::V0_111_0);
+            let discarded = add_card(&mut s, CardId::DefendIronclad);
+            s.player.sly_this_combat.push(discarded);
+            s.player.discard.push(discarded);
+            let drawn = add_card(&mut s, CardId::DefendIronclad);
+            s.player.retain_this_turn.push(drawn);
+            s.player.sly_this_turn.push(drawn);
+            s.player.draw.push(drawn);
+            let in_hand = add_card(&mut s, CardId::DefendIronclad);
+            s.player.sly_this_combat.push(in_hand);
+            s.player.hand.push(in_hand);
+            let plain = add_card(&mut s, CardId::StrikeIronclad);
+            s.player.exhaust.push(plain);
+
+            let v = combat_state_to_value(&s).expect("serializes");
+            let d = &v["deck"]["discard_pile"][0];
+            assert_eq!(d["pile_flags"], serde_json::json!(["sly"]));
+            assert!(d.get("flags").is_none(), "pile `flags` unchanged: {d}");
+            let dr = &v["deck"]["draw_pile"][0];
+            assert_eq!(
+                dr["pile_flags"],
+                serde_json::json!(["sly_turn", "retain_turn"])
+            );
+            // Hand cards keep `flags` exactly as before and get no `pile_flags`.
+            let h = &v["deck"]["hand"][0];
+            assert_eq!(h["flags"], serde_json::json!(["sly"]));
+            assert!(h.get("pile_flags").is_none());
+            assert!(v["deck"]["exhaust_pile"][0].get("pile_flags").is_none());
+        }
+
+        #[test]
+        fn discards_and_type_counts() {
+            let mut s = board(GameVersion::V0_111_0);
+            let v = combat_state_to_value(&s).expect("serializes");
+            for k in [
+                "discards_this_turn",
+                "attacks_played_this_turn",
+                "skills_played_this_turn",
+            ] {
+                assert!(v["player"].get(k).is_none(), "{k} absent at 0");
+            }
+            s.combat_log.cards_discarded_this_turn = 2;
+            s.player.cards_played_this_turn[CardType::Attack.index()] = 3;
+            s.player.cards_played_this_turn[CardType::Skill.index()] = 1;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(v["player"]["discards_this_turn"], 2);
+            assert_eq!(v["player"]["attacks_played_this_turn"], 3);
+            assert_eq!(v["player"]["skills_played_this_turn"], 1);
+        }
+
+        /// Emotion Chip is armed while a pulse is pending: a hit that cost HP
+        /// this turn (or last turn, not yet consumed at turn start).
+        #[test]
+        fn relic_armed_emotion_chip() {
+            let mut s = board(GameVersion::V0_111_0);
+            relic(&mut s, RelicKind::EmotionChip, 0);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(relic_dict(&v, "EMOTION_CHIP")["armed"], false);
+            // A hit this turn (the engine's THIS_TURN bit).
+            s.relics.iter_mut().next().expect("chip").counter = 0b10;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(relic_dict(&v, "EMOTION_CHIP")["armed"], true);
+            // Other relics carry no `armed` key.
+            relic(&mut s, RelicKind::Anchor, 0);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert!(relic_dict(&v, "ANCHOR").get("armed").is_none());
+        }
+
+        /// Mini Regent fires on the first star spend of a turn: armed until
+        /// then, disarmed after.
+        #[test]
+        fn relic_armed_mini_regent_used() {
+            let mut s = board(GameVersion::V0_111_0);
+            relic(&mut s, RelicKind::MiniRegent, 0);
+            s.player.stars = 3;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(relic_dict(&v, "MINI_REGENT")["armed"], true);
+            let _ = s.spend_card_play_stars(1);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(relic_dict(&v, "MINI_REGENT")["armed"], false);
+        }
+
+        /// Regalite's once-per-turn latch is a v0.111.0 thing; v0.107.1's
+        /// Regalite fires on every generated card.
+        #[test]
+        fn relic_armed_regalite_latch() {
+            let mut s = board(GameVersion::V0_111_0);
+            relic(&mut s, RelicKind::Regalite, 0);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(relic_dict(&v, "REGALITE")["armed"], true);
+            s.relics.iter_mut().next().expect("regalite").counter = 1;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(relic_dict(&v, "REGALITE")["armed"], false);
+            s.game_version = GameVersion::V0_107_1;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(relic_dict(&v, "REGALITE")["armed"], true);
+        }
+
+        /// C# `PaleBlueDotPower.DisplayAmount => Math.Max(0, 5 -
+        /// AttacksPlayedThisTurn)`, where that count is every finished play
+        /// of the owner this turn (no type filter despite the name).
+        #[test]
+        fn pale_blue_dot_display() {
+            let mut s = board(GameVersion::V0_111_0);
+            player_power(&mut s, PowerKind::PaleBlueDot, 2, 0);
+            s.combat_log.card_plays_finished_this_turn = 2;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(power_display(&v, "PALE_BLUE_DOT"), 3);
+            s.combat_log.card_plays_finished_this_turn = 7;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(power_display(&v, "PALE_BLUE_DOT"), 0);
+            // v0.107.1's Pale Blue Dot has no DisplayAmount override.
+            s.game_version = GameVersion::V0_107_1;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(power_display(&v, "PALE_BLUE_DOT"), 2);
+        }
+
+        fn hand_card(state: &mut CombatState, id: CardId) -> CardUid {
+            let uid = add_card(state, id);
+            state.player.hand.push(uid);
+            uid
+        }
+
+        /// Void Form zeroes the star cost of the turn's first `Amount` plays
+        /// (C# `VoidFormPower.TryModifyStarCost`): `star_cost_live` follows,
+        /// `base_star_cost` keeps the printed cost, and a non-star card
+        /// carries neither key.
+        #[test]
+        fn star_cost_void_form_free() {
+            let mut s = board(GameVersion::V0_111_0);
+            hand_card(&mut s, CardId::Comet);
+            hand_card(&mut s, CardId::StrikeIronclad);
+            let v = combat_state_to_value(&s).expect("serializes");
+            let comet = &v["deck"]["hand"][0];
+            assert_eq!(comet["star_cost_live"], 5);
+            assert_eq!(comet["base_star_cost"], 5);
+            let strike = &v["deck"]["hand"][1];
+            assert!(strike.get("star_cost_live").is_none());
+            assert!(strike.get("base_star_cost").is_none());
+            player_power(&mut s, PowerKind::VoidForm, 1, 0);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(v["deck"]["hand"][0]["star_cost_live"], 0);
+            assert_eq!(v["deck"]["hand"][0]["base_star_cost"], 5);
+            // The existing `star_cost` key stays unemitted by the engine.
+            assert!(v["deck"]["hand"][0].get("star_cost").is_none());
+        }
+
+        /// A v0.111.0 cost change reads in the state's build: Guiding Star
+        /// prints 1 there, 2 in v0.107.1.
+        #[test]
+        fn star_cost_reads_the_build() {
+            let mut s = board(GameVersion::V0_111_0);
+            hand_card(&mut s, CardId::GuidingStar);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(v["deck"]["hand"][0]["base_star_cost"], 1);
+            assert_eq!(v["deck"]["hand"][0]["star_cost_live"], 1);
+            s.game_version = GameVersion::V0_107_1;
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(v["deck"]["hand"][0]["base_star_cost"], 2);
+        }
+
+        /// Stardust is star-X (`HasStarCostX`): both keys read -1.
+        #[test]
+        fn star_cost_x_stardust_is_minus_one() {
+            let mut s = board(GameVersion::V0_111_0);
+            s.player.stars = 4;
+            hand_card(&mut s, CardId::Stardust);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(v["deck"]["hand"][0]["star_cost_live"], -1);
+            assert_eq!(v["deck"]["hand"][0]["base_star_cost"], -1);
+        }
+
+        /// The parse ignores the new keys: a Void-Form-zeroed `star_cost_live`
+        /// must not come back as a free-this-turn rider, and the wire with
+        /// the keys rebuilds the same state as the wire without them.
+        #[test]
+        fn star_cost_live_is_ignored_by_the_parse() {
+            let mut s = board(GameVersion::V0_111_0);
+            hand_card(&mut s, CardId::Comet);
+            player_power(&mut s, PowerKind::VoidForm, 1, 0);
+            let with = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(with["deck"]["hand"][0]["star_cost_live"], 0);
+            let mut without = with.clone();
+            let card = without["deck"]["hand"][0]
+                .as_object_mut()
+                .expect("card dict");
+            card.remove("star_cost_live");
+            card.remove("base_star_cost");
+            let a = crate::state_from_wire(&&with).expect("parses");
+            let b = crate::state_from_wire(&&without).expect("parses");
+            let comet = a
+                .cards
+                .iter()
+                .find(|c| c.card_id == CardId::Comet)
+                .expect("comet");
+            assert_eq!(comet.combat_var(VarKey::StarCostFreeThisTurn), 0);
+            assert_eq!(comet.combat_var(VarKey::StarCostFreeThisCombat), 0);
+            assert_eq!(
+                combat_state_to_value(&a).expect("re-emits"),
+                combat_state_to_value(&b).expect("re-emits")
+            );
+        }
+
+        /// Every power without a `DisplayAmount` override shows its `amount`
+        /// (C# `PowerModel.DisplayAmount => Amount`), on both builds, whatever
+        /// its `counter` and the turn's plays: the Monologue and Pale Blue Dot
+        /// overrides above must not spread.
+        #[test]
+        fn plain_powers_display_their_amount() {
+            let plain = [
+                (PowerKind::Strength, 3, "STRENGTH"),
+                (PowerKind::Dexterity, -2, "DEXTERITY"),
+                (PowerKind::Vigor, 5, "VIGOR"),
+                (PowerKind::Focus, 2, "FOCUS"),
+                (PowerKind::Ritual, 1, "RITUAL"),
+                (PowerKind::Thorns, 4, "THORNS"),
+            ];
+            for version in [GameVersion::V0_107_1, GameVersion::V0_111_0] {
+                let mut s = board(version);
+                for (i, (kind, amount, _)) in plain.iter().enumerate() {
+                    player_power(&mut s, *kind, *amount, 7 + i32::try_from(i).expect("small"));
+                }
+                s.combat_log.card_plays_finished_this_turn = 4;
+                let v = combat_state_to_value(&s).expect("serializes");
+                for (_, amount, name) in plain {
+                    assert_eq!(power_display(&v, name), amount, "{name} on {version:?}");
+                }
+            }
+        }
+
+        /// C# `MonologuePower.DisplayAmount => StrengthApplied`, the engine's
+        /// `counter`.
+        #[test]
+        fn monologue_display() {
+            let mut s = board(GameVersion::V0_111_0);
+            player_power(&mut s, PowerKind::Monologue, 1, 3);
+            let v = combat_state_to_value(&s).expect("serializes");
+            assert_eq!(power_display(&v, "MONOLOGUE"), 3);
+        }
     }
 }

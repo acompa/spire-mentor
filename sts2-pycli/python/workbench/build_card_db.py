@@ -165,7 +165,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(f"manifest not found: {args.manifest!r} (pass --manifest)")
     db = build(args.manifest)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(db, indent=1, sort_keys=True) + "\n")
+    # LF on every OS: the shipped file is LF on disk (root .gitattributes).
+    args.out.write_text(
+        json.dumps(db, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
     print(f"wrote {len(db)} cards -> {args.out}")
 
 

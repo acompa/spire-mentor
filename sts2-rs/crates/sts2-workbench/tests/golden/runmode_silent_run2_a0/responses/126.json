@@ -14,133 +14,143 @@
    "idx": 0,
    "node_id": 0,
    "taken_label": "Choose: Booming Conch",
-   "value": 0.9873
+   "value": 0.9999
   },
   {
    "act": 1,
    "decision": "map_select",
-   "delta_prev": -0.0028,
+   "delta_prev": -0.0014,
    "floor": 1,
    "idx": 1,
    "node_id": 1,
    "taken_label": "Map → (2,1)",
-   "value": 0.9844
+   "value": 0.9985
   },
   {
    "act": 1,
    "decision": "card_reward",
-   "delta_prev": -0.0394,
+   "delta_prev": -0.0378,
    "floor": 2,
-   "idx": 32,
-   "node_id": 32,
+   "idx": 20,
+   "node_id": 20,
    "taken_label": "Take Snakebite",
-   "value": 0.9451
+   "value": 0.9607
   },
   {
    "act": 1,
    "decision": "shop",
-   "delta_prev": 0.0021,
+   "delta_prev": -0.0004,
    "floor": 3,
-   "idx": 34,
-   "node_id": 34,
+   "idx": 22,
+   "node_id": 22,
    "taken_label": "Buy Finisher",
-   "value": 0.9472
+   "value": 0.9603
   },
   {
    "act": 1,
    "decision": "event_choice",
-   "delta_prev": -0.0422,
+   "delta_prev": -0.073,
    "floor": 4,
-   "idx": 37,
-   "node_id": 37,
-   "taken_label": "Choose: Consume",
-   "value": 0.905
-  },
-  {
-   "act": 1,
-   "decision": "card_select",
-   "delta_prev": 0.0005,
-   "floor": 4,
-   "idx": 38,
-   "node_id": 38,
-   "taken_label": "Upgrade Strike",
-   "value": 0.9055
+   "idx": 25,
+   "node_id": 25,
+   "taken_label": "Choose: Grab the Sword",
+   "value": 0.8873
   },
   {
    "act": 1,
    "decision": "card_reward",
-   "delta_prev": -0.1077,
+   "delta_prev": -0.0873,
    "floor": 5,
-   "idx": 62,
-   "node_id": 62,
+   "idx": 47,
+   "node_id": 47,
    "taken_label": "Take Reflex",
-   "value": 0.7978
+   "value": 0.8001
   },
   {
    "act": 1,
    "decision": "map_select",
-   "delta_prev": -0.0477,
+   "delta_prev": -0.0284,
    "floor": 5,
-   "idx": 63,
-   "node_id": 63,
+   "idx": 48,
+   "node_id": 48,
    "taken_label": "Map → (2,5)",
-   "value": 0.7501
+   "value": 0.7717
   },
   {
    "act": 1,
    "decision": "card_reward",
-   "delta_prev": -0.062,
+   "delta_prev": -0.1008,
    "floor": 6,
-   "idx": 88,
-   "node_id": 88,
-   "taken_label": "?",
-   "value": 0.6881
+   "idx": 69,
+   "node_id": 69,
+   "taken_label": "Take Deadly Poison",
+   "value": 0.6709
+  },
+  {
+   "act": 1,
+   "decision": "rest_site",
+   "delta_prev": 0.026,
+   "floor": 7,
+   "idx": 71,
+   "node_id": 71,
+   "taken_label": "Choose: Smith",
+   "value": 0.6969
+  },
+  {
+   "act": 1,
+   "decision": "card_select",
+   "delta_prev": 0.0015,
+   "floor": 7,
+   "idx": 72,
+   "node_id": 72,
+   "taken_label": "Upgrade Strike",
+   "value": 0.6985
   }
  ],
  "summary": {
-  "biggest_drop": -0.1077,
-  "biggest_gain": 0.0021,
-  "final_value": 0.6881,
-  "first_value": 0.9873,
-  "n_points": 9,
+  "biggest_drop": -0.1008,
+  "biggest_gain": 0.026,
+  "final_value": 0.6985,
+  "first_value": 0.9999,
+  "n_points": 10,
   "n_turning_points": 3
  },
  "turning_points": [
   {
    "act": 1,
-   "decision": "card_select",
-   "floor": 4,
-   "idx": 38,
-   "message": "floor 4 (card_select): after “Upgrade Strike” your outlook dropped -0.108 (0.906 → 0.798) (spans the fight that followed)",
-   "node_id": 38,
-   "swing": -0.1077,
-   "taken_label": "Upgrade Strike",
-   "value_after": 0.7978,
-   "value_before": 0.9055
-  },
-  {
-   "act": 1,
    "decision": "map_select",
    "floor": 5,
-   "idx": 63,
-   "message": "floor 5 (map_select): after “Map → (2,5)” your outlook dropped -0.062 (0.750 → 0.688) (spans the fight that followed)",
-   "node_id": 63,
-   "swing": -0.062,
+   "idx": 48,
+   "message": "floor 5 (map_select): after “Map → (2,5)” your outlook dropped -0.101 (0.772 → 0.671) (spans the fight that followed)",
+   "node_id": 48,
+   "swing": -0.1008,
    "taken_label": "Map → (2,5)",
-   "value_after": 0.6881,
-   "value_before": 0.7501
+   "value_after": 0.6709,
+   "value_before": 0.7717
   },
   {
    "act": 1,
-   "decision": "card_reward",
-   "floor": 5,
-   "idx": 62,
-   "message": "floor 5 (card_reward): after “Take Reflex” your outlook dropped -0.048 (0.798 → 0.750)",
-   "node_id": 62,
-   "swing": -0.0477,
-   "taken_label": "Take Reflex",
-   "value_after": 0.7501,
-   "value_before": 0.7978
+   "decision": "event_choice",
+   "floor": 4,
+   "idx": 25,
+   "message": "floor 4 (event_choice): after “Choose: Grab the Sword” your outlook dropped -0.087 (0.887 → 0.800) (spans the fight that followed)",
+   "node_id": 25,
+   "swing": -0.0873,
+   "taken_label": "Choose: Grab the Sword",
+   "value_after": 0.8001,
+   "value_before": 0.8873
+  },
+  {
+   "act": 1,
+   "decision": "shop",
+   "floor": 3,
+   "idx": 22,
+   "message": "floor 3 (shop): after “Buy Finisher” your outlook dropped -0.073 (0.960 → 0.887) (spans the fight that followed)",
+   "node_id": 22,
+   "swing": -0.073,
+   "taken_label": "Buy Finisher",
+   "value_after": 0.8873,
+   "value_before": 0.9603
   }
  ]
 }

@@ -1,12 +1,15 @@
 import type { Step, ChooseHandler } from "../api";
 import CardReward from "./CardReward";
 import Shop from "./Shop";
+import BlitzShop from "./BlitzShop";
+import ChestRewards from "./ChestRewards";
 import EventScreen from "./EventScreen";
 import RestSite from "./RestSite";
 import CardSelect from "./CardSelect";
 import BundleSelect from "./BundleSelect";
 import GameOver from "./GameOver";
 import ChoicePanel from "./ChoicePanel";
+import { t } from "../i18n";
 
 /**
  * Routes a non-combat decision step to its bespoke screen, in both modes.
@@ -27,11 +30,21 @@ export default function DecisionScreen({
   onReviewReplay?: () => void;
   onCoachReview?: () => void;
 }) {
+  // GH #1347: the Blitz chest, two relics over two rounds (the `rewards`
+  // decision with `chest_picks_left`). Any other `rewards` screen keeps the
+  // generic list at the foot of the switch.
+  if (step.decision === "rewards" && step.state.chest_picks_left != null) {
+    return <ChestRewards step={step} onChoose={onChoose} />;
+  }
   switch (step.decision) {
     case "card_reward":
       return <CardReward step={step} onChoose={onChoose} />;
     case "shop":
-      return <Shop step={step} onChoose={onChoose} />;
+      // GH #1347: the Blitz merchant sells nothing for gold; he has a
+      // screen of his own.
+      return step.state.blitz_choices_remaining != null
+        ? <BlitzShop step={step} onChoose={onChoose} />
+        : <Shop step={step} onChoose={onChoose} />;
     case "event_choice":
       return <EventScreen step={step} onChoose={onChoose} />;
     case "rest_site":
@@ -49,7 +62,7 @@ export default function DecisionScreen({
         <ChoicePanel title={step.action_label || step.decision} options={step.state.options ?? []} onChoose={onChoose} />
       ) : (
         <div className="mono" style={{ padding: 20, color: "var(--muted)" }}>
-          {step.decision} — {step.action_label || "(no dedicated view)"}
+          {step.decision} — {step.action_label || t("(no dedicated view)")}
         </div>
       );
   }

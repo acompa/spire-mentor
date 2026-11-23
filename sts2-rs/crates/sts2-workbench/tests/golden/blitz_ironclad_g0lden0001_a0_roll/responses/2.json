@@ -1,0 +1,418 @@
+{
+ "details": [
+  "+Card Molten Fist",
+  "+Card Taunt",
+  "+Card Twin Strike"
+ ],
+ "error": null,
+ "label": "Select Molten Fist, Taunt, Twin Strike",
+ "step": {
+  "action_label": "",
+  "assets_base": "https://assets.test",
+  "chosen_action": null,
+  "decision": "map_select",
+  "idx": 0,
+  "meta": {
+   "act": 1,
+   "act_name": "Overgrowth",
+   "bg_col": null,
+   "bg_row": null,
+   "bg_seed": "11180935036767329045",
+   "floor": 1,
+   "step_no": 0,
+   "turn": null
+  },
+  "pv": null,
+  "scores": [],
+  "source": "live",
+  "state": {
+   "act": 1,
+   "act1": "overgrowth",
+   "act_name": "Overgrowth",
+   "ascension": 0,
+   "bg_seed": "11180935036767329045",
+   "choices": [
+    {
+     "col": 3,
+     "icon": "https://assets.test/run_history/monster.png",
+     "row": 1,
+     "type": "Monster"
+    }
+   ],
+   "decision": "map_select",
+   "floor": 1,
+   "full_map": {
+    "boss": {
+     "col": 3,
+     "icon": "https://assets.test/run_history/ceremonial_beast_boss.png",
+     "id": "CEREMONIAL_BEAST_BOSS",
+     "kind": "CeremonialBeast",
+     "name": "Ceremonial Beast",
+     "row": 7,
+     "type": "Boss"
+    },
+    "current_coord": null,
+    "path_plan": {
+     "baseline_col": 3,
+     "best_col": 3,
+     "columns": [
+      {
+       "baseline_score": 0.3643,
+       "can_skip_elite": false,
+       "col": 3,
+       "is_pick": true,
+       "max_elites": 1,
+       "min_elites": 1,
+       "n_paths": 1,
+       "score": 0.3643
+      }
+     ],
+     "diverged": false,
+     "first_col": 3,
+     "route": [
+      {
+       "col": 3,
+       "row": 1
+      },
+      {
+       "col": 3,
+       "row": 2
+      },
+      {
+       "col": 3,
+       "row": 3
+      },
+      {
+       "col": 3,
+       "row": 4
+      },
+      {
+       "col": 3,
+       "row": 5
+      },
+      {
+       "col": 3,
+       "row": 6
+      }
+     ]
+    },
+    "rows": [
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 1
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/ancient.png",
+       "row": 0,
+       "type": "Ancient",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 2
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/monster.png",
+       "row": 1,
+       "type": "Monster",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 3
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/monster.png",
+       "row": 2,
+       "type": "Monster",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 4
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/shop.png",
+       "row": 3,
+       "type": "Shop",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 5
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/elite.png",
+       "row": 4,
+       "type": "Elite",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 6
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/treasure.png",
+       "row": 5,
+       "type": "Treasure",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 7
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/rest_site.png",
+       "row": 6,
+       "type": "RestSite",
+       "visited": false
+      }
+     ]
+    ],
+    "second_boss": null
+   },
+   "game_mode": "blitz",
+   "game_version": "v0.113.0",
+   "options": [
+    {
+     "action": "select_map_node",
+     "args": {
+      "col": 3,
+      "row": 1
+     },
+     "enabled": true,
+     "label": "Monster (3,1)"
+    }
+   ],
+   "player": {
+    "block": 0,
+    "deck": [
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 0,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 1,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 2,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 3,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 4,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 5,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 6,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 7,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 8,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 2,
+      "description": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "description_rich": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "id": "BASH",
+      "image": "https://assets.test/card_atlas/ironclad/bash.png",
+      "index": 9,
+      "name": "Bash",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 10 damage.\nDouble the enemy's Vulnerable.\nExhaust.",
+      "description_rich": "Deal 10 damage.\nDouble the enemy's Vulnerable.\n[gold]Exhaust[/gold].",
+      "id": "MOLTEN_FIST",
+      "image": "https://assets.test/card_atlas/ironclad/molten_fist.png",
+      "index": 10,
+      "name": "Molten Fist",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "description_rich": "Gain 6 Block.\nApply 1 Vulnerable.",
+      "id": "TAUNT",
+      "image": "https://assets.test/card_atlas/ironclad/taunt.png",
+      "index": 11,
+      "name": "Taunt",
+      "rarity": "Common",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 5 damage X times.",
+      "description_rich": "Deal 5 damage X times.",
+      "id": "TWIN_STRIKE",
+      "image": "https://assets.test/card_atlas/ironclad/twin_strike.png",
+      "index": 12,
+      "name": "Twin Strike",
+      "rarity": "Common",
+      "type": "Attack",
+      "upgraded": false
+     }
+    ],
+    "gold": 99,
+    "hp": 80,
+    "max_hp": 80,
+    "name": "Ironclad",
+    "potion_slots": 3,
+    "potions": [],
+    "relics": [
+     {
+      "description": "At the end of combat, heal 6 HP.",
+      "id": "BURNING_BLOOD",
+      "image": "https://assets.test/relic_atlas/burning_blood.png",
+      "name": "Burning Blood"
+     }
+    ]
+   }
+  }
+ }
+}

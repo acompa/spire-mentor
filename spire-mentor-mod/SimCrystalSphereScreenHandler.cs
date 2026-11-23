@@ -4,14 +4,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
+using HarmonyLib;
 using MegaCrit.Sts2.Core.AutoSlay;
 using MegaCrit.Sts2.Core.AutoSlay.Handlers;
 using MegaCrit.Sts2.Core.AutoSlay.Helpers;
 using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Events.Custom.CrystalSphereEvent;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Events.Custom.CrystalSphere;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
@@ -163,22 +167,8 @@ public class SimCrystalSphereScreenHandler : IScreenHandler, IHandler
         int index = await SimAgentChoice.AskAsync(
             (_, _) =>
             {
-                List<Dictionary<string, object>> options = cells.Select((c, i) => CellOption(c, i)).ToList();
                 proceedOffered = ProceedEnabled(screen);
-                if (proceedOffered)
-                {
-                    options.Add(new Dictionary<string, object>
-                    {
-                        ["index"] = cells.Count,
-                        ["action"] = NonCombatBridgeProtocol.ProceedAction,
-                        ["enabled"] = true,
-                    });
-                }
-                return new Dictionary<string, object>
-                {
-                    [NonCombatBridgeProtocol.TypeField] = NonCombatBridgeProtocol.CrystalSphereState,
-                    ["options"] = options,
-                };
+                return BuildState(screen, cells, proceedOffered);
             },
             cells.Count + 1, NonCombatBridgeProtocol.CrystalSphereState, "SimCrystalSphere", ct,
             rejectAtReply: i => i == cells.Count && !(proceedOffered && ProceedEnabled(screen))
@@ -186,6 +176,111 @@ public class SimCrystalSphereScreenHandler : IScreenHandler, IHandler
                 : null);
 
         return index < cells.Count ? CrystalSphereChoice.Click(cells[index]) : CrystalSphereChoice.Proceed;
+    }
+
+    /// <summary>
+    /// The `crystal_sphere` message body, for both lanes (this handler and
+    /// F7's ask, SimScreenAdvice.DescribeCrystalSphere): one `divine_cell`
+    /// option per cell of <paramref name="hiddenCells"/>, in that order, plus
+    /// a trailing `proceed` when <paramref name="proceedOffered"/>; then
+    /// `divinations_left` / `divinations_total` / `revealed` for the digger.
+    /// Those three are omitted together when the minigame cannot be reached,
+    /// and the agent falls back to its block order. No envelope.
+    /// </summary>
+    internal static Dictionary<string, object> BuildState(
+        NCrystalSphereScreen screen, List<NCrystalSphereCell> hiddenCells, bool proceedOffered)
+    {
+        List<Dictionary<string, object>> options = hiddenCells.Select((c, i) => CellOption(c, i)).ToList();
+        if (proceedOffered)
+        {
+            options.Add(new Dictionary<string, object>
+            {
+                ["index"] = hiddenCells.Count,
+                ["action"] = NonCombatBridgeProtocol.ProceedAction,
+                ["enabled"] = true,
+            });
+        }
+        var state = new Dictionary<string, object>
+        {
+            [NonCombatBridgeProtocol.TypeField] = NonCombatBridgeProtocol.CrystalSphereState,
+            ["options"] = options,
+        };
+
+        (int Left, int Total)? divinations = Divinations(screen);
+        Control? container = screen.GetNodeOrNull<Control>(CellsPath);
+        if (divinations is { } d && container != null)
+        {
+            state["divinations_left"] = d.Left;
+            state["divinations_total"] = d.Total;
+            // What the player sees: a hidden cell's Item is never read out
+            // (CrystalSphereWire.Revealed drops hidden cells).
+            state["revealed"] = CrystalSphereWire.Revealed(
+                UiHelper.FindAll<NCrystalSphereCell>(container)
+                    .Where(GodotObject.IsInstanceValid)
+                    .Select(c => (c.Entity.X, c.Entity.Y, c.Entity.IsHidden,
+                        c.Entity.IsHidden ? null : c.Entity.Item?.GetType().Name)));
+        }
+        return state;
+    }
+
+    /// <summary>The screen's minigame (private `_entity`, NCrystalSphereScreen).</summary>
+    private static readonly FieldInfo? EntityField =
+        AccessTools.Field(typeof(NCrystalSphereScreen), "_entity");
+
+    /// <summary>The largest DivinationCount seen per screen: the total.</summary>
+    private static readonly ConditionalWeakTable<NCrystalSphereScreen, StrongBox<int>> TotalSeen = new();
+
+    /// <summary>
+    /// The minigame's DivinationCount and the largest count seen on this
+    /// screen instance (its total, when the first look was before the first
+    /// reveal), or null when the minigame cannot be reached. Each call is
+    /// also a look: DescribeCrystalSphere calls it on every poll so the total
+    /// is caught before F7 or the player divines.
+    /// </summary>
+    internal static (int Left, int Total)? Divinations(NCrystalSphereScreen screen)
+    {
+        try
+        {
+            if (!GodotObject.IsInstanceValid(screen))
+            {
+                return null;
+            }
+            if (EntityField?.GetValue(screen) is not CrystalSphereMinigame minigame)
+            {
+                LogUnreadableOnce(EntityField == null
+                    ? "NCrystalSphereScreen._entity was not found"
+                    : "NCrystalSphereScreen._entity is not a CrystalSphereMinigame");
+                return null;
+            }
+            int left = minigame.DivinationCount;
+            StrongBox<int> seen = TotalSeen.GetValue(screen, _ => new StrongBox<int>(left));
+            seen.Value = Math.Max(seen.Value, left);
+            return (left, seen.Value);
+        }
+        catch (Exception ex)
+        {
+            LogUnreadableOnce(ex.Message);
+            return null;
+        }
+    }
+
+    private static bool _unreadableLogged;
+
+    /// <summary>
+    /// Says, once per session, that the minigame cannot be read: the board
+    /// then goes out without divinations_left / divinations_total /
+    /// revealed, so the advisor plays the #872 rule, not the digger.
+    /// Divinations runs on every poll; logging each failure would flood.
+    /// </summary>
+    private static void LogUnreadableOnce(string why)
+    {
+        if (_unreadableLogged)
+        {
+            return;
+        }
+        _unreadableLogged = true;
+        Logger.Log($"[SimCrystalSphere] Could not read the minigame ({why}); the crystal_sphere message " +
+                   "goes out without the digger's fields, so the advisor plays the #872 rule (logged once).");
     }
 
     private static bool ProceedEnabled(NCrystalSphereScreen screen)

@@ -275,9 +275,9 @@ impl Session {
             "node_id": node.id,
             "parent_id": snap.parent_id,
             "decision": snap.decision,
-            "kind": choice_kind(&snap.decision),
+            "kind": choice_kind(&snap.decision).map(crate::i18n::tr),
             "verdict": g.verdict,
-            "strength": g.strength,
+            "strength": crate::i18n::tr(g.strength),
             "played": {"label": you.label, "prob": you.prob, "rank": g.rank},
             "top": {"label": top.label, "prob": top.prob},
             "alternatives": ranked.iter().take(3)

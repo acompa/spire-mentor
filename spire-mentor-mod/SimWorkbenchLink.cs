@@ -69,13 +69,12 @@ internal static class SimWorkbenchLink
         if (url == null)
         {
             SimActionLog.Note(configured.Length > 0
-                ? $"Workbench is not reachable at {configured} (the Workbench URL setting)."
-                : "Workbench is not reachable — turn the AI coach on (F8): the advisor hosts it. " +
-                  "In a dev install, `just workbench` in sts2-pycli starts the Python one.");
+                ? L10n.F("Workbench is not reachable at {0} (the Workbench URL setting).", configured)
+                : L10n.T("Workbench is not reachable — turn the AI coach on (F8): the advisor hosts it. In a dev install, `just workbench` in sts2-pycli starts the Python one."));
             Logger.Log($"[SimWorkbenchLink] Health probe failed for {string.Join(", ", candidates)}; not opening a browser.");
             return;
         }
-        url = WorkbenchUrl.WithFollowParams(url, run, step);
+        url = WorkbenchUrl.WithLang(WorkbenchUrl.WithFollowParams(url, run, step), L10n.Tag);
         // NOT OS.ShellOpen: that spawns the browser as a CHILD OF THE GAME,
         // and Steam waits for the game's whole descendant tree on quit -- a
         // browser opened this way left Steam stuck on "closing" until the
@@ -99,12 +98,12 @@ internal static class SimWorkbenchLink
                 Arguments = "\"" + shortcut + "\"",
                 UseShellExecute = false,
             });
-            SimActionLog.Note($"Opened workbench: {url}");
+            SimActionLog.Note(L10n.F("Opened workbench: {0}", url));
         }
         catch (Exception ex)
         {
             Logger.Log($"[SimWorkbenchLink] Open failed: {ex.Message}");
-            SimActionLog.Note($"Could not open the browser. Workbench URL: {url}");
+            SimActionLog.Note(L10n.F("Could not open the browser. Workbench URL: {0}", url));
         }
     }
 

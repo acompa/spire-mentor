@@ -4,7 +4,7 @@
 [![Docs](https://img.shields.io/badge/docs-tfriedel.github.io%2Fspire--mentor-blue)](https://tfriedel.github.io/spire-mentor/)
 [![Steam Workshop](https://img.shields.io/badge/Steam_Workshop-Spire_Mentor-1b2838?logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3821016481)
 
-**A Rust simulator of Slay the Spire 2's combat and run rules, plus a strong AI trained on it.  
+**A Rust simulator of Slay the Spire 2's combat and run rules, plus a strong AI trained on it: one neural network, no search, 81% wins with Ironclad at Ascension 10.  
 It's an analysis and training tool for people who own the game: replay positions in the browser, see how the AI would play them, or let it coach you.  
 You can even let the AI play the fights, so you can practise the run-level decisions.**
 
@@ -15,24 +15,25 @@ You can even let the AI play the fights, so you can practise the run-level decis
 
 ![The browser workbench in the act-3 boss fight: the best card carries a 95% win badge and the machine-reasoning panel ranks every legal move](docs/site/img/wb-combat.webp)
 
-<sub>The browser workbench in the act-3 boss fight: the search marks the best
-card with its win chance, and the machine-reasoning panel ranks every legal
-move.</sub>
+<sub>The browser workbench in the act-3 boss fight, here with the combat
+search as the advisor: it marks the best card with its win chance, and the
+machine-reasoning panel ranks every legal move.</sub>
 
 ## Highlights
 
 ### Simulation
 
-- complete Rust port of the combat and run rules for **all characters**, cards, relics, potions and enemies of the current stable build v0.107.1  
+- complete Rust port of the combat and run rules for **all characters**, cards, relics, potions and enemies of the current stable build v0.111.1 (the v0.113.0 beta, with The Fool, and the older v0.107.1 are modelled too)  
 - optimized for [speed](https://tfriedel.github.io/spire-mentor/benchmarks.html), but with no compromises on accuracy: \~1,500× faster than running the game's own combat logic headless on one core (\~60k combats/s), \~2,400× using the whole machine. This was also the main reason to port the rules to Rust, because the training time is bottlenecked by the simulation.  
 - parity tests and fuzzing against the game's own code after every action. After the initial implementation I found there were lots of little differences between the simulation and the real game, so I invested a lot of effort into extensive parity testing. Ironclad is currently at 100% parity, the other characters between 99.4% and 99.8%.  
 - Python bindings so you can run combats, full runs or the training stack from Python
 
 ### AI
 
-- MCTS-based combat  
-- PPO / reinforcement-learning-based run-level AI, trained over many weeks, with the best win rates of any STS2 AI I'm aware of (e.g. Ironclad champion `cont300_it1150`: 30% A10 in the simulator at the advisor's 4,000 sims per decision, 16,000 in boss fights; its predecessor won 96% at A0 at 8,000)  
-- **non-clairvoyant** / using chance nodes, i.e. it doesn’t cheat by exploiting the RNG or using information like which card it’s about to draw
+- **Instinct**: one transformer that makes every decision of a run, fights included, in a single forward pass, with **no search**. It was trained end to end with PPO by self-play in the simulator (9 billion decisions for the first Ironclad net, about 13 days on one machine).
+- It wins **81% of Ironclad runs at Ascension 10** in the simulator, the best win rate of any STS2 AI I'm aware of, and plays all six characters ([numbers below](#win-rates)).
+- The agent it replaced is still included: chance-node MCTS for the fights plus a PPO-trained run policy per character. It won 21% on the same Ironclad A10 test seeds. Today it is the analysis tool (search tree, principal line, win estimates, blunder review) and Instinct's fallback.
+- **non-clairvoyant**: neither agent cheats by exploiting the RNG or using information like which card it's about to draw. Instinct sees only what the game shows a player; the search uses chance nodes.
 
 ### UI / workbench
 
@@ -53,65 +54,59 @@ move.</sub>
 | Engine coverage | 5 characters · 580 card ids · 297 relics · 63 potions · 272 powers · 121 monsters · 69 events · 4 act models |
 | Parity vs the game's C# | lockstep after every action, a 5,000-seed fuzz tier · last full sweeps: Ironclad 6,104/6,104 fuzzed fights clean (June 2026), the other characters 99.4–99.8% (July 2026) · whole runs 1,232/1,250 clean (July 2026) |
 | Throughput | one core: ~59k random-play fights/s · ~1.3M engine actions/s · whole machine (24 cores / 48 threads): ~1.4M fights/s · ~31M actions/s · vs the shipped game run headless ~2,430× whole machine |
+| Instinct | one transformer, 4 blocks × 256, 6.1M parameters · no search, one forward pass per decision |
+| Training | Instinct, first Ironclad campaign: 9.0B decisions in 313 h on one machine (24 cores, 4× RTX 3090), ~8,000 decisions/s |
 | MCTS | search: 1,000 sims ≈ 14 ms native, one thread  |
-| Training | a typical PPO iteration (Ironclad, 960 games, 46 workers, one RTX 3090) ≈ 208 s, 150 iterations ≈ 9 h |
 | Code | ~360k lines of Rust · ~116k Python · ~56k TypeScript · 7,000+ Rust tests, 3,000+ Python, 1,400+ web |
 
 More performance benchmarks: [benchmarks page](https://tfriedel.github.io/spire-mentor/benchmarks.html);
 method and commands:
 [`sts2-rs/docs/perf/2026-10-14-benchmarks.md`](sts2-rs/docs/perf/2026-10-14-benchmarks.md).
 
-**Win rates of the current champions** (8,000 sims per decision,
-measured October 2026; 200 runs per cell at A0–A8, 500 at A9–A10;
-except the first Ironclad row, see below):
+### Win rates
 
-| Character | A0 | A4 | A8 | A9 | A10 | Mean A0–A10 | Promotion gate (vs previous champion) |
-|---|---|---|---|---|---|---|---|
-| Ironclad `cont300_it1150` (4,000/16,000 sims, 400 runs) | – | – | – | 59.2%* | 30.0% | – | A10: +3.7 pp, p = 0.021 (missed p < 0.01); promoted by owner decision |
-| Ironclad, champion before last `a10_it700` | 96.0% | 95.0% | 84.5% | 56.4% | 27.2% | **83.6%** | pooled +1.6 pp, p = 0.11 (missed); promoted on A10: +6.9 pp, p = 9e-7 |
-| Defect | 93.0% | 90.5% | 70.0% | 39.2% | 22.0% | **76.1%** | +5.5 pp, p = 2e-6 |
-| Silent | 78.5% | 67.5% | 55.5% | 20.0% | 9.0% | **59.9%** | +5.6 pp, p = 7e-7, all 11 levels up |
-| Regent | 67.5% | 66.0% | 43.5% | 15.6% | 6.2% | **53.8%** | +4.6 pp, p = 1e-4 |
-| Necrobinder | 66.5% | 62.5% | 44.5% | 13.8% | 5.6% | **51.7%** | +6.8 pp, p = 6e-10, all 11 levels up |
+**Instinct** (no search, greedy play, Ascension 10, in the simulator):
 
-The current Ironclad champion, `cont300_it1150` (promoted 31 October 2026),
-has so far been measured only at A10, on a different budget from the rest of
-the table: 400 runs at the advisor's 4,000 sims per decision (16,000 in boss
-fights), on a separate seed panel. It won 30.0% (95% interval 25.7–34.7%).
-\*The A9 cell is an estimate from those same A10 runs, not an A9 sweep: A10
-is A9 plus a second final boss, so a run that beats the first one has won the
-A9 run's last fight; 59.2% did. On the same seeds, budget and engine the
-previous champion, `cardmods_it850`, won 27.0% at A10 (57.2% A9 estimate).
-This row is on an engine that fixed a simulator bug in A10's favour: it used to
-give rewards after the first of the two final bosses, and the game gives none.
-The other rows were measured before that fix, so their A10 cells are somewhat
-flattering. A0–A8 have not been re-run for the new net; the row of the
-champion before last, at 8,000 sims, is kept below it. Record:
-[`docs/experiments/2026-10-31-ironclad-a10-cont300.md`](docs/experiments/2026-10-31-ironclad-a10-cont300.md).
+| Character | Shipped net (2.5B decisions) | Same training lane at 4.5B (not shipped yet) |
+|---|---|---|
+| Ironclad | **81.2%** (812 / 1,000) | 79.9% (799 / 1,000) |
+| Defect | **63.8%** (319 / 500) | 71.8% (359 / 500) |
+| Regent | **54.2%** (271 / 500) | 65.8% (329 / 500) |
+| Silent | **53.4%** (267 / 500) | 60.8% (304 / 500) |
+| Necrobinder | **43.8%** (219 / 500) | 52.8% (264 / 500) |
+| The Fool (v0.113.0, own net, 600M decisions) | **50.0%** (250 / 500) | – |
 
-Win rates for every ascension level are in the
-[docs](https://tfriedel.github.io/spire-mentor/#ai). The table mixes dates
-and generations of combat search: the second Ironclad row was re-measured on 26
-October 2026 with that champion (`a10_it700`) and the combat search the
-run agent has shipped for Ironclad since 26 October (a gated layer of search
-settings plus a move prior in elite and boss fights, on top of the learned
-playout net it has used since 18 October), on that day's engine; the other four
-rows are from the 11–13 October 2026 sweep, on the engine of that time. Those
-four keep the same champions, but their combat search has used a learned
-playout net of its own since 21 October, and their rows have not been re-run
-since. The 8,000-sim rows share seeds and protocol; comparisons between the
-Ironclad rows and the others are descriptive. Write-ups:
-[`docs/experiments/2026-10-26-ironclad-release-winrates.md`](docs/experiments/2026-10-26-ironclad-release-winrates.md)
-and [`docs/experiments/2026-10-11-release-winrates.md`](docs/experiments/2026-10-11-release-winrates.md).
-The last column is each champion's own promotion gate, at the gates' cheaper
-1,000/4,000-sim budget, from its provenance file in `sts2-pycli/data/ppo/`.
-Ironclad's last two champions were gated on A10 alone.
-`cardmods_it850` passed a pre-registered A10 gate, 21.7% → 28.1% on 1,000
-paired seeds
-([`ppo_fullrun_ironclad_cardmods_it850.provenance.md`](sts2-pycli/data/ppo/ppo_fullrun_ironclad_cardmods_it850.provenance.md));
-`a10_it700` missed the pooled significance bar and was promoted on its A10
-result
-([`ppo_fullrun_ironclad_a10_it700.provenance.md`](sts2-pycli/data/ppo/ppo_fullrun_ironclad_a10_it700.provenance.md)).
+One net plays the first five characters on game build v0.111.0; The Fool,
+new in v0.113.0, has its own. Each lane measured its net on its held-out DEV
+seed panel in the engine it trained on; a cell's 95% interval is about
+±4.4 pp (±2.5 pp for Ironclad). The five-character lane is still training:
+the right-hand column is its 4.5-billion-decision milestone, read on 22
+November 2026 on the same seeds. Records:
+[`sts2-pycli/data/e2e/`](sts2-pycli/data/e2e/).
+
+**Instinct against the search agent** (Ironclad, A10, the same 4,000 sealed
+test seeds, read once under a pre-registered protocol):
+
+| Agent | Wins | Win rate |
+|---|---|---|
+| Instinct, Ironclad-only net (9.0B decisions), no search | 3,255 / 4,000 | **81.4%** |
+| Search agent: run policy `cont300_it1150` + MCTS, 1,000 sims (4,000 at bosses) | 846 / 4,000 | 21.2% |
+
+Write-up:
+[`docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md`](docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md).
+
+**On the game's own code.** The shipped net played 300 Ironclad A10 seeds
+twice, in the Rust engine and through the game's real assembly run headless
+with the game's own RNG: 79.7% against 78.7%, within noise (p = 0.72). The
+simulator's numbers carry over
+([`docs/experiments/2026-11-21-spire-bench-paired.md`](docs/experiments/2026-11-21-spire-bench-paired.md)).
+
+The search agent's per-ascension win rates from October 2026 (for example
+Defect 76.1% and the then Ironclad champion 83.6% averaged over A0–A10, at
+8,000 sims per decision on game build v0.107.1) are in the
+[docs](https://tfriedel.github.io/spire-mentor/#search-agent), with
+[how Instinct plays](https://tfriedel.github.io/spire-mentor/ai.html#instinct)
+and [how it was trained](https://tfriedel.github.io/spire-mentor/training.html#instinct).
 
 ## The browser workbench
 
@@ -128,6 +123,7 @@ turn or even a full run.
 - **Rewind and branch** any decision; like save-scumming, it lets you explore many "what-ifs".
 - **Ask the AI** for a combat hint, open the MCTS search tree, rank the
   choices on a card reward, shop or event, or let it play the best line.
+  You can pick the advisor: the search, or Instinct.
 - **Coach**: after each of your moves, the AI reveals how it would have played.
   If you make a particularly bad move, it will tell you.
 - **Autobattle**: if you want to focus on learning deck building / work on your run-level decisions (paths, cards, shops, events),
@@ -172,9 +168,10 @@ A lighter version of the workbench that runs inside the real game: the AI can ad
 (Windows only; Steam installs BaseLib along with it). The workbench is
 bundled with the mod and follows your run in the browser.
 
-- **Advisor mode**: you play, and the mod shows the ranked moves with their
-  MCTS statistics, scores for card rewards and shop items, the recommended
-  map route and your estimated chance of winning.
+- **Advisor mode**: you play, and the mod shows Instinct's ranking of the
+  moves, card rewards and shop items and its recommended map route. One key
+  (`Shift+F8`) switches to the search, with its MCTS statistics and an
+  estimate of your chance of winning.
 - **AI turns**: `F6` lets the AI make one decision, `F7` lets it keep playing
   until you stop it. Autopilot plays whole runs on its own.
 - **Rewind**: the mod saves a snapshot (including the RNG state) every time
@@ -194,8 +191,8 @@ How to build and install it, and the protocol it uses to talk to the AI:
 
 | Subproject | Language | What it is |
 |---|---|---|
-| [`sts2-rs/`](sts2-rs/) | Rust | The engine, MCTS, the run AI (ONNX policy inference), a CLI, the PyO3 bindings and the engine part of the workbench (WASM). Builds and tests on its own. |
-| [`sts2-pycli/`](sts2-pycli/) | Python + C# + TS | Most of the rest: the headless C# harness that runs the real game code (from your copy) for parity testing, the parity tests, PPO training, the workbench web app, the real-game advisor, and an MCP server so an LLM can play. |
+| [`sts2-rs/`](sts2-rs/) | Rust | The engine, Instinct's inference (`sts2-e2e`), MCTS, the earlier run AI (ONNX policy inference), a CLI, the PyO3 bindings and the engine part of the workbench (WASM). Builds and tests on its own. |
+| [`sts2-pycli/`](sts2-pycli/) | Python + C# + TS | Most of the rest: the headless C# harness that runs the real game code (from your copy) for parity testing, the parity tests, PPO training (Instinct in `python/ppo/e2e/`), the workbench web app, the real-game advisor, and an MCP server so an LLM can play. |
 | [`spire-mentor-mod/`](spire-mentor-mod/) | C# | The Spire Mentor mod. |
 | [`sts2-wiki/`](sts2-wiki/) | Python / Astro | Extraction tools: decompiles your copy of the game, extracts data, art and sound, and can generate a static wiki. |
 | `scripts/import_game.py` | Python | What `just import-game` runs. Extracts everything the repo needs from your game install. |
@@ -259,7 +256,7 @@ extracted from your copy for your own use. The servers only listen on
 `127.0.0.1` by default. Set `STS2_HOST` (Python servers) or `STS2_WEB_HOST`
 (Vite) to make them reachable from your LAN.
 
-**The mod.** You need Windows, the game at v0.107.1, the .NET 9 SDK and
+**The mod.** You need Windows, the game at v0.111.1 (stable) or the v0.113.0 beta, the .NET 9 SDK and
 [BaseLib](https://github.com/Alchyr/BaseLib-StS2) v3.4.1 in
 `<game>/mods/BaseLib/` (`install-windows-deps.ps1` installs both).
 `cd spire-mentor-mod && dotnet build` builds the mod and copies it into the

@@ -11,6 +11,8 @@ import {
   type AdvisorProgress,
 } from "../api";
 import CardFrame from "./CardFrame";
+import ViewUpgradesToggle from "./ViewUpgradesToggle";
+import { upgradedTwin, useGlossary, useViewUpgrades } from "../glossary";
 import "../skins/cardreward.css";
 import { detectCharacter, synergyFor, type PartnerHint } from "../synergy";
 import { declaredGameVersion } from "../gameVersion";
@@ -19,6 +21,7 @@ import { useHints } from "../hints/useHints";
 import { MarkBadge } from "../advice/AdviceContext";
 import { markClass, markFor, useAdviceMarks } from "../advice/useAdviceMarks";
 import { fitRewardCardWidth } from "../rewardFit";
+import { getLang, t } from "../i18n";
 
 /** Reward-card widths, in px, largest first.
  *
@@ -67,10 +70,10 @@ function SynergyChip({ hints }: { hints: PartnerHint[] }) {
     <div
       className="mono"
       style={{ fontSize: 11, marginTop: 6, lineHeight: 1.5, maxWidth: 158 }}
-      title="cards already in your deck that this card synergizes with (confirmed = green, undiscovered = purple)"
+      title={t("cards already in your deck that this card synergizes with (confirmed = green, undiscovered = purple)")}
     >
       <div style={{ color: "var(--text)", fontWeight: 600 }}>
-        ⚡ synergy ×{total}
+        ⚡ {t("synergy")} ×{total}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 6px", justifyContent: "center" }}>
         {hints.map((h) => (
@@ -100,11 +103,11 @@ function ArchetypeChipView({ chips }: { chips: ArchetypeChip[] }) {
     <div
       className="mono"
       style={{ fontSize: 11, marginTop: 6, lineHeight: 1.5, maxWidth: 158 }}
-      title="archetypes already in your deck that this card advances; ⚡ = the piece that turns super-additive on the measured combat dose-response curve"
+      title={t("archetypes already in your deck that this card advances; ⚡ = the piece that turns super-additive on the measured combat dose-response curve")}
     >
       {chips.map((c) => (
         <div key={c.id} style={{ color: ARCHETYPE_COLOR[c.tag] }}>
-          🏛 {ordinal(c.piece)} {c.label}
+          🏛 {ordinal(c.piece)} {t(c.label)}
           {c.superAdditive ? " ⚡" : ""}
         </div>
       ))}
@@ -113,6 +116,7 @@ function ArchetypeChipView({ chips }: { chips: ArchetypeChip[] }) {
 }
 
 function ordinal(n: number): string {
+  if (getLang() === "zh") return `第${n}张`;
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
@@ -125,15 +129,16 @@ function DeltaChip({ delta }: { delta: RewardPreview["candidates"][number]["delt
   const col = (v: number) =>
     Math.abs(v) < 0.5 ? "var(--muted)" : v > 0 ? "oklch(68% 0.13 145)" : "var(--hp)";
   const axes: [string, number][] = [
-    ["D", delta.damage],
-    ["B", delta.block],
-    ["V", delta.velocity],
+    // Axis initials (Damage / Block / Velocity) in the page's language.
+    [t("D"), delta.damage],
+    [t("B"), delta.block],
+    [t("V"), delta.velocity],
   ];
   return (
     <div className="mono" style={{ fontSize: 11, marginTop: 6, lineHeight: 1.5 }}
-      title="change to your deck's Damage / Block / Velocity and overall Volume">
+      title={t("change to your deck's Damage / Block / Velocity and overall Volume")}>
       <div style={{ color: col(delta.volume), fontWeight: 600 }}>
-        volume {fmt(delta.volume)}
+        {t("volume")} {fmt(delta.volume)}
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
         {axes.map(([k, v]) => (
@@ -164,10 +169,12 @@ function SimChip({ c }: { c: RewardSimCandidate }) {
   return (
     <div
       className="mono"
-      title={`boss-fight simulation score ${c.score.toFixed(0)}`}
+      title={t("boss-fight simulation score {score}", { score: c.score.toFixed(0) })}
       style={{ fontSize: 11, marginTop: 5, color: c.win ? "oklch(68% 0.13 145)" : "var(--muted)" }}
     >
-      {c.win ? `▲ boss win · ${(c.score - 10000).toFixed(0)} hp left` : `▼ boss loss · ${c.score.toFixed(0)}`}
+      {c.win
+        ? t("▲ boss win · {hp} hp left", { hp: (c.score - 10000).toFixed(0) })
+        : t("▼ boss loss · {score}", { score: c.score.toFixed(0) })}
     </div>
   );
 }
@@ -182,18 +189,14 @@ function AdviceChip({ c }: { c: AdvisorCandidate }) {
   return (
     <div
       className="mono"
-      title={
-        `act win-rate over ${c.n} rollouts of the rest of the act ` +
-        `(MCTS in combat). Δ is this option's composite value (act-win + ` +
-        `depth reached + HP carried) minus the best other option; ` +
-        `~${c.avg_floors_advanced.toFixed(1)} floors advanced, ` +
-        `${c.avg_hp_at_deepest.toFixed(0)} HP at the deepest room.`
-      }
+      title={t("act win-rate over {n} rollouts of the rest of the act (MCTS in combat). Δ is this option's composite value (act-win + depth reached + HP carried) minus the best other option; ~{floors} floors advanced, {hp} HP at the deepest room.",
+        { n: c.n, floors: c.avg_floors_advanced.toFixed(1), hp: c.avg_hp_at_deepest.toFixed(0) },
+      )}
       style={{ fontSize: 11, marginTop: 5, lineHeight: 1.45, color: col, fontWeight: c.is_best ? 600 : 400 }}
     >
-      <div>{c.is_best ? "★ " : ""}{pct}% act win</div>
+      <div>{c.is_best ? "★ " : ""}{t("{pct}% act win", { pct })}</div>
       <div style={{ color: "var(--muted)", fontWeight: 400 }}>
-        Δ {c.delta >= 0 ? "+" : ""}{dpct} · {c.avg_hp_at_deepest.toFixed(0)} hp
+        Δ {c.delta >= 0 ? "+" : ""}{dpct} · {t("{hp} hp", { hp: c.avg_hp_at_deepest.toFixed(0) })}
       </div>
     </div>
   );
@@ -209,6 +212,8 @@ type AdvProgress = {
 };
 
 export default function CardReward({ step, onChoose }: { step: Step; onChoose?: ChooseHandler }) {
+  const glossary = useGlossary();
+  const [showUpgrades] = useViewUpgrades();
   // The run policy's marks on the cards and the skip (advice/marks.ts).
   const { marks } = useAdviceMarks();
   const s = step.state;
@@ -438,7 +443,7 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
           <div className="gs-cardreward-fit" ref={fitRef}>
             <div className="gs-cardreward-banner">
               <img src={assetUrl("ui/reward_screen/reward_banner.png")} alt="" />
-              <h2 className="gs-cardreward-title">Choose a Card</h2>
+              <h2 className="gs-cardreward-title">{t("Choose a Card")}</h2>
             </div>
             {/* The gold the fight paid, and (in replay) what was actually taken.
                 These are FACTS about the run, not advice — they were on the
@@ -447,10 +452,10 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
                 putting them there hid the fight's gold from live play. */}
             {(s.gold_earned != null || onChoose == null) && (
               <div className="gs-cardreward-ledger mono">
-                {s.gold_earned != null && <span>+{s.gold_earned} gold</span>}
+                {s.gold_earned != null && <span>{t("+{n} gold", { n: s.gold_earned })}</span>}
                 {onChoose == null && (
                   <span>
-                    {skipped ? "✓ skipped" : chosenIdx != null ? "✓ card taken" : "no choice recorded"}
+                    {skipped ? t("✓ skipped") : chosenIdx != null ? t("✓ card taken") : t("no choice recorded")}
                   </span>
                 )}
               </div>
@@ -469,15 +474,16 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
                 const mark = markFor(marks, "select_card_reward", { card_index: c.index });
                 return (
                   <div key={c.index} className={cls}>
-                    <CardFrame card={c} width={cardW} mark={mark?.tier} step={mark?.order}
+                    <CardFrame card={showUpgrades ? upgradedTwin(c, glossary) : c} width={cardW} mark={mark?.tier} step={mark?.order}
                       onClick={onChoose ? () => onChoose("select_card_reward", { card_index: c.index }) : undefined} />
                     {taken && onChoose == null && (
-                      <div className="gs-cardreward-chosenbadge" title="taken" aria-hidden="true" />
+                      <div className="gs-cardreward-chosenbadge" title={t("taken")} aria-hidden="true" />
                     )}
                   </div>
                 );
               })}
             </div>
+            <ViewUpgradesToggle className="gs-cardreward-upgrades" />
             {s.can_skip && (
               <button
                 className={
@@ -489,10 +495,10 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
                 onClick={() => onChoose?.("skip_card_reward", {})}
               >
                 <img src={assetUrl("ui/reward_screen/reward_skip_button.png")} alt="" />
-                <span>Skip</span>
+                <span>{t("Skip")}</span>
                 <MarkBadge mark={markFor(marks, "skip_card_reward")} />
                 {skipped && onChoose == null && (
-                  <div className="gs-cardreward-chosenbadge" title="skipped" aria-hidden="true" />
+                  <div className="gs-cardreward-chosenbadge" title={t("skipped")} aria-hidden="true" />
                 )}
               </button>
             )}
@@ -505,12 +511,12 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
       {railVisible && (
         <div className="gs-cardreward-advisor mono">
           <div className="gs-cardreward-adv-head">
-            <span className="gs-cardreward-adv-tag">advisor</span>
+            <span className="gs-cardreward-adv-tag">{t("advisor")}</span>
             {/* gold + outcome live on the game surface under the banner — see
                 the ledger line there; the rail carries only advice. */}
             {sim?.encounter && (
               <span style={{ fontSize: 11 }}>
-                picked by simulating {sim.encounter} ({sim.sims ?? "?"} sims/move)
+                {t("picked by simulating {encounter} ({sims} sims/move)", { encounter: sim.encounter, sims: sim.sims ?? "?" })}
               </span>
             )}
             {onChoose != null && hints.on && (
@@ -518,10 +524,10 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
                 className="mono"
                 onClick={runAdvisor}
                 disabled={advising}
-                title="Deep EV analysis: fork the run and play the rest of the act out many times for take A / B / C / skip (MCTS in every fight). Slow — a few seconds."
+                title={t("Deep EV analysis: fork the run and play the rest of the act out many times for take A / B / C / skip (MCTS in every fight). Slow — a few seconds.")}
                 style={{ marginLeft: "auto", fontSize: 11 }}
               >
-                {advising ? "analyzing…" : "🎲 analyze picks (EV)"}
+                {advising ? t("analyzing…") : t("🎲 analyze picks (EV)")}
               </button>
             )}
           </div>
@@ -529,7 +535,7 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
             <div style={{ marginBottom: 10, fontSize: 11 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span>
-                  analyzing picks…{prog ? ` ${prog.done}/${prog.total} sims` : ""}
+                  {t("analyzing picks…")}{prog ? ` ${t("{done}/{total} sims", { done: prog.done, total: prog.total })}` : ""}
                 </span>
                 <span>{elapsed.toFixed(1)}s</span>
               </div>
@@ -550,7 +556,7 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
                     const full = n >= prog.rollouts;
                     return (
                       <span key={String(c.key)} style={{ color: full ? "var(--accent-strong)" : "var(--muted)" }}>
-                        {c.key === "skip" ? "skip" : `take ${c.label}`} {n}/{prog.rollouts}
+                        {c.key === "skip" ? t("skip") : t("take {label}", { label: c.label })} {n}/{prog.rollouts}
                       </span>
                     );
                   })}
@@ -560,13 +566,13 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
           )}
           {advice?.error && (
             <div style={{ color: "var(--hp)", marginBottom: 10, fontSize: 11 }}>
-              advisor unavailable: {advice.error}
+              {t("advisor unavailable: {error}", { error: advice.error })}
             </div>
           )}
           {advice && !advice.error && (
             <div style={{ marginBottom: 10, fontSize: 11 }}>
-              act win-rate over {advice.candidates[0]?.n ?? "?"} rollouts of the rest of act {advice.act}
-              {" "}· ★ = recommended
+              {t("act win-rate over {n} rollouts of the rest of act {act}", { n: advice.candidates[0]?.n ?? "?", act: advice.act ?? "" })}
+              {" "}· {t("★ = recommended")}
             </div>
           )}
           <div className="gs-cardreward-adv-grid">
@@ -578,7 +584,7 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
                   <div className="gs-cardreward-adv-cellname">
                     {c.name}
                     {taken && onChoose == null && (
-                      <span style={{ color: "var(--accent-strong)" }}> · ✓ taken</span>
+                      <span style={{ color: "var(--accent-strong)" }}> · {t("✓ taken")}</span>
                     )}
                   </div>
                   {deltaByIdx.has(c.index) && <DeltaChip delta={deltaByIdx.get(c.index)!} />}
@@ -592,9 +598,9 @@ export default function CardReward({ step, onChoose }: { step: Step; onChoose?: 
             {skipCell && (
               <div className="gs-cardreward-adv-cell">
                 <div className="gs-cardreward-adv-cellname">
-                  skip
+                  {t("skip")}
                   {skipped && onChoose == null && (
-                    <span style={{ color: "var(--accent-strong)" }}> · ✓ skipped</span>
+                    <span style={{ color: "var(--accent-strong)" }}> · {t("✓ skipped")}</span>
                   )}
                 </div>
                 {skipSim && <SimChip c={skipSim} />}

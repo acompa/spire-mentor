@@ -89,9 +89,9 @@ See `../docs/parity-suite.md` for the full map of this area before touching it.
   `realgame_mcts.py`, `realgame_ppo.py`, `realgame_hand_select.py`,
   `realgame_parity.py`, `realgame_adapter.py`; eval: `realgame_eval.py`.
 - **Advisor** — entry: `realgame_advisor.py` (answers the mod's
-  `advice_request`s; frozen into the SimAdvisor exe via
-  `../packaging/SimAdvisor.spec`). `runtime_paths.py` resolves paths inside
-  the frozen bundle.
+  `advice_request`s; the dev path: the mod ships the native SimAdvisor
+  binary, `../../sts2-rs/crates/sim-advisor`). `runtime_paths.py` resolves
+  the data paths.
 - **Headless eval rung** — entry: `headless_eval.py` (real game DLL as world,
   Rust engine as search model — the rung between pure-sim and live).
   `combat_mirror.py` keeps a persistent per-fight engine mirror for these

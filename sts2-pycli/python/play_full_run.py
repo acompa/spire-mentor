@@ -122,9 +122,12 @@ def play_run(
             print(f"Connected: {ready}")
 
         # Start run
-        state = send(
-            {"cmd": "start_run", "character": character, "seed": seed, "ascension": ascension}
-        )
+        start = {"cmd": "start_run", "character": character, "seed": seed, "ascension": ascension}
+        # GH #1346: STS2_GAME_MODE=dread plays Dread runs (v0.113.0 and later).
+        game_mode = os.environ.get("STS2_GAME_MODE")
+        if game_mode:
+            start["game_mode"] = game_mode
+        state = send(start)
 
         step = 0
         max_steps = 500  # Safety limit

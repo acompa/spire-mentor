@@ -338,6 +338,34 @@ pub static ACT1_ENCOUNTERS: &[EncounterDef] = &[
     },
 ];
 
+/// `TheKinBoss.GenerateMonsters` in a Dread run (v0.113.0 `TheKinBoss.cs:
+/// 72-93`, GH #1346): three `KinFollower`s with `Index` 0, 1, 2 in `slot1`,
+/// `slot2`, `slot3` (openers POWER_DANCE, QUICK_SLASH, BOOMERANG,
+/// `KinFollower.cs:117-122`), then the `KinPriest` in `leaderSlot`. The
+/// standard roster is the `THE_KIN_BOSS` row above: followers 0 and 1, then
+/// the priest.
+pub(crate) const THE_KIN_BOSS_DREAD: &[(MonsterKind, MonsterSpawnArgs)] = &[
+    (
+        MonsterKind::KinFollower,
+        MonsterSpawnArgs::KinFollower {
+            slot: crate::monsters::act1_overgrowth::KinFollowerSlot::Third,
+        },
+    ),
+    (
+        MonsterKind::KinFollower,
+        MonsterSpawnArgs::KinFollower {
+            slot: crate::monsters::act1_overgrowth::KinFollowerSlot::First,
+        },
+    ),
+    (
+        MonsterKind::KinFollower,
+        MonsterSpawnArgs::KinFollower {
+            slot: crate::monsters::act1_overgrowth::KinFollowerSlot::Boomerang,
+        },
+    ),
+    (MonsterKind::KinPriest, MonsterSpawnArgs::None),
+];
+
 /// Lookup helper: resolve an Act-1 encounter id (`UPPER_SNAKE`).
 /// Case-insensitive: `MAWLER_NORMAL` and `mawler_normal` both match.
 #[must_use]

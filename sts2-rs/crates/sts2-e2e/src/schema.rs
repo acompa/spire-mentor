@@ -429,16 +429,36 @@ const fn str_eq(a: &str, b: &str) -> bool {
 /// The "chars" fill event's names (`contracts` section 4b, GH #1373): each
 /// alias and the reserved section or spare column it takes. The tables above
 /// keep the reserved names, as the hashed tables of `contracts` do.
-pub const CHARS_ALIASES: [(&str, &str); 6] = [
+pub const CHARS_ALIASES: [(&str, &str); 12] = [
     ("ALLY", "RES_44"),
     ("ORB", "RES_45"),
     ("X_CHAR", "X_RES0"),
     ("C_ORB_PASSIVE", "X_C_RES0"),
     ("C_ORB_EVOKE", "X_C_RES1"),
     ("E_DOOMED", "X_C_RES2"),
+    // GH #1197: the corrected and new per-character inputs.
+    ("C_STAR_COST", "X_C_RES3"),
+    ("E_DIES_FIRST", "X_C_RES4"),
+    ("S_DISCARDS_TURN", "X_C_RES5"),
+    ("S_ATTACKS_TURN", "X_C_RES6"),
+    ("S_PLAYER_DOOMED", "X_C_RES7"),
+    ("R_ARMED", "R_RES0"),
 ];
 /// ORB tokens per row at most (`MAX_ORB_TOKENS`: a belt has at most 10 slots).
 pub const MAX_ORB_TOKENS: usize = 10;
+/// The "fool" fill event's names (`contracts` section 4c, GH #1535): v0.113.0's
+/// arrows and melody (and the Wuppy, an ALLY token).
+pub const FOOL_ALIASES: [(&str, &str); 5] = [
+    ("ARROW", "RES_46"),
+    ("MELODY", "RES_47"),
+    ("X_FOOL1", "X_RES1"),
+    ("X_FOOL2", "X_RES2"),
+    ("X_FOOL3", "X_RES3"),
+];
+/// ARROW tokens per row at most (`MAX_ARROW_TOKENS`).
+pub const MAX_ARROW_TOKENS: usize = 8;
+/// The cap of a count in an `X_FOOL` column (`FOOL_COUNT_CAP`; 16 rows).
+pub const FOOL_COUNT_CAP: i64 = 15;
 /// `contracts.CHARACTERS`: X_CHAR is 1 + the index; 0, the column's absent
 /// value, is a row without "chars" data.
 pub const CHARACTERS: [&str; 6] = [
@@ -464,6 +484,13 @@ const fn unalias(name: &str) -> &str {
     while i < CHARS_ALIASES.len() {
         if str_eq(CHARS_ALIASES[i].0, name) {
             return CHARS_ALIASES[i].1;
+        }
+        i += 1;
+    }
+    let mut i = 0;
+    while i < FOOL_ALIASES.len() {
+        if str_eq(FOOL_ALIASES[i].0, name) {
+            return FOOL_ALIASES[i].1;
         }
         i += 1;
     }
@@ -579,10 +606,22 @@ mod tests {
         assert_eq!(sec("OPT_FIXED"), 38);
         // The "chars" aliases resolve to their reserved slots.
         assert_eq!((sec("ALLY"), sec("ORB")), (44, 45));
+        // The "fool" aliases (GH #1535).
+        assert_eq!((sec("ARROW"), sec("MELODY")), (46, 47));
+        assert_eq!(
+            (xc("X_FOOL1"), xc("X_FOOL2"), xc("X_FOOL3")),
+            (xc("X_RES1"), xc("X_RES2"), xc("X_RES3"))
+        );
         assert_eq!(xc("X_CHAR"), xc("X_RES0"));
         assert_eq!(xf("C_ORB_PASSIVE"), 202);
         assert_eq!(xf("C_ORB_EVOKE"), 203);
         assert_eq!(xf("E_DOOMED"), 204);
+        assert_eq!(xf("C_STAR_COST"), 205);
+        assert_eq!(xf("E_DIES_FIRST"), 206);
+        assert_eq!(xf("S_DISCARDS_TURN"), 207);
+        assert_eq!(xf("S_ATTACKS_TURN"), 208);
+        assert_eq!(xf("S_PLAYER_DOOMED"), 209);
+        assert_eq!(xf("R_ARMED"), xf("R_RES0"));
         assert_eq!(char_id("Ironclad"), Some(1));
         assert_eq!(char_id("Necrobinder"), Some(5));
         assert_eq!(char_id("Watcher"), None);

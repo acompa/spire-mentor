@@ -496,7 +496,11 @@ fn build_bundle_present(dir: &Path) -> bool {
         .as_ref()
         .and_then(|r| r["body"]["game_version"].as_str())
         .unwrap_or_default();
-    let present = version != "v0.111.0" || cfg!(workbench_game_data_v0_111_0);
+    let present = match version {
+        "v0.111.0" => cfg!(workbench_game_data_v0_111_0),
+        "v0.113.0" => cfg!(workbench_game_data_v0_113_0),
+        _ => true,
+    };
     if !present {
         eprintln!(
             "skip {}: no {version} workbench bundle in this checkout",

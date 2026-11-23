@@ -2,6 +2,7 @@ import type { CombatLogRow } from "../api";
 import { readableRows } from "../combatlog";
 import { LogLine } from "./logLine";
 import { keptInNet, type DetailMode } from "./turnLedgerState";
+import { t } from "../i18n";
 
 /**
  * Shared turn-ledger pieces for the two history logs (LiveLog / EventLog).
@@ -34,24 +35,24 @@ export function DetailToggle({ mode, onChange }: {
     </button>
   );
   return (
-    <span aria-label="History detail" style={{ display: "inline-flex", border: "1px solid var(--border)",
+    <span aria-label={t("History detail")} style={{ display: "inline-flex", border: "1px solid var(--border)",
       borderRadius: 5, overflow: "hidden", flexShrink: 0 }}>
-      {btn("net", "net")}
-      {btn("full", "full")}
+      {btn("net", t("net"))}
+      {btn("full", t("full"))}
     </span>
   );
 }
 
 export function TurnHeader({ turn, chips }: { turn: number; chips: string[] }) {
   return (
-    <div aria-label={`Turn ${turn}`}
+    <div aria-label={t("Turn {n}", { n: turn })}
       style={{
         display: "flex", justifyContent: "space-between", alignItems: "baseline",
         gap: 8, margin: "7px 0 2px", padding: "1px 6px",
         background: "oklch(24% 0.02 265)", borderRadius: 4,
       }}>
       <span style={{ fontSize: 10, letterSpacing: ".06em", color: "var(--accent)" }}>
-        TURN {turn}
+        {t("TURN {n}", { n: turn })}
       </span>
       <span style={{ fontSize: 9.5, color: "var(--muted)", whiteSpace: "nowrap",
         overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -64,13 +65,13 @@ export function TurnHeader({ turn, chips }: { turn: number; chips: string[] }) {
 /** One coloured diff line ("Nibbit HP 50→44 (−6)") for steps without a tape. */
 export function ColoredDetail({ line }: { line: string }) {
   // Tokenize on the few shapes diff_states emits; everything else stays muted.
-  const parts = line.split(/(\(\s*[−+]\d+\s*\)|☠ defeated|\d+→\d+)/g);
+  const parts = line.split(/(\(\s*[−+]\d+\s*\)|☠ defeated|☠ 被击败|\d+→\d+)/g);
   return (
     <>
       {parts.map((p, i) => {
         if (/^\(\s*−\d+\s*\)$/.test(p)) return <span key={i} style={{ color: "var(--hp)" }}>{p}</span>;
         if (/^\(\s*\+\d+\s*\)$/.test(p)) return <span key={i} style={{ color: "var(--good, var(--accent))" }}>{p}</span>;
-        if (p === "☠ defeated") return <span key={i} style={{ color: "var(--hp)", fontWeight: 600 }}>{p}</span>;
+        if (p === "☠ defeated" || p === "☠ 被击败") return <span key={i} style={{ color: "var(--hp)", fontWeight: 600 }}>{p}</span>;
         if (/^\d+→\d+$/.test(p)) return <span key={i} style={{ color: "var(--gold)" }}>{p}</span>;
         return <span key={i}>{p}</span>;
       })}

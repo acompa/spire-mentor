@@ -87,6 +87,27 @@ def test_a_build_without_its_loc_dir_is_not_offered(tmp_path):
     assert localization.available_game_versions(tmp_path) == [V107, V111]
 
 
+def test_the_launcher_default_falls_back_to_a_build_the_checkout_can_show(tmp_path):
+    """GH #1368: without the default build's loc (a public snapshot), a run
+    started without naming a build is the legacy one, not raw ids."""
+    from workbench import localization
+
+    (tmp_path / "localization_eng").mkdir()
+    assert localization.launcher_default_game_version(tmp_path) == V107
+    (tmp_path / f"localization_eng_{V111}").mkdir()
+    assert localization.launcher_default_game_version(tmp_path) == V111
+
+
+def test_a_rust_start_without_a_build_starts_on_one_it_can_show(tmp_path, monkeypatch):
+    """The request-side twin of the launcher default (GH #1368)."""
+    from workbench import localization, server
+
+    monkeypatch.setattr(localization, "available_game_versions", lambda *_: [V107])
+    assert server._requested_game_version(None) == V107
+    monkeypatch.setattr(localization, "available_game_versions", lambda *_: [V107, V111])
+    assert server._requested_game_version(None) == V111
+
+
 @pytest.mark.parametrize(
     ("route", "body"),
     [
@@ -182,16 +203,23 @@ def test_write_save_omits_the_default_build(tmp_path):
 
 
 def test_start_on_v0111_runs_that_build(tmp_path):
+    from workbench import localization
+
     _rust()
     c = _client(tmp_path)
     step = _start(c, V111)
     assert step["state"]["game_version"] == V111
     assert c.get("/api/live/state").json()["state"]["game_version"] == V111
     # The legacy build's STATE never carries the key (its golden bytes are
-    # unchanged); a start that names no build gets the default one.
+    # unchanged); a start that names no build gets the default one, or the
+    # legacy one where the checkout can't show the default (GH #1368).
     legacy = _start(c, V107)
     assert "game_version" not in legacy["state"]
-    assert _start(c, None)["state"]["game_version"] == V111
+    unnamed = _start(c, None)["state"]
+    if localization.launcher_default_game_version() == V111:
+        assert unnamed["game_version"] == V111
+    else:
+        assert "game_version" not in unnamed
     # v0.111.0 hashes the text seed differently: the same seed is another run.
     assert step["state"]["bg_seed"] != legacy["state"]["bg_seed"]
 

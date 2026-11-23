@@ -4,6 +4,9 @@
 // The browser workbench's follow handler reads `follow=1`, `run=<log name>`
 // and `step=<replay step index>` (sts2-pycli/web/src/followUrl.ts). A coach
 // record carries `log_name` / `log_idx` (PROTOCOL.md section 5, v5.1).
+// It renders in the language `lang=zh|en` names (sts2-pycli/web/src/i18n),
+// so a mod speaking Chinese appends `lang=zh` (WithLang); English adds
+// nothing and the URL stays as it was.
 
 using System;
 using System.Collections.Generic;
@@ -51,6 +54,29 @@ internal static class WorkbenchUrl
         }
         char sep = baseUrl.Contains('?') ? (baseUrl.EndsWith("?") || baseUrl.EndsWith("&") ? '\0' : '&') : '?';
         return baseUrl + (sep == '\0' ? "" : sep.ToString()) + string.Join("&", add) + fragment;
+    }
+
+    /// <summary>
+    /// <paramref name="url"/> with <c>lang=zh</c> appended when
+    /// <paramref name="lang"/> is "zh" (the mod's <see cref="L10n.Tag"/>) and
+    /// the URL names no <c>lang</c> of its own. Any other language: the URL
+    /// unchanged (the workbench defaults to English).
+    /// </summary>
+    public static string WithLang(string url, string? lang)
+    {
+        if (lang != "zh" || HasParam(url, "lang"))
+        {
+            return url;
+        }
+        string fragment = "";
+        int hash = url.IndexOf('#');
+        if (hash >= 0)
+        {
+            fragment = url.Substring(hash);
+            url = url.Substring(0, hash);
+        }
+        string sep = url.Contains('?') ? (url.EndsWith("?") || url.EndsWith("&") ? "" : "&") : "?";
+        return url + sep + "lang=zh" + fragment;
     }
 
     private static bool HasParam(string url, string name)

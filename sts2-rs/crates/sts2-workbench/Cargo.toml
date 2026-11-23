@@ -45,6 +45,11 @@ ppo = ["sts2-runai/ppo"]
 # shell enables it too. Its net is fetched separately (`dist/e2e/`).
 e2e = ["dep:sts2-e2e"]
 
+[build-dependencies]
+# `SRC_HASH`: the crate is linked into `sts2_rs` (the live board import), so
+# it is part of that extension's content identity (`ENGINE_CRATES`).
+sts2-srchash = { path = "../sts2-srchash" }
+
 [dev-dependencies]
 # Golden-parity test: SHA-256 of the normalized response, matching the
 # Python dump script (`sts2-pycli/scripts/dump_workbench_golden.py`).

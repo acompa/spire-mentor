@@ -23,6 +23,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading;
 using Godot;
 using MegaCrit.Sts2.Core.AutoSlay.Helpers;
@@ -32,6 +33,7 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Potions;
 using MegaCrit.Sts2.Core.Nodes.Cards;
@@ -495,7 +497,7 @@ internal static class SimScreenAdvice
             string label = canOpen ? "open the chest" : "proceed";
             return LocalDecision(
                 NonCombatBridgeProtocol.TreasureState, room, nameof(NTreasureRoom),
-                $"treasure: {label}", label,
+                canOpen ? L10n.T("treasure: open the chest") : L10n.T("treasure: proceed"), label,
                 index =>
                 {
                     if (canOpen && chest != null && GodotObject.IsInstanceValid(chest))
@@ -635,7 +637,7 @@ internal static class SimScreenAdvice
             }
             return LocalDecision(
                 NonCombatBridgeProtocol.RestSiteState, room, nameof(NRestSiteRoom),
-                "rest site: done, proceed", "proceed",
+                L10n.T("rest site: done, proceed"), "proceed",
                 _ =>
                 {
                     TaskHelper.RunSafely(UiHelper.Click(proceed));
@@ -766,12 +768,19 @@ internal static class SimScreenAdvice
     }
 
     /// <summary>
-    /// The crystal sphere is a blind pick -- every remaining cell is hidden,
-    /// which is the whole point of the screen -- so there is nothing for the
-    /// advisor's nets to rank and no reason to spend a round trip. Answered
-    /// locally: divine the cell <see cref="CrystalSpherePick"/> names (a fixed
-    /// block order that can uncover the 4x4 relic, GH #872), or proceed once
-    /// the screen offers it.
+    /// The crystal sphere, answered locally: proceed once the screen offers
+    /// it, otherwise divine a cell. Which cell: with an advisor that
+    /// advertises <c>capabilities.crystal_sphere</c>, its pick -- its digger,
+    /// or the #872 rule when the digger cannot answer
+    /// (<see cref="AskThenRevealAsync"/>); otherwise, and whenever the
+    /// advisor's answer is not a usable cell, the one
+    /// <see cref="CrystalSpherePick"/> names (a fixed block order that can
+    /// uncover the 4x4 relic, GH #872).
+    ///
+    /// The decision stays LOCAL even when the advisor is asked: the takeover
+    /// has no fallback for a non-local decision whose reply is a hand_back or
+    /// never comes, and F7 must not stall here. The ask lives inside Choose,
+    /// bounded by <see cref="SphereAskWaitMs"/>.
     /// </summary>
     private static SimScreenDecision? DescribeCrystalSphere(NCrystalSphereScreen screen)
     {
@@ -784,9 +793,15 @@ internal static class SimScreenAdvice
         NProceedButton? proceed = screen.GetNodeOrNull<NProceedButton>("%ProceedButton");
         bool canProceed = proceed != null && GodotObject.IsInstanceValid(proceed) && proceed.IsEnabled;
 
+        // A look at the minigame on every poll, so divinations_total is the
+        // count the screen opened with, not the count when F7 first asks.
+        SimCrystalSphereScreenHandler.Divinations(screen);
+
         // Nothing revealed and nothing to click: the outcome is still
-        // animating. That is a wait, not a decision.
-        if (hidden.Count == 0 && !canProceed)
+        // animating. That is a wait, not a decision. So is an ask in flight,
+        // or its click not yet landed: describing the same reveal again would
+        // let autoplay divine twice.
+        if ((hidden.Count == 0 && !canProceed) || SphereAskPending(screen, hidden.Count))
         {
             return null;
         }
@@ -795,14 +810,29 @@ internal static class SimScreenAdvice
         int pick = reveal
             ? CrystalSpherePick.Pick(hidden.Select(c => (c.Entity.X, c.Entity.Y)).ToList())
             : -1;
-        string label = reveal
+        string blockOrder = reveal
             ? $"reveal cell ({hidden[pick].Entity.X},{hidden[pick].Entity.Y})"
             : "proceed";
+        bool askAdvisor = reveal && SimAdvisor.AdvisorCrystalSphereCapability >= 1;
+        // Asking, the cell is not known until the reply: the label says who
+        // picks it, and the click itself is logged with its cell.
+        string label = askAdvisor ? "reveal the advisor's cell" : blockOrder;
+        string blockOrderText = reveal
+            ? L10n.F("reveal cell ({0},{1})", hidden[pick].Entity.X, hidden[pick].Entity.Y)
+            : L10n.T("proceed");
+        string note = askAdvisor
+            ? L10n.F("crystal sphere: the advisor picks the cell (its digger, or the #872 rule when the digger cannot answer); without an answer, {0} (fixed 3x3 block order)", blockOrderText)
+            : L10n.F("crystal sphere: {0} (fixed 3x3 block order; the board's contents are not read)", blockOrderText);
         SimScreenDecision decision = LocalDecision(
             NonCombatBridgeProtocol.CrystalSphereState, screen, nameof(NCrystalSphereScreen),
-            $"crystal sphere: {label} (fixed 3x3 block order; the board's contents are not read)", label,
+            note, label,
             _ =>
             {
+                if (askAdvisor)
+                {
+                    TaskHelper.RunSafely(AskThenRevealAsync(screen, hidden, pick));
+                    return true;
+                }
                 if (reveal)
                 {
                     SelectBigDivination(screen);
@@ -824,6 +854,178 @@ internal static class SimScreenAdvice
         // it under the default `pause_on: "unsupported"`. A player who wants to
         // read the board themselves lists "CrystalSphere" in `pause_on`.
         return decision;
+    }
+
+    /// <summary>How long F7 waits for the advisor before it plays
+    /// CrystalSpherePick instead.</summary>
+    private const int SphereAskWaitMs = 3000;
+
+    /// <summary>How long after the click the same hidden count still reads
+    /// as "not landed yet" (the click itself is a few frames).</summary>
+    private const int SphereClickSettleMs = 1500;
+
+    /// <summary>Past this, a pending ask is forgotten whatever its state:
+    /// the backstop that keeps this screen from ever reading as a wait for
+    /// good.</summary>
+    private const int SphereAskCeilingMs = SphereAskWaitMs + SphereClickSettleMs + 1500;
+
+    // The one ask in flight (main thread only). Token 0 = none.
+    private static int _sphereAskToken;
+    private static GodotObject? _sphereAskScreen;
+    private static int _sphereAskHidden;
+    private static ulong _sphereAskStartedMs;
+    private static ulong _sphereAskClickedMs;
+
+    /// <summary>
+    /// True while an ask for this screen is out, or its click has not landed
+    /// (the hidden count has not moved) within <see cref="SphereClickSettleMs"/>.
+    /// Never past <see cref="SphereAskCeilingMs"/>.
+    /// </summary>
+    private static bool SphereAskPending(NCrystalSphereScreen screen, int hiddenNow)
+    {
+        if (_sphereAskToken == 0)
+        {
+            return false;
+        }
+        ulong now = Time.GetTicksMsec();
+        bool pending = ReferenceEquals(_sphereAskScreen, screen) &&
+                       now - _sphereAskStartedMs < SphereAskCeilingMs &&
+                       (_sphereAskClickedMs == 0 ||
+                        (hiddenNow == _sphereAskHidden && now - _sphereAskClickedMs < SphereClickSettleMs));
+        if (!pending)
+        {
+            ForgetSphereAsk();
+        }
+        return pending;
+    }
+
+    private static int _sphereAskCounter;
+
+    /// <summary>
+    /// F7 on a Crystal Sphere reveal with a capable advisor: send the board
+    /// (the agent lane's `crystal_sphere` message plus the envelope), wait up
+    /// to <see cref="SphereAskWaitMs"/>, and divine the advisor's cell; on a
+    /// hand_back, no reply, an unusable index or no advisor, divine
+    /// <paramref name="fallback"/> (CrystalSpherePick's). Started on the main
+    /// thread; Godot's synchronization context brings the continuation back
+    /// there for the click. Big tool only, as every played reveal.
+    /// </summary>
+    private static async System.Threading.Tasks.Task AskThenRevealAsync(
+        NCrystalSphereScreen screen, List<NCrystalSphereCell> hidden, int fallback)
+    {
+        CrystalSphereWire.Takeover atAsk = SimAdvisor.Instance.TakeoverNow();
+        int token = ++_sphereAskCounter;
+        _sphereAskToken = token;
+        _sphereAskScreen = screen;
+        _sphereAskHidden = hidden.Count;
+        _sphereAskStartedMs = Time.GetTicksMsec();
+        _sphereAskClickedMs = 0;
+
+        int advised = -1;
+        string? advisedPolicy = null;
+        string why = "no advisor to ask";
+        try
+        {
+            Dictionary<string, object> state =
+                SimCrystalSphereScreenHandler.BuildState(screen, hidden, proceedOffered: false);
+            RunState? runState = RunManager.Instance.DebugOnlyGetState();
+            SimStateExtractor.ApplyEnvelope(state, runState, LocalContext.GetMe(runState));
+            var reply = new System.Threading.Tasks.TaskCompletionSource<JsonElement>(
+                System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            string? requestId = SimAdvisor.SendSideAdviceRequest(
+                state, CrystalSphereWire.AdviceFor, root => reply.TrySetResult(root.Clone()));
+            if (requestId != null)
+            {
+                System.Threading.Tasks.Task done = await System.Threading.Tasks.Task.WhenAny(
+                    reply.Task, System.Threading.Tasks.Task.Delay(SphereAskWaitMs));
+                if (done == reply.Task)
+                {
+                    advised = CrystalSphereWire.AdvisedIndex(reply.Task.Result, hidden.Count);
+                    advisedPolicy = CrystalSphereWire.AdvisedPolicy(reply.Task.Result);
+                    why = "the advisor's answer named no usable cell";
+                }
+                else
+                {
+                    BridgeServer.Instance.CancelAdviceRequest(requestId);
+                    why = $"no answer within {SphereAskWaitMs / 1000} s";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            advised = -1;
+            why = $"the ask failed ({ex.Message})";
+        }
+
+        if (NGame.IsMainThread())
+        {
+            RevealAfterAsk(screen, hidden, token, atAsk, advised, advisedPolicy, fallback, why);
+        }
+        else
+        {
+            // Godot's context should have brought us back; if not, the
+            // click (and the ask's bookkeeping) still belongs on the main thread.
+            int a = advised;
+            string? p = advisedPolicy;
+            string w = why;
+            Callable.From(() => RevealAfterAsk(screen, hidden, token, atAsk, a, p, fallback, w)).CallDeferred();
+        }
+    }
+
+    /// <summary>The click that ends <see cref="AskThenRevealAsync"/>. Main thread.</summary>
+    private static void RevealAfterAsk(
+        NCrystalSphereScreen screen, List<NCrystalSphereCell> hidden, int token,
+        CrystalSphereWire.Takeover atAsk, int advised, string? advisedPolicy, int fallback, string why)
+    {
+        // The backstop gave up on this ask, so the screen has been described
+        // (and maybe played) again without it: clicking now could divine twice.
+        if (_sphereAskToken != token || !GodotObject.IsInstanceValid(screen))
+        {
+            Logger.Log("[SimScreenAdvice] Crystal sphere: the ask was given up; not clicking.");
+            return;
+        }
+        // The player took over (F7 / autobattle toggled) or Advisor mode was
+        // left while the ask was out: a divination is theirs to spend now.
+        if (!CrystalSphereWire.MayStillClick(atAsk, SimAdvisor.Instance.TakeoverNow()))
+        {
+            Logger.Log("[SimScreenAdvice] Crystal sphere: autoplay or the mode changed during the ask; not clicking.");
+            ForgetSphereAsk();
+            return;
+        }
+        try
+        {
+            int index = advised >= 0 ? advised : fallback;
+            if (advised < 0)
+            {
+                Logger.Log($"[SimScreenAdvice] Crystal sphere: {why}; playing the block order.");
+            }
+            NCrystalSphereCell cell = hidden[index];
+            if (!GodotObject.IsInstanceValid(cell) || !cell.Entity.IsHidden)
+            {
+                // Revealed meanwhile (the player clicked): describe afresh.
+                ForgetSphereAsk();
+                return;
+            }
+            SimActionLog.Note(L10n.F("crystal sphere: reveal cell ({0},{1}) ({2})", cell.Entity.X, cell.Entity.Y,
+                CrystalSphereWire.ClickSource(advised >= 0, advisedPolicy)));
+            _sphereAskClickedMs = Time.GetTicksMsec();
+            SelectBigDivination(screen);
+            if (!ClickHolder(hidden, index))
+            {
+                ForgetSphereAsk();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[SimScreenAdvice] Crystal sphere: the reveal failed: {ex.Message}");
+            ForgetSphereAsk();
+        }
+    }
+
+    private static void ForgetSphereAsk()
+    {
+        _sphereAskToken = 0;
+        _sphereAskScreen = null;
     }
 
     /// <summary>
@@ -859,7 +1061,7 @@ internal static class SimScreenAdvice
             Screen = screen,
             ScreenName = nameof(NGameOverScreen),
             Local = true,
-            LocalAdvice = new SimAdvice { Note = "run over — autoplay stopped" },
+            LocalAdvice = new SimAdvice { Note = L10n.T("run over — autoplay stopped") },
             Choose = _ => false,
         };
 
@@ -1013,12 +1215,12 @@ internal static class SimScreenAdvice
     /// event: a resume LOOP. So while the merchant is up this always returns
     /// a decision, and Leave is always enabled.
     ///
-    /// Described as the engine presents it in training, an `event` with
-    /// `buy`, `throw_foul`, `leave` in that order (GH #886) -- the SAME options
-    /// the F7 autopilot sends (`SimEventRoomHandler.FakeMerchantOptions`), so
-    /// the two lanes cannot disagree. Nothing is opened to describe it: the
-    /// slots are built in `NFakeMerchant._Ready`, and the throw needs the
-    /// shopfront closed anyway.
+    /// Described as the engine presents it (GH #1607): a `shop` named by
+    /// `event_name` FAKE_MERCHANT, option 0 leaves and 1..n buy a stocked,
+    /// affordable fake relic -- the SAME options the F7 autopilot sends
+    /// (`SimEventRoomHandler.FakeMerchantShopOptions`), so the two lanes
+    /// cannot disagree. Throwing a Foul Potion stays the player's own move:
+    /// no deployed policy was trained on out-of-combat potion use.
     /// </summary>
     private static SimScreenDecision? DescribeFakeMerchant()
     {
@@ -1048,47 +1250,46 @@ internal static class SimScreenAdvice
         NMerchantInventory inventory = merchant.Inventory;
         if (inventory == null || !GodotObject.IsInstanceValid(inventory))
         {
-            return FakeMerchantLeaveDecision(merchant, "fake merchant: no shopfront — leave");
+            return FakeMerchantLeaveDecision(merchant, L10n.T("fake merchant: no shopfront — leave"));
         }
 
-        NMerchantSlot? buySlot = SimEventRoomHandler.FakeMerchantBuySlot(merchant);
-        // The game's own usability check fails while the shopfront is open
-        // (`FoulPotion.GetFoulPotionMerchantTarget`), and a player may have
-        // opened it. Holding the potion is what decides the option; the
-        // throw closes the shopfront first.
-        bool canThrow = SimEventRoomHandler.FakeMerchantFoulPotion(merchant, me) != null ||
-                        inventory.IsOpen && merchant.MerchantButton is { } button &&
-                        button.IsVisibleInTree() && me != null && me.Potions.OfType<FoulPotion>().Any();
-        List<Dictionary<string, object?>> options = SimEventRoomHandler.FakeMerchantOptions(buySlot, canThrow);
+        List<NMerchantSlot> slots = SimEventRoomHandler.FakeMerchantPurchasable(merchant);
+        if (slots.Count == 0)
+        {
+            return FakeMerchantLeaveDecision(merchant, L10n.T("fake merchant: nothing left to buy — leave"));
+        }
+        List<Dictionary<string, object>> options = SimEventRoomHandler.FakeMerchantShopOptions(slots);
 
         Dictionary<string, object> state = new()
         {
-            [NonCombatBridgeProtocol.TypeField] = NonCombatBridgeProtocol.EventState,
+            [NonCombatBridgeProtocol.TypeField] = NonCombatBridgeProtocol.ShopState,
             ["options"] = options,
             ["player_gold"] = me?.Gold ?? 0,
-            ["stock"] = inventory.GetAllSlots().Select(SimShopRoomHandler.ShopStockRow).ToList(),
+            ["stock"] = SimEventRoomHandler.FakeMerchantStock(merchant, slots),
+            ["event_name"] = SimEventRoomHandler.FakeMerchantEventId,
         };
         SimStateExtractor.ApplyEnvelope(state, runState, me);
 
         return new SimScreenDecision
         {
-            AdviceFor = NonCombatBridgeProtocol.EventState,
+            AdviceFor = NonCombatBridgeProtocol.ShopState,
             State = state,
             OptionCount = options.Count,
-            OptionLabels = options.Select(o => (string)o["label"]!).ToList(),
-            // A purchase changes the gold and the next relic, and may take
-            // the buy or the throw away; each is a new decision.
-            Signature = $"fakemerchant:{me?.Gold ?? 0}:{options[SimEventRoomHandler.FakeMerchantBuy]["relic_id"]}:" +
-                        string.Join("|", options.Select(o => o["enabled"] is true ? "1" : "0")),
+            // No OptionLabels, as the shop: the advisor names a relic by its
+            // display name, the options by their id. A purchase spends gold and
+            // empties a slot; each is a new decision.
+            Signature = $"fakemerchant:{me?.Gold ?? 0}:" +
+                        string.Join("|", options.Select(o => o.TryGetValue("label", out object? l) ? l : "?")),
             Screen = merchant,
             ScreenName = nameof(NFakeMerchant),
-            Choose = index => ChooseFakeMerchantOption(merchant, room, options, buySlot, me, index),
+            OptionNodes = new List<Control?> { null }.Concat(slots.Select(s => (Control?)s)).ToList(),
+            Choose = index => ChooseFakeMerchantOption(merchant, slots, index),
         };
     }
 
     private static SimScreenDecision FakeMerchantLeaveDecision(NFakeMerchant merchant, string label) =>
         LocalDecision(
-            NonCombatBridgeProtocol.EventState, merchant, nameof(NFakeMerchant),
+            NonCombatBridgeProtocol.ShopState, merchant, nameof(NFakeMerchant),
             label, "leave",
             _ =>
             {
@@ -1096,56 +1297,25 @@ internal static class SimScreenAdvice
                 return true;
             });
 
-    private static bool ChooseFakeMerchantOption(
-        NFakeMerchant merchant, Node room, List<Dictionary<string, object?>> options,
-        NMerchantSlot? buySlot, Player? me, int index)
+    /// <summary>Index 0 leaves; 1..n buy the corresponding relic slot.</summary>
+    private static bool ChooseFakeMerchantOption(NFakeMerchant merchant, List<NMerchantSlot> slots, int index)
     {
-        if (!GodotObject.IsInstanceValid(merchant) || index < 0 || index >= options.Count ||
-            options[index]["enabled"] is not true)
+        if (!GodotObject.IsInstanceValid(merchant) || index < 0 || index > slots.Count)
         {
             return false;
         }
-        switch (index)
+        if (index == 0)
         {
-            case SimEventRoomHandler.FakeMerchantBuy:
-                TaskHelper.RunSafely(SimEventRoomHandler.BuyFromFakeMerchantAsync(
-                    merchant, buySlot!, CancellationToken.None));
-                return true;
-            case SimEventRoomHandler.FakeMerchantThrowFoul:
-                TaskHelper.RunSafely(ThrowAtFakeMerchantAsync(merchant, room, me));
-                return true;
-            default:
-                TaskHelper.RunSafely(LeaveFakeMerchantAsync(merchant));
-                return true;
+            TaskHelper.RunSafely(LeaveFakeMerchantAsync(merchant));
+            return true;
         }
-    }
-
-    /// <summary>
-    /// Close the shopfront if a player left it open (the potion cannot target
-    /// the merchant otherwise), then throw. The fight that follows is a
-    /// normal combat screen for the coach.
-    /// </summary>
-    private static async System.Threading.Tasks.Task ThrowAtFakeMerchantAsync(
-        NFakeMerchant merchant, Node room, Player? me)
-    {
-        NMerchantInventory inventory = merchant.Inventory;
-        if (inventory.IsOpen)
+        NMerchantSlot slot = slots[index - 1];
+        if (!GodotObject.IsInstanceValid(slot) || slot.Entry is not { IsStocked: true, EnoughGold: true })
         {
-            NBackButton? back = UiHelper.FindFirst<NBackButton>(merchant);
-            if (back != null && GodotObject.IsInstanceValid(back) && back.IsVisibleInTree())
-            {
-                await UiHelper.Click(back);
-            }
-            await WaitHelper.Until(() => !inventory.IsOpen, CancellationToken.None,
-                TimeSpan.FromSeconds(10), "FakeMerchant shopfront did not close");
+            return false;
         }
-        FoulPotion? foul = SimEventRoomHandler.FakeMerchantFoulPotion(merchant, me);
-        if (foul == null)
-        {
-            Logger.Log("[SimScreenAdvice] No throwable Foul Potion after all; asking again.");
-            return;
-        }
-        await SimEventRoomHandler.ThrowFoulPotionAsync(foul, room, CancellationToken.None);
+        TaskHelper.RunSafely(SimEventRoomHandler.BuyFromFakeMerchantAsync(merchant, slot, CancellationToken.None));
+        return true;
     }
 
     /// <summary>
@@ -1283,7 +1453,7 @@ internal static class SimScreenAdvice
             // open shopfront in the way.
             return LocalDecision(
                 NonCombatBridgeProtocol.ShopState, room, nameof(NMerchantRoom),
-                "shop: nothing left to buy — leave", "leave shop",
+                L10n.T("shop: nothing left to buy — leave"), "leave shop",
                 _ =>
                 {
                     TaskHelper.RunSafely(LeaveShopAsync(room));
@@ -1881,7 +2051,7 @@ internal static class SimScreenAdvice
             return null;
         }
 
-        var advice = new SimAdvice { Note = "loot: claim everything, then proceed" };
+        var advice = new SimAdvice { Note = L10n.T("loot: claim everything, then proceed") };
         for (int i = 0; i < buttons.Count; i++)
         {
             advice.Options.Add(new SimAdviceOption
@@ -2336,17 +2506,31 @@ internal static class SimScreenAdvice
         int selected = HandSelectedCount(hand);
         NConfirmButton? confirm = HandConfirmButton(hand);
 
+        // A picked card LEAVES the hand (SelectCardInSimpleMode ->
+        // RemoveCardHolder, into the selected-card container), so unlike the
+        // grid screens there is nothing to filter out here: what is still in
+        // hand is exactly what is still pickable. `ActiveHolders` is already
+        // restricted to the visible ones, which is how the selection filter
+        // expresses "this card does not qualify".
+        List<NHandCardHolder> holders = hand.ActiveHolders
+            .Where(h => GodotObject.IsInstanceValid(h) && h.CardNode?.Model != null)
+            .ToList();
+
         // The confirm button IS the game's answer to "is this selection
         // legal yet" -- RefreshSelectModeConfirmButton enables it exactly when
         // MinSelect <= count <= MaxSelect (NPlayerHand.cs). So once it is live
-        // and something is picked, committing is the decision.
-        if (selected > 0 && confirm != null &&
-            GodotObject.IsInstanceValid(confirm) && confirm.IsEnabled)
+        // and something is picked, committing is the decision -- unless the
+        // selection may still take more (Gambler's Brew, Ashwater: any
+        // number), where the advisor is asked again and continues its set or
+        // answers confirm (CardSelectRules.HandOffersMorePicks, GH #1770).
+        bool canConfirm = selected > 0 && confirm != null &&
+            GodotObject.IsInstanceValid(confirm) && confirm.IsEnabled;
+        if (canConfirm && !CardSelectRules.HandOffersMorePicks(selected, maxSelect, holders.Count))
         {
             string label = selected == 1 ? "confirm" : $"confirm ({selected} cards)";
             return LocalDecision(
                 NonCombatBridgeProtocol.CardSelectState, hand, "NPlayerHand",
-                $"hand select: {label}", label,
+                selected == 1 ? L10n.T("hand select: confirm") : L10n.F("hand select: confirm ({0} cards)", selected), label,
                 _ =>
                 {
                     if (!GodotObject.IsInstanceValid(confirm) || !confirm.IsEnabled)
@@ -2359,15 +2543,6 @@ internal static class SimScreenAdvice
                 signature: $"handselect:confirm:{selected}");
         }
 
-        // A picked card LEAVES the hand (SelectCardInSimpleMode ->
-        // RemoveCardHolder, into the selected-card container), so unlike the
-        // grid screens there is nothing to filter out here: what is still in
-        // hand is exactly what is still pickable. `ActiveHolders` is already
-        // restricted to the visible ones, which is how the selection filter
-        // expresses "this card does not qualify".
-        List<NHandCardHolder> holders = hand.ActiveHolders
-            .Where(h => GodotObject.IsInstanceValid(h) && h.CardNode?.Model != null)
-            .ToList();
         if (holders.Count == 0)
         {
             return null;
@@ -2412,6 +2587,15 @@ internal static class SimScreenAdvice
             ["screen"] = "NPlayerHand",
             ["combat"] = (object?)SimCombatHandler.BuildEmbeddedCombatState(me)!,
         };
+        if (canConfirm)
+        {
+            // Cards already taken, sent once the selection may stop here
+            // (GH #1770): the advisor continues its planned set, or answers
+            // skip, which confirms what is taken (ConfirmHandSelection).
+            // Before the minimum is met no confirm exists to answer with,
+            // so the advisor is asked as before.
+            state["selected_count"] = selected;
+        }
         SimStateExtractor.ApplyEnvelope(state, runState, me);
 
         return new SimScreenDecision
@@ -2494,20 +2678,99 @@ internal static class SimScreenAdvice
             return false;
         }
         NHandCardHolder holder = holders[index];
+        // Read before the press: a press that lands frees the holder's card.
+        string title = holder.CardNode!.Model.Title;
         int before = HandSelectedCount(hand);
         holder.EmitSignal(NCardHolder.SignalName.Pressed, holder);
         // Report what the game did, not what we asked for. A pick that does
         // not land is indistinguishable from one that does at this level, and
         // that is precisely how the hitbox version stayed invisible.
-        int after = HandSelectedCount(hand);
-        if (after == before)
+        if (HandPickLanded(hand, holder, before))
         {
-            Logger.Log(
-                $"[SimScreenAdvice] Hand pick '{holder.CardNode!.Model.Title}' did not change " +
-                $"the selection ({before} selected).");
-            return false;
+            return true;
         }
-        return true;
+        Logger.Log(
+            $"[SimScreenAdvice] Hand pick '{title}' did not change the selection " +
+            $"({before} selected; {HandPressRefusal(hand)}).");
+        return false;
+    }
+
+    /// <summary>
+    /// Did the press take the card? The selection grew, or the press finished
+    /// the selection outright: the hand left its select mode, or the card left
+    /// the hand. The last two are how a pick that also CONFIRMS looks
+    /// (GH #1413): BetterSpire2's AutoConfirmSingleCard completes a one-card
+    /// selection inside the press, so the selection is already cleared when
+    /// it is counted, and a landed pick read as refused.
+    /// </summary>
+    private static bool HandPickLanded(NPlayerHand hand, NHandCardHolder holder, int before)
+    {
+        if (HandSelectedCount(hand) != before)
+        {
+            return true;
+        }
+        if (hand.CurrentMode != NPlayerHand.Mode.SimpleSelect &&
+            hand.CurrentMode != NPlayerHand.Mode.UpgradeSelect)
+        {
+            return true;
+        }
+        return !GodotObject.IsInstanceValid(holder) || !holder.IsInsideTree() || holder.CardNode == null;
+    }
+
+    /// <summary>
+    /// Why a press changed nothing, so a refused pick says why (GH #1413: one
+    /// did not, and its log could not tell the cases apart).
+    /// `NPlayerHand.OnHolderPressed` drops a press when peeking, outside a
+    /// combat in progress, or under an overlay. Another mod's patch on the
+    /// selection can drop one too: BetterSpire2's AutoConfirmSingleCard
+    /// ignores the first press after a selection prompt opens ("blocking
+    /// phantom selection"), and that press is what wedged the run.
+    /// </summary>
+    private static string HandPressRefusal(NPlayerHand hand)
+    {
+        try
+        {
+            var reasons = new List<string>();
+            if (hand.PeekButton?.IsPeeking == true)
+                reasons.Add("peeking");
+            if (!SimChoiceCapture.SafeInCombat())
+                reasons.Add("combat not in progress");
+            int overlays = NOverlayStack.Instance?.ScreenCount ?? 0;
+            if (overlays > 0)
+                reasons.Add($"{overlays} overlay(s) up: {NOverlayStack.Instance!.Peek()?.GetType().Name}");
+            string patchers = ForeignHandSelectPatchers();
+            if (patchers.Length > 0)
+                reasons.Add($"selection patched by {patchers}");
+            return reasons.Count > 0 ? string.Join(", ", reasons) : "no known cause";
+        }
+        catch (Exception ex)
+        {
+            return $"cause unreadable: {ex.Message}";
+        }
+    }
+
+    /// <summary>The Harmony owners, other than this mod, patching the hand's
+    /// press-to-select path; empty when there are none.</summary>
+    private static string ForeignHandSelectPatchers()
+    {
+        var owners = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (string name in new[] { "OnHolderPressed", "SelectCardInSimpleMode", "SelectCardInUpgradeMode", "SelectCards" })
+        {
+            MethodInfo? method = HarmonyLib.AccessTools.Method(typeof(NPlayerHand), name);
+            HarmonyLib.Patches? info = method == null ? null : HarmonyLib.Harmony.GetPatchInfo(method);
+            if (info == null)
+            {
+                continue;
+            }
+            foreach (string owner in info.Owners)
+            {
+                if (owner != MainFile.ModId)
+                {
+                    owners.Add(owner);
+                }
+            }
+        }
+        return string.Join(", ", owners);
     }
 
     /// <summary>The hand's `%SelectModeConfirmButton` -- the checkmark.</summary>
@@ -2573,6 +2836,42 @@ internal static class SimScreenAdvice
         return (1, 1);
     }
 
+    /// <summary><c>NDeckEnchantSelectScreen._enchantment</c>, set by
+    /// <c>ShowScreen</c> (the same field name in v0.107.1 through v0.113.1);
+    /// null if a build renames it.</summary>
+    private static readonly FieldInfo? DeckEnchantField =
+        typeof(NDeckEnchantSelectScreen).GetField(
+            "_enchantment", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    /// <summary>
+    /// The enchantment an enchant grid will stamp, as its <c>Id.Entry</c>
+    /// (GH #574), or null when <paramref name="screen"/> is not an enchant
+    /// select. Read off the screen itself (<see cref="DeckEnchantField"/>).
+    /// If that field cannot be read, the fallback is the
+    /// <c>FromDeckForEnchantment</c> capture, which that entry point's
+    /// prefix rewrites first thing on every call, so it names this screen's
+    /// enchantment unless the prefix itself was skipped.
+    /// </summary>
+    private static string? PendingEnchantmentOf(NCardGridSelectionScreen screen)
+    {
+        if (screen is not NDeckEnchantSelectScreen)
+        {
+            return null;
+        }
+        try
+        {
+            if (DeckEnchantField?.GetValue(screen) is EnchantmentModel enchantment)
+            {
+                return SimCardSelectContext.EntryOf(enchantment);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[SimScreenAdvice] Enchant screen's enchantment unavailable: {ex.Message}");
+        }
+        return SimCardSelectContext.PendingEnchantment;
+    }
+
     private static SimScreenDecision? DescribeCardSelect(NCardGridSelectionScreen screen)
     {
         // Once something is selected, the question is no longer "which card" --
@@ -2596,7 +2895,7 @@ internal static class SimScreenAdvice
                 string label = selected == 1 ? "confirm" : $"confirm ({selected} cards)";
                 return LocalDecision(
                     NonCombatBridgeProtocol.CardSelectState, screen, screen.GetType().Name,
-                    $"card select: {label}", label,
+                    selected == 1 ? L10n.T("card select: confirm") : L10n.F("card select: confirm ({0} cards)", selected), label,
                     _ =>
                     {
                         if (!GodotObject.IsInstanceValid(confirm) || !confirm.IsEnabled)
@@ -2672,6 +2971,9 @@ internal static class SimScreenAdvice
             ["source_target_index"] = (object?)SimCardSelectContext.SourceTargetIndex!,
             ["source_upgraded"] = (object?)SimCardSelectContext.SourceUpgraded!,
             ["screen"] = screen.GetType().Name,
+            // Which enchantment a TO_ENCHANT pick stamps (GH #574); null on
+            // every other grid.
+            ["pending_enchantment"] = (object?)PendingEnchantmentOf(screen)!,
             // Cards already taken on this screen (an "up to N" combat pile
             // pick asks again after each one): the advisor continues its
             // planned picks, or confirms.

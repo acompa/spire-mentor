@@ -89,9 +89,10 @@ internal static class SimStateCopy
             {
                 combat["type"] = "advice_request";
                 combat["advice_for"] = "combat_action";
-                // The brain the advisor lane asks with, so a pasted state
-                // reproduces the request (PROTOCOL.md section 8).
-                combat["brain"] = SimAdvisor.CurrentBrain;
+                // The player's brain (Instinct unless test tooling forces
+                // one), so a pasted state reproduces the request (PROTOCOL.md
+                // section 8).
+                combat["brain"] = SimAdvisor.PlayerBrain;
                 return WithMap(combat, runState);
             }
         }
@@ -103,7 +104,7 @@ internal static class SimStateCopy
             {
                 ["type"] = "advice_request",
                 ["advice_for"] = screen.AdviceFor,
-                ["brain"] = SimAdvisor.CurrentBrain,
+                ["brain"] = SimAdvisor.PlayerBrain,
             };
             return WithMap(msg, runState);
         }

@@ -1,0 +1,84 @@
+{
+  "_provenance": "synthetic: the first turn of the live Fool run 20261117_224412_FOOL_K8WV3NXYVXUK (v0.113.0, floor 2, Nibbit), in the mod's combat_action shape (single_enemy_ironclad.json's fields)",
+  "type": "combat_action",
+  "game_version": "v0.113.0",
+  "player": {
+    "hp": 77,
+    "max_hp": 77,
+    "block": 0,
+    "energy": 3,
+    "max_energy": 3,
+    "powers": [
+      {"id": "AIM_POWER", "name": "Aim", "amount": 6, "type": "Buff", "description": ""}
+    ]
+  },
+  "hand": [
+    {"id": "DEFEND_FOOL", "name": "Defend", "cost": 1, "base_cost": 1, "effective_cost": 1, "costs_x": false, "type": "Skill", "rarity": "Basic", "target_type": "Self", "upgrade_level": 0, "pile": "Hand", "playable": true, "valid_target_indices": []},
+    {"id": "STRIKE_FOOL", "name": "Strike", "cost": 1, "base_cost": 1, "effective_cost": 1, "costs_x": false, "type": "Attack", "rarity": "Basic", "target_type": "AnyEnemy", "upgrade_level": 0, "pile": "Hand", "playable": true, "valid_target_indices": [0]},
+    {"id": "DEFEND_FOOL", "name": "Defend", "cost": 1, "base_cost": 1, "effective_cost": 1, "costs_x": false, "type": "Skill", "rarity": "Basic", "target_type": "Self", "upgrade_level": 0, "pile": "Hand", "playable": true, "valid_target_indices": []},
+    {"id": "FOOLISH_SHOT", "name": "Foolish Shot", "cost": 1, "base_cost": 1, "effective_cost": 1, "costs_x": false, "type": "Attack", "rarity": "Basic", "target_type": "AnyEnemy", "upgrade_level": 0, "pile": "Hand", "playable": true, "valid_target_indices": [0]},
+    {"id": "STRIKE_FOOL", "name": "Strike", "cost": 1, "base_cost": 1, "effective_cost": 1, "costs_x": false, "type": "Attack", "rarity": "Basic", "target_type": "AnyEnemy", "upgrade_level": 0, "pile": "Hand", "playable": true, "valid_target_indices": [0]}
+  ],
+  "draw_pile": {
+    "type": "Draw",
+    "count": 5,
+    "cards": [
+      {"id": "STRIKE_FOOL", "name": "Strike", "cost": 1, "base_cost": 1, "type": "Attack", "rarity": "Basic", "target_type": "AnyEnemy", "upgrade_level": 0, "pile": "Draw"},
+      {"id": "DEFEND_FOOL", "name": "Defend", "cost": 1, "base_cost": 1, "type": "Skill", "rarity": "Basic", "target_type": "Self", "upgrade_level": 0, "pile": "Draw"},
+      {"id": "DEFEND_FOOL", "name": "Defend", "cost": 1, "base_cost": 1, "type": "Skill", "rarity": "Basic", "target_type": "Self", "upgrade_level": 0, "pile": "Draw"},
+      {"id": "STRIKE_FOOL", "name": "Strike", "cost": 1, "base_cost": 1, "type": "Attack", "rarity": "Basic", "target_type": "AnyEnemy", "upgrade_level": 0, "pile": "Draw"},
+      {"id": "STRIKE_FOOL", "name": "Strike", "cost": 1, "base_cost": 1, "type": "Attack", "rarity": "Basic", "target_type": "AnyEnemy", "upgrade_level": 0, "pile": "Draw"}
+    ]
+  },
+  "discard_pile": {"type": "Discard", "count": 0, "cards": []},
+  "exhaust_pile": {"type": "Exhaust", "count": 0, "cards": []},
+  "enemies": [
+    {
+      "id": "NIBBIT",
+      "name": "Nibbit",
+      "side": "Enemy",
+      "is_player": false,
+      "is_monster": true,
+      "is_alive": true,
+      "is_hittable": true,
+      "hp": 43,
+      "max_hp": 43,
+      "block": 0,
+      "slot_name": null,
+      "powers": [],
+      "next_move_id": "BUTT_MOVE",
+      "intents": [
+        {"kind": "SingleAttackIntent", "intent_type": "Attack", "title": "Aggressive", "description": "", "damage": 12, "hits": 1, "total_damage": 12}
+      ],
+      "move_history": []
+    }
+  ],
+  "orbs": [],
+  "orb_capacity": 0,
+  "pets": [],
+  "potions": [{"slot": 0, "empty": true}, {"slot": 1, "empty": true}, {"slot": 2, "empty": true}],
+  "available_actions": ["PLAY", "END_TURN"],
+  "draw_pile_count": 5,
+  "discard_pile_count": 0,
+  "exhaust_pile_count": 0,
+  "round": 1,
+  "seed": "K8WV3NXYVXUK",
+  "act": 1,
+  "floor": 2,
+  "room_type": "Monster",
+  "run_state": {
+    "gold": 99,
+    "hp": 77,
+    "max_hp": 77,
+    "potions": [{"slot": 0, "empty": true}, {"slot": 1, "empty": true}, {"slot": 2, "empty": true}],
+    "potion_slot_count": 3,
+    "relics": [
+      {"id": "SONG_BOW", "name": "Song Bow", "description": "", "rarity": "Starter", "counter": null, "stack_count": 1}
+    ],
+    "master_deck": [],
+    "ascension": 0,
+    "character": "FOOL"
+  },
+  "state_id": 3,
+  "request_id": "3"
+}

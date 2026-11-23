@@ -18,7 +18,9 @@ from headless_eval import (
     _boss_relic_reroute,
     _bridge_answer_to_command,
     _envelope,
+    _run_state,
     to_bridge_event,
+    to_bridge_rest_site,
     to_bridge_shop,
 )
 
@@ -304,6 +306,49 @@ def test_run_state_emits_empty_belt_slots_from_potion_slots() -> None:
     assert [p["empty"] for p in belt] == [False, True, True]
 
 
+def test_run_state_potions_sit_in_their_belt_slots() -> None:
+    """GH #1690: `index` counts only the filled slots; `slot` is the belt's."""
+    state = {
+        "context": {"act": 1, "floor": 3, "total_floor": 3},
+        "player": {
+            "hp": 60,
+            "max_hp": 75,
+            "gold": 100,
+            "relics": [],
+            "potions": [
+                {"index": 0, "slot": 1, "entry": "FLEX_POTION", "name": "Flex Potion"},
+                {"index": 1, "slot": 2, "entry": "REGEN_POTION", "name": "Regen Potion"},
+            ],
+            "potion_slots": 3,
+            "deck": [],
+        },
+    }
+    belt = _envelope(state, "map_select", "Ironclad")["run_state"]["potions"]
+    by_slot = {p["slot"]: p for p in belt}
+    assert by_slot[0]["empty"] and by_slot[1]["entry"] == "FLEX_POTION"
+    assert by_slot[2]["entry"] == "REGEN_POTION"
+
+
+def test_run_state_deck_keeps_a_cards_enchantment() -> None:
+    """GH #1683: the host names a deck card's enchantment; the rebuild of the
+    run stamps it back on only if the master deck carries it."""
+    card = {"id": "CARD.STRIKE_IRONCLAD", "upgraded": False}
+    state = {
+        "context": {"act": 1, "floor": 3, "total_floor": 3},
+        "player": {
+            "hp": 60,
+            "max_hp": 75,
+            "gold": 100,
+            "relics": [],
+            "potions": [],
+            "deck": [{**card, "enchantment": "Perfect Fit", "enchantment_amount": 2}, card],
+        },
+    }
+    deck = _envelope(state, "map_select", "Ironclad")["run_state"]["master_deck"]
+    assert deck[0]["enchantment"] == "Perfect Fit" and deck[0]["enchantment_amount"] == 2
+    assert "enchantment" not in deck[1]
+
+
 def test_shop_options_carry_item_identity() -> None:
     """Shop relic/potion/card option items must carry the vocab-resolvable id
     (2026-07-16 audit: the csharp emulation omitted relic/potion ids entirely,
@@ -346,6 +391,24 @@ def test_shop_options_carry_item_identity() -> None:
     # commands stay index-aligned with options
     for o in bridge_state["options"]:
         assert 0 <= o["index"] < len(commands)
+
+
+def test_a_shop_card_the_host_shows_upgraded_reaches_the_bridge_upgraded() -> None:
+    """An egg relic stocks the merchant's cards of its type upgraded."""
+    state = {
+        "type": "shop",
+        "gold": 300,
+        "cards": [
+            {"index": 0, "id": "EVIL_EYE", "name": "EVIL_EYE.title", "cost": 70, "upgraded": True},
+            {"index": 1, "id": "ANGER", "name": "ANGER.title", "cost": 49, "upgraded": False},
+        ],
+        "relics": [],
+        "potions": [],
+        "card_removal_cost": 75,
+    }
+    bridge_state, _ = to_bridge_shop(state, "Ironclad")
+    cards = [o["item"] for o in bridge_state["options"] if o["action"] == "buy_card"]
+    assert [(c["id"], c["upgrade_level"]) for c in cards] == [("EVIL_EYE", 1), ("ANGER", 0)]
 
 
 class _RemovalStubPolicy:
@@ -995,3 +1058,107 @@ def test_a_mirrored_pick_targets_the_dlls_living_enemy(monkeypatch) -> None:
     assert extra is None
     assert cmd == {"action": "play_card", "args": {"card_index": 0, "target_index": 1}}
     assert engine == {"action": "play", "card_index": 0, "target_index": 2}
+
+
+def test_an_ascension_run_is_searched_and_decided_at_its_ascension(monkeypatch):
+    """GH #1639: the search config and the PPO envelope carry the run's ascension.
+
+    Both used to say 0 whatever level the run started at: MCTS rebuilt A10
+    fights with A0 enemy HP and damage, and the run net was told A0.
+    """
+    import random
+    import types
+
+    import headless_eval
+    from sts2_hint.recommender import RecommendConfig
+
+    combat = {
+        "type": "decision",
+        "decision": "combat_play",
+        "context": {"floor": 2, "act": 1},
+        "player": {"hp": 44, "max_hp": 80, "energy": 3},
+        "hand": [],
+        "enemies": [{"name": "Nibbit", "hp": 30}],
+    }
+    rest = {
+        "type": "decision",
+        "decision": "rest_site",
+        "context": {"floor": 3, "act": 1},
+        "player": {"hp": 44, "max_hp": 80},
+        "options": [{"index": 0, "id": "HEAL", "name": "Rest", "enabled": True}],
+    }
+    over = {"type": "decision", "decision": "game_over", "victory": False}
+    script = [combat, rest, over]
+
+    class _Game:
+        def __init__(self, *, forward_stderr: bool = False) -> None:
+            self.proc = types.SimpleNamespace(kill=lambda: None, wait=lambda timeout=None: 0)
+
+        def world_errors(self, **kwargs) -> dict:
+            return {"count": 0, "sample": []}
+
+        def start(self, character: str, **kwargs) -> dict:
+            return dict(script.pop(0))
+
+        def send(self, cmd: dict) -> dict:
+            return dict(script.pop(0))
+
+    seen: dict[str, object] = {}
+
+    def _combat(state, cfg, rng, sims, banned=None, mirror=None):
+        seen["search"] = cfg.ascension
+        return {"action": "end_turn", "args": {}}, None, {"action": "end_turn"}
+
+    def _ppo(bridge_state, rng, policies, **kw):
+        seen["envelope"] = bridge_state["run_state"]["ascension"]
+        seen["run_config"] = kw.get("run_config_ascension")
+        return {"action": "choose", "index": 0}, None
+
+    monkeypatch.setattr(headless_eval, "Game", _Game)
+    monkeypatch.setattr(headless_eval, "pick_combat_action_headless", _combat)
+    monkeypatch.setattr(headless_eval, "pick_noncombat_action_ppo", _ppo)
+
+    headless_eval.play_one_headless_session(
+        random.Random(0),
+        run_index=0,
+        character="Ironclad",
+        seed=1,
+        mcts_cfg=RecommendConfig(character="Ironclad"),
+        ppo_policies=None,
+        max_steps=20,
+        ascension=10,
+    )
+
+    assert seen == {"search": 10, "envelope": 10, "run_config": 10}
+
+
+def test_run_state_relics_keep_the_shown_counter() -> None:
+    """The rebuild restores a relic's counter (Book of Five Rings toward its
+    heal), so the bridge relic keeps the host's ``counter`` (Spire Bench seed
+    170000009); a relic without one stays bare."""
+    state = {
+        "player": {
+            "relics": [
+                {"id": "BURNING_BLOOD", "name": "Burning Blood", "counter": None},
+                {"id": "BOOK_OF_FIVE_RINGS", "name": "Book of Five Rings", "counter": 4},
+            ]
+        }
+    }
+    relics = _run_state(state, "Ironclad")["relics"]
+    assert relics == [{"id": "BURNING_BLOOD"}, {"id": "BOOK_OF_FIVE_RINGS", "counter": 4}]
+
+
+def test_a_tent_visits_leave_leaves_the_rest_site():
+    """GH #1833: with Miniature Tent the host offers leaving (`can_leave`)
+    once an option is used; the student's leave goes out as `leave_room`."""
+    state = {
+        "decision": "rest_site",
+        "options": [{"index": 0, "option_id": "HEAL", "is_enabled": True}],
+        "can_leave": True,
+        "player": {"hp": 63, "max_hp": 80},
+    }
+    assert to_bridge_rest_site(state, "Ironclad")["can_leave"] is True
+    cmd = _bridge_answer_to_command("rest_site", {"action": "leave"}, state, None)
+    assert cmd == {"action": "leave_room", "args": {}}
+    cmd = _bridge_answer_to_command("rest_site", {"action": "choose", "index": 0}, state, None)
+    assert cmd == {"action": "choose_option", "args": {"option_index": 0}}

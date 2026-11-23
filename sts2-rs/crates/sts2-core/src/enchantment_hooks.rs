@@ -217,9 +217,14 @@ pub fn enchant_block_additive(card: &crate::cards::Card) -> i32 {
 /// delegates here. GH #806 (PARITY149: a Silken-Tress Glam SCULPTING_STRIKE
 /// hit once in Rust, twice in C#).
 #[must_use]
+#[inline]
 pub fn enchant_play_count_bonus(card: &crate::cards::Card) -> i32 {
     /// `DynamicVar("Times", 1m)` — the fixed bonus, NOT the enchantment Amount.
     const TIMES: i32 = 1;
+    // Both bonuses need an enchantment on the card; most cards carry none.
+    if card.enchantments.is_empty() {
+        return 0;
+    }
     let mut bonus = 0;
     if card.has_enchantment(EnchantmentId::Spiral) {
         bonus += TIMES;
@@ -270,6 +275,7 @@ fn card_for(state: &CombatState, uid: CardUid) -> Option<&Card> {
 /// `Slither.AfterCardDrawn` rerolls on EVERY draw-pile draw (turn-start
 /// AND effect draws), so all draw paths must dispatch here
 /// unconditionally (census v8 seeds 1003/1006/1042/1049).
+#[inline]
 pub fn dispatch_on_card_drawn(state: &mut CombatState, card_uid: CardUid, from_hand_draw: bool) {
     // Empty-bus early-out: if the drawn card has no enchantments,
     // there is nothing to dispatch.
@@ -302,7 +308,7 @@ pub fn dispatch_on_card_drawn(state: &mut CombatState, card_uid: CardUid, from_h
 /// Python's `on_card_drawn` Slither leg fires regardless of the draw
 /// source, only the `Imbued` auto-play leg is round-1 + draw-pile only
 /// (handled by `after_player_turn_start`, not here).
-#[inline]
+#[inline(never)]
 fn on_card_drawn_stub(state: &mut CombatState, card_uid: CardUid, _from_hand_draw: bool) {
     let idx = (card_uid.get() as usize).saturating_sub(1);
     let Some(card) = state.cards.get(idx) else {
@@ -339,6 +345,13 @@ fn on_card_drawn_stub(state: &mut CombatState, card_uid: CardUid, _from_hand_dra
 /// Empty-bus early-out: if no card in any pile has any enchantments, skip
 /// the walk entirely.
 pub fn dispatch_after_player_turn_start(state: &mut CombatState) {
+    // Perf: the listener body acts only on the first player turn (its own
+    // `turn_number() > 1` return comes before any read or write), so test
+    // that before walking five piles for an enchanted card. Same outcome:
+    // past turn 1 both orders return with nothing done.
+    if state.turn_number() > 1 {
+        return;
+    }
     let p = &state.player;
     if ![
         &p.hand[..],
@@ -641,7 +654,17 @@ fn modify_shuffle_order_stub(
 ///
 /// Python entry (site NO LONGER followed): `enchantments.py:158` —
 /// `on_card_played(card, combat)`.
+#[inline]
 pub fn dispatch_on_card_played(state: &mut CombatState, card_uid: CardUid) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if card_for(state, card_uid).is_some_and(|c| !c.enchantments.is_empty()) {
+        dispatch_on_card_played_body(state, card_uid);
+    }
+}
+
+#[inline(never)]
+fn dispatch_on_card_played_body(state: &mut CombatState, card_uid: CardUid) {
     let Some(card) = card_for(state, card_uid) else {
         return;
     };
@@ -823,7 +846,17 @@ fn mark_used(state: &mut CombatState, card_uid: CardUid, bit: i32) {
 /// (Vigorous / Glam) as consumed and ticks Goopy's amount.
 ///
 /// Python entry: `enchantments.py:184` — `after_card_played(card)`.
+#[inline]
 pub fn dispatch_after_card_played(state: &mut CombatState, card_uid: CardUid) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if card_for(state, card_uid).is_some_and(|c| !c.enchantments.is_empty()) {
+        dispatch_after_card_played_body(state, card_uid);
+    }
+}
+
+#[inline(never)]
+fn dispatch_after_card_played_body(state: &mut CombatState, card_uid: CardUid) {
     let Some(card) = card_for(state, card_uid) else {
         return;
     };

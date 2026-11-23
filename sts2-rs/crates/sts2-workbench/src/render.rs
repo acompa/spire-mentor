@@ -14,8 +14,55 @@
 //! the sibling modules (`options`, `statediff`, `combatlog`, `playlog`) share.
 
 use std::collections::BTreeSet;
+use std::fmt::Display;
 
 use serde_json::{Map, Value};
+
+/// The language one [`describe_action`] call renders in: `L(true)` follows
+/// the display language ([`crate::i18n::tr`]), `L(false)` is always the
+/// English the run log keeps ([`describe_action_en`]).
+#[derive(Clone, Copy)]
+struct L(bool);
+
+impl L {
+    fn tr(self, en: &'static str) -> &'static str {
+        if self.0 {
+            crate::i18n::tr(en)
+        } else {
+            en
+        }
+    }
+
+    fn trf(self, en: &'static str, vars: &[(&str, &dyn Display)]) -> String {
+        crate::i18n::fill(self.tr(en), vars)
+    }
+
+    fn tr_dyn(self, en: &str) -> String {
+        if self.0 {
+            crate::i18n::tr_dyn(en)
+        } else {
+            en.to_string()
+        }
+    }
+}
+
+/// A character's display title (`"Ironclad"` → `"铁甲战士"`) from the game's
+/// `characters` table (`<ID>.title`) in Chinese; the name as given in
+/// English.
+#[must_use]
+pub fn character_title(character: &str) -> String {
+    if !crate::localization::display_zh() {
+        return character.to_string();
+    }
+    let id = character.trim().to_ascii_uppercase();
+    let id = id.strip_prefix("THE ").unwrap_or(&id);
+    crate::data::zh_tables()
+        .characters
+        .get(&format!("{id}.title"))
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_else(|| character.to_string())
+}
 
 /// Sentinel verb for a step taken by the NATIVE run agent (run-mode autoplay).
 /// Its `args` are a raw Rust `RunAction` dict rather than workbench-verb
@@ -391,6 +438,11 @@ fn matching_close(text: &str, open: usize) -> Option<usize> {
     None
 }
 
+thread_local! {
+    /// Whether the template [`resolve_card_text`] is rendering is Chinese.
+    static TEXT_IS_ZH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Recursively resolve `{...}` directives in `text` (balanced braces).
 ///
 /// Handles three directive shapes (branches may nest further `{...}`):
@@ -497,6 +549,65 @@ impl IconCount<'_> {
     }
 }
 
+/// The value a `{Var:cond:…}` tests. The game's text vars name a property of
+/// the variable (`{CardTitles.StringValue:cond:…}`), while `stats` is keyed
+/// by the bare variable name, so a dotted key falls back to its first segment.
+fn cond_value<'a>(stats: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
+    stats
+        .get(key)
+        .or_else(|| key.split_once('.').and_then(|(base, _)| stats.get(base)))
+}
+
+/// One `<op><number>?` test of a `cond:` branch (`<0?Decreases`), split into
+/// `(op, threshold, text)`; `None` for a branch without a test.
+fn cond_test(branch: &str) -> Option<(&str, f64, &str)> {
+    let op = ["<=", ">=", "==", "!=", "<", ">"]
+        .into_iter()
+        .find(|op| branch.starts_with(op))?;
+    let after = &branch[op.len()..];
+    let q = after.find('?')?;
+    let threshold = after[..q].trim().parse::<f64>().ok()?;
+    Some((op, threshold, &after[q + 1..]))
+}
+
+/// The branch a SmartFormat `cond:` directive renders, unrendered.
+///
+/// Two shapes appear in the game's text. Tested branches
+/// (`{Amount:cond:==1? next turn|>1? for {} turns|}`) are tried in order and
+/// the first untested branch is the default. Plain branches
+/// (`{CardTitles.StringValue:cond:Cards devoured: {}|}`) pick the first for a
+/// truthy value (non-empty text, non-zero number, true) and the second
+/// otherwise; a missing value is falsy.
+fn cond_branch<'a>(body: &'a str, value: Option<&Value>) -> &'a str {
+    let branches = split_top_level(body, '|');
+    if branches.iter().any(|b| cond_test(b).is_some()) {
+        let n = value.and_then(py::num).map(py::Num::as_f64);
+        for branch in branches {
+            let Some((op, threshold, text)) = cond_test(branch) else {
+                return branch;
+            };
+            let Some(n) = n else { continue };
+            let hit = match op {
+                "<=" => n <= threshold,
+                ">=" => n >= threshold,
+                "==" => (n - threshold).abs() < f64::EPSILON,
+                "!=" => (n - threshold).abs() >= f64::EPSILON,
+                "<" => n < threshold,
+                _ => n > threshold,
+            };
+            if hit {
+                return text;
+            }
+        }
+        return "";
+    }
+    if py::truthy_opt(value) {
+        branches[0]
+    } else {
+        branches.get(1).copied().unwrap_or("")
+    }
+}
+
 fn eval_directive(
     body: &str,
     stats: &Map<String, Value>,
@@ -576,15 +687,38 @@ fn eval_directive(
             // so its literal count is an icon count, never a value to print.
             return if is_star {
                 "★".to_string()
+            } else if TEXT_IS_ZH.with(std::cell::Cell::get) {
+                crate::i18n::tr(" Energy").to_string()
             } else {
                 " Energy".to_string()
             };
         }
-        let noun = if is_star { "Stars" } else { "Energy" };
-        return match count_str {
-            Some(n) => format!("{n} {noun}"),
-            None => noun.to_string(),
+        if !TEXT_IS_ZH.with(std::cell::Cell::get) {
+            let noun = if is_star { "Stars" } else { "Energy" };
+            return match count_str {
+                Some(n) => format!("{n} {noun}"),
+                None => noun.to_string(),
+            };
+        }
+        return match (count_str, is_star) {
+            (Some(n), true) => crate::i18n::trf("{n} Stars", &[("n", &n)]),
+            (Some(n), false) => crate::i18n::trf("{n} Energy", &[("n", &n)]),
+            (None, true) => crate::i18n::tr("Stars").to_string(),
+            (None, false) => crate::i18n::tr("Energy").to_string(),
         };
+    }
+
+    if let Some(cond_body) = rest.strip_prefix("cond:") {
+        let value = cond_value(stats, &key);
+        let chosen = cond_branch(cond_body, value);
+        // `{}` inside the chosen branch prints the tested value itself
+        // (`Cards devoured:\n{}`); the empty key carries it.
+        if !chosen.contains("{}") {
+            return render_template(chosen, stats, flags, markup);
+        }
+        let mut with_self = stats.clone();
+        with_self.insert(String::new(), value.cloned().unwrap_or(Value::Null));
+        return render_template(chosen, &with_self, flags, markup);
     }
 
     if let Some(plural_body) = rest.strip_prefix("plural:") {
@@ -667,6 +801,20 @@ fn collect_directive(body: &str, flags: &Map<String, Value>, out: &mut BTreeSet<
             halves.get(1).copied().unwrap_or("")
         };
         collect_vars(chosen, flags, out);
+        return;
+    }
+    if let Some(cond_body) = rest.strip_prefix("cond:") {
+        let branches = split_top_level(cond_body, '|');
+        // A numeric test needs its number; a truthiness test reads a missing
+        // value as false (Pael's Tooth before it has devoured anything), so
+        // only the tested form makes the var required.
+        if branches.iter().any(|b| cond_test(b).is_some()) {
+            out.insert(key);
+        }
+        for branch in branches {
+            let text = cond_test(branch).map_or(branch, |(_, _, t)| t);
+            collect_vars(&text.replace("{}", ""), flags, out);
+        }
         return;
     }
     if let Some(plural_body) = rest.strip_prefix("plural:") {
@@ -826,6 +974,12 @@ pub fn resolve_card_text(
         Some(Value::Object(m)) => m,
         _ => &empty,
     };
+    // Spelled-out icon words follow the TEXT's language: an English
+    // template kept in Chinese mode (no Chinese for it) stays all English.
+    let zh_text = description
+        .chars()
+        .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c));
+    TEXT_IS_ZH.with(|f| f.set(zh_text));
     let out = render_template(description, stats, &flags.to_map(), flags.keep_markup);
     let out = if flags.keep_markup {
         out
@@ -857,8 +1011,8 @@ fn find<'a>(items: Option<&'a Value>, idx: Option<&Value>) -> Option<&'a Value> 
 }
 
 /// Return the name of the item at stable `index` (or positional) `idx`.
-fn named(items: Option<&Value>, idx: Option<&Value>, kind: &str) -> String {
-    let fallback = || format!("{kind} {}", py::opt_str(idx));
+fn named(items: Option<&Value>, idx: Option<&Value>, kind: &str, l: L) -> String {
+    let fallback = || format!("{} {}", l.tr_dyn(kind), py::opt_str(idx));
     match find(items, idx) {
         Some(it) => py::get_raw(it, "name").map_or_else(fallback, py::to_str),
         None => fallback(),
@@ -873,8 +1027,8 @@ fn named(items: Option<&Value>, idx: Option<&Value>, kind: &str) -> String {
 /// stable `index` at all: when the view carries indices, a missing one is a
 /// slot that is not on the board, and its list position names a DIFFERENT
 /// enemy.
-fn enemy_named(items: Option<&Value>, idx: Option<&Value>) -> String {
-    let fallback = || format!("enemy {}", py::opt_str(idx));
+fn enemy_named(items: Option<&Value>, idx: Option<&Value>, l: L) -> String {
+    let fallback = || format!("{} {}", l.tr_dyn("enemy"), py::opt_str(idx));
     let list = py::list(items);
     let Some(want) = idx.filter(|v| !v.is_null()) else {
         return fallback();
@@ -900,17 +1054,48 @@ fn enemy_named(items: Option<&Value>, idx: Option<&Value>) -> String {
 }
 
 /// Like [`named`] but marks upgraded cards with a trailing `+`.
-fn card_name(cards: Option<&Value>, idx: Option<&Value>) -> String {
+fn card_name(cards: Option<&Value>, idx: Option<&Value>, l: L) -> String {
+    let fallback = || format!("{} {}", l.tr_dyn("card"), py::opt_str(idx));
     let Some(it) = find(cards, idx) else {
-        return format!("card {}", py::opt_str(idx));
+        return fallback();
     };
-    let name =
-        py::get_raw(it, "name").map_or_else(|| format!("card {}", py::opt_str(idx)), py::to_str);
+    let name = py::get_raw(it, "name").map_or_else(fallback, py::to_str);
     if py::truthy_opt(py::get_raw(it, "upgraded")) {
         format!("{name}+")
     } else {
         name
     }
+}
+
+/// `_blitz_ware_title`: the title of the Blitz merchant ware listed at
+/// `idx`: from the enriched `blitz_wares`, else from the engine's own
+/// `blitz_choice` options. `None` when the state names no such ware.
+fn blitz_ware_title(state: &Value, idx: Option<&Value>) -> Option<String> {
+    let idx = idx.filter(|v| !v.is_null())?;
+    let at = |v: &Value| py::get_raw(v, "index").is_some_and(|i| py::eq(i, idx));
+    let title = |v: Option<&Value>| {
+        v.and_then(|v| py::get_raw(v, "title"))
+            .filter(|t| py::truthy(t))
+            .map(py::to_str)
+    };
+    for ware in py::get_list(state, "blitz_wares") {
+        if ware.is_object() && at(ware) {
+            if let Some(t) = title(Some(ware)) {
+                return Some(t);
+            }
+        }
+    }
+    for opt in py::get_list(state, "options") {
+        if opt.is_object()
+            && py::get_raw(opt, "action").and_then(Value::as_str) == Some("blitz_choice")
+            && at(opt)
+        {
+            if let Some(t) = title(py::get_raw(opt, "item")) {
+                return Some(t);
+            }
+        }
+    }
+    None
 }
 
 /// `next((args[k] for k in keys if args.get(k) is not None), None)`.
@@ -927,8 +1112,49 @@ fn first_present<'a>(args: &'a Map<String, Value>, keys: &[&str]) -> Option<&'a 
 ///
 /// Returns e.g. `"Play Strike → enemy 0"`, `"End turn"`, `"Start run ·
 /// Ironclad"`. Empty string when there is no action.
+///
+/// The words are in the display language ([`crate::i18n`]); the names come
+/// from `state` as resolved. [`describe_action_en`] always writes English.
 #[must_use]
 pub fn describe_action(state: Option<&Value>, action: Option<&Value>) -> String {
+    let zh = crate::localization::display_zh();
+    if zh {
+        if let Some(label) = display_label_zh(state, action) {
+            return label;
+        }
+    }
+    describe_action_in(state, action, L(zh))
+}
+
+/// [`describe_action`] in English whatever the display language: the label
+/// a run log records (`runlog::write_run_log`).
+#[must_use]
+pub fn describe_action_en(state: Option<&Value>, action: Option<&Value>) -> String {
+    describe_action_in(state, action, L(false))
+}
+
+/// A RECORDED action's Chinese label, for a run log read back in Chinese:
+/// its `label_zh` (written beside the English `label` by a run played in
+/// Chinese), else the label rendered afresh from its replayable workbench
+/// verb (`replay`, which is what the live session described). `None` when
+/// neither applies (the recorded `label` then stands).
+fn display_label_zh(state: Option<&Value>, action: Option<&Value>) -> Option<String> {
+    let action = action.filter(|a| py::truthy(a))?;
+    if let Some(zh) = py::get(action, "label_zh").filter(|l| py::truthy(l)) {
+        return Some(py::to_str(zh));
+    }
+    py::get(action, "label").filter(|l| py::truthy(l))?;
+    let replay = py::get(action, "replay")?;
+    let verb = py::get(replay, "action").and_then(Value::as_str)?;
+    if verb == NATIVE_ACTION {
+        return None;
+    }
+    let args = py::get(replay, "args").cloned().unwrap_or(Value::Null);
+    let fresh = serde_json::json!({"cmd": "action", "action": verb, "args": args});
+    Some(describe_action_in(state, Some(&fresh), L(true)))
+}
+
+fn describe_action_in(state: Option<&Value>, action: Option<&Value>, l: L) -> String {
     let Some(action) = action.filter(|a| py::truthy(a)) else {
         return String::new();
     };
@@ -946,7 +1172,17 @@ pub fn describe_action(state: Option<&Value>, action: Option<&Value>) -> String 
     if cmd.and_then(Value::as_str) == Some("start_run") {
         let character =
             py::get_raw(action, "character").map_or_else(|| "?".to_string(), py::to_str);
-        return format!("Start run · {character}");
+        return l.trf(
+            "Start run · {character}",
+            &[(
+                "character",
+                &if l.0 {
+                    character_title(&character)
+                } else {
+                    character.clone()
+                },
+            )],
+        );
     }
 
     let mut act: Option<Value> = match py::get_raw(action, "action") {
@@ -990,18 +1226,22 @@ pub fn describe_action(state: Option<&Value>, action: Option<&Value>) -> String 
             // Both index spellings: the C# verb's `card_index` and the raw
             // RunAction's `hand_idx` (same semantics — a position in the hand).
             let card_idx = first_present(&args, &["card_index", "hand_idx"]);
-            let name = card_name(py::get(state, "hand"), card_idx);
+            let name = card_name(py::get(state, "hand"), card_idx, l);
             match args.get("target_index").filter(|v| !v.is_null()) {
-                Some(target) => {
-                    format!(
-                        "Play {name} → {}",
-                        enemy_named(py::get(state, "enemies"), Some(target))
-                    )
-                }
-                None => format!("Play {name}"),
+                Some(target) => l.trf(
+                    "Play {name} → {target}",
+                    &[
+                        ("name", &name),
+                        (
+                            "target",
+                            &enemy_named(py::get(state, "enemies"), Some(target), l),
+                        ),
+                    ],
+                ),
+                None => l.trf("Play {name}", &[("name", &name)]),
             }
         }
-        Some("end_turn") => "End turn".to_string(),
+        Some("end_turn") => l.tr("End turn").to_string(),
         Some("use_potion" | "drink_potion") => {
             // Both index spellings: `to_workbench_verb` emits `potion_index`,
             // the native RunAction shape `slot`.
@@ -1013,50 +1253,84 @@ pub fn describe_action(state: Option<&Value>, action: Option<&Value>) -> String 
             let belt = py::get(py::get_obj(state, "player"), "potions")
                 .filter(|v| py::truthy(v))
                 .or_else(|| py::get(state, "potions"));
-            let name = named(belt, slot, "potion");
+            let name = named(belt, slot, "potion", l);
             match args.get("target_index").filter(|v| !v.is_null()) {
-                Some(target) => {
-                    format!(
-                        "Drink {name} → {}",
-                        enemy_named(py::get(state, "enemies"), Some(target))
-                    )
-                }
-                None => format!("Drink {name}"),
+                Some(target) => l.trf(
+                    "Drink {name} → {target}",
+                    &[
+                        ("name", &name),
+                        (
+                            "target",
+                            &enemy_named(py::get(state, "enemies"), Some(target), l),
+                        ),
+                    ],
+                ),
+                None => l.trf("Drink {name}", &[("name", &name)]),
             }
         }
-        Some("select_map_node") => format!(
-            "Map → ({},{})",
-            py::opt_str(args.get("col")),
-            py::opt_str(args.get("row"))
+        Some("select_map_node") => {
+            // A missing coordinate prints Python's `None` (the label's English
+            // is parity-pinned); Chinese shows `?` instead.
+            let coord = |k: &str| {
+                let v = py::opt_str(args.get(k));
+                if v == "None" && crate::localization::display_zh() {
+                    "?".to_string()
+                } else {
+                    v
+                }
+            };
+            l.trf(
+                "Map → ({col},{row})",
+                &[("col", &coord("col")), ("row", &coord("row"))],
+            )
+        }
+        Some("select_card_reward") => l.trf(
+            "Take {name}",
+            &[(
+                "name",
+                &card_name(py::get(state, "cards"), args.get("card_index"), l),
+            )],
         ),
-        Some("select_card_reward") => {
-            format!(
-                "Take {}",
-                card_name(py::get(state, "cards"), args.get("card_index"))
-            )
-        }
-        Some("skip_card_reward") => "Skip card reward".to_string(),
-        Some("buy_card") => {
-            format!(
-                "Buy {}",
-                card_name(py::get(state, "cards"), args.get("card_index"))
-            )
-        }
+        Some("skip_card_reward") => l.tr("Skip card reward").to_string(),
+        Some("buy_card") => l.trf(
+            "Buy {name}",
+            &[(
+                "name",
+                &card_name(py::get(state, "cards"), args.get("card_index"), l),
+            )],
+        ),
         Some(act @ ("buy_relic" | "buy_potion")) => {
             let (key, idx_arg) = if act == "buy_relic" {
                 ("relics", "relic_index")
             } else {
                 ("potions", "potion_index")
             };
-            format!(
-                "Buy {}",
-                named(
-                    py::get(state, key),
-                    args.get(idx_arg),
-                    &key[..key.len() - 1]
-                )
+            let name = named(
+                py::get(state, key),
+                args.get(idx_arg),
+                &key[..key.len() - 1],
+                l,
+            );
+            l.trf("Buy {name}", &[("name", &name)])
+        }
+        // GH #1347: a Blitz merchant ware, by the index the shop lists it at.
+        Some("blitz_choice") => {
+            let idx = args.get("index");
+            blitz_ware_title(state, idx).map_or_else(
+                || l.trf("Take ware {n}", &[("n", &py::opt_str(idx))]),
+                |title| l.trf("Take {name}", &[("name", &title)]),
             )
         }
+        Some("take_reward") => {
+            let name = named(
+                py::get(state, "rewards"),
+                args.get("reward_index"),
+                "reward",
+                l,
+            );
+            l.trf("Take {name}", &[("name", &name)])
+        }
+        Some("skip_reward") => l.tr("Leave the chest").to_string(),
         Some("choose_option") => {
             let oi = args.get("option_index");
             let options = py::get_list(state, "options");
@@ -1076,10 +1350,10 @@ pub fn describe_action(state: Option<&Value>, action: Option<&Value>) -> String 
                     Some(py::to_str(opt)).filter(|s| !s.is_empty())
                 };
                 if let Some(label) = label {
-                    return format!("Choose: {label}");
+                    return l.trf("Choose: {label}", &[("label", &label)]);
                 }
             }
-            format!("Choose option {}", py::opt_str(oi))
+            l.trf("Choose option {n}", &[("n", &py::opt_str(oi))])
         }
         Some("select_cards") => {
             let indices = args.get("indices").map_or_else(String::new, py::to_str);
@@ -1106,23 +1380,25 @@ pub fn describe_action(state: Option<&Value>, action: Option<&Value>) -> String 
                     let named: Vec<String> = idxs
                         .iter()
                         .map(|i| {
-                            format!(
-                                "{} (deck #{})",
-                                card_name(Some(deck), Some(i)),
-                                py::to_str(i)
+                            l.trf(
+                                "{name} (deck #{n})",
+                                &[
+                                    ("name", &card_name(Some(deck), Some(i), l)),
+                                    ("n", &py::to_str(i)),
+                                ],
                             )
                         })
                         .collect();
                     return if named.is_empty() {
-                        "Remove card".to_string()
+                        l.tr("Remove card").to_string()
                     } else {
-                        format!("Remove {}", named.join(", "))
+                        l.trf("Remove {names}", &[("names", &named.join(l.tr(", ")))])
                     };
                 }
             }
             let names: Vec<String> = idxs
                 .iter()
-                .map(|i| card_name(py::get(state, "cards"), Some(i)))
+                .map(|i| card_name(py::get(state, "cards"), Some(i), l))
                 .collect();
             // The Rust backend stamps the card_select's purpose on `context`
             // ("upgrade" = rest-site Smith, "remove" = deck removal, otherwise a
@@ -1130,20 +1406,22 @@ pub fn describe_action(state: Option<&Value>, action: Option<&Value>) -> String 
             let context = py::get(state, "context")
                 .filter(|v| py::truthy(v))
                 .map_or_else(String::new, py::to_str);
-            let verb = match context.as_str() {
-                "upgrade" => "Upgrade",
-                "remove" => "Remove",
-                _ => "Select",
-            };
             if names.is_empty() {
-                "Select cards".to_string()
+                l.tr("Select cards").to_string()
             } else {
-                format!("{verb} {}", names.join(", "))
+                let names = names.join(l.tr(", "));
+                match context.as_str() {
+                    "upgrade" => l.trf("Upgrade {names}", &[("names", &names)]),
+                    "remove" => l.trf("Remove {names}", &[("names", &names)]),
+                    _ => l.trf("Select {names}", &[("names", &names)]),
+                }
             }
         }
-        Some("skip_select") => "Skip selection".to_string(),
+        Some("skip_select") => l.tr("Skip selection").to_string(),
+        // A verb with no phrase of its own (`proceed`, `leave_room`, ...)
+        // prints as itself; Chinese names the known ones.
         _ => match act {
-            Some(v) if py::truthy(&v) => py::to_str(&v),
+            Some(v) if py::truthy(&v) => l.tr_dyn(&py::to_str(&v)),
             _ => "?".to_string(),
         },
     }
@@ -1156,6 +1434,39 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// In Chinese a label reads Chinese, and a run log's recorded English
+    /// label is shown as its `label_zh`, else re-described from `replay`;
+    /// `describe_action_en` stays English.
+    #[test]
+    fn chinese_labels_and_recorded_labels() {
+        if !crate::data::zh_tables().is_present() {
+            return;
+        }
+        crate::localization::set_display_language("zh");
+        let state = json!({"hand": [{"index": 0, "name": "防御"}],
+                           "enemies": [{"index": 1, "name": "小啃兽"}]});
+        let play = json!({"action": "play_card", "args": {"card_index": 0, "target_index": 1}});
+        assert_eq!(
+            describe_action(Some(&state), Some(&play)),
+            "打出 防御 → 小啃兽"
+        );
+        assert_eq!(
+            describe_action_en(Some(&state), Some(&play)),
+            "Play 防御 → 小啃兽"
+        );
+        let mv = json!({"action": "select_map_node", "args": {"col": 1, "row": 1}});
+        assert_eq!(describe_action(Some(&state), Some(&mv)), "地图 → (1,1)");
+        let logged = json!({"label": "End turn", "replay": {"action": "end_turn", "args": {}}});
+        assert_eq!(describe_action(Some(&state), Some(&logged)), "结束回合");
+        let both =
+            json!({"label": "End turn", "label_zh": "已记录", "replay": {"action": "end_turn"}});
+        assert_eq!(describe_action(Some(&state), Some(&both)), "已记录");
+        let live = json!({"label": "Proceed"});
+        assert_eq!(describe_action(Some(&state), Some(&live)), "Proceed");
+        crate::localization::set_display_language("en");
+        assert_eq!(describe_action(Some(&state), Some(&logged)), "End turn");
+    }
+
     fn resolve(tmpl: &str, stats: Value) -> String {
         resolve_card_text(Some(tmpl), Some(&stats), CardTextFlags::default())
     }
@@ -1166,6 +1477,46 @@ mod tests {
 
     fn set(items: &[&str]) -> BTreeSet<String> {
         items.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn test_cond_text_value_absent_takes_else_branch() {
+        // Pael's Tooth before it has devoured anything: the bug report showed
+        // the raw `Upgraded.CardTitles.StringValue` tail.
+        let tmpl = "add [blue]1[/blue] back [gold]Upgraded[/gold].{CardTitles.StringValue:cond:
+
+Cards devoured:
+{}|}";
+        assert_eq!(resolve(tmpl, json!({})), "add 1 back Upgraded.");
+        assert_eq!(
+            required_stat_vars(Some(tmpl), CardTextFlags::default()),
+            set(&[])
+        );
+    }
+
+    #[test]
+    fn test_cond_text_value_present_prints_it() {
+        let tmpl = "{CardTitles.StringValue:cond:Cards devoured: {}|none}";
+        assert_eq!(
+            resolve(tmpl, json!({"cardtitles": "Bash, Strike"})),
+            "Cards devoured: Bash, Strike"
+        );
+        assert_eq!(resolve(tmpl, json!({"cardtitles": ""})), "none");
+    }
+
+    #[test]
+    fn test_cond_numeric_tests() {
+        let tmpl = "{Amount:cond:<0?Decreases|Increases} damage";
+        assert_eq!(resolve(tmpl, json!({"amount": -2})), "Decreases damage");
+        assert_eq!(resolve(tmpl, json!({"amount": 3})), "Increases damage");
+        let turns = "Lasts{Amount:cond:==1? next turn|>1? for {} turns|}.";
+        assert_eq!(resolve(turns, json!({"amount": 1})), "Lasts next turn.");
+        assert_eq!(resolve(turns, json!({"amount": 3})), "Lasts for 3 turns.");
+        assert_eq!(resolve(turns, json!({"amount": 0})), "Lasts.");
+        assert_eq!(
+            required_stat_vars(Some(turns), CardTextFlags::default()),
+            set(&["amount"])
+        );
     }
 
     #[test]

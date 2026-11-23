@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How the AI plays</title>
-<meta name="description" content="How the spire-mentor AI decides: chance-node MCTS with honest hidden information for every combat action, and a per-character PPO transformer for every other decision.">
+<meta name="description" content="How the spire-mentor AI decides: Instinct, one transformer that plays every decision of a run with no search, and the earlier agent, chance-node MCTS for fights plus a PPO run policy.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 9v14l12 7 12-7V9z' fill='%23d9a441'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kreon:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 <script>try{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
@@ -30,7 +30,8 @@
 <nav id="toc" class="toc" aria-label="Contents">
   <p class="toc-title">On this page</p>
   <ol>
-    <li><a href="#split">Two halves</a></li>
+    <li><a href="#instinct">Instinct</a></li>
+    <li><a href="#split">The search agent</a></li>
     <li><a href="#search">Combat search</a></li>
     <li><a href="#hidden">Hidden information</a></li>
     <li><a href="#values">What a fight is worth</a></li>
@@ -45,22 +46,71 @@
 
 <section class="hero">
   <h1>How the AI plays</h1>
-  <p class="lede">Two different machines share the work. A tree search
-  decides every action inside a fight. A small transformer, trained by
-  reinforcement learning, decides everything between fights. Neither
-  ever sees information a human player could not.</p>
-  <p class="note">How the transformer was trained and promoted is on
+  <p class="lede">The AI is <strong>Instinct</strong>: one small
+  transformer, trained by reinforcement learning, that makes every decision
+  of a run in a single forward pass, with no search. The agent it replaced
+  splits the work between a tree search inside fights and a learned policy
+  between them; it is still shipped as an analysis tool and a fallback, and
+  most of this page describes it. Neither ever sees information a human
+  player could not.</p>
+  <p class="note">How the networks were trained is on
   <a href="training.html">its own page</a>. This page describes what runs at
   decision time, as deployed.</p>
   <figure class="video">
     <div class="frame"><iframe src="https://www.youtube-nocookie.com/embed/DcZs8ZGSDyo" title="Slay the Spire 2: AI beats Ironclad Ascension 9" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
-    <figcaption>The AI beating Ironclad at Ascension 9 in the real game, through the Spire Mentor mod. The advisor panel at the top left shows the search's ranking of each move.</figcaption>
+    <figcaption>The search agent beating Ironclad at Ascension 9 in the real game, through the Spire Mentor mod (recorded before Instinct). The advisor panel at the top left shows the search's ranking of each move.</figcaption>
   </figure>
 
 </section>
 
+<section id="instinct">
+  <h2>Instinct: one network, no search</h2>
+  <p>Instinct plays a whole run alone. At every decision with more than one
+  option, in a fight or between fights, the state the player can see is
+  turned into a set of tokens, the network scores the legal options, and the
+  top one is played. There is no tree, no rollout and no second network.</p>
+  <ul class="facts">
+    <li><strong>What it decides.</strong> Card plays with their targets,
+    potions, in-fight choices and ending the turn; then paths, card rewards,
+    relics, shops, removals and upgrades, events and rest sites.</li>
+    <li><strong>What it sees.</strong> The hand, the draw, discard and
+    exhaust piles as unordered sets, powers, relics, potions, the deck, the
+    map, the offers on screen, the act's boss, and each enemy's shown intent
+    with a three-step forecast of its move pattern. It does not get the draw
+    order, the monsters' hidden rolls or anything about rooms not yet
+    visited. A test enforces this: shuffling the hidden state leaves its
+    output bit-identical.</li>
+    <li><strong>The network.</strong> An entity transformer: 4 blocks, width
+    256, 4 heads, about 6.1 million parameters, one shared embedding table
+    for every card, relic, power, monster and event id, and no positional
+    encoding. Identical options (two copies of Strike at the same target)
+    are merged into one choice.</li>
+    <li><strong>Choosing.</strong> Greedy: the highest-scoring option, every
+    time. Inference runs on one CPU core, in the browser too.</li>
+    <li><strong>Which nets.</strong> One net plays Ironclad, Silent, Defect,
+    Regent and Necrobinder on game build v0.111.0. The Fool, new in
+    v0.113.0, has its own net.</li>
+  </ul>
+  <p>In the simulator the Ironclad net won 81.4% of 4,000 test runs at
+  Ascension 10 on which the search agent below won 21.2%; the numbers for
+  every character are in the <a href="index.html#instinct">main docs</a>.
+  One measured part of the difference is resources. The search plays each
+  fight for its own sake, and in a small audit on an older build it drank potions in ordinary
+  fights about three times as often as Instinct and reached boss fights with
+  an empty belt far more often. The network that picks the cards also knows
+  what the run still needs, and keeps its potions for elites and bosses, much
+  as winning human players do.</p>
+  <p>What Instinct does not give you is an explanation. It outputs a ranking
+  of the options, not a line of play or a win estimate. That is what the
+  search is still used for.</p>
+</section>
+
 <section id="split">
-  <h2>Two halves</h2>
+  <h2>The search agent: two halves</h2>
+  <p>This is the agent the project shipped until November 2026. It is what
+  draws the search tree, the principal line and the win estimates in the
+  workbench and the mod, it reviews finished fights, and it answers when
+  Instinct cannot (an unsupported character and build combination).</p>
   <figure class="fig">
     <div class="canvas"><svg viewBox="0 0 820 186" role="img" aria-label="A run alternates between fights, decided action by action by the search, and choices between fights, decided by the run policy"><defs><marker id="ah-split" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker><marker id="aa-split" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-acc"/></marker></defs><line x1="20" y1="70" x2="800" y2="70" class="line"/><circle cx="33" cy="70" r="9" class="hot"/><text x="33" y="104" class="s" text-anchor="middle">start</text><rect x="68" y="52" width="50" height="36" rx="8" class="box"/><text x="93.0" y="75" class="m" text-anchor="middle">fight</text><circle cx="135" cy="70" r="9" class="hot"/><text x="135" y="104" class="s" text-anchor="middle">reward</text><circle cx="179" cy="70" r="9" class="hot"/><text x="179" y="104" class="s" text-anchor="middle">path</text><rect x="214" y="52" width="50" height="36" rx="8" class="box"/><text x="239.0" y="75" class="m" text-anchor="middle">fight</text><circle cx="281" cy="70" r="9" class="hot"/><text x="281" y="104" class="s" text-anchor="middle">reward</text><circle cx="325" cy="70" r="9" class="hot"/><text x="325" y="104" class="s" text-anchor="middle">event</text><circle cx="369" cy="70" r="9" class="hot"/><text x="369" y="104" class="s" text-anchor="middle">path</text><rect x="404" y="52" width="50" height="36" rx="8" class="box"/><text x="429.0" y="75" class="m" text-anchor="middle">elite</text><circle cx="471" cy="70" r="9" class="hot"/><text x="471" y="104" class="s" text-anchor="middle">relic</text><circle cx="515" cy="70" r="9" class="hot"/><text x="515" y="104" class="s" text-anchor="middle">rest</text><circle cx="559" cy="70" r="9" class="hot"/><text x="559" y="104" class="s" text-anchor="middle">shop</text><circle cx="603" cy="70" r="9" class="hot"/><text x="603" y="104" class="s" text-anchor="middle">path</text><rect x="638" y="52" width="50" height="36" rx="8" class="box"/><text x="663.0" y="75" class="m" text-anchor="middle">fight</text><rect x="696" y="52" width="60" height="36" rx="8" class="box"/><text x="726.0" y="75" class="m" text-anchor="middle">boss</text><rect x="24" y="128" width="14" height="14" rx="3" class="box"/><text x="46" y="140" class="m" text-anchor="start">fight: MCTS on every action (1,000 sims, 4,000 at bosses)</text><circle cx="31" cy="164" r="7" class="hot"/><text x="46" y="169" class="m" text-anchor="start">anything else: one forward pass of the run policy</text><text x="20" y="26" class="tb" text-anchor="start">Act 1, schematically: who decides at each stop</text></svg></div>
     <figcaption>Fights go to the search one action at a time; every other choice is one pass of the run policy. Single-option prompts are taken automatically.</figcaption>
@@ -388,13 +438,14 @@
   <table>
     <thead><tr><th>Host</th><th>Search</th><th>Policy</th></tr></thead>
     <tbody>
+      <tr><td>Instinct, every host</td><td>none</td><td>its own inference code in pure Rust (<code>sts2-rs/crates/sts2-e2e</code>), CPU; the same crate natively, in the mod's advisor process and compiled to WebAssembly, where the ~21 MB net is fetched when the brain is first chosen</td></tr>
       <tr><td>Simulator and gates</td><td>native Rust</td><td>ONNX via <em>tract</em>, pure Rust, CPU, batch 1</td></tr>
       <tr><td>Browser workbench</td><td>the same Rust crate compiled to WebAssembly, in a Web Worker</td><td>the same <em>tract</em> runtime inside the WebAssembly module; the ~8.5 MB model is fetched once and cached for offline use</td></tr>
       <tr><td>Spire Mentor mod</td><td colspan="2">The mod itself only reads the game and draws the HUD. It starts a separate advisor process that bundles the Rust engine and the champion models, mirrors the live state into the engine and answers over a local socket.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>The models are pinned by SHA-256 in
+  <p>The rows below the first are the search agent. Its run-policy models are pinned by SHA-256 in
   <code>sts2-pycli/data/ppo/champions.toml</code>. A missing or mismatched
   champion is a load error, not a silent swap to something weaker. The Rust
   encoder matches the Python one exactly, and <em>tract</em> matches PyTorch

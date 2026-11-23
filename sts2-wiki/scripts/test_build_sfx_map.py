@@ -15,13 +15,17 @@ from scripts.build_sfx_map import (
     load_character_anim_fallbacks,
     load_character_sfx,
     load_intent_tables,
+    load_melody_sfx,
+    load_node_generic_sfx,
     load_orb_sfx,
     load_treasure_sfx,
     parse_creature_sfx,
     parse_hit_sfx,
     parse_impact_sfx,
+    parse_melody_sfx,
     parse_move_sfx,
     parse_move_states,
+    parse_power_spent_sfx,
     tmp_sfx_path,
 )
 
@@ -1555,6 +1559,134 @@ class TestCharacterSfxOverride(unittest.TestCase):
         fool = load_character_sfx(V0113_DECOMP, None)["Fool"]
         self.assertEqual(fool["die"], "event:/sfx/characters/fugitive/fugitive_die")
         self.assertEqual(fool["attack"], "event:/sfx/characters/fool/fool_attack")
+
+
+_WA = "event:/sfx/characters/fugitive/fugitive_wa"
+_CHO = "event:/sfx/characters/fugitive/fugitive_cho"
+_KI = "event:/sfx/characters/fugitive/fugitive_ki"
+
+
+class TestParseMelodySfx(unittest.TestCase):
+    MELODIES = {"Wah": ("NWahVfx", _WA), "Cho": ("NChoVfx", _CHO), "Ki": ("NKiVfx", _KI)}
+
+    def test_one_syllable_per_call_in_play_order(self):
+        src = (
+            "await MelodyCmd.PlayMelodyVfx(base.Owner.Creature, CardTag.Wah);\n"
+            "await MelodyCmd.PlayMelodyVfx(base.Owner.Creature, CardTag.Cho);\n"
+            "await MelodyCmd.PlayMelodyVfx(base.Owner.Creature, CardTag.Ki);"
+        )
+        self.assertEqual(parse_melody_sfx(src, self.MELODIES), [_WA, _CHO, _KI])
+
+    def test_a_tag_check_is_not_a_song(self):
+        # Cho Limbs asks `MelodyCmd.PlayedWahThisTurn(...)`; only
+        # `PlayMelodyVfx` plays anything.
+        src = "if (!MelodyCmd.PlayedWahThisTurn(base.Owner)) { } CardTag.Wah"
+        self.assertEqual(parse_melody_sfx(src, self.MELODIES), [])
+
+    def test_a_tag_with_no_sound_drops_out(self):
+        src = "await MelodyCmd.PlayMelodyVfx(base.Owner.Creature, CardTag.Ki);"
+        self.assertEqual(parse_melody_sfx(src, {"Wah": ("NWahVfx", _WA)}), [])
+
+
+class TestCardSignatureSkipsMelodyNodes(unittest.TestCase):
+    def test_a_skipped_node_leaves_the_card_without_a_signature(self):
+        vfx = {"NWahVfx": f'SfxCmd.Play("{_WA}");'}
+        card = "protected override IEnumerable<string> ExtraRunAssetPaths => NWahVfx.AssetPaths;"
+        self.assertEqual(card_signature_event(card, vfx), _WA)
+        self.assertIsNone(card_signature_event(card, vfx, frozenset({"NWahVfx"})))
+
+
+@unittest.skipUnless(V0113_DECOMP.is_dir(), "needs the v0.113.0 decompilation")
+class TestFoolMelodies(unittest.TestCase):
+    def test_melody_cmd_switch_maps_each_tag_to_its_syllable(self):
+        vfx = {
+            cs.stem: cs.read_text(encoding="utf-8")
+            for cs in V0113_DECOMP.glob("MegaCrit.Sts2.Core.Nodes.Vfx*/**/*.cs")
+        }
+        self.assertEqual(
+            load_melody_sfx(V0113_DECOMP, vfx),
+            {"Wah": ("NWahVfx", _WA), "Cho": ("NChoVfx", _CHO), "Ki": ("NKiVfx", _KI)},
+        )
+
+    def test_built_map_sings_ki_verse_and_both_halves_of_wah_cho(self):
+        # Ki Verse names no vfx node (no `ExtraRunAssetPaths`), so following
+        # vfx references left it silent; Wah Cho kept only the wa.
+        doc = build_map(V0113_DECOMP, "v0.113.0")
+        self.assertEqual(doc["cardMelodies"]["Ki Verse"], [_KI])
+        self.assertEqual(doc["cardMelodies"]["Wah Cho"], [_WA, _CHO])
+        self.assertEqual(doc["cardMelodies"]["Wah Cho Ki"], [_WA, _CHO, _KI])
+        # The syllable lives in `cardMelodies` only, so it is not played twice.
+        self.assertNotIn("Wah Cho", doc["cards"])
+
+    def test_a_build_without_melodies_has_an_empty_table(self):
+        self.assertEqual(build_map(_REPO_DECOMP_ROOT, "v0.107.1")["cardMelodies"], {})
+
+
+class TestParsePowerSpentSfx(unittest.TestCase):
+    def test_the_sound_in_the_hook_that_removes_the_power(self):
+        src = (
+            "public sealed class GodByrdPower : PowerModel\n{\n"
+            "\tpublic override PowerType Type => PowerType.Buff;\n"
+            "\tpublic override async Task AfterPlayerTurnStart(PlayerChoiceContext c, Player p)\n"
+            "\t{\n"
+            '\t\tSfxCmd.Play("event:/sfx/byrdpip/byrd_2_attack");\n'
+            "\t\tawait PowerCmd.Remove(this);\n\t}\n}\n"
+        )
+        self.assertEqual(parse_power_spent_sfx(src), "event:/sfx/byrdpip/byrd_2_attack")
+
+    def test_a_sound_in_another_hook_is_not_the_spent_sound(self):
+        # Skittish plays its retract/extend from hooks that never remove it.
+        src = (
+            "public sealed class P : PowerModel\n{\n"
+            "\tpublic override async Task A()\n\t{\n"
+            '\t\tSfxCmd.Play("event:/sfx/x/retract");\n\t}\n'
+            "\tpublic override async Task B()\n\t{\n"
+            "\t\tawait PowerCmd.Remove(this);\n\t}\n}\n"
+        )
+        self.assertIsNone(parse_power_spent_sfx(src))
+
+
+class TestParseMoveSfxAccess(unittest.TestCase):
+    def test_a_public_move_method_is_a_move_and_ends_the_one_before_it(self):
+        # Waterfall Giant: the private-only parser ran `ExplodeMove` on into
+        # the public method below it and took that method's knockout sound.
+        src = (
+            "\tprivate async Task ExplodeMove(IReadOnlyList<Creature> t)\n\t{\n\t}\n"
+            "\tpublic async Task TriggerAboutToBlowState()\n\t{\n"
+            '\t\tSfxCmd.Play("event:/sfx/x/knockout");\n\t}\n'
+            "\tpublic async Task EnergyOrb(IReadOnlyList<Creature> t)\n\t{\n"
+            '\t\tawait DamageCmd.Attack(3).WithAttackerFx(null, "event:/sfx/x/orb")\n'
+            "\t\t\t.Execute(null);\n\t}\n"
+        )
+        out = parse_move_sfx(src)
+        self.assertNotIn("ExplodeMove", out)
+        self.assertEqual(out["EnergyOrb"], "event:/sfx/x/orb")
+
+
+@unittest.skipUnless(V0113_DECOMP.is_dir(), "needs the v0.113.0 decompilation")
+class TestV0113SoundGaps(unittest.TestCase):
+    def setUp(self):
+        self.doc = build_map(V0113_DECOMP, "v0.113.0")
+
+    def test_god_byrd_strikes_as_it_is_spent(self):
+        self.assertEqual(self.doc["powerSpent"]["God Byrd"], "event:/sfx/byrdpip/byrd_2_attack")
+
+    def test_evolve_and_arrow_dislodge_are_generic_keys(self):
+        self.assertEqual(self.doc["generic"]["restEvolve"], "event:/sfx/byrdpip/byrdlett_evolution")
+        self.assertEqual(
+            self.doc["generic"]["arrowDislodge"], "event:/sfx/characters/fool/fool_dislodge"
+        )
+
+    def test_snapping_jaxfruit_has_its_public_move(self):
+        moves = self.doc["monsters"]["Snapping Jaxfruit"]["moves"]
+        self.assertEqual(
+            [m["event"] for m in moves],
+            ["event:/sfx/enemy/enemy_attacks/orb_plant/snapping_jaxfruit_energy_orb"],
+        )
+
+    def test_a_build_without_the_nodes_names_neither_generic_key(self):
+        generic = load_node_generic_sfx(_REPO_DECOMP_ROOT)
+        self.assertEqual(generic, {})
 
 
 @needs_decomp

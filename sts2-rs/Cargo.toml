@@ -12,6 +12,8 @@ members = [
     "crates/sts2-vocab",
     "crates/sts2-e2e",
     "crates/sts2-workbench",
+    "crates/sts2-advisor",
+    "crates/sim-advisor",
     "crates/sts2-workbench-wasm",
     "crates/sts2-srchash",
     "xtask",
@@ -45,6 +47,8 @@ sts2-runai = { path = "crates/sts2-runai", version = "0.0.1" }
 sts2-vocab = { path = "crates/sts2-vocab", version = "0.0.1" }
 # Browser workbench: the ported FastAPI layer (JSON in/out, no I/O).
 sts2-workbench = { path = "crates/sts2-workbench", version = "0.0.1" }
+# The live advisor's logic ported from sts2-pycli (GH #1426): JSON in/out, no I/O.
+sts2-advisor = { path = "crates/sts2-advisor", version = "0.0.1" }
 # Bead `sts2-rs-a2fh` exposed sts2-cli as a library; reusable from
 # bench harnesses (e.g. `mcts_corpus_realistic`).
 sts2-cli = { path = "crates/sts2-cli", version = "0.0.1" }

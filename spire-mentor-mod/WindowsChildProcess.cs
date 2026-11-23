@@ -11,7 +11,7 @@ namespace SpireMentor;
 
 /// <summary>Starts the advisor without inheriting the game's open save files.
 /// Process.Start on Windows enables unrestricted handle inheritance.</summary>
-internal sealed class WindowsChildProcess : IDisposable
+internal sealed class WindowsChildProcess : IAdvisorChild
 {
     public Process Process { get; }
     public StreamReader StandardOutput { get; }

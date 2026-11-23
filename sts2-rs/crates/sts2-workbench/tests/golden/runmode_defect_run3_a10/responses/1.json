@@ -12,7 +12,7 @@
   "idx": 0,
   "meta": {
    "act": 1,
-   "act_name": "Overgrowth",
+   "act_name": "Underdocks",
    "bg_col": null,
    "bg_row": null,
    "bg_seed": 3,
@@ -25,8 +25,8 @@
   "source": "live",
   "state": {
    "act": 1,
-   "act1": "overgrowth",
-   "act_name": "Overgrowth",
+   "act1": "underdocks",
+   "act_name": "Underdocks",
    "ascension": 10,
    "bg_seed": 3,
    "choices": [
@@ -60,10 +60,10 @@
    "full_map": {
     "boss": {
      "col": 3,
-     "icon": "https://assets.test/run_history/the_kin_boss.png",
-     "id": "THE_KIN_BOSS",
-     "kind": "KinFollower",
-     "name": "The Kin",
+     "icon": "https://assets.test/run_history/lagavulin_matriarch_boss.png",
+     "id": "LAGAVULIN_MATRIARCH_BOSS",
+     "kind": "LagavulinMatriarch",
+     "name": "Lagavulin Matriarch",
      "row": 16,
      "type": "Boss"
     },

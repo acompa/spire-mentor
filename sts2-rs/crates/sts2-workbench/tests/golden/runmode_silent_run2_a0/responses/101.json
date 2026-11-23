@@ -1,7 +1,7 @@
 {
  "saves": [
   {
-   "act1": "overgrowth",
+   "act1": "roll",
    "ascension": 0,
    "backend": "rust",
    "character": "Silent",
@@ -10,14 +10,14 @@
    "progress": {
     "act": 1,
     "floor": 6,
-    "hp": 66,
+    "hp": 48,
     "max_hp": 70
    },
    "run_mode": true,
    "saved_at": "2026-01-01T00:00:00Z",
    "schema_version": 1,
    "seed": "2",
-   "step_count": 71
+   "step_count": 64
   }
  ]
 }

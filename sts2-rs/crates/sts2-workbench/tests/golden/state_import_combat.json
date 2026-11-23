@@ -2,6 +2,7 @@
  "cases": [
   {
    "combat_wire": {
+    "act_index": 2,
     "active_attack": null,
     "combat_id": 0,
     "deck": {
@@ -592,6 +593,7 @@
       "uid": 1
      }
     ],
+    "is_boss": true,
     "is_elite": false,
     "pending_choice": null,
     "pending_play": null,
@@ -729,6 +731,7 @@
     },
     "round": 8,
     "side": "Player",
+    "total_floor": 33,
     "turn": 8,
     "wire_version": 1
    },
@@ -1112,6 +1115,7 @@
     },
     "round": 2,
     "side": "Player",
+    "total_floor": 8,
     "turn": 2,
     "wire_version": 1
    },
@@ -1419,6 +1423,7 @@
     },
     "round": 1,
     "side": "Player",
+    "total_floor": 2,
     "turn": 1,
     "wire_version": 1
    },
@@ -1824,6 +1829,7 @@
     },
     "round": 1,
     "side": "Player",
+    "total_floor": 2,
     "turn": 1,
     "wire_version": 1
    },
@@ -2155,6 +2161,7 @@
     },
     "round": 3,
     "side": "Player",
+    "total_floor": 2,
     "turn": 3,
     "wire_version": 1
    },
@@ -2179,6 +2186,7 @@
   },
   {
    "combat_wire": {
+    "act_index": 2,
     "active_attack": null,
     "combat_id": 0,
     "deck": {
@@ -2624,6 +2632,7 @@
     },
     "round": 1,
     "side": "Player",
+    "total_floor": 19,
     "turn": 1,
     "wire_version": 1
    },
@@ -2901,6 +2910,7 @@
     },
     "round": 2,
     "side": "Player",
+    "total_floor": 1,
     "turn": 2,
     "wire_version": 1
    },
@@ -3189,6 +3199,7 @@
     },
     "round": 1,
     "side": "Player",
+    "total_floor": 2,
     "turn": 1,
     "wire_version": 1
    },
@@ -3460,6 +3471,7 @@
     },
     "round": 1,
     "side": "Player",
+    "total_floor": 1,
     "turn": 1,
     "wire_version": 1
    },
@@ -3485,7 +3497,7 @@
   }
  ],
  "engine": {
-  "src_hash": "539ed44acf161fc4",
+  "src_hash": "a33a300c5cf43a1a",
   "version": "0.0.1"
  }
 }

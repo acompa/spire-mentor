@@ -5094,7 +5094,7 @@ impl<P: Policy> Mcts<P> {
                                 .expect("decision node has realized state")
                                 .clone();
                             let s = self.realize_chance_outcome(
-                                pre_action,
+                                Box::new(pre_action),
                                 &edge,
                                 base,
                                 0,
@@ -5102,7 +5102,7 @@ impl<P: Policy> Mcts<P> {
                             );
                             self.chance_alloc_decision(Some(chance_id), s, &path)
                         } else {
-                            self.chance_alloc_decision(Some(chance_id), work, &path)
+                            self.chance_alloc_decision(Some(chance_id), Box::new(work), &path)
                         };
                         self.tree.node_mut(node_id).children.push((edge, chance_id));
                         self.tree.node_mut(node_id).child_visits.push(0);
@@ -5125,13 +5125,13 @@ impl<P: Policy> Mcts<P> {
                             Vec::new()
                         };
                         let child = if pruned.is_empty() {
-                            self.chance_alloc_decision(Some(node_id), work, &path)
+                            self.chance_alloc_decision(Some(node_id), Box::new(work), &path)
                         } else {
                             let salt = dominance::salt(&pruned);
                             let sh = sts2_core::search_hash(&work) ^ salt;
                             let child = self.chance_alloc_decision_with_hash(
                                 Some(node_id),
-                                work,
+                                Box::new(work),
                                 &path,
                                 sh,
                                 salt,
@@ -5615,12 +5615,12 @@ impl<P: Policy> Mcts<P> {
     #[allow(clippy::unused_self)]
     fn realize_chance_outcome(
         &self,
-        mut pre_action: CombatState,
+        mut pre_action: Box<CombatState>,
         action_edge: &EdgeAction,
         base: u64,
         n: u32,
         reshuffle_pile: bool,
-    ) -> CombatState {
+    ) -> Box<CombatState> {
         if reshuffle_pile {
             sts2_core::blindfold::shuffle_unknown_pile_for_outcome(&mut pre_action.player, base, n);
         }
@@ -5665,7 +5665,7 @@ impl<P: Policy> Mcts<P> {
         parent: NodeId,
         base: u64,
         n: u32,
-    ) -> Option<CombatState> {
+    ) -> Option<Box<CombatState>> {
         if !matches!(
             self.config.hidden_info,
             HiddenInfoMode::BeliefDraw | HiddenInfoMode::Clairvoyant
@@ -5684,7 +5684,7 @@ impl<P: Policy> Mcts<P> {
         match &self.tree.node(chance_id).endturn_prefix {
             EndTurnPrefix::Uncacheable => None,
             EndTurnPrefix::Cached { phases, state } => {
-                let mut s = (**state).clone();
+                let mut s = Box::new((**state).clone());
                 reseed_for_outcome(&mut s, base, n);
                 let _ =
                     sts2_core::combat_loop::end_turn_dispatch_from(&mut s, usize::from(*phases));
@@ -5697,7 +5697,7 @@ impl<P: Policy> Mcts<P> {
                     self.tree.node_mut(chance_id).endturn_prefix = EndTurnPrefix::Uncacheable;
                     return None;
                 }
-                let mut s = pre.clone();
+                let mut s = Box::new(pre.clone());
                 reseed_for_outcome(&mut s, base, n);
                 let clone_from = usize::from(self.endturn_prefix_guess);
                 let (clean, prefix) = end_turn_probing_prefix(&mut s, clone_from);
@@ -5775,7 +5775,7 @@ impl<P: Policy> Mcts<P> {
     fn chance_alloc_decision(
         &mut self,
         parent: Option<NodeId>,
-        state: CombatState,
+        state: Box<CombatState>,
         path: &[NodeId],
     ) -> NodeId {
         let sh = sts2_core::search_hash(&state);
@@ -5792,7 +5792,7 @@ impl<P: Policy> Mcts<P> {
     fn chance_alloc_decision_with_hash(
         &mut self,
         parent: Option<NodeId>,
-        state: CombatState,
+        state: Box<CombatState>,
         path: &[NodeId],
         sh: u64,
         salt: u64,
@@ -5829,7 +5829,7 @@ impl<P: Policy> Mcts<P> {
     fn alloc_decision_inner(
         &mut self,
         parent: Option<NodeId>,
-        state: CombatState,
+        state: Box<CombatState>,
         search_hash: u64,
     ) -> NodeId {
         // Chance mode keys transposition on `search_hash` and never consults
@@ -5838,7 +5838,7 @@ impl<P: Policy> Mcts<P> {
         let mut node =
             MctsNode::new_inner(parent, &state, self.config.use_lethal_detector, search_hash);
         node.search_hash = search_hash;
-        node.realized = Some(Box::new(state));
+        node.realized = Some(state);
         let id = self.tree.alloc(node);
         self.nodes_allocated += 1;
         id
@@ -5935,13 +5935,14 @@ impl<P: Policy> Mcts<P> {
                     .chance_action
                     .clone()
                     .expect("chance node has action");
-                let pre_action = self
-                    .tree
-                    .node(parent)
-                    .realized
-                    .as_deref()
-                    .expect("chance parent has realized state")
-                    .clone();
+                let pre_action = Box::new(
+                    self.tree
+                        .node(parent)
+                        .realized
+                        .as_deref()
+                        .expect("chance parent has realized state")
+                        .clone(),
+                );
                 // F2 (bead `sts2-rs-09x5n`): the per-outcome pile reshuffle
                 // is `DrawChance`-only — under `BeliefDraw`,
                 // `is_draw_triggered` CAN be true (see the expansion-site
@@ -6502,8 +6503,11 @@ fn rollout(
     // playout plays them all at once from the teammate policy, as before.
     state.coop.joint = false;
     let mut depth = 0u32;
+    // Perf 2026-11-18: one action buffer for the whole playout, refilled in
+    // place each step (same actions, same order as `legal_actions`).
+    let mut acts: smallvec::SmallVec<[Action; 16]> = smallvec::SmallVec::new();
     while !is_terminal(state) && depth < max_depth {
-        let acts = legal_actions(state);
+        sts2_core::legal_actions_into(state, &mut acts);
         if acts.is_empty() {
             break;
         }
@@ -6864,6 +6868,11 @@ const BLOCK_CREDIT_WEIGHT: f32 = 0.5;
 ///   all of it below A2 and 80% from A2 (WearyTraveler,
 ///   `AncientEventModel.BeforeEventStarted`), so HP carries 0 or 0.2.
 ///   Potions stay in the belt and carry fully.
+///
+/// `ascension` is read against WearyTraveler only, as a standard-ladder
+/// number. A Blitz level is not one (Blitz 1 already holds WearyTraveler):
+/// pass `RunState::ascension_view(&[AscensionLevel::WearyTraveler])`, which
+/// is the plain ascension outside Blitz (GH #1347).
 #[must_use]
 pub fn boss_win_carry(
     is_boss: bool,
@@ -8561,7 +8570,7 @@ mod tests {
                 relics: Vec::new().into(),
                 potions: Vec::new(),
                 player,
-                allies: smallvec::SmallVec::new(),
+                allies: Vec::new(),
                 enemy_uids,
                 pending_choice: None,
                 resolving_card: None,
@@ -8579,6 +8588,7 @@ mod tests {
                 pending_autoplay_resume: None,
                 autoplay_inline_resolve: false,
                 vakuu_selector: false,
+                interactive_turn_start_picks: false,
                 pending_curse_choice: None,
                 pending_potion_hook_resume: None,
                 pending_enemy_exec_resume: None,
@@ -8602,11 +8612,14 @@ mod tests {
                 is_boss: false,
                 act_index: 1,
                 total_floor: 0,
+                game_mode: sts2_core::GameMode::Standard,
+                dominion: None,
                 active_attack: None,
                 energy_wasted: 0,
                 cards_drawn: 0,
                 pending_run_gold_loss: 0,
                 last_drawn_card: None,
+                enemy_turn_end_last_participant: None,
             };
             let r0 = start_combat(&mut state);
             assert_eq!(r0, StepResult::Advanced);
@@ -8849,7 +8862,7 @@ mod tests {
             relics: Vec::new().into(),
             potions: Vec::new(),
             player,
-            allies: SmallVec::new(),
+            allies: Vec::new(),
             enemy_uids,
             pending_choice: None,
             resolving_card: None,
@@ -8867,6 +8880,7 @@ mod tests {
             pending_autoplay_resume: None,
             autoplay_inline_resolve: false,
             vakuu_selector: false,
+            interactive_turn_start_picks: false,
             pending_curse_choice: None,
             pending_potion_hook_resume: None,
             pending_enemy_exec_resume: None,
@@ -8890,11 +8904,14 @@ mod tests {
             is_boss: false,
             act_index: 1,
             total_floor: 0,
+            game_mode: sts2_core::GameMode::Standard,
+            dominion: None,
             active_attack: None,
             energy_wasted: 0,
             cards_drawn: 0,
             pending_run_gold_loss: 0,
             last_drawn_card: None,
+            enemy_turn_end_last_participant: None,
         };
         assert_eq!(start_combat(&mut state), StepResult::Advanced);
         assert_eq!(start_player_turn(&mut state), StepResult::Advanced);
@@ -9213,7 +9230,7 @@ mod tests {
                 relics: Vec::new().into(),
                 potions: Vec::new(),
                 player,
-                allies: SmallVec::new(),
+                allies: Vec::new(),
                 enemy_uids,
                 pending_choice: None,
                 resolving_card: None,
@@ -9231,6 +9248,7 @@ mod tests {
                 pending_autoplay_resume: None,
                 autoplay_inline_resolve: false,
                 vakuu_selector: false,
+                interactive_turn_start_picks: false,
                 pending_curse_choice: None,
                 pending_potion_hook_resume: None,
                 pending_enemy_exec_resume: None,
@@ -9254,11 +9272,14 @@ mod tests {
                 is_boss: false,
                 act_index: 1,
                 total_floor: 0,
+                game_mode: sts2_core::GameMode::Standard,
+                dominion: None,
                 active_attack: None,
                 energy_wasted: 0,
                 cards_drawn: 0,
                 pending_run_gold_loss: 0,
                 last_drawn_card: None,
+                enemy_turn_end_last_participant: None,
             };
             assert_eq!(start_combat(&mut state), StepResult::Advanced);
             assert_eq!(start_player_turn(&mut state), StepResult::Advanced);
@@ -9414,7 +9435,7 @@ mod tests {
             relics: Vec::new().into(),
             potions: Vec::new(),
             player,
-            allies: smallvec::SmallVec::new(),
+            allies: Vec::new(),
             enemy_uids,
             pending_choice: None,
             resolving_card: None,
@@ -9432,6 +9453,7 @@ mod tests {
             pending_autoplay_resume: None,
             autoplay_inline_resolve: false,
             vakuu_selector: false,
+            interactive_turn_start_picks: false,
             pending_curse_choice: None,
             pending_potion_hook_resume: None,
             pending_enemy_exec_resume: None,
@@ -9455,11 +9477,14 @@ mod tests {
             is_boss: false,
             act_index: 1,
             total_floor: 0,
+            game_mode: sts2_core::GameMode::Standard,
+            dominion: None,
             active_attack: None,
             energy_wasted: 0,
             cards_drawn: 0,
             pending_run_gold_loss: 0,
             last_drawn_card: None,
+            enemy_turn_end_last_participant: None,
         };
         assert_eq!(start_combat(&mut state), StepResult::Advanced);
         assert_eq!(start_player_turn(&mut state), StepResult::Advanced);
@@ -9595,7 +9620,7 @@ mod tests {
             relics: Vec::new().into(),
             potions: Vec::new(),
             player,
-            allies: smallvec::SmallVec::new(),
+            allies: Vec::new(),
             enemy_uids,
             pending_choice: None,
             resolving_card: None,
@@ -9613,6 +9638,7 @@ mod tests {
             pending_autoplay_resume: None,
             autoplay_inline_resolve: false,
             vakuu_selector: false,
+            interactive_turn_start_picks: false,
             pending_curse_choice: None,
             pending_potion_hook_resume: None,
             pending_enemy_exec_resume: None,
@@ -9636,11 +9662,14 @@ mod tests {
             is_boss: false,
             act_index: 1,
             total_floor: 0,
+            game_mode: sts2_core::GameMode::Standard,
+            dominion: None,
             active_attack: None,
             energy_wasted: 0,
             cards_drawn: 0,
             pending_run_gold_loss: 0,
             last_drawn_card: None,
+            enemy_turn_end_last_participant: None,
         };
         let r0 = start_combat(&mut state);
         assert_eq!(r0, StepResult::Advanced);
@@ -10304,6 +10333,7 @@ mod tests {
                 card_type: CardType::Skill,
                 target_type: TargetType::Self_,
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: 0,
                 base_block: 5,
                 combat_vars: sts2_core::cards::CombatVars::new(),
@@ -10419,6 +10449,7 @@ mod tests {
                     TargetType::Self_
                 },
                 upgraded: false,
+                extra_upgrades: 0,
                 base_damage: if attack { 6 } else { 0 },
                 base_block: if attack { 0 } else { 5 },
                 combat_vars: sts2_core::cards::CombatVars::new(),
@@ -13147,7 +13178,7 @@ mod tests {
         let edge = EdgeAction::Other(Action::EndTurn);
         let chance_id = m.alloc_chance_node(root, &edge, &pre);
         m.tree.node_mut(root).children.push((edge, chance_id));
-        let outcome = m.chance_alloc_decision(Some(chance_id), pre, &[]);
+        let outcome = m.chance_alloc_decision(Some(chance_id), Box::new(pre), &[]);
         m.tree.node_mut(outcome).proven_loss = true;
         m.tree
             .node_mut(chance_id)
@@ -13184,7 +13215,7 @@ mod tests {
         // Mirror the lazy-expansion state after sim 1: node expanded,
         // ONE child (proven loss), one canonical action still untried.
         let first_edge = EdgeAction::Other(Action::EndTurn);
-        let dead_child = m.chance_alloc_decision(Some(root), pre, &[]);
+        let dead_child = m.chance_alloc_decision(Some(root), Box::new(pre), &[]);
         m.tree.node_mut(dead_child).proven_loss = true;
         {
             let n = m.tree.node_mut(root);
@@ -13207,7 +13238,7 @@ mod tests {
         // now the proof is complete and the stamp must land.
         let pre2 = m.tree.node(root).realized.as_deref().unwrap().clone();
         let second_edge = m.tree.node_mut(root).untried_actions.remove(0);
-        let dead_child2 = m.chance_alloc_decision(Some(root), pre2, &[]);
+        let dead_child2 = m.chance_alloc_decision(Some(root), Box::new(pre2), &[]);
         m.tree.node_mut(dead_child2).proven_loss = true;
         m.tree
             .node_mut(root)
@@ -13232,7 +13263,7 @@ mod tests {
         let edge = EdgeAction::Other(Action::EndTurn);
         let chance_id = m.alloc_chance_node(root, &edge, &pre);
         m.tree.node_mut(root).children.push((edge, chance_id));
-        let outcome = m.chance_alloc_decision(Some(chance_id), pre, &[]);
+        let outcome = m.chance_alloc_decision(Some(chance_id), Box::new(pre), &[]);
         m.tree.node_mut(outcome).proven_win = true;
         m.tree.node_mut(chance_id).chance_closed = true;
         m.tree
@@ -13420,7 +13451,7 @@ mod tests {
             relics: Vec::new().into(),
             potions: Vec::new(),
             player,
-            allies: SmallVec::new(),
+            allies: Vec::new(),
             enemy_uids,
             pending_choice: None,
             resolving_card: None,
@@ -13438,6 +13469,7 @@ mod tests {
             pending_autoplay_resume: None,
             autoplay_inline_resolve: false,
             vakuu_selector: false,
+            interactive_turn_start_picks: false,
             pending_curse_choice: None,
             pending_potion_hook_resume: None,
             pending_enemy_exec_resume: None,
@@ -13461,11 +13493,14 @@ mod tests {
             is_boss: false,
             act_index: 1,
             total_floor: 0,
+            game_mode: sts2_core::GameMode::Standard,
+            dominion: None,
             active_attack: None,
             energy_wasted: 0,
             cards_drawn: 0,
             pending_run_gold_loss: 0,
             last_drawn_card: None,
+            enemy_turn_end_last_participant: None,
         }
     }
 
@@ -13656,8 +13691,8 @@ mod tests {
         let edge = EdgeAction::Other(Action::EndTurn);
         let m = Mcts::new(state.clone(), draw_chance_cfg(0x5EED, 0));
 
-        let s0a = m.realize_chance_outcome(state.clone(), &edge, 0xF00D_BEEF, 0, true);
-        let s0b = m.realize_chance_outcome(state.clone(), &edge, 0xF00D_BEEF, 0, true);
+        let s0a = m.realize_chance_outcome(Box::new(state.clone()), &edge, 0xF00D_BEEF, 0, true);
+        let s0b = m.realize_chance_outcome(Box::new(state.clone()), &edge, 0xF00D_BEEF, 0, true);
         let h0a = sts2_core::search_hash(&s0a);
         assert_eq!(
             h0a,
@@ -13665,8 +13700,13 @@ mod tests {
             "same (pre_action, edge, base, n) must reproduce the same realized state"
         );
 
-        let h1 =
-            sts2_core::search_hash(&m.realize_chance_outcome(state, &edge, 0xF00D_BEEF, 1, true));
+        let h1 = sts2_core::search_hash(&m.realize_chance_outcome(
+            Box::new(state),
+            &edge,
+            0xF00D_BEEF,
+            1,
+            true,
+        ));
         assert_ne!(
             h0a, h1,
             "distinct outcome ordinals must (almost surely) realize distinct outcomes — outcome \
@@ -13719,7 +13759,7 @@ mod tests {
             ..draw_chance_cfg(0x5EED, 0)
         };
         let m_cv = Mcts::new(state.clone(), cv_cfg);
-        let s_cv = m_cv.realize_chance_outcome(state.clone(), &edge, base, n, false);
+        let s_cv = m_cv.realize_chance_outcome(Box::new(state.clone()), &edge, base, n, false);
         assert_eq!(
             sts2_core::search_hash(&s_cv),
             sts2_core::search_hash(&reference),
@@ -13728,7 +13768,7 @@ mod tests {
         );
 
         let m_draw = Mcts::new(state.clone(), draw_chance_cfg(0x5EED, 0));
-        let s_draw = m_draw.realize_chance_outcome(state.clone(), &edge, base, n, true);
+        let s_draw = m_draw.realize_chance_outcome(Box::new(state.clone()), &edge, base, n, true);
         assert_ne!(
             s_draw.player.draw, s_cv.player.draw,
             "DrawChance's extra pile-shuffle step must change the post-action draw pile \
@@ -13760,7 +13800,7 @@ mod tests {
         let edge = EdgeAction::Other(Action::EndTurn);
 
         let m = Mcts::new(state.clone(), draw_chance_cfg(0x5EED, 0));
-        let s = m.realize_chance_outcome(state, &edge, 0xABCD, 9, true);
+        let s = m.realize_chance_outcome(Box::new(state), &edge, 0xABCD, 9, true);
         assert_eq!(s.player.pinned_bottom.as_slice(), &[bottom]);
         assert_eq!(s.player.draw.last().copied(), Some(bottom));
     }

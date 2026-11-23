@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, isStaticMode } from "../transport";
+import { t } from "../i18n";
 import {
   ClaudeLinkClient,
   consumePairingFragment,
@@ -124,7 +125,7 @@ export function useClaudeLink(host: ClaudeLinkHost, mode: string): ClaudeLinkSta
 
   const askToken = useCallback((): boolean => {
     const entered = globalThis.prompt?.(
-      "Claude link pairing token (Claude Code shows it: ask it for the workbench pairing token, or see wb_status)",
+      t("Claude link pairing token (Claude Code shows it: ask it for the workbench pairing token, or see wb_status)"),
       "",
     );
     if (!entered?.trim()) return false;

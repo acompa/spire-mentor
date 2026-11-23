@@ -88,6 +88,8 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, TypeGuard
 
+from . import build as _build
+
 CONTRACT_VERSION = 1
 
 # ── the lane's save dir ─────────────────────────────────────────────────────
@@ -212,8 +214,11 @@ WD_NO_RESTART_CODES = (2, 3, 4, 5, 6, 7, 8, 9)
 # The environment every lane runs under (plan §8 Ops; malloc settings [LES]).
 # The watchdog starts the learner under `env -i` with these, HOME, PATH, LANG,
 # USER, PYTHONPATH (`python`, or `<pin>:python`) and lane.learner_env.
+# The build is the lane's (`ppo.e2e.build`): lane.env sets STS2_E2E_GAME_VERSION for
+# a v0.113.0 lane, the watchdog shell exports it before it asks for this table.
 LANE_ENVIRONMENT: dict[str, str] = {
-    "STS2_GAME_VERSION": "v0.111.0",
+    "STS2_GAME_VERSION": _build.GAME_VERSION,
+    _build.BUILD_ENV: _build.GAME_VERSION,
     "STS2_RUNAI_POTION_SWAP": "1",
     "STS2_PPO_FEATURES": "card_mods,reward_upgrade",
     "OMP_NUM_THREADS": "1",
@@ -222,7 +227,7 @@ LANE_ENVIRONMENT: dict[str, str] = {
     "MALLOC_TOP_PAD_": "268435456",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
 }
-GAME_VERSION = "v0.111.0"
+GAME_VERSION = _build.GAME_VERSION
 
 # The thread caps every actor and eval worker starts under, whatever the lane's
 # environment. A spawned worker imports numpy (and torch, through the learner's
@@ -302,13 +307,22 @@ DEV_START = 160_000_000
 EVAL_PANELS: dict[str, dict[str, int]] = {
     "DEV-1000": {"n": 1000, "seed_start": DEV_START},
     "DEV-2000": {"n": 2000, "seed_start": DEV_START},
+    # GH #1197: the all-character lane's panel for the non-Ironclad characters (one
+    # eval per character, `scripts/e2e_allchar_evalq.py`). No DEV-500 range was ever
+    # pre-registered: it is DEV-1000's first 500 seeds, the same for every character.
+    "DEV-500": {"n": 500, "seed_start": DEV_START},
 }
-DEV1000_EVERY = 250_000_000  # EMA0.996
+DEV1000_EVERY = 250_000_000  # EMA0.999 (EMA0.996 until 4.0B, PREREG Amendment 10)
 DEV2000_EVERY = 1_000_000_000  # raw, EMA0.996, EMA0.999 (replaces that milestone's DEV-1000)
-EVAL_VARIANTS_DEV1000 = ("ema0996",)
+# PREREG Amendment 10 (user, 2026-11-11): DEV-1000 reads EMA0.999 from the 4.25B
+# milestone on; milestones before it keep EMA0.996, so switching does not queue
+# retroactive evals on old pins (the driver walks every milestone).
+EVAL_VARIANTS_DEV1000 = ("ema0999",)
+EVAL_VARIANTS_DEV1000_BEFORE = ("ema0996",)
+DEV1000_SWITCH_AT = 4_250_000_000
 EVAL_VARIANTS_DEV2000 = ("raw", "ema0996", "ema0999")
 EVAL_NICE = 10
-EVAL_MAX_PROCS = 6
+EVAL_MAX_PROCS = 18
 EVAL_RESULT_FIELDS = ("wins", "runs")  # added to the request's fields in EVAL_DONE/<id>.json
 
 # Pre-registered reads of finished evals (plan §1.4 and §12), on the default
@@ -723,7 +737,7 @@ ALARMS: tuple[Alarm, ...] = (
         "GAME_VERSION",
         HUMAN,
         "driver",
-        "a stats stamp names a game version other than v0.111.0",
+        "a stats stamp names a game version other than the lane build",
         "stopped the lane (DONE)",
         "user",
         True,

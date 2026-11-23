@@ -269,7 +269,7 @@ mod shrinker {
             relics: Vec::new(),
             potions: Vec::new(),
             player: make_player(),
-            allies: SmallVec::new(),
+            allies: Vec::new(),
             enemy_uids,
             pending_choice: None,
             resolving_card: None,
@@ -287,6 +287,7 @@ mod shrinker {
             pending_autoplay_resume: None,
             autoplay_inline_resolve: false,
             vakuu_selector: false,
+            interactive_turn_start_picks: false,
             pending_curse_choice: None,
             pending_potion_hook_resume: None,
             pending_enemy_exec_resume: None,
@@ -313,6 +314,7 @@ mod shrinker {
             cards_drawn: 0,
             pending_run_gold_loss: 0,
             last_drawn_card: None,
+            enemy_turn_end_last_participant: None,
         };
         let _ = start_combat(&mut state);
         let _ = start_player_turn(&mut state);

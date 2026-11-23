@@ -16,6 +16,8 @@ import type { AttemptResult } from "./stats";
 
 export interface Job {
   seed: string;
+  /** The run's character (the engine's default: Ironclad). */
+  character?: string;
   /** 0-10; the e2e student trained at 10. */
   ascension: number;
   seq: Seq;
@@ -168,6 +170,7 @@ export class SeedCheckPool {
             type: "attempt",
             id: this.nextId++,
             seed: job.seed,
+            character: job.character,
             ascension: job.ascension,
             seq: job.seq,
             k,

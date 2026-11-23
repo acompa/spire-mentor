@@ -52,6 +52,12 @@ pub struct RunLog {
     pub text: String,
 }
 
+/// The label a log records for `node`: English always (its `label_en` when
+/// the run was played in Chinese).
+fn log_label(node: &crate::session::Node) -> &str {
+    node.label_en.as_deref().unwrap_or(&node.label)
+}
+
 fn record(step: u64, ts: &str, kind: &str, data: Value) -> String {
     let entry = json!({"step": step, "ts": ts, "type": kind, "data": data});
     // `json.dumps(ensure_ascii=False)` — serde_json emits raw UTF-8 too.
@@ -80,6 +86,11 @@ pub fn write_run_log(sess: &Session, now_iso: &str) -> Option<RunLog> {
     // GH #801: always named, so a log says which build it is;
     // `run_identity` reads absence (an older log) as v0.107.1.
     meta["game_version"] = json!(sess.game_version.as_str());
+    // GH #1346: named only off standard; `run_identity` reads absence as a
+    // standard run.
+    if !sess.game_mode.is_default() {
+        meta["game_mode"] = json!(sess.game_mode.as_str());
+    }
     // Named only for an e2e start; `run_identity` reads absence as false.
     if sess.e2e_setup() {
         meta["e2e_setup"] = json!(true);
@@ -87,7 +98,7 @@ pub fn write_run_log(sess: &Session, now_iso: &str) -> Option<RunLog> {
     lines.push(record(step, ts, "meta", meta));
     let log_wpa = |lines: &mut Vec<String>, step: u64, i: usize| {
         if let Some(v) = path[i].value {
-            let taken = path.get(i + 1).map_or(Value::Null, |n| json!(n.label));
+            let taken = path.get(i + 1).map_or(Value::Null, |n| json!(log_label(n)));
             lines.push(record(
                 step,
                 ts,
@@ -100,18 +111,19 @@ pub fn write_run_log(sess: &Session, now_iso: &str) -> Option<RunLog> {
     lines.push(record(step, ts, "state", path[0].state.clone()));
     log_wpa(&mut lines, step, 0);
     for (j, node) in path.iter().enumerate().skip(1) {
-        lines.push(record(
-            step,
-            ts,
-            "action",
-            json!({
-                "cmd": "action",
-                "action": node.action,
-                "args": native_action_recorded(node.action.as_deref(), &node.args),
-                "label": node.label,
-                "replay": {"action": node.action, "args": node.args},
-            }),
-        ));
+        let mut action = json!({
+            "cmd": "action",
+            "action": node.action,
+            "args": native_action_recorded(node.action.as_deref(), &node.args),
+            "label": log_label(node),
+            "replay": {"action": node.action, "args": node.args},
+        });
+        // A run played in Chinese keeps its English `label` (what other
+        // tools read) and the label it showed, for a replay in Chinese.
+        if node.label_en.is_some() {
+            action["label_zh"] = json!(node.label);
+        }
+        lines.push(record(step, ts, "action", action));
         // The root distribution of the search that CHOSE this action, attached
         // to the decision it answered (an `mcts` record shares the step number
         // of the preceding `state`, which is the parent's). Without it a replay
@@ -467,6 +479,18 @@ impl ReplayStore {
                 _ => {}
             }
         }
+        // A header that names no build: the live advisor's run logs omitted it
+        // until 2026-11-18, while their combat boards carry the game's
+        // `game_version`. Without this a v0.113 live run replays as
+        // v0.107.1 (no art overlay: the Fool drew as an empty box).
+        if !head.contains_key("game_version") {
+            if let Some(v) = states
+                .iter()
+                .find_map(|(_, d)| d.get("game_version").filter(|v| v.is_string()))
+            {
+                head.insert("game_version".into(), v.clone());
+            }
+        }
         // WHICH MAP NODE each floor's room sits on: collected in a pass of its
         // own because the coord arrives after the room it belongs to.
         let mut coord_by_floor: BTreeMap<String, Value> = BTreeMap::new();
@@ -705,6 +729,7 @@ impl ReplayStore {
                 .unwrap_or("rust")
                 .to_string(),
             game_version: crate::session::parse_game_version(self.head.get("game_version")).ok()?,
+            game_mode: crate::session::parse_game_mode(self.head.get("game_mode")).ok()?,
             e2e_setup: self
                 .head
                 .get("e2e_setup")
@@ -746,6 +771,9 @@ pub struct RunIdentity {
     /// The build the run was played in; v0.107.1 when the meta carries no
     /// `game_version` (GH #801).
     pub game_version: sts2_core::GameVersion,
+    /// The run's game mode; standard when the meta carries no `game_mode`
+    /// (GH #1346).
+    pub game_mode: sts2_core::GameMode,
     /// The run was built as the e2e student's training run.
     pub e2e_setup: bool,
 }
@@ -757,6 +785,12 @@ pub fn resume_capability(store: &ReplayStore) -> Value {
     // A build this workbench does not know (a log from a newer one) is named
     // as such, not reported as a missing action line (#855).
     if let Err(e) = crate::session::parse_game_version(store.head.get("game_version")) {
+        return json!({
+            "kind": Value::Null,
+            "reason": format!("this recording cannot be resumed: {e}"),
+        });
+    }
+    if let Err(e) = crate::session::parse_game_mode(store.head.get("game_mode")) {
         return json!({
             "kind": Value::Null,
             "reason": format!("this recording cannot be resumed: {e}"),
@@ -1040,6 +1074,31 @@ mod tests {
         assert_eq!(agg["final_turn_histogram"], json!({"3": 1}));
         assert_eq!(agg["pattern_tags"], json!({"fast_death": 1}));
         assert!(ReplayStore::parse("y", "{not json").is_err());
+    }
+
+    /// A live run log whose header names no build (written before the
+    /// advisor put it there) replays in the build its boards name; the
+    /// header still wins when it has one.
+    #[test]
+    fn a_headerless_build_is_read_from_the_boards() {
+        let text = [
+            r#"{"step":0,"type":"meta","data":{"character":"FOOL","seed":"S"}}"#,
+            r#"{"step":1,"type":"state","data":{"decision":"event_choice"}}"#,
+            r#"{"step":2,"type":"state","data":{"decision":"combat_play","game_version":"v0.113.0"}}"#,
+        ]
+        .join("\n");
+        let store = ReplayStore::parse("x.jsonl", &text).unwrap();
+        assert_eq!(store.game_version().as_str(), "v0.113.0");
+        let named = text.replacen(
+            r#""seed":"S""#,
+            r#""seed":"S","game_version":"v0.111.0""#,
+            1,
+        );
+        let store = ReplayStore::parse("x.jsonl", &named).unwrap();
+        assert_eq!(store.game_version().as_str(), "v0.111.0");
+        let bare = text.replacen(r#","game_version":"v0.113.0""#, "", 1);
+        let store = ReplayStore::parse("x.jsonl", &bare).unwrap();
+        assert_eq!(store.game_version().as_str(), "v0.107.1");
     }
 
     /// The live advisor stamps coach records with `log_idx`, the index of

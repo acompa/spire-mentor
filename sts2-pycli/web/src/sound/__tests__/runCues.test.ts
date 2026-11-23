@@ -156,6 +156,37 @@ describe("cuesForCard", () => {
       .toEqual(["event:/sfx/ui/cards/card_movement_B_play_into_discard"]);
   });
 
+  it("sings every melody syllable a Fool card carries", () => {
+    // Wah Cho calls `PlayMelodyVfx` twice; the map used to keep only the wa.
+    const m: SfxMap = {
+      ...MAP,
+      cardMelodies: {
+        "Wah Cho": [
+          "event:/sfx/characters/fugitive/fugitive_wa",
+          "event:/sfx/characters/fugitive/fugitive_cho",
+        ],
+      },
+    };
+    expect(events(cuesForCard(m, "Wah Cho", "Attack", "Fool"))).toEqual([
+      "event:/sfx/characters/fugitive/fugitive_wa",
+      "event:/sfx/characters/fugitive/fugitive_cho",
+      "event:/sfx/ui/cards/card_movement_B_play_into_discard",
+    ]);
+  });
+
+  it("does not double a syllable a pre-table map also names in cards", () => {
+    const wa = "event:/sfx/characters/fugitive/fugitive_wa";
+    const m: SfxMap = {
+      ...MAP,
+      cards: { ...MAP.cards, "Wah Blast": wa },
+      cardMelodies: { "Wah Blast": [wa] },
+    };
+    expect(events(cuesForCard(m, "Wah Blast", "Attack"))).toEqual([
+      wa,
+      "event:/sfx/ui/cards/card_movement_B_play_into_discard",
+    ]);
+  });
+
   it("marks card play as informative so reduced mode keeps it", () => {
     expect(cuesForCard(MAP, "Strike", "Attack")[0].cls).toBe("informative");
   });

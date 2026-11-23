@@ -334,6 +334,34 @@ def test_only_a_shared_selection_needs_its_outcome() -> None:
     assert len(E.merged_classes(cs).members) == len(acts)
 
 
+def test_identical_discard_cards_are_one_choice_class(monkeypatch: pytest.MonkeyPatch) -> None:
+    # GH #1800: the discard pile is sent sorted, so two identical copies in it
+    # are interchangeable picks. Probing their outcomes split them whenever a
+    # random draw followed: the draw samples a position in a uid-ordered pile,
+    # and the two picks leave different uids behind. The probe below gives
+    # every pick its own outcome; identical discard copies must merge anyway.
+    import ppo.combat_ctx.snapshot as snap
+
+    cs = scenario(["HEADBUTT", "STRIKE_IRONCLAD", "STRIKE_IRONCLAD", "DEFEND_IRONCLAD", "BASH"])
+    for _ in range(2):
+        cs.apply(cs.legal_actions()[plays_of(cs, "STRIKE_IRONCLAD")[0]] | {"target_index": 0})
+    cs.apply(cs.legal_actions()[plays_of(cs, "HEADBUTT")[0]] | {"target_index": 0})
+    bv, d, _ = E.combat_view(cs, "monster")
+    acts = obs_actions(cs.legal_actions(), cs.pending_choice(), bv.pending_choice())
+    choice = bv.pending_choice()
+    picks = [
+        i
+        for i, a in enumerate(acts)
+        if a.get("action") == "choose"
+        and [choice["cards"][int(x)]["id"] for x in a.get("selection") or []] == ["STRIKE_IRONCLAD"]
+    ]
+    assert len(picks) == 2, "the test needs two discard Strikes to pick from"
+    calls = iter(range(1000))
+    monkeypatch.setattr(snap, "choose_outcome_key", lambda c: f"outcome {next(calls)}")
+    keys = E.combat_keys(bv, d, acts)
+    assert keys[picks[0]] == keys[picks[1]]
+
+
 def test_choice_rows_carry_the_schemas_classes() -> None:
     n = 0
     for k in range(3):

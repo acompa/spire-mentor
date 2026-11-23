@@ -33,7 +33,10 @@ function fakeApi(routes: Record<string, unknown | ((body: unknown) => unknown)>)
   return { api, calls };
 }
 
-const identity = { origin: "https://wb.test", userAgent: "UA/1", buildId: "deadbeef" };
+const identity = {
+  origin: "https://wb.test", userAgent: "UA/1", buildId: "deadbeef",
+  viewport: { width: 412, height: 915, dpr: 2.625 },
+};
 const persist = { character: "Silent", seed: "ABC", ascension: 3, nodes: [{ id: 0 }], active_leaf: 0 };
 
 describe("buildBrowserDump", () => {
@@ -49,6 +52,7 @@ describe("buildBrowserDump", () => {
       meta: {
         mode: "live", character: "Silent", seed: "ABC", ascension: 3, backend: "wasm",
         engine_build: "v0.107.1", workbench_commit: "deadbeef", host: "https://wb.test", user_agent: "UA/1",
+        viewport: { width: 412, height: 915, dpr: 2.625 },
       },
       repro: { persist },
       state: { game_state: { floor: 2, player: { name: "Silent" } }, map: { nodes: [1, 2] } },

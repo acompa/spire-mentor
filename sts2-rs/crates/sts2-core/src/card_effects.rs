@@ -1187,8 +1187,14 @@ pub fn apply_power_to_creature_cardless_allow_dead(
 /// (`DieForYouPower.cs:35`). So while an Osty carries it, alive or dead, no
 /// corpse receives powers: MonarchsGaze's killing-blow StrengthDown never
 /// lands (Regent full tier seed 5371, Bound Phylactery; GH #1054 item 5).
+/// v0.113.0 `WuppysLoyaltyPower.ShouldAllowHitting` is the same
+/// `creature.IsAlive` override ("so Wuppy won't receive powers while it is
+/// dead"), so a Wuppy in the fight, alive or dead, bars corpses too.
 pub(crate) fn corpses_can_receive_powers(state: &CombatState) -> bool {
-    !state.powers.iter().any(|p| p.kind == PowerKind::DieForYou)
+    !state
+        .powers
+        .iter()
+        .any(|p| matches!(p.kind, PowerKind::DieForYou | PowerKind::WuppysLoyalty))
 }
 
 /// Whether a corpse was killed and removed from the combat by a nested damage
@@ -1509,12 +1515,7 @@ fn apply_power_to_creature_inner(
     }
 
     // 2. Otherwise allocate a new PowerUid and push.
-    let next_id_raw = state
-        .powers
-        .iter()
-        .map(|p| p.id.get())
-        .max()
-        .map_or(1, |m| m.saturating_add(1));
+    let next_id_raw = state.powers.max_live_id().saturating_add(1);
     let new_id = NonZeroU32::new(next_id_raw).expect("power id non-zero");
     let applier = enemy_self_attribute_applier(state, target_uid, kind);
     state.powers.push(Power {
@@ -3187,14 +3188,17 @@ pub fn spawn_card_into_pile_with_origin(
 ) -> CardUid {
     let raw = u32::try_from(state.cards.len() + 1).expect("cards arena fits in u32");
     let uid = CardUid::new(raw).expect("non-zero uid");
-    let mut card = card;
+    let version = state.game_version;
+    // Perf: the card goes into the arena first and is stamped in its arena
+    // slot, one 176-byte copy instead of a local copy plus the push.
+    state.cards.push(card);
+    let card = state.cards.last_mut().expect("just pushed");
     card.uid = uid;
     // C# `CardModel.DeckVersion == null` for combat-generated cards — the
     // marker deck-scoped pickers (ThievingHopper steal) filter on.
-    stamp_generated_in_combat(&mut card);
+    stamp_generated_in_combat(card);
     // v0.111.0 values for a card minted on a v0.107.1-only path (GH #793).
-    card.normalize_for_version(state.game_version);
-    state.cards.push(card);
+    card.normalize_for_version(version);
     // C# `CardPileCmd.Add` hand-cap redirect (`CardPileCmd.cs:420-424`):
     // `isFullHandAdd = targetPile.Type == Hand && Cards.Count >= MaxCardsInHand`
     // (`CardPile.cs:21`, 10) → `targetPile = CardPile.Get(PileType.Discard, …)`.
@@ -3843,8 +3847,14 @@ pub fn spawn_wound_into_pile(state: &mut CombatState, pile: PileKind) -> CardUid
 /// in core (cf. [`wound_card_pod`]) so the engine-side `WitheringPresence`
 /// power reaction — which lives in `crate::hooks` and cannot reach
 /// `sts2-content` — can add a Wither to the player's hand. Keep in sync with
-/// `crates/sts2-content/src/cards/status_specs_generated.rs::wither()`. Bead
+/// `crates/sts2-content/src/cards/status_specs_generated.rs::wither()`
+/// (`core_built_wither_is_the_spec_wither` pins the two together). Bead
 /// `sts2-rs-v0107-content-port-wb8lk.2`.
+///
+/// `base_damage` is C# `Wither.CanonicalVars`' `DamageVar(3m, …)`
+/// (`Wither.cs:57`). The turn-end damage reads the FakeUpgrade level, not
+/// this field, so it is display only: the wire's `base_damage` and the e2e
+/// card token. It was 0 here until GH #1347.
 #[must_use]
 fn wither_card_pod() -> crate::cards::Card {
     crate::cards::Card {
@@ -3852,6 +3862,7 @@ fn wither_card_pod() -> crate::cards::Card {
         cost: crate::CardEnergyCost::new(-1),
         card_type: crate::cards::CardType::Status,
         target_type: crate::cards::TargetType::None,
+        base_damage: 3,
         ..crate::cards::Card::pod_defaults()
     }
 }
@@ -5017,6 +5028,39 @@ pub fn resolving_card_x_value(state: &CombatState) -> i32 {
     crate::relic_effects::dispatch_modify_x_value(state, captured)
 }
 
+/// C# `Hook.ModifyAttackHitCount` on one `AttackCommand` of `hits` hits from
+/// a source of type `source_card_type` (`None` when the attack does not come
+/// from a card). Rust has no `AttackCommand`, so every card that builds one
+/// with `WithHitCount(n)` routes its final `n` through
+/// [`resolving_card_attack_hits`]. v0.113.0 `Thumbscrew` is the only
+/// listener.
+#[must_use]
+pub fn modify_attack_hit_count(
+    state: &CombatState,
+    source_card_type: Option<crate::cards::CardType>,
+    hits: i32,
+) -> i32 {
+    crate::relic_effects::dispatch_modify_attack_hit_count(state, source_card_type, hits)
+}
+
+/// [`modify_attack_hit_count`] for the attack the card currently being
+/// played makes (`DamageCmd.Attack(..).WithHitCount(hits).FromCard(this)`).
+/// Call it once per C# `AttackCommand`, on the count C# passes to
+/// `WithHitCount` (after X / `CalculatedHits` resolution).
+#[must_use]
+pub fn resolving_card_attack_hits(state: &CombatState, hits: i32) -> i32 {
+    let card_type = resolving_card_inst(state).map(|c| c.card_type);
+    modify_attack_hit_count(state, card_type, hits)
+}
+
+/// `u32` form of [`resolving_card_attack_hits`], for the loops that count
+/// in `u32`.
+#[must_use]
+pub fn resolving_card_attack_hits_u32(state: &CombatState, hits: u32) -> u32 {
+    let n = resolving_card_attack_hits(state, i32::try_from(hits).unwrap_or(i32::MAX));
+    u32::try_from(n).unwrap_or(0)
+}
+
 /// `base_damage` of the card currently being played, or 0 when nothing is
 /// resolving. C# `DamageVar.BaseValue` off the `CardPlay`'s own card.
 #[must_use]
@@ -5574,7 +5618,7 @@ pub fn apply_retain_keyword(card: &mut Card) {
 /// with `TargetType.AnyAlly`: BelieveInYou, Coordinate, DemonicShield,
 /// Ignition, Intercept, Largesse, Lift, Mimic.
 #[must_use]
-pub fn card_is_any_ally(id: crate::cards::CardId) -> bool {
+pub const fn card_is_any_ally(id: crate::cards::CardId) -> bool {
     use crate::cards::CardId;
     matches!(
         id,
@@ -5827,13 +5871,25 @@ fn fire_late_effects_frozen(
     played_ctx: &hooks::CardCtx,
     table: &[Option<LateEffectFn>],
 ) {
-    if !state
-        .cards
+    // The arena check resumes past the rows an earlier sweep already found
+    // clean ([`crate::cards::CardStore::late_free_prefix`]): every frozen
+    // sweep reads this same table, and those rows cannot change.
+    let start = state.cards.late_free_prefix();
+    let first_hit = state.cards[start..]
         .iter()
-        .any(|card| FrozenCardTable::entry(table, card.card_id).is_some())
-    {
+        .position(|card| FrozenCardTable::entry(table, card.card_id).is_some());
+    debug_assert!(
+        !state.cards[..start]
+            .iter()
+            .any(|card| FrozenCardTable::entry(table, card.card_id).is_some()),
+        "late-effect memo covers a row with a frozen late effect"
+    );
+    let Some(hit) = first_hit else {
+        let len = state.cards.len();
+        state.cards.set_late_free_prefix(len);
         return;
-    }
+    };
+    state.cards.set_late_free_prefix(start + hit);
     let mut to_fire: smallvec::SmallVec<[(CardUid, LateEffectFn); 8]> = smallvec::SmallVec::new();
     for pile in [
         crate::cards::PileKind::Hand,
@@ -7217,6 +7273,7 @@ mod tests {
             card_type: crate::cards::CardType::Status,
             target_type: crate::cards::TargetType::None,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -9524,6 +9581,7 @@ mod tests {
             card_type: crate::cards::CardType::Skill,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),
@@ -9641,6 +9699,7 @@ mod tests {
             card_type: crate::cards::CardType::Skill,
             target_type: crate::cards::TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 0,
             base_block: 0,
             combat_vars: crate::cards::CombatVars::new(),

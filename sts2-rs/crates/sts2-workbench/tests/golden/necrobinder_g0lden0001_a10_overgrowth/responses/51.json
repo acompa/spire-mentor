@@ -89,7 +89,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Ultimate Strike"
+   ],
    "error": false,
    "floor": 1,
    "id": 2,
@@ -1109,7 +1111,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Defy"
+   ],
    "error": false,
    "floor": 2,
    "id": 25,
@@ -1831,7 +1835,9 @@
    "child_ids": [],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Sow"
+   ],
    "error": false,
    "floor": 3,
    "id": 42,

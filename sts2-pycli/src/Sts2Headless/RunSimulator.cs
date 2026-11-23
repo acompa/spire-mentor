@@ -295,6 +295,14 @@ internal class LocLookup
     public string RelicText(RelicModel relic) =>
         Text(relic.DynamicDescription, "relics", relic.Id.Entry + ".description");
 
+    /// <summary>
+    /// A relic's name as the game shows it (`RelicModel.Title`). Not always
+    /// `<id>.title`: Sea Glass is named after the character it shows ("Noble
+    /// Glass", `SEA_GLASS.REGENT.title`; GH #1287).
+    /// </summary>
+    public string RelicTitle(RelicModel relic) =>
+        Text(relic.Title, "relics", relic.Id.Entry + ".title");
+
     /// <summary>A potion's text with its variables filled (`PotionModel.DynamicDescription`).</summary>
     public string PotionText(PotionModel potion) =>
         Text(potion.DynamicDescription, "potions", potion.Id.Entry + ".description");
@@ -447,6 +455,9 @@ public class RunSimulator
     // minigame parks here and each divination is one `crystal_sphere_click`.
     private MegaCrit.Sts2.Core.Events.Custom.CrystalSphereEvent.CrystalSphereMinigame? _pendingSphere;
     private TaskCompletionSource? _pendingSphereTcs;
+    // Divinations the pending minigame started with (the screen shows what is
+    // left; a client that plans the whole dig needs the starting count too).
+    private int _pendingSphereTotal;
 
     private IReadOnlyList<IReadOnlyList<CardModel>>? _pendingBundles;
     private TaskCompletionSource<IEnumerable<CardModel>>? _pendingBundleTcs;
@@ -491,8 +502,11 @@ public class RunSimulator
     // (RewardsCmd.OfferCustom → RewardsSet.Offer → testSelector). The selector
     // awaits `Choice` while the client takes or skips; the game task that
     // offered the screen stays parked like one at a card selection.
+    // CanSkip is false for a set built WithSkippingDisallowed (NeowsBones): the
+    // game makes the player take every reward before the screen goes (GH #1641).
     private sealed record CustomRewardScreen(
-        List<RewardEntry> Entries, TaskCompletionSource<(string Command, int Index)> Choice);
+        List<RewardEntry> Entries, TaskCompletionSource<(string Command, int Index)> Choice,
+        bool CanSkip);
     private volatile CustomRewardScreen? _customScreen;
     // The thread that answers the client. A screen offered on it cannot wait
     // for the client (the wait would block the reply), so it is taken as before.
@@ -575,13 +589,54 @@ public class RunSimulator
         return DetectDecisionPoint();
     }
 
-    public Dictionary<string, object?> StartRun(string character, int ascension = 0, string? seed = null, string lang = "en", bool playedSave = false, string? act1 = null, bool interactivePotionSwap = false) =>
-        _gameThread.Submit(() => StartRunImpl(character, ascension, seed, lang, playedSave, act1, interactivePotionSwap));
+#if GAME_V0113
+    // The game's cap, AscensionManager.maxAscensionAllowedBlitz (AscensionManager.cs:24).
+    private const int BlitzMaxLevel = 5;
+#endif
 
-    private Dictionary<string, object?> StartRunImpl(string character, int ascension, string? seed, string lang, bool playedSave = false, string? act1 = null, bool interactivePotionSwap = false)
+    public Dictionary<string, object?> StartRun(string character, int ascension = 0, string? seed = null, string lang = "en", bool playedSave = false, string? act1 = null, bool interactivePotionSwap = false, string? gameMode = null, ProfileSpec? profile = null) =>
+        _gameThread.Submit(() => StartRunImpl(character, ascension, seed, lang, playedSave, act1, interactivePotionSwap, gameMode, profile));
+
+    private Dictionary<string, object?> StartRunImpl(string character, int ascension, string? seed, string lang, bool playedSave = false, string? act1 = null, bool interactivePotionSwap = false, string? gameMode = null, ProfileSpec? profile = null)
     {
         try
         {
+            if (profile != null && Referee.Keyed)
+                return Error("start_run.profile is not available in referee mode");
+            // GH #1346: the run's game mode. Dread exists from v0.113.0 and is
+            // always an ascension-10 run: the lobby sets it and the Dread
+            // screen embarks with the literal 10 (StartRunLobby.cs:793-797,
+            // NDreadScreen.cs:584), so the requested level is overridden.
+            var runGameMode = GameMode.Standard;
+            switch ((gameMode ?? "standard").ToLowerInvariant())
+            {
+                case "standard":
+                    break;
+                case "dread":
+#if GAME_V0113
+                    runGameMode = GameMode.Dread;
+                    ascension = 10;
+                    break;
+#else
+                    return Error("game_mode dread needs game v0.113.0 or later");
+#endif
+                case "blitz":
+#if GAME_V0113
+                    // GH #1347: Blitz (v0.113.0). `ascension` is the Blitz level
+                    // 0..=5; the game maps each level to a real ascension effect
+                    // (AscensionManager.cs:57-64, AscensionHelper.GetLevelForBlitz)
+                    // and throws on anything else, so it is refused here.
+                    if (ascension < 0 || ascension > BlitzMaxLevel)
+                        return Error($"game_mode blitz: ascension is the Blitz level 0..{BlitzMaxLevel} (got {ascension})");
+                    runGameMode = GameMode.Blitz;
+                    break;
+#else
+                    return Error("game_mode blitz needs game v0.113.0 or later");
+#endif
+                default:
+                    return Error($"Unknown game_mode: {gameMode} (expected standard|dread|blitz)");
+            }
+
             _loc.Lang = lang;
             _interactivePotionSwap = interactivePotionSwap;
             _pendingPotionSwaps.Clear();
@@ -589,7 +644,13 @@ public class RunSimulator
             _treasureOpened = false;
             EnsureModelDbInitialized();
 
-            var player = CreatePlayer(character, playedSave);
+            if (profile != null)
+            {
+                var unknown = profile.Unknown();
+                if (unknown.Count > 0)
+                    return Error("start_run.profile: unknown ids " + string.Join(",", unknown));
+            }
+            var player = CreatePlayer(character, playedSave, profile);
             if (player == null)
                 return Error($"Unknown character: {character}");
 
@@ -621,7 +682,7 @@ public class RunSimulator
             act1 ??= "roll";
             IReadOnlyList<ActModel>? acts = null;
             {
-                var chosen = ResolveAct1(act1, seedStr, playedSave);
+                var chosen = ResolveAct1(act1, seedStr, playedSave, profile);
                 if (chosen == null)
                     return Error($"Unknown act1: {act1} (expected overgrowth|underdocks|roll)");
                 var actList = ActModel.GetDefaultList().ToList();
@@ -634,6 +695,7 @@ public class RunSimulator
             _runState = RunState.CreateForTest(
                 players: new[] { player },
                 acts: acts,
+                gameMode: runGameMode,
                 ascensionLevel: ascension,
                 seed: seedStr
             );
@@ -651,10 +713,16 @@ public class RunSimulator
             // lands on false -- matching a real save with many runs where Neow
             // was never manually revealed on the Timeline screen. See
             // BuildUnlockState's doc comment for the full mechanism.
-            if (!playedSave)
+            // With a profile the flag stays what SetUpTest computed from the
+            // profile's unlock state (RunManager.cs:589).
+            if (!playedSave && profile == null)
                 _runState.ExtraFields.StartedWithNeow = true;
 
-            // Generate rooms for all acts
+            // Generate rooms for all acts. With a profile the discovery-order
+            // changes apply as in a real standard run (first unseen boss, the
+            // first run's fixed rooms); TestMode otherwise keeps them off
+            // (RunManager.ShouldApplyTutorialModifications).
+            RunManager.Instance.ForceDiscoveryOrderModifications = profile != null;
             RunManager.Instance.GenerateRooms();
             Log("Rooms generated");
 
@@ -741,6 +809,8 @@ public class RunSimulator
                 ["normal"] = Ids(roomSet.normalEncounters),
                 ["elite"] = Ids(roomSet.eliteEncounters),
                 ["boss"] = roomSet.Boss?.Id.Entry,
+                // Unset when the act has no ancient (Neow not revealed): the getter throws.
+                ["ancient"] = roomSet.HasAncient ? roomSet.Ancient.Id.Entry : null,
                 // M5 event-pool parity: the per-act `RoomSet.events` list is
                 // `(AllEvents ++ AllSharedEvents)` UnstableShuffled off `up_front`
                 // in `ActModel.GenerateRooms`; `eventsVisited` is the pick cursor.
@@ -776,6 +846,22 @@ public class RunSimulator
         for (int i = 0; i < actList.Count; i++)
         {
             var act = actList[i];
+#if GAME_V0113
+            // GH #1347: a Blitz act is the fixed line, built without RNG
+            // (RunManager.cs:891-896 never calls Act.CreateMap, so the
+            // act_N_map stream does not exist). The constructor reads one
+            // thing off the run state, the CURRENT act's HasSecondBoss
+            // (BlitzActMap.cs:44), false at every Blitz level (no DoubleBoss:
+            // AscensionHelper.GetLevelForBlitz); an act that disagrees with
+            // the current one cannot be built from here, so it is an error.
+            if (GameApi.IsBlitz(_runState))
+            {
+                if (act.HasSecondBoss != _runState.Act.HasSecondBoss)
+                    return Error($"dump_maps: Blitz act {i + 1} differs from the current act in HasSecondBoss");
+                acts.Add(SerializeMapGraph(new BlitzActMap(_runState)));
+                continue;
+            }
+#endif
             var rng = new MegaCrit.Sts2.Core.Random.Rng(_runState.Rng.Seed, $"act_{i + 1}_map");
             var map = new StandardActMap(rng, act, isMultiplayer, shouldReplaceTreasureWithElites: false, act.HasSecondBoss);
             acts.Add(SerializeMapGraph(map));
@@ -889,7 +975,7 @@ public class RunSimulator
         var d = new Dictionary<string, object?>
         {
             ["id"] = entry,
-            ["name"] = _loc.Relic(entry),
+            ["name"] = relic != null ? _loc.RelicTitle(relic) : _loc.Relic(entry),
             ["description"] = relic != null ? _loc.RelicText(relic) : _loc.Bilingual("relics", entry + ".description"),
             ["vars"] = vars.Count > 0 ? vars : null,
         };
@@ -1019,6 +1105,9 @@ public class RunSimulator
     {
         if (_runState == null) return Error("No run in progress");
         var player = _runState.Players[0];
+#if GAME_V0113
+        if (_runState.GameMode == GameMode.Blitz) return DumpBlitzShop(player);
+#endif
         // Generate a full normal-merchant inventory off the player's fresh
         // `Shops` (card pick / cost / on-sale index / potion roll) and `Rewards`
         // (card-rarity roll + per-card upgrade no-op roll + relic RollRarity)
@@ -1076,6 +1165,164 @@ public class RunSimulator
             ["shops_reads"] = shopsReads,
             ["rewards_reads"] = rewardsReads,
         };
+    }
+
+#if GAME_V0113
+    /// <summary>GH #1347: the Blitz twin of <see cref="DumpShop"/>. A Blitz
+    /// run's merchant is <c>MerchantInventory.CreateForBlitzMerchant</c>
+    /// (<c>MerchantSynchronizer.cs:51</c>): five wares drawn without
+    /// replacement plus one cursed ware, all off <c>PlayerRng.Shops</c>
+    /// (<c>MerchantInventory.GetBlitzEntries</c>). Like the standard dump it
+    /// rolls a fresh inventory, so it advances that stream.</summary>
+    private Dictionary<string, object?> DumpBlitzShop(Player player)
+    {
+        int shops0 = RngCompat.Counter(player.PlayerRng.Shops);
+        int rewards0 = RngCompat.Counter(player.PlayerRng.Rewards);
+        var inv = MerchantInventory.CreateForBlitzMerchant(player);
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "shop",
+            ["game_mode"] = "blitz",
+            ["blitz_entries"] = inv.BlitzEntries.Select(e => (object?)BlitzEntryItem(e)).ToList(),
+            ["blitz_choices_remaining"] = inv.BlitzChoicesRemaining,
+            ["shops_reads"] = RngCompat.Counter(player.PlayerRng.Shops) - shops0,
+            ["rewards_reads"] = RngCompat.Counter(player.PlayerRng.Rewards) - rewards0,
+        };
+    }
+
+    /// <summary>A Blitz ware's <c>item</c>, in the live mod's wire shape
+    /// (spire-mentor-mod/SimBlitzShop.cs <c>Detail</c>): its kind as the game
+    /// names it (<c>BlitzMerchantEntryType</c>), whether taking it adds a
+    /// random Curse (<c>IsCursed</c>: every kind from <c>Glam</c> on), whether
+    /// it is one of the half-weight kinds, and the game's own text.</summary>
+    private Dictionary<string, object?> BlitzEntryItem(BlitzMerchantEntry entry)
+    {
+        string? Text(Func<LocString> get)
+        {
+            // CardEnchant's title reads its rolled enchantment, null when no
+            // option fits the deck (BlitzMerchantCardEnchantEntry.cs:54-60).
+            try { return _loc.Text(get()); }
+            catch (Exception hostFault) { HostFaults.Swallowed(hostFault); return null; }
+        }
+        return new Dictionary<string, object?>
+        {
+            ["blitz_kind"] = entry.MerchantEntryType.ToString(),
+            ["cursed"] = entry.IsCursed,
+            ["rare"] = entry.IsRare,
+            ["title"] = Text(() => entry.Title),
+            ["description"] = Text(() => entry.Description),
+        };
+    }
+
+    /// <summary>
+    /// GH #1347: the Blitz merchant. Its stock is six free wares, of which
+    /// the player takes <c>blitz_choices_remaining</c> (3 on entry,
+    /// <c>MerchantInventory.cs:152-155</c>); leaving early is allowed. The
+    /// decision keeps the standard shop's keys (empty) so a client that only
+    /// knows those leaves, and adds <c>options</c> in the live mod's shape
+    /// (spire-mentor-mod/SimNonCombatRoomHandlers.cs <c>ShopOption</c>):
+    /// option 0 leaves, options 1..6 are the wares in inventory order. Unlike
+    /// the mod, a taken or disabled ware stays listed (<c>enabled: false</c>),
+    /// so a ware's index never changes within one shop.
+    /// </summary>
+    private Dictionary<string, object?> BlitzShopState(MerchantInventory inv, Player player)
+    {
+        var options = new List<Dictionary<string, object?>>
+        {
+            new()
+            {
+                ["index"] = 0,
+                ["id"] = "leave_shop",
+                ["action"] = "leave_shop",
+                ["label"] = "leave_shop",
+                ["enabled"] = true,
+            },
+        };
+        for (int i = 0; i < inv.BlitzEntries.Count; i++)
+        {
+            var entry = inv.BlitzEntries[i];
+            options.Add(new Dictionary<string, object?>
+            {
+                ["index"] = i + 1,
+                ["id"] = "blitz_choice",
+                ["action"] = "blitz_choice",
+                ["label"] = "blitz:" + entry.MerchantEntryType,
+                ["description"] = $"Cost: {entry.Cost}",
+                ["enabled"] = entry.IsStocked && entry.EnoughGold,
+                ["price"] = entry.Cost,
+                ["status"] = entry.Status.ToString(),
+                ["item"] = BlitzEntryItem(entry),
+            });
+        }
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "decision",
+            ["decision"] = "shop",
+            ["context"] = RunContext(),
+            ["cards"] = new List<object?>(),
+            ["relics"] = new List<object?>(),
+            ["potions"] = new List<object?>(),
+            ["card_removal_cost"] = null,
+            ["blitz_choices_remaining"] = inv.BlitzChoicesRemaining,
+            ["options"] = options,
+            ["player"] = PlayerSummary(player),
+        };
+    }
+#endif
+
+    /// <summary>
+    /// GH #1347: take one of the Blitz merchant's wares (<c>index</c>: the
+    /// option's index, 1..6). The purchase is the game's own
+    /// (<c>MerchantSynchronizer.PurchaseLocalEntry</c>, as the shop slot calls
+    /// it). Most wares open a follow-up the player answers: a deck pick
+    /// (<c>card_select</c>, cancelable: a cancel returns the ware unspent) or
+    /// a reward screen (<c>card_reward</c>s, or <c>rewards</c> with
+    /// interactive rewards). The purchase task parks there like a shop
+    /// relic's and is driven on by the selection handlers.
+    /// </summary>
+    private Dictionary<string, object?> DoBlitzChoice(Player player, Dictionary<string, object?>? args)
+    {
+#if GAME_V0113
+        if (_runState?.CurrentRoom is not MerchantRoom merchantRoom)
+            return Error("Not in a shop");
+        var inv = GameApi.LocalInventory(merchantRoom);
+        if (inv == null || !inv.IsBlitzShop)
+            return Error("blitz_choice: not a Blitz shop");
+        if (args == null || !args.TryGetValue("index", out var raw) || raw == null)
+            return Error("blitz_choice requires 'index' (the option's index, 1..6)");
+        var idx = Convert.ToInt32(raw);
+        if (idx < 1 || idx > inv.BlitzEntries.Count)
+            return Error($"blitz_choice: invalid index {idx} (expected 1..{inv.BlitzEntries.Count})");
+        var entry = inv.BlitzEntries[idx - 1];
+        if (inv.BlitzChoicesRemaining <= 0)
+            return Error("blitz_choice: no Blitz picks left");
+        if (!entry.IsStocked)
+            return Error($"blitz_choice: {entry.MerchantEntryType} is {entry.Status}");
+
+        var kind = entry.MerchantEntryType;
+        try
+        {
+            bool taken = false;
+            var task = RunOnPool(async () => { taken = await GameApi.Purchase(entry, merchantRoom); });
+            WaitUntilOptionTaskSettles(task, "blitz-choice task or selection");
+            if (!task.IsCompleted && AnySelectionPending())
+            {
+                _pendingPurchaseTask = task;
+                WaitForActionExecutor();
+                return DetectDecisionPoint();
+            }
+            WaitForTask(task, 2000, "blitz-choice task");
+            if (task.IsFaulted) task.GetAwaiter().GetResult();
+            _syncCtx.Pump();
+            WaitForActionExecutor();
+            Log($"Blitz choice: {kind} -> {(taken ? "taken" : "not taken")}");
+        }
+        catch (Exception ex) { return ErrorWithTrace($"blitz_choice {kind} failed", ex); }
+
+        return DetectDecisionPoint();
+#else
+        return Error("blitz_choice needs game v0.113.0 or later");
+#endif
     }
 
     public Dictionary<string, object?> SetPlayer(Dictionary<string, System.Text.Json.JsonElement> args) =>
@@ -1525,14 +1772,14 @@ public class RunSimulator
 
             // PARITY-FUZZ: enumerate held potions as use_potion actions so the
             // cross-engine harness can exercise the potion surface (it picks
-            // from this list). We emit ONE action per occupied slot with a
-            // null target, matching the Rust engine's legal_actions, which
-            // surfaces Action::DrinkPotion per slot with target=None and lets
-            // the on-drink dispatcher resolve the target internally (per-enemy
-            // target fan-out is deferred on the Rust side, sts2-rs-h9u). The
-            // C# apply path (DoUsePotion L1724-1728) likewise resolves a null
-            // target to the first alive enemy for AnyEnemy potions, so both
-            // engines apply the equivalent effect.
+            // from this list). An AnyEnemy potion takes any living enemy
+            // (PotionModel.IsValidTarget: alive, other side), so it fans out
+            // to one action per living enemy, target_index over the alive
+            // subset exactly like an AnyEnemy card above; DoUsePotion resolves
+            // it the same way. Every other potion is one action per occupied
+            // slot with a null target. The Rust engine's legal_actions offers
+            // the same set (GH #1604; it used to emit one untargeted action
+            // per slot and aim it at the first alive enemy).
             var potions = player.Potions?.ToList() ?? new();
             for (int i = 0; i < potions.Count; i++)
             {
@@ -1564,6 +1811,19 @@ public class RunSimulator
                 if (aliveCount == 0
                     && potions[i].TargetType == TargetType.AnyEnemy)
                 {
+                    continue;
+                }
+                if (potions[i].TargetType == TargetType.AnyEnemy)
+                {
+                    for (int t = 0; t < aliveCount; t++)
+                    {
+                        actions.Add(new Dictionary<string, object?>
+                        {
+                            ["action"] = "use_potion",
+                            ["potion_index"] = i,
+                            ["target_index"] = t,
+                        });
+                    }
                     continue;
                 }
                 actions.Add(new Dictionary<string, object?>
@@ -1696,6 +1956,9 @@ public class RunSimulator
                         ["max_hp"] = e.MaxHp,
                         ["block"] = e.Block,
                         ["alive"] = e.IsAlive,
+                        // Where it stands in the encounter ("egg3"): tells apart
+                        // two enemies alike in kind and hp (GH #1286).
+                        ["slot"] = e.SlotName,
                         ["powers"] = ePowers,
                         // sts2-rs-u3wjj: the move-state id this monster is
                         // currently telegraphing (`MoveState.StateId`, e.g.
@@ -1731,7 +1994,7 @@ public class RunSimulator
                 playerWon = player.Creature == null ? (object?)false : (object?)!player.Creature.IsDead;
             }
 
-            return new Dictionary<string, object?>
+            var state = new Dictionary<string, object?>
             {
                 ["type"] = "ok",
                 ["player"] = playerDict,
@@ -1826,9 +2089,59 @@ public class RunSimulator
                         ? new Dictionary<string, object?> { ["alive"] = false }
                         : null),
             };
+#if GAME_V0113
+            AppendDreadCombatState(state, combatState);
+#endif
+            return state;
         }
         catch (Exception ex) { return ErrorWithTrace("GetState failed", ex); }
     }
+
+#if GAME_V0113
+    /// <summary>
+    /// GH #1346: the Dread context of the combat, under the engine wire's
+    /// names, so the full-state parity diff can compare it. A Dread run
+    /// carries all four keys on every <c>get_state</c>; any other run carries
+    /// none, so its output is unchanged.
+    ///
+    /// <c>dominion</c> is the combat's own (<c>CombatState.Dominion</c>, null
+    /// in the act's boss fights and outside combat).
+    /// <c>dread_weak_encounter</c> is <c>EncounterModel.IsWeak</c> of a combat
+    /// under a dominion. <c>dread_explosive</c> is what
+    /// <c>WaterfallGiantDominion.GetExplosiveAmount</c> returns for this
+    /// encounter (the amount it gives the entry roster and every later
+    /// summon), 0 under any other dominion.
+    /// </summary>
+    private void AppendDreadCombatState(Dictionary<string, object?> state, CombatState? combatState)
+    {
+        if (_runState == null || _runState.GameMode != GameMode.Dread) return;
+        var dominion = combatState?.Dominion;
+        var encounter = combatState?.Encounter;
+        state["game_mode"] = "dread";
+        state["dominion"] = dominion?.Id.Entry;
+        state["dread_weak_encounter"] = dominion != null && (encounter?.IsWeak ?? false);
+        state["dread_explosive"] = DreadExplosiveAmount(dominion, encounter);
+    }
+
+    /// <summary>
+    /// The game's own <c>WaterfallGiantDominion.GetExplosiveAmount(encounter)</c>
+    /// (private, WaterfallGiantDominion.cs:44-59), so the amount is never
+    /// re-derived here. 0 when the combat is not under that dominion; null
+    /// when the method cannot be found or throws, which the parity diff
+    /// reports as a split rather than a silent pass.
+    /// </summary>
+    private static int? DreadExplosiveAmount(AbstractModel? dominion, EncounterModel? encounter)
+    {
+        if (dominion == null || encounter == null || dominion.Id.Entry != "WATERFALL_GIANT_DOMINION")
+            return 0;
+        try
+        {
+            var method = AccessTools.Method(dominion.GetType(), "GetExplosiveAmount");
+            return method == null ? null : (int)method.Invoke(dominion, new object[] { encounter })!;
+        }
+        catch (Exception) { return null; }
+    }
+#endif
 
     // Per-stream RNG read-counts, keyed to match the Rust dump's
     // rng_counters (RunRngType snake_case). Each RunRngSet stream is a
@@ -2289,6 +2602,12 @@ public class RunSimulator
                     return DoBuyPotion(player, args);
                 case "remove_card":
                     return DoRemoveCard(player);
+                case "blitz_choice":
+                    return DoBlitzChoice(player, args);
+                // The Blitz shop lists leaving as option 0 under the live
+                // mod's name for it (NonCombatBridgeProtocol.LeaveShopAction).
+                case "leave_shop":
+                    return DoLeaveRoom(player);
                 case "select_bundle":
                     return DoSelectBundle(player, args);
                 case "select_cards":
@@ -3241,6 +3560,10 @@ public class RunSimulator
             // chosen or not. Without driving the stashed task the Injury never
             // landed on a skip (run-parity RP47: cs deck 10 vs rs 11).
             DrainEventOptionTaskIfDue();
+            // GH #1347: a canceled Blitz ware pick (upgrade / transform /
+            // removal / enchant) ends its purchase task with "not bought"; see
+            // it through before the shop is read again.
+            if (_runState?.CurrentRoom is MerchantRoom) DrivePurchaseTask();
         }
         return DetectDecisionPoint();
     }
@@ -3535,7 +3858,7 @@ public class RunSimulator
     private Dictionary<string, object?> DoLeaveRoom(Player player)
     {
         Log("Leaving room");
-        try { GameApi.ProceedFromTerminalRewardsScreen().GetAwaiter().GetResult(); }
+        try { GameApi.ProceedFromTerminalRewardsScreen(_runState).GetAwaiter().GetResult(); }
         catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
         _syncCtx.Pump();
         WaitForActionExecutor();
@@ -3588,7 +3911,7 @@ public class RunSimulator
             }
         }
 
-        GameApi.ProceedFromTerminalRewardsScreen().GetAwaiter().GetResult();
+        GameApi.ProceedFromTerminalRewardsScreen(_runState).GetAwaiter().GetResult();
         WaitForActionExecutor();
         return DetectDecisionPoint();
     }
@@ -3642,6 +3965,7 @@ public class RunSimulator
                 ["context"] = RunContext(),
                 ["rewards"] = customScreen.Entries.Select(RewardItem).ToList(),
                 ["from_event"] = true,
+                ["can_skip"] = customScreen.CanSkip,
                 ["player"] = PlayerSummary(player),
             };
             return state;
@@ -3687,7 +4011,7 @@ public class RunSimulator
             {
                 var stats = new Dictionary<string, object?>();
                 try { foreach (var dv in cr.Card.DynamicVars.Values) stats[dv.Name.ToLowerInvariant()] = (int)dv.BaseValue; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
-                return new Dictionary<string, object?>
+                var info = new Dictionary<string, object?>
                 {
                     ["index"] = i,
                     ["id"] = cr.Card.Id.ToString(),
@@ -3700,6 +4024,8 @@ public class RunSimulator
                     ["stats"] = stats.Count > 0 ? stats : null,
                     ["after_upgrade"] = GetUpgradedInfo(cr.Card),
                 };
+                AddEnchantment(info, cr.Card);
+                return info;
             }).ToList();
 
             return new Dictionary<string, object?>
@@ -3723,7 +4049,7 @@ public class RunSimulator
             {
                 var stats = new Dictionary<string, object?>();
                 try { foreach (var dv in card.DynamicVars.Values) stats[dv.Name.ToLowerInvariant()] = (int)dv.BaseValue; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
-                return new Dictionary<string, object?>
+                var opt = new Dictionary<string, object?>
                 {
                     ["index"] = i,
                     ["id"] = card.Id.ToString(),
@@ -3736,9 +4062,38 @@ public class RunSimulator
                     ["description"] = _loc.CardText(card),
                     ["after_upgrade"] = GetUpgradedInfo(card),
                 };
+                // The card's enchantment, as the screen shows it: Dolly's
+                // Mirror offering a Kifuda card copies its Adroit 3, and a
+                // mirror rebuilt from a bare id offered Adroit 1.
+                if (card.Enchantment != null)
+                {
+                    opt["enchantment"] = _loc.Bilingual("enchantments", card.Enchantment.Id.Entry + ".title");
+                    try { if (card.Enchantment.Amount != 0) opt["enchantment_amount"] = card.Enchantment.Amount; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
+                }
+                return opt;
             }).ToList();
 
-            return new Dictionary<string, object?>
+            // Replay harness only (python/host_replay.py): where each offered
+            // card lies in the draw pile, and the pile's order. A log names the
+            // card a player picked from the pile, not which of several alike;
+            // the draws that follow tell, given the order. Never in referee
+            // mode: a player does not see the pile's order.
+            List<string>? drawOrder = null;
+            if (!Referee.Keyed && Environment.GetEnvironmentVariable("STS2_REVEAL_DRAW_ORDER") == "1")
+            {
+                var pile = player.PlayerCombatState?.DrawPile?.Cards?.ToList();
+                if (pile != null)
+                {
+                    drawOrder = pile.Select(c => c.Id.Entry).ToList();
+                    for (int i = 0; i < opts.Count; i++)
+                    {
+                        int at = pile.IndexOf(_cardSelector.PendingOptions[i]);
+                        if (at >= 0) opts[i]["draw_index"] = at;
+                    }
+                }
+            }
+
+            var selectState = new Dictionary<string, object?>
             {
                 ["type"] = "decision",
                 ["decision"] = "card_select",
@@ -3756,6 +4111,7 @@ public class RunSimulator
                 ["prompt_key"] = _cardSelector.PendingPromptKey,
                 ["source"] = _cardSelector.PendingSource,
                 ["source_model"] = _cardSelector.PendingSourceModel,
+                ["enchantment_amount"] = _cardSelector.PendingEnchantAmount,
                 ["cancelable"] = _cardSelector.PendingCancelable,
                 ["player"] = PlayerSummary(player),
                 // The whole board, when this selection was opened mid-fight.
@@ -3769,6 +4125,8 @@ public class RunSimulator
                 // (rest-site upgrade, event grant), where there is no board.
                 ["combat"] = InCombatBoard(player),
             };
+            if (drawOrder != null) selectState["draw_order"] = drawOrder;
+            return selectState;
         }
 
         // Check if there's a pending card reward
@@ -4161,6 +4519,12 @@ public class RunSimulator
             // is the engine's UNSETTLING_LAMP_FINISHED (RelicLatchSpent).
             // Rebuilt unspent, a co-op replay doubled a later Bash+ (GH #989).
             ["UNSETTLING_LAMP"] = LatchField("UnsettlingLamp", "_isFinishedTriggering"),
+            // First card of a combat is played twice; the relic stops glowing
+            // once it has fired (RelicStatus.Active -> Normal), so the bit is
+            // on screen. Rebuilt unspent, the fight mirror played the next
+            // card twice too: a Perfected Strike that left a Zapbot on 5 HP
+            // killed it there (Spire Bench seed 170000220).
+            ["THROWING_AXE"] = LatchField("ThrowingAxe", "_usedThisCombat"),
         };
 
     /// <summary>The counter a spent latch reads as, where the engine's is not
@@ -4214,6 +4578,23 @@ public class RunSimulator
         catch (Exception hostFault) { HostFaults.Swallowed(hostFault); return null; }
     }
 
+    /// <summary>The creature's slot in its encounter's slot order (GH #1838): the order
+    /// <c>SortEnemiesBySlotName</c> keeps the board in. A summon takes the first free
+    /// slot, which a removed corpse's can be, so creation order alone cannot place a
+    /// corpse among the living. Null without a named slot.</summary>
+    private static int? SlotIndex(Creature c, EncounterModel? encounter = null)
+    {
+        try
+        {
+            // A removed corpse has left its combat state: the caller names the fight's.
+            var slots = (c.CombatState?.Encounter ?? encounter)?.Slots;
+            if (slots == null || string.IsNullOrEmpty(c.SlotName)) return null;
+            for (int i = 0; i < slots.Count; i++) if (slots[i] == c.SlotName) return i;
+        }
+        catch (Exception) { }
+        return null;
+    }
+
     private static Dictionary<string, object?>? PowerVars(PowerModel pw)
     {
         try
@@ -4235,6 +4616,27 @@ public class RunSimulator
             if (pw.GetType().Name == "SurroundedPower"
                 && pw.GetType().GetProperty("Facing")?.GetValue(pw) is System.Enum facing)
                 d["Facing"] = Convert.ToInt32(facing, System.Globalization.CultureInfo.InvariantCulture);
+            // Possess Strength / Speed keep what they stole in private data and
+            // give it back on death; the engine counts it on `counter` (GH #1836).
+            string? stolenField = pw.GetType().Name switch
+            {
+                "PossessStrengthPower" => "stolenStrength",
+                "PossessSpeedPower" => "stolenDexterity",
+                _ => null,
+            };
+            if (stolenField != null
+                && typeof(PowerModel)
+                    .GetField("_internalData", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.GetValue(pw) is object data
+                && data.GetType()
+                    .GetField(stolenField, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.GetValue(data) is System.Collections.IDictionary stolen)
+            {
+                decimal total = 0m;
+                foreach (System.Collections.DictionaryEntry e in stolen)
+                    total += e.Value is decimal v ? v : 0m;
+                d["Stolen"] = (int)(-total);
+            }
             return d.Count > 0 ? d : null;
         }
         catch (Exception hostFault) { HostFaults.Swallowed(hostFault); return null; }
@@ -4509,6 +4911,11 @@ public class RunSimulator
                     {
                         intentInfo["damage"] = atk.GetSingleDamage(playerCreatures, e);
                         intentInfo["hits"] = atk.Repeats;
+                        // The move's own number, before Strength, Weak and
+                        // the like: what a player knows from the bestiary,
+                        // and what the shown number hides when it floors at
+                        // 0 (GH #1708).
+                        if (atk.DamageCalc != null) intentInfo["base_damage"] = (int)atk.DamageCalc();
                     }
                     catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
                 }
@@ -4616,6 +5023,10 @@ public class RunSimulator
         }
         var kws = c.Keywords?.Where(k => k != CardKeyword.None).Select(k => k.ToString()).ToList();
         if (kws?.Count > 0) cardInfo["keywords"] = kws;
+        // The card's own replays ("Replay 1" on its text): Soldier's Stew's
+        // +1 on every Strike lasts the fight, and a board rebuilt without it
+        // plays the card once. The live mod sends the same key.
+        try { if (c.BaseReplayCount != 0) cardInfo["base_replay_count"] = c.BaseReplayCount; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
         if (c.Enchantment != null)
         {
             cardInfo["enchantment"] = _loc.Bilingual("enchantments", c.Enchantment.Id.Entry + ".title");
@@ -4711,6 +5122,13 @@ public class RunSimulator
                 var enemyDict = new Dictionary<string, object?>
                 {
                     ["index"] = i,
+                    // The creature's id in this fight (creation order): unlike
+                    // `index`, it survives another enemy's death (GH #1651).
+                    ["combat_id"] = e.CombatId,
+                    ["slot"] = SlotIndex(e),
+                    // The model id (`SHRINKER_BEETLE`): the adapters resolve the monster
+                    // by it, the English title is only their fallback (GH #1423).
+                    ["id"] = e.Monster?.Id.Entry,
                     ["name"] = e.Monster != null ? _loc.Text(e.Monster.Title) : _loc.Monster("UNKNOWN"),
                     ["hp"] = e.CurrentHp,
                     ["max_hp"] = e.MaxHp,
@@ -4729,6 +5147,14 @@ public class RunSimulator
                 // Allowlisted private AI state (Fabricator._lastSpawned,
                 // KnowledgeDemon curse counter) — see AppendMonsterHiddenState.
                 AppendMonsterHiddenState(enemyDict, e.Monster);
+                // The card a thief holds (`SwipePower.StolenCard`, shown on the
+                // thief), as the engine emits it (GH #1693).
+                var stolen = e.Powers.OfType<SwipePower>()
+                    .Select(sp => sp.StolenCard)
+                    .Where(c => c != null)
+                    .Select(c => new Dictionary<string, object?> { ["id"] = c!.Id.Entry, ["upgraded"] = c.IsUpgraded })
+                    .ToList();
+                if (stolen.Count > 0) enemyDict["stolen_cards"] = stolen;
                 return enemyDict;
             }).ToList() ?? new();
 
@@ -4739,9 +5165,7 @@ public class RunSimulator
         // sees the corpse treats every kill as permanent. Kept in a SEPARATE
         // list so the alive list's index semantics (play_card targeting) are
         // untouched.
-        var deadEnemies = combatState?.Enemies?
-            .Where(e => e != null && !e.IsAlive)
-            .Select(e =>
+        Func<Creature, Dictionary<string, object?>> corpseOf = e =>
             {
                 var dIntents = SerializeIntents(e, playerCreatures);
                 var dPowers = e.Powers?.Select(pw => new Dictionary<string, object?>
@@ -4758,6 +5182,11 @@ public class RunSimulator
                 }).ToList();
                 var corpseDict = new Dictionary<string, object?>
                 {
+                    ["combat_id"] = e.CombatId,
+                    ["slot"] = SlotIndex(e, combatState?.Encounter),
+                    // The model id (`SHRINKER_BEETLE`): the adapters resolve the monster
+                    // by it, the English title is only their fallback (GH #1423).
+                    ["id"] = e.Monster?.Id.Entry,
                     ["name"] = e.Monster != null ? _loc.Text(e.Monster.Title) : _loc.Monster("UNKNOWN"),
                     ["hp"] = e.CurrentHp,
                     ["max_hp"] = e.MaxHp,
@@ -4781,7 +5210,38 @@ public class RunSimulator
                 // reviving monster's counters survive its death.
                 AppendMonsterHiddenState(corpseDict, e.Monster);
                 return corpseDict;
-            }).ToList() ?? new();
+            };
+        var deadEnemies = combatState?.Enemies?
+            .Where(e => e != null && !e.IsAlive)
+            .Select(corpseOf).ToList() ?? new();
+        // Enemies that died and left the board (GH #1716). The game takes an
+        // ordinary corpse out of `Enemies`; the engine keeps it in its place,
+        // so a fight rebuilt from the board alone has one enemy too few (a
+        // Twig Slime killed by Festive Popper before the first decision).
+        // The game keeps no list of them: they are the dead monsters the
+        // combat history still names (damage taken, powers received, moves
+        // made) that are neither on the board nor escaped. In creation order.
+        var removedEnemies = new List<Dictionary<string, object?>>();
+        try
+        {
+            if (combatState != null)
+            {
+                var history = CombatManager.Instance?.History;
+                var named = history?.Entries
+                    .SelectMany(en => en is MegaCrit.Sts2.Core.Combat.History.Entries.DamageReceivedEntry d
+                        ? new[] { en.Actor, d.Dealer }
+                        : new[] { en.Actor })
+                    .Where(c => c != null && c!.Monster != null && c.Side == CombatSide.Enemy
+                        && c.IsDead && !combatState.Enemies.Contains(c)
+                        && !combatState.EscapedCreatures.Contains(c))
+                    .Select(c => c!)
+                    .Distinct()
+                    .OrderBy(c => c.CombatId ?? uint.MaxValue)
+                    .ToList();
+                if (named != null) removedEnemies = named.Select(corpseOf).ToList();
+            }
+        }
+        catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
 
         // Player powers/buffs
         var playerPowers = player.Creature?.Powers?.Select(pw => new Dictionary<string, object?>
@@ -4806,6 +5266,10 @@ public class RunSimulator
             SerializeCombatCard(c, i, pcs, includePlayability: false)).ToList() ?? new();
         var discardPile = pcs?.DiscardPile?.Cards?.Select((c, i) =>
             SerializeCombatCard(c, i, pcs, includePlayability: false)).ToList() ?? new();
+        // The draw-pile cards a player has seen placed and that still sit
+        // there: top first, bottom first (GH #1710). The referee view sends
+        // the pile itself sorted.
+        var (knownTop, knownBottom) = KnownDrawOrder.Positions(pcs?.DrawPile);
         // The card that is MID-PLAY. C# parks it in its own `PlayPile` "so
         // that it isn't counted towards your hand or your discard pile"
         // (PileType.Play), and moves it to the discard only once the play
@@ -4852,6 +5316,8 @@ public class RunSimulator
                 playerSummary["bound_card_played_this_turn"] = true;
         }
         catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
+        try { SeatHistory.Add(playerSummary, player, pcs); }
+        catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
 
         var result = new Dictionary<string, object?>
         {
@@ -4864,9 +5330,12 @@ public class RunSimulator
             ["hand"] = hand,
             ["enemies"] = enemies,
             ["dead_enemies"] = deadEnemies.Count > 0 ? deadEnemies : null,
+            ["removed_enemies"] = removedEnemies.Count > 0 ? removedEnemies : null,
             ["player"] = playerSummary,
             ["player_powers"] = playerPowers?.Count > 0 ? playerPowers : null,
             ["draw_pile"] = drawPile,
+            ["draw_pile_top"] = knownTop.Count > 0 ? knownTop.Select(i => drawPile[i]).ToList() : null,
+            ["draw_pile_bottom"] = knownBottom.Count > 0 ? knownBottom.Select(i => drawPile[i]).ToList() : null,
             ["discard_pile"] = discardPile,
             ["exhaust_pile"] = exhaustPile,
             // Only present when a card is actually mid-play — see above.
@@ -4918,8 +5387,9 @@ public class RunSimulator
                 result["orb_slots"] = orbQueue.Capacity;
             }
 
-            // Regent: Stars
-            if (pcs != null && pcs.Stars >= 0 && player.Character?.Id.Entry == "REGENT")
+            // Stars: Regent's mechanic, but any character can gain them
+            // (Big Bang, a colorless card; GH #1734).
+            if (pcs != null && (pcs.Stars > 0 || (pcs.Stars >= 0 && player.Character?.Id.Entry == "REGENT")))
             {
                 result["stars"] = pcs.Stars;
             }
@@ -5003,7 +5473,7 @@ public class RunSimulator
                 // then a silent skip after the selector's 300 s timeout. The real
                 // game shows the reward screen, so stash the task at the reward
                 // and let select/skip_card_reward drive it on, as for an option.
-                var task = RunOnPool(() => GameApi.ProceedFromTerminalRewardsScreen());
+                var task = RunOnPool(() => GameApi.ProceedFromTerminalRewardsScreen(_runState));
                 WaitUntilOptionTaskSettles(task, "parent event resume or its reward");
                 if (!task.IsCompleted && AnySelectionPending())
                 {
@@ -5228,7 +5698,7 @@ public class RunSimulator
         {
             var stats = new Dictionary<string, object?>();
             try { foreach (var dv in c.DynamicVars.Values) stats[dv.Name.ToLowerInvariant()] = (int)dv.BaseValue; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
-            return new Dictionary<string, object?>
+            var info = new Dictionary<string, object?>
             {
                 ["index"] = i,
                 ["id"] = c.Id.ToString(),
@@ -5243,6 +5713,8 @@ public class RunSimulator
                 ["stats"] = stats.Count > 0 ? stats : null,
                 ["after_upgrade"] = GetUpgradedInfo(c),
             };
+            AddEnchantment(info, c);
+            return info;
         }).ToList();
 
         return new Dictionary<string, object?>
@@ -5276,7 +5748,7 @@ public class RunSimulator
         try
         {
             HostFaults.MaybeInject("ForceToMap");  // GH #1283 fail-closed test
-            GameApi.ProceedFromTerminalRewardsScreen().GetAwaiter().GetResult();
+            GameApi.ProceedFromTerminalRewardsScreen(_runState).GetAwaiter().GetResult();
             _syncCtx.Pump();
         }
         catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
@@ -5325,7 +5797,7 @@ public class RunSimulator
             Log($"Event {localEvent?.GetType().Name ?? "null"} finished, proceeding");
             try
             {
-                GameApi.ProceedFromTerminalRewardsScreen().GetAwaiter().GetResult();
+                GameApi.ProceedFromTerminalRewardsScreen(_runState).GetAwaiter().GetResult();
                 _syncCtx.Pump();
             }
             catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
@@ -5350,6 +5822,18 @@ public class RunSimulator
         var options = currentOptions
             .Select((opt, i) =>
             {
+                // The game fills an option's text with the event's own values
+                // before formatting it (NEventOptionButton._Ready:
+                // Event.DynamicVars.AddTo(Option.Description / Option.Title)).
+                // Without them Ranwid the Elder read "Give {Relic}" and Grave of
+                // the Forgotten "Accept the {Relic}" (GH #1287).
+                try
+                {
+                    if (opt.Description != null) localEvent.DynamicVars.AddTo(opt.Description);
+                    if (opt.Title != null) localEvent.DynamicVars.AddTo(opt.Title);
+                }
+                catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
+
                 // Try to resolve title via loc tables
                 string? title = null;
                 if (opt.Title != null)
@@ -5592,6 +6076,9 @@ public class RunSimulator
     {
         var inv = GameApi.LocalInventory(merchantRoom);
         if (inv == null) { ForceToMap(); return MapSelectState(); }
+#if GAME_V0113
+        if (inv.IsBlitzShop) return BlitzShopState(inv, player);
+#endif
 
         var cards = inv.CharacterCardEntries.Concat(inv.ColorlessCardEntries)
             .Select((e, i) =>
@@ -5608,9 +6095,9 @@ public class RunSimulator
                         // A stocked card is already mutable, so ToMutable()
                         // throws MutableModelException and the shop loses every
                         // card's stats (GH #1283 census: ~40% of runs). Fixed in
-                        // referee mode only: the default payload feeds measured
+                        // referee and keyed modes only: the default payload feeds measured
                         // pipelines, so changing it there is a separate decision.
-                        var mutable = Referee.Mode && card.IsMutable ? card : card.ToMutable();
+                        var mutable = Referee.Keyed && card.IsMutable ? card : card.ToMutable();
                         foreach (var dv in mutable.DynamicVars.Values)
                             stats[dv.Name.ToLowerInvariant()] = (int)dv.BaseValue;
                     }
@@ -5625,6 +6112,8 @@ public class RunSimulator
                     ["id"] = entry,
                     ["name"] = _loc.Card(entry),
                     ["type"] = card?.Type.ToString() ?? "?",
+                    // An egg relic stocks its type's cards upgraded (GH #1730).
+                    ["upgraded"] = card?.IsUpgraded ?? false,
                     ["card_cost"] = cardCost,
                     ["description"] = card != null ? _loc.CardText(card) : _loc.Bilingual("cards", entry + ".description"),
                     ["stats"] = stats.Count > 0 ? stats : null,
@@ -5693,7 +6182,7 @@ public class RunSimulator
         {
             item["type"] = "relic";
             item["id"] = relic.Id.Entry;
-            item["name"] = _loc.Relic(relic.Id.Entry);
+            item["name"] = _loc.RelicTitle(relic);
             item["description"] = _loc.RelicText(relic);
         }
         if (entry.ChestRelic != null)
@@ -5701,6 +6190,12 @@ public class RunSimulator
             Relic(entry.ChestRelic);
             return item;
         }
+        // GH #1698: a reward the room was handed on top of its own set (an
+        // event fight's prize: PunchOff's relic and potion, TheHunt's card),
+        // CombatRoom.ExtraRewards. The player may take it in any order.
+        if (entry.Reward != null && _runState?.CurrentRoom is CombatRoom extraRoom
+            && extraRoom.ExtraRewards.Values.Any(l => l.Contains(entry.Reward)))
+            item["extra"] = true;
         switch (entry.Reward)
         {
             case GoldReward gold:
@@ -5755,7 +6250,7 @@ public class RunSimulator
         _rewardScreen!.Remove(entry);
         if (entry.ChestRelic != null)
         {
-            CollectTreasureRelic();
+            CollectTreasureRelic(entry.ChestRelic);
             return DetectDecisionPoint();
         }
         switch (entry.Reward)
@@ -5816,10 +6311,11 @@ public class RunSimulator
     internal async Task PlayCustomRewardScreen(RewardsSet set, MegaCrit.Sts2.Core.Multiplayer.Game.RewardsSetSynchronizer sync)
     {
         var entries = set.Rewards.Select((r, i) => new RewardEntry(i, r, null)).ToList();
+        bool canSkip = !(typeof(RewardsSet).GetField("_disallowSkipping", NonPublic)?.GetValue(set) is true);
         while (entries.Count > 0 && !sync.IsRewardsSetCompleted(set))
         {
             var choice = new TaskCompletionSource<(string Command, int Index)>();
-            _customScreen = new CustomRewardScreen(entries, choice);
+            _customScreen = new CustomRewardScreen(entries, choice, canSkip);
             var (command, index) = await choice.Task;
             if (command == "proceed") break;
             var entry = entries.First(e => e.Index == index);
@@ -5844,6 +6340,8 @@ public class RunSimulator
     {
         var screen = _customScreen!;
         int index = -1;
+        if (command != "take" && !screen.CanSkip)
+            return Error($"{command}: this reward screen must be taken whole");
         if (command != "proceed")
         {
             if (args == null || !args.TryGetValue("reward_index", out var raw) || raw == null)
@@ -5872,13 +6370,25 @@ public class RunSimulator
         if (entry == null) return Error("skip_reward: no such reward on the reward screen");
         _rewardScreen!.Remove(entry);
         SkipRewardEntry(entry);
+        // The chest has ONE skip (NTreasureRoom.cs:256 SkipRelicLocally): in
+        // single-player it ends the picking with nothing more awarded
+        // (TreasureRoomRelicSynchronizer.OnPicked), so a Blitz chest's other
+        // relic goes with it.
+        if (entry.ChestRelic != null) _rewardScreen.RemoveAll(e => e.ChestRelic != null);
         return DetectDecisionPoint();
     }
 
     /// <summary>Leaves the reward screen; every reward still on it is skipped.</summary>
     private Dictionary<string, object?> DoProceedFromRewards()
     {
-        foreach (var entry in _rewardScreen!) SkipRewardEntry(entry);
+        bool chestSkipped = false;
+        foreach (var entry in _rewardScreen!)
+        {
+            // One skip closes the chest, however many relics it still holds.
+            if (entry.ChestRelic != null && chestSkipped) continue;
+            chestSkipped |= entry.ChestRelic != null;
+            SkipRewardEntry(entry);
+        }
         _rewardScreen = null;
         return DetectDecisionPoint();
     }
@@ -5905,11 +6415,21 @@ public class RunSimulator
             }
             catch (Exception ex) { LogException("Treasure rewards", ex); }
             var rolled = RunManager.Instance.TreasureRoomRelicSynchronizer.CurrentRelics;
+            // One relic per player, so one here; a solo Blitz chest lists its
+            // two, and taking one leaves the other for the second round.
             _rewardScreen = rolled is { Count: > 0 }
-                ? new List<RewardEntry> { new(0, null, rolled[0]) }
+                ? rolled.Take(GameApi.IsBlitz(_runState) ? rolled.Count : 1)
+                    .Select((relic, i) => new RewardEntry(i, null, relic)).ToList()
                 : null;
         }
-        if (_rewardScreen is { Count: > 0 }) return RewardScreenState(player);
+        if (_rewardScreen is { Count: > 0 })
+        {
+            var screen = RewardScreenState(player);
+            // Blitz only: how many relics the chest still hands out, this
+            // pick included (2, then 1).
+            if (GameApi.IsBlitz(_runState)) screen["chest_picks_left"] = _rewardScreen.Count;
+            return screen;
+        }
         _rewardScreen = null;
         try
         {
@@ -5925,7 +6445,10 @@ public class RunSimulator
 
     private Dictionary<string, object?> TreasureState(TreasureRoom treasureRoom)
     {
-        if (Referee.InteractiveRewards) return InteractiveTreasureState(treasureRoom);
+        // GH #1347: a solo Blitz chest holds two relics taken over two rounds
+        // (TreasureRoomRelicSynchronizer.cs:119-137); which goes first, and
+        // whether to skip, is the player's, so it is always the reward screen.
+        if (Referee.InteractiveRewards || GameApi.IsBlitz(_runState)) return InteractiveTreasureState(treasureRoom);
 
         // Treasure rooms give relics via TreasureRoomRelicSynchronizer
         Log("Treasure room — collecting rewards");
@@ -5982,7 +6505,7 @@ public class RunSimulator
     /// EndRelicVoting); the RelicsAwarded event's only subscriber is the UI
     /// node, absent headlessly, so the Obtain runs here directly.
     /// </summary>
-    private void CollectTreasureRelic()
+    private void CollectTreasureRelic(RelicModel? which = null)
     {
         try
         {
@@ -5994,8 +6517,17 @@ public class RunSimulator
                 Log("Treasure relic: no rolled relic to collect");
                 return;
             }
-            var relic = relics[0].ToMutable();
-            sync.PickRelicLocally(0);
+            // `which` names one of several chest relics (a solo Blitz chest's
+            // two): the vote is its CURRENT index, since each round's award
+            // removes the taken relic from the list.
+            int pick = which == null ? 0 : relics.FindIndex(r => ReferenceEquals(r, which));
+            if (pick < 0)
+            {
+                Log($"Treasure relic: {which!.Id.Entry} is no longer in the chest");
+                return;
+            }
+            var relic = relics[pick].ToMutable();
+            sync.PickRelicLocally(pick);
             WaitForActionExecutor();
             _syncCtx.Pump();
             RelicCmd.Obtain(relic, _runState!.Players[0]).GetAwaiter().GetResult();
@@ -6500,6 +7032,14 @@ public class RunSimulator
     {
         if (combatState == null || playerCreature == null)
             return false;
+        // The power's own flag is the authority (as the mod reads it,
+        // `SimCombatHandler.ReadChainsBoundFlag`): `BeforeCardPlayed` sets it
+        // only for a card Bound when its play starts. The history scan reads
+        // the affliction now, so a Hellraiser auto-play afflicted after it
+        // started counted, and the next Bound card read as unplayable.
+        bool? own = ReadChainsBoundFlag(playerCreature);
+        if (own.HasValue)
+            return own.Value;
         foreach (var entry in CombatManager.Instance.History.CardPlaysStarted)
         {
             if (!entry.HappenedThisTurn(combatState))
@@ -6512,6 +7052,30 @@ public class RunSimulator
                 return true;
         }
         return false;
+    }
+
+    /// <summary>`ChainsOfBindingPower`'s private `boundCardPlayed` (no power:
+    /// false), or null when this build hides it (the caller scans history).</summary>
+    private static bool? ReadChainsBoundFlag(Creature playerCreature)
+    {
+        try
+        {
+            PowerModel? chains = playerCreature.Powers.FirstOrDefault(p => p is ChainsOfBindingPower);
+            if (chains == null)
+                return false;
+            object? data = typeof(PowerModel)
+                .GetField("_internalData", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?.GetValue(chains);
+            object? flag = data?.GetType()
+                .GetField("boundCardPlayed", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                ?.GetValue(data);
+            return flag is bool value ? value : null;
+        }
+        catch (Exception hostFault)
+        {
+            HostFaults.Swallowed(hostFault);
+            return null;
+        }
     }
 
     private Dictionary<string, object?> PlayerSummary(Player player)
@@ -6541,7 +7105,7 @@ public class RunSimulator
                     // whose title differs from its entry words (e.g.
                     // CHOSEN_CHEESE → "The Chosen Cheese") false-diverged.
                     ["id"] = r.Id.Entry,
-                    ["name"] = _loc.Relic(r.Id.Entry),
+                    ["name"] = _loc.RelicTitle(r),
                     ["description"] = _loc.RelicText(r),
                     ["vars"] = vars.Count > 0 ? vars : null,
                     // The relic's LIVE counter, for the relics that have one.
@@ -6579,7 +7143,11 @@ public class RunSimulator
                 try { foreach (var dv in p.DynamicVars.Values) pvars[dv.Name] = (int)dv.BaseValue; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
                 return new Dictionary<string, object?>
                 {
+                    // `index` is the potion's place among the FILLED slots,
+                    // which `use_potion` / `discard_potion` index; `slot` is
+                    // its place on the belt, empty slots counted (GH #1690).
                     ["index"] = i,
+                    ["slot"] = player.PotionSlots.ToList().IndexOf(p),
                     // Registry entry alongside the display name, for the same
                     // reason relics carry `id`: a trace that compares potion
                     // IDENTITY across worlds cannot use the localized title
@@ -6605,7 +7173,7 @@ public class RunSimulator
                 var dstats = new Dictionary<string, object?>();
                 try { foreach (var dv in c.DynamicVars.Values) dstats[dv.Name.ToLowerInvariant()] = (int)dv.BaseValue; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
                 var dkws = c.Keywords?.Where(k => k != CardKeyword.None).Select(k => k.ToString()).ToList();
-                return new Dictionary<string, object?>
+                var info = new Dictionary<string, object?>
                 {
                     ["id"] = c.Id.ToString(),
                     ["name"] = _loc.Card(c.Id.Entry),
@@ -6618,8 +7186,27 @@ public class RunSimulator
                     ["tinker_time_rider"] = MadScienceRider(c),
                     ["after_upgrade"] = GetUpgradedInfo(c),
                 };
+                // The deck's enchantments, as the combat serializer names
+                // them (GH #1683): a rebuilt run stamps them back on.
+                if (c.Enchantment != null)
+                {
+                    info["enchantment"] = _loc.Bilingual("enchantments", c.Enchantment.Id.Entry + ".title");
+                    try { if (c.Enchantment.Amount != 0) info["enchantment_amount"] = c.Enchantment.Amount; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
+                }
+                return info;
             }).ToList(),
         };
+    }
+
+    /// <summary>
+    /// A reward card's enchantment, as the deck dump names it (GH #1683): Silken
+    /// Tress glams every card reward, and the card joins the deck enchanted.
+    /// </summary>
+    private void AddEnchantment(Dictionary<string, object?> info, CardModel c)
+    {
+        if (c.Enchantment == null) return;
+        info["enchantment"] = _loc.Bilingual("enchantments", c.Enchantment.Id.Entry + ".title");
+        try { if (c.Enchantment.Amount != 0) info["enchantment_amount"] = c.Enchantment.Amount; } catch (Exception hostFault) { HostFaults.Swallowed(hostFault); }
     }
 
     /// <summary>Common context added to every decision point.</summary>
@@ -6639,19 +7226,38 @@ public class RunSimulator
             ["room_type"] = _runState.CurrentRoom?.RoomType.ToString(),
         };
 
-        // Boss encounter info — use BossEncounter?.Id?.Entry
+#if GAME_V0113
+        // GH #1346: a Dread run names its mode, its ascension (always 10) and
+        // the act's dominion (null inside the act's boss rooms). Standard runs
+        // carry none of these keys, so their output is unchanged.
+        if (_runState.GameMode == GameMode.Dread)
+        {
+            ctx["game_mode"] = "dread";
+            ctx["ascension"] = _runState.AscensionLevel;
+            ctx["dominion"] = _runState.Dominion?.Id.Entry;
+        }
+        // GH #1347: a Blitz run names its mode and its Blitz level (0..=5,
+        // not a standard ascension: AscensionHelper.GetLevelForBlitz).
+        else if (_runState.GameMode == GameMode.Blitz)
+        {
+            ctx["game_mode"] = "blitz";
+            ctx["ascension"] = _runState.AscensionLevel;
+        }
+#endif
+
+        // The boss, named as the top bar names it (NTopBarBossIcon: the
+        // encounter's Title). The monster's `<id>.name` key came out raw for
+        // Kaiser Crab and as an unfilled "Test Subject #C{Count}" (#1287).
         try
         {
-            var bossIdEntry = _runState.Act?.BossEncounter?.Id?.Entry;
-            if (!string.IsNullOrEmpty(bossIdEntry))
+            var boss = _runState.Act?.BossEncounter;
+            var bossIdEntry = boss?.Id?.Entry;
+            if (boss != null && !string.IsNullOrEmpty(bossIdEntry))
             {
-                var monsterKey = bossIdEntry.EndsWith("_BOSS") ? bossIdEntry[..^5] : bossIdEntry;
-                // Handle special mappings
-                if (monsterKey == "THE_KIN") monsterKey = "KIN_PRIEST";
                 ctx["boss"] = new Dictionary<string, object?>
                 {
                     ["id"] = bossIdEntry,
-                    ["name"] = _loc.Monster(monsterKey),
+                    ["name"] = _loc.Text(boss.Title),
                 };
             }
         }
@@ -6905,9 +7511,9 @@ public class RunSimulator
         }
     }
 
-    private Player? CreatePlayer(string characterName, bool playedSave = false)
+    private Player? CreatePlayer(string characterName, bool playedSave = false, ProfileSpec? profile = null)
     {
-        var unlockState = BuildUnlockState(playedSave);
+        var unlockState = BuildUnlockState(playedSave, profile);
         return characterName.ToLowerInvariant() switch
         {
             "ironclad" => Player.CreateForNewRun<Ironclad>(unlockState, 1uL),
@@ -7009,13 +7615,20 @@ public class RunSimulator
     /// epoch (e.g. a Relic5Epoch-only relic, or a second character) could
     /// still diverge from a real save that has more actually unlocked.
     /// </summary>
-    private static UnlockState BuildUnlockState(bool playedSave)
+    private static UnlockState BuildUnlockState(bool playedSave, ProfileSpec? profile = null)
     {
+        // GH #1286: the player's profile as the replay harness inferred it.
+        if (profile != null && !Referee.Keyed)
+            return new UnlockState(
+                EpochModel.AllEpochIds.Where(e => !profile.LockedEpochs.Contains(e)),
+                ModelDb.AllEncounters.Select(e => e.Id).Where(id => !profile.UnseenEncounters.Contains(id.Entry)),
+                profile.NumberOfRuns ?? 999999999);
+
         // Diagnostics (GH #1286): STS2_LOCKED_EPOCHS=A,B leaves those epochs
         // unrevealed, to test whether a recorded run's content differences are
         // the player's unlocks. Never in referee mode.
         var locked = Environment.GetEnvironmentVariable("STS2_LOCKED_EPOCHS");
-        if (!playedSave && !Referee.Mode && !string.IsNullOrWhiteSpace(locked))
+        if (!playedSave && !Referee.Keyed && !string.IsNullOrWhiteSpace(locked))
         {
             var drop = locked.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
             foreach (var id in drop.Where(d => !EpochModel.AllEpochIds.Contains(d)))
@@ -8141,8 +8754,18 @@ public class RunSimulator
             var tcs = new TaskCompletionSource();
             _pendingSphere = game;
             _pendingSphereTcs = tcs;
+            _pendingSphereTotal = game.DivinationCount;
             Console.Error.WriteLine($"[SIM] Crystal Sphere pending: {game.DivinationCount} divinations");
             await tcs.Task;
+            // The await resumes on the game thread (it captured _syncCtx), and
+            // the rewards may include a card reward, whose selector blocks its
+            // caller until the client answers. On the game thread that is the
+            // thread that has to answer: no reply to the last click, then a
+            // silent skip after the selector's 300 s timeout (GH #1364). Hand
+            // the rewards to the pool, as an option's own start is.
+            await RunOnPool(() => CrystalSphereCompleteMinigame!.Invoke(game, null) as Task
+                ?? Task.CompletedTask);
+            return;
         }
         if (CrystalSphereCompleteMinigame!.Invoke(game, null) is Task t) await t;
     }
@@ -8184,17 +8807,68 @@ public class RunSimulator
                 cells.Add(entry);
             }
         }
-        return new Dictionary<string, object?>
+        var state = new Dictionary<string, object?>
         {
             ["type"] = "decision",
             ["decision"] = "crystal_sphere",
             ["context"] = RunContext(),
             ["divinations_left"] = game.DivinationCount,
+            ["divinations_total"] = _pendingSphereTotal,
             ["grid"] = new Dictionary<string, object?> { ["width"] = size.X, ["height"] = size.Y },
             ["cells"] = cells,
             ["player"] = PlayerSummary(player),
         };
+        // Diagnostics (GH #1286): what lies under the fog, for a harness that
+        // replays a recorded run. The log holds what the player dug up, not
+        // where they dug, so the replay has to plan the clicks. Never in
+        // referee mode: a player does not see this.
+        if (!Referee.Keyed && Environment.GetEnvironmentVariable("STS2_CRYSTAL_SPHERE_REVEAL") == "1")
+        {
+            state["items"] = game.Items.Select(item => (object?)new Dictionary<string, object?>
+            {
+                ["kind"] = CrystalSphereItemKind(item),
+                ["x"] = item.Position.X,
+                ["y"] = item.Position.Y,
+                ["width"] = item.Size.X,
+                ["height"] = item.Size.Y,
+            }).ToList();
+            // The three cards a card reward of each rarity gives once the
+            // event's stream has made `skip` draws (CardFactory.CreateForReward:
+            // a card and an upgrade roll, three times). A reward's place in
+            // this list tells how many draws came before it, which is what
+            // the order of the digging decides.
+            var draws = new Dictionary<string, object?>();
+            foreach (var rarity in new[] { CardRarity.Common, CardRarity.Uncommon, CardRarity.Rare })
+            {
+                var opts = new MegaCrit.Sts2.Core.Runs.CardCreationOptions(
+                    new[] { player.Character.CardPool },
+                    MegaCrit.Sts2.Core.Runs.CardCreationSource.Other,
+                    MegaCrit.Sts2.Core.Runs.CardRarityOddsType.Uniform,
+                    c => c.Rarity == rarity);
+                var pool = opts.GetPossibleCards(player).ToList();
+                var rows = new List<object?>();
+                for (int skip = 0; skip <= CrystalSphereDrawsAhead && pool.Count >= 3; skip++)
+                {
+                    var rng = new Rng(game.Rng.ToSerializable());
+                    for (int i = 0; i < skip; i++) rng.NextInt(2);
+                    var taken = new List<CardModel>();
+                    for (int i = 0; i < 3; i++)
+                    {
+                        taken.Add(rng.NextItem(pool.Except(taken).ToList())!);
+                        rng.NextFloat();
+                    }
+                    rows.Add(taken.Select(c => c.Id.Entry).ToList());
+                }
+                draws[rarity.ToString().ToLowerInvariant()] = rows;
+            }
+            state["card_draws"] = draws;
+        }
+        return state;
     }
+
+    // Fifteen items lie under the fog and a relic or a potion draws a few
+    // numbers at most, so no card reward comes later than this.
+    private const int CrystalSphereDrawsAhead = 48;
 
     // The texture is what the player tells items apart by; its file name is
     // the kind (crystal_sphere_relic, crystal_sphere_rare, ...).
@@ -8767,6 +9441,12 @@ public class RunSimulator
     /// </summary>
     internal static class HeadlessCardSelectContext
     {
+        /// <summary>
+        /// `FromDeckForEnchantment`'s `amount` (Kifuda's Adroit 3, GH #1715):
+        /// what the screen applies, printed on its source. Null for every
+        /// other entry point.
+        /// </summary>
+        public static int? EnchantAmount;
         public static string? Source;
         public static string? PromptKey;
         public static string? SourceModel;
@@ -8823,9 +9503,10 @@ public class RunSimulator
         {
             ChoiceContext = args?.OfType<PlayerChoiceContext>().FirstOrDefault();
             ChoicePlayer = args?.OfType<Player>().FirstOrDefault();
-            // FromHand / FromHandForDiscard signal CancelPlayCardActions
-            // (CardSelectCmd.cs:837, :928); every other entry point None.
-            ChoiceOptions = m.Name is "FromHand" or "FromHandForDiscard"
+            // The hand selections signal CancelPlayCardActions: FromHand (and
+            // FromHandForDiscard through it) at CardSelectCmd.cs:837,
+            // FromHandForUpgrade at :928. Every other entry point None.
+            ChoiceOptions = m.Name is "FromHand" or "FromHandForDiscard" or "FromHandForUpgrade"
                 ? PlayerChoiceOptions.CancelPlayCardActions
                 : PlayerChoiceOptions.None;
         }
@@ -8869,6 +9550,9 @@ public class RunSimulator
                 PromptKey = prefs.Prompt.LocEntryKey;
                 SourceModel = ModelEntryFrom(__args);
                 Cancelable = prefs.Cancelable;
+                EnchantAmount = __originalMethod.Name == "FromDeckForEnchantment"
+                    ? __args?.OfType<int>().Cast<int?>().FirstOrDefault()
+                    : null;
                 CaptureChoice(__args, __originalMethod);
             }
             catch (Exception hostFault) { HostFaults.Swallowed(hostFault); /* capture-only: never break the game's selection flow */ }
@@ -8919,6 +9603,7 @@ public class RunSimulator
         // played). The only signal that identifies mid-combat selection
         // semantics — see HeadlessCardSelectContext.ModelEntryFrom.
         public string? PendingSourceModel { get; private set; }
+        public int? PendingEnchantAmount { get; private set; }
         // CardSelectorPrefs.Cancelable verbatim; null when the entry point was
         // not patched (the driver then falls back to the min<=0 guess).
         public bool? PendingCancelable { get; private set; }
@@ -8935,6 +9620,8 @@ public class RunSimulator
             // would carry a stale prompt_key.
             (string? ctxSource, string? ctxPromptKey, string? ctxSourceModel, bool? ctxCancelable) =
                 HeadlessCardSelectContext.Consume();
+            PendingEnchantAmount = HeadlessCardSelectContext.EnchantAmount;
+            HeadlessCardSelectContext.EnchantAmount = null;
             var (choiceCtx, choicePlayer, choiceOpts) = HeadlessCardSelectContext.ConsumeChoice();
             var optList = options.ToList();
             // Pile tracer (STS2_TRACE_PILES): emit the option list IN PRESENTATION
@@ -9774,19 +10461,13 @@ public class RunSimulator
             }
             catch (Exception ex) { Console.Error.WriteLine($"[WARN] Bundle patch: {ex.Message}"); }
 
-            // Patch HasEntry to always return true
-            PatchMethod(harmony, typeof(LocTable), "HasEntry", nameof(LocPatches.HasEntryPrefix));
-
-            // Patch IsLocalKey to always return true
-            PatchMethod(harmony, typeof(LocTable), "IsLocalKey", nameof(LocPatches.HasEntryPrefix));
-
-            // Patch LocString.Exists (static) to always return true
-            var locStringExists = typeof(LocString).GetMethod("Exists",
-                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
-            if (locStringExists != null)
-            {
-                PatchMethod(harmony, locStringExists, nameof(LocPatches.HasEntryPrefix));
-            }
+            // LocTable.HasEntry / IsLocalKey and LocString.Exists run unpatched:
+            // the tables hold the real entries, and the game picks text by
+            // whether an entry exists. Forcing them to true made every
+            // `LocString.GetIfExists` return a missing key, so
+            // `EventOption.FromRelic` never fell back to the relic's own title
+            // and description: Orobas offered "Sea Glass" with a raw template
+            // where the game shows "Noble Glass" (GH #1287).
 
             // Patch LocTable.GetLocStringsWithPrefix to return empty list
             PatchMethod(harmony, typeof(LocTable), "GetLocStringsWithPrefix", nameof(LocPatches.GetLocStringsWithPrefixPrefix));
@@ -9849,13 +10530,6 @@ public class RunSimulator
         public static bool GetRawTextInstancePrefix(LocString __instance, ref string __result)
         {
             __result = __instance?.LocEntryKey ?? "";
-            return false;
-        }
-
-
-        public static bool HasEntryPrefix(ref bool __result)
-        {
-            __result = true;
             return false;
         }
 
@@ -9979,16 +10653,211 @@ public class RunSimulator
     /// (ActModel.cs:570) is dead here and the roll is purely seed-driven --
     /// exactly what makes it comparable to the Rust `roll_acts` port.
     /// </summary>
-    private static ActModel? ResolveAct1(string act1, string seedStr, bool playedSave) =>
+    private static ActModel? ResolveAct1(string act1, string seedStr, bool playedSave, ProfileSpec? profile = null) =>
         act1.ToLowerInvariant() switch
         {
             "overgrowth" => ModelDb.Act<Overgrowth>(),
             "underdocks" => ModelDb.Act<Underdocks>(),
-            "roll" => ActModel
-                .GetRandomList(ActSelectionRng(seedStr), BuildUnlockState(playedSave), isMultiplayer: false)
+            "roll" => UndiscoveredAct1(BuildUnlockState(playedSave, profile), profile) ?? ActModel
+                .GetRandomList(ActSelectionRng(seedStr), BuildUnlockState(playedSave, profile), isMultiplayer: false)
                 .First(),
             _ => null,
         };
+
+    /// <summary>
+    /// The act-1 variant the game forces because the profile has it unlocked
+    /// but has never entered it (ActModel.GetRandomList, ActModel.cs:563: the
+    /// branch TestMode keeps dead). Null when the roll decides.
+    /// </summary>
+    private static ActModel? UndiscoveredAct1(UnlockState unlockState, ProfileSpec? profile) =>
+        profile == null
+            ? null
+            : ModelDb.ActsByIndex[0].FirstOrDefault(a =>
+                a.IsUnlocked(unlockState) && !a.IsDefault && profile.UndiscoveredActs.Contains(a.Id.Entry));
+
+    /// <summary>
+    /// A player's profile, as far as it shapes a run (GH #1286). The real game
+    /// reads these from the progress save; the host has none, so a recorded run
+    /// of a player who has not unlocked everything can only be reproduced when
+    /// the harness states them. Never in referee mode.
+    /// </summary>
+    public sealed class ProfileSpec
+    {
+        /// <summary>Epoch ids not revealed on the timeline.</summary>
+        public HashSet<string> LockedEpochs { get; } = new();
+        /// <summary>Encounter ids the player has never met (bosses: ActModel.ApplyDiscoveryOrderModifications).</summary>
+        public HashSet<string> UnseenEncounters { get; } = new();
+        /// <summary>Act ids unlocked but never entered.</summary>
+        public HashSet<string> UndiscoveredActs { get; } = new();
+        /// <summary>Runs finished so far; 0 is the first run ever. Null: many.</summary>
+        public int? NumberOfRuns { get; set; }
+
+        public List<string> Unknown()
+        {
+            var encounters = ModelDb.AllEncounters.Select(e => e.Id.Entry).ToHashSet();
+            var acts = ModelDb.ActsByIndex.SelectMany(a => a).Select(a => a.Id.Entry).ToHashSet();
+            return LockedEpochs.Where(e => !EpochModel.AllEpochIds.Contains(e))
+                .Concat(UnseenEncounters.Where(e => !encounters.Contains(e)))
+                .Concat(UndiscoveredActs.Where(a => !acts.Contains(a)))
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// The start-of-run draws under each of `profiles`, without starting a run
+    /// (GH #1286): the `up_front` counter after the relic bags and the rooms
+    /// are generated, the act-1 variant, and each act's boss, ancient and
+    /// event list. It runs the game's own steps in the order a new run runs
+    /// them (RunManager.InitializeNewRun, RunManager.GenerateRooms) on a
+    /// RunState no RunManager owns, so one process can try thousands of
+    /// profiles; a real start can try one. With `upFront` set, only profiles
+    /// that end on that counter are returned.
+    /// </summary>
+    public Dictionary<string, object?> ProbeProfiles(string character, int ascension, string? seed, List<ProfileSpec> profiles, int? upFront) =>
+        _gameThread.Submit(() => ProbeProfilesImpl(character, ascension, seed, profiles, upFront));
+
+    private Dictionary<string, object?> ProbeProfilesImpl(string character, int ascension, string? seed, List<ProfileSpec> profiles, int? upFront)
+    {
+        try
+        {
+            if (Referee.Keyed)
+                return Error("probe_profiles is not available in referee mode");
+            EnsureModelDbInitialized();
+            var seedStr = SeedHelper.CanonicalizeSeed(seed ?? "");
+            var results = new List<object?>();
+            for (int n = 0; n < profiles.Count; n++)
+            {
+                var profile = profiles[n];
+                var player = CreatePlayer(character, false, profile);
+                if (player == null)
+                    return Error($"Unknown character: {character}");
+                var actList = ActModel.GetDefaultList().ToList();
+                actList[0] = ResolveAct1("roll", seedStr, false, profile)!;
+                var state = RunState.CreateForTest(
+                    players: new[] { player },
+                    acts: actList,
+                    gameMode: GameMode.Standard,
+                    ascensionLevel: ascension,
+                    seed: seedStr);
+                var rng = state.Rng.UpFront;
+                var unlocks = state.UnlockState;
+                // RunManager.InitializeNewRun (RunManager.cs:528-534).
+                state.SharedRelicGrabBag.Populate(ModelDb.RelicPool<MegaCrit.Sts2.Core.Models.RelicPools.SharedRelicPool>().GetUnlockedRelics(unlocks), rng);
+                player.PopulateRelicGrabBagIfNecessary(rng);
+                // RunManager.GenerateRooms (RunManager.cs:751-775).
+                var ancients = MegaCrit.Sts2.Core.Extensions.ListExtensions.UnstableShuffle(unlocks.SharedAncients.ToList(), rng);
+                foreach (var act in state.Acts.Skip(1))
+                {
+                    int count = rng.NextInt(ancients.Count + 1);
+                    var subset = ancients.Take(count).ToList();
+                    ancients = ancients.Except(subset).ToList();
+                    act.SetSharedAncientSubset(subset);
+                }
+                for (int i = 0; i < state.Acts.Count; i++)
+                {
+                    var act = state.Acts[i];
+                    act.GenerateRooms(rng, unlocks, false);
+                    act.ApplyDiscoveryOrderModifications(unlocks);
+                    if (i == state.Acts.Count - 1 && ascension >= (int)MegaCrit.Sts2.Core.Entities.Ascension.AscensionLevel.DoubleBoss)
+                        act.SetSecondBossEncounter(rng.NextItem(act.AllBossEncounters.Where(e => e.Id != act.BossEncounter.Id)));
+                }
+#if GAME_V0111
+                int counter = RngCompat.Counter(rng);
+#else
+                int counter = rng.Counter;
+#endif
+                if (upFront != null && counter != upFront)
+                    continue;
+                results.Add(new Dictionary<string, object?>
+                {
+                    ["index"] = n,
+                    ["up_front"] = counter,
+                    // The player's relic bag as shuffled: each rarity's relics
+                    // in the order the run hands them out.
+                    ["relics"] = (GetInheritedField(player.RelicGrabBag, "_deques")
+                        as Dictionary<MegaCrit.Sts2.Core.Entities.Relics.RelicRarity, List<RelicModel>>)
+                        ?.ToDictionary(kv => kv.Key.ToString().ToLowerInvariant(), kv => (object?)kv.Value.Select(r => r.Id.Entry).ToList()),
+                    ["acts"] = state.Acts.Select(a =>
+                    {
+                        var rooms = GetInheritedField(a, "_rooms") as MegaCrit.Sts2.Core.Rooms.RoomSet;
+                        return (object?)new Dictionary<string, object?>
+                        {
+                            ["id"] = a.Id.Entry,
+                            ["boss"] = a.BossEncounter?.Id.Entry,
+                            ["ancient"] = rooms != null && rooms.HasAncient ? rooms.Ancient.Id.Entry : null,
+                            ["events"] = rooms?.events.Select(e => e.Id.Entry).ToList(),
+                            ["normal"] = rooms?.normalEncounters.Select(e => e.Id.Entry).ToList(),
+                            ["elite"] = rooms?.eliteEncounters.Select(e => e.Id.Entry).ToList(),
+                        };
+                    }).ToList(),
+                });
+            }
+            return new Dictionary<string, object?> { ["type"] = "profiles", ["tried"] = profiles.Count, ["results"] = results };
+        }
+        catch (Exception ex)
+        {
+            return ErrorWithTrace("probe_profiles", ex);
+        }
+    }
+
+    /// <summary>
+    /// What each timeline epoch unlocks, and each act's boss discovery order
+    /// (GH #1286). Read off the game's own tables: every content epoch has a
+    /// static `Cards`, `Relics`, `Potions` or `Events` list.
+    /// </summary>
+    public Dictionary<string, object?> Epochs() => _gameThread.Submit(EpochsImpl);
+
+    private Dictionary<string, object?> EpochsImpl()
+    {
+        try
+        {
+            EnsureModelDbInitialized();
+            var epochs = new Dictionary<string, object?>();
+            // By id: the legacy build has no list of the epoch types.
+            foreach (var type in EpochModel.AllEpochIds.Select(id => EpochModel.Get(id).GetType()))
+            {
+                var content = new Dictionary<string, object?>();
+                foreach (var name in new[] { "Cards", "Relics", "Potions", "Events" })
+                {
+                    var prop = type.GetProperty(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (prop?.GetValue(null) is System.Collections.IEnumerable items)
+                        content[name.ToLowerInvariant()] = items.Cast<AbstractModel>().Select(m => m.Id.Entry).ToList();
+                }
+                epochs[EpochModel.GetId(type)] = content;
+            }
+            return new Dictionary<string, object?>
+            {
+                ["type"] = "epochs",
+                ["epochs"] = epochs,
+                // Whose card each card is: a stop on a card names the pools,
+                // and so the epochs, that can be behind it.
+                ["card_pools"] = ModelDb.AllCharacters
+                    .Select(c => (Key: c.Id.Entry, Pool: c.CardPool))
+                    .Append((Key: "COLORLESS", Pool: (CardPoolModel)ModelDb.CardPool<MegaCrit.Sts2.Core.Models.CardPools.ColorlessCardPool>()))
+                    .ToDictionary(t => t.Key, t => (object?)t.Pool.AllCards.Select(c => c.Id.Entry).ToList()),
+                // How rare each card and potion is: a Crystal Sphere item gives
+                // a reward of one rarity, and a log shows only what it gave.
+                ["card_rarity"] = ModelDb.AllCards
+                    .GroupBy(c => c.Id.Entry)
+                    .ToDictionary(g => g.Key, g => (object?)g.First().Rarity.ToString()),
+                ["potion_rarity"] = ModelDb.AllPotions
+                    .GroupBy(p => p.Id.Entry)
+                    .ToDictionary(g => g.Key, g => (object?)g.First().Rarity.ToString()),
+                ["acts"] = ModelDb.ActsByIndex.SelectMany(a => a).ToDictionary(
+                    a => a.Id.Entry,
+                    a => (object?)new Dictionary<string, object?>
+                    {
+                        ["boss_discovery_order"] = a.BossDiscoveryOrder.Select(e => e.Id.Entry).ToList(),
+                        ["bosses"] = a.AllBossEncounters.Select(e => e.Id.Entry).ToList(),
+                        ["default"] = a.IsDefault,
+                    }),
+            };
+        }
+        catch (Exception ex)
+        {
+            return ErrorWithTrace("epochs", ex);
+        }
+    }
 
     /// <summary>
     /// Seed-driven act roll, WITHOUT starting a run. Returns the three act id
@@ -10363,6 +11232,16 @@ internal static class GameApi
     /// <summary>The local player's merchant inventory. v0.113.0 moved it from
     /// the room to <c>RunManager.MerchantSynchronizer</c>
     /// (<c>Rooms/MerchantRoom.cs:46</c>, <c>Multiplayer.Game/MerchantSynchronizer.cs:69</c>).</summary>
+    /// <summary>The run is a Blitz run (the mode exists from v0.113.0).</summary>
+    internal static bool IsBlitz(RunState? state)
+    {
+#if GAME_V0113
+        return state?.GameMode == GameMode.Blitz;
+#else
+        return false;
+#endif
+    }
+
     internal static MerchantInventory LocalInventory(MerchantRoom room)
     {
 #if GAME_V0113
@@ -10483,10 +11362,23 @@ internal static class GameApi
 
     /// <summary>The awaitable proceed-from-rewards. v0.113.0 made
     /// <c>ProceedFromTerminalRewardsScreen</c> fire-and-forget and added the
-    /// <c>…Async</c> twin (<c>Runs/RunManager.cs:1541-1549</c>).</summary>
-    internal static Task ProceedFromTerminalRewardsScreen()
+    /// <c>…Async</c> twin (<c>Runs/RunManager.cs:1541-1549</c>).
+    ///
+    /// <para>Blitz (GH #1347): <c>RunManager.Proceed</c> there does not open
+    /// the map; <c>TryAdvanceToNextBlitzNode</c> (<c>RunManager.cs:1592</c>)
+    /// votes for the line's next node, or readies the act change after the
+    /// boss, and the queued <c>MoveToMapCoordAction</c> enters it. The host
+    /// surfaces that move as a one-choice <c>map_select</c> and enters the node
+    /// from <c>DoMapSelect</c> (the same <c>EnterMapCoord</c> the action runs
+    /// under TestMode, <c>MoveToMapCoordAction.cs:38-43</c>), so in Blitz only
+    /// the nested-combat resume branch of the game's method is kept.</para></summary>
+    internal static Task ProceedFromTerminalRewardsScreen(RunState? state)
     {
 #if GAME_V0113
+        if (IsBlitz(state)
+            && !(state!.CurrentRoomCount > 1
+                 && state.CurrentRoom is CombatRoom { ShouldResumeParentEventAfterCombat: true }))
+            return Task.CompletedTask;
         return RunManager.Instance.ProceedFromTerminalRewardsScreenAsync();
 #else
         return RunManager.Instance.ProceedFromTerminalRewardsScreen();

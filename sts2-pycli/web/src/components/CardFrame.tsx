@@ -4,6 +4,11 @@ import { characterArt } from "../characters";
 // card.tscn's card box, in the scene's own units, plus the width→height rule.
 // Shared so callers that reserve space for a card get the same number it uses.
 import { CARD_H, CARD_W, cardBoxHeight } from "../cardGeometry";
+import { spineFontPx } from "../handFan";
+import { floorPx, useStageZoom } from "../phone";
+import { cardEnchantment, useGlossary } from "../glossary";
+import TermTip from "./TermTip";
+import { t } from "../i18n";
 
 // ---------------------------------------------------------------------------
 // This renders a card the way the game does, out of the game's own art.
@@ -39,6 +44,11 @@ const DESCRIPTION = box(-122, 37, 121, 173);
 const TITLE_BANNER = box(-163, -207, 164, -124);
 const TITLE_LABEL = box(-105, -204, 105, -150);
 const ENERGY_ICON = box(-166, -227, -102, -163);
+// The enchantment tab on the card's left edge (`Enchantment`, its `Icon` and
+// amount `Label`), GH #1600.
+const ENCHANT_TAB = box(-166, -116, -94, -62);
+const ENCHANT_ICON = box(-152, -107, -117, -72);
+const ENCHANT_LABEL = box(-140, -89, -100, -63);
 // Regent star cost, tucked under the energy orb on the same overhanging corner.
 const STAR_ICON = box(-186, -189, -128, -131);
 const TYPE_PLAQUE_TOP = `${((1 + CARD_H / 2) / CARD_H) * 100}%`;
@@ -55,6 +65,7 @@ const DESC_MIN_SIZE = em(12); // MegaRichTextLabel MinFontSize
 const TYPE_SIZE = em(16);
 const ENERGY_SIZE = em(32);
 const STAR_SIZE = em(22);
+const ENCHANT_SIZE = em(20);
 
 // The frame texture is chosen by card TYPE. CardModel.cs folds None/Status/Curse
 // into Skill (and the portrait border folds Quest in too), so those cards wear
@@ -113,6 +124,13 @@ function frameColor(card: Card): string {
   if (card.color) return card.color;
   const folder = card.image?.match(/card_atlas\/([^/]+)\//)?.[1];
   return (folder && POOL_COLOR[folder]) || "colorless";
+}
+
+/** The spine's colour: the card's type, which is what a spine has room to
+ *  say besides the name. Status, curse and quest cards share a neutral band. */
+function spineKind(type: string | undefined): string {
+  const t = (type ?? "").toLowerCase();
+  return t === "attack" || t === "skill" || t === "power" ? t : "other";
 }
 
 // Shrink the description (from `max` down to `min`) just enough that it fits its
@@ -195,7 +213,7 @@ function renderMarkup(text: string, orb: string): ReactNode[] {
       for (let i = 0; i < Number(m[4]); i++) {
         out.push(
           <img key={out.length} className="gs-card-inline-icon" src={src}
-            alt={m[3] === "star" ? "star" : "energy"} />
+            alt={m[3] === "star" ? t("star") : t("energy")} />
         );
       }
     } else {
@@ -271,7 +289,7 @@ function renderDesc(
   return <>{out}</>;
 }
 
-export default function CardFrame({ card, width = 112, height, dim = false, unaffordable = false, blocked = false, played = false, onClick, clickable = false, hotkey, winProb, best, mark, step, previewDamage, descFloor }: {
+export default function CardFrame({ card, width = 112, height, dim = false, unaffordable = false, blocked = false, played = false, onClick, clickable = false, hotkey, winProb, best, mark, step, previewDamage, descFloor, spine, spineBadges = false, count }: {
   card: Card; width?: number; height?: number; dim?: boolean;
   /** In hand, and you cannot pay for it right now. The game does NOT fade the
    *  card for this: `NCard.UpdateEnergyCostVisuals` paints the cost numeral
@@ -309,16 +327,36 @@ export default function CardFrame({ card, width = 112, height, dim = false, unaf
    *  ratio gives 11-12; text that no longer fits then scrolls inside its box
    *  (phone.css, `.gs-zoomcard .gs-card-desc`) instead of shrinking. */
   descFloor?: number;
+  /** A covered card in a tight hand fan (Hand.tsx, `fanIsTight`): its name
+   *  runs down the left edge the next card leaves showing, on a band in the
+   *  card type's colour. The value is the band's length in px; null or 0
+   *  draws no spine. */
+  spine?: number | null;
+  /** A spined card's badges (the step number, the count) go INSIDE the
+   *  spine, ahead of the name, instead of on the card: the fan's step leaves
+   *  no room for them beside it. */
+  spineBadges?: boolean;
+  /** The slot stands for this many copies of the card (`handStacks`); drawn
+   *  as "×N" when above 1. */
+  count?: number;
 }) {
   // Fixed portrait aspect ratio (card.tscn's 300x422) so cards never resize
   // with content length.
   const cardHeight = height ?? cardBoxHeight(width);
+  const k = useStageZoom();
   const color = frameColor(card);
   const rarity = bannerRarity(card.rarity);
   const orb = ORB_BY_COLOR[color] ?? "colorless";
   // Prefer the keyword-marked text; older payloads and fixtures only have plain.
   // Both can be absent entirely (token cards, fixtures) — the frame still draws.
-  const desc = card.description_rich ?? card.description ?? "";
+  const glossary = useGlossary();
+  const enchant = cardEnchantment(glossary, card);
+  // Chinese display mode: the backend's name for the chip; the id keys the art.
+  const enchantTitle = enchant ? card.enchantment_name ?? enchant.title : "";
+  // `CardModel.GetDescriptionForPile`: the enchantment's extra line follows
+  // the card's own text, in purple.
+  const baseDesc = card.description_rich ?? card.description ?? "";
+  const desc = enchant?.extra ? `${baseDesc}\n[purple]${enchant.extra.replace(/\[\/?[a-z]+\]/g, "")}[/purple]` : baseDesc;
 
   // Energy cost repainted when something MOVED it. `CardCostHelper` compares
   // the hook/local-modifier cost against the printed one and hands
@@ -344,6 +382,11 @@ export default function CardFrame({ card, width = 112, height, dim = false, unaf
   if (played) cls.push("gs-played");
   if (best) cls.push("gs-best");
   if (mark) cls.push(`gs-mark-${mark}`);
+  const spineLen = spine != null && spine > 0 ? spine : 0;
+  if (spineLen) cls.push("gs-spined");
+  const inlineStep = spineLen > 0 && spineBadges && step != null;
+  const inlineCount = spineLen > 0 && spineBadges && count != null && count > 1;
+  const title = `${card.name}${card.upgrade_level ? `+${card.upgrade_level}` : card.upgraded ? "+" : ""}`;
 
   return (
     <div
@@ -358,7 +401,7 @@ export default function CardFrame({ card, width = 112, height, dim = false, unaf
       <div className="gs-card-portrait" style={PORTRAIT}>
         {card.image
           ? <img src={card.image} alt={card.name} />
-          : <div className="gs-noart">no art</div>}
+          : <div className="gs-noart">{t("no art")}</div>}
       </div>
 
       {/* Frame: tinted by pool. Also paints the description panel behind the text. */}
@@ -386,11 +429,11 @@ export default function CardFrame({ card, width = 112, height, dim = false, unaf
         src={assetUrl(`card_template/banners/${rarity}.png`)} />
 
       {/* MegaLabel auto-sizes the title down for long names (MaxFontSize 26). */}
-      <FitText fitKey={`${card.name}|${card.upgraded ?? false}`}
+      <FitText fitKey={`${card.name}|${card.upgraded ?? false}|${card.upgrade_level ?? ""}`}
         max={width * TITLE_SIZE} min={width * TITLE_MIN_SIZE} nowrap
         className={`gs-card-title${card.upgraded ? " gs-upgraded" : ""}`}
         style={{ ...TITLE_LABEL, ["--gs-title-outline" as string]: TITLE_OUTLINE[rarity] }}>
-        {card.name}{card.upgraded ? "+" : ""}
+        {title}
       </FitText>
 
       <div className="gs-card-plaque"
@@ -399,7 +442,7 @@ export default function CardFrame({ card, width = 112, height, dim = false, unaf
           fontSize: `calc(var(--cw) * ${TYPE_SIZE})`,
           borderImageSource: `url(${assetUrl(`card_template/plaques/${rarity}.png`)})`,
         }}>
-        {card.type}
+        {card.type_name ?? card.type}
       </div>
 
       <div className={`gs-card-energy${costShift}`} style={ENERGY_ICON}>
@@ -408,23 +451,54 @@ export default function CardFrame({ card, width = 112, height, dim = false, unaf
       </div>
 
       {blocked && (
-        <img className="gs-card-unplayable" style={ENERGY_ICON} alt="cannot be played"
+        <img className="gs-card-unplayable" style={ENERGY_ICON} alt={t("cannot be played")}
           src={assetUrl("card_template/unplayable.png")} />
+      )}
+
+      {enchant && (
+        <div className="gs-card-enchant"
+          aria-label={t("enchanted: {name}", { name: `${enchantTitle}${enchant.showAmount ? ` ${enchant.amount}` : ""}` })}>
+          <TermTip tip={{ title: `${enchantTitle}${enchant.showAmount ? ` ${enchant.amount}` : ""}`,
+            description: enchant.description, image: enchant.image }}>
+            <img className="gs-card-layer gs-card-enchant-tab" style={ENCHANT_TAB} alt="" aria-hidden="true"
+              src={assetUrl("v0.113.0/ui/common_ui/card/card_enchant_s.png")} />
+            <img className="gs-card-layer" style={ENCHANT_ICON} alt="" aria-hidden="true"
+              src={assetUrl(enchant.image)} />
+            {enchant.showAmount && (
+              <span className="gs-card-enchant-amount"
+                style={{ ...ENCHANT_LABEL, fontSize: `calc(var(--cw) * ${ENCHANT_SIZE})` }}>{enchant.amount}</span>
+            )}
+          </TermTip>
+        </div>
       )}
 
       {card.star_cost != null && card.star_cost !== 0 && (
         <div className="gs-card-energy gs-card-star" style={STAR_ICON}
-          aria-label={`costs ${card.star_cost} stars`}>
+          aria-label={t("costs {n} stars", { n: card.star_cost })}>
           <img src={assetUrl("card_template/energy_star.png")} alt="" aria-hidden="true" />
           <span style={{ fontSize: `calc(var(--cw) * ${STAR_SIZE})` }}>{card.star_cost}</span>
         </div>
       )}
 
+      {spineLen > 0 && (
+        <span aria-hidden="true"
+          className={`gs-card-spine gs-spine-${spineKind(card.type)}${card.upgraded ? " gs-upgraded" : ""}`}
+          style={{ height: spineLen,
+            fontSize: spineFontPx(`${inlineStep ? "00" : ""}${inlineCount ? "×00" : ""}${title}`, spineLen, width, floorPx(10, k)) }}>
+          {inlineStep && <span className={`gs-spine-step gs-spine-step-${mark ?? "best"}`}>{step}</span>}
+          {inlineCount && <span className="gs-spine-count">×{count}</span>}
+          {title}
+        </span>
+      )}
+
       {/* Workbench affordances — not part of the game's card. */}
-      {played && <span className="gs-badge gs-played-tag">played</span>}
+      {count != null && count > 1 && !inlineCount && (
+        <span className="gs-badge gs-count-tag" aria-label={t("{n} copies", { n: count })}>×{count}</span>
+      )}
+      {played && <span className="gs-badge gs-played-tag">{t("played")}</span>}
       {hotkey != null && <span aria-hidden="true" className="gs-badge gs-hotkey-tag">{hotkey}</span>}
-      {step != null && (
-        <span className={`gs-badge gs-step-tag gs-step-${mark ?? "best"}`} aria-label={`step ${step}`}>{step}</span>
+      {step != null && !inlineStep && (
+        <span className={`gs-badge gs-step-tag gs-step-${mark ?? "best"}`} aria-label={t("step {n}", { n: step })}>{step}</span>
       )}
       {winProb != null && (
         <span aria-hidden="true" className={`gs-badge gs-win${best ? " gs-best" : ""}`}>

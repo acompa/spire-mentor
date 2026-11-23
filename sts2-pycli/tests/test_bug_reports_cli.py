@@ -142,3 +142,39 @@ def test_kv_value_parses_past_a_banner():
     assert bug_reports.parse_kv_value(json.dumps(dump)) == dump
     with pytest.raises(SystemExit):
         bug_reports.parse_kv_value("Value not found")
+
+
+def test_flags_hide_dealt_with_reports_and_show_with_all():
+    reports = [
+        {
+            "name": "bugreports/wb-aaaaaaaaaaaaaaaa",
+            "metadata": {"captured_at": "2026-11-19T01:00:00Z"},
+        },
+        {
+            "name": "bugreports/wb-bbbbbbbbbbbbbbbb",
+            "metadata": {"captured_at": "2026-11-19T02:00:00Z"},
+        },
+    ]
+    rec = bug_reports.status_record("fixed", "PR #1563", "2026-11-19T17:00:00Z")
+    flags = bug_reports.status_map(
+        [{"name": "bugstatus/wb-bbbbbbbbbbbbbbbb", "metadata": rec}, {"name": "other/x"}]
+    )
+    assert flags == {"wb-bbbbbbbbbbbbbbbb": rec}
+
+    headers = bug_reports.listing(reports)
+    open_only = bug_reports.with_status(headers, flags, show_all=False)
+    assert [h["id"] for h in open_only] == ["wb-aaaaaaaaaaaaaaaa"]
+
+    every = bug_reports.with_status(headers, flags, show_all=True)
+    assert [(h["id"], h["status"]) for h in every] == [
+        ("wb-bbbbbbbbbbbbbbbb", "fixed"),
+        ("wb-aaaaaaaaaaaaaaaa", "open"),
+    ]
+    table = bug_reports.format_listing(every)
+    assert "status" in table.splitlines()[0]
+    assert "[PR #1563]" in table
+
+
+def test_status_record_rejects_an_unknown_status():
+    with pytest.raises(SystemExit):
+        bug_reports.status_record("done", "", "")

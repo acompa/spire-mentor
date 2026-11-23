@@ -38,6 +38,7 @@ vi.mock("@esotericsoftware/spine-webgl", () => {
     constructor(public data: unknown) {}
     setSkin() {}
     setSlotsToSetupPose() {}
+    findSlot() { return null; }
     setToSetupPose() {}
     update() {}
     updateWorldTransform() {}

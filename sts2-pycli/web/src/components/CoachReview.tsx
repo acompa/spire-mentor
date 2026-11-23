@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CoachChoiceRecord, CoachRecapRecord, CoachRecord, CoachTurnRecord } from "../api";
 import { choiceGap, turnCost, type AutopsyItem } from "../coach/coachRank";
-import { choiceChipText, plural, turnBlockLines } from "../coach/coachText";
+import { choiceChipText, turnBlockLines } from "../coach/coachText";
+import { t, tn } from "../i18n";
 
 /**
  * Coach review — every graded decision of a run (follow / replay: what the
@@ -32,7 +33,7 @@ function Row({ heading, lines, tone, onSeek }: {
   heading: string; lines: string[]; tone: string; onSeek?: () => void;
 }) {
   return (
-    <button type="button" onClick={onSeek} title={onSeek ? "jump to this decision" : undefined}
+    <button type="button" onClick={onSeek} title={onSeek ? t("jump to this decision") : undefined}
       style={{ display: "block", width: "100%", textAlign: "left", cursor: onSeek ? "pointer" : "default",
         background: "var(--field-bg)", border: "1px solid var(--border)", borderRadius: 8,
         padding: "8px 12px", marginBottom: 8, color: "var(--text)", font: "inherit" }}>
@@ -54,8 +55,8 @@ const TONE: Record<string, string> = {
 function choiceLines(c: CoachChoiceRecord): string[] {
   const text = choiceChipText(c);
   if (text) return text.lines;
-  const agree = c.verdict === "agree" ? "AI agrees" : "toss-up";
-  return [`${agree} · you: ${c.played?.label ?? "?"}${c.peeked ? " (peeked)" : ""}`];
+  const agree = c.verdict === "agree" ? t("AI agrees") : t("toss-up");
+  return [`${agree} · ${t("you: {label}", { label: c.played?.label ?? "?" })}${c.peeked ? ` ${t("(peeked)")}` : ""}`];
 }
 
 export default function CoachReview({
@@ -101,20 +102,20 @@ export default function CoachReview({
   const seek = (r: CoachSeekTarget) => (onSeek ? () => onSeek(r) : undefined);
 
   const tabs: [CoachTab, string][] = [
-    ...(autopsy ? [["autopsy", "Autopsy"] as [CoachTab, string]] : []),
-    ["fights", `Fights (${recaps.length})`],
-    ["all", `All decisions (${shownTurns.length + shownChoices.length})`],
+    ...(autopsy ? [["autopsy", t("Autopsy")] as [CoachTab, string]] : []),
+    ["fights", t("Fights ({n})", { n: recaps.length })],
+    ["all", t("All decisions ({n})", { n: shownTurns.length + shownChoices.length })],
   ];
 
   return (
-    <div ref={rootRef} className="mono" role="region" aria-label="Coach Review"
+    <div ref={rootRef} className="mono" role="region" aria-label={t("Coach Review")}
       style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 50,
         display: "flex", flexDirection: "column", maxHeight: "46vh",
         background: "var(--bg)", borderTop: "1px solid var(--border)",
         boxShadow: "0 -8px 28px oklch(30% 0.04 255 / .35)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px",
         borderBottom: "1px solid var(--border)" }}>
-        <b>Coach review{live ? " · live run" : ""}</b>
+        <b>{t("Coach review")}{live ? ` · ${t("live run")}` : ""}</b>
         <span role="tablist" style={{ display: "flex", gap: 4 }}>
           {tabs.map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
@@ -122,26 +123,26 @@ export default function CoachReview({
           ))}
         </span>
         <span style={{ marginLeft: "auto" }} />
-        <button onClick={onClose} aria-label="Close">✕</button>
+        <button onClick={onClose} aria-label={t("Close")}>✕</button>
       </div>
       <div style={{ padding: 16, overflow: "auto" }}>
         {tab === "autopsy" && autopsy && (
           <>
             <div style={{ marginBottom: 8 }}>
-              <b>Run autopsy{autopsy.floor != null ? ` · died on floor ${autopsy.floor}` : ""}</b>
+              <b>{t("Run autopsy")}{autopsy.floor != null ? ` · ${t("died on floor {floor}", { floor: autopsy.floor })}` : ""}</b>
             </div>
-            {autopsy.items.length === 0 && <div>No costly decisions found.</div>}
+            {autopsy.items.length === 0 && <div>{t("No costly decisions found.")}</div>}
             {autopsy.items.map((item, i) => item.kind === "turn"
               ? <Row key={item.record.id} tone={TONE[item.record.verdict] ?? "var(--text)"}
-                  heading={`${i + 1}. Combat turn${item.record.floor != null ? ` · floor ${item.record.floor}` : ""}`}
+                  heading={`${i + 1}. ${t("Combat turn")}${item.record.floor != null ? ` · ${t("floor {floor}", { floor: item.record.floor })}` : ""}`}
                   lines={turnBlockLines(item.record)} onSeek={seek(item.record)} />
               : <Row key={item.record.id} tone={TONE.flag}
-                  heading={`${i + 1}. ${item.record.label_kind} · you: ${item.record.played?.label ?? "?"}`}
+                  heading={`${i + 1}. ${t(item.record.label_kind)} · ${t("you: {label}", { label: item.record.played?.label ?? "?" })}`}
                   lines={choiceLines(item.record)} onSeek={seek(item.record)} />)}
             {(autopsy.decisions_graded != null || autopsy.turns_ungraded != null) && (
               <div style={{ color: "var(--muted)", fontSize: 11 }}>
-                {plural(autopsy.decisions_graded ?? 0, "decision")} graded
-                {" · "}{plural(autopsy.turns_ungraded ?? 0, "turn")} ungraded
+                {tn(autopsy.decisions_graded ?? 0, "{n} decision graded", "{n} decisions graded")}
+                {" · "}{tn(autopsy.turns_ungraded ?? 0, "{n} turn ungraded", "{n} turns ungraded")}
               </div>
             )}
           </>
@@ -150,18 +151,18 @@ export default function CoachReview({
           <>
             {recaps.length === 0 && (
               <div style={{ color: "var(--muted)" }}>
-                {live ? "Fight recaps come from the real-game advisor (follow mode)." : "No fight recaps in this run."}
+                {live ? t("Fight recaps come from the real-game advisor (follow mode).") : t("No fight recaps in this run.")}
               </div>
             )}
             {recaps.map((r) => (
               <div key={r.id} style={{ marginBottom: 12 }}>
-                <Row tone="var(--text)" heading={`Fight recap · floor ${r.floor ?? "?"}`}
-                  lines={[`−${r.hp_lost} HP${r.turns_ungraded > 0 ? ` · ${plural(r.turns_ungraded, "turn")} ungraded` : ""}`]}
+                <Row tone="var(--text)" heading={t("Fight recap · floor {floor}", { floor: r.floor ?? "?" })}
+                  lines={[`${t("−{n} HP", { n: r.hp_lost })}${r.turns_ungraded > 0 ? ` · ${tn(r.turns_ungraded, "{n} turn ungraded", "{n} turns ungraded")}` : ""}`]}
                   onSeek={seek(r)} />
-                {r.costliest.map((t) => (
-                  <div key={t.id} style={{ marginLeft: 16 }}>
-                    <Row tone={TONE[t.verdict] ?? "var(--text)"} heading={t.verdict === "blunder" ? "⚠ blunder" : "▽ suboptimal"}
-                      lines={turnBlockLines(t)} onSeek={seek(t)} />
+                {r.costliest.map((tr) => (
+                  <div key={tr.id} style={{ marginLeft: 16 }}>
+                    <Row tone={TONE[tr.verdict] ?? "var(--text)"} heading={tr.verdict === "blunder" ? t("⚠ blunder") : t("▽ suboptimal")}
+                      lines={turnBlockLines(tr)} onSeek={seek(tr)} />
                   </div>
                 ))}
               </div>
@@ -170,23 +171,23 @@ export default function CoachReview({
         )}
         {tab === "all" && (
           <>
-            <div style={{ fontWeight: 700, margin: "0 0 6px" }}>Combat turns · by HP lost</div>
-            {shownTurns.length === 0 && <div style={{ color: "var(--muted)", marginBottom: 8 }}>No costly turns.</div>}
-            {shownTurns.map((t) => (
-              <Row key={t.id} tone={TONE[t.verdict] ?? "var(--text)"}
-                heading={t.verdict === "blunder" ? "⚠ blunder" : t.verdict === "slip" ? "▽ suboptimal" : "≈ toss-up"}
-                lines={turnBlockLines(t)} onSeek={seek(t)} />
+            <div style={{ fontWeight: 700, margin: "0 0 6px" }}>{t("Combat turns · by HP lost")}</div>
+            {shownTurns.length === 0 && <div style={{ color: "var(--muted)", marginBottom: 8 }}>{t("No costly turns.")}</div>}
+            {shownTurns.map((tr) => (
+              <Row key={tr.id} tone={TONE[tr.verdict] ?? "var(--text)"}
+                heading={tr.verdict === "blunder" ? t("⚠ blunder") : tr.verdict === "slip" ? t("▽ suboptimal") : t("≈ toss-up")}
+                lines={turnBlockLines(tr)} onSeek={seek(tr)} />
             ))}
             {ungraded > 0 && (
               <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8 }}>
-                {plural(ungraded, "turn")} ungraded (too close to call, or not gradable)
+                {tn(ungraded, "{n} turn ungraded (too close to call, or not gradable)", "{n} turns ungraded (too close to call, or not gradable)")}
               </div>
             )}
-            <div style={{ fontWeight: 700, margin: "8px 0 6px" }}>Run choices · by how strongly the AI disagreed</div>
-            {shownChoices.length === 0 && <div style={{ color: "var(--muted)" }}>No graded choices.</div>}
+            <div style={{ fontWeight: 700, margin: "8px 0 6px" }}>{t("Run choices · by how strongly the AI disagreed")}</div>
+            {shownChoices.length === 0 && <div style={{ color: "var(--muted)" }}>{t("No graded choices.")}</div>}
             {shownChoices.map((c) => (
               <Row key={c.id} tone={TONE[c.verdict] ?? "var(--text)"}
-                heading={`${c.label_kind} · you: ${c.played?.label ?? "?"}`}
+                heading={`${t(c.label_kind)} · ${t("you: {label}", { label: c.played?.label ?? "?" })}`}
                 lines={choiceLines(c)} onSeek={seek(c)} />
             ))}
           </>

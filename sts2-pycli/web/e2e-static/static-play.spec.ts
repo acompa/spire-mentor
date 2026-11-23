@@ -208,6 +208,32 @@ test("run mode in the worker: the PPO panel at Neow, play to end, autobattle", a
   await expect(page.getByText(/^Run start|^Since your last stop/)).toBeVisible({ timeout: 180_000 });
 });
 
+test("autobattle switched on mid-fight takes the fight over, side panel hidden", async ({ page }) => {
+  // <=1200px hides the side panel by default, and the autobattle panel's
+  // Start button used to live only there: switching autobattle on mid-fight
+  // changed the status line and nothing else. Now the switch starts the leg
+  // itself and the panel floats over the board.
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await startRun(page, "E2E3");
+  // Neow → its follow-up → the map's first room (a fight on this seed).
+  for (let i = 0; i < 8 && !(await page.locator(".gs-endturn").isVisible().catch(() => false)); i++) {
+    const map = mapChoices(page).first();
+    const opt = page.locator(".gs-event-option:not([disabled])").first();
+    const skip = page.getByRole("button", { name: /Skip/ }).first();
+    if (await map.isVisible().catch(() => false)) await map.click({ force: true });
+    else if (await opt.isVisible().catch(() => false)) await opt.click();
+    else if (await skip.isVisible().catch(() => false)) await skip.click();
+    await page.waitForTimeout(2000);
+  }
+  await expect(page.locator(".gs-endturn")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator(".wb-side")).toBeHidden();
+  await page.getByRole("button", { name: "Autobattle", exact: true }).click();
+  await expect(page.locator(".wb-autobattle-float .autobattle-panel")).toBeVisible();
+  // No other click: the agent finishes the fight and stops at the reward.
+  await expect(page.getByText(/decisions? auto-played/)).toBeVisible({ timeout: 180_000 });
+  await expect(page.locator(".gs-endturn")).toHaveCount(0);
+});
+
 test("the replay viewer in the worker: end run → review the recorded log → play from here", async ({ page }) => {
   await startRun(page, "E2E5");
   // A few agent steps, then end the run: the engine writes the JSONL run

@@ -22,7 +22,9 @@
 pub const SRC_HASH: &str = env!("STS2_CONTENT_SRC_HASH");
 
 pub mod ascension_scaling;
+pub mod blitz;
 pub mod cards;
+pub mod dread_bosses;
 pub mod enchantments;
 pub mod encounters;
 pub mod events;

@@ -92,14 +92,16 @@ export default function SoundBridge({ soundRef, live, mode }: {
     const prevDecision = prevDecisionRef.current;
     const prevEventName = prevEventNameRef.current;
     prevDecisionRef.current = live.decision;
-    prevEventNameRef.current = (live.state.event_name ?? "").trim().toLowerCase() || null;
+    // The English name the room keys on (`event_name` is the shown one).
+    const eventKey = live.state.event_name_en ?? live.state.event_name;
+    prevEventNameRef.current = (eventKey ?? "").trim().toLowerCase() || null;
     const s = soundRef.current;
     if (!s?.map) return;
     const cues = [
       ...arrivalCues(s.map, prevDecision, live.decision, {
         holdsPotion: (live.state.player?.potions?.length ?? 0) > 0,
       }),
-      neowArrivalCue(s.map, prevEventName, live.decision, live.state.event_name),
+      neowArrivalCue(s.map, prevEventName, live.decision, eventKey),
     ].filter((c) => c !== null);
     if (cues.length) s.emit(cues);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- soundRef is a ref, deliberately excluded (see comment above)

@@ -68,27 +68,40 @@ fn decision_common<'py>(py: Python<'py>, d: &WireDecision) -> PyResult<Bound<'py
     }
     out.set_item("responses", responses)?;
     out.set_item("labels", d.labels.clone())?;
+    out.set_item("source_note", d.source_note.clone())?;
+    out.set_item("pick_count", d.pick_count)?;
+    out.set_item("optional_room", d.optional_room)?;
     Ok(out)
 }
 
 /// Build the PPO observation + candidate list for one bridge decision.
 ///
 /// `surface` is the bridge `state["type"]` (`map_select`, `card_reward`,
-/// `boss_relic`, `rest_site`, `event`, `shop`). Returns `None` when that
+/// `boss_relic`, `rest_site`, `event`, `shop`, `card_select`; the last takes
+/// the previous message type as its fallback surface key,
+/// `realgame_ppo._build_card_select`'s `prev_msg_type`). Returns `None` when that
 /// surface has nothing to decide or is not one the net covers — the same
 /// signal `_PPO_NONCOMBAT_BUILDERS.get(...)` returning `None` carries.
 ///
-/// The returned dict has `obs` / `actions` / `responses` / `labels`, matching
+/// The returned dict has `obs` / `actions` / `responses` / `labels` /
+/// `source_note` / `pick_count` / `optional_room`, matching
 /// `realgame_ppo.PpoDecision` minus its `metrics` (whose scalars live inside
 /// `obs` on this side).
 #[pyfunction]
+#[pyo3(signature = (state, surface, prev_msg_type=None))]
 pub fn ppo_wire_obs<'py>(
     py: Python<'py>,
     state: &Bound<'py, PyAny>,
     surface: &str,
+    prev_msg_type: Option<&str>,
 ) -> PyResult<Option<Bound<'py, PyDict>>> {
     let value = state_value(state)?;
-    let Some(decision) = wire::build_decision(&value, surface) else {
+    let built = if surface == "card_select" {
+        wire::build_card_select(&value, prev_msg_type)
+    } else {
+        wire::build_decision(&value, surface)
+    };
+    let Some(decision) = built else {
         return Ok(None);
     };
     Ok(Some(decision_common(py, &decision)?))

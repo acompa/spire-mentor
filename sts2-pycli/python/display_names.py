@@ -17,6 +17,10 @@ payload has them; this module is the rest:
   wire boundary, applied to every human-facing string the advisor sends, so a
   surface added later cannot leak an id either.
 
+The name tables and the id rewriting run in Rust
+(``sts2_rs.DisplayNames``, ``sts2-advisor/src/display_names.rs``, GH #1426
+step 3); this module reads the localization tables and hands them over.
+
 The takeover's cross-check (``SimAdvisor.ReconcileIndex``) compares
 ``advice.best.label`` against the labels the mod built for the screen, so
 :func:`sanitize_advice` never rewrites a ``best.label`` that is the mod's own
@@ -27,26 +31,25 @@ spelling of an option on a cross-checked surface (see
 from __future__ import annotations
 
 import functools
-import re
 from pathlib import Path
 from typing import Any
 
 import runtime_paths
 
-#: Localization tables and the key suffix holding each entry's display name,
-#: in lookup order (a card and a relic sharing an id resolve as the card).
+#: Localization tables, in lookup order (a card and a relic sharing an id
+#: resolve as the card). Their name-key suffixes live with the Rust tables.
 _TABLES = (
-    ("cards", ".title"),
-    ("relics", ".title"),
-    ("potions", ".title"),
-    ("monsters", ".name"),
-    ("events", ".title"),
-    ("enchantments", ".title"),
-    ("powers", ".title"),
-    ("orbs", ".title"),
-    ("afflictions", ".title"),
-    ("encounters", ".title"),
-    ("characters", ".title"),
+    "cards",
+    "relics",
+    "potions",
+    "monsters",
+    "events",
+    "enchantments",
+    "powers",
+    "orbs",
+    "afflictions",
+    "encounters",
+    "characters",
 )
 
 #: ``advice_for`` surfaces whose ``best.label`` the mod cross-checks against
@@ -75,119 +78,47 @@ def _loc_dirs() -> list[Path]:
 
 
 @functools.cache
-def _names() -> dict[str, str]:
-    """``ID`` (upper, ``_``-separated) -> display name, over every table."""
+def _names() -> Any:
+    """The ``sts2_rs.DisplayNames`` tables over every localization directory."""
+    import sts2_rs
     from sts2_hint.canonical_maps import _load_json
 
-    out: dict[str, str] = {}
-    for loc_dir in _loc_dirs():
-        if not loc_dir.is_dir():
-            continue
-        for table, suffix in _TABLES:
-            for key, value in _load_json(loc_dir / f"{table}.json").items():
-                if not key.endswith(suffix) or "." in key[: -len(suffix)]:
-                    continue
-                stem = key[: -len(suffix)].upper()
-                if not value or "{" in value:
-                    continue
-                out.setdefault(stem, value)
-                if table == "powers" and stem.endswith("_POWER"):
-                    out.setdefault(stem[: -len("_POWER")], value)
-    return out
-
-
-def _squash(raw: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", raw.upper())
-
-
-@functools.cache
-def _squashed() -> dict[str, str]:
-    """The same names keyed without separators (``StrikeIronclad`` engine
-    spelling, ``STRIKEIRONCLAD``)."""
-    out: dict[str, str] = {}
-    for stem, name in _names().items():
-        out.setdefault(_squash(stem), name)
-    return out
-
-
-def _prettify(stem: str) -> str:
-    return stem.replace("_", " ").strip().title()
+    tables = [
+        (table, list(_load_json(loc_dir / f"{table}.json").items()))
+        for loc_dir in _loc_dirs()
+        if loc_dir.is_dir()
+        for table in _TABLES
+    ]
+    return sts2_rs.DisplayNames(tables)
 
 
 def display_name(raw: Any) -> str:
     """The English name for a game id in any spelling; the id prettified when
     no table knows it (``SOME_NEW_CARD`` -> ``Some New Card``)."""
-    text = str(raw or "").strip()
-    if not text:
-        return ""
-    upgraded = text.endswith("+")
-    text = text.rstrip("+")
-    parts = text.split(".")
-    if len(parts) > 1 and parts[-1].lower() in ("title", "name"):
-        parts = parts[:-1]
-    stem = parts[-1]
-    name = _names().get(stem.upper()) or _squashed().get(_squash(stem))
-    if name is None:
-        if re.fullmatch(r"[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+", stem):
-            # Engine CamelCase (`ShrugItOff`): split the words.
-            stem = re.sub(r"(?<!^)(?=[A-Z])", " ", stem)
-        name = _prettify(stem)
-    return name + ("+" if upgraded else "")
-
-
-#: An id-shaped token: SCREAMING_SNAKE (``SHRUG_IT_OFF``), optionally behind a
-#: registry prefix (``CARD.``) or before a loc suffix (``.title``), or a lone
-#: all-caps word (``BASH``) -- the latter replaced only when a table knows it,
-#: so prose capitals (``NOT a recommendation``, ``MCTS``) stay.
-_UPPER_ID = re.compile(
-    r"(?<![\w./\\-])"
-    r"(?:(?:CARD|RELIC|POTION|POWER|MONSTER|EVENT|ENCHANTMENT|ORB)\.)?"
-    r"(?P<stem>[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)"
-    r"(?:\.(?:title|name))?"
-    r"(?![\w/\\])"
-)
-
-#: A machine verb spelled in snake_case (``remove_card``, ``leave_shop``,
-#: ``card_select``): its words.
-_SNAKE = re.compile(r"(?<![\w./\\-])[a-z]+(?:_[a-z0-9]+)+(?![\w./\\])")
-
-#: ``remove:STRIKE_IRONCLAD`` (the run policy's shop-removal candidates).
-_VERB_PREFIX = re.compile(r"\b(remove|buy|upgrade|transform|discard):(?=\S)")
-
-
-def _upper_token(m: re.Match[str]) -> str:
-    whole = m.group(0)
-    stem = m.group("stem")
-    if "_" not in stem and whole == stem:
-        # A bare all-caps word: only a known id is replaced.
-        name = _names().get(stem)
-        return name if name is not None and len(stem) >= 3 else whole
-    return display_name(whole)
+    if not isinstance(raw, (str, int, float, bool)) and raw is not None:
+        raw = str(raw)
+    return _names().display_name(raw)
 
 
 def humanize(text: Any) -> Any:
     """``text`` with every id-shaped token replaced by its display name.
 
     Non-strings pass through unchanged. Idempotent on display text: a name
-    has no ``_`` and is not all caps.
+    has no ``_`` and is not all caps. ``remove:STRIKE_IRONCLAD`` reads
+    ``Remove Strike``, a snake_case verb (``leave_shop``) its words, and a
+    lone all-caps word only changes when a table knows it, so prose capitals
+    (``NOT a recommendation``, ``MCTS``) stay.
     """
     if not isinstance(text, str) or not text:
         return text
-    out = _VERB_PREFIX.sub(lambda m: m.group(1).capitalize() + " ", text)
-    out = _UPPER_ID.sub(_upper_token, out)
-    return _SNAKE.sub(lambda m: m.group(0).replace("_", " "), out)
+    return _names().humanize(text)
 
 
 def card_name(card: Any) -> str:
     """A wire Card object's name: its ``name``, else its id's display name."""
     if not isinstance(card, dict):
         return "?"
-    name = card.get("name")
-    if isinstance(name, str) and name.strip():
-        return name.strip()
-    label = display_name(card.get("id")) or "?"
-    level = card.get("upgrade_level")
-    return label + ("+" if (level or card.get("upgraded")) else "")
+    return _names().card_name(card)
 
 
 def shop_option_label(option: dict[str, Any]) -> str:
@@ -196,19 +127,7 @@ def shop_option_label(option: dict[str, Any]) -> str:
     The option's own ``label`` is the merchant entry's id (``SHRUG_IT_OFF``,
     ``remove_card``); the display name is in ``item`` (PROTOCOL.md ``shop``).
     """
-    action = option.get("action")
-    if action == "leave_shop":
-        return "Leave shop"
-    if action == "remove_card":
-        return "Remove a card"
-    item = option.get("item")
-    if isinstance(item, dict):
-        name = item.get("name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-        if item.get("id"):
-            return display_name(item["id"])
-    return humanize(str(option.get("label") or action or "?"))
+    return _names().shop_option_label(option)
 
 
 def potion_swap_label(option: dict[str, Any], belt: list[Any] | None = None) -> str:
@@ -218,25 +137,7 @@ def potion_swap_label(option: dict[str, Any], belt: list[Any] | None = None) -> 
     is named in ``reward`` and the held potion in the belt (``run_state.potions``
     by ``discard_slot``).
     """
-    reward = option.get("reward") if isinstance(option.get("reward"), dict) else {}
-    new = reward.get("name") or display_name(reward.get("id")) or "the new potion"
-    slot = option.get("discard_slot")
-    if slot is None:
-        return f"Keep your potions (leave {new})"
-    held = next(
-        (
-            p
-            for p in belt or []
-            if isinstance(p, dict) and p.get("slot") == slot and not p.get("empty")
-        ),
-        None,
-    )
-    if held is not None:
-        old = held.get("name") or display_name(held.get("id"))
-    else:
-        raw = str(option.get("label") or "")
-        old = display_name(raw.split(" ", 1)[1]) if raw.startswith("discard ") else f"slot {slot}"
-    return f"Discard {old} for {new}"
+    return _names().potion_swap_label(option, belt)
 
 
 def _mod_labels(state: dict[str, Any] | None) -> set[str]:
@@ -257,6 +158,10 @@ def sanitize_advice(
     advice: dict[str, Any], advice_for: str | None = None, state: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """The final guard on every human-facing string of an ``advice`` object.
+
+    The walk stays here because it rewrites the reply in place; the native
+    advisor's twin (``sts2_rs.DisplayNames.sanitize_advice``) is held to it by
+    ``tests/test_display_names.py``.
 
     Rewrites, in place: ``note``, ``hand_back``, ``instinct_unavailable``,
     ``pv[]``, ``options[].label``, ``plan[].label`` and ``best.label`` --

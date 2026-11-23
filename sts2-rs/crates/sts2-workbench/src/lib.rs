@@ -12,6 +12,12 @@
 //! a native coach binary. That is what lets the golden-parity tests run
 //! under `cargo nextest` natively.
 
+/// Content hash of this crate's source and its `data/` bundles, stamped by
+/// `build.rs`. Part of the `sts2_rs` content identity
+/// (`sts2_srchash::ENGINE_CRATES`) since the extension links the crate for the
+/// live board import (GH #1426); see `sts2_core::SRC_HASH`.
+pub const SRC_HASH: &str = env!("STS2_WORKBENCH_SRC_HASH");
+
 pub mod combatlog;
 pub mod options;
 pub mod playlog;
@@ -53,4 +59,5 @@ pub mod step;
 pub mod assets;
 pub mod data;
 pub mod display_maps;
+pub mod i18n;
 pub mod localization;

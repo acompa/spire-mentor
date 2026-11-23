@@ -60,6 +60,15 @@ def test_csharp_full_belt_reward_decline_keeps_belt(game):
     assert _belt(state) == ["Fire Potion", "Block Potion", "Energy Potion"]
 
 
+def test_csharp_decline_sent_as_a_json_null(game):
+    # GH #1682: the eval loop sends its command as it is; a null slot was
+    # rejected, and the reward re-offered after the recovering proceed.
+    state = _wellspring_bottle(game, swap=True)
+    state = game.send({"cmd": "action", "action": "potion_swap", "args": {"discard_slot": None}})
+    assert state["decision"] == "map_select"
+    assert _belt(state) == ["Fire Potion", "Block Potion", "Energy Potion"]
+
+
 def test_csharp_swap_off_drops_silently(game):
     state = _wellspring_bottle(game, swap=False)
     assert state["decision"] == "map_select"

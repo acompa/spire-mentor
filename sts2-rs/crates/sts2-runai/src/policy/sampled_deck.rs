@@ -192,13 +192,13 @@ impl SampledDeckPolicy {
         if options.is_empty() {
             return 0;
         }
-        // Map each option to a distinct non-upgraded deck copy of its id.
+        // Map each option to a distinct upgradable deck copy of its id.
         let mut used: Vec<usize> = Vec::new();
         let scores: Vec<f64> = options
             .iter()
             .map(|opt| {
                 let deck_idx = view.deck.iter().enumerate().position(|(i, c)| {
-                    c.card_id == opt.card_id && !c.upgraded && !used.contains(&i)
+                    c.card_id == opt.card_id && c.takes_another_upgrade() && !used.contains(&i)
                 });
                 deck_idx.map_or(0.0, |i| {
                     used.push(i);

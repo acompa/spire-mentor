@@ -176,11 +176,13 @@ export function actionCues(
     const id = (state.rest_options ?? []).find((o) => o.index === index)?.option_id;
     // `HealRestSiteOption.cs:98-99` plays BOTH: the `sleep.tres` randomiser
     // and then the blanket. `DigRestSiteOption.cs:35` plays the shovel. The
-    // other seven options (Smith, Cook, Clone, …) have no sound of their own.
+    // other options (Smith, Cook, Clone, …) have no sound of their own, save
+    // v0.113.0's Evolve, whose `NByrdEvolutionVfx` loops the evolution.
     if (id === "HEAL") {
       cues.push(cueForUi(map, "restSleep", rand), cueForUi(map, "restBlanket", rand));
     }
     if (id === "DIG") cues.push(cueForUi(map, "restDig", rand));
+    if (id === "EVOLVE") cues.push(cueForUi(map, "restEvolve", rand));
   }
 
   // A deck operation committing. `context` is the same field `choiceKinds.ts`
@@ -215,7 +217,8 @@ export function steppedActionCues(
   label: string | undefined,
 ): SoundCue[] {
   if (!prev || prev.decision !== "combat_play" || !label) return [];
-  const m = /^Play (.+?)(?: → .*)?$/.exec(label);
+  // The engine labels plays "Play X" in English and "打出 X" in Chinese.
+  const m = /^(?:Play|打出) (.+?)(?: → .*)?$/.exec(label);
   if (!m) return [];
   const name = m[1].replace(/\+$/, "");
   const card = (prev.state.hand ?? []).find((c) => c.name === name);

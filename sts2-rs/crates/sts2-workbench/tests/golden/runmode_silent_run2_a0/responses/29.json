@@ -3,41 +3,25 @@
  "impl": "rust",
  "options": [
   {
-   "action": "select_card_reward",
+   "action": "choose_option",
    "args": {
-    "card_index": 0
+    "option_index": 0
+   },
+   "is_best": false,
+   "label": "Choose: Grab the Sword",
+   "prob": 0.0078
+  },
+  {
+   "action": "choose_option",
+   "args": {
+    "option_index": 1
    },
    "is_best": true,
-   "label": "Take Snakebite",
-   "prob": 0.9999
-  },
-  {
-   "action": "select_card_reward",
-   "args": {
-    "card_index": 1
-   },
-   "is_best": false,
-   "label": "Take Acrobatics",
-   "prob": 0.0
-  },
-  {
-   "action": "select_card_reward",
-   "args": {
-    "card_index": 2
-   },
-   "is_best": false,
-   "label": "Take Prepared",
-   "prob": 0.0
-  },
-  {
-   "action": "skip_card_reward",
-   "args": {},
-   "is_best": false,
-   "label": "Skip card reward",
-   "prob": 0.0
+   "label": "Choose: Dive into the Water",
+   "prob": 0.9922
   }
  ],
  "ppo_available": true,
- "surface": "card-pick",
- "value": 0.9451
+ "surface": "event",
+ "value": 0.8873
 }

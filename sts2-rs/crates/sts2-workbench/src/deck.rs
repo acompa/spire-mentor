@@ -732,53 +732,61 @@ fn warnings(
         if !attacks.is_empty() && dmg_scalers.is_empty() {
             add(
                 "warn",
-                "No damage scaling — you may stall out against high-HP bosses.",
+                crate::i18n::tr("No damage scaling — you may stall out against high-HP bosses."),
             );
         }
         if blk_scalers.is_empty() && blk_per_turn < 10.0 {
             add(
                 "warn",
-                "Thin on block and no block engine — big hits will land in Act 2+.",
+                crate::i18n::tr(
+                    "Thin on block and no block engine — big hits will land in Act 2+.",
+                ),
             );
         }
         if !attacks.is_empty() && aoe.is_empty() {
             add(
                 "info",
-                "No AOE — multi-enemy fights (Gremlins, hallways) will be slow.",
+                crate::i18n::tr("No AOE — multi-enemy fights (Gremlins, hallways) will be slow."),
             );
         }
         if vel_s < 25.0 {
             add(
                 "info",
-                "Low velocity — few draw/energy cards; you'll often draw the wrong hand.",
+                crate::i18n::tr(
+                    "Low velocity — few draw/energy cards; you'll often draw the wrong hand.",
+                ),
             );
         }
         if bottleneck == "energy" {
             add(
                 "info",
-                "Energy-limited — cards stranded in hand; more energy helps, more draw won't.",
+                crate::i18n::tr(
+                    "Energy-limited — cards stranded in hand; more energy helps, more draw won't.",
+                ),
             );
         } else if bottleneck == "draw" {
             add(
                 "info",
-                "Draw-limited — hand empties with energy to spare; add card draw, not energy.",
+                crate::i18n::tr(
+                    "Draw-limited — hand empties with energy to spare; add card draw, not energy.",
+                ),
             );
         }
         if n > 0 && (dead.len() + basics.len()) as f64 / n as f64 > 0.45 {
             add(
                 "warn",
-                "Deck clogged with basics/curses — prioritise removals.",
+                crate::i18n::tr("Deck clogged with basics/curses — prioritise removals."),
             );
         }
         if n >= 35 && vel_s < 45.0 {
             add(
                 "info",
-                "Large deck with low velocity — consistency suffers as it bloats.",
+                crate::i18n::tr("Large deck with low velocity — consistency suffers as it bloats."),
             );
         }
     }
     if out.is_empty() {
-        out.push(json!({"severity": "info", "text": "No structural gaps flagged — keep an eye on your next 5-20 turns."}));
+        out.push(json!({"severity": "info", "text": crate::i18n::tr("No structural gaps flagged — keep an eye on your next 5-20 turns.")}));
     }
     out
 }

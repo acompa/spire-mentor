@@ -1,18 +1,27 @@
-// AdvisorBrainRules.cs -- which brain answers the player's advice: Search or Instinct.
+// AdvisorBrainRules.cs -- which brain answers the player's advice: Instinct,
+// with Search as its fallback.
 //
-// Search is what the advisor always was: MCTS for the fights, the PPO run
-// policy for the screens. Instinct is the end-to-end net (no search) playing
-// every decision, today the e2e Ironclad net on v0.111.0 only. The player
-// picks one (SpireMentorModConfig.AdvisorBrain, the badge's Brain switch,
-// Shift+F8); the mod sends the choice on every advice_request as `brain`, and
-// the ADVISOR decides per request whether Instinct can answer (PROTOCOL.md
-// section 5, v5.2). The mod never filters by character itself: it only uses
-// the advisor's `capabilities.instinct` to decide whether the switch is worth
-// showing.
+// Instinct is the end-to-end net (no search) playing every decision; Search is
+// what the advisor always was: MCTS for the fights, the PPO run policy for the
+// screens. Instinct is the only brain a player gets: nothing in game (badge,
+// hotkey, settings, the frame) switches it. A request asks for Instinct
+// wherever the advisor's `capabilities.instinct` covers the run (or before it
+// has said), and Search elsewhere; the ADVISOR still decides per request
+// whether Instinct can answer, and answers with Search, saying why
+// (`instinct_unavailable`), where it cannot (PROTOCOL.md section 5, v5.2).
+//
+// Test tooling alone can force a brain for a session: the launch arg
+// `--spire-mentor-brain search|instinct`, else SpireMentor.conf's
+// `advisor_brain` (written by tools/ascension_climb.py); both land in
+// SimConfig.AdvisorBrain. It applies to the player's seat and to the AI
+// partners' brain (PartnerDefault) alike. The brain an older version's
+// in-game switch saved (BaseLib's SpireMentor.cfg `AdvisorBrain`) is read by
+// nothing: BaseLib skips a key no property claims and drops it on the next
+// save, so a player who once picked Search gets Instinct.
 //
 // Game-free (System.Text.Json only) so tests/unit pins the rules: the
-// capability parse, who sees the switch, which reply is stale after a
-// toggle, and the HUD's source tag.
+// capability parse, the brain each seat asks for, which reply is stale, and
+// the HUD's source tag.
 
 using System;
 using System.Collections.Generic;
@@ -29,20 +38,20 @@ internal static class AdvisorBrainRules
     public const string Search = "search";
     public const string Instinct = "instinct";
 
-    /// <summary>The wire value for a stored preference: anything but
-    /// "instinct" (case-insensitive, trimmed) is Search, so a blank or
-    /// hand-edited config can never send a brain the advisor does not know.</summary>
+    /// <summary>The wire value for a brain: anything but "instinct"
+    /// (case-insensitive, trimmed) is Search, so nothing can send a brain the
+    /// advisor does not know.</summary>
     public static string Normalize(string? value) =>
         string.Equals(value?.Trim(), Instinct, StringComparison.OrdinalIgnoreCase) ? Instinct : Search;
 
     public static bool IsInstinct(string? value) => Normalize(value) == Instinct;
 
     /// <summary>
-    /// SpireMentor.conf's <c>advisor_brain</c>: "search" / "instinct"
+    /// A tooling override's value (SpireMentor.conf's <c>advisor_brain</c>,
+    /// the <c>--spire-mentor-brain</c> launch arg): "search" / "instinct"
     /// (case-insensitive, trimmed), else null -- absent, blank or a typo.
-    /// Unlike <see cref="Normalize"/> a typo is NOT read as Search: the key
-    /// overrides the player's setting, and an override nobody meant must not
-    /// happen (SimConfig logs it instead).
+    /// Unlike <see cref="Normalize"/> a typo is NOT read as Search: an
+    /// override nobody meant must not happen (SimConfig logs it instead).
     /// </summary>
     public static string? ParseConf(string? value)
     {
@@ -54,16 +63,34 @@ internal static class AdvisorBrainRules
         return v.Equals(Search, StringComparison.OrdinalIgnoreCase) ? Search : null;
     }
 
-    /// <summary>The brain in effect: the session's conf override while it
-    /// stands (null once the player switched in game), else the player's
-    /// persisted preference.</summary>
-    public static string Effective(string? sessionOverride, string? preference) =>
-        Normalize(ParseConf(sessionOverride) ?? preference);
+    /// <summary>The player's brain when no test tooling forces one.</summary>
+    public const string PlayerDefault = Instinct;
 
-    public static string Toggle(string? current) => IsInstinct(current) ? Search : Instinct;
+    /// <summary>
+    /// The AI co-op partners' brain when no test tooling forces one: what
+    /// every partner advice_request asks for (SimAdvisor.PartnerBrain).
+    /// Instinct, as for the player: the partners' advisor answers with
+    /// Instinct for the seat's character where it can, else with Search. A
+    /// co-op benchmark flips this one value (or forces every seat with the
+    /// tooling override); it is no player-visible choice.
+    /// </summary>
+    public const string PartnerDefault = Instinct;
 
-    /// <summary>The player-facing name ("Search" / "Instinct").</summary>
-    public static string Label(string? value) => IsInstinct(value) ? "Instinct" : "Search";
+    /// <summary>The test tooling's brain for this session: the launch arg
+    /// (<c>--spire-mentor-brain</c>) over SpireMentor.conf's
+    /// <c>advisor_brain</c>; null when neither names a brain (a typo is no
+    /// override, see <see cref="ParseConf"/>).</summary>
+    public static string? ToolingOverride(string? launchArg, string? conf) =>
+        ParseConf(launchArg) ?? ParseConf(conf);
+
+    /// <summary>The player's brain: the tooling override, else
+    /// <see cref="PlayerDefault"/>. No saved setting takes part, so a Search
+    /// an older version's switch saved cannot keep a player on Search.</summary>
+    public static string Player(string? toolingOverride) => ParseConf(toolingOverride) ?? PlayerDefault;
+
+    /// <summary>The AI partners' brain: the tooling override, else
+    /// <see cref="PartnerDefault"/>.</summary>
+    public static string Partner(string? toolingOverride) => ParseConf(toolingOverride) ?? PartnerDefault;
 
     /// <summary>
     /// `capabilities.instinct` of an advice reply: top level, next to
@@ -125,8 +152,9 @@ internal static class AdvisorBrainRules
         string build = GameVersionFormat.Normalize(gameVersion) ?? GameVersionFormat.Default;
         foreach (InstinctTarget t in targets)
         {
+            // A hotfix plays on its base build, so v0.113.1 matches a v0.113.0 target.
             if (string.Equals(t.Character, character.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(GameVersionFormat.Normalize(t.GameVersion), build, StringComparison.OrdinalIgnoreCase))
+                GameVersionFormat.EngineBuild(build, new[] { t.GameVersion }) != null)
             {
                 return true;
             }
@@ -135,30 +163,31 @@ internal static class AdvisorBrainRules
     }
 
     /// <summary>
-    /// The brain to ask the advisor for: the player's preference, except that
-    /// Instinct is asked for only in a run it plays. Elsewhere the search
-    /// answers without the "Search (Instinct: ...)" tag on every reply:
-    /// Instinct is the default, and most runs are not ones it plays.
-    /// <paramref name="known"/>: the advisor has said which runs Instinct
-    /// plays (its capability); until then the preference goes as it is and
-    /// the advisor falls back where it must. The toolbar's switch is shown
-    /// exactly where this can be Instinct (<paramref name="eligible"/>).
+    /// The brain the player's request asks the advisor for:
+    /// <paramref name="brain"/> (<see cref="Player"/>, Instinct unless tooling
+    /// forces Search), except that Instinct is asked for only in a run it
+    /// plays. Elsewhere the search answers without the "Search (Instinct:
+    /// ...)" tag on every reply. <paramref name="known"/>: the advisor has
+    /// said which runs Instinct plays (its capability); until then Instinct
+    /// is asked for and the advisor falls back where it must.
     /// </summary>
-    public static string Requested(string? preference, bool known, bool eligible) =>
-        IsInstinct(preference) && (eligible || !known) ? Instinct : Search;
+    public static string Requested(string? brain, bool known, bool eligible) =>
+        IsInstinct(brain) && (eligible || !known) ? Instinct : Search;
 
     /// <summary>
-    /// A reply that must not be rendered because the player switched brain
-    /// after it was asked for: <paramref name="requested"/> is the brain the
-    /// request was stamped with, <paramref name="current"/> the preference now.
+    /// A reply that must not be rendered because the brain to ask for changed
+    /// after it was asked for (the advisor's capability arrived and says
+    /// Instinct does not play this run): <paramref name="requested"/> is the
+    /// brain the request was stamped with, <paramref name="current"/> the
+    /// brain a request would ask for now.
     ///
     /// Deliberately NOT keyed on the reply's own `advice.brain`: a Search
     /// answer to an Instinct request is the advisor falling back
     /// (`instinct_unavailable`), the right thing to show; and an Instinct
     /// answer to a Search request can only be an advisor bug, where dropping
     /// it would leave the decision with no advice at all. The stamp is what
-    /// tells a reply from before the toggle, and it cannot loop: the
-    /// re-request is stamped with the new preference.
+    /// tells an outdated reply, and it cannot loop: the re-request is
+    /// stamped with the brain asked for now.
     /// </summary>
     public static bool IsStale(string requested, string current) => Normalize(requested) != Normalize(current);
 

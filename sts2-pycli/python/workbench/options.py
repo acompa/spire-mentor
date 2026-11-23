@@ -79,6 +79,40 @@ def normalize_options(state: dict[str, Any]) -> list[Option]:
             out.append(_opt("Skip", "skip_select", {}))
         return out
 
+    if decision == "shop" and state.get("blitz_choices_remaining") is not None:
+        # GH #1347: the Blitz merchant. Its wares are the state's own
+        # ``options`` (the oracle's shape, ``action: "blitz_choice"``), each
+        # taken by its listed index; a used or disabled ware stays listed,
+        # greyed.
+        out = [
+            _opt(
+                (o.get("item") or {}).get("title") or o.get("label") or f"Ware {o.get('index')}",
+                "blitz_choice",
+                {"index": o.get("index")},
+                enabled=bool(o.get("enabled")),
+            )
+            for o in state.get("options", []) or []
+            if o.get("action") == "blitz_choice"
+        ]
+        out.append(_opt("Leave shop", "leave_room", {}))
+        return out
+
+    if decision == "rewards" and state.get("chest_picks_left") is not None:
+        # GH #1347: the Blitz chest, the oracle's ``rewards`` screen with
+        # ``chest_picks_left``: take a relic by the index it was first listed
+        # at, or close the chest. (Any other ``rewards`` screen keeps the
+        # safety net below.)
+        out = [
+            _opt(
+                r.get("name", f"Reward {r.get('index')}"),
+                "take_reward",
+                {"reward_index": r.get("index")},
+            )
+            for r in state.get("rewards", []) or []
+        ]
+        out.append(_opt("Skip", "skip_reward", {}))
+        return out
+
     if decision == "shop":
         out = []
         for cd in state.get("cards", []) or []:

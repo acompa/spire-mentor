@@ -302,6 +302,26 @@ impl PotionKind {
         matches!(self, PotionKind::FairyInABottle)
     }
 
+    /// C# `PotionUsage.AnyTime`: the potions the game lets the player drink
+    /// out of combat (GH #1606). The five `Usage => PotionUsage.AnyTime`
+    /// overrides of both decomp builds (v0.111.0 and v0.113.0):
+    /// `BloodPotion`, `FruitJuice`, `EntropicBrew`, `Ambergris` and
+    /// `FoulPotion`; `NPotionPopup._Ready` enables Use for them whatever the
+    /// room. Foul Potion's `PassesCustomUsabilityCheck` further limits it, out
+    /// of combat, to a merchant to throw it at (`FoulPotion.cs:51-75`); the
+    /// run loop applies that room rule.
+    #[must_use]
+    pub const fn is_usable_any_time(self) -> bool {
+        matches!(
+            self,
+            PotionKind::BloodPotion
+                | PotionKind::FruitJuice
+                | PotionKind::EntropicBrew
+                | PotionKind::Ambergris
+                | PotionKind::FoulPotion
+        )
+    }
+
     /// `true` for the three event-only / token rarities
     /// (`FoulPotion`, `GlowwaterPotion`, `PotionShapedRock`) and for
     /// any potion whose Python source carried

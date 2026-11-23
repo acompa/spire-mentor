@@ -322,6 +322,7 @@
   .gs-hud-char { width: 30px; height: 30px; border-radius: 8px; }
   .gs-hud-char .gs-hud-charletter { font-size: 14px; }
   .gs-hud-asc { width: 16px; height: 18px; right: -5px; bottom: -4px; }
+  .gs-hud-dread b, .gs-hud-dominion { font-size: 10px; }
   .gs-hud-heart { width: 24px; height: 23px; }
   .gs-hud-coin { width: 21px; height: 21px; }
   .gs-hud-hpnum, .gs-hud-goldnum { font-size: 17px; -webkit-text-stroke-width: 2px; }
@@ -351,6 +352,8 @@
    overlapped. Let the tray scroll sideways in the room it is given instead. */
 @media (max-width: 700px) {
   .gs-hud { gap: 8px; padding-left: 8px; padding-right: 8px; }
+  /* The dominion stays in the marker's tooltip; the band has no room for it. */
+  .gs-hud-dominion { display: none; }
   .gs-hud-relictray { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .gs-hud-relictray::-webkit-scrollbar { display: none; }
   .gs-hud-right { gap: 8px; }
@@ -439,6 +442,36 @@
 .wb-topbar:has(.wb-mentor--ai) { box-shadow: inset 0 -2px 0 oklch(80% 0.15 75);
   background: oklch(80% 0.15 75 / 0.08); }
 
+/* ---- what a step changed (src/components/RunGainsToast.tsx) ----------------
+   A banner over the top of the board after a run-level step: the relics,
+   cards, potions, gold and HP it changed. Anchored to the board box (the
+   chest reveal's), so it sits under the bar in every layout. */
+.wb-gains { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 45;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  max-width: min(640px, calc(100% - 32px)); padding: 8px 26px 8px 10px;
+  border: 1px solid oklch(70% 0.1 85 / 0.6); border-radius: 10px;
+  background: oklch(18% 0.02 70 / 0.94); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  font-family: var(--font); font-size: 14px; color: oklch(93% 0.02 85); cursor: pointer;
+  animation: wb-gains-in 0.18s ease-out; }
+@keyframes wb-gains-in { from { opacity: 0; transform: translate(-50%, -6px); } }
+.wb-gains-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.wb-gains-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.wb-gain-card { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.wb-gain-card figcaption { font-size: 13px; max-width: 150px; text-align: center; }
+.wb-gain-card .wb-gain-verb { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; opacity: .75; }
+.wb-gain-card--gain figcaption b { color: oklch(82% 0.15 150); }
+.wb-gain-card--loss figcaption { color: oklch(74% 0.16 25); }
+.wb-gains-close { position: absolute; top: 4px; right: 8px; font-size: 16px; opacity: .6; }
+.wb-gain { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+  background: oklch(28% 0.03 70); white-space: nowrap; }
+.wb-gain img { width: 22px; height: 22px; object-fit: contain; }
+.wb-gain b { font-weight: 700; }
+.wb-gain-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+.wb-gain--gain b, .wb-gain--gold.wb-gain--gain, .wb-gain--hp.wb-gain--gain, .wb-gain--max_hp.wb-gain--gain
+  { color: oklch(82% 0.15 150); }
+.wb-gain--loss, .wb-gain--loss b { color: oklch(74% 0.16 25); }
+.wb-gain--gold.wb-gain--gain { color: oklch(85% 0.14 85); }
+
 /* ---- advice marks (src/advice/) ------------------------------------------
    The mod's rings: gold and breathing on the move to make (numbered 1), a
    softer gold on the plan's later steps and moves as good as the pick, a thin
@@ -481,6 +514,7 @@
 .wb-mark > .wb-mark-badge { position: absolute; }
 .wb-mark-badge--good, .gs-badge.gs-step-good { background: oklch(93% 0.06 88); }
 @media (prefers-reduced-motion: reduce) {
+  .wb-gains { animation: none; }
   .wb-mark--best { animation: none; }
   .wb-mentor-dot--thinking, .wb-mentor-dot--ai { animation: none; }
 }
@@ -513,3 +547,22 @@
   font-size: 12px; color: var(--text); }
 .wb-fight-line > span { flex: 1; }
 .wb-fight-line > button { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; }
+
+/* GH #1599: a term the game explains on hover, and its tip. */
+.wb-term { text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-thickness: 1px; cursor: help; }
+.wb-term-tip { position: fixed; z-index: 1000; pointer-events: none; padding: 8px 10px;
+  background: #1b2433; color: #f3ead8; border: 1px solid #c9a75b; border-radius: 6px;
+  box-shadow: 0 8px 22px rgba(0,0,0,.45); font-size: 13px; line-height: 1.4; text-align: left;
+  font-weight: 400; letter-spacing: normal; text-transform: none; white-space: normal; }
+.wb-term-tip-head { display: flex; align-items: center; gap: 6px; font-weight: 700; color: #f6d27a; margin-bottom: 4px; }
+.wb-term-tip-head img { width: 26px; height: 26px; object-fit: contain; }
+.wb-term-tip-body { white-space: pre-line; }
+
+/* GH #1598: the "View upgrades" tick box on the card grids. */
+.wb-viewupgrades { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+  padding: 6px 12px; border-radius: 8px; background: rgba(10, 14, 22, .78); border: 1px solid rgba(201, 167, 91, .6);
+  color: #f3ead8; font-size: 15px; }
+.wb-viewupgrades input { width: 16px; height: 16px; accent-color: #6fcf5f; cursor: pointer; }
+.gs-pileview-upgrades { position: absolute; right: 24px; bottom: 24px; z-index: 3; }
+.gs-cardreward-upgrades { margin-top: 10px; }
+.gs-cardselect-upgrades { align-self: flex-start; }

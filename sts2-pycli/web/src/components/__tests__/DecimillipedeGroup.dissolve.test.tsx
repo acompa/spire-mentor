@@ -26,7 +26,7 @@ vi.mock("@esotericsoftware/spine-webgl", () => {
   class Skeleton {
     slots: unknown[] = [];
     constructor(public data: unknown) {}
-    setSkin() {} setSlotsToSetupPose() {} setToSetupPose() {}
+    setSkin() {} setSlotsToSetupPose() {} setToSetupPose() {} findSlot() { return null; }
     update() {} updateWorldTransform() {}
     getBounds(off: Vector2, size: Vector2) {
       off.set(BOUNDS.x, BOUNDS.y); size.set(BOUNDS.w, BOUNDS.h);

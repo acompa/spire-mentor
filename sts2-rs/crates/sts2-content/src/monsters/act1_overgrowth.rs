@@ -201,9 +201,17 @@ fn eye_with_teeth_distract_effect(state: &mut CombatState, _owner: CreatureUid) 
 
 /// Bead `sts2-rs-r8x8h`: Vantom Prepare applies +2 Strength to self.
 /// Mirrors C# `Vantom.cs:169-184` `await PowerCmd.Apply<StrengthPower>(base.Creature, 2m, base.Creature, null)`.
+/// v0.113.0 `Vantom.cs:72-82`, `:205`: `PrepareStrength`, 3 in Dread (GH
+/// #1346).
 fn vantom_prepare_effect(state: &mut CombatState, owner: CreatureUid) {
     use sts2_core::card_effects::apply_power_to_creature;
-    apply_power_to_creature(state, owner, PowerKind::Strength, 2);
+    let amount = 2 + crate::dread_bosses::power_bonus(
+        state,
+        sts2_core::MonsterKind::Vantom,
+        "PREPARE",
+        PowerKind::Strength,
+    );
+    apply_power_to_creature(state, owner, PowerKind::Strength, amount);
 }
 
 /// Bead `sts2-rs-o1mwv` (C.3): SnappingJaxfruit ENERGY_ORB applies +2
@@ -448,7 +456,14 @@ fn ceremonial_beast_plow_effect(state: &mut CombatState, owner: CreatureUid) {
             return;
         }
     }
-    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::Strength, 2);
+    // `PlowStrength`: 2, and 3 in Dread (`CeremonialBeast.cs:63-73`, GH #1346).
+    let amount = 2 + crate::dread_bosses::power_bonus(
+        state,
+        sts2_core::MonsterKind::CeremonialBeast,
+        "PLOW",
+        PowerKind::Strength,
+    );
+    sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::Strength, amount);
 }
 
 /// Bead `sts2-rs-pdsdl`: CeremonialBeast BEAST_CRY applies `RingingPower(1)`
@@ -1482,6 +1497,15 @@ fn plow_after_damage(
     for c in &mut state.creatures {
         c.powers.retain(|u| !pids.contains(&u.0));
     }
+    // Dread (GH #1346): `PlowPower.cs:41-45` calls `CeremonialBeast.
+    // SetStunned` between the Strength strip and the stun, and in Dread that
+    // applies `RitualPower(RitualAmount = 2)` to the beast
+    // (`CeremonialBeast.cs:75-85`, `:233-243`; `RitualAmount` is 0 otherwise).
+    // A full `PowerCmd.Apply`, so `RitualPower.AfterApplied` decides from the
+    // current side whether the first turn end is skipped.
+    if state.game_mode.is_dread() {
+        sts2_core::card_effects::apply_power_to_creature(state, owner, PowerKind::Ritual, 2);
+    }
     // C# `PlowPower.AfterDamageReceived` also `CreatureCmd.Stun(StunnedMove)` —
     // an IMMEDIATE move override that INTERRUPTS the already-telegraphed PLOW so
     // the beast performs STUN (0 dmg, no Strength) next turn instead of one more
@@ -1731,11 +1755,25 @@ pub fn create_kin_priest_ai() -> MonsterAi {
 /// has no encounter-flag plumbing yet, so `slot=Third` is the stand-in for
 /// `StartsWithDance=true` (start on POWER_DANCE) and everyone else starts on
 /// QUICK_SLASH. Bead `sts2-rs-29kfv`.
+///
+/// v0.113.0 replaces the flag with `KinFollower.Index`, set by `TheKinBoss.
+/// GenerateMonsters` (`KinFollower.cs:104-122`, `TheKinBoss.cs:72-113`): the
+/// opener is `Index switch { 0 => POWER_DANCE, 1 => QUICK_SLASH, 2 =>
+/// BOOMERANG }`. The variant names predate it and are NOT the C# index:
+///
+/// | variant | C# `Index` | opener |
+/// |---|---|---|
+/// | `Third` | 0 (`slot1`) | POWER_DANCE |
+/// | `First`, `Second` | 1 (`slot2`) | QUICK_SLASH |
+/// | `Boomerang` | 2 (`slot3`, Dread only) | BOOMERANG |
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KinFollowerSlot {
     First,
     Second,
     Third,
+    /// C# `Index` 2: the third follower of a Dread run's `TheKinBoss`, which
+    /// opens on BOOMERANG (GH #1346).
+    Boomerang,
 }
 
 /// `KinFollower` POWER_DANCE → `PowerCmd.Apply<StrengthPower>(base.Creature,
@@ -1791,10 +1829,10 @@ pub fn create_kin_follower_ai(slot: KinFollowerSlot) -> MonsterAi {
             kin_follower_power_dance_effect,
         ),
     );
-    let initial = if matches!(slot, KinFollowerSlot::Third) {
-        "POWER_DANCE"
-    } else {
-        "QUICK_SLASH"
+    let initial = match slot {
+        KinFollowerSlot::Third => "POWER_DANCE",
+        KinFollowerSlot::First | KinFollowerSlot::Second => "QUICK_SLASH",
+        KinFollowerSlot::Boomerang => "BOOMERANG",
     };
     MonsterAi::new(s, initial)
 }

@@ -23,7 +23,7 @@ Policies:
   decisions, card rewards picked by simulating the pinned act-boss
   fight per candidate (``--reward-sims``; 0 disables). Each run is
   recorded as a workbench-readable JSONL log under ``--record-dir``
-  (open via ``just workbench`` → MCTS Runs, or ``python -m
+  (open via ``just workbench`` → Run history, or ``python -m
   workbench.report <log>``).
 
 The run-level policy itself lives in ``run_policy.py`` so the workbench
@@ -140,7 +140,7 @@ def play_run_mcts(
     When ``record_dir`` is set, the run is written as a workbench JSONL
     log (same schema as ``workbench.record``): per combat decision a
     ``state`` + ``mcts`` + ``action`` record, per run a ``meta`` header
-    and a ``summary`` trailer. Open it on the workbench MCTS Runs page
+    and a ``summary`` trailer. Open it on the workbench Run history page
     or with ``python -m workbench.report <log>``.
     """
     from workbench.record import (
@@ -436,7 +436,7 @@ def main() -> int:
     logs = [r["log"] for r in results if r.get("log")]
     if logs:
         print(f"\nRecorded {len(logs)} workbench logs in {Path(logs[0]).parent}/")
-        print("  open: just workbench (MCTS Runs page), or python -m workbench.report <log>")
+        print("  open: just workbench (Run history page), or python -m workbench.report <log>")
     print(
         f"\nWins: {wins}/{args.num_runs}, Completed: {completed}/{args.num_runs}  "
         f"({t_total:.2f}s total, {args.num_runs / t_total:.1f} runs/s)"

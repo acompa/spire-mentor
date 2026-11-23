@@ -24,6 +24,7 @@ import {
   type Position,
   type PowerRow,
 } from "./position";
+import { t } from "../i18n";
 
 export interface NewPositionRequest {
   character: string;
@@ -66,11 +67,11 @@ export default function PositionEditor({
       {/* ── SETUP ─────────────────────────────────────────────────────── */}
       <section className="sl-panel">
         <div className="sl-panel-head">
-          <span className="sl-label">Setup</span>
+          <span className="sl-label">{t("Setup")}</span>
           <span className="sl-head-right">
-            <span className="sl-label">new position for</span>
+            <span className="sl-label">{t("new position for")}</span>
             <select
-              aria-label="new position for"
+              aria-label={t("new position for")}
               value=""
               disabled={busy}
               onChange={(e) => {
@@ -85,7 +86,7 @@ export default function PositionEditor({
               }}
             >
               <option value="">—</option>
-              {pos.encounter && <option value="__current__">{encounterOf(catalog, pos.encounter)?.display ?? pos.encounter} (this encounter)</option>}
+              {pos.encounter && <option value="__current__">{t("{name} (this encounter)", { name: encounterOf(catalog, pos.encounter)?.display ?? pos.encounter })}</option>}
               {encounterGroups(catalog).map((g) => (
                 <optgroup key={g.label} label={g.label}>
                   {g.items.map((e) => (
@@ -100,9 +101,9 @@ export default function PositionEditor({
         </div>
         <div className="sl-row">
           <label className="sl-field">
-            <span>character</span>
+            <span>{t("character")}</span>
             <select
-              aria-label="character"
+              aria-label={t("character")}
               value={pos.character}
               onChange={(e) => {
                 const c = catalog.characters.find((x) => x.id === e.target.value);
@@ -117,27 +118,27 @@ export default function PositionEditor({
             </select>
           </label>
           <label className="sl-field">
-            <span>ascension</span>
-            <NumberInput min={0} max={10} value={pos.ascension} onChange={(v) => onChange({ ...pos, ascension: v })} width={56} ariaLabel="ascension" />
+            <span>{t("ascension")}</span>
+            <NumberInput min={0} max={10} value={pos.ascension} onChange={(v) => onChange({ ...pos, ascension: v })} width={56} ariaLabel={t("ascension")} />
           </label>
           <label className="sl-field">
-            <span>turn</span>
-            <NumberInput min={1} value={pos.turn} onChange={(v) => onChange({ ...pos, turn: v })} width={56} ariaLabel="turn" />
+            <span>{t("turn")}</span>
+            <NumberInput min={1} value={pos.turn} onChange={(v) => onChange({ ...pos, turn: v })} width={56} ariaLabel={t("turn")} />
           </label>
           <label className="sl-field">
-            <span>elite</span>
-            <input type="checkbox" aria-label="elite" checked={pos.isElite} onChange={(e) => onChange({ ...pos, isElite: e.target.checked })} />
+            <span>{t("elite")}</span>
+            <input type="checkbox" aria-label={t("elite")} checked={pos.isElite} onChange={(e) => onChange({ ...pos, isElite: e.target.checked })} />
           </label>
         </div>
         <div className="sl-row">
           <label className="sl-field">
-            <span>encounter</span>
+            <span>{t("encounter")}</span>
             <select
-              aria-label="encounter"
+              aria-label={t("encounter")}
               value={pos.encounter ?? ""}
               onChange={(e) => onChange({ ...pos, encounter: e.target.value || null })}
             >
-              <option value="">— custom lineup —</option>
+              <option value="">{t("— custom lineup —")}</option>
               {pos.encounter && !encounterOf(catalog, pos.encounter) && <option value={pos.encounter}>{pos.encounter}</option>}
               {encounterGroups(catalog).map((g) => (
                 <optgroup key={g.label} label={g.label}>
@@ -151,26 +152,26 @@ export default function PositionEditor({
             </select>
           </label>
           <label className="sl-field">
-            <span>seed</span>
-            <NumberInput min={1} value={pos.seed} onChange={(v) => onChange({ ...pos, seed: v })} width={110} ariaLabel="seed" />
+            <span>{t("seed")}</span>
+            <NumberInput min={1} value={pos.seed} onChange={(v) => onChange({ ...pos, seed: v })} width={110} ariaLabel={t("seed")} />
           </label>
-          <button type="button" title="new random seed" onClick={() => onChange({ ...pos, seed: randomSeed() })}>
+          <button type="button" title={t("new random seed")} onClick={() => onChange({ ...pos, seed: randomSeed() })}>
             ↻
           </button>
           <button
             type="button"
             className="sl-chip"
             disabled={busy}
-            title="deal turn 1 of this encounter with this seed: starter deck, fresh hand, enemy HP rolls and openers"
+            title={t("deal turn 1 of this encounter with this seed: starter deck, fresh hand, enemy HP rolls and openers")}
             onClick={() => onNew({ character: pos.character, encounter: pos.encounter, ascension: pos.ascension, seed: pos.seed })}
           >
-            starting hand
+            {t("starting hand")}
           </button>
           <button
             type="button"
             className="sl-chip"
             disabled={!pos.encounter}
-            title="reset the enemies to this encounter's lineup (HP at the monster's max, openers rolled by the engine)"
+            title={t("reset the enemies to this encounter's lineup (HP at the monster's max, openers rolled by the engine)")}
             onClick={() => {
               const enc = encounterOf(catalog, pos.encounter);
               if (!enc) return;
@@ -184,7 +185,7 @@ export default function PositionEditor({
               });
             }}
           >
-            enemies
+            {t("enemies")}
           </button>
         </div>
       </section>
@@ -192,26 +193,26 @@ export default function PositionEditor({
       {/* ── PLAYER ────────────────────────────────────────────────────── */}
       <section className="sl-panel">
         <div className="sl-panel-head">
-          <span className="sl-label">Player</span>
+          <span className="sl-label">{t("Player")}</span>
           {character && <span className="sl-muted">{character.name}</span>}
         </div>
         <div className="sl-row">
-          <Num label="hp" aria="player hp" value={P.hp} onChange={(v) => patchPlayer({ hp: v })} />
-          <Num label="maxHp" aria="player maxHp" value={P.maxHp} min={1} onChange={(v) => patchPlayer({ maxHp: v, hp: Math.min(P.hp, v) })} />
-          <Num label="block" aria="player block" value={P.block} onChange={(v) => patchPlayer({ block: v })} />
-          <Num label="energy" aria="player energy" value={P.energy} onChange={(v) => patchPlayer({ energy: v })} />
-          <Num label="max" aria="player max" value={P.maxEnergy} onChange={(v) => patchPlayer({ maxEnergy: v })} />
-          <Num label="stars" aria="player stars" value={P.stars} onChange={(v) => patchPlayer({ stars: v })} />
-          <Num label="gold" aria="player gold" value={P.gold} onChange={(v) => patchPlayer({ gold: v })} width={70} />
-          <Num label="orb slots" aria="player orb slots" value={P.orbSlots} onChange={(v) => patchPlayer({ orbSlots: v, orbs: P.orbs.slice(0, v) })} />
+          <Num label="hp" aria={t("player hp")} value={P.hp} onChange={(v) => patchPlayer({ hp: v })} />
+          <Num label="maxHp" aria={t("player maxHp")} value={P.maxHp} min={1} onChange={(v) => patchPlayer({ maxHp: v, hp: Math.min(P.hp, v) })} />
+          <Num label="block" aria={t("player block")} value={P.block} onChange={(v) => patchPlayer({ block: v })} />
+          <Num label="energy" aria={t("player energy")} value={P.energy} onChange={(v) => patchPlayer({ energy: v })} />
+          <Num label="max" aria={t("player max")} value={P.maxEnergy} onChange={(v) => patchPlayer({ maxEnergy: v })} />
+          <Num label="stars" aria={t("player stars")} value={P.stars} onChange={(v) => patchPlayer({ stars: v })} />
+          <Num label="gold" aria={t("player gold")} value={P.gold} onChange={(v) => patchPlayer({ gold: v })} width={70} />
+          <Num label="orb slots" aria={t("player orb slots")} value={P.orbSlots} onChange={(v) => patchPlayer({ orbSlots: v, orbs: P.orbs.slice(0, v) })} />
         </div>
         {P.orbSlots > 0 && (
           <div className="sl-sub">
-            <span className="sl-label">orbs</span>
+            <span className="sl-label">{t("orbs")}</span>
             {P.orbs.map((o, i) => (
               <div className="sl-row" key={i}>
                 <select
-                  aria-label={`orb ${i + 1} type`}
+                  aria-label={t("orb {n} type", { n: i + 1 })}
                   value={o.type}
                   onChange={(e) => {
                     const base = catalog.orbs.find((x) => x.id === e.target.value);
@@ -224,16 +225,16 @@ export default function PositionEditor({
                     </option>
                   ))}
                 </select>
-                <Num label="passive" aria={`orb ${i + 1} passive`} value={o.passive ?? 0} onChange={(v) => patchPlayer({ orbs: P.orbs.map((x, j) => (j === i ? { ...x, passive: v } : x)) })} />
-                <Num label="evoke" aria={`orb ${i + 1} evoke`} value={o.evoke ?? 0} onChange={(v) => patchPlayer({ orbs: P.orbs.map((x, j) => (j === i ? { ...x, evoke: v } : x)) })} />
-                <button type="button" className="sl-x" aria-label={`remove orb ${i + 1}`} onClick={() => patchPlayer({ orbs: P.orbs.filter((_, j) => j !== i) })}>
+                <Num label="passive" aria={t("orb {n} passive", { n: i + 1 })} value={o.passive ?? 0} onChange={(v) => patchPlayer({ orbs: P.orbs.map((x, j) => (j === i ? { ...x, passive: v } : x)) })} />
+                <Num label="evoke" aria={t("orb {n} evoke", { n: i + 1 })} value={o.evoke ?? 0} onChange={(v) => patchPlayer({ orbs: P.orbs.map((x, j) => (j === i ? { ...x, evoke: v } : x)) })} />
+                <button type="button" className="sl-x" aria-label={t("remove orb {n}", { n: i + 1 })} onClick={() => patchPlayer({ orbs: P.orbs.filter((_, j) => j !== i) })}>
                   ×
                 </button>
               </div>
             ))}
             {P.orbs.length < P.orbSlots && (
               <button type="button" className="sl-chip" onClick={() => patchPlayer({ orbs: [...P.orbs, { type: "Lightning", passive: 3, evoke: 8 }] })}>
-                + orb
+                + {t("orb")}
               </button>
             )}
           </div>
@@ -243,19 +244,19 @@ export default function PositionEditor({
             <span className="sl-label">Osty</span>
             <div className="sl-row">
               <label className="sl-field">
-                <span>summoned</span>
+                <span>{t("summoned")}</span>
                 <input
                   type="checkbox"
-                  aria-label="osty summoned"
+                  aria-label={t("osty summoned")}
                   checked={!!P.osty}
                   onChange={(e) => patchPlayer({ osty: e.target.checked ? { alive: true, hp: 6, maxHp: 6, block: 0 } : null })}
                 />
               </label>
               {P.osty && (
                 <>
-                  <Num label="hp" aria="osty hp" value={P.osty.hp} onChange={(v) => patchPlayer({ osty: { ...P.osty!, hp: v } })} />
-                  <Num label="maxHp" aria="osty maxHp" value={P.osty.maxHp} min={1} onChange={(v) => patchPlayer({ osty: { ...P.osty!, maxHp: v } })} />
-                  <Num label="block" aria="osty block" value={P.osty.block} onChange={(v) => patchPlayer({ osty: { ...P.osty!, block: v } })} />
+                  <Num label="hp" aria={t("osty hp")} value={P.osty.hp} onChange={(v) => patchPlayer({ osty: { ...P.osty!, hp: v } })} />
+                  <Num label="maxHp" aria={t("osty maxHp")} value={P.osty.maxHp} min={1} onChange={(v) => patchPlayer({ osty: { ...P.osty!, maxHp: v } })} />
+                  <Num label="block" aria={t("osty block")} value={P.osty.block} onChange={(v) => patchPlayer({ osty: { ...P.osty!, block: v } })} />
                 </>
               )}
             </div>
@@ -263,45 +264,45 @@ export default function PositionEditor({
         )}
 
         <div className="sl-sub">
-          <span className="sl-label">relics</span>
+          <span className="sl-label">{t("relics")}</span>
           {P.relics.map((r, i) => (
             <div className="sl-row sl-item" key={i}>
               <Combobox
                 value={r.id}
                 options={optionsFor(catalog, "relic")}
-                ariaLabel={`relic ${i + 1}`}
+                ariaLabel={t("relic {n}", { n: i + 1 })}
                 onChange={(id) => patchPlayer({ relics: P.relics.map((x, j) => (j === i ? { ...x, id } : x)) })}
               />
               <span className="sl-name">{nameOf(catalog, "relic", r.id)}</span>
-              {(r.counter ?? 0) !== 0 && <span className="sl-muted">counter {r.counter}</span>}
-              <button type="button" className="sl-x" aria-label={`remove relic ${i + 1}`} onClick={() => patchPlayer({ relics: P.relics.filter((_, j) => j !== i) })}>
+              {(r.counter ?? 0) !== 0 && <span className="sl-muted">{t("counter {n}", { n: r.counter ?? 0 })}</span>}
+              <button type="button" className="sl-x" aria-label={t("remove relic {n}", { n: i + 1 })} onClick={() => patchPlayer({ relics: P.relics.filter((_, j) => j !== i) })}>
                 ×
               </button>
             </div>
           ))}
           <button type="button" className="sl-chip" onClick={() => patchPlayer({ relics: [...P.relics, { id: "", counter: 0 }] })}>
-            + relic
+            + {t("relic")}
           </button>
         </div>
 
         <div className="sl-sub">
-          <span className="sl-label">potions</span>
+          <span className="sl-label">{t("potions")}</span>
           {P.potions.map((p, i) => (
             <div className="sl-row sl-item" key={i}>
               <Combobox
                 value={p}
                 options={optionsFor(catalog, "potion")}
-                ariaLabel={`potion ${i + 1}`}
+                ariaLabel={t("potion {n}", { n: i + 1 })}
                 onChange={(id) => patchPlayer({ potions: P.potions.map((x, j) => (j === i ? id : x)) })}
               />
               <span className="sl-name">{p ? nameOf(catalog, "potion", p) : "—"}</span>
-              <button type="button" className="sl-x" aria-label={`remove potion ${i + 1}`} onClick={() => patchPlayer({ potions: P.potions.filter((_, j) => j !== i) })}>
+              <button type="button" className="sl-x" aria-label={t("remove potion {n}", { n: i + 1 })} onClick={() => patchPlayer({ potions: P.potions.filter((_, j) => j !== i) })}>
                 ×
               </button>
             </div>
           ))}
           <button type="button" className="sl-chip" onClick={() => patchPlayer({ potions: [...P.potions, ""] })}>
-            + potion
+            + {t("potion")}
           </button>
         </div>
 
@@ -309,7 +310,7 @@ export default function PositionEditor({
           label="powers"
           rows={P.powers}
           catalog={catalog}
-          ariaPrefix="player power"
+          ariaPrefix={t("player power")}
           onChange={(powers) => patchPlayer({ powers })}
         />
       </section>
@@ -317,8 +318,8 @@ export default function PositionEditor({
       {/* ── CARDS ─────────────────────────────────────────────────────── */}
       <section className="sl-panel">
         <div className="sl-panel-head">
-          <span className="sl-label">Cards</span>
-          <span className="sl-label">{totalCards(pos)} in all four piles</span>
+          <span className="sl-label">{t("Cards")}</span>
+          <span className="sl-label">{t("{n} in all four piles", { n: totalCards(pos) })}</span>
         </div>
         {PILES.map((pile) => (
           <PileEditor key={pile} pile={pile} pos={pos} catalog={catalog} onChange={onChange} />
@@ -328,12 +329,12 @@ export default function PositionEditor({
       {/* ── ENEMIES ───────────────────────────────────────────────────── */}
       <section className="sl-panel">
         <div className="sl-panel-head">
-          <span className="sl-label">Enemies</span>
+          <span className="sl-label">{t("Enemies")}</span>
           <button type="button" className="sl-chip" onClick={() => onChange(addMonster(pos, catalog.monsters[0]?.id ?? "Nibbit", catalog.monsters[0]?.maxHp ?? 10))}>
-            + enemy
+            + {t("enemy")}
           </button>
         </div>
-        {pos.monsters.length === 0 && <div className="sl-muted sl-empty">no enemies — add one, or pick an encounter and press “enemies”</div>}
+        {pos.monsters.length === 0 && <div className="sl-muted sl-empty">{t("no enemies — add one, or pick an encounter and press “enemies”")}</div>}
         {pos.monsters.map((m, i) => {
           const info = monsterOf(catalog, m.monster);
           return (
@@ -342,7 +343,7 @@ export default function PositionEditor({
                 <Combobox
                   value={m.monster}
                   options={optionsFor(catalog, "monster")}
-                  ariaLabel={`enemy ${i + 1}`}
+                  ariaLabel={t("enemy {n}", { n: i + 1 })}
                   onChange={(id) => {
                     const next = monsterOf(catalog, id);
                     const hp = next?.maxHp ?? m.maxHp;
@@ -350,22 +351,22 @@ export default function PositionEditor({
                   }}
                 />
                 <span className="sl-name">{nameOf(catalog, "monster", m.monster)}</span>
-                <Num label="hp" aria={`enemy ${i + 1} hp`} value={m.hp} min={1} onChange={(v) => onChange(setMonster(pos, i, { hp: v, maxHp: Math.max(m.maxHp, v) }))} />
-                <Num label="maxHp" aria={`enemy ${i + 1} maxHp`} value={m.maxHp} min={1} onChange={(v) => onChange(setMonster(pos, i, { maxHp: v, hp: Math.min(m.hp, v) }))} />
-                <Num label="block" aria={`enemy ${i + 1} block`} value={m.block} onChange={(v) => onChange(setMonster(pos, i, { block: v }))} />
-                <button type="button" className="sl-chip" aria-label={`remove enemy ${i + 1}`} onClick={() => onChange(removeMonster(pos, i))}>
-                  remove enemy
+                <Num label="hp" aria={t("enemy {n} hp", { n: i + 1 })} value={m.hp} min={1} onChange={(v) => onChange(setMonster(pos, i, { hp: v, maxHp: Math.max(m.maxHp, v) }))} />
+                <Num label="maxHp" aria={t("enemy {n} maxHp", { n: i + 1 })} value={m.maxHp} min={1} onChange={(v) => onChange(setMonster(pos, i, { maxHp: v, hp: Math.min(m.hp, v) }))} />
+                <Num label="block" aria={t("enemy {n} block", { n: i + 1 })} value={m.block} onChange={(v) => onChange(setMonster(pos, i, { block: v }))} />
+                <button type="button" className="sl-chip" aria-label={t("remove enemy {n}", { n: i + 1 })} onClick={() => onChange(removeMonster(pos, i))}>
+                  {t("remove enemy")}
                 </button>
               </div>
               <div className="sl-row">
                 <label className="sl-field">
-                  <span>intent</span>
+                  <span>{t("intent")}</span>
                   <select
-                    aria-label={`enemy ${i + 1} intent`}
+                    aria-label={t("enemy {n} intent", { n: i + 1 })}
                     value={m.intent ?? ""}
                     onChange={(e) => onChange(setMonster(pos, i, { intent: e.target.value || null }))}
                   >
-                    <option value="">— let the engine roll —</option>
+                    <option value="">{t("— let the engine roll —")}</option>
                     {m.intent && !info?.moves.some((mv) => mv.id === m.intent) && <option value={m.intent}>{m.intent}</option>}
                     {(info?.moves ?? []).map((mv) => (
                       <option key={mv.id} value={mv.id}>
@@ -380,7 +381,7 @@ export default function PositionEditor({
                 label="powers"
                 rows={m.powers}
                 catalog={catalog}
-                ariaPrefix={`enemy ${i + 1} power`}
+                ariaPrefix={t("enemy {n} power", { n: i + 1 })}
                 onChange={(powers) => onChange(setMonster(pos, i, { powers }))}
               />
             </div>
@@ -417,8 +418,9 @@ function Num({
 }) {
   return (
     <label className="sl-field">
-      <span>{label}</span>
-      <NumberInput min={min} value={value} onChange={onChange} width={width} ariaLabel={aria ?? label} />
+      {/* label is one of a closed set of English constants (zh/simlab.ts) */}
+      <span>{t(label)}</span>
+      <NumberInput min={min} value={value} onChange={onChange} width={width} ariaLabel={aria ?? t(label)} />
     </label>
   );
 }
@@ -438,8 +440,8 @@ function PowerList({
 }) {
   return (
     <div className="sl-sub">
-      <span className="sl-label">{label}</span>
-      {rows.length === 0 && <span className="sl-muted sl-empty">none</span>}
+      <span className="sl-label">{t(label)}</span>
+      {rows.length === 0 && <span className="sl-muted sl-empty">{t("none")}</span>}
       {rows.map((p, i) => (
         <div className="sl-row sl-item" key={i}>
           <Combobox
@@ -449,14 +451,14 @@ function PowerList({
             onChange={(id) => onChange(rows.map((x, j) => (j === i ? { ...x, id } : x)))}
           />
           <span className="sl-name">{nameOf(catalog, "power", p.id)}</span>
-          <Num label="amount" aria={`${ariaPrefix} ${i + 1} amount`} value={p.amount} min={-999} onChange={(v) => onChange(rows.map((x, j) => (j === i ? { ...x, amount: v } : x)))} />
-          <button type="button" className="sl-x" aria-label={`remove ${ariaPrefix} ${i + 1}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
+          <Num label="amount" aria={t("{prefix} {n} amount", { prefix: ariaPrefix, n: i + 1 })} value={p.amount} min={-999} onChange={(v) => onChange(rows.map((x, j) => (j === i ? { ...x, amount: v } : x)))} />
+          <button type="button" className="sl-x" aria-label={t("remove {prefix} {n}", { prefix: ariaPrefix, n: i + 1 })} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
             ×
           </button>
         </div>
       ))}
       <button type="button" className="sl-chip" onClick={() => onChange([...rows, { id: "", amount: 1 }])}>
-        + power
+        + {t("power")}
       </button>
     </div>
   );
@@ -479,14 +481,14 @@ function PileEditor({
   return (
     <div className="sl-pile">
       <div className="sl-pile-head">
-        <span className="sl-label">{pile}</span>
+        <span className="sl-label">{t(pile)}</span>
         <span className="sl-muted">{rows.length}</span>
-        <button type="button" className="sl-chip" aria-label={`add card to ${pile}`} onClick={() => onChange(addCard(pos, pile, ""))}>
-          + card
+        <button type="button" className="sl-chip" aria-label={t("add card to {pile}", { pile: t(pile) })} onClick={() => onChange(addCard(pos, pile, ""))}>
+          + {t("card")}
         </button>
-        {pile === "draw" && rows.length > 0 && <span className="sl-muted sl-note">top of the draw pile first — this order is what the engine deals</span>}
+        {pile === "draw" && rows.length > 0 && <span className="sl-muted sl-note">{t("top of the draw pile first — this order is what the engine deals")}</span>}
       </div>
-      {rows.length === 0 && <div className="sl-muted sl-empty">empty</div>}
+      {rows.length === 0 && <div className="sl-muted sl-empty">{t("empty")}</div>}
       {groups.map((g) => {
         const i = g.indices[0];
         const c = g.card;
@@ -499,7 +501,7 @@ function PileEditor({
             >
               {PILES.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {t(p)}
                 </option>
               ))}
             </select>
@@ -531,7 +533,7 @@ function PileEditor({
               ariaLabel={`${pile} card ${i + 1} count`}
               onChange={(v) => onChange(setPile(pos, pile, setGroupCount(rows, g, v)))}
             />
-            <span className="sl-muted">cost</span>
+            <span className="sl-muted">{t("cost")}</span>
             <input
               className="mono sl-cost"
               aria-label={`${pile} card ${i + 1} cost`}
@@ -602,10 +604,10 @@ function JsonBox({
   return (
     <section className="sl-panel">
       <div className="sl-panel-head">
-        <span className="sl-label">Position JSON</span>
+        <span className="sl-label">{t("Position JSON")}</span>
         <span className="sl-head-right">
           <button type="button" className="sl-chip" onClick={apply} disabled={!dirty}>
-            apply
+            {t("apply")}
           </button>
           <button
             type="button"
@@ -617,16 +619,16 @@ function JsonBox({
               setError(null);
             }}
           >
-            revert
+            {t("revert")}
           </button>
         </span>
       </div>
       <div className="sl-muted sl-note">
-        Paste a position here, or the state the game copied (SpireMentor <b>Copy state</b> / Ctrl+Shift+C) — then <b>apply</b>.
+        {t("Paste a position here, or the state the game copied (SpireMentor")} <b>{t("Copy state")}</b> / Ctrl+Shift+C) {t("— then")} <b>{t("apply")}</b>.
       </div>
       <textarea
         className="mono sl-json"
-        aria-label="position json"
+        aria-label={t("position json")}
         spellCheck={false}
         value={text}
         onChange={(e) => {
@@ -638,7 +640,7 @@ function JsonBox({
         }}
       />
       {error && <div className="sl-error">{error}</div>}
-      <div className="sl-muted sl-note">{titleCase(position.character)} · A{position.ascension} · turn {position.turn}</div>
+      <div className="sl-muted sl-note">{titleCase(position.character)} · A{position.ascension} · {t("turn {n}", { n: position.turn })}</div>
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { clamp } from "../panelPrefs";
+import { t } from "../i18n";
 
 /** The collapse caret and the drag grip shared by the workbench's two
  *  space-hungry docks — the PPO policy panel under the board and the
@@ -21,8 +22,8 @@ export function CollapseButton({ collapsed, onToggle, label }: {
       type="button"
       onClick={onToggle}
       aria-expanded={!collapsed}
-      aria-label={`${collapsed ? "expand" : "collapse"} ${label}`}
-      title={`${collapsed ? "expand" : "collapse"} ${label}`}
+      aria-label={collapsed ? t("expand {label}", { label }) : t("collapse {label}", { label })}
+      title={collapsed ? t("expand {label}", { label }) : t("collapse {label}", { label })}
       style={{
         font: "inherit", background: "none", border: "none", color: "var(--muted)",
         cursor: "pointer", padding: 0, width: 14, flex: "0 0 auto",

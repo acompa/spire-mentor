@@ -160,6 +160,13 @@ public static class SimMp
         double.TryParse(CmdlineValue("spire-mentor-speed"), System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out double s) ? s : null;
 
+    /// <summary><c>--spire-mentor-brain search|instinct</c>: test tooling
+    /// only (a co-op benchmark's "every seat Search" arm): the brain the
+    /// player's seat and the AI partners ask for this launch, over
+    /// SpireMentor.conf's <c>advisor_brain</c> (SimConfig.ApplyCommandLine).
+    /// Raw; anything but the two names is no override.</summary>
+    public static string? BrainOverride => CmdlineValue("spire-mentor-brain");
+
     /// <summary><c>--spire-mentor-no-saves</c>: write no saves (SimNoSaves);
     /// the dummy partner shares the user's Steam profile.</summary>
     public static bool NoSavesOverride => HasCmdlineArg("spire-mentor-no-saves");

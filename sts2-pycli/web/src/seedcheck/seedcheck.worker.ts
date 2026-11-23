@@ -37,10 +37,10 @@ self.onmessage = async (ev: MessageEvent<ToWorker>) => {
     }
     return;
   }
-  const { id, seed, ascension, seq, k } = msg;
+  const { id, seed, character, ascension, seq, k } = msg;
   try {
     if (!wb) throw new Error("seed-check worker used before init");
-    const r = JSON.parse(wb.call("POST", "/api/seedcheck/attempt", JSON.stringify({ seed, ascension, seq, k }))) as {
+    const r = JSON.parse(wb.call("POST", "/api/seedcheck/attempt", JSON.stringify({ seed, character, ascension, seq, k }))) as {
       status: number;
       body: unknown;
     };

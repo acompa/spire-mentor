@@ -3191,3 +3191,179 @@ fn free_generated_pick_is_free_before_it_enters_combat() {
         "a negative local cost skips Borrowed Time"
     );
 }
+
+// ── GH #1604: per-enemy targets for `AnyEnemy` potions ──────────────────
+
+/// The `DrinkPotion` actions `legal_actions` offers, as `(slot, target)`.
+fn drink_actions(state: &CombatState) -> Vec<(u8, Option<u8>)> {
+    sts2_core::legal_actions(state)
+        .iter()
+        .filter_map(|a| match *a {
+            sts2_core::Action::DrinkPotion {
+                potion_slot,
+                target,
+            } => Some((potion_slot, target)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// GH #1604: the game lets the player click any living enemy for an
+/// `AnyEnemy` potion (C# `PotionModel.IsValidTarget`: alive and on the other
+/// side), so `legal_actions` offers one `DrinkPotion` per living enemy slot,
+/// like a targeted card — not one untargeted action that `drink_potion`
+/// aimed at the first enemy.
+#[test]
+fn any_enemy_potion_fans_out_one_drink_per_living_enemy() {
+    ensure_installed();
+    for n in 1..=3u32 {
+        let mut state = fresh_state_with_player(50, 80);
+        state.phase = CombatPhase::PlayerPlayPhase;
+        for i in 0..n {
+            push_enemy(&mut state, 2 + i, 30);
+        }
+        state.player.potions.push(PotionKind::FirePotion);
+        let want: Vec<(u8, Option<u8>)> = (0..u8::try_from(n).unwrap())
+            .map(|t| (0, Some(t)))
+            .collect();
+        assert_eq!(drink_actions(&state), want, "{n} enemies alive");
+    }
+}
+
+/// Dead enemy slots are not targets (C# `IsValidTarget` rejects a dead
+/// creature); the living ones keep their roster slot index.
+#[test]
+fn any_enemy_potion_skips_dead_enemy_slots() {
+    ensure_installed();
+    let mut state = fresh_state_with_player(50, 80);
+    state.phase = CombatPhase::PlayerPlayPhase;
+    push_enemy(&mut state, 2, 30);
+    let dead = push_enemy(&mut state, 3, 30);
+    push_enemy(&mut state, 4, 30);
+    state
+        .creatures
+        .iter_mut()
+        .find(|c| c.id == dead.0)
+        .unwrap()
+        .current_hp = 0;
+    state.player.potions.push(PotionKind::WeakPotion);
+    assert_eq!(drink_actions(&state), vec![(0, Some(0)), (0, Some(2))]);
+}
+
+/// Potions that take no enemy target (self, player, all enemies) stay one
+/// untargeted action per slot; only the `AnyEnemy` slot fans out.
+#[test]
+fn untargeted_potions_are_not_fanned_out() {
+    ensure_installed();
+    let mut state = fresh_state_with_player(50, 80);
+    state.phase = CombatPhase::PlayerPlayPhase;
+    push_enemy(&mut state, 2, 30);
+    push_enemy(&mut state, 3, 30);
+    state.player.potions.push(PotionKind::BlockPotion); // Self
+    state.player.potions.push(PotionKind::ExplosiveAmpoule); // AllEnemies
+    state.player.potions.push(PotionKind::PotionShapedRock); // AnyEnemy
+    assert_eq!(
+        drink_actions(&state),
+        vec![(0, None), (1, None), (2, Some(0)), (2, Some(1))]
+    );
+}
+
+/// The chosen target is the one hit: a Fire Potion aimed at enemy 2 damages
+/// enemy 2 and leaves enemies 0 and 1 alone.
+#[test]
+fn targeted_drink_hits_the_chosen_enemy() {
+    use sts2_core::{Action, StepResult};
+    ensure_installed();
+    let mut state = fresh_state_with_player(50, 80);
+    state.phase = CombatPhase::PlayerPlayPhase;
+    let e0 = push_enemy(&mut state, 2, 40);
+    let e1 = push_enemy(&mut state, 3, 40);
+    let e2 = push_enemy(&mut state, 4, 40);
+    state.player.potions.push(PotionKind::FirePotion);
+    let act = Action::DrinkPotion {
+        potion_slot: 0,
+        target: Some(2),
+    };
+    assert!(sts2_core::legal_actions(&state).contains(&act));
+    let r = sts2_core::apply(&mut state, act);
+    assert_eq!(r, StepResult::Advanced);
+    let hp_of = |uid: sts2_core::CreatureUid| {
+        state
+            .creatures
+            .iter()
+            .find(|c| c.id == uid.0)
+            .map_or(0, |c| c.current_hp)
+    };
+    assert_eq!(hp_of(e0), 40);
+    assert_eq!(hp_of(e1), 40);
+    assert!(hp_of(e2) < 40, "enemy 2 takes the fire damage");
+    assert!(state.player.potions.is_empty());
+}
+
+/// `target: None` stays accepted for old callers and replays: it still aims
+/// at the first living enemy.
+#[test]
+fn untargeted_drink_of_an_any_enemy_potion_still_hits_the_first_living_enemy() {
+    use sts2_core::{Action, StepResult};
+    ensure_installed();
+    let mut state = fresh_state_with_player(50, 80);
+    state.phase = CombatPhase::PlayerPlayPhase;
+    let dead = push_enemy(&mut state, 2, 40);
+    let first_alive = push_enemy(&mut state, 3, 40);
+    let other = push_enemy(&mut state, 4, 40);
+    state
+        .creatures
+        .iter_mut()
+        .find(|c| c.id == dead.0)
+        .unwrap()
+        .current_hp = 0;
+    state.player.potions.push(PotionKind::PotionShapedRock);
+    let r = sts2_core::apply(
+        &mut state,
+        Action::DrinkPotion {
+            potion_slot: 0,
+            target: None,
+        },
+    );
+    assert_eq!(r, StepResult::Advanced);
+    let hp_of = |uid: sts2_core::CreatureUid| {
+        state
+            .creatures
+            .iter()
+            .find(|c| c.id == uid.0)
+            .map_or(0, |c| c.current_hp)
+    };
+    assert_eq!(hp_of(first_alive), 25);
+    assert_eq!(hp_of(other), 40);
+}
+
+/// An `AnyEnemy` drink aimed at a dead or missing enemy slot is refused like
+/// a card play at one (`InvalidTarget`, state untouched); the game cancels a
+/// potion use whose target fails `IsValidTarget`.
+#[test]
+fn targeted_drink_at_a_dead_or_missing_enemy_is_rejected() {
+    use sts2_core::{Action, StepResult};
+    ensure_installed();
+    let mut state = fresh_state_with_player(50, 80);
+    state.phase = CombatPhase::PlayerPlayPhase;
+    let dead = push_enemy(&mut state, 2, 40);
+    push_enemy(&mut state, 3, 40);
+    state
+        .creatures
+        .iter_mut()
+        .find(|c| c.id == dead.0)
+        .unwrap()
+        .current_hp = 0;
+    state.player.potions.push(PotionKind::FirePotion);
+    for t in [0u8, 7] {
+        let r = sts2_core::apply(
+            &mut state,
+            Action::DrinkPotion {
+                potion_slot: 0,
+                target: Some(t),
+            },
+        );
+        assert_eq!(r, StepResult::InvalidTarget, "target {t}");
+        assert_eq!(state.player.potions.as_slice(), [PotionKind::FirePotion]);
+    }
+}

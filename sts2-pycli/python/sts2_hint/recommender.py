@@ -421,18 +421,12 @@ def _append_log(
 
 
 def _bucket_label(p_win: float, buckets: list[tuple[float, str]]) -> str:
-    """Return the bucket label for ``p_win``.
-
-    ``buckets`` is the value of ``sts2_rs.WIN_PROB_BUCKETS`` — a list
-    of ``(low_inclusive, label)`` pairs sorted **descending** by
-    threshold (see ``crates/sts2-mcts/src/hint.rs``). The first row
-    with ``low <= p_win`` wins.
-    """
+    """Return the bucket label for ``p_win``: the first ``(low, label)`` row
+    of ``buckets`` (``sts2_rs.WIN_PROB_BUCKETS``, descending) with
+    ``low <= p_win``."""
     for low, label in buckets:
         if p_win >= low:
             return label
-    # Defensive fallback — shouldn't trigger because the last bucket
-    # in WIN_PROB_BUCKETS has low=0.0.
     return buckets[-1][1] if buckets else "unknown"
 
 
@@ -459,132 +453,55 @@ class UnmappableAction(KeyError):
 
 
 def _stable_idx_for_action(action: dict[str, Any], hand: list[dict[str, Any]]) -> int:
-    """Map one sts2-rs legal-action dict to its C# stable_idx.
+    """Map one sts2-rs legal-action dict to its C# stable_idx (Rust:
+    ``sts2_advisor::combat_advice``).
 
-    Sentinels documented in the module docstring. Raises
-    :class:`UnmappableAction` when a play indexes past this world's hand —
-    recoverable, and dropped by :func:`tags_from_result`. Raises a plain
-    :class:`KeyError` for shapes that aren't in the wire contract at all; the
-    caller should not catch that one (it indicates sts2-rs/adapter drift).
-    """
-    kind = action["action"]
-    if kind == "play":
-        card_index = int(action["card_index"])
-        if not 0 <= card_index < len(hand):
-            raise UnmappableAction(
-                f"recommend(): play action card_index={card_index} out of range "
-                f"for hand of size {len(hand)}"
-            )
-        return int(hand[card_index]["stable_idx"])
-    if kind == "end_turn":
-        return END_TURN_STABLE_IDX
-    if kind in ("potion", "drink_potion"):
-        return POTION_STABLE_IDX_BASE - int(action["slot"])
-    if kind == "channel":
-        return CHANNEL_STABLE_IDX
-    if kind == "evoke":
-        return EVOKE_STABLE_IDX
-    if kind == "choose":
-        # `selection` is authoritative: the engine emits it precisely so the
-        # empty-selection FINALIZE/SKIP is distinguishable from "choose option
-        # 0" — both collapse to `index == 0` (crates/sts2-py/src/lib.rs,
-        # `legal_actions` choose arm). Reading only `index` turned every
-        # ranked skip into a phantom pick of option 0.
-        selection = action.get("selection")
-        if selection is not None:
-            if len(selection) == 0:
-                return CHOOSE_SKIP_STABLE_IDX
-            return CHOOSE_STABLE_IDX_BASE - int(selection[0])
-        return CHOOSE_STABLE_IDX_BASE - int(action.get("index", 0))
-    raise KeyError(f"recommend(): unknown sts2-rs action kind {kind!r}")
-
-
-def tags_from_result(result: dict[str, Any], hand: list[dict[str, Any]]) -> list[HintTag]:
-    """Turn a raw ``sts2_rs.mcts_recommend`` result into ranked :class:`HintTag`s.
-
-    Split out of :func:`recommend_all` so a caller that already owns the
-    searched state — the persistent combat mirror, which searches a clone of
-    itself rather than a fresh reconstruction — reuses the exact same
-    action→``stable_idx`` mapping instead of a second copy that could drift.
-
-    Args:
-        result: The ``mcts_recommend`` dict.
-        hand: The wire dict's ``deck.hand``, whose ``stable_idx`` values are
-            the world's own card handles.
-
-    Returns:
-        MCTS-best first, then descending win probability. One entry per
-        (action, target) pair — rows sharing a ``stable_idx`` are NOT
-        collapsed. Rows the world's hand cannot address are DROPPED (see
-        :class:`UnmappableAction`); an empty result means every row was
-        unmappable, which the caller still treats as "no legal actions".
+    Raises :class:`UnmappableAction` when a play indexes past this world's
+    hand -- recoverable, and dropped by :func:`tags_from_result`. Raises a
+    plain :class:`KeyError` for shapes that aren't in the wire contract.
     """
     import sts2_rs
 
-    buckets: list[tuple[float, str]] = list(sts2_rs.WIN_PROB_BUCKETS)
-    out: list[HintTag] = []
-    dropped: list[str] = []
-    for entry in result["actions"]:
-        action = entry["action"]
-        target = action.get("target_index")
-        ally = action.get("ally_index")
-        p_win = float(entry["p_win"])
-        try:
-            stable_idx = _stable_idx_for_action(action, hand)
-        except UnmappableAction as e:
-            # GH #360: one phantom card must not cost the whole ranking. Never
-            # silent — a dropped row means the searched state disagreed with
-            # the world, which is exactly what the corpus mining needs to see.
-            dropped.append(str(e))
-            continue
-        out.append(
-            HintTag(
-                stable_idx=stable_idx,
-                win_prob=p_win,
-                bucket_label=_bucket_label(p_win, buckets),
-                is_best=bool(entry["is_best"]),
-                visits=int(entry["visits"]),
-                q_saturated=bool(entry.get("q_saturated", False)),
-                low_confidence=bool(entry.get("low_confidence", False)),
-                target_index=int(target) if target is not None else None,
-                q=float(entry.get("q", entry.get("value", 0.0))),
-                wins=int(entry.get("wins", 0)),
-                losses=int(entry.get("losses", 0)),
-                ties=int(entry.get("ties", 0)),
-                ally_index=int(ally) if ally is not None else None,
-                pick_rank=int(entry["pick_rank"]) if entry.get("pick_rank") is not None else None,
-                in_band=bool(entry.get("in_band", False)),
-            )
-        )
+    idx, err = sts2_rs.hint_stable_idx_for_action(action, hand)
+    if err is None:
+        return int(idx)
+    kind, msg = err
+    if kind == "unmappable":
+        raise UnmappableAction(msg)
+    raise KeyError(msg)
+
+
+def tags_from_result(result: dict[str, Any], hand: list[dict[str, Any]]) -> list[HintTag]:
+    """Turn a raw ``sts2_rs.mcts_recommend`` result into ranked :class:`HintTag`s
+    (Rust: ``sts2_advisor::combat_advice``).
+
+    MCTS-best first, then descending win probability; one entry per (action,
+    target) pair. Rows the world's hand cannot address are DROPPED (see
+    :class:`UnmappableAction`) and reported on stderr.
+    """
+    import sts2_rs
+
+    tags, dropped, err = sts2_rs.hint_tags_from_result(result, hand)
+    if err is not None:
+        raise KeyError(err[1])
     if dropped:
         print(
             f"[hint] dropped {len(dropped)} unmappable action row(s) from the ranking, "
-            f"kept {len(out)}: {dropped[0]}",
+            f"kept {len(tags)}: {dropped[0]}",
             file=sys.stderr,
         )
-    out = crown_engine_heir(out)
-    out.sort(key=lambda t: (not t.is_best, -t.win_prob))
-    return out
+    return [HintTag(**t) for t in tags]
 
 
 def crown_engine_heir(tags: list[HintTag]) -> list[HintTag]:
-    """Re-crown ``tags`` when the engine's pick is no longer among them.
-
-    A caller that drops rows after the search -- an unmappable row here, a
-    play the live game refuses in ``realgame_advisor.veto_unplayable`` --
-    must not crown a move by a rule of its own. The heir is the engine's own
-    next choice among the survivors: the lowest ``pick_rank`` (GH #1022),
-    falling back to the first tag only when no tag carries a rank.
-
-    Returns:
-        ``tags`` unchanged when one is still ``is_best``; otherwise the heir
-        first with ``is_best`` set, then the rest in their order.
-    """
+    """Re-crown ``tags`` when the engine's pick is no longer among them: the
+    engine's own next choice among the survivors (lowest ``pick_rank``, GH
+    #1022), heir first. ``tags`` unchanged when one is still ``is_best``."""
     if not tags or any(t.is_best for t in tags):
         return tags
-    ranked = [t for t in tags if t.pick_rank is not None]
-    heir = min(ranked, key=lambda t: t.pick_rank) if ranked else tags[0]
-    return [heir._replace(is_best=True)] + [t for t in tags if t is not heir]
+    import sts2_rs
+
+    return [HintTag(**t) for t in sts2_rs.hint_crown_engine_heir([t._asdict() for t in tags])]
 
 
 def choice_picks_from_tags(
@@ -594,65 +511,18 @@ def choice_picks_from_tags(
     min_select: int,
     max_select: int,
 ) -> list[int]:
-    """Option indices to answer a pending-choice screen with, best-first.
+    """Option indices to answer a pending-choice screen with, best-first (Rust:
+    ``sts2_advisor::combat_advice::choice_picks_from_tags``).
 
-    Shared by BOTH mirrored ``card_select`` drivers
-    (``headless_eval.pick_card_select_mirrored`` and
-    ``realgame_mcts.pick_card_select_mirrored``) so the tag→picks reading
-    cannot fork and drift. Three properties are load-bearing:
-
-    * **The FINALIZE/SKIP tag is a stop signal, not a pick.** The engine's
-      multi-pick root enumerates one incremental pick per option plus one
-      empty-selection finalize (sts2-core ``legal_actions``); the search
-      ranking the finalize above a remaining option means "stop here".
-      The old reading encoded it as a phantom "choose option 0"
-      (:data:`CHOOSE_SKIP_STABLE_IDX`), which both destroyed the stop
-      signal (every mulligan discarded ``max_select`` cards) and sent a
-      DUPLICATE index to the world — whose ``ResolvePendingByIndices``
-      (RunSimulator.cs:7119) keeps duplicates, so Gambling Chip's
-      ``DiscardAndDraw(list, list.Count)`` (GamblingChip.cs:20-23) drew one
-      more card than it discarded while the engine's resolver
-      (``resolve_discard_from_hand_and_draw``) skips the already-discarded
-      duplicate. That asymmetry was the entire mirror_d1 "post-mulligan
-      hand short by 1" family (seeds 1004/1047).
-    * **No duplicates, ever.** A selection index names one concrete option;
-      the world's screen consumes each at most once.
-    * **Arity is honored.** At most ``max_select`` picks; a skip ranked
-      before ``min_select`` picks were collected is ignored (stopping there
-      is not legal), and a search that returned fewer than ``min_select``
-      option rows is padded with the lowest unused indices (defensive —
-      every option is a root action, so this should not happen).
-
-    Args:
-        tags: :func:`tags_from_result` output (best-first).
-        n_options: How many options the world's screen shows.
-        min_select / max_select: The screen's (already clamped) arity.
-
-    Returns:
-        Distinct option indices, best-first. Empty means skip.
+    The FINALIZE/SKIP tag is a stop signal, not a pick (honoured once
+    ``min_select`` picks are in); no index repeats; at most ``max_select``
+    picks, padded with the lowest unused indices up to ``min_select``.
     """
-    picks: list[int] = []
-    stop_when_legal = False
-    for t in tags:
-        if t.stable_idx == CHOOSE_SKIP_STABLE_IDX:
-            if len(picks) >= min_select:
-                break
-            # Stopping is not legal yet: remember the wish and stop the
-            # moment the minimum is satisfied.
-            stop_when_legal = True
-            continue
-        if t.stable_idx > CHOOSE_STABLE_IDX_BASE:
-            continue  # not a choose tag
-        idx = CHOOSE_STABLE_IDX_BASE - t.stable_idx
-        if not 0 <= idx < n_options or idx in picks:
-            continue
-        picks.append(idx)
-        if len(picks) >= max_select or (stop_when_legal and len(picks) >= min_select):
-            break
-    if len(picks) < min_select:
-        picks.extend(i for i in range(n_options) if i not in picks)
-        del picks[min_select:]
-    return picks
+    import sts2_rs
+
+    return list(
+        sts2_rs.hint_choice_picks([t._asdict() for t in tags], n_options, min_select, max_select)
+    )
 
 
 #: What :func:`next_choice_pick_from_tags` returns when the search ranked the
@@ -667,42 +537,15 @@ def next_choice_pick_from_tags(
     taken: Sequence[int],
     allow_finalize: bool = True,
 ) -> int | object | None:
-    """The single best next pick for an open choice — ONE incremental step.
+    """The single best next pick for an open choice -- ONE incremental step:
+    the option index, :data:`FINALIZE` when the search wants to stop, or
+    ``None`` when no choose row was usable (Rust)."""
+    import sts2_rs
 
-    :func:`choice_picks_from_tags` reads a whole multi-pick answer off one
-    search. This reads only the FIRST pick, so the caller can apply it and
-    search again with that pick in the root state — which is how the engine
-    itself models a multi-pick (`legal_actions` re-opens the same choice after
-    every incremental `ResolveChoice`, bead ``sts2-rs-sopgf``). Second-best at
-    a root where nothing is picked yet is not the same question as best-given-
-    the-first-pick, and only the sequential read asks the second question.
-
-    Args:
-        tags: :func:`tags_from_result` output (best-first) for the CURRENT
-            root — i.e. re-derived after each applied pick.
-        n_options: How many options the world's screen shows.
-        taken: Option indices already picked in this choice.
-        allow_finalize: When False the FINALIZE row is skipped over instead of
-            returned — the caller has not reached ``min_select`` yet, so
-            stopping is not legal. Same rule as
-            :func:`choice_picks_from_tags`'s "a skip ranked too early is
-            ignored".
-
-    Returns:
-        The option index to pick next, :data:`FINALIZE` when the search wants
-        to stop, or ``None`` when no choose row was usable at all.
-    """
-    for t in tags:
-        if t.stable_idx == CHOOSE_SKIP_STABLE_IDX:
-            if allow_finalize:
-                return FINALIZE
-            continue
-        if t.stable_idx > CHOOSE_STABLE_IDX_BASE:
-            continue  # not a choose tag
-        idx = CHOOSE_STABLE_IDX_BASE - t.stable_idx
-        if 0 <= idx < n_options and idx not in taken:
-            return idx
-    return None
+    out = sts2_rs.hint_next_choice_pick(
+        [t._asdict() for t in tags], n_options, list(taken), allow_finalize
+    )
+    return FINALIZE if out == "finalize" else out
 
 
 def recommend_all(game: Any, cfg: RecommendConfig | None = None) -> list[HintTag]:

@@ -18,7 +18,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_select",
-   "details": [],
+   "details": [
+    "+Card Ultimate Strike"
+   ],
    "floor": 1,
    "idx": 1,
    "label": "Select Ultimate Strike",
@@ -401,7 +403,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Bloodletting"
+   ],
    "floor": 2,
    "idx": 11,
    "label": "Take Bloodletting",
@@ -873,7 +877,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card True Grit"
+   ],
    "floor": 3,
    "idx": 24,
    "label": "Take True Grit",
@@ -1557,7 +1563,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Tremble"
+   ],
    "floor": 5,
    "idx": 43,
    "label": "Take Tremble",
@@ -1579,7 +1587,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "event_choice",
-   "details": [],
+   "details": [
+    "+Card Spoils Map"
+   ],
    "floor": 6,
    "idx": 45,
    "label": "Choose: Nab the Map",
@@ -2715,7 +2725,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Molten Fist"
+   ],
    "floor": 7,
    "idx": 70,
    "label": "Take Molten Fist",
@@ -2762,7 +2774,8 @@
    "combat_log": [],
    "decision": "shop",
    "details": [
-    "Gold 221→169"
+    "Gold 221→169",
+    "+Card Pommel Strike"
    ],
    "floor": 9,
    "idx": 74,
@@ -2800,7 +2813,8 @@
    "combat_log": [],
    "decision": "card_select",
    "details": [
-    "Gold 118→43"
+    "Gold 118→43",
+    "−Card Strike"
    ],
    "floor": 9,
    "idx": 77,
@@ -2859,7 +2873,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_select",
-   "details": [],
+   "details": [
+    "Upgraded Strike → Strike+"
+   ],
    "floor": 11,
    "idx": 82,
    "label": "Upgrade Strike",
@@ -3937,7 +3953,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Cinder"
+   ],
    "floor": 12,
    "idx": 106,
    "label": "Take Cinder",
@@ -5003,7 +5021,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Colossus"
+   ],
    "floor": 13,
    "idx": 130,
    "label": "Take Colossus",
@@ -5569,7 +5589,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Blood Wall"
+   ],
    "floor": 14,
    "idx": 145,
    "label": "Take Blood Wall",
@@ -6791,7 +6813,9 @@
    "act_name": "Overgrowth",
    "combat_log": [],
    "decision": "card_reward",
-   "details": [],
+   "details": [
+    "+Card Shrug It Off"
+   ],
    "floor": 15,
    "idx": 168,
    "label": "Take Shrug It Off",

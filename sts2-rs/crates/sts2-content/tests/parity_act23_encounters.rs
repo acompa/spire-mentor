@@ -332,7 +332,7 @@ fn build_state(fixture_initial: &Value, encounter: &str, seed: u64) -> CombatSta
         relics: Vec::new().into(),
         potions: Vec::new(),
         player,
-        allies: SmallVec::new(),
+        allies: Vec::new(),
         enemy_uids,
         pending_choice: None,
         resolving_card: None,
@@ -350,6 +350,7 @@ fn build_state(fixture_initial: &Value, encounter: &str, seed: u64) -> CombatSta
         pending_autoplay_resume: None,
         autoplay_inline_resolve: false,
         vakuu_selector: false,
+        interactive_turn_start_picks: false,
         pending_curse_choice: None,
         pending_potion_hook_resume: None,
         pending_enemy_exec_resume: None,
@@ -373,11 +374,14 @@ fn build_state(fixture_initial: &Value, encounter: &str, seed: u64) -> CombatSta
         is_boss: false,
         act_index: 1,
         total_floor: 0,
+        game_mode: sts2_core::GameMode::Standard,
+        dominion: None,
         active_attack: None,
         energy_wasted: 0,
         cards_drawn: 0,
         pending_run_gold_loss: 0,
         last_drawn_card: None,
+        enemy_turn_end_last_participant: None,
     };
     apply_start_of_combat_powers(&mut state, enemy_uid, encounter);
     state

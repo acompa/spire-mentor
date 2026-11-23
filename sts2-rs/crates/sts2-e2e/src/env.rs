@@ -64,9 +64,10 @@
 
 use serde_json::{json, Value};
 use smallvec::SmallVec;
+pub use sts2_core::potions::CharacterId;
 use sts2_core::run_manager::{Phase, RunManager};
 use sts2_core::{Action, CombatState};
-use sts2_wire::emit::names::{phase_str, result_str};
+use sts2_wire::emit::names::{character_str, phase_str, result_str};
 use sts2_wire::emit::run_manager as emit_rm;
 
 use crate::contracts::{self as ct, ak, dt, SchemaError, Selection};
@@ -74,7 +75,9 @@ use crate::intent_log::IntentLog;
 use crate::pyjson::{self, as_int, get, get_null, list_or_empty, truthy};
 use crate::snapshot;
 
-/// The campaign build (`factory.GAME_VERSION`).
+/// The all-character campaign's build (v0.111.0). A run builder here plays
+/// the current table build instead (`build::current`: the lane's, or the
+/// net's a host entered), so the Fool's v0.113.0 net gets v0.113.0 runs.
 pub const GAME_VERSION: &str = "v0.111.0";
 /// The campaign ascension (`factory.ASCENSION`).
 pub const ASCENSION: u8 = 10;
@@ -95,13 +98,27 @@ pub const FACE_VARS: [&str; 7] = [
     "enchantment_used",
 ];
 
-/// The run-level forms of combat actions (`COMBAT_RUN_KINDS`).
-const COMBAT_RUN_KINDS: [&str; 5] = [
+/// The run-level forms of combat actions (`COMBAT_RUN_KINDS`). A fight's
+/// `discard_potion` rides on a run with the potion popup ("ooc-potion",
+/// GH #1606); the env plays combat from `cs.legal_actions()`, which has none.
+const COMBAT_RUN_KINDS: [&str; 6] = [
     "play_card",
     "end_turn",
     "drink_potion",
     "combat_resolve_choice",
     "combat_resolve_choice_take_first",
+    "discard_potion",
+];
+
+/// The run actions the run encoder need not encode (`FILL_RUN_ACTIONS`): the
+/// potion popup's ("ooc-potion", GH #1606) and the reward screen's ("#1069",
+/// GH #1620). The screen's own actions must still have a surface.
+pub(crate) const FILL_RUN_ACTIONS: [&str; 5] = [
+    "use_potion_ooc",
+    "discard_potion",
+    "take_reward",
+    "skip_reward",
+    "proceed_rewards",
 ];
 
 /// The run-action kinds the run encoder has a surface for
@@ -179,17 +196,79 @@ pub fn new_run(seed: i64) -> RunManager {
 /// If `seed` is outside `[0, 2**31)`.
 #[must_use]
 pub fn new_run_at(seed: i64, ascension: u8) -> RunManager {
+    new_run_for(seed, CharacterId::Ironclad, ascension)
+}
+
+/// The characters the all-character student (GH #1197) plays, in the
+/// schema's order (`ppo.e2e.factory.CHARACTERS`).
+pub const CHARACTERS: [CharacterId; 5] = [
+    CharacterId::Ironclad,
+    CharacterId::Silent,
+    CharacterId::Defect,
+    CharacterId::Regent,
+    CharacterId::Necrobinder,
+];
+
+/// The characters a build's students play: [`CHARACTERS`], and from
+/// v0.113.0 on The Fool too (`build.characters`, GH #1535).
+#[must_use]
+pub fn characters_for(gv: sts2_core::GameVersion) -> &'static [CharacterId] {
+    const LATER: [CharacterId; 6] = [
+        CharacterId::Ironclad,
+        CharacterId::Silent,
+        CharacterId::Defect,
+        CharacterId::Regent,
+        CharacterId::Necrobinder,
+        CharacterId::Fool,
+    ];
+    if gv == sts2_core::GameVersion::V0_111_0 {
+        &CHARACTERS
+    } else {
+        &LATER
+    }
+}
+
+/// One of [`CHARACTERS`] by name (any case).
+///
+/// # Errors
+///
+/// A name that is not one of [`CHARACTERS`].
+pub fn parse_character(name: &str) -> Result<CharacterId, String> {
+    parse_character_for(name, sts2_core::GameVersion::V0_111_0)
+}
+
+/// One of `gv`'s characters ([`characters_for`]) by name (any case).
+///
+/// # Errors
+///
+/// A name that is not one of them.
+pub fn parse_character_for(name: &str, gv: sts2_core::GameVersion) -> Result<CharacterId, String> {
+    characters_for(gv)
+        .iter()
+        .copied()
+        .find(|c| character_str(*c).eq_ignore_ascii_case(name.trim()))
+        .ok_or_else(|| format!("the e2e student does not play {name:?}"))
+}
+
+/// [`new_run_at`] for `character` (the all-character student, GH #1197:
+/// `factory.new_run(seed, character=...)`).
+///
+/// # Panics
+///
+/// If `seed` is outside `[0, 2**31)`.
+#[must_use]
+pub fn new_run_for(seed: i64, character: CharacterId, ascension: u8) -> RunManager {
     assert!(
         (0..1_i64 << 31).contains(&seed),
         "seed {seed} outside [0, 2**31)"
     );
     ensure_engine_installed();
-    let gv: sts2_core::GameVersion = GAME_VERSION.parse().expect("v0.111.0 is a known build");
+    let gv = crate::build::current();
     let master_seed = u64::try_from(seed).unwrap_or(0);
     let effective_seed = i32::try_from(seed).unwrap_or(0);
     let rm = sts2_content::run_callbacks::new_run_manager_for_character_with_ascension(
         effective_seed,
-        sts2_core::potions::CharacterId::Ironclad,
+        character,
         ascension,
     );
     finish_run(rm, gv, master_seed)
@@ -224,16 +303,29 @@ pub fn canonical_game_seed(seed: &str) -> Result<String, String> {
 ///
 /// See [`canonical_game_seed`].
 pub fn new_run_from_game_seed(seed: &str, ascension: u8) -> Result<RunManager, String> {
+    new_run_from_game_seed_for(seed, CharacterId::Ironclad, ascension)
+}
+
+/// [`new_run_from_game_seed`] for `character`.
+///
+/// # Errors
+///
+/// See [`canonical_game_seed`].
+pub fn new_run_from_game_seed_for(
+    seed: &str,
+    character: CharacterId,
+    ascension: u8,
+) -> Result<RunManager, String> {
     let canonical = canonical_game_seed(seed)?;
     ensure_engine_installed();
-    let gv: sts2_core::GameVersion = GAME_VERSION.parse().expect("v0.111.0 is a known build");
+    let gv = crate::build::current();
     let master_seed = gv.run_seed_hash(&canonical);
     // The i32 view `sts2_rs.RunManager(string_seed=...)` constructs with.
     #[allow(clippy::cast_possible_truncation)]
     let effective_seed = master_seed as i32;
     let rm = sts2_content::run_callbacks::new_run_manager_for_character_with_ascension(
         effective_seed,
-        sts2_core::potions::CharacterId::Ironclad,
+        character,
         ascension,
     );
     Ok(finish_run(rm, gv, master_seed))
@@ -308,6 +400,16 @@ pub fn classify_surface(phase: &str, actions: &[Value]) -> Option<&'static str> 
 /// `shop_buy_potion` (a graceful no-op the engine accepts).
 #[must_use]
 pub fn mask_rejectable(rm: &RunManager, phase: &str, actions: Vec<Value>) -> Vec<Value> {
+    if rm.deck_select_cancelable() {
+        // GH #1790: Smith's and Cook's cancel on a `deck_select_screens` run
+        // is never offered (no kind names it).
+        let masked: Vec<Value> = actions
+            .iter()
+            .filter(|a| action_name(a) != "confirm_deck_selection")
+            .cloned()
+            .collect();
+        return if masked.is_empty() { actions } else { masked };
+    }
     if phase != "shop" {
         return actions;
     }
@@ -327,8 +429,54 @@ pub fn mask_rejectable(rm: &RunManager, phase: &str, actions: Vec<Value>) -> Vec
     }
 }
 
+/// `ppo.env._drop_deck_select_picks` (GH #1790): on a pick-N deck select
+/// picked into, the open kind's offer lists lose the picked positions (the
+/// pick actions index the offer minus them) and `deck_select_picked_deck`
+/// names the picked master-deck cards. A no-op otherwise.
+fn drop_deck_select_picks(rm: &RunManager, o: &mut serde_json::Map<String, Value>) {
+    let Some(kind) = rm.deck_select_picked_kind() else {
+        return;
+    };
+    let picked = rm.deck_select_picked();
+    let keys: &[&str] = match kind {
+        "removal" => &["card_removal_options", "card_removal_option_enchantments"],
+        "upgrade" => &["upgrade_select_deck_indices"],
+        "transform" => &["transform_select_deck_indices"],
+        _ => &["enchant_select_deck_indices"],
+    };
+    for k in keys {
+        if let Some(Value::Array(a)) = o.get_mut(*k) {
+            let kept: Vec<Value> = std::mem::take(a)
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| !picked.contains(i))
+                .map(|(_, v)| v)
+                .collect();
+            *a = kept;
+        }
+    }
+    o.insert(
+        "deck_select_picked_deck".into(),
+        json!(rm.deck_select_picked_deck_indices()),
+    );
+}
+
 fn ench_list(v: Vec<Option<(String, i64)>>) -> Value {
     json!(v)
+}
+
+/// The ascension the observation carries (`R_ASC`, `bosses_left`): the
+/// run's own, a rung of the standard ladder the student was trained on.
+///
+/// A Blitz run's `ascension_level` is not one: it is the Blitz level 0..=5,
+/// a SET of standard levels (`AscensionHelper.GetLevelForBlitz`, GH #1347).
+/// There the observation carries the standard level with the same fights
+/// ([`sts2_core::runstate::RunState::combat_ascension`]: 0, 8 with
+/// ToughEnemies, 9 with DeadlyEnemies), which is also what the fight's own
+/// state holds. Standard and Dread runs are unchanged.
+#[must_use]
+pub fn obs_ascension(rm: &RunManager) -> i64 {
+    i64::from(rm.run_state.combat_ascension())
 }
 
 /// `ppo.env.observe(rm, phase, surface, seed, ascension)`: the run
@@ -357,7 +505,7 @@ pub fn observe(
     o.insert("map".into(), emit_rm::full_map(rm));
     o.insert("map_coord".into(), json!(emit_rm::map_coord(rm)));
     // metrics_snapshot
-    o.insert("ascension".into(), json!(rm.run_state.ascension_level));
+    o.insert("ascension".into(), json!(obs_ascension(rm)));
     o.insert("total_floor".into(), json!(rm.run_state.total_floor));
     o.insert("act_index".into(), json!(rm.run_state.act_index));
     o.insert("act_floor".into(), json!(rm.run_state.act_floor));
@@ -443,6 +591,7 @@ pub fn observe(
                     .map(|p| p.enchantment.python_name())),
             );
             o.insert("upgrade_select_deck_indices".into(), json!(upgradable));
+            drop_deck_select_picks(rm, &mut o);
         }
         Some("shop") => {
             o.insert("shop".into(), emit_rm::shop_inventory(rm));
@@ -600,12 +749,29 @@ pub fn bridge_action(a: &Value) -> R<Action> {
     })
 }
 
-fn face_vars(card: &Value) -> serde_json::Map<String, Value> {
+/// The wire's `player.class` of the launch character (`_BASE_CLASS`). Its
+/// rows keep the frozen schema's play classes; another character's also
+/// split on the star cost (GH #1407).
+const BASE_CLASS: &str = "ironclad";
+
+/// `_face_vars(raw_card, stars=)`: what refines a play key. The card's
+/// [`FACE_VARS`], and with `stars` its star cost now (`star_cost_live`) where
+/// that is not the printed one (free this turn or this combat, Void Form,
+/// Brilliant Scarf). A copy at its printed cost adds nothing, so its key is
+/// the schema's.
+fn face_vars(card: &Value, stars: bool) -> serde_json::Map<String, Value> {
     let cv = get_null(card, "combat_vars");
     let mut out = pyjson::obj();
     for k in FACE_VARS {
         if let Some(v) = get(&cv, k).filter(|v| truthy(v)) {
             out.insert(k.to_owned(), v.clone());
+        }
+    }
+    if stars {
+        if let Some(live) = get(card, "star_cost_live").filter(|v| !v.is_null()) {
+            if get(card, "base_star_cost") != Some(live) {
+                out.insert("star_cost_live".to_owned(), live.clone());
+            }
         }
     }
     out
@@ -675,6 +841,11 @@ pub fn combat_keys(bv: &CombatState, d_bv: &Value, acts: &[Value]) -> R<Vec<Stri
     };
     let keys = ct::combat_class_keys(acts, hand, pots, choice.as_ref(), &mut outcome, &deck)
         .map_err(schema)?;
+    // GH #1407: another character's fight also splits a play on a star cost
+    // that is not the printed one. An Ironclad fight keeps the schema's.
+    let stars = get(&player, "class")
+        .and_then(Value::as_str)
+        .is_some_and(|c| c != BASE_CLASS);
     let mut out = Vec::with_capacity(keys.len());
     for (k, a) in keys.into_iter().zip(acts) {
         if action_name(a) == "play" {
@@ -682,7 +853,7 @@ pub fn combat_keys(bv: &CombatState, d_bv: &Value, acts: &[Value]) -> R<Vec<Stri
                 .and_then(as_int)
                 .and_then(|i| usize::try_from(i).ok())
                 .and_then(|i| hand.get(i))
-                .map(face_vars)
+                .map(|c| face_vars(c, stars))
                 .unwrap_or_default();
             if !fv.is_empty() {
                 out.push(pyjson::dumps(&json!([k, fv])));
@@ -814,6 +985,54 @@ pub struct Decision {
 }
 
 impl Decision {
+    /// A decision as plain data: its type, its merged classes (each with the
+    /// run-action dict of every member, the representative first) and the
+    /// selection it is part of.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let d = self;
+        let classes: Vec<Value> = d
+            .members
+            .iter()
+            .enumerate()
+            .map(|(ci, members)| {
+                let actions: Vec<Value> = members
+                    .iter()
+                    .map(|&ai| d.actions.get(ai).cloned().unwrap_or(Value::Null))
+                    .collect();
+                let obs_actions: Vec<Value> = members
+                    .iter()
+                    .map(|&ai| d.obs_actions.get(ai).cloned().unwrap_or(Value::Null))
+                    .collect();
+                let kind = members
+                    .first()
+                    .and_then(|&ai| d.kinds.get(ai))
+                    .map_or("", |&k| ct::kind_name(k));
+                json!({
+                    "class": ci,
+                    "kind": kind,
+                    "actions": actions,
+                    "obs_actions": obs_actions,
+                })
+            })
+            .collect();
+        json!({
+            "row": d.row,
+            "kind": d.kind.as_str(),
+            "decision_type": ct::dtype_name(d.dtype),
+            "is_combat": d.is_combat(),
+            "n_classes": d.n_classes(),
+            "classes": classes,
+            "selection": d.sel.to_value(),
+            "event_name": d.event_name,
+            "act": d.act,
+            "floor": d.floor,
+            "turn": d.turn(),
+            "surface": d.ooc.as_ref().and_then(|o| o.surface),
+            "phase": d.ooc.as_ref().map(|o| o.phase),
+        })
+    }
+
     /// Number of merged classes (the policy's options).
     #[must_use]
     pub fn n_classes(&self) -> usize {
@@ -1037,6 +1256,14 @@ impl Driver {
         self.fight.as_ref().map(|f| &f.ilog)
     }
 
+    /// Follow the live fight's enemies through a rebuild that renamed
+    /// their uids (`(uid then, uid now)`, GH #1651). A no-op outside a fight.
+    pub fn remap_enemies(&mut self, pairs: &[(u32, u32)]) {
+        if let Some(f) = self.fight.as_mut() {
+            f.ilog.remap(pairs);
+        }
+    }
+
     /// Replace the live fight's intent log (starting the fight if the run
     /// is in one and none is tracked).
     pub fn set_intent_log(&mut self, rm: &RunManager, ilog: IntentLog) {
@@ -1212,9 +1439,12 @@ impl Driver {
         if self.steps >= self.max_steps {
             return Ok(self.finish(rm, "max_steps"));
         }
-        let phase = phase_str(rm.phase());
+        let mut phase = phase_str(rm.phase());
         if phase == "event" {
             sts2_content::events::dispatch::bind_pending_event_callback(&mut rm.run_state);
+            // The Fake Merchant's page is its shop (GH #1607).
+            rm.open_fake_merchant_if_bound();
+            phase = phase_str(rm.phase());
         }
         let actions = available(rm);
         if actions.is_empty() {
@@ -1233,10 +1463,10 @@ impl Driver {
                 kind: ApplyKind::Run { strict: false },
             }));
         }
-        if let Some(a) = actions
-            .iter()
-            .find(|a| !ENCODABLE.contains(&action_name(a)))
-        {
+        if let Some(a) = actions.iter().find(|a| {
+            let n = action_name(a);
+            !ENCODABLE.contains(&n) && !FILL_RUN_ACTIONS.contains(&n)
+        }) {
             return Err(format!(
                 "unencodable action kind {:?} (phase {phase:?})",
                 action_name(a)
@@ -1249,7 +1479,7 @@ impl Driver {
                 kind: ApplyKind::Run { strict: false },
             }));
         }
-        let asc = i64::from(rm.run_state.ascension_level);
+        let asc = obs_ascension(rm);
         let obs = observe(rm, phase, surface, self.seed, asc);
         self.ooc(rm, phase, surface, actions, obs)
     }
@@ -1537,6 +1767,13 @@ impl E2eEnv {
         Self::over_run(new_run(seed), seed)
     }
 
+    /// A fresh campaign run for `seed` as `character` ([`new_run_for`] at
+    /// the training ascension).
+    #[must_use]
+    pub fn new_for(seed: i64, character: CharacterId) -> Self {
+        Self::over_run(new_run_for(seed, character, ASCENSION), seed)
+    }
+
     /// The env over a run the caller built, at any point of it (see the
     /// module docs for the driver state this cannot recover). `seed` is only
     /// the observation's `seed` field (the tokenizer drops it).
@@ -1603,6 +1840,21 @@ impl E2eEnv {
     /// The combat state could not be emitted.
     pub fn observe_combat_position(&mut self) -> R<()> {
         self.drv.observe_combat_position(&self.rm)
+    }
+
+    /// Re-deal the live fight's hidden state from `seed` alone
+    /// ([`sts2_core::blindfold::blindfold_root`]): the unknown draw order and
+    /// every combat RNG stream. Returns `false` outside a fight.
+    ///
+    /// The belief view, the legal actions and so the pending decision are
+    /// unchanged: only what the player cannot see moves. A rollout that
+    /// clones the env must call this BEFORE it steps, or it reads the true
+    /// draw order and the true rolls.
+    pub fn redeal_hidden(&mut self, seed: u64) -> bool {
+        self.rm.combat.as_mut().is_some_and(|cs| {
+            sts2_core::blindfold::blindfold_root(cs, seed);
+            true
+        })
     }
 
     /// Advance to the first stored decision.
@@ -1701,7 +1953,8 @@ fn check_caps(n_members: usize, n_classes: usize, dtype: u8) -> R<()> {
 /// order, the pick the engine made before the select surfaced. The schema
 /// (`ironclad-e2e-v111`) has no kind for the confirm, so the select stays out
 /// of the policy until a schema revision adds one (`_claws_auto_pick` in
-/// `ppo/e2e/env.py`).
+/// `ppo/e2e/env.py`). Both drivers take it: [`Driver::peek`] and the
+/// training env's `TrainEnv::advance` (`train.rs`).
 pub(crate) fn claws_auto_pick(rm: &RunManager, actions: &[Value]) -> Option<Value> {
     rm.run_state
         .pending_claws_selection
@@ -1725,6 +1978,10 @@ pub(crate) fn round_of(d_bv: &Value) -> i64 {
 
 pub(crate) fn snapshot_of(bv: &CombatState, d_bv: &Value, room: &str) -> Value {
     let pc = sts2_wire::emit::pending_choice(bv);
+    let corpses = snapshot::with_corpse_intents(bv, d_bv);
+    let d_bv = corpses.as_ref().unwrap_or(d_bv);
+    // A "chars" row's live keys are the tokenizer's (`snapshot::live_snapshot`,
+    // GH #1197): a row without the event pays for none of them.
     snapshot::snapshot_from_parts(
         d_bv,
         &sts2_wire::emit::card_damage_preview(bv),
@@ -1748,11 +2005,33 @@ mod face_var_tests {
         fresh["combat_vars"] = serde_json::json!({"generated_in_combat": 1});
         let mut spent = base;
         spent["combat_vars"] = serde_json::json!({"enchantment_used": 1});
-        assert!(face_vars(&fresh).is_empty());
+        assert!(face_vars(&fresh, true).is_empty());
         assert_eq!(
-            Value::Object(face_vars(&spent)),
+            Value::Object(face_vars(&spent, true)),
             serde_json::json!({"enchantment_used": 1})
         );
+    }
+
+    /// GH #1407: a star cost that is not the printed one refines the play
+    /// key (0 is the value that matters), only where the caller asks for it.
+    /// Mirrors `test_a_free_star_copy_is_its_own_play_class`.
+    #[test]
+    fn a_discounted_star_cost_is_a_face_var() {
+        let paid =
+            serde_json::json!({"id": "FALLING_STAR", "star_cost_live": 2, "base_star_cost": 2});
+        let free =
+            serde_json::json!({"id": "FALLING_STAR", "star_cost_live": 0, "base_star_cost": 2});
+        let none = serde_json::json!({"id": "STRIKE_REGENT"});
+        let star_x =
+            serde_json::json!({"id": "STARDUST", "star_cost_live": -1, "base_star_cost": -1});
+        for c in [&paid, &none, &star_x] {
+            assert!(face_vars(c, true).is_empty());
+        }
+        assert_eq!(
+            Value::Object(face_vars(&free, true)),
+            serde_json::json!({"star_cost_live": 0})
+        );
+        assert!(face_vars(&free, false).is_empty());
     }
 }
 

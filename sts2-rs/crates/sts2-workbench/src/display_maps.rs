@@ -394,6 +394,134 @@ pub fn monster_title(monster_id: &str) -> String {
     out
 }
 
+// ── Display names in the page's language ────────────────────────────────
+//
+// The `*_title` functions above stay English: they feed art lookups and the
+// title -> id maps. These wrap them for DISPLAY only — the game's own
+// Chinese table by id when the display language is Chinese
+// ([`crate::localization::display_zh`]), else exactly the English title.
+
+/// `monsters.json` key stems for a monster id: its SCREAMING_SNAKE form, then
+/// the stem of the English row that carries its English title (the segment
+/// ids and the `Hatchling` alias share another monster's row).
+fn monster_loc_stems(monster_id: &str) -> Vec<String> {
+    let mut out = vec![pascal_to_screaming_snake(monster_id)];
+    let title = monster_title(monster_id);
+    for (key, value) in &data::data().loc_monsters {
+        if let Some(stem) = key.strip_suffix(".name") {
+            if *value == title && !out.iter().any(|s| s == stem) {
+                out.push(stem.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// [`monster_title`] in the display language: the game's Chinese
+/// `monsters.json` `<ID>.name` when Chinese is on.
+#[must_use]
+pub fn monster_display_name(monster_id: &str) -> String {
+    let english = monster_title(monster_id);
+    if !crate::localization::display_zh() {
+        return english;
+    }
+    let zh = data::zh_tables();
+    for stem in monster_loc_stems(monster_id) {
+        if let Some(name) = zh.get("monsters", &format!("{stem}.name")) {
+            let name = strip_specimen_template(name);
+            return strip_loc_template_vars(&name).trim().to_string();
+        }
+    }
+    english
+}
+
+/// The `powers.json` key stem (`STRENGTH_POWER`) of a power id, when the
+/// Chinese table has a row for it.
+fn power_loc_stem(power_id: &str) -> Option<String> {
+    let snake = pascal_to_screaming_snake(power_id);
+    let pid = snake.strip_suffix("_POWER").unwrap_or(&snake);
+    let zh = data::zh_tables();
+    let direct = format!("{pid}_POWER");
+    if zh.get("powers", &format!("{direct}.title")).is_some() {
+        return Some(direct);
+    }
+    // The English row carrying the curated title (a title-cased fallback id
+    // that differs from its loc key).
+    let title = power_title(power_id);
+    data::data()
+        .loc_powers
+        .0
+        .iter()
+        .find(|(k, v)| *v == title && k.strip_suffix(".title").is_some())
+        .and_then(|(k, _)| k.strip_suffix(".title"))
+        .map(str::to_string)
+}
+
+/// [`power_title`] in the display language: the game's Chinese
+/// `powers.json` `<ID>_POWER.title` when Chinese is on.
+#[must_use]
+pub fn power_display_name(power_id: &str) -> String {
+    let english = power_title(power_id);
+    if !crate::localization::display_zh() {
+        return english;
+    }
+    power_loc_stem(power_id)
+        .and_then(|stem| data::zh_tables().get("powers", &format!("{stem}.title")))
+        .map_or(english, str::to_string)
+}
+
+/// A power's hover text in Chinese (`smartDescription` filled with its
+/// `amount` and the `owner`'s name, else the static `description`), plain.
+/// `None` in English mode — the English page shows no power text — and when
+/// no row renders without a leftover placeholder.
+#[must_use]
+///
+/// `version` is the build whose state is shown (its Chinese set guards the
+/// powers whose text changed between builds, `data::zh_tables_for`); `None`
+/// reads the shared set.
+pub fn power_display_description(
+    power_id: &str,
+    amount: i64,
+    owner: &str,
+    version: Option<sts2_core::GameVersion>,
+) -> Option<String> {
+    if !crate::localization::display_zh() {
+        return None;
+    }
+    let stem = power_loc_stem(power_id)?;
+    let zh = version.map_or_else(data::zh_tables, data::zh_tables_for);
+    let stats = serde_json::json!({"amount": amount, "ownername": owner});
+    for field in ["smartDescription", "description"] {
+        let Some(template) = zh.get("powers", &format!("{stem}.{field}")) else {
+            continue;
+        };
+        if let Some(text) = render_zh_text(template, &stats) {
+            return Some(text);
+        }
+    }
+    None
+}
+
+/// Render a Chinese game template with `stats` to plain text, or `None` when
+/// it needs a variable `stats` lacks (it would print the variable's name).
+#[must_use]
+pub fn render_zh_text(template: &str, stats: &serde_json::Value) -> Option<String> {
+    let flags = crate::render::CardTextFlags {
+        in_combat: true,
+        ..Default::default()
+    };
+    let have: BTreeSet<String> = stats
+        .as_object()
+        .map(|m| m.keys().map(|k| k.to_lowercase()).collect())
+        .unwrap_or_default();
+    let needed = crate::render::required_stat_vars(Some(template), flags);
+    if !needed.is_subset(&have) {
+        return None;
+    }
+    let text = crate::render::resolve_card_text(Some(template), Some(stats), flags);
+    (!text.is_empty() && !text.contains('{')).then_some(text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

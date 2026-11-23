@@ -484,6 +484,8 @@
     "name": "Wriggler",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/wriggler/wriggler",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -64.0,
     "rig_bounds_h": 148.0,
     "rig_bounds_w": 180.0,
     "rig_scale": 0.2142,
@@ -529,6 +531,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/wriggler/wriggler",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -64.0,
     "rig_bounds_h": 148.0,
     "rig_bounds_w": 180.0,
     "rig_scale": 0.2142,
@@ -813,6 +817,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/defect/defect",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -179.0,
    "rig_bounds_h": 260.0,
    "rig_bounds_w": 250.0,
    "rig_scale": 0.125

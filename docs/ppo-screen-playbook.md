@@ -559,6 +559,13 @@ A screen win does not make a feature deployable. Shipping means moving the Rust
 encoder, the ONNX export and the parity fixtures together, or the train/deploy
 asymmetry behind GH #302 recurs. Budget that separately.
 
+**Training featurizes in Rust (GH #1426).** `ppo.encoder.featurize_row` calls
+`sts2_rs.ppo_featurize`, the same `sts2-runai::ppo::encoder` the arena and the
+advisor run. A new feature is therefore written in `encoder.rs` first (and the
+wheel rebuilt) before a screen can train with it; `featurize_row_py` is the
+Python reference `tests/test_ppo_encoder_rust.py` holds it to bit for bit, so
+the feature goes there too.
+
 ---
 
 ## 4. Calibration — the screen is worthless until this is done

@@ -106,6 +106,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import gc
 import json
 import math
 import os
@@ -148,7 +149,23 @@ from .net import (
     to_batch,
     to_packed,
 )
-from .rowstore import Chunk, ShmChunk, batch_from_shm, concat, gather_to_shm, take
+from .roundshm import RoundMaps, is_ref
+from .rowstore import (
+    ROW_OF,
+    Chunk,
+    RowRefs,
+    ShmChunk,
+    batch_from_shm,
+    concat,
+    drain_closes,
+    gather_to_shm,
+    place_to_shm,
+    pool_close,
+    pool_open,
+    row_chars,
+    take,
+)
+from .rowstore import dense as dense_batch
 from .rowstore import sweep as rowstore_sweep
 from .update import Rank, rank_main
 
@@ -244,6 +261,22 @@ class Cfg:
     # Ironclad needs "chars" in `filled` (GH #1373). Ironclad may declare it: its rows
     # then show orbs and Doom too (the learner sets `STS2_E2E_CHARS` for its workers).
     character: str = "Ironclad"
+    # An all-character lane (GH #1197, `mix.MixCfg` as JSON: characters, settle_end,
+    # ramp_end, target_new): each new run's character is drawn from its seed and the
+    # decision clock (`mix.draw_character`). Needs "chars" in `filled`; `character` and
+    # the process-character check are then skipped. {} = one character, as before. The
+    # state keeps it: on a resume an empty dict keeps the saved mix, a non-empty one
+    # replaces it (the `sched` rule).
+    mix: dict[str, Any] = field(default_factory=dict)
+    # Forced deck inclusion (GH #1541, `forced.ForcedCfg` as JSON: p, cards): a share p
+    # of full runs start with one of their character's never-picked cards (the lists in
+    # `forced_cards.toml` unless `cards` overrides them). {} = off. Kept in the state
+    # like `mix`: on a resume an empty dict keeps the saved one, a non-empty one replaces it.
+    forced: dict[str, Any] = field(default_factory=dict)
+    # Human starts (`human.HumanCfg` as JSON: p, bank): a share p of full runs start
+    # from a real player's mid-run state (deck, relics, potions, HP, gold) out of the
+    # run-corpus bank (`python -m ppo.e2e.human build`). {} = off. Kept like `forced`.
+    human: dict[str, Any] = field(default_factory=dict)
     # Action logs (plan §3.2): the workers keep boss-2, capped and error segments and 2%
     # of runs under <save_dir>/actions (`actionlog.LogSink`, 10 GB in total).
     action_logs: bool = True
@@ -279,6 +312,46 @@ class Cfg:
     # slot or option is computed; one forward per model, so `serve_groups` is moot.
     # Off: the padded path, S1's numbers bit for bit. On: equal up to float rounding.
     packed_serve: bool = False
+    # Compile that packed student forward (`torch.compile(dynamic=True)`, #1550; CUDA
+    # with `packed_serve` only). Serving is host-bound on the a4000 lane: fewer kernel
+    # launches took its forward from ~47 s to ~40 s an iteration. Its bf16 rounding
+    # strays further from the update's eager path than eager serving's: at lr 0 the
+    # importance ratio's p01/p99 widen from 0.986/1.014 to 0.975/1.025, against
+    # 0.87/1.10 of real policy change at a third of the base lr.
+    compile_serve: bool = True
+    # The workers send each round's rows through a shared-memory block they reuse
+    # instead of the pipe (#1550, `roundshm`): the learner's reader thread no longer
+    # assembles and unpickles ~0.6 MB a message under the GIL.
+    shm_rounds: bool = True
+    # A round no teacher scores queues its forward and draw before the learner
+    # does the round's bookkeeping, answers its workers as soon as the device is
+    # done, and writes the round's acting-time fields after that (`collect`).
+    serve_overlap: bool = True
+    # The workers send their rows in the compact row layout (#1550,
+    # `contracts.compact_rows`: each token's live columns only), and the learner
+    # stores them, ships them to the ranks and holds them back that way: about a
+    # tenth of the dense rows' memory (a 1,048,576-decision table 40 -> ~4 GB, and it
+    # exists twice: the one being collected and the one being trained on). The
+    # serving and update forwards upload the compact arrays and build the dense
+    # token matrices on the device (`net.dense_tokens`): the same values.
+    compact_rows: bool = True
+    # The row block of the update that landed takes the next cut's rows instead of
+    # being unmapped (#1550, `rowstore._Pool`): its pages are already there, so the
+    # copy neither allocates nor zeroes them. One block stays in /dev/shm between
+    # updates, named after the learner (`rowstore.sweep` removes a dead learner's).
+    recycle_blocks: bool = True
+    # Collect cyclic garbage once an iteration, after the cut's hand-off, instead of
+    # automatically (#1550). The serving loop keeps ~1M+ rows alive, and the automatic
+    # collector ran 5-6 full passes over them an iteration (~1.6 s each, 8-12 s in all)
+    # on the serving thread. One pass an iteration frees the same garbage, one
+    # iteration later at most.
+    manual_gc: bool = True
+    # `manual_gc` collects every this many iterations. A full collection walks the
+    # iteration's million stored rows and, in the lane, finds nothing (`gc_found` 0
+    # in every stats row): 1.2 s an iteration with the serving loop stopped (#1550).
+    # Reference cycles made in between wait for it; the rows do not, they are freed
+    # by reference count when their chunk goes.
+    gc_every: int = 16
     # The cut (S1-cut, #1097): copy the shipped rows' inputs into the update's row block
     # in a thread while serving goes on, and submit the update when the copy is done.
     # What the cut ships (rows, flags, the join, iteration tags) is decided inline at the
@@ -289,6 +362,15 @@ class Cfg:
     # count). a4000, a 4.6 GB table: 1 thread 4.6 s, 2 2.7 s, 4 2.0 s; serving slows by
     # ~1% per thread while it runs (laptop).
     pack_threads: int = 2
+    # The update's row block holds the cut's chunks (serving rounds) one after
+    # another, as they are, with a map from the table's rows to the block's
+    # (`rowstore.place_to_shm`), instead of the rows in the table's order
+    # (`gather_to_shm`). The table is ordered by segment, so a round's rows scatter
+    # over it, and the ordered copy is tens of thousands of small index gathers
+    # that keep retaking the GIL from the serving loop: with compact rows 8.5 s on
+    # 8 threads for a lane table, and a collect 3 s longer (#1550). Placing is one
+    # concatenate per field. The ranks read the same rows through the map.
+    place_rows: bool = True
     # The net (`NetConfig` overrides; {} = plan §5's 6 x 256) and its init.
     net: dict[str, Any] = field(default_factory=dict)
     init: str = ""  # a WP4b checkpoint ("" = random init from `seed`)
@@ -307,6 +389,19 @@ class Cfg:
     strata_per_mb: int = 24
     probe_strata: int = 24
     fwd_chunk: int = 2048
+    # The update's pre-pass on the packed (pad-free) forward, in chunks of `fwd_chunk`
+    # rows, compiled on CUDA (#1550): 20 s -> 11 s of the lane's update. Its values and
+    # log pi_prox differ from the padded forward's by float rounding, as the packed
+    # serving's do.
+    packed_prepass: bool = True
+    # A step's strata of one rank go through one packed forward instead of one
+    # padded forward each (#1550, `update.Rank._update`): 17 ms instead of 25 ms
+    # for 340 rows on an idle GPU. The gradient is the same up to float rounding.
+    packed_update: bool = True
+    # The most rows of one packed update forward: a rank's part of a step is split
+    # into near-equal pieces of at most this many. The lane's 3 ranks get ~2,730 rows
+    # a step each; one rank gets all 8,192, which does not fit a 24 GB device at once.
+    update_chunk: int = 3072
     hold_iters: int = A.HOLD_ITERS
     lam_c: float = A.LAM_C
     lam_r: float = A.LAM_R
@@ -362,70 +457,44 @@ class Cfg:
         return S.ScheduleCfg.from_dict({**S.DEFAULT.to_dict(), **self.sched})
 
 
-class Row:
-    """One stored decision: its row is row `i` of `chunk` (a `rowstore.Chunk`)."""
+class Round(Chunk):
+    """One serving round's chunk with what its rows share: the workers' `meta`
+    block (`actors.META_COLS`, one line per row), the collection `it` and the policy
+    `version` that served it. `k` numbers the rounds.
 
-    __slots__ = (
-        "action",
-        "actor",
-        "boot",
-        "cell",
-        "chunk",
-        "comb",
-        "dtype",
-        "has_t",
-        "i",
-        "it",
-        "logp",
-        "ncls",
-        "ntok",
-        "ref",
-        "reward",
-        "t",
-        "uid",
-        "v",
-        "version",
-    )
+    A stored row is its `ref`, and the learner keeps no object per row (#1550: a
+    lane iteration stores a million). `_store` numbers a round's rows `ref0`,
+    `ref0 + 1`, ... and keeps `r_prev`, the reward each row brought for its
+    segment's row before it; the round's `meta` lines and row batch hold the rest
+    (`_serve` writes the acting-time fields into the batch). `Learner.rounds` finds
+    a ref's round (`_locate`), and the cut reads whole columns of them."""
+
+    __slots__ = ("it", "k", "meta", "r_prev", "ref0", "version")
 
     def __init__(
-        self,
-        ref: int,
-        chunk: Chunk,
-        i: int,
-        uid: int,
-        t: int,
-        meta: np.ndarray,
-        it: int,
-        version: int,
+        self, rb: Mapping[str, np.ndarray], meta: np.ndarray, it: int, version: int, k: int
     ) -> None:
-        self.ref = ref
-        self.chunk, self.i = chunk, i
-        self.ntok = int(chunk.rb["n_tok"][i])
-        self.uid = uid
-        self.t = t
-        self.comb = bool(meta[MC["is_combat"]])
-        self.dtype = int(meta[MC["dtype"]])
-        self.ncls = int(meta[MC["n_classes"]])
-        self.cell = int(meta[MC["cell"]])
-        self.boot = bool(meta[MC["boot"]])
-        self.it = it
-        self.version = version
-        self.action = 0
-        self.logp = 0.0
-        self.actor = A.ACTOR_STUDENT
-        self.v = 0.0
-        self.has_t = False  # the chunk's `tprob` holds teacher class probabilities
-        self.reward: float | None = None
+        super().__init__(rb)
+        self.meta, self.it, self.version, self.k = meta, it, version, k
+        self.ref0 = -1
+        self.r_prev = np.zeros(0, np.float64)
 
-    @classmethod
-    def held(cls, ref: int, chunk: Chunk, i: int) -> Row:
-        """A held row restored from a state: only its inputs (the table has the rest)."""
-        r = cls.__new__(cls)
-        r.ref, r.chunk, r.i = int(ref), chunk, int(i)
-        r.ncls = int(chunk.rb["n_classes"][i])
-        r.ntok = int(chunk.rb["n_tok"][i])
-        r.has_t = bool(chunk.rb["t_src"][i])
-        return r
+
+class Held:
+    """The held rows' inputs: ref `refs[j]` is row `at[j]` of `chunk` (rank 0's block
+    of an update's held rows, or a state's)."""
+
+    __slots__ = ("at", "chunk", "refs")
+
+    def __init__(
+        self, chunk: Chunk | None = None, refs: Any = (), at: np.ndarray | None = None
+    ) -> None:
+        self.chunk = chunk
+        self.refs = np.asarray(refs, np.int64)
+        self.at = np.arange(len(self.refs), dtype=np.int64) if at is None else at
+
+    def __len__(self) -> int:
+        return len(self.refs)
 
 
 #: `ProcessUpdater.stop`'s end-of-messages mark for its reader thread.
@@ -464,10 +533,13 @@ class Seg:
         "cell",
         "ended",
         "error",
+        "it",
         "kind",
+        "last_boot",
         "next_t",
-        "pending",
+        "r_last",
         "r_sum",
+        "refs",
         "uid",
     )
 
@@ -475,13 +547,97 @@ class Seg:
         self.uid = uid
         self.kind = kind
         self.cell = cell
-        self.pending: list[Row] = []
+        #: Its rows not yet shipped as ordinary rows (`Round` refs), oldest first;
+        #: the newest one's iteration and bootstrap flag, and its reward once the
+        #: segment has ended (the others' come with their next row, `Round.r_prev`).
+        self.refs: list[int] = []
+        self.it = -1
+        self.last_boot = False
+        self.r_last: float | None = None
         self.next_t = 0
         self.r_sum = 0.0  # every reward given to the segment's rows (T4: the env's total)
         self.ended = False
         self.error = False
         self.boot_end = False
         self.actor: dict[tuple[int, int], int] = {}
+
+
+#: `Learner.cut`'s columns, in the table's order.
+CUT_COLS = (
+    "run_uid",
+    "t",
+    "is_combat",
+    "dtype",
+    "reward",
+    "done",
+    "bootstrap",
+    "actor",
+    "logp_behav",
+    "n_classes",
+    "action",
+    "iter",
+    "v_behav",
+    "cell",
+    "ref",
+    "n_tok",
+    "has_t",
+    "version",
+)
+
+
+def _round_cols(rounds: Sequence[Round], k: np.ndarray, i: np.ndarray) -> dict[str, np.ndarray]:
+    """The cut's columns that live in the rows' rounds, for rows `i` of rounds
+    `rounds[k]`: the workers' meta (`run_uid`, `t`, `is_combat`, `dtype`,
+    `n_classes`, `cell`), what `_serve` wrote (`actor`, `logp_behav`, `action`,
+    `v_behav`, the teacher mark), the round's own `iter` and `version`, and
+    `r_prev` (`Round.r_prev`). Each column is one gather out of the rounds' joined
+    arrays."""
+    n = len(k)
+    kinds = {
+        "run_uid": np.int64,
+        "t": np.int32,
+        "is_combat": bool,
+        "dtype": np.uint8,
+        "actor": np.uint8,
+        "logp_behav": np.float32,
+        "n_classes": np.uint16,
+        "action": np.uint16,
+        "iter": np.int32,
+        "v_behav": np.float32,
+        "cell": np.uint8,
+        "n_tok": np.int32,
+        "has_t": bool,
+        "version": np.int32,
+        "r_prev": np.float64,
+    }
+    if not n:
+        return {name: np.zeros(0, dt) for name, dt in kinds.items()}
+    ns = np.fromiter((len(r.meta) for r in rounds), np.int64, len(rounds))
+    g = (np.cumsum(ns) - ns)[k] + i
+    meta = np.concatenate([r.meta for r in rounds])[g]
+    out: dict[str, np.ndarray] = {}
+    for name, col in (
+        ("run_uid", "uid"),
+        ("t", "t"),
+        ("is_combat", "is_combat"),
+        ("dtype", "dtype"),
+        ("n_classes", "n_classes"),
+        ("cell", "cell"),
+    ):
+        out[name] = meta[:, MC[col]].astype(kinds[name])
+    for name in ("actor", "logp_behav", "action", "v_behav", "n_tok"):
+        out[name] = np.concatenate([r.rb[name] for r in rounds])[g].astype(kinds[name], copy=False)
+    out["has_t"] = np.concatenate([r.rb["t_src"] for r in rounds])[g] != 0
+    out["iter"] = np.fromiter((r.it for r in rounds), np.int32, len(rounds))[k]
+    out["version"] = np.fromiter((r.version for r in rounds), np.int32, len(rounds))[k]
+    out["r_prev"] = np.concatenate([r.r_prev for r in rounds])[g]
+    return out
+
+
+def _round_meta(parts: Sequence[Any]) -> np.ndarray:
+    """A round's `meta` blocks (one per worker message) as one int64 block."""
+    blocks = [np.asarray(p, np.int64).reshape(-1, len(MC)) for p in parts]
+    return np.concatenate(blocks) if blocks else np.zeros((0, len(MC)), np.int64)
 
 
 def mix64(*parts: int) -> int:
@@ -593,7 +749,9 @@ def teacher_types(combat: bool, run: bool) -> np.ndarray:
 def closed_form_lr(row: dict[str, Any], cfg: S.ScheduleCfg) -> dict[str, float]:
     """The lr of each group from the schedule's closed form (ops contract `lr_closed_form`)."""
     frac = float(row["kl_m"]) * S.anneal(float(row["t_wall"]), cfg) * S.warmup(int(row["it"]), cfg)
-    return {"trunk": cfg.lr_trunk * frac, "value": cfg.lr_value * frac}
+    if S.lr_hold(int(row["decisions"]), cfg):  # the lr hold phase applies lr 0
+        frac = 0.0
+    return {g: base * frac for g, base in cfg.base_lrs().items()}
 
 
 # ── rollout sources ──────────────────────────────────────────────────────
@@ -631,6 +789,9 @@ class ProcessSource:
         #: The reader's summed seconds in `Connection.recv` (the pipe read and the
         #: unpickle), which then sit outside the serving loop's `wait_s`; 0 without it.
         self.recv_s = 0.0
+        #: The workers' round blocks, and whether `recv` has returned views of one.
+        self.maps = RoundMaps()
+        self.borrowed = False
         self._got: dict[int, Any] = {}
         self._inbox: queue.Queue[tuple[int, Any, BaseException | None]] | None = None
         self._halt = threading.Event()
@@ -713,11 +874,19 @@ class ProcessSource:
 
     def recv(self, i: int) -> Any:
         if self._inbox is not None:
-            return self._got.pop(i)
+            return self._rows(i, self._got.pop(i))
         try:
-            return self.conns[i].recv()
+            return self._rows(i, self.conns[i].recv())
         except EOFError as e:
             raise self._dead(i, e) from e
+
+    def _rows(self, i: int, msg: Any) -> Any:
+        """`msg` with a row batch sent by reference (`roundshm`, `Cfg.shm_rounds`)
+        replaced by views of worker `i`'s block: valid until `i` is answered."""
+        if isinstance(msg, tuple) and len(msg) > 4 and is_ref(msg[4]):
+            self.borrowed = True
+            return (*msg[:4], self.maps.rows(i, msg[4]), *msg[5:])
+        return msg
 
     def send(self, i: int, msg: Any) -> None:
         try:
@@ -740,6 +909,7 @@ class ProcessSource:
             self._reader.join(timeout=10)
         for c in self.conns:
             c.close()
+        self.maps.close()
         self.conns, self.procs = [], []
         self._got.clear()
 
@@ -891,6 +1061,13 @@ def _ready(x: Any) -> Callable[[], Any]:
     return lambda: x
 
 
+#: `Learner.cut()`: the fresh table, its rows, the dropped segments, the cut's stats.
+#: `Learner.cut`'s result: the fresh table's columns, where its rows' inputs are (the
+#: rounds, and each row's round and row of it), the dropped segments, the counters.
+CutLoc = tuple[list[Round], np.ndarray, np.ndarray]
+CutResult = tuple[dict[str, np.ndarray], CutLoc, list[int], dict[str, Any]]
+
+
 class Learner:
     def __init__(
         self,
@@ -944,18 +1121,26 @@ class Learner:
 
         from . import factory
 
-        if cfg.character != factory.CHARACTER:
+        if not cfg.mix and cfg.character != factory.CHARACTER:
             raise UsageError(
                 f"--character {cfg.character}: this process plays {factory.CHARACTER}; set "
                 f"{factory.CHARACTER_ENV}={cfg.character} before the learner starts"
             )
-        if cfg.character != C.BASE_CHARACTER and C.FILL_CHARS not in cfg.filled:
+        if not cfg.mix and cfg.character != C.BASE_CHARACTER and C.FILL_CHARS not in cfg.filled:
             raise UsageError(
                 f"--filled {sorted(cfg.filled)} with --character {cfg.character}: every "
                 f'character but {C.BASE_CHARACTER} declares "chars"'
             )
+        if cfg.mix:
+            self._refuse_mix_with_teacher()  # before any teacher loads
         # The workers (and this process) tokenize Ironclad rows with the event iff declared.
         factory.set_fill_chars(C.FILL_CHARS in cfg.filled)
+        # The workers' runs offer the potion popup iff declared (GH #1606).
+        factory.set_fill_ooc_potion(C.FILL_OOC_POTION in cfg.filled)
+        # ... and the reward screen iff declared (GH #1620).
+        factory.set_fill_reward_screen(C.FILL_REWARD_SCREEN in cfg.filled)
+        # ... and the deck select screens iff declared (GH #1790).
+        factory.set_fill_deck_select(C.FILL_DECK_SELECT in cfg.filled)
         try:
             self.stamps = make_stamps(filled=cfg.filled)
         except sts2_client.GameVersionMismatch as e:
@@ -971,17 +1156,25 @@ class Learner:
         self.decisions = 0
         self.runs_done = 0
         self.next_ref = 0
+        self.n_rounds = 0  # `Round.k` of the next round
+        if cfg.recycle_blocks:
+            pool_open()
         self.elapsed0 = 0.0
         self.lc_first: list[float] = []
         self.lc_last: deque[float] = deque(maxlen=max(1, cfg.lc_window))
         self.totals: Counter = Counter()
         self.resumed_from = ""
-        self.held: dict[int, Row] = {}
+        self.held = Held()
+        #: The rounds some stored row is still in, in `ref0` order (`_store`, `cut`).
+        self.rounds: list[Round] = []
         # Runs whose held rows the next update drops on the learner and every rank.
         self.lost_uids: list[int] = []
         # Held rows a resume dropped (`HoldBack.resume`), counted in the next stats row.
         self.held_lost = 0
         opt_state = ema_state = None
+        saved_mix = None
+        saved_forced = None
+        saved_human = None
         if cfg.resume:
             st = torch.load(cfg.resume, map_location="cpu", weights_only=True)
             if st.get("format") != STATE_FORMAT:
@@ -996,12 +1189,15 @@ class Learner:
             self.lc_first = [float(x) for x in ls["lc_first"]]
             self.lc_last.extend(float(x) for x in ls["lc_last"])
             self.totals.update(ls.get("totals", {}))
+            saved_mix = ls.get("mix")  # None: a one-character lane, or an older state
+            saved_forced = ls.get("forced")  # None: no forced runs, or an older state
+            saved_human = ls.get("human")  # None: no human starts, or an older state
             if algo.clocks.it != self.version or algo.clocks.decisions != self.decisions:
                 raise UsageError(f"{cfg.resume}: learner counters disagree with the AlgoState")
             if st.get("held") is not None:  # a state from before the learner left them out
-                held = held_from_state(st["held"])
+                held = held_from_state(st["held"], compact=bool(cfg.compact_rows))
                 refs = set(algo.hold.cols["ref"].tolist()) if len(algo.hold) else set()
-                if refs != set(held):
+                if refs != set(held.refs.tolist()):
                     raise UsageError(f"{cfg.resume}: held-row inputs do not match the hold-back")
             # Every held row belongs to a run the restart lost (WP4a): drop them
             # before the first join and before the ranks get the state.
@@ -1059,6 +1255,9 @@ class Learner:
                 lam_c=cfg.lam_c,
                 lam_r=cfg.lam_r,
             )
+        self._resolve_mix(saved_mix)
+        self._resolve_forced(saved_forced)
+        self._resolve_human(saved_human)
         self.lc_applied = None
         if cfg.lc_verdict:
             with open(cfg.lc_verdict, encoding="utf-8") as f:
@@ -1098,6 +1297,11 @@ class Learner:
         ).to(self.dev_i)
         self.net_inf.eval()
         self.net_inf.bf16 = cfg.bf16 and self.dev_i.type == "cuda"
+        # The serving forward; compiled once, it keeps reading `net_inf`'s parameters,
+        # which each update's `load_state_dict` overwrites in place.
+        self._fwd_packed = self.net_inf.forward_packed
+        if cfg.compile_serve and cfg.packed_serve and self.dev_i.type == "cuda":
+            self._fwd_packed = torch.compile(self.net_inf.forward_packed, dynamic=True)
         self.init_path = str(self.sd.p(f"{OC.CKPT_DIR}/rank_init.pt"))
         os.makedirs(os.path.dirname(self.init_path), exist_ok=True)
         ckpt.atomic_write(
@@ -1136,6 +1340,8 @@ class Learner:
         self.workers_stats: dict[str, Any] = {}
         self.draw_log: list[tuple[int, int, list[float]]] = []  # (collection, seed, first draws)
         self.stats_rows: list[dict[str, Any]] = []  # this session's rows (tests read them)
+        self._gc_last: dict[str, float] = {"gc_s": 0.0, "gc_found": 0}  # `_collect_garbage`
+        self._gc_n = 0
         self.k_gates = sorted((str(r), int(d)) for r, d in cfg.k_gates)
         # The fill check runs on this start's tables until one is conclusive.
         self._fill_pending = bool(cfg.fill_check)
@@ -1177,6 +1383,92 @@ class Learner:
 
         net.set_prior(CP.table(), want)
         print(f"[e2e] content prior filled: prior_sha256 {want}", flush=True)
+
+    def _resolve_forced(self, saved: dict[str, Any] | None) -> None:
+        """Settle `cfg.forced` like `cfg.mix` (`_resolve_mix`): normalized; a resume
+        without `--forced` keeps the state's, a `--forced` replaces it."""
+        from .forced import ForcedCfg
+
+        cfg = self.cfg
+        if not cfg.forced and saved:
+            cfg.forced = dict(saved)
+            print(f"[e2e] resume: keeps the saved forced runs {cfg.forced}", flush=True)
+        if not cfg.forced:
+            return
+        try:
+            cfg.forced = ForcedCfg.from_dict(cfg.forced).to_dict()
+        except (TypeError, ValueError) as e:
+            raise UsageError(f"--forced {cfg.forced}: {e}") from None
+        if saved and cfg.forced != saved:
+            print(f"[e2e] resume: --forced {cfg.forced} replaces the saved {saved}", flush=True)
+
+    def _resolve_human(self, saved: dict[str, Any] | None) -> None:
+        """Settle `cfg.human` like `cfg.forced`, and load its bank (a missing bank fails
+        here, not in the workers)."""
+        from .human import HumanCfg, load_bank
+
+        cfg = self.cfg
+        if not cfg.human and saved:
+            cfg.human = dict(saved)
+            print(f"[e2e] resume: keeps the saved human starts {cfg.human}", flush=True)
+        if not cfg.human:
+            return
+        try:
+            hc = HumanCfg.from_dict(cfg.human)
+            if hc.p > 0:
+                bank = load_bank(str(hc.path))
+                sizes = {c: len(v) for c, v in bank.items()}
+                print(f"[e2e] human starts p {hc.p} from {hc.path}: {sizes}", flush=True)
+        except (TypeError, ValueError, OSError) as e:
+            raise UsageError(f"--human {cfg.human}: {e}") from None
+        cfg.human = hc.to_dict()
+        if saved and cfg.human != saved:
+            print(f"[e2e] resume: --human {cfg.human} replaces the saved {saved}", flush=True)
+
+    def _resolve_mix(self, saved: dict[str, Any] | None) -> None:
+        """Settle `cfg.mix` (normalized, so cfg.json, the state and the workers carry the
+        same dict): a resume without `--mix` keeps the state's, so the lane draws the
+        same characters at the same decisions; a `--mix` replaces it."""
+        from .mix import MixCfg
+
+        cfg = self.cfg
+        if not cfg.mix and saved:
+            cfg.mix = dict(saved)
+            print(f"[e2e] resume: keeps the saved mix {cfg.mix}", flush=True)
+        if not cfg.mix:
+            return
+        try:
+            cfg.mix = MixCfg.from_dict(cfg.mix).to_dict()
+        except (TypeError, ValueError) as e:
+            raise UsageError(f"--mix {cfg.mix}: {e}") from None
+        if saved and cfg.mix != saved:
+            print(f"[e2e] resume: --mix {cfg.mix} replaces the saved {saved}", flush=True)
+        self._refuse_mix_with_teacher()  # a resume that keeps the saved mix too
+        if C.FILL_CHARS not in cfg.filled:
+            raise UsageError(
+                f'--mix needs "chars" in --filled (every character\'s rows carry it), got '
+                f"{sorted(cfg.filled)}"
+            )
+
+    def _refuse_mix_with_teacher(self) -> None:
+        """A mixed lane takes no teacher: the combat and run teachers are Ironclad
+        champions, and the KL toward them would pull every character's rows to
+        Ironclad play (GH #1197)."""
+        cfg = self.cfg
+        named = [
+            f"--{k.replace('_', '-')} {v}"
+            for k, v in (
+                ("teacher_pair", cfg.teacher_pair),
+                ("combat_teacher", cfg.combat_teacher),
+                ("run_teacher", cfg.run_teacher),
+            )
+            if v
+        ]
+        if named:
+            raise UsageError(
+                f"--mix with a teacher ({', '.join(named)}): the teachers are Ironclad"
+                " champions; a mixed lane trains without one"
+            )
 
     def _check_resume_stamps(self, have: dict[str, Any]) -> None:
         """A resume may move the wheel or the source (a hot-swap deploys a new SHA), never
@@ -1256,6 +1548,11 @@ class Learner:
             "run_teacher_honest": bool(cfg.run_teacher_honest),
             "action_log_dir": str(self.sd.p(OC.ACTIONS_DIR)) if cfg.action_logs else None,
             "rust_env": bool(cfg.rust_env),
+            "shm_rounds": bool(cfg.shm_rounds),
+            "compact_rows": bool(cfg.compact_rows),
+            "mix": dict(cfg.mix) if cfg.mix else None,
+            "forced": dict(cfg.forced) if cfg.forced else None,
+            "human": dict(cfg.human) if cfg.human else None,
         }
 
     def start(self) -> None:
@@ -1296,6 +1593,8 @@ class Learner:
         if self.updater is not None:
             self.updater.stop()
         self._stop_evals(requeue=True)
+        pool_close()
+        drain_closes(timeout=60)  # the row blocks whose rows went: unmapped before we exit
         self._unlock()
 
     # ── teacher use ──────────────────────────────────────────────────────
@@ -1334,7 +1633,7 @@ class Learner:
         from .teachers import length_groups
 
         if self.cfg.packed_serve:
-            out = self.net_inf.forward_packed(to_packed(ch.rb, self.dev_i))
+            out = self._fwd_packed(to_packed(ch.rb, self.dev_i))
             return out.logp.float(), out.value.float()
         vis = np.concatenate([[0], np.cumsum(C.student_mask(ch.rb), dtype=np.int64)])
         off = ch.off["tok"]
@@ -1356,7 +1655,7 @@ class Learner:
 
     @torch.no_grad()
     def _serve(
-        self, rows: list[Row], ch: Chunk, metas: np.ndarray, feats: list[Any], st: dict[str, Any]
+        self, ch: Round, metas: np.ndarray, feats: list[Any], st: dict[str, Any]
     ) -> np.ndarray:
         """Score and sample one round's rows (all of `ch`, in order) and fill their
         acting-time fields in the chunk (`rowstore.ACTING`, `tprob`).
@@ -1368,7 +1667,7 @@ class Learner:
         actions, log-probs, values and teacher fields are S0's serving path's
         (bit-identical up to device float nondeterminism); with `serve_groups` > 1
         equal up to the student's float rounding (see `_student`)."""
-        b = len(rows)
+        b = len(metas)
         tf = time.time()
         lp_s, v_dev = self._student(ch)
         width = lp_s.shape[1]
@@ -1376,14 +1675,14 @@ class Learner:
         scored: list[int] = []
         finish = None
         if self._teacher_on():
-            scored, finish = self._teacher_start(rows, ch, feats)
+            scored, finish = self._teacher_start(metas, ch, feats)
         beta = self._beta_act()
         actors_ = np.zeros(b, np.int64)
         acted: list[int] = []
         for i in scored:  # every teacher-scored row (no bootstrap row is scored)
-            r, m = rows[i], metas[i]
-            seg = self.segs[r.uid]
-            who = A.ACTOR_COMBAT_TEACHER if r.comb else A.ACTOR_RUN_TEACHER
+            m = metas[i]
+            seg = self.segs[int(m[MC["uid"]])]
+            who = A.ACTOR_COMBAT_TEACHER if m[MC["is_combat"]] else A.ACTOR_RUN_TEACHER
             a = self._actor(seg, int(m[MC["unit_kind"]]), int(m[MC["unit_idx"]]), beta, who)
             if a != A.ACTOR_STUDENT:
                 acted.append(i)
@@ -1396,7 +1695,7 @@ class Learner:
             # past its class count: S0 wrote the same values row by row.
             tw = np.full((len(acted), width), -np.inf, np.float32)
             for k, i in enumerate(acted):
-                tw[k, : rows[i].ncls] = teacher_lp[i]
+                tw[k, : int(metas[i, MC["n_classes"]])] = teacher_lp[i]
             beh = lp_s.clone()
             idx = torch.from_numpy(np.asarray(acted, np.int64)).to(self.dev_i, non_blocking=True)
             beh[idx] = torch.from_numpy(tw).to(self.dev_i, non_blocking=True)
@@ -1407,31 +1706,50 @@ class Learner:
         st["fwd_s"] += time.time() - tf
         arg_s = lp_s.argmax(1).cpu().numpy()
         rb = ch.rb
-        for i, r in enumerate(rows):
-            r.v = float(values[i])
-            rb["v_behav"][i] = r.v
-            rb["iter"][i] = r.it
-            if r.boot:
-                continue
-            r.action = int(act_np[i])
-            r.logp = float(logp[i])
-            r.actor = int(actors_[i])
-            rb["action"][i], rb["logp_behav"][i], rb["actor"][i] = r.action, r.logp, r.actor
+        # The rows' acting-time fields, in their round (`Row` and `cut` read them
+        # there). A bootstrap row acts nothing: it keeps the zeros of its fields.
+        live = metas[:, MC["boot"]] == 0
+        rb["v_behav"][:] = values
+        rb["iter"][:] = ch.it
+        for k, x in (("action", act_np), ("logp_behav", logp), ("actor", actors_)):
+            rb[k][:] = np.where(live, x, 0)
+        for i in scored:
             tl = teacher_lp[i]
             if tl is not None:
+                comb = bool(metas[i, MC["is_combat"]])
                 p = np.exp(tl).astype(np.float32)
                 rb["tprob"][ch.span("cls", i)] = p / p.sum(dtype=np.float32)
-                rb["t_src"][i] = 1 if r.comb else 2
-                r.has_t = True
-                key = "combat" if r.comb else "ooc"
+                rb["t_src"][i] = 1 if comb else 2
+                key = "combat" if comb else "ooc"
                 st["agree_n"][key] += 1
                 st["agree"][key] += int(int(np.argmax(tl)) == int(arg_s[i]))
-            if r.actor != A.ACTOR_STUDENT:
-                st["teacher_rows"] += 1
+        st["teacher_rows"] += int((actors_[live] != A.ACTOR_STUDENT).sum())
         return act_np
 
+    @torch.no_grad()
+    def _serve_queue(self, ch: Round) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """`_serve`'s device work for a round no teacher scores, queued and not waited
+        for: the sampled classes, their log-probs and the values (on the device).
+        The same forward and the same draw as `_serve`'s."""
+        lp_s, v_dev = self._student(ch)
+        act = torch.multinomial(lp_s.exp(), 1, generator=self.gen).squeeze(1)
+        return act, lp_s.gather(1, act[:, None]).squeeze(1), v_dev
+
+    def _serve_fill(
+        self, ch: Round, metas: np.ndarray, act: np.ndarray, logp: np.ndarray, values: np.ndarray
+    ) -> None:
+        """A `_serve_queue` round's acting-time fields, as `_serve` writes them (every
+        row the student's)."""
+        rb = ch.rb
+        live = metas[:, MC["boot"]] == 0
+        rb["v_behav"][:] = values
+        rb["iter"][:] = ch.it
+        for k, x in (("action", act), ("logp_behav", logp)):
+            rb[k][:] = np.where(live, x, 0)
+        rb["actor"][:] = A.ACTOR_STUDENT
+
     def _teacher_start(
-        self, rows: list[Row], ch: Chunk, feats: list[Any]
+        self, metas: np.ndarray, ch: Chunk, feats: list[Any]
     ) -> tuple[list[int], Callable[[list[np.ndarray | None]], None]]:
         """Queue the teachers' class log-probs: the combat teacher from the rows' S_ctx
         blocks (X-C), the run teacher from the workers' `featurize_row` inputs.
@@ -1439,28 +1757,34 @@ class Learner:
         writes each scored row's into its slot of the list it is given."""
         t = self.teachers
         tt = self.algo.teacher_types
+        rows = list(
+            zip(
+                metas[:, MC["is_combat"]].tolist(),
+                metas[:, MC["boot"]].tolist(),
+                metas[:, MC["dtype"]].tolist(),
+                strict=True,
+            )
+        )
         ci = [
             i
-            for i, r in enumerate(rows)
-            if r.comb and not r.boot and t.combat is not None and tt[r.dtype]
+            for i, (comb, boot, dtype) in enumerate(rows)
+            if comb and not boot and t.combat is not None and tt[dtype]
         ]
         ri = [
             i
-            for i, r in enumerate(rows)
-            if not r.comb
-            and not r.boot
-            and t.run is not None
-            and tt[r.dtype]
-            and feats[i] is not None
+            for i, (comb, boot, dtype) in enumerate(rows)
+            if not comb and not boot and t.run is not None and tt[dtype] and feats[i] is not None
         ]
+        ncls = metas[:, MC["n_classes"]]
         jobs: list[tuple[list[int], Callable[[], list[np.ndarray]]]] = []
         if ri:
-            args = ([feats[i] for i in ri], [ch.classes(i) for i in ri], [rows[i].ncls for i in ri])
+            args = ([feats[i] for i in ri], [ch.classes(i) for i in ri], [int(ncls[i]) for i in ri])
             start = getattr(t.run, "logp_start", None)
             jobs.append((ri, start(*args) if start else _ready(t.run.logp(*args))))
         if ci:
             start = getattr(t.combat, "logp_rows_start", None)
-            jobs.append((ci, start(ch.rb, ci) if start else _ready(t.combat.logp_rows(ch.rb, ci))))
+            rb = dense_batch(ch.rb)  # the teacher reads the S_ctx block's dense columns
+            jobs.append((ci, start(rb, ci) if start else _ready(t.combat.logp_rows(rb, ci))))
 
         def finish(out: list[np.ndarray | None]) -> None:
             for idx, done in jobs:
@@ -1477,6 +1801,8 @@ class Learner:
             "ends": [],
             "bad_stamps": [],  # worker messages whose wheel or py_src is not the learner's
             "runs": 0,
+            "run_ends": [],  # the counted runs' end records (`by_char_row`)
+            "rows_char": Counter(),  # policy rows per character (X_CHAR, `row_chars`)
             "practice": 0,
             "practice_cells": Counter(),
             "floor": [],
@@ -1545,20 +1871,36 @@ class Learner:
             ready = self.source.ready()
             msgs = [(i, self.source.recv(i)) for i in ready]
             st["wait_s"] += time.time() - tw
-            rows: list[Row] = []
-            metas: list[np.ndarray] = []
             feats: list[Any] = []
             per_src: list[tuple[int, int]] = []
             ends_all: list[dict[str, Any]] = []
-            ch = Chunk(concat([m[4] for _i, m in msgs]))
+            metas = _round_meta([m[2] for _i, m in msgs])
+            rb = concat([m[4] for _i, m in msgs])
+            if len(msgs) == 1 and getattr(self.source, "borrowed", False):
+                # One worker's rows are not copied by `concat`, and with `shm_rounds`
+                # they are views of the block the worker writes its next round into.
+                rb = {k: np.array(v) for k, v in rb.items()}
+            if cfg.compact_rows and not C.is_compact(rb):  # a source that sends dense rows
+                rb = C.compact_rows(rb)
+            ch = Round(rb, metas, c, self.version, self.n_rounds)
+            self.n_rounds += 1
+            r_prev_all = [float(x) for _i, m in msgs for x in m[3]]
+            if len(metas) != len(r_prev_all):
+                raise RuntimeError(f"round: {len(r_prev_all)} rewards for {len(metas)} metas")
+            # With no teacher to score the round (`serve_overlap`), its forward and
+            # draw are queued first, and the segment bookkeeping and the statistics
+            # below run while the device works: the same values, and ~3 ms of host
+            # work a round that the loop used to do before and after waiting for
+            # the device (#1550).
+            tf = time.time()
+            queued = None
+            if cfg.serve_overlap and len(metas) and not self._teacher_on():
+                queued = self._serve_queue(ch)
+            rows = self._store(ch, r_prev_all) if len(metas) else 0
             j0 = 0
             for i, msg in msgs:
-                _kind, wid, meta, r_prev, _rb, ex, ends = msg
+                _kind, wid, meta, _r_prev, _rb, ex, ends = msg
                 n = len(meta)
-                for j in range(n):
-                    m = meta[j]
-                    rows.append(self._store(ch, j0 + j, m, float(r_prev[j]), c))
-                    metas.append(m)
                 fx = ex.get("feats")
                 feats.extend(fx if fx is not None else [None] * n)
                 per_src.append((i, n))
@@ -1573,27 +1915,37 @@ class Learner:
                 raise RuntimeError(f"round: {j0} metas for {ch.n} rows")
             acts = np.zeros(0, np.int64)
             if rows:
-                acts = self._serve(rows, ch, np.stack(metas), feats, st)
+                if queued is None:
+                    acts = self._serve(ch, metas, feats, st)
                 st["batches"] += 1
-                st["batch_rows"] += len(rows)
-                for r in rows:
-                    if r.boot:
-                        st["boot_rows"] += 1
-                        continue
-                    st["rows"] += 1
-                    st["rows_type"][DTYPE_NAMES[r.dtype]] += 1
-                    # The decision clock counts every collected policy row, also those
-                    # of a segment the cut drops for an env error (review LRN-6).
-                    self.n_new += 1
-                    self.decisions += 1
+                st["batch_rows"] += rows
+                live = metas[:, MC["boot"]] == 0
+                n_live = int(live.sum())
+                st["boot_rows"] += rows - n_live
+                st["rows"] += n_live
+                for ci, k in enumerate(np.bincount(row_chars(ch.rb)[live]).tolist()):
+                    if k:
+                        st["rows_char"][C.CHARACTERS[ci]] += k
+                for dt, k in enumerate(np.bincount(metas[live, MC["dtype"]]).tolist()):
+                    if k:
+                        st["rows_type"][DTYPE_NAMES[dt]] += k
+                # The decision clock counts every collected policy row, also those
+                # of a segment the cut drops for an env error (review LRN-6).
+                self.n_new += n_live
+                self.decisions += n_live
             want_feats = bool(
                 self.teachers is not None and self.teachers.run is not None and self._teacher_on()
             )
             info = {"decisions": self.decisions, "feats": want_feats}
+            if queued is not None:  # wait for the device now; the workers go first
+                acts = queued[0].cpu().numpy()
+                st["fwd_s"] += time.time() - tf
             o = 0
             for i, k in per_src:
-                self.source.send(i, ("act", [int(x) for x in acts[o : o + k]], info))
+                self.source.send(i, ("act", acts[o : o + k].tolist(), info))
                 o += k
+            if queued is not None:
+                self._serve_fill(ch, metas, acts, queued[1].cpu().numpy(), queued[2].cpu().numpy())
             for e in ends_all:
                 self._ingest_end(e, st)
             self._ops_tick()
@@ -1603,26 +1955,64 @@ class Learner:
         st["sampler_seed"] = seed
         return st
 
-    def _store(self, ch: Chunk, i: int, m: np.ndarray, r_prev: float, c: int) -> Row:
-        uid, t = int(m[MC["uid"]]), int(m[MC["t"]])
-        if int(ch.rb["run_uid"][i]) != uid or int(ch.rb["t"][i]) != t:
-            raise RuntimeError(f"row {i}: (run_uid, t) disagree with its meta ({uid}, {t})")
-        seg = self.segs.get(uid)
-        if t == 0:
-            if seg is not None:
-                raise RuntimeError(f"segment uid {uid} reused")
-            kind = "practice" if int(m[MC["practice"]]) else "run"
-            seg = self.segs[uid] = Seg(uid, kind, int(m[MC["cell"]]))
-        else:
-            if seg is None or seg.next_t != t or not seg.pending or seg.pending[-1].t != t - 1:
-                raise RuntimeError(f"segment {uid}: row {t} out of order")
-            seg.pending[-1].reward = r_prev
-            seg.r_sum += r_prev
-        row = Row(self.next_ref, ch, i, uid, t, m, c, self.version)
-        self.next_ref += 1
-        seg.pending.append(row)
-        seg.next_t = t + 1
-        return row
+    def _store(self, ch: Round, r_prev: list[float]) -> int:
+        """Store the round's rows, each joined to its segment: row `t` brings row
+        `t - 1` its reward (`r_prev`, kept in the round), and a row 0 opens its
+        segment. Returns their count."""
+        m = ch.meta
+        uids, ts = m[:, MC["uid"]], m[:, MC["t"]]
+        bad = np.flatnonzero((ch.rb["run_uid"] != uids) | (ch.rb["t"] != ts))
+        if len(bad):
+            i = int(bad[0])
+            raise RuntimeError(
+                f"row {i}: (run_uid, t) disagree with its meta ({int(uids[i])}, {int(ts[i])})"
+            )
+        segs = self.segs
+        ref = self.next_ref
+        it = ch.it
+        cols = (
+            uids.tolist(),
+            ts.tolist(),
+            m[:, MC["boot"]].tolist(),
+            m[:, MC["practice"]].tolist(),
+            m[:, MC["cell"]].tolist(),
+        )
+        for i, (uid, t, boot, practice, cell) in enumerate(zip(*cols, strict=True)):
+            seg = segs.get(uid)
+            if t == 0:
+                if seg is not None:
+                    raise RuntimeError(f"segment uid {uid} reused")
+                seg = segs[uid] = Seg(uid, "practice" if practice else "run", cell)
+            else:
+                if seg is None or seg.next_t != t or not seg.refs:
+                    raise RuntimeError(f"segment {uid}: row {t} out of order")
+                seg.r_sum += r_prev[i]
+            seg.refs.append(ref + i)
+            seg.next_t = t + 1
+            seg.it = it
+            seg.last_boot = bool(boot)
+        n = len(cols[0])
+        ch.ref0 = ref
+        ch.r_prev = np.asarray(r_prev, np.float64)
+        self.rounds.append(ch)
+        self.next_ref = ref + n
+        return n
+
+    def _locate(self, refs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Each of `refs`' round, as an index into `self.rounds`, and its row there."""
+        rounds = self.rounds
+        if not len(refs):
+            return np.zeros(0, np.int64), np.zeros(0, np.int64)
+        ref0 = np.fromiter((r.ref0 for r in rounds), np.int64, len(rounds))
+        k = np.searchsorted(ref0, refs, side="right") - 1
+        if len(rounds) == 0 or int(k.min()) < 0:
+            raise RuntimeError(f"stored row ref {int(refs[0])} is in no round")
+        i = refs - ref0[k]
+        ns = np.fromiter((len(r.meta) for r in rounds), np.int64, len(rounds))
+        if bool((i >= ns[k]).any()):
+            x = int(refs[np.flatnonzero(i >= ns[k])[0]])
+            raise RuntimeError(f"stored row ref {x} is in no round")
+        return k, i
 
     def _ingest_end(self, e: dict[str, Any], st: dict[str, Any]) -> None:
         st["ends"].append(e)
@@ -1666,19 +2056,17 @@ class Learner:
             return
         if seg is None:  # a segment that stored no row
             return
-        last = seg.pending[-1] if seg.pending else None
-        if last is None or last.t != int(e["t_last"]):
-            raise RuntimeError(
-                f"segment {e['uid']}: end after row {e['t_last']}, have {last and last.t}"
-            )
+        last_t = seg.next_t - 1 if seg.refs else None
+        if last_t is None or last_t != int(e["t_last"]):
+            raise RuntimeError(f"segment {e['uid']}: end after row {e['t_last']}, have {last_t}")
         if out == "bootstrap":
-            if not last.boot:
+            if not seg.last_boot:
                 raise RuntimeError(f"segment {e['uid']}: a bootstrap end without a bootstrap row")
             seg.boot_end = True
-            last.reward = 0.0
+            seg.r_last = 0.0
         else:
-            last.reward = float(e["r_last"])
-            seg.r_sum += last.reward
+            seg.r_last = float(e["r_last"])
+            seg.r_sum += seg.r_last
         seg.ended = True
         # T4 at run time: the rows' rewards add up to the env's total for the segment.
         if abs(seg.r_sum - float(e.get("total_reward", 0.0))) > 1e-9:
@@ -1693,6 +2081,7 @@ class Learner:
             return
         self.runs_done += 1
         st["runs"] += 1
+        st["run_ends"].append(e)
         st["floor"].append(int(e["floor"]))
         st["won"] += int(e["won"])
         st["bosses"] += int(e["bosses"])
@@ -1709,66 +2098,69 @@ class Learner:
 
     # ── the cut ──────────────────────────────────────────────────────────
 
-    def cut(self) -> tuple[dict[str, np.ndarray], list[Row], list[int], dict[str, int]]:
-        """This collection's fresh table (WP4a `HoldBack.join`'s input), its rows, the dropped segments."""
+    def cut(self) -> CutResult:
+        """This collection's fresh table (WP4a `HoldBack.join`'s input), where its rows'
+        inputs are, the dropped segments."""
         c = self.n_dispatched
-        fresh: list[tuple[Row, bool, bool]] = []  # (row, done, bootstrap)
+        refs_all: list[int] = []
+        ends: list[int] = []  # the rows (by place) that end a segment
+        boots: list[int] = []  # the value-only rows: a practice end's, an open segment's last
+        last_r: list[float] = []  # the ended segments' last rows' rewards, in `ends` order
         drop: list[int] = []
         ast: Counter = Counter()
         for uid in list(self.segs):
             seg = self.segs[uid]
             if seg.error:
-                ast["dropped_error_rows"] += len(seg.pending)
+                ast["dropped_error_rows"] += len(seg.refs)
                 drop.append(uid)
                 del self.segs[uid]
                 continue
-            p = seg.pending
+            p = seg.refs
             if seg.ended:
-                for r in p[:-1]:
-                    fresh.append((r, False, False))
-                fresh.append((p[-1], True, seg.boot_end))
+                refs_all.extend(p)
+                ends.append(len(refs_all) - 1)
+                if seg.boot_end:
+                    boots.append(len(refs_all) - 1)
+                elif seg.r_last is None:
+                    raise RuntimeError(
+                        f"segment {uid}: row {seg.next_t - 1} has no reward at the cut"
+                    )
+                last_r.append(0.0 if seg.r_last is None else seg.r_last)
                 del self.segs[uid]
                 ast["segments_ended"] += 1
                 continue
-            if p[-1].it < c:
+            if seg.it < c:
                 ast["dormant_segments"] += 1
                 continue
-            for r in p[:-1]:
-                fresh.append((r, False, False))
-            fresh.append((p[-1], False, True))
-            seg.pending = [p[-1]]
+            refs_all.extend(p)
+            boots.append(len(refs_all) - 1)
+            seg.refs = [p[-1]]
             ast["segments_open"] += 1
-        n = len(fresh)
-        rows = [x[0] for x in fresh]
-        for r, _done, boot in fresh:
-            if not boot and r.reward is None:
-                raise RuntimeError(f"segment {r.uid}: row {r.t} has no reward at the cut")
-        cols = {
-            "run_uid": np.fromiter((r.uid for r in rows), np.int64, n),
-            "t": np.fromiter((r.t for r in rows), np.int32, n),
-            "is_combat": np.fromiter((r.comb for r in rows), bool, n),
-            "dtype": np.fromiter((r.dtype for r in rows), np.uint8, n),
-            "reward": np.fromiter(
-                (0.0 if (b or r.reward is None) else r.reward for r, _d, b in fresh), np.float64, n
-            ),
-            "done": np.fromiter((d for _r, d, _b in fresh), bool, n),
-            "bootstrap": np.fromiter((b for _r, _d, b in fresh), bool, n),
-            "actor": np.fromiter((r.actor for r in rows), np.uint8, n),
-            "logp_behav": np.fromiter((r.logp for r in rows), np.float32, n),
-            "n_classes": np.fromiter((r.ncls for r in rows), np.uint16, n),
-            "action": np.fromiter((r.action for r in rows), np.uint16, n),
-            "iter": np.fromiter((r.it for r in rows), np.int32, n),
-            "v_behav": np.fromiter((r.v for r in rows), np.float32, n),
-            "cell": np.fromiter((r.cell for r in rows), np.uint8, n),
-            "ref": np.fromiter((r.ref for r in rows), np.int64, n),
-            "n_tok": np.fromiter((r.ntok for r in rows), np.int32, n),
-            "has_t": np.fromiter((r.has_t for r in rows), bool, n),
-            "version": np.fromiter((r.version for r in rows), np.int32, n),
-        }
+        n = len(refs_all)
+        refs = np.fromiter(refs_all, np.int64, n)
+        rounds = self.rounds
+        k, i = self._locate(refs)
+        got = _round_cols(rounds, k, i)
+        done = np.zeros(n, bool)
+        done[ends] = True
+        boot = np.zeros(n, bool)
+        boot[boots] = True
+        # A row's reward came with its segment's next row, the one after it here; an
+        # ended segment's last row has its own, and a bootstrap row none.
+        reward = np.zeros(n, np.float64)
+        reward[:-1] = got.pop("r_prev")[1:]
+        reward[ends] = last_r
+        reward[boot] = 0.0
+        cols = {"reward": reward, "done": done, "bootstrap": boot, "ref": refs, **got}
+        cols = {name: cols[name] for name in CUT_COLS}
+        # The rounds a stored row is still in: an open or dormant segment's.
+        left = [x for seg in self.segs.values() for x in seg.refs]
+        keep = np.unique(self._locate(np.fromiter(left, np.int64, len(left)))[0])
+        self.rounds = [rounds[int(j)] for j in keep]
         ast["fresh_rows"] = n
         ast["fresh_bootstrap"] = int(cols["bootstrap"].sum())
         ast["open_segments"] = len(self.segs)
-        return cols, rows, drop, dict(ast)
+        return cols, (rounds, k, i), drop, dict(ast)
 
     # ── hand-off to the update ───────────────────────────────────────────
 
@@ -1787,11 +2179,15 @@ class Learner:
             "seed": self.cfg.seed,
             "sampler_seed_offset": self.cfg.sampler_seed_offset,
             "time": float(self.now()),
+            "mix": dict(self.cfg.mix) if self.cfg.mix else None,
+            "forced": dict(self.cfg.forced) if self.cfg.forced else None,
+            "human": dict(self.cfg.human) if self.cfg.human else None,
         }
 
-    def dispatch(self, cst: dict[str, Any]) -> None:
+    def dispatch(self, cst: dict[str, Any], cut: CutResult | None = None) -> None:
+        """Hand this collection to the update. `cut`: its `cut()`, taken earlier."""
         tc = time.time()
-        fresh, rows, drop, ast = self.cut()
+        fresh, (rounds, fk, fi), drop, ast = cut if cut is not None else self.cut()
         lost = self.algo.hold.drop(self.lost_uids) if self.lost_uids else 0
         ast["held_lost"], self.held_lost = self.held_lost + lost, 0
         drop = sorted(set(drop) | set(self.lost_uids))
@@ -1800,26 +2196,33 @@ class Learner:
             self.algo.hold.drop(drop)
         table = self.algo.join(fresh)
         refs = np.asarray(table["ref"], np.int64)
-        by_ref = {r.ref: r for r in rows}
-        joined: list[Row] = []
-        held: dict[int, Row] = {}
-        for x in refs.tolist():
-            r = by_ref.get(x)
-            if r is None:
-                r = self.held.get(x)
-                if r is None:
-                    raise RuntimeError(f"held row ref {x} has no tokens")
-                held[x] = r
-            joined.append(r)
+        # Where each table row's inputs are: a fresh row's in its round, any other's
+        # in the held rows' chunk. The copy reads these chunks, which nothing writes
+        # to again (serving fills only the round it serves).
+        n = len(refs)
+        chunks: list[Chunk] = list(rounds)
+        ck = np.full(n, -1, np.int64)
+        ci = np.zeros(n, np.int64)
+        fr = np.asarray(fresh["ref"], np.int64)
+        if len(fr) and n:
+            o = np.argsort(fr, kind="stable")
+            at = np.minimum(np.searchsorted(fr[o], refs), len(fr) - 1)
+            hit = fr[o][at] == refs
+            ck[hit], ci[hit] = fk[o[at[hit]]], fi[o[at[hit]]]
+        miss = np.flatnonzero(ck < 0)
+        held = Held()
+        if len(miss):
+            h = self.held
+            o = np.argsort(h.refs, kind="stable")
+            at = np.minimum(np.searchsorted(h.refs[o], refs[miss]), max(0, len(o) - 1))
+            ok = h.refs[o][at] == refs[miss] if len(o) else np.zeros(len(miss), bool)
+            if h.chunk is None or not bool(ok.all()):
+                raise RuntimeError(f"held row ref {int(refs[miss][~ok][0])} has no tokens")
+            ck[miss], ci[miss] = len(chunks), h.at[o[at]]
+            chunks.append(h.chunk)
+            held = Held(h.chunk, refs[miss], h.at[o[at]])
         self.held = held  # less the rows a drop left out
-        # Where each shipped row's inputs are now: the copy reads these chunks, which
-        # nothing writes to again (serving fills only the round it serves).
-        src = [(r.chunk, r.i) for r in joined]
-        # The rows that will read the block: all but an open segment's newest row,
-        # which stays in its round (it ships again next iteration, and would keep this
-        # block alive until then).
-        pending = {id(r) for s in self.segs.values() for r in s.pending}
-        move = [k for k, r in enumerate(joined) if id(r) not in pending]
+        src = RowRefs(chunks, ck, ci)
         c = self.n_dispatched
         job: dict[str, Any] = {
             "it": c,
@@ -1834,29 +2237,37 @@ class Learner:
         }
         self.n_new = 0
         self.n_dispatched += 1
-        ast["held_rows"] = len(refs) - len(rows)
+        ast["held_rows"] = len(refs) - len(fr)
         ast["table_rows"] = len(refs)
         # The first table of a start goes through the fill check before it trains:
         # its copy runs inline, as every copy does without `async_pack`.
         inline = self._fill_pending or not self.cfg.async_pack
         fut: Future = Future()
         if inline:
-            fut.set_result(pack_rows(src, table, self.cfg.pack_threads))
+            fut.set_result(pack_rows(src, table, self.cfg.pack_threads, self.cfg.place_rows))
         else:
             if self._packer is None:
                 self._packer = ThreadPoolExecutor(1, thread_name_prefix="e2e-pack")
-            fut = self._packer.submit(pack_rows, src, table, self.cfg.pack_threads)
-        self.packing = {
-            "fut": fut,
-            "job": job,
-            "rows": joined,
-            "move": move,
-            "cst": cst,
-            "ast": ast,
-        }
-        ast["cut_s"] = time.time() - tc  # the serving loop's time on the cut
+            fut = self._packer.submit(
+                pack_rows, src, table, self.cfg.pack_threads, self.cfg.place_rows
+            )
+        self.packing = {"fut": fut, "job": job, "cst": cst, "ast": ast}
+        # The serving loop's time on the cut: the cut itself (`cut_early_s`, taken
+        # before the wait on the update) and the join and hand-off here.
+        ast["cut_s"] = ast.get("cut_early_s", 0.0) + (time.time() - tc)
         if inline:
             self._pack_done(block=True)
+
+    def _collect_garbage(self) -> None:
+        """One full collection every `gc_every` iterations (`manual_gc`); the next
+        stats row carries its time (0 for an iteration without one)."""
+        self._gc_n += 1
+        if self._gc_n % max(1, int(self.cfg.gc_every)):
+            self._gc_last = {"gc_s": 0.0, "gc_found": 0}
+            return
+        t = time.time()
+        found = gc.collect()
+        self._gc_last = {"gc_s": time.time() - t, "gc_found": found}
 
     def _pack_done(self, *, block: bool) -> bool:
         """Submit the update of the last cut once its row block is copied (`block`:
@@ -1879,23 +2290,13 @@ class Learner:
         fill = None
         if self._fill_pending:
             try:
-                fill = self._fill_check(blk.rb)
+                fill = self._fill_check(fill_sample(blk))
             except BaseException:
                 blk.unlink()
                 raise
-        job, joined = pk["job"], pk["rows"]
+        job = pk["job"]
         job["shm"], job["layout"] = shm.name, layout
-        self.inflight = {
-            "job": job,
-            "block": blk,
-            "rows": joined,
-            "cst": pk["cst"],
-            "ast": ast,
-            "fill": fill,
-        }
-        for k in pk["move"]:
-            r = joined[k]
-            r.chunk, r.i = blk, k
+        self.inflight = {"job": job, "block": blk, "cst": pk["cst"], "ast": ast, "fill": fill}
         ast["submit_t"] = time.time()
         self.updater.submit(job)
         return True
@@ -1936,7 +2337,13 @@ class Learner:
         # its wall time from submission to here (ranks plus the hand-offs).
         inf["ast"]["poll_wait_s"] = time.time() - tw if block else 0.0
         inf["ast"]["update_wall_s"] = time.time() - inf["ast"].pop("submit_t", tw)
-        inf["block"].unlink()  # the ranks are done with it; the rows in it keep it mapped
+        # The ranks are done with it, and it goes with `inf` (the rows the hold-back
+        # keeps are in rank 0's copy, `_land_held`). It is then recycled
+        # (`recycle_blocks`) or, its name gone here, unmapped.
+        if self.cfg.recycle_blocks:
+            inf["block"].retire()
+        else:
+            inf["block"].unlink()
         t0 = time.time()
         held = _map_held(res.get("held"))  # rank 0's copy of the held rows; its name goes
         map_s = time.time() - t0
@@ -1958,18 +2365,13 @@ class Learner:
     ) -> None:
         """Make the update's held rows the held rows, pointing at rank 0's copy of
         them (`ch`: rows `held["pos"]` of the update's block, in that order)."""
-        joined, block = inf["rows"], inf["block"]
-        self.held = {}
+        self.held = Held()
         if ch is not None:
             assert held is not None
-            for j, k in enumerate(np.asarray(held["pos"], np.int64).tolist()):
-                r = joined[k]
-                if r.chunk is not block or r.i != k:
-                    raise RuntimeError(f"held row {r.ref} is not row {k} of its table's block")
-                r.chunk, r.i = ch, j
-                self.held[r.ref] = r
+            pos = np.asarray(held["pos"], np.int64)
+            self.held = Held(ch, np.asarray(inf["job"]["refs"], np.int64)[pos])
         hold = self.algo.hold.cols["ref"] if len(self.algo.hold) else np.zeros(0, np.int64)
-        got = np.fromiter(self.held, np.int64, len(self.held))
+        got = self.held.refs
         if not np.array_equal(np.sort(got), np.sort(np.asarray(hold, np.int64))):
             raise RuntimeError(
                 f"rank 0 copied {len(got)} held rows, the hold-back keeps {len(hold)}"
@@ -2084,10 +2486,11 @@ class Learner:
 
     def _stats_row(self, inf: dict[str, Any], res: dict[str, Any]) -> dict[str, Any]:
         cst, ast = inf["cst"], inf["ast"]
+        ast.update(self._gc_last)
         ust = res["stats"]
         now = time.time()
         floor = cst["floor"]
-        lr = {"trunk": float(ust["lr_trunk"]), "value": float(ust["lr_value"])}
+        lr = {g: float(ust[f"lr_{g}"]) for g in self.algo.cfg.base_lrs()}
         nan = math.nan
 
         def num(x: Any) -> float:
@@ -2143,7 +2546,7 @@ class Learner:
             "source_mismatch": cst.get("source_mismatch"),
             "stamps": dict(self.stamps),
             # ── the update ──
-            "update": {k: v for k, v in ust.items() if k not in ("kl_t", "ent_norm_t")},
+            "update": {k: v for k, v in ust.items() if k not in _ROW_UPDATE_KEYS},
             # ── collection ──
             "collection": cst["collection"],
             "sampler_seed": cst["sampler_seed"],
@@ -2179,6 +2582,23 @@ class Learner:
             "totals": dict(self.totals),
             "workers": self.workers_stats if self.workers_stats else None,
         }
+        # GH #1197: the same per character (a one-character lane has one entry), and
+        # an all-character lane's scheduled non-Ironclad share (`mix.mix_share`).
+        row["by_char"] = by_char_row(
+            cst["run_ends"], default=self.cfg.character, rows_char=cst["rows_char"], update=ust
+        )
+        if self.cfg.forced:  # GH #1541: the forced runs' outcomes, per card
+            from .forced import forced_stats
+
+            row["forced"] = forced_stats(cst["run_ends"])
+        if self.cfg.human:  # the human-start runs' outcomes, per start act
+            from .human import human_stats
+
+            row["human"] = human_stats(cst["run_ends"])
+        if self.cfg.mix:
+            from .mix import MixCfg, mix_share
+
+            row["mix_share"] = mix_share(row["decisions"], MixCfg.from_dict(self.cfg.mix))
         if self.lc_applied is not None:
             row["lc_verdict_pass"] = self.lc_applied
         if inf.get("fill") is not None:
@@ -2197,13 +2617,14 @@ class Learner:
         with open(self.sd.p(OC.STATS), "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
         self.stats_rows.append(row)
+        lr_in = f"in {row['lr']['input']:.2e} " if "input" in row["lr"] else ""
         print(
             f"[e2e] it {row['it']} {ust['phase']} dec {row['decisions']:,} "
             f"{row['dec_per_s']:.0f}/s runs {row['runs']} floor {row['floor_mean']} "
             f"win {row['win']:.3f} vloss {row['losses']['value']} "
             f"ploss {row['losses']['policy']} kl {ust.get('probe_kl')} "
             f"ev {row['value_ev']['combat']}/{row['value_ev']['run']} "
-            f"ep {ust['epochs_run']} m {ust['kl_m']:.2f} lr {ust['lr_trunk']:.2e} "
+            f"ep {ust['epochs_run']} m {ust['kl_m']:.2f} lr {ust['lr_trunk']:.2e} {lr_in}"
             f"rows {ust['rows_trained']} held {ust['rows_held']} upd {ust['rank_s']:.1f}s",
             flush=True,
         )
@@ -2417,6 +2838,9 @@ class Learner:
         self.start()
         self._t_row = time.time()
         why = ""
+        gc_was = gc.isenabled()
+        if cfg.manual_gc:
+            gc.disable()  # `_collect_garbage` runs it, once an iteration
         try:
             while not why:
                 why = self._limit()
@@ -2426,10 +2850,21 @@ class Learner:
                 if cst is None:
                     break
                 self._check_batch(cst)
+                # Cut before waiting on the update: the cut reads only the segments,
+                # which the update's landing leaves alone, so its time hides under the
+                # update's instead of adding to the iteration (#1550).
+                tc = time.time()
+                cut = self.cut()
+                cut[3]["cut_early_s"] = time.time() - tc
                 self._pack_done(block=True)  # the last cut's update, if not yet submitted
                 if self.inflight is not None:
                     self._poll(block=True)
-                self.dispatch(cst)
+                self.dispatch(cst, cut)
+                # Its rows would otherwise keep their update's row block mapped until the
+                # next cut, past the update's landing.
+                del cut
+                if cfg.manual_gc:
+                    self._collect_garbage()
                 if cfg.sync_updates:
                     self._pack_done(block=True)
                     self._poll(block=True)
@@ -2454,6 +2889,8 @@ class Learner:
                     decisions=int(self.algo.clocks.decisions),
                 )
         finally:
+            if gc_was:
+                gc.enable()
             self.stop()
             with contextlib.suppress(ValueError):
                 for s, h in old.items():
@@ -2463,6 +2900,92 @@ class Learner:
 
 
 # ── held rows in a state ─────────────────────────────────────────────────
+
+
+#: Update statistics a stats row carries elsewhere (`kl`, `entropy`, `by_char`).
+_ROW_UPDATE_KEYS = ("kl_t", "ent_norm_t", "ent_norm_ct", "kl_ct", "vloss_c")
+#: The acts a run's per-character boss and death counts cover.
+ACTS = (1, 2, 3)
+
+
+def _ratio(k: float, n: float) -> float:
+    return k / n if n > 0 else math.nan
+
+
+def run_char_stats(ends: Sequence[Mapping[str, Any]]) -> dict[str, float]:
+    """One character's run results from its counted runs' end records (GH #1197).
+
+    Per act k, `boss_win_act<k>` is boss fights won / fought. The env counts boss
+    fights per run, not per act (`fights/boss`, `fights_won/boss`), so a run that
+    ended in act k fought and beat one boss in each earlier act, and the rest of its
+    boss fights are act k's (two in act 3, the double boss). `deaths_act<k>` is the
+    share of runs lost in act k (a capped run is a loss, not a death);
+    `elite_win` is elite fights won / fought. A rate with no fight or run is NaN."""
+    n = len(ends)
+    fought = Counter()
+    won = Counter()
+    deaths = Counter()
+    elite = [0, 0]
+    for e in ends:
+        c = e.get("counts") or {}
+        act = min(int(e.get("act") or 0), ACTS[-1])  # past act 3 (none in v0.111.0): act 3's
+        bf, bw = int(c.get("fights/boss", 0)), int(c.get("fights_won/boss", 0))
+        for k in ACTS:
+            if k < act:
+                fought[k] += 1
+                won[k] += 1
+            elif k == act:
+                fought[k] += max(0, bf - (k - 1))
+                won[k] += max(0, bw - (k - 1))
+        if e.get("outcome") == "lost":
+            deaths[act] += 1
+        elite[0] += int(c.get("fights/elite", 0))
+        elite[1] += int(c.get("fights_won/elite", 0))
+    floors = [float(e["floor"]) for e in ends]
+    out = {
+        "runs": n,
+        "win": _ratio(sum(bool(e.get("won")) for e in ends), n),
+        "floor_mean": float(np.mean(floors)) if floors else math.nan,
+        "bosses_per_run": _ratio(sum(int(e.get("bosses", 0)) for e in ends), n),
+    }
+    for k in ACTS:
+        out[f"boss_win_act{k}"] = _ratio(won[k], fought[k])
+    out["elite_win"] = _ratio(elite[1], elite[0])
+    for k in ACTS:
+        out[f"deaths_act{k}"] = _ratio(deaths[k], n)
+    return out
+
+
+def by_char_row(
+    run_ends: Sequence[Mapping[str, Any]],
+    *,
+    default: str,
+    rows_char: Mapping[str, int],
+    update: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """A stats row's `by_char` (GH #1197): per character, `run_char_stats` of the
+    iteration's counted runs (an end record without a `character` is `default`'s),
+    `share` of the collected policy rows, and the update's normalised `entropy` and
+    `kl` per decision type and value loss `vloss` on that character's rows. A
+    character with rows or runs this iteration has an entry."""
+    by: dict[str, list[Mapping[str, Any]]] = {}
+    for e in run_ends:
+        by.setdefault(str(e.get("character") or default), []).append(e)
+    ent = update.get("ent_norm_ct") or {}
+    kl = update.get("kl_ct") or {}
+    vl = update.get("vloss_c") or {}
+    rows = sum(rows_char.values())
+    chars = [c for c in C.CHARACTERS if c in by or rows_char.get(c) or c in ent or c in vl]
+    return {
+        c: {
+            **run_char_stats(by.get(c, [])),
+            "entropy": dict(ent.get(c) or {}),
+            "kl": dict(kl.get(c) or {}),
+            "vloss": float(vl.get(c, math.nan)),
+            "share": _ratio(rows_char.get(c, 0), rows),
+        }
+        for c in chars
+    }
 
 
 def park_orphan_stats(stats: Path, orphan: Path, it: int) -> int:
@@ -2509,27 +3032,51 @@ def lost_runs(algo: A.AlgoState) -> list[int]:
     return sorted({int(x) for x in algo.hold.cols["run_uid"]}) if len(algo.hold) else []
 
 
-def held_from_state(h: dict[str, Any] | None) -> dict[int, Row]:
-    """The held rows' inputs a full state carries (`update.held_blob`), by ref."""
+#: The most rows of a table the fill check reads (`fill_sample`).
+FILL_SAMPLE_ROWS = 65536
+
+
+def fill_sample(blk: Chunk) -> Mapping[str, np.ndarray]:
+    """The rows the fill check reads. A dense table goes whole (views of its block).
+    A compact one's dense matrices are built for the check, so it reads evenly spaced
+    rows, at most `FILL_SAMPLE_ROWS` (65,536 rows are ~2 GB dense); the check's
+    findings are ones that hold on any sample (`fillcheck`)."""
+    if not C.is_compact(blk.rb):
+        return blk.rb
+    idx = np.arange(0, blk.n, max(1, -(-blk.n // FILL_SAMPLE_ROWS)), dtype=np.int64)
+    return dense_batch(blk.rb if len(idx) == blk.n else take(blk, idx))
+
+
+def held_from_state(h: dict[str, Any] | None, compact: bool | None = None) -> Held:
+    """The held rows' inputs a full state carries (`update.held_blob`), by ref.
+    `compact`: the row layout to hold them in (`Cfg.compact_rows`; None: as saved),
+    so a state saved with the other layout joins this start's rows."""
     if not h:
-        return {}
-    ch = Chunk({k: v.numpy() for k, v in h["rows"].items()})
+        return Held()
+    rb = {k: v.numpy() for k, v in h["rows"].items()}
+    if compact is not None and compact != C.is_compact(rb):
+        rb = C.compact_rows(rb) if compact else C.dense_rows(rb)
+    ch = Chunk(rb)
     refs = h["refs"].numpy().tolist()
     if len(refs) != ch.n:
         raise UsageError(f"held rows: {len(refs)} refs for {ch.n} rows")
-    return {int(ref): Row.held(ref, ch, i) for i, ref in enumerate(refs)}
+    return Held(ch, refs)
 
 
 def pack_rows(
-    src: Sequence[tuple[Chunk, int]], table: Mapping[str, np.ndarray], threads: int = 1
+    src: Sequence[tuple[Chunk, int]] | RowRefs,
+    table: Mapping[str, np.ndarray],
+    threads: int = 1,
+    place: bool = False,
 ) -> tuple[shared_memory.SharedMemory, dict[str, Any], float]:
     """The update's row block of a cut: the rows `src` (the joined table's, in its
-    order) copied into one `SharedMemory` block (`rowstore.gather_to_shm` on
-    `threads` threads), the
-    table's values written over theirs (`table_to_rows`), and the copy's wall time.
+    order) copied into one `SharedMemory` block on `threads` threads, in the
+    table's order (`rowstore.gather_to_shm`) or, with `place`, chunk by chunk with
+    a row map (`rowstore.place_to_shm`, `Cfg.place_rows`); the table's values
+    written over theirs (`table_to_rows`), and the copy's wall time.
     It only reads `src`'s chunks and `table`, so it runs in the cut's thread."""
     t0 = time.time()
-    shm, layout = gather_to_shm(src, threads=threads)
+    shm, layout = (place_to_shm if place else gather_to_shm)(src, threads=threads)
     try:
         rb = batch_from_shm(shm, layout)
         table_to_rows(rb, table)
@@ -2550,17 +3097,19 @@ def table_to_rows(rb: dict[str, np.ndarray], table: Mapping[str, np.ndarray]) ->
     cut row's reward belongs to its next storing). The acting-time fields, the
     run uid, `t` and the cell come from the table too; the ranks rebuild the
     table themselves (`algo.join`) and train on its values."""
-    if len(rb["n_tok"]) != len(table["ref"]):
+    # A placed block (`rowstore.place_to_shm`): table row `i` is its row `at[i]`.
+    at: Any = rb.get(ROW_OF, ...)
+    if (len(rb["n_tok"]) if at is ... else len(at)) != len(table["ref"]):
         raise RuntimeError("the row batch and the table have different lengths")
     boot = np.asarray(table["bootstrap"], bool)
     for k in ("reward", "done", "bootstrap"):
         if rb[k].dtype != C.FIELDS[k].dtype:
             raise RuntimeError(f"row batch field {k} is {rb[k].dtype}, not {C.FIELDS[k].dtype}")
-    rb["reward"][...] = np.where(boot, 0.0, np.asarray(table["reward"], np.float64))
-    rb["done"][...] = np.asarray(table["done"], bool)
-    rb["bootstrap"][...] = boot
+    rb["reward"][at] = np.where(boot, 0.0, np.asarray(table["reward"], np.float64))
+    rb["done"][at] = np.asarray(table["done"], bool)
+    rb["bootstrap"][at] = boot
     for k in ("actor", "logp_behav", "action", "iter", "v_behav", "run_uid", "t", "cell"):
-        rb[k][...] = np.asarray(table[k]).astype(rb[k].dtype)
+        rb[k][at] = np.asarray(table[k]).astype(rb[k].dtype)
 
 
 def _jsonable(x: Any) -> Any:

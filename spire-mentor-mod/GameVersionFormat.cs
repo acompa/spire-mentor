@@ -51,4 +51,48 @@ internal static class GameVersionFormat
         }
         return "v" + v;
     }
+
+    /// <summary>
+    /// The build of <paramref name="builds"/> that plays
+    /// <paramref name="version"/>: the build itself, or, for a hotfix (same
+    /// major and minor, higher patch: <c>"v0.113.1"</c>), the newest build of
+    /// that line whose patch is not above it (<c>"v0.113.0"</c>). The game
+    /// ships hotfixes as bug-fix updates, and the advisor runs them on the
+    /// base build's engine (<c>sts2_client.hotfix_base</c>). Null when no
+    /// build fits: a new minor is a content update, not a hotfix. Both sides
+    /// are compared in wire form (<see cref="Normalize"/>).
+    /// </summary>
+    public static string? EngineBuild(string? version, IEnumerable<string> builds)
+    {
+        string? wire = Normalize(version);
+        if (wire == null || !TryParts(wire, out long major, out long minor, out long patch))
+        {
+            return null;
+        }
+        string? best = null;
+        long bestPatch = -1;
+        foreach (string b in builds)
+        {
+            string? bw = Normalize(b);
+            if (bw != null && TryParts(bw, out long bMajor, out long bMinor, out long bPatch) &&
+                bMajor == major && bMinor == minor && bPatch <= patch && bPatch > bestPatch)
+            {
+                best = bw;
+                bestPatch = bPatch;
+            }
+        }
+        return best;
+    }
+
+    /// <summary>The three numbers of a wire-form build (<c>"v0.113.1"</c>).</summary>
+    private static bool TryParts(string wire, out long major, out long minor, out long patch)
+    {
+        major = minor = patch = 0;
+        string[] parts = wire.Length > 1 && wire[0] == 'v' ? wire.Substring(1).Split('.') : Array.Empty<string>();
+        return parts.Length == 3
+            && parts.All(p => p.Length > 0 && p.Length <= 9 && p.All(char.IsAsciiDigit))
+            && long.TryParse(parts[0], out major)
+            && long.TryParse(parts[1], out minor)
+            && long.TryParse(parts[2], out patch);
+    }
 }

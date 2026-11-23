@@ -34,6 +34,7 @@ pub(crate) fn play_heavenly_drill(
     if x >= 4 {
         x = x.saturating_mul(2);
     }
+    let x = sts2_core::card_effects::resolving_card_attack_hits(state, x);
     for _ in 0..x {
         let _ = deal_damage_player_to_enemy(state, t, current_damage(state));
         if !state

@@ -65,7 +65,7 @@ pub(crate) fn play_flak_cannon(state: &mut CombatState, _t: Option<CreatureUid>)
 /// .TargetingRandomOpponents`, each hit re-rolling a random alive enemy.
 pub(crate) fn flak_cannon_hits(state: &mut CombatState, hits: u8) {
     let base = current_card_damage(state);
-    for _ in 0..hits {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, i32::from(hits)) {
         let Some(t) = state.get_random_enemy() else {
             break;
         };

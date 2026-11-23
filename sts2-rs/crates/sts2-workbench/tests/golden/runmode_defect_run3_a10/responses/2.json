@@ -1,6 +1,6 @@
 {
  "details": [
-  "Spawned: Fuzzy Wurm Crawler"
+  "Spawned: Seapunk"
  ],
  "error": null,
  "label": "Map → (0,1)",
@@ -12,7 +12,7 @@
   "idx": 0,
   "meta": {
    "act": 1,
-   "act_name": "Overgrowth",
+   "act_name": "Underdocks",
    "bg_col": 0,
    "bg_row": 1,
    "bg_seed": 3,
@@ -25,8 +25,8 @@
   "source": "live",
   "state": {
    "act": 1,
-   "act1": "overgrowth",
-   "act_name": "Overgrowth",
+   "act1": "underdocks",
+   "act_name": "Underdocks",
    "ascension": 10,
    "bg_col": 0,
    "bg_row": 1,
@@ -152,25 +152,27 @@
    "enemies": [
     {
      "block": 0,
-     "hp": 59,
-     "image": "https://assets.test/monsters/fuzzy_wurm_crawler.png",
+     "hp": 48,
+     "image": "https://assets.test/monsters/seapunk.png",
      "index": 0,
      "intents": [
       {
-       "damage": 6,
-       "intent_image": "https://assets.test/intent_atlas/attack/intent_attack_2.png",
+       "damage": 13,
+       "intent_image": "https://assets.test/intent_atlas/attack/intent_attack_3.png",
        "type": "Attack"
       }
      ],
-     "kind": "FuzzyWurmCrawler",
-     "max_hp": 59,
-     "move_state": "FIRST_ACID_GOOP",
-     "name": "Fuzzy Wurm Crawler",
+     "kind": "Seapunk",
+     "max_hp": 48,
+     "move_state": "SEA_KICK",
+     "name": "Seapunk",
      "powers": [],
-     "rig": "https://assets.test/monster_rigs/fuzzy_wurm_crawler/fuzzy_wurm_crawler",
-     "rig_bounds_h": 166.0,
-     "rig_bounds_w": 272.0,
-     "rig_scale": 0.35,
+     "rig": "https://assets.test/monster_rigs/seapunk/seapunk",
+     "rig_arrow_x": 0.0,
+     "rig_arrow_y": -74.0,
+     "rig_bounds_h": 212.0,
+     "rig_bounds_w": 200.0,
+     "rig_scale": 0.256,
      "uid": 2
     }
    ],
@@ -461,6 +463,8 @@
      }
     ],
     "rig": "https://assets.test/character_rigs/defect/defect",
+    "rig_arrow_x": 4.0,
+    "rig_arrow_y": -179.0,
     "rig_bounds_h": 260.0,
     "rig_bounds_w": 250.0,
     "rig_scale": 0.125

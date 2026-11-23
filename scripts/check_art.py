@@ -119,6 +119,33 @@ def summary(public: Path = PUBLIC, list_missing: bool = False) -> list[str]:
         lines += [f"  older builds only: {r} ({LEGACY_ONLY[r]})" for r in legacy]
     elif missing:
         lines.append("  (--list prints every missing path)")
+    return lines + later_builds(public, list_missing)
+
+
+def later_builds(public: Path = PUBLIC, list_missing: bool = False) -> list[str]:
+    """One line per later game build whose bundle manifest is present
+    (`game/<version>/asset_manifest.json`): of the files that build has and
+    the default build's manifest does not — its art overlay
+    (`images/<version>/`) and the sound it added to the shared audio tree —
+    how many the local tree holds. Those manifests are private, so the public
+    export reports the default build only."""
+    default = set(json.loads(MANIFEST.read_text(encoding="utf-8")))
+    lines = []
+    for manifest in sorted(MANIFEST.parent.glob("v*/asset_manifest.json")):
+        own = sorted(set(json.loads(manifest.read_text(encoding="utf-8"))) - default - NOT_ART)
+        if not own:
+            continue
+        missing = [r for r in own if not local_path(public, r).is_file()]
+        version = manifest.parent.name
+        n_audio = sum(r.startswith("audio/") for r in own)
+        lines.append(
+            f"{version} coverage: {len(own) - len(missing)}/{len(own)} files of its own present "
+            f"({len(own) - n_audio} art, {n_audio} sound); {len(missing)} missing"
+        )
+        if list_missing:
+            lines += [f"  missing: {r}" for r in missing]
+        elif missing:
+            lines.append(f"  (`just import-game` on the {version} build fills them; --list names them)")
     return lines
 
 

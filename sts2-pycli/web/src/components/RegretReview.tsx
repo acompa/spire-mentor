@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { type RegretReview as Review, type DecisionRegret } from "../api";
+import { t } from "../i18n";
 
 /**
  * Post-combat regret review — the learning engine, shown as a dock pinned to
@@ -34,7 +35,7 @@ function BlunderRow({ d, onSeek, tone = "var(--hp)" }: {
     <button
       type="button"
       onClick={onSeek ? () => onSeek(d) : undefined}
-      title={onSeek ? "jump to this decision" : undefined}
+      title={onSeek ? t("jump to this decision") : undefined}
       style={{
         display: "block", width: "100%", textAlign: "left", cursor: onSeek ? "pointer" : "default",
         background: "var(--field-bg)", border: "1px solid var(--border)", borderRadius: 8,
@@ -43,21 +44,21 @@ function BlunderRow({ d, onSeek, tone = "var(--hp)" }: {
     >
       <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
         <span style={{ color: tone, fontWeight: 700 }}>
-          −{d.drop_pct} pts{d.hp_drop != null && Math.round(d.hp_drop) >= 1 ? ` · ≈${Math.round(d.hp_drop)} HP` : ""}
+          {t("−{n} pts", { n: d.drop_pct })}{d.hp_drop != null && Math.round(d.hp_drop) >= 1 ? ` · ≈${Math.round(d.hp_drop)} HP` : ""}
         </span>
         <span style={{ color: "var(--muted)", fontSize: 12 }}>
-          turn {d.turn ?? "?"}{d.floor != null ? ` · floor ${d.floor}` : ""}
+          {t("turn {n}", { n: d.turn ?? "?" })}{d.floor != null ? ` · ${t("floor {floor}", { floor: d.floor })}` : ""}
         </span>
       </div>
       <div style={{ marginTop: 4, fontSize: 13 }}>
-        played <b>{d.played_label}</b> instead of{" "}
+        {t("played")} <b>{d.played_label}</b> {t("instead of")}{" "}
         <b style={{ color: "var(--accent-strong)" }}>{d.best_label}</b>{" "}
         {pct(d.played_win_prob) === pct(d.best_win_prob)
-          ? `(${pct(d.best_win_prob)} either way)`
-          : `(${pct(d.played_win_prob)} vs ${pct(d.best_win_prob)})`}
+          ? t("({p} either way)", { p: pct(d.best_win_prob) })
+          : t("({a} vs {b})", { a: pct(d.played_win_prob), b: pct(d.best_win_prob) })}
       </div>
       <div style={{ marginTop: 3, color: "var(--muted)", fontSize: 11 }}>
-        your move ranked #{d.player_rank + 1} of {d.n_actions} · {d.visits} MCTS visits on the top line
+        {t("your move ranked #{rank} of {n} · {visits} MCTS visits on the top line", { rank: d.player_rank + 1, n: d.n_actions, visits: d.visits })}
       </div>
     </button>
   );
@@ -114,7 +115,7 @@ export default function RegretReview({
     && lost === 0 && (s?.cumulative_hp_drop ?? 0) === 0 && uncertain === 0;
 
   return (
-    <div ref={rootRef} className="mono" role="region" aria-label="Regret Review"
+    <div ref={rootRef} className="mono" role="region" aria-label={t("Regret Review")}
       style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 50,
         display: "flex", flexDirection: "column", maxHeight: "46vh",
         background: "var(--bg)", borderTop: "1px solid var(--border)",
@@ -122,43 +123,43 @@ export default function RegretReview({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
           padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <b>Post-combat regret review{live ? " · live run" : ""}</b>
+            <b>{t("Post-combat regret review")}{live ? ` · ${t("live run")}` : ""}</b>
             {onSeek && (
               <span style={{ color: "var(--muted)", fontSize: 11 }}>
-                click a decision to jump there
+                {t("click a decision to jump there")}
               </span>
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {onRerun && (
-              <button onClick={onRerun} aria-label="Re-run analysis"
-                title="re-run the analysis (e.g. after more moves)">↻ re-run</button>
+              <button onClick={onRerun} aria-label={t("Re-run analysis")}
+                title={t("re-run the analysis (e.g. after more moves)")}>{t("↻ re-run")}</button>
             )}
-            <button onClick={onClose} aria-label="Close">✕</button>
+            <button onClick={onClose} aria-label={t("Close")}>✕</button>
           </div>
         </div>
         <div style={{ padding: 16, overflow: "auto" }}>
           {review == null && (
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>analyzing…</div>
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>{t("analyzing…")}</div>
           )}
           {review != null && (
             <>
               <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
-                {s?.total_decisions ?? 0} decision(s) reviewed ·{" "}
-                {s?.blunder_count ?? 0} blunder(s) ·{" "}
-                {s?.cumulative_drop_pct ?? 0} total win-prob pts lost ·{" "}
-                {Math.round(s?.cumulative_hp_drop ?? 0)} HP lost
+                {t("{n} decision(s) reviewed", { n: s?.total_decisions ?? 0 })} ·{" "}
+                {t("{n} blunder(s)", { n: s?.blunder_count ?? 0 })} ·{" "}
+                {t("{n} total win-prob pts lost", { n: s?.cumulative_drop_pct ?? 0 })} ·{" "}
+                {t("{n} HP lost", { n: Math.round(s?.cumulative_hp_drop ?? 0) })}
               </div>
               {trulyClean ? (
                 <div style={{ color: "var(--accent-strong)", fontSize: 13 }}>
-                  clean run — every decision matched or beat the MCTS line. ✔
+                  {t("clean run — every decision matched or beat the MCTS line. ✔")}
                 </div>
               ) : (
                 <>
                   {blunders.length > 0 && (
                     <>
                       <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8 }}>
-                        blunders — costliest plays:
+                        {t("blunders — costliest plays:")}
                       </div>
                       {blunders.map((d) => (
                         <BlunderRow key={d.idx} d={d} onSeek={onSeek} />
@@ -168,7 +169,7 @@ export default function RegretReview({
                   {slips.length > 0 && (
                     <>
                       <div style={{ color: "var(--muted)", fontSize: 11, margin: "12px 0 8px" }}>
-                        smaller slips — sub-threshold, often within MCTS search noise:
+                        {t("smaller slips — sub-threshold, often within MCTS search noise:")}
                       </div>
                       {slips.map((d) => (
                         <BlunderRow key={d.idx} d={d} onSeek={onSeek} tone="var(--warn, #c79a3a)" />
@@ -177,11 +178,10 @@ export default function RegretReview({
                   )}
                   {blunders.length === 0 && slips.length === 0 && (
                     <div style={{ color: "var(--accent-strong)", fontSize: 13 }}>
-                      on the MCTS line — {lost} win-prob pt(s) lost across {s?.total_decisions ?? 0}{" "}
-                      decisions
+                      {t("on the MCTS line — {lost} win-prob pt(s) lost across {n} decisions", { lost, n: s?.total_decisions ?? 0 })}
                       {uncertain > 0
-                        ? `; ${uncertain} move(s) ungraded (too few search samples).`
-                        : ", all toss-ups within search noise. ✔"}
+                        ? t("; {n} move(s) ungraded (too few search samples).", { n: uncertain })
+                        : t(", all toss-ups within search noise. ✔")}
                     </div>
                   )}
                 </>

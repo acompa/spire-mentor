@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import {
-  PHONES, fontPx, openPreview, phoneContext, realBox, shortLandscapeContext, tapSlot, type Orientation, type PhoneSize,
+  PHONES, fireStep, fontPx, openPreview, phoneContext, realBox, shortLandscapeContext, tapSlot, type Orientation, type PhoneSize,
 } from "./phoneHarness";
 import { splitBandReal, splitZoomRise, splitZoomWidth } from "../src/portraitSplit";
 import { portraitZoomLeft } from "../src/zoomPlacement";
@@ -415,13 +415,12 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
       });
 
       test("the sheet closes when the combat state moves on", async ({ page }) => {
-        // The fixture's timer starts with the page, not with the tap: 2.5 s
-        // lost the race to a cold page load (the state moved BEFORE the sheet
-        // opened, which then rightly stayed), so it gets 6 s.
-        await openPreview(page, "enemies=2&enemy=cultists&powers=3&debuff=6000");
+        await openPreview(page, "enemies=2&enemy=cultists&powers=3&debuff=manual");
         await thing(page).first().tap(T);
         await expect(page.locator(".gs-inspect")).toBeVisible();
-        await expect(page.locator(".gs-inspect")).toHaveCount(0, { timeout: 10_000 });
+        // The state moves on only once the sheet is open (GH #1442).
+        await fireStep(page, "debuff");
+        await expect(page.locator(".gs-inspect")).toHaveCount(0);
       });
 
       test("the same power on another enemy switches the sheet", async ({ page }) => {
@@ -695,6 +694,61 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
         }
       });
 
+      // The owner: "when I have more than 5 cards in the hand it becomes near
+      // impossible to recognize which cards I have". A tight fan covers every
+      // card's centred name banner, so each covered card names itself down the
+      // edge it still shows (a spine), and copies fold into one slot.
+      test("a crowded fan names every covered card on its spine", async ({ page }) => {
+        await openPreview(page, "hand=10");
+        const stage = await realBox(page.locator(".gs-arena-stage"));
+        const bottom = stage.y + stage.height;
+        const slots = await page.locator(".gs-handslot").all();
+        expect(slots.length).toBe(10);
+        for (let i = 0; i < slots.length; i++) {
+          const spine = slots[i].locator(".gs-card-spine");
+          if (i === slots.length - 1) { await expect(spine).toHaveCount(0); continue; }
+          await expect(spine).toHaveText((await slots[i].locator(".gs-card-title").textContent())!);
+          expect(await fontPx(spine)).toBeGreaterThanOrEqual(9.5);
+          const b = await realBox(spine);
+          expect(b.y + b.height).toBeLessThanOrEqual(bottom + 0.5);
+          // Inside the strip of its card that the next card leaves showing.
+          const next = await realBox(slots[i + 1].locator(".gs-handslot-lift"));
+          expect(b.x + b.width).toBeLessThanOrEqual(next.x + 0.5);
+          // A name of up to 11 characters fits whole (longer ones may end in
+          // an ellipsis at the 10px floor; the tap zoom shows the card).
+          const name = (await spine.textContent())!;
+          if (name.length <= 11) {
+            expect(await spine.evaluate((el) => el.scrollHeight <= el.clientHeight + 1), name).toBe(true);
+          }
+        }
+      });
+
+      test("copies of a card stack into one slot with a count", async ({ page }) => {
+        // Ten cards cycling five faces: five slots, each "×2".
+        await openPreview(page, "hand=10&copies=1");
+        const stage = await realBox(page.locator(".gs-arena-stage"));
+        const bottom = stage.y + stage.height;
+        await expect(page.locator(".gs-handslot")).toHaveCount(5);
+        const tags = await page.locator(".gs-count-tag").all();
+        expect(tags.length).toBe(5);
+        for (const tag of tags) {
+          await expect(tag).toHaveText("×2");
+          expect(await fontPx(tag)).toBeGreaterThanOrEqual(13);
+          const b = await realBox(tag);
+          expect(b.y).toBeGreaterThanOrEqual(bottom - 96);
+          expect(b.y + b.height).toBeLessThanOrEqual(bottom + 0.5);
+          const covered = await tag.evaluate((el, [x, y]) => {
+            const mine = el.closest(".gs-handslot")!;
+            const all = Array.from(document.querySelectorAll(".gs-handslot"));
+            return all.slice(all.indexOf(mine) + 1).some((sl) => {
+              const r = sl.querySelector(".gs-handslot-lift")!.getBoundingClientRect();
+              return x > r.left && x < r.right && y > r.top && y < r.bottom;
+            });
+          }, [b.x + b.width / 2, b.y + b.height / 2]);
+          expect(covered, "a later card covers the count").toBe(false);
+        }
+      });
+
       // The owner: "when clicking on cards in the hand ... the cards to the
       // right of the clicked would flicker". Every slot is recorded on every
       // animation frame for 600ms after a tap: no slot but the tapped one may
@@ -710,8 +764,13 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
           const foe = orientation === "portrait" ? "nibbit" : "cultists";
           await openPreview(page, `enemies=2&enemy=${foe}&hand=${hand}`);
           const target = hand === 5 ? 1 : 4;
+          // Recorded until 14 frames AND 600 ms after the tap, not for a fixed
+          // 800 ms: software WebGL renders a large phone's 2x canvas at 9-11
+          // frames in 800 ms on a loaded box, too few to judge, yet nothing
+          // flickered. A slow box now just records for longer.
+          type Rec = { __frames: string[][]; __mark?: number; __markT?: number; __done?: boolean };
           await page.evaluate(() => {
-            const w = window as unknown as { __frames: string[][] };
+            const w = window as unknown as Rec;
             w.__frames = [];
             const snap = () => Array.from(document.querySelectorAll(".gs-handslot")).map((s) => {
               const lift = s.querySelector(".gs-handslot-lift")!;
@@ -722,15 +781,24 @@ for (const size of Object.keys(PHONES) as PhoneSize[]) {
                 cs.transform, getComputedStyle(lift).transform, getComputedStyle(card).opacity,
                 getComputedStyle(lift).opacity, s.className].join("|");
             });
-            const t0 = performance.now();
-            const loop = () => { w.__frames.push(snap()); if (performance.now() - t0 < 800) requestAnimationFrame(loop); };
+            const loop = () => {
+              w.__frames.push(snap());
+              const enough = w.__mark !== undefined && w.__frames.length - w.__mark >= 14
+                && performance.now() - w.__markT! >= 600;
+              if (enough) w.__done = true; else requestAnimationFrame(loop);
+            };
             requestAnimationFrame(loop);
           });
           await page.waitForTimeout(120);
-          const before = await page.evaluate(() => (window as unknown as { __frames: string[][] }).__frames.length);
+          const before = await page.evaluate(() => {
+            const w = window as unknown as Rec;
+            w.__mark = w.__frames.length;
+            w.__markT = performance.now();
+            return w.__mark;
+          });
           await tapSlot(page, target);
-          await page.waitForTimeout(800);
-          const frames = await page.evaluate(() => (window as unknown as { __frames: string[][] }).__frames);
+          await page.waitForFunction(() => (window as unknown as Rec).__done === true, undefined, { timeout: 20_000 });
+          const frames = await page.evaluate(() => (window as unknown as Rec).__frames);
           expect(frames.length, "frames recorded after the tap").toBeGreaterThan(before + 10);
           const base = frames[before - 1];
           const seen = new Set<string>();

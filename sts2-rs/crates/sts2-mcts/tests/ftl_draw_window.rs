@@ -83,6 +83,7 @@ fn fixture(
             card_type: CardType::Attack,
             target_type: TargetType::Enemy,
             upgraded: false,
+            extra_upgrades: 0,
             base_damage: 6,
             base_block: 0,
             combat_vars: sts2_core::cards::CombatVars::new(),

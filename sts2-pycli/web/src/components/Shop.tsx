@@ -1,7 +1,7 @@
 import { MarkBadge } from "../advice/AdviceContext";
 import { markClass, markFor, useAdviceMarks } from "../advice/useAdviceMarks";
 import type { Mark } from "../advice/marks";
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useMediaQuery, TOUCH_QUERY } from "../useMediaQuery";
 import type { Step, ChooseHandler, Card, Relic, Potion } from "../api";
@@ -9,11 +9,13 @@ import { assetUrl } from "../api";
 import CardFrame from "./CardFrame";
 import SpineSprite from "./SpineSprite";
 import { cardBoxHeight } from "../cardGeometry";
+import { splitShelves, useShopFit } from "../shopFit";
 import { DecisionAnalyzeButton, DecisionAnalyzeStatus, DecisionWinChip } from "./DecisionAdvisor";
 import { useDecisionAdvisor } from "./useDecisionAdvisor";
 import { useSound } from "../sound/useSound";
 import { cueForRelic } from "../sound/runCues";
 import "../skins/shop.css";
+import { t } from "../i18n";
 
 /** Deterministic 0..1 hash from small integers — the same mixer MapView uses
  *  for its hand-drawn node wobble. Every bit of scatter on this screen is
@@ -60,8 +62,9 @@ function moteField(layer: number, count: number): string {
   }
   return dots.join(",");
 }
-const MOTES_FAR = moteField(0, 26);
-const MOTES_NEAR = moteField(1, 14);
+/* Exported for the Blitz merchant (BlitzShop.tsx), which stands in the same room. */
+export const MOTES_FAR = moteField(0, 26);
+export const MOTES_NEAR = moteField(1, 14);
 
 /** Coin-glyph price tag (the game never writes a "g" suffix): the sprite-font
  *  coin + gold Kreon numerals on a small leather tag; numerals go red when the
@@ -109,7 +112,7 @@ function PriceTag({
  *  own scene, where the merchant rig draws at 0.470095 and the room rig behind
  *  him at 0.505 (`scenes/rooms/merchant_room.tscn`) — he is a little under a
  *  third of the room's height. */
-const MERCHANT_H = 255;
+export const MERCHANT_H = 255;
 
 /**
  * Shop screen: the merchant's tent as a scene — cards on a display row with
@@ -138,6 +141,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
   // ware's sheet instead (name, what it does, price) and the sheet's button
   // buys. Every ware is tappable for that, sold or too dear included.
   const touch = useMediaQuery(TOUCH_QUERY);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [ware, setWare] = useState<{
     key: string; kind: "relic" | "potion"; name: string; image: string | null | undefined;
     description: string | undefined; cost: number | undefined; soldOut: boolean; affordable: boolean;
@@ -178,7 +182,86 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
   const adv = useDecisionAdvisor(shopSig, onChoose != null);
 
   const CARD_W = 165;
+  const { rack, bin } = splitShelves(cards);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const merchantRef = useRef<HTMLDivElement>(null);
+  useShopFit(rootRef, contentRef, merchantRef);
   const removalCost = s.card_removal_cost;
+
+  /** One card on its stand: frame, contact shadow, sale tag, price tag.
+   *  `i` / `n` place it on its shelf's arc; `bend` scales that arc (the
+   *  two-card colorless shelf would otherwise sink its tags off the floor). */
+  const cardStand = (c: Card, i: number, n: number, bend = 1) => {
+    const b = buy("buy_card", { card_index: c.index }, c.cost, c.is_stocked);
+    // CardFrame shows `cost` as the energy badge; shop puts energy in card_cost.
+    const framed = { ...c, cost: c.card_cost ?? 0 };
+    const affordable = (c.cost ?? 0) <= gold;
+    // See `wareItem`: sold out ≠ unaffordable.
+    const cls =
+      "gs-shop-cardstand" +
+      (c.is_available === false ? " is-soldout" : "") +
+      (!affordable ? " is-unaffordable" : "");
+    // The rack arc + hand-laid scatter. r4's ±1.5°/±6px scatter was
+    // invisible at this card width (a 1.5° tilt shifts a 165px edge by
+    // ~2px), so the row still read as `display:flex`. The dominant
+    // term is now the ARC: `off` runs -1..+1 across the rack, the ends
+    // fan outward and sit lower, and every card gets its own depth
+    // (scale + z), so no two cards share a top or a bottom edge.
+    const mid = (n - 1) / 2;
+    const off = mid > 0 ? ((i - mid) / mid) * bend : 0;
+    const arc = Math.abs(off) ** 1.6;
+    const tilt = off * 3.6 + jit(i, c.index, 1, 1.1);
+    const drop = arc * 26 + jit(i, c.index, 2, 7);
+    const nudge = jit(i, c.index, 3, 6);
+    // cards at the ends of the rack lean away from the lamp, so they
+    // are a touch smaller and painted behind their neighbours
+    const scale = 1 - arc * 0.05;
+    const depth = 12 - Math.round(arc * 9);
+    // A card sitting lower casts a tighter, darker pool.
+    const shadow = 0.42 + (drop + 6) / 26;
+    return (
+      <div
+        key={c.index}
+        className={cls}
+        style={
+          {
+            "--gs-tilt": `${tilt.toFixed(2)}deg`,
+            "--gs-drop": `${drop.toFixed(1)}px`,
+            "--gs-nudge": `${nudge.toFixed(1)}px`,
+            "--gs-scale": scale.toFixed(3),
+            "--gs-z": depth,
+            "--gs-shadow": shadow.toFixed(2),
+            "--gs-cardh": `${cardBoxHeight(CARD_W)}px`,
+          } as CSSProperties
+        }
+      >
+        <span className="gs-shop-cardshadow" aria-hidden="true" />
+        <CardFrame card={framed} width={CARD_W} onClick={b.disabled ? undefined : b.onClick}
+          mark={b.mark?.tier} step={b.mark?.order} />
+        {/* The discounted card's "%" tag, pinned where merchant_card.tscn
+            pins its SaleVisual: a Sprite2D at (146.3, -153.2) on the
+            300x422 card, i.e. centred on 98.8% / 13.7% of the frame. */}
+        {c.on_sale && (
+          <img className="gs-shop-cardsale"
+            src={assetUrl("rooms/merchant_room/shop_sales_tag.png")}
+            alt="" aria-hidden="true" />
+        )}
+        <PriceTag
+          gold={c.cost}
+          affordable={affordable}
+          onSale={!!c.on_sale}
+          disabled={b.disabled}
+          onClick={b.onClick}
+          ariaLabel={t("Buy {name} — {cost} gold", { name: c.name, cost: c.cost ?? "?" }) + (c.on_sale ? ` ${t("(on sale)")}` : "")}
+        />
+        {adv.byKey.has(`card:${c.index}`) && (
+          <div className="gs-shop-chip">
+            <DecisionWinChip c={adv.byKey.get(`card:${c.index}`)!} adv={adv} />
+          </div>
+        )}
+      </div>
+    );
+  };
   const panelUrl = `url(${assetUrl("ui/common_ui/submenu_panel_short.png")})`;
 
   /** One relic/potion as a physical item on the rug: sprite (with contact
@@ -222,7 +305,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
         aria-disabled={inspectFirst && b.disabled ? true : undefined}
         onClick={inspectFirst ? open : b.onClick}
         title={(description ? `${name} — ${description}` : name)
-          + (soldOut ? " (sold out)" : !affordable ? " (too expensive)" : "")}
+          + (soldOut ? ` ${t("(sold out)")}` : !affordable ? ` ${t("(too expensive)")}` : "")}
       >
         <MarkBadge mark={b.mark ?? null} />
         <span className="gs-shop-itemart" aria-hidden="true">
@@ -246,6 +329,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
 
   return (
     <div
+      ref={rootRef}
       className="gs-shop gs-scene"
       style={
         {
@@ -274,7 +358,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
             and arms that only becomes a figure once a skeleton poses them.
             The crops read as exactly that — a floating hood above a
             disembodied arm. */}
-        <div className="gs-shop-merchant">
+        <div className="gs-shop-merchant" ref={merchantRef}>
           <SpineSprite
             rigBase={assetUrl("room_rigs/shop_merchant_top/shop_merchant_top")}
             fallbackHeight={MERCHANT_H}
@@ -283,106 +367,46 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
         </div>
       </div>
 
-      <div className="gs-shop-content">
-        <header className="gs-shop-header">
-          <div className="gs-shop-sign">
-            <span className="gs-shop-signtitle">Merchant</span>
-            <span className="gs-shop-purse" title="Your gold">
-              <img src={assetUrl("ui/sprite_fonts/gold_icon.png")} alt="" aria-hidden="true" />
-              {gold}
-            </span>
-          </div>
-          {/* workbench tooling voice, kept OFF the game surfaces */}
-          {adv.enabled && (
-            <div className="gs-shop-tools">
-              <div className="gs-shop-toolscrim">
-                <DecisionAnalyzeButton adv={adv} />
+      <div className="gs-shop-content" ref={contentRef}>
+        {/* The top band: the sign (and the advisor's tooling) beside the class
+            cards rather than above them. A row of its own cost the whole
+            screen a tenth of its height for one parchment sign. */}
+        <div className="gs-shop-top">
+          <header className="gs-shop-header">
+            <div className="gs-shop-sign">
+              <span className="gs-shop-signtitle">{t("Merchant")}</span>
+              <span className="gs-shop-purse" title={t("Your gold")}>
+                <img src={assetUrl("ui/sprite_fonts/gold_icon.png")} alt="" aria-hidden="true" />
+                {gold}
+              </span>
+            </div>
+            {/* workbench tooling voice, kept OFF the game surfaces */}
+            {adv.enabled && (
+              <div className="gs-shop-tools">
+                <div className="gs-shop-toolscrim">
+                  <DecisionAnalyzeButton adv={adv} />
+                </div>
               </div>
+            )}
+            <div className="gs-shop-toolstatus">
+              <DecisionAnalyzeStatus adv={adv} />
+            </div>
+          </header>
+
+          {/* the card display row: real-size frames, slight scatter, price tags */}
+          <div className="gs-shop-cardrow">
+            {rack.map((c, i) => cardStand(c, i, rack.length))}
+            {cards.length === 0 && <span className="gs-shop-empty">{t("Sold out")}</span>}
+          </div>
+        </div>
+
+        {/* the shop floor: the colorless cards, the wares rug, the services */}
+        <div className="gs-shop-floor">
+          {bin.length > 0 && (
+            <div className="gs-shop-cardrow is-bin">
+              {bin.map((c, i) => cardStand(c, i, bin.length, 0.4))}
             </div>
           )}
-        </header>
-        <div className="gs-shop-toolstatus">
-          <DecisionAnalyzeStatus adv={adv} />
-        </div>
-
-        {/* the card display row: real-size frames, slight scatter, price tags */}
-        <div className="gs-shop-cardrow">
-          {cards.map((c, i) => {
-            const b = buy("buy_card", { card_index: c.index }, c.cost, c.is_stocked);
-            // CardFrame shows `cost` as the energy badge; shop puts energy in card_cost.
-            const framed = { ...c, cost: c.card_cost ?? 0 };
-            const affordable = (c.cost ?? 0) <= gold;
-            // See `wareItem`: sold out ≠ unaffordable.
-            const cls =
-              "gs-shop-cardstand" +
-              (c.is_available === false ? " is-soldout" : "") +
-              (!affordable ? " is-unaffordable" : "");
-            // The rack arc + hand-laid scatter. r4's ±1.5°/±6px scatter was
-            // invisible at this card width (a 1.5° tilt shifts a 165px edge by
-            // ~2px), so the row still read as `display:flex`. The dominant
-            // term is now the ARC: `off` runs -1..+1 across the rack, the ends
-            // fan outward and sit lower, and every card gets its own depth
-            // (scale + z), so no two cards share a top or a bottom edge.
-            const mid = (cards.length - 1) / 2;
-            const off = mid > 0 ? (i - mid) / mid : 0;
-            const arc = Math.abs(off) ** 1.6;
-            const tilt = off * 3.6 + jit(i, c.index, 1, 1.1);
-            const drop = arc * 26 + jit(i, c.index, 2, 7);
-            const nudge = jit(i, c.index, 3, 6);
-            // cards at the ends of the rack lean away from the lamp, so they
-            // are a touch smaller and painted behind their neighbours
-            const scale = 1 - arc * 0.05;
-            const depth = 12 - Math.round(arc * 9);
-            // A card sitting lower casts a tighter, darker pool.
-            const shadow = 0.42 + (drop + 6) / 26;
-            return (
-              <div
-                key={c.index}
-                className={cls}
-                style={
-                  {
-                    "--gs-tilt": `${tilt.toFixed(2)}deg`,
-                    "--gs-drop": `${drop.toFixed(1)}px`,
-                    "--gs-nudge": `${nudge.toFixed(1)}px`,
-                    "--gs-scale": scale.toFixed(3),
-                    "--gs-z": depth,
-                    "--gs-shadow": shadow.toFixed(2),
-                    "--gs-cardh": `${cardBoxHeight(CARD_W)}px`,
-                  } as CSSProperties
-                }
-              >
-                <span className="gs-shop-cardshadow" aria-hidden="true" />
-                <CardFrame card={framed} width={CARD_W} onClick={b.disabled ? undefined : b.onClick}
-                  mark={b.mark?.tier} step={b.mark?.order} />
-                {/* The discounted card's "%" tag, pinned where merchant_card.tscn
-                    pins its SaleVisual: a Sprite2D at (146.3, -153.2) on the
-                    300x422 card, i.e. centred on 98.8% / 13.7% of the frame. */}
-                {c.on_sale && (
-                  <img className="gs-shop-cardsale"
-                    src={assetUrl("rooms/merchant_room/shop_sales_tag.png")}
-                    alt="" aria-hidden="true" />
-                )}
-                <PriceTag
-                  gold={c.cost}
-                  affordable={affordable}
-                  onSale={!!c.on_sale}
-                  disabled={b.disabled}
-                  onClick={b.onClick}
-                  ariaLabel={`Buy ${c.name} — ${c.cost ?? "?"} gold${c.on_sale ? " (on sale)" : ""}`}
-                />
-                {adv.byKey.has(`card:${c.index}`) && (
-                  <div className="gs-shop-chip">
-                    <DecisionWinChip c={adv.byKey.get(`card:${c.index}`)!} adv={adv} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {cards.length === 0 && <span className="gs-shop-empty">Sold out</span>}
-        </div>
-
-        {/* the shop floor: wares rug on the left, services on the right */}
-        <div className="gs-shop-floor">
           <div className="gs-shop-rugmat">
             <img
               className="gs-shop-rug"
@@ -405,6 +429,8 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
                   </div>
                 );
               })}
+              {/* relics over potions, the game's own 3x2 */}
+              {relics.length > 0 && potions.length > 0 && <span className="gs-shop-warebreak" aria-hidden="true" />}
               {potions.map((p, i) => {
                 const b = buy("buy_potion", { potion_index: p.index }, p.cost, p.is_stocked);
                 const cand = adv.byKey.get(`potion:${p.index}`);
@@ -424,7 +450,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
                 );
               })}
               {relics.length === 0 && potions.length === 0 && (
-                <span className="gs-shop-empty">Nothing left on the rug</span>
+                <span className="gs-shop-empty">{t("Nothing left on the rug")}</span>
               )}
             </div>
           </div>
@@ -437,7 +463,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
                 }
                 disabled={!onChoose || removalCost > gold}
                 onClick={() => onChoose?.("remove_card", {})}
-                title="Pay the merchant to remove a card from your deck"
+                title={t("Pay the merchant to remove a card from your deck")}
               >
                 <img
                   className="gs-shop-removal-medal"
@@ -446,7 +472,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
                   aria-hidden="true"
                 />
                 <span className="gs-shop-removal-plaque">
-                  <span className="gs-shop-removal-label">Remove a card</span>
+                  <span className="gs-shop-removal-label">{t("Remove a card")}</span>
                   <PriceTag gold={removalCost} affordable={removalCost <= gold} />
                 </span>
                 <img
@@ -457,7 +483,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
                 />
               </button>
             ) : (
-              <div className="gs-shop-removal is-spent" title="No card removal available">
+              <div className="gs-shop-removal is-spent" title={t("No card removal available")}>
                 <img
                   className="gs-shop-removal-medal"
                   src={assetUrl("rooms/merchant_room/card_removal_04.png")}
@@ -465,7 +491,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
                   aria-hidden="true"
                 />
                 <span className="gs-shop-removal-plaque">
-                  <span className="gs-shop-removal-label">No removals</span>
+                  <span className="gs-shop-removal-label">{t("No removals")}</span>
                 </span>
                 <img
                   className="gs-shop-removal-post"
@@ -478,7 +504,7 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
 
             <button className={`gs-shop-hexbtn${markClass(markFor(marks, "leave_room"))}`} disabled={!onChoose}
               onClick={() => onChoose?.("leave_room", {})}>
-              <span className="gs-shop-hexface">Leave shop</span>
+              <span className="gs-shop-hexface">{t("Leave shop")}</span>
             </button>
             {adv.byKey.has("leave") && (
               <div className="gs-shop-chip">
@@ -498,14 +524,14 @@ export default function Shop({ step, onChoose }: { step: Step; onChoose?: Choose
           </span>
           <div className="gs-shop-sheettext">
             <b>{ware.name}</b>
-            <span>{ware.description ?? (ware.kind === "relic" ? "A relic." : "A potion.")}</span>
+            <span>{ware.description ?? (ware.kind === "relic" ? t("A relic.") : t("A potion."))}</span>
           </div>
           <div className="gs-shop-sheetbtns">
             <button type="button" className="gs-shop-sheetbuy" disabled={ware.soldOut || !ware.affordable}
               onClick={() => { const buyIt = ware.buy; setWare(null); buyIt(); }}>
-              {ware.soldOut ? "Sold out" : !ware.affordable ? `Too expensive (${ware.cost} gold)` : `Buy for ${ware.cost} gold`}
+              {ware.soldOut ? t("Sold out") : !ware.affordable ? t("Too expensive ({cost} gold)", { cost: ware.cost ?? "?" }) : t("Buy for {cost} gold", { cost: ware.cost ?? "?" })}
             </button>
-            <button type="button" className="gs-shop-sheetclose" onClick={() => setWare(null)}>✕ Close</button>
+            <button type="button" className="gs-shop-sheetclose" onClick={() => setWare(null)}>✕ {t("Close")}</button>
           </div>
         </div>,
         document.body,

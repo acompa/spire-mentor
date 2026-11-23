@@ -1170,7 +1170,11 @@ def test_decision_validation_rejects(case: str) -> None:
 
 
 def test_reserved_decisions_need_allow_reserved() -> None:
-    acts = [{"action": "take_reward_potion"}, {"action": "skip_reward_potion"}]
+    # The reward screen's (section 4d): live only when the process declares "#1069".
+    acts = [
+        {"action": "take_reward", "idx": 0, "reward": "potion", "id": "FirePotion"},
+        {"action": "skip_reward", "idx": 0, "reward": "potion", "id": "FirePotion"},
+    ]
     kinds = [C.AK["TAKE_REWARD_POTION"], C.AK["SKIP_REWARD_POTION"]]
     d = C.make_decision(
         run_uid=1,
@@ -1240,7 +1244,7 @@ def test_vocab_rejects_canonical_collisions(
     held = next(r.name for r in old if r.registry == "card" and r.name == "STRIKE_IRONCLAD")
     with pytest.raises(ValueError, match=repr(held)):
         V.build_rows({"card": ["StrikeIronclad"]}, old)  # would silently share its id
-    monkeypatch.setattr(V, "engine_names", lambda: {"card": ["StrikeIronclad"]})
+    monkeypatch.setattr(V, "engine_names", lambda _build=None: {"card": ["StrikeIronclad"]})
     monkeypatch.setattr(V, "write_tsv", lambda *a, **k: pytest.fail("wrote the table"))
     for flag in ("--check", "--append"):
         assert V.main([flag]) == 1

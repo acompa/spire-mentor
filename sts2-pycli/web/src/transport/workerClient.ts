@@ -9,6 +9,7 @@
  * they complete in call order. The worker is spawned lazily on first use and
  * told `{init: {assets_base}}` first thing.
  */
+import { getLang } from "../i18n";
 import type {
   FrameMessage,
   ProgressMessage,
@@ -91,7 +92,13 @@ export class WorkerClient {
     const w = this.opts.spawn();
     w.onmessage = (ev) => this.onMessage(ev.data);
     w.onerror = (ev) => this.fail(new Error(`engine worker crashed: ${ev.message ?? ev}`));
-    w.postMessage({ init: { assets_base: this.opts.assetsBase } });
+    // The page's language names the game text too (the engine's display
+    // tables); English sends no `lang`, as before.
+    w.postMessage({
+      init: getLang() === "zh"
+        ? { assets_base: this.opts.assetsBase, lang: "zh" }
+        : { assets_base: this.opts.assetsBase },
+    });
     this.worker = w;
     return w;
   }

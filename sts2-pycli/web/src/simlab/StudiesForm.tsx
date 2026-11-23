@@ -3,6 +3,7 @@ import { api, type Meta, type SweepSpec } from "./api";
 import NumberInput from "../components/NumberInput";
 import { card } from "./styles";
 import { formatDeck, parseDeckText, unknownCards } from "./deckText";
+import { t } from "../i18n";
 
 // Fallback lists, used only if GET /api/meta fails. Otherwise the form is
 // driven by the backend's /api/meta payload.
@@ -84,23 +85,23 @@ function variantErrors(
   const errs: string[] = [];
   const trimmed = variant.name.trim();
   if (trimmed === "") {
-    errs.push("name required");
+    errs.push(t("name required"));
   } else if (trimmed.includes("/")) {
-    errs.push('name may not contain "/"');
+    errs.push(t('name may not contain "/"'));
   } else if (all.some((d, i) => i !== index && d.name.trim() === trimmed)) {
-    errs.push("duplicate name");
+    errs.push(t("duplicate name"));
   }
   const parsed = parseDeckText(variant.text);
   errs.push(...parsed.errors);
   if (parsed.cards.length === 0) {
-    errs.push("deck is empty");
+    errs.push(t("deck is empty"));
   } else if (parsed.cards.length > MAX_DECK_CARDS) {
-    errs.push(`deck too large (${parsed.cards.length}/${MAX_DECK_CARDS})`);
+    errs.push(t("deck too large ({n}/{max})", { n: parsed.cards.length, max: MAX_DECK_CARDS }));
   }
   // Skip unknown-card checks until meta supplies the card list.
   if (knownCards.length > 0) {
     const unknown = unknownCards(parsed.cards, knownCards);
-    if (unknown.length > 0) errs.push(`unknown card(s): ${unknown.join(", ")}`);
+    if (unknown.length > 0) errs.push(t("unknown card(s): {cards}", { cards: unknown.join(", ") }));
   }
   return errs;
 }
@@ -242,19 +243,19 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
     setErr(null);
     // Run all guards before building the spec or touching busy state.
     if (strategies.length === 0) {
-      setErr("select at least one strategy");
+      setErr(t("select at least one strategy"));
       return;
     }
     if (nSeeds < 1) {
-      setErr("seeds must be at least 1");
+      setErr(t("seeds must be at least 1"));
       return;
     }
     if (ascMin > ascMax) {
-      setErr("ascension min must be ≤ max");
+      setErr(t("ascension min must be ≤ max"));
       return;
     }
     if (hasDeckErrors) {
-      setErr("fix deck variant errors before running");
+      setErr(t("fix deck variant errors before running"));
       return;
     }
     const ascensions: number[] = [];
@@ -287,19 +288,18 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
 
   return (
     <div style={card}>
-      <h2 style={{ marginTop: 0 }}>New study</h2>
+      <h2 style={{ marginTop: 0 }}>{t("New study")}</h2>
       <p style={{ marginTop: 0, color: "var(--muted)", fontSize: 13 }}>
-        Deck variants × encounters × ascensions from turn 1 — the batch view. For one
-        exact position, use the Sandbox tab.
+        {t("Deck variants × encounters × ascensions from turn 1 — the batch view. For one exact position, use the Sandbox tab.")}
       </p>
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
         <label>
-          Name
+          {t("Name")}
           <br />
           <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%" }} />
         </label>
         <label>
-          Encounter
+          {t("Encounter")}
           <br />
           <select
             value={encounter}
@@ -307,7 +307,7 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
             style={{ width: "100%" }}
           >
             {customEncounters.length > 0 && (
-              <option value="">— none (custom enemies only) —</option>
+              <option value="">{t("— none (custom enemies only) —")}</option>
             )}
             {meta.encounters.map((e) => (
               <option key={e} value={e}>
@@ -316,11 +316,11 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
             ))}
           </select>
           <div style={{ marginTop: 6, fontSize: 12 }}>
-            <span style={{ color: "var(--muted)" }}>custom enemies: </span>
+            <span style={{ color: "var(--muted)" }}>{t("custom enemies:")} </span>
             <select
               value={monsterPick}
               onChange={(e) => setMonsterPick(e.target.value)}
-              aria-label="custom enemy"
+              aria-label={t("custom enemy")}
               style={{ maxWidth: 160 }}
             >
               {meta.monsters.map((m) => (
@@ -334,12 +334,12 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
               max={4}
               step={1}
               value={monsterCount}
-              ariaLabel="custom enemy count"
+              ariaLabel={t("custom enemy count")}
               onChange={setMonsterCount}
               width={48}
             />{" "}
             <button type="button" onClick={addCustomEnemy} disabled={!monsterPick}>
-              add
+              {t("add")}
             </button>
             <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
               {customEncounters.map((entry) => (
@@ -359,7 +359,7 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
                   {customEnemyLabel(entry)}
                   <button
                     type="button"
-                    aria-label={`remove ${entry}`}
+                    aria-label={t("remove {name}", { name: entry })}
                     onClick={() => removeCustomEnemy(entry)}
                     style={{
                       border: "none",
@@ -378,24 +378,24 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
           </div>
         </label>
         <label
-          title="Number of simulated fights per strategy. Seed i gives every strategy the identical shuffle, so strategies are compared on the same draws."
+          title={t("Number of simulated fights per strategy. Seed i gives every strategy the identical shuffle, so strategies are compared on the same draws.")}
         >
-          combats per strategy
+          {t("combats per strategy")}
           <br />
           <NumberInput min={1} value={nSeeds} onChange={setNSeeds} width="100%" />
         </label>
         <label>
-          Ascension min
+          {t("Ascension min")}
           <br />
           <NumberInput min={0} value={ascMin} onChange={setAscMin} width="100%" />
         </label>
         <label>
-          Ascension max
+          {t("Ascension max")}
           <br />
           <NumberInput min={0} value={ascMax} onChange={setAscMax} width="100%" />
         </label>
         <fieldset style={{ border: "1px solid #ddd", borderRadius: 4 }}>
-          <legend>Strategies</legend>
+          <legend>{t("Strategies")}</legend>
           {meta.strategies.map((s) => (
             <label key={s} style={{ display: "block" }}>
               <input
@@ -409,7 +409,7 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
         </fieldset>
       </div>
       <fieldset style={{ border: "1px solid #ddd", borderRadius: 4, marginTop: 12 }}>
-        <legend>Deck variants</legend>
+        <legend>{t("Deck variants")}</legend>
         <div style={{ display: "grid", gap: 12 }}>
           {decks.map((d, i) => (
             <div
@@ -425,14 +425,14 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input
                   value={d.name}
-                  aria-label={`variant ${i + 1} name`}
-                  placeholder="variant name"
+                  aria-label={t("variant {n} name", { n: i + 1 })}
+                  placeholder={t("variant name")}
                   onChange={(e) => updateVariant(i, { name: e.target.value })}
                   style={{ flex: 1 }}
                 />
                 <select
                   value=""
-                  aria-label={`variant ${i + 1} load preset`}
+                  aria-label={t("variant {n} load preset", { n: i + 1 })}
                   onChange={(e) => {
                     const preset = e.target.value;
                     if (preset) {
@@ -440,7 +440,7 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
                     }
                   }}
                 >
-                  <option value="">load preset…</option>
+                  <option value="">{t("load preset…")}</option>
                   {Object.keys(meta.deck_presets).map((p) => (
                     <option key={p} value={p}>
                       {p}
@@ -449,17 +449,17 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
                 </select>
                 <button
                   type="button"
-                  aria-label={`remove variant ${i + 1}`}
+                  aria-label={t("remove variant {n}", { n: i + 1 })}
                   onClick={() => removeVariant(i)}
                   disabled={decks.length <= 1}
-                  title={decks.length <= 1 ? "at least one variant required" : "remove variant"}
+                  title={decks.length <= 1 ? t("at least one variant required") : t("remove variant")}
                 >
                   ✕
                 </button>
               </div>
               <textarea
                 value={d.text}
-                aria-label={`variant ${i + 1} cards`}
+                aria-label={t("variant {n} cards", { n: i + 1 })}
                 onChange={(e) => updateVariant(i, { text: e.target.value })}
                 rows={7}
                 spellCheck={false}
@@ -474,11 +474,11 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
           ))}
         </div>
         <button type="button" onClick={addVariant} style={{ marginTop: 8 }}>
-          + add variant
+          + {t("add variant")}
         </button>
       </fieldset>
       <details style={{ marginTop: 12 }}>
-        <summary style={{ cursor: "pointer" }}>Advanced (search budgets)</summary>
+        <summary style={{ cursor: "pointer" }}>{t("Advanced (search budgets)")}</summary>
         <div
           style={{
             display: "grid",
@@ -488,27 +488,27 @@ export default function StudiesForm({ onSubmitted }: { onSubmitted: (id: string)
           }}
         >
           <label
-            title="Search iterations the MCTS player runs for every single card-play decision inside one combat. More = stronger + slower."
+            title={t("Search iterations the MCTS player runs for every single card-play decision inside one combat. More = stronger + slower.")}
           >
-            MCTS: sims per decision
+            {t("MCTS: sims per decision")}
             <br />
             <NumberInput min={1} value={mctsSims} onChange={setMctsSims} width="100%" />
           </label>
           <label
-            title="Max actions a search playout may run before the position is scored. 200 = engine default."
+            title={t("Max actions a search playout may run before the position is scored. 200 = engine default.")}
           >
-            MCTS: rollout depth
+            {t("MCTS: rollout depth")}
             <br />
             <NumberInput min={1} value={mctsDepth} onChange={setMctsDepth} width="100%" />
           </label>
         </div>
         <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted)" }}>
-          seeds = how many fights; sims = how hard mcts thinks per move
+          {t("seeds = how many fights; sims = how hard mcts thinks per move")}
         </p>
       </details>
       <div style={{ marginTop: 12 }}>
         <button onClick={submit} disabled={busy || hasDeckErrors}>
-          {busy ? "submitting…" : "Run sweep"}
+          {busy ? t("submitting…") : t("Run sweep")}
         </button>
         {err && <span style={{ color: "var(--bad, #d66)", marginLeft: 12 }}>{err}</span>}
       </div>

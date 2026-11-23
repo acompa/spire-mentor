@@ -39,13 +39,16 @@ def _campaign_process():
 
 @lru_cache(maxsize=1)
 def _run() -> dict[str, Any]:
-    # Seed 13: the run whose sampled decisions hold exactly one EVENT, the
-    # RoomFullOfCheese one `test_event_previews_are_honest` reads. Its 8-sim
+    # Seed 28: the run whose sampled decisions hold exactly one EVENT, the
+    # ThisOrThat one `test_event_previews_are_honest` reads. Its 8-sim
     # combat searches draw from state-hash-seeded RNG, so an engine change
     # that moves the card hash moves the run (the cost model moved seed 7's
     # first divergent search at step 18, on an identical state, and its run
-    # no longer meets an event).
-    return R.record_run(13, 0.6, 8, 8)
+    # no longer meets an event; the per-enemy potion targets of GH #1604
+    # moved seed 13 onto three events; its act-start MAP row also tripped
+    # the next-node flag gap of GH #1616, now fixed and pinned by
+    # `test_an_act_start_map_row_flags_the_start_nodes_children`).
+    return R.record_run(28, 0.6, 8, 8)
 
 
 @lru_cache(maxsize=1)
@@ -361,7 +364,7 @@ def test_event_previews_are_honest() -> None:
 
     infos = d.run_obs["event_options"]
     relic = [i for i, o in enumerate(infos) if (o.get("relics_gained") or 0) > 0]
-    assert relic, "the RoomFullOfCheese event has a relic-gaining option"
+    assert relic, "the ThisOrThat event has a relic-gaining option"
     got = ev_cols(d)
     assert sorted(got) == list(range(len(infos)))
     for idx, cols_got in got.items():
@@ -639,6 +642,50 @@ def test_encode_priv_rejects_a_rooms_record_that_is_not_one() -> None:
     pytest.fail("the recorded run has no decision")
 
 
+def _check_map_row(tok: K.Tok, cols: set[int]) -> None:
+    """A MAP row flags exactly the move columns on the next row, and every
+    OPT_MOVE carries its route summary (M_ROWS_LEFT > 0)."""
+    nodes = tok.sec == CT.SEC["MAPNODE"]
+    nxt = tok.cont[nodes, CT.XF["N_NEXT"]].astype(float)
+    assert int(nxt.sum()) == len(cols)
+    nxt_cols = tok.cont[nodes, CT.XF["N_COL"]].astype(float)[nxt > 0.5] * 6.0
+    assert {round(c) for c in nxt_cols} == cols
+    off = tok.cont[nodes, CT.XF["N_ROW_OFF"]].astype(float)[nxt > 0.5] * 17.0
+    assert {round(o) for o in off} == {1}
+    moves = tok.sec == CT.SEC["OPT_MOVE"]
+    assert moves.sum() == len(cols)
+    assert (tok.cont[moves, CT.XF["M_ROWS_LEFT"]] > 0).all()
+
+
+@pytest.mark.parametrize("seed", [15, 16])
+def test_an_act_start_map_row_flags_the_start_nodes_children(seed: int) -> None:
+    """GH #1616: at an act's first MAP decision the run has no current node
+    (`current_coord` None) and the moves are the start node's (the row-0
+    Ancient's) children on row 1. Both tokenizers read the start node as the
+    current one: they flag those children and give each move its route; they
+    used to flag row 0, i.e. nothing, and drop every route summary."""
+    import random
+
+    from ppo.e2e import env as E
+    from ppo.e2e.rsenv import RsE2EEnv
+
+    py_env, rs_env = E.E2EEnv(seed), RsE2EEnv(seed)
+    d, r = py_env.reset(), rs_env.reset()
+    rng = random.Random(seed)
+    starts = 0
+    while isinstance(d, E.E2EDecision) and starts < 2:
+        assert r.dtype == d.dtype and r.n_classes == d.n_classes
+        if CT.DECISION_TYPES[d.dtype].name == "MAP":
+            cols = {int(a["col"]) for a in d.obs_actions}
+            at_start = d.run_obs["map_coord"] is None
+            starts += at_start
+            for tok in (K.encode(d), r.tok):
+                _check_map_row(tok, cols)
+        c = rng.randrange(d.n_classes)
+        d, r = py_env.step(c), rs_env.step(c)
+    assert starts >= 1
+
+
 @pytest.mark.parametrize("seed", [11, 12])
 def test_tokenizer_in_the_env(seed: int) -> None:
     """The env drives the Tokenizer (`EnvConfig(tokenizer=...)`): its rows over
@@ -764,19 +811,26 @@ EVENT_FIGHTS = (
     ("BattlewornDummy", "setting_3", "BATTLEWORN_DUMMY_EVENT_V3_ENCOUNTER"),
     ("DenseVegetation", "rest", "DENSE_VEGETATION_EVENT_ENCOUNTER"),
     ("TheLanternKey", "keep_key", "MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER"),
-    ("FakeMerchant", "throw_foul", "FAKE_MERCHANT_EVENT_ENCOUNTER"),
+    # The Fake Merchant is a shop (GH #1607); a thrown Foul Potion starts its fight,
+    # which only an "ooc-potion" launch offers.
+    ("FakeMerchant", "use_potion_ooc", "FAKE_MERCHANT_EVENT_ENCOUNTER"),
+    ("PunchOff", "take_them", "PUNCH_OFF_EVENT_ENCOUNTER"),
 )
 
 
 def event_fight_env(seed: int, event: str, option: str, **cfg: Any) -> Any:
     """An env whose run starts at `event` (forced over Neow) and whose first decision is
-    that event; `option` (an `option_id`) starts its fight. FakeMerchant's fight needs a
-    Foul Potion on the belt."""
+    that event; `option` (an `option_id`) starts its fight. FakeMerchant's fight is a
+    Foul Potion thrown from its shop (the caller declares "ooc-potion"); `option` is
+    then the action's name."""
     from ppo.e2e import env as E
 
     rm = factory.new_run(seed)
     if event == "FakeMerchant":
         rm.debug_set_potion_state(["FOUL_POTION"], [])
+        rm.debug_enter_event(event)
+        env = E.E2EEnv(seed, rm=rm, cfg=E.EnvConfig(**cfg))
+        return env, None
     assert rm.force_event(event) == event
     env = E.E2EEnv(seed, rm=rm, cfg=E.EnvConfig(**cfg))
     return env, [o["option_id"] for o in rm.event_option_infos()].index(option)
@@ -784,16 +838,24 @@ def event_fight_env(seed: int, event: str, option: str, **cfg: Any) -> Any:
 
 @pytest.mark.skipif(not hasattr(sts2_rs.CombatState, "encounter_id"), reason="pre-W2 wheel")
 @pytest.mark.parametrize(("event", "option", "encounter"), EVENT_FIGHTS)
-def test_event_fights_have_an_encounter_id(event: str, option: str, encounter: str) -> None:
+def test_event_fights_have_an_encounter_id(
+    event: str, option: str, encounter: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A3: an event's fight fills RUNCTX's X_ID_AUX with its event encounter's id, not
     `UNK_ENCOUNTER` (vocabulary revision 2.1 appended them)."""
     from ppo.e2e import env as E
 
+    if option == "use_potion_ooc":
+        monkeypatch.setenv(factory.OOC_POTION_ENV, "1")
     v = V.load()
     env, opt = event_fight_env(162_000_400, event, option)
     d = env.reset()
-    assert isinstance(d, E.E2EDecision) and d.dtype == CT.DT["EVENT"]
-    d = env.step_action(next(i for i, a in enumerate(d.actions) if a.get("idx") == opt))
+    if opt is None:
+        assert isinstance(d, E.E2EDecision) and d.dtype == CT.DT["SHOP"]
+        d = env.step_action(next(i for i, a in enumerate(d.actions) if a["action"] == option))
+    else:
+        assert isinstance(d, E.E2EDecision) and d.dtype == CT.DT["EVENT"]
+        d = env.step_action(next(i for i, a in enumerate(d.actions) if a.get("idx") == opt))
     rows = 0
     while isinstance(d, E.E2EDecision) and d.is_combat and rows < 20:
         assert d.bv.encounter_id == encounter
@@ -1008,3 +1070,27 @@ def test_t14_dropping_priv_leaves_the_students_logits_bit_identical(bf16: bool) 
     assert any(t.n_priv for t in full) and not any(t.n_priv for t in bare)
     net = _student(bf16)
     assert torch.equal(_s0_logits(net, full), _s0_logits(net, bare))
+
+
+def test_an_outlier_saturates_instead_of_overflowing() -> None:
+    """A run with ~1e9 gold (an edited save's) and HP: every float16 column stays
+    finite, R_GOLD at 65504; a plain cast made it inf and the policy NaN (allchar
+    lane, it 7806)."""
+    from ppo.combat_ctx import tokens as T
+    from ppo.e2e import env as E
+    from ppo.e2e import fillcheck as FC
+
+    seed = 162_000_207
+    rm = factory.new_run(seed)
+    rm.set_player(1_000_000_000, 1_000_000_000, 1_000_000_000)
+    env = E.E2EEnv(seed, rm=rm, cfg=E.EnvConfig(max_fight_turns=400))
+    act, d, kinds = FC.random_actor(seed), env.reset(), set()
+    for _ in range(60):
+        if not isinstance(d, E.E2EDecision):
+            break
+        tok = K.encode(d)
+        assert np.isfinite(tok.cont.astype(np.float32)).all(), d.dtype_name
+        assert tok.cont[0, CT.XF["R_GOLD"]] == np.float16(T.F16_MAX)
+        kinds.add(tok.is_combat)
+        d = env.step(act(d))
+    assert kinds == {False, True}

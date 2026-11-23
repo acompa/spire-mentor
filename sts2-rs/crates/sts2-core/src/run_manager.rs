@@ -59,6 +59,12 @@ pub enum Phase {
     Event,
     /// Treasure-room chest resolution.
     Treasure,
+    /// The game's reward screen (`NRewardsScreen`, GH #1620): every reward of
+    /// a won combat room, or the treasure chest's relic, taken or skipped one
+    /// by one ([`RunAction::TakeReward`] / [`RunAction::SkipReward`]) until
+    /// [`RunAction::ProceedRewards`] leaves the rest. Only reached with
+    /// [`crate::runstate::RunState::reward_screen`] set.
+    Rewards,
     /// Run is finished — `run_state.player_won` resolves outcome.
     RunOver,
 }
@@ -262,6 +268,48 @@ pub enum RunAction {
     /// `TransformDeckCard` fan-out). Phase-agnostic like [`Self::RemoveDeckCard`].
     /// Bead `sts2-rs-gorge-select`.
     GrantDeckCard { idx: usize },
+    /// Shop, Blitz merchant (GH #1347): take ware `idx` of
+    /// [`RunManager::blitz_shop`] (0-based, in inventory order). Free; spends
+    /// one of the merchant's picks once the ware's effect completes. A ware
+    /// that opens a deck pick (CardUpgrade, CardTransform, CardRemoval,
+    /// CardEnchant, Glam) preempts the phase with that pick plus
+    /// [`Self::ConfirmDeckSelection`], which cancels it and leaves the ware
+    /// available (C# `CardSelectorPrefs.Cancelable`).
+    BlitzChoice { idx: usize },
+    /// Treasure, Blitz chest (GH #1347): take the chest relic first listed
+    /// at `idx` ([`crate::blitz::Chest::relics`]). The chest holds two
+    /// relics taken over two rounds; [`Self::SkipRelic`] closes it with
+    /// nothing more awarded.
+    TakeChestRelic { idx: usize },
+    /// Out of combat: drink the potion in visible belt slot `potion_slot`
+    /// (the game's potion popup, `NPotionPopup` Use, GH #1606). Offered for
+    /// `PotionUsage.AnyTime` potions only
+    /// ([`crate::potions::PotionKind::is_usable_any_time`]): Blood Potion and
+    /// Ambergris heal, Fruit Juice raises max HP, Entropic Brew fills the
+    /// open slots, and Foul Potion, thrown at a merchant (shop phase only),
+    /// gains 100 gold (`FoulPotion.cs`). Only surfaced when
+    /// [`crate::runstate::RunState::ooc_potion_actions`] is set.
+    UsePotionOutOfCombat { potion_slot: usize },
+    /// Discard the potion in visible belt slot `potion_slot` (`NPotionPopup`
+    /// Discard → `PotionCmd.Discard`, GH #1606). Offered at every
+    /// out-of-combat decision and on the player's turn in combat while
+    /// [`crate::runstate::RunState::ooc_potion_actions`] is set. The combat
+    /// search never offers it (`crate::legal_actions` has no discard).
+    DiscardPotion { potion_slot: usize },
+    /// Reward screen (GH #1620): take the reward first listed under `idx`
+    /// ([`RewardScreenEntry::index`]; the indices of the rewards still on the
+    /// screen do not shift). C# `Reward.OnSelect` via `NRewardButton`: gold is
+    /// gained, a potion procured (a full belt parks a potion swap, as the
+    /// host's `NotePotionRewardOutcome`), a relic obtained, a special card
+    /// added, a card reward opens its pick, a card removal its deck pick.
+    TakeReward { idx: usize },
+    /// Reward screen (GH #1620): leave the reward first listed under `idx`
+    /// (`Reward.OnSkipped`). The chest relic's skip closes the chest
+    /// (`TreasureRoomRelicSynchronizer.SkipRelicLocally`).
+    SkipReward { idx: usize },
+    /// Reward screen (GH #1620): leave the screen, skipping every reward
+    /// still on it (`RewardsSetSynchronizer.SkipLocalRewardsSet`).
+    ProceedRewards,
     /// Catch-all for not-yet-modeled actions. Routes to
     /// [`ActionResult::NotImplemented`].
     Unhandled,
@@ -486,6 +534,13 @@ pub struct ContentCallbacks {
     /// [`RunManager::drain_pending_rewards`]. Bead `sts2-rs-01o`.
     pub roll_potion_reward_kind:
         Option<fn(rs: &mut RunState) -> Option<crate::potions::PotionKind>>,
+    /// Roll ONE Entropic Brew fill out of combat (GH #1606): C#
+    /// `PotionFactory.CreateRandomPotionOutOfCombat(owner,
+    /// Rng.CombatPotionGeneration)` (`EntropicBrew.cs`; v0.113.0 rolls on
+    /// `PlayerRng.NonCombatGeneration`), the stream the in-combat Brew uses.
+    /// When unwired, an out-of-combat Brew fills nothing.
+    pub roll_entropic_brew_potion:
+        Option<fn(rs: &mut RunState) -> Option<crate::potions::PotionKind>>,
     /// Roll ONE `NeowsBones` curse on the `Niche` stream (C#
     /// `Rng.Niche.NextItem(availableCurses)`), returning its POD. Invoked by
     /// [`RunManager::drain_post_pick_deck_cards_if_settled`] once the grant
@@ -566,6 +621,26 @@ pub struct ContentCallbacks {
     pub resume_event_after_combat: Option<
         fn(rs: &mut RunState, encounter: &crate::events::EventEncounter, clean_victory: bool),
     >,
+    /// Blitz (GH #1347): roll the merchant's six wares on entering its room
+    /// (C# `MerchantInventory.CreateForBlitzMerchant`), including the draws
+    /// two wares' constructors make.
+    pub generate_blitz_merchant: Option<fn(rs: &mut RunState) -> crate::blitz::MerchantInventory>,
+    /// Blitz: run a ware's C# `OnTrySelect` up to its first player decision:
+    /// immediate effects and reward rolls land on the run state, rewards
+    /// that need a pick are queued on it, a deck pick is queued and reported.
+    pub blitz_merchant_select: Option<
+        fn(rs: &mut RunState, entry: &crate::blitz::MerchantEntry) -> crate::blitz::SelectOutcome,
+    >,
+    /// Blitz: the rest of a ware's `OnTrySelect` once its deck pick resolved
+    /// (Glam's curse, CardRemoval's removal count).
+    pub blitz_merchant_after_pick:
+        Option<fn(rs: &mut RunState, entry: &crate::blitz::MerchantEntry)>,
+    /// Blitz: populate and claim the `PotionReward` a won room's replaced
+    /// reward set holds after its card reward (C# `BlitzRunModel.
+    /// TryReplaceDefaultRoomRewards`: a non-weak Monster room, a boss before
+    /// the last act). Returns whether the room had one.
+    pub blitz_room_potion:
+        Option<fn(rs: &mut RunState, room_type: crate::runstate::RoomType) -> bool>,
 }
 
 impl core::fmt::Debug for ContentCallbacks {
@@ -620,6 +695,10 @@ impl core::fmt::Debug for ContentCallbacks {
                 &self.roll_potion_reward_kind.is_some(),
             )
             .field(
+                "roll_entropic_brew_potion",
+                &self.roll_entropic_brew_potion.is_some(),
+            )
+            .field(
                 "roll_neows_bones_curse",
                 &self.roll_neows_bones_curse.is_some(),
             )
@@ -637,6 +716,19 @@ impl core::fmt::Debug for ContentCallbacks {
                 "resume_event_after_combat",
                 &self.resume_event_after_combat.is_some(),
             )
+            .field(
+                "generate_blitz_merchant",
+                &self.generate_blitz_merchant.is_some(),
+            )
+            .field(
+                "blitz_merchant_select",
+                &self.blitz_merchant_select.is_some(),
+            )
+            .field(
+                "blitz_merchant_after_pick",
+                &self.blitz_merchant_after_pick.is_some(),
+            )
+            .field("blitz_room_potion", &self.blitz_room_potion.is_some())
             .finish()
     }
 }
@@ -722,12 +814,23 @@ pub struct RunManager {
     /// the boss gold roll reads the boss room type. Bead `sts2-rs-jenwp`
     /// (M4 live reward stream — Boss follow-up).
     pending_boss_act_advance: bool,
+    /// The final boss is dead on v0.113.0+, but its reward set still holds
+    /// an interactive pick (Forbidden Grimoire's `CardRemovalReward`,
+    /// `RewardsSet.cs:96-103`). `advance_after_card_reward` stamps the win
+    /// once the set has drained.
+    pending_run_win: bool,
     /// The next act's Ancient-event entry heal already landed when the
     /// boss-relic (= Ancient) screen opened (`AncientEventModel.cs:172-193`
     /// heals in `BeforeEventStarted`, before the options are offered), so
     /// [`Self::advance_boss_act`] must not heal again: the A2 WearyTraveler
     /// heal is 80% of the HP still missing, which is not idempotent.
     ancient_heal_done: bool,
+    /// The next act's `DreadRunModel.AfterActEntered` already ran when the
+    /// boss-relic (= Ancient) offers were rolled, so
+    /// [`Self::advance_boss_act`] must not run it again
+    /// ([`Self::dread_after_act_entered`], GH #1346). Always `false` outside
+    /// the window between that roll and the act advance.
+    dread_act_entry_done: bool,
     /// Set when an intermediate page of a multi-page event offered rewards
     /// (C# `RewardsCmd.OfferCustom` awaited inside the option, e.g. Dream
     /// Catcher's card from DenseVegetation's mimicked rest heal). Once the
@@ -777,6 +880,40 @@ pub struct RunManager {
     /// shop is open OR the callback isn't wired (legacy skip-only
     /// behavior). Bead `sts2-rs-if6ry` (W3).
     shop_inventory: Option<crate::shop::ShopInventory>,
+    /// The Blitz merchant's wares during [`Phase::Shop`] of a Blitz run
+    /// (GH #1347), `None` otherwise. Rolled on entering the room, dropped on
+    /// [`RunAction::LeaveShop`].
+    blitz_shop: Option<crate::blitz::MerchantInventory>,
+    /// The Blitz ware whose cancelable deck pick is open: its index in
+    /// [`Self::blitz_shop`] and which pick it queued.
+    blitz_pick: Option<(usize, crate::blitz::DeckPick)>,
+    /// The open Blitz chest during [`Phase::Treasure`] of a Blitz run.
+    blitz_chest: Option<crate::blitz::Chest>,
+    /// The open reward screen of a
+    /// [`crate::runstate::RunState::reward_screen`] run (GH #1620): the
+    /// rewards not yet taken or skipped, in screen order. Stays set while a
+    /// taken card reward's pick (or anything a taken relic queued) is up;
+    /// [`Phase::Rewards`] comes back once that resolves.
+    reward_screen: Option<Vec<RewardScreenEntry>>,
+    /// Reward screens under the open one (GH #1641): a relic taken off a
+    /// screen whose `AfterObtained` offers its own set (Orrery, Small
+    /// Capsule) opens that set on top (`RewardsSetSynchronizer` keeps a
+    /// stack); the outer screen comes back once it is left.
+    outer_reward_screens: Vec<(Vec<RewardScreenEntry>, bool)>,
+    /// The open reward screen's set disallows skipping
+    /// (`RewardsSet.WithSkippingDisallowed`, Neow's Bones, GH #1641): the
+    /// player must take every reward; no skip, no proceed.
+    reward_screen_must_take: bool,
+}
+
+/// One reward still on the open reward screen ([`RunManager::reward_screen`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RewardScreenEntry {
+    /// The position the reward was first listed at (C# host `reward_index`):
+    /// stable while other rewards are taken or skipped.
+    pub index: usize,
+    /// What taking it grants.
+    pub reward: crate::runstate::ScreenReward,
 }
 
 /// Resume point of a suspended `LordsParasol.PurchaseEverything` (see
@@ -786,6 +923,18 @@ pub struct RunManager {
 enum ParasolStep {
     Relic(usize),
     Potion(usize),
+}
+
+/// A fresh `AscendersBane` for the run deck (`Models.Cards/AscendersBane.cs`:
+/// an unplayable, ethereal, eternal Curse): the A5 one of run start and the
+/// one a Dread run adds on entering acts 2 and 3.
+fn ascenders_bane_card() -> crate::cards::Card {
+    let mut curse = crate::cards::Card::pod_defaults();
+    curse.card_id = crate::cards::CardId::AscendersBane;
+    curse.cost = crate::CardEnergyCost::new(-1);
+    curse.card_type = crate::cards::CardType::Curse;
+    curse.target_type = crate::cards::TargetType::None;
+    curse
 }
 
 impl RunManager {
@@ -866,6 +1015,76 @@ impl RunManager {
         self
     }
 
+    /// Set the run's game mode (GH #1346). Builder-style, chained after
+    /// [`Self::with_game_version`] and before the run starts.
+    ///
+    /// A Dread run is an ascension-10 run on v0.113.0 or later: the game's
+    /// Dread screen embarks with the literal 10 (`NDreadScreen.cs:584`), so
+    /// build it with [`Self::with_ascension`]`(.., 10)`. Every A1-A10 effect
+    /// then applies as in a standard A10 run; Dread adds the per-act dominion
+    /// ([`RunState::act_dominion`]), one more Ascender's Bane on entering
+    /// acts 2 and 3, and the `IsDread()` boss changes.
+    ///
+    /// A Blitz run (GH #1347) is built with [`Self::with_ascension`] at its
+    /// Blitz level 0..=5; this re-reads that number as the Blitz level set
+    /// ([`crate::ascension::blitz_levels`]) and lays out the Blitz act map.
+    /// Chain it after the starter deck is populated (the content run
+    /// factories do that), so Ascender's Bane lands at the deck tail.
+    ///
+    /// # Panics
+    /// If the run has started, if the build is older than the mode's first
+    /// (v0.113.0 for Dread and Blitz), or if the ascension is not one the
+    /// mode has (Dread: 10; Blitz: 0..=5).
+    #[must_use]
+    pub fn with_game_mode(mut self, mode: crate::GameMode) -> Self {
+        if mode == self.run_state.game_mode {
+            return self;
+        }
+        assert!(
+            self.phase == Phase::MapChoice && self.combat.is_none(),
+            "RunManager::with_game_mode must be chained before the run starts \
+             (phase = {:?})",
+            self.phase
+        );
+        assert!(
+            self.game_version >= mode.min_game_version(),
+            "{} exists from {} (this run is {})",
+            mode.name(),
+            mode.min_game_version(),
+            self.game_version
+        );
+        if let Some(level) = mode.forced_ascension() {
+            assert_eq!(
+                self.ascension_level, level,
+                "a {mode} run is an ascension-{level} run"
+            );
+        }
+        assert!(
+            self.ascension_level <= mode.max_ascension(),
+            "a {mode} run's ascension is 0..={} (got {})",
+            mode.max_ascension(),
+            self.ascension_level
+        );
+        if mode.is_blitz() || self.run_state.game_mode.is_blitz() {
+            // Blitz reads the ascension number as a level SET
+            // (`AscensionHelper.GetLevelForBlitz`), and its act map is the
+            // fixed line. Redo what the constructor derived from the number
+            // under the standard ladder, then the map.
+            let rs = &mut self.run_state;
+            rs.game_mode = mode;
+            rs.current_hp = rs.max_hp;
+            rs.max_potion_slots = RunState::new().max_potion_slots;
+            rs.master_deck
+                .retain(|c| c.card_id != crate::cards::CardId::AscendersBane);
+            Self::apply_ascension_setup(rs);
+            let master = self.run_state.rng.seed;
+            self.reseed_run(master);
+            return self;
+        }
+        self.run_state.game_mode = mode;
+        self
+    }
+
     /// Set the run's hashed master seed (C# `RunRngSet.Seed`) to the full
     /// `master` — the way into a v0.111.0 run, whose master seed is a 64-bit
     /// XxHash64 that the `i32` constructors cannot carry (GH #788). Use
@@ -906,6 +1125,34 @@ impl RunManager {
         if let Some(pre_roll) = self.callbacks.pre_roll_act_boss {
             pre_roll(&mut self.run_state);
         }
+    }
+
+    /// The run-start ascension effects, read off `run_state`'s
+    /// `ascension_level` and `game_mode` through
+    /// [`RunState::has_ascension`] (C# `AscensionManager.ApplyEffectsTo`,
+    /// `AscensionManager.cs:80-95`, plus the flags the engine derives once):
+    /// WearyTraveler's 80% Neow start, TightBelt's lost potion slot,
+    /// AscendersBane at the deck tail, Scarcity's rarity odds, DoubleBoss.
+    ///
+    /// Expects `current_hp == max_hp`, the default potion slots and no
+    /// Ascender's Bane in the deck: [`Self::build`] calls it on a fresh
+    /// state, [`Self::with_game_mode`] resets those first.
+    fn apply_ascension_setup(run_state: &mut RunState) {
+        use crate::AscensionLevel as L;
+        if run_state.has_ascension(L::WearyTraveler) {
+            run_state.current_hp = (f64::from(run_state.max_hp)
+                * crate::runstate::WEARY_TRAVELER_HEAL_MULTIPLIER)
+                .floor() as i32;
+        }
+        if run_state.has_ascension(L::TightBelt) {
+            run_state.max_potion_slots = (run_state.max_potion_slots - 1).max(0);
+        }
+        if run_state.has_ascension(L::AscendersBane) {
+            run_state.master_deck.push(ascenders_bane_card());
+        }
+        run_state.card_rarity_odds =
+            crate::card_rewards::CardRarityOdds::new(run_state.ascension_view(&[L::Scarcity]));
+        run_state.has_double_boss = run_state.has_ascension(L::DoubleBoss);
     }
 
     /// Shared body of [`Self::with_ascension`] / [`Self::with_game_version`].
@@ -950,15 +1197,7 @@ impl RunManager {
         // C# truncates the decimal heal (`(int)Math.Min(amount, MaxHp)`).
         // Inter-act Ancient heals land in `advance_boss_act` /
         // `advance_act_on_boss_kill` via `RunState::apply_ancient_event_heal`.
-        if ascension_level >= crate::runstate::WEARY_TRAVELER_ASCENSION_LEVEL {
-            run_state.current_hp = (f64::from(run_state.max_hp)
-                * crate::runstate::WEARY_TRAVELER_HEAL_MULTIPLIER)
-                .floor() as i32;
-        }
         // A4 TightBelt: -1 max potion slot, saturating at 0.
-        if ascension_level >= crate::runstate::TIGHT_BELT_ASCENSION_LEVEL {
-            run_state.max_potion_slots = (run_state.max_potion_slots - 1).max(0);
-        }
         // A5 AscendersBane: append the unplayable+ethereal curse to the
         // master deck. Pin: sts2-rl-agent@01c094d run_state.py:1520-1532
         // / cards/status.py:160-166. Spec mirrors
@@ -968,14 +1207,6 @@ impl RunManager {
         // Standalone vs the rest of starter-deck plumbing (still
         // pending per the module header) — the curse-add step is its
         // own line in the Python pin, distinct from base-deck assembly.
-        if ascension_level >= 5 {
-            let mut curse = crate::cards::Card::pod_defaults();
-            curse.card_id = crate::cards::CardId::AscendersBane;
-            curse.cost = crate::CardEnergyCost::new(-1);
-            curse.card_type = crate::cards::CardType::Curse;
-            curse.target_type = crate::cards::TargetType::None;
-            run_state.master_deck.push(curse);
-        }
         // A7 Scarcity: rebind the run's `CardRarityOdds` to the real
         // ascension level so both the rarity-roller's *_SCARCITY tables
         // (`CardRarityOdds::new`, gated on `SCARCITY_ASCENSION_LEVEL = 7`)
@@ -985,12 +1216,11 @@ impl RunManager {
         // in place; this just threads the live level into `RunState`. Pin:
         // sts2-rl-agent@01c094d run_state.py:1534-1536 + rewards.py:30-31
         // + odds.py:160-189.
-        run_state.card_rarity_odds = crate::card_rewards::CardRarityOdds::new(ascension_level);
         // A10 DoubleBoss: flip the run-level flag at asc ≥ 10. The
         // actual two-boss-per-act map-gen wiring is a P9.A.10b follow-up;
         // this is the field + threshold setter only. Pin:
         // sts2-rl-agent@01c094d run_state.py:1544-1545.
-        run_state.has_double_boss = ascension_level >= 10;
+        Self::apply_ascension_setup(&mut run_state);
         // Seed the legacy single-stream RNG so deterministic tests can
         // rely on a non-zero seed. The named-stream bundle on
         // RunState itself lands in the ewm6b follow-up.
@@ -1041,7 +1271,9 @@ impl RunManager {
             card_reward_bundles: None,
             boss_relic_options: Vec::new(),
             pending_boss_act_advance: false,
+            pending_run_win: false,
             ancient_heal_done: false,
+            dread_act_entry_done: false,
             resume_event_after_rewards: false,
             resume_shop_after_rewards: None,
             parasol_resume: None,
@@ -1050,6 +1282,12 @@ impl RunManager {
             pending_choose_screen_post_add: Vec::new(),
             card_offer_can_skip: true,
             shop_inventory: None,
+            blitz_shop: None,
+            blitz_pick: None,
+            blitz_chest: None,
+            reward_screen: None,
+            outer_reward_screens: Vec::new(),
+            reward_screen_must_take: false,
         }
     }
 
@@ -1132,7 +1370,11 @@ impl RunManager {
     /// Bead `sts2-rs-g24zv` (R3.1.3 under `sts2-rs-nr8l4`).
     #[must_use]
     pub fn with_neow_start(mut self) -> Self {
-        self.run_state.roll_neow_offers_if_needed();
+        // A Blitz Neow offers its one BLITZ option before any `Rng` draw
+        // (`Neow.cs:218-223`), so its relic offers are never rolled.
+        if !self.run_state.game_mode.is_blitz() {
+            self.run_state.roll_neow_offers_if_needed();
+        }
         self.run_state
             .enter_event_room(crate::events::EventId::Neow);
         // C# `RunManager` calls `State.Act.MarkRoomVisited(room.RoomType)` on
@@ -1162,6 +1404,56 @@ impl RunManager {
                 bind(&mut self.run_state);
             }
         }
+        self.open_fake_merchant_if_bound();
+    }
+
+    /// Open the Fake Merchant's shop page once its event is bound (GH #1607).
+    ///
+    /// C# `FakeMerchant` has no options (`GenerateInitialOptions` is empty):
+    /// its page is `NFakeMerchant`, a merchant inventory over the six fake
+    /// relics `BeforeEventStarted` stocked, with Proceed to the map. The
+    /// engine plays it as [`Phase::Shop`] over that inventory (moved out of
+    /// `event_state.fake_merchant`, [`crate::shop::ShopInventory::fake_merchant`]
+    /// set): `ShopBuyRelic` buys any stocked relic it can afford, any number
+    /// of times; `LeaveShop` ends the event; a thrown Foul Potion
+    /// ([`RunAction::UsePotionOutOfCombat`]) starts its fight. The event stays
+    /// bound (`current_event`) for the whole visit, as the room does.
+    ///
+    /// No-op unless the run stands on the bound Fake Merchant's page with
+    /// its stock not yet opened; idempotent and RNG-free. Hosts that bind an
+    /// event through the content callback directly (not
+    /// [`Self::bind_pending_event`]) call this after it.
+    pub fn open_fake_merchant_if_bound(&mut self) {
+        if self.phase != Phase::Event
+            || self.run_state.current_event != Some(crate::events::EventId::FakeMerchant)
+            || self.run_state.event_combat.is_some()
+        {
+            return;
+        }
+        if let Some(inv) = self.run_state.event_state.fake_merchant.take() {
+            self.shop_inventory = Some(inv);
+            self.phase = Phase::Shop;
+        }
+    }
+
+    /// The bound Fake Merchant's stock while its shop page is not yet open.
+    fn staged_fake_merchant(&self) -> Option<&crate::shop::ShopInventory> {
+        if self.run_state.current_event != Some(crate::events::EventId::FakeMerchant)
+            || self.run_state.event_combat.is_some()
+        {
+            return None;
+        }
+        self.run_state.event_state.fake_merchant.as_ref()
+    }
+
+    /// Whether the open shop is the Fake Merchant's (GH #1607).
+    #[must_use]
+    pub fn in_fake_merchant_shop(&self) -> bool {
+        self.phase == Phase::Shop
+            && self
+                .shop_inventory
+                .as_ref()
+                .is_some_and(|i| i.fake_merchant)
     }
 
     /// Access the wired callbacks (mostly for tests).
@@ -1337,6 +1629,49 @@ impl RunManager {
         Ok(())
     }
 
+    /// Park the run at `act`'s entrance, the way a run stands before its
+    /// first map choice of the act: the act entered (advanced and generated
+    /// as [`Self::debug_place_on_map`] does), no node, nothing visited, act
+    /// floor 0, `total_floor` floors behind it, choosing a path. The game's
+    /// own state stands on the act's start node there (the Ancient, row 0),
+    /// which the engine never enters (GH #1654).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::debug_place_on_map`]: `act` out of range or behind the run,
+    /// or its map cannot be generated.
+    pub fn debug_park_at_act_entrance(&mut self, act: u8, total_floor: i32) -> Result<(), String> {
+        let acts = self.run_state.acts.len().max(3);
+        if act < 1 || usize::from(act) > acts {
+            return Err(format!("act {act} is outside this run's 1..={acts}"));
+        }
+        if self.run_state.act_index > act {
+            return Err(format!(
+                "run is already at act {}, cannot go back to act {act}",
+                self.run_state.act_index
+            ));
+        }
+        while self.run_state.act_index < act {
+            self.run_state.advance_act();
+            self.run_state.generate_map();
+        }
+        if self.run_state.current_act_map.is_none() {
+            self.run_state.generate_map();
+        }
+        if self.run_state.current_act_map.is_none() {
+            return Err(format!("act {act}'s map could not be generated"));
+        }
+        self.run_state.visited_map_coords.clear();
+        self.run_state.act_floor = 0;
+        self.run_state.total_floor = total_floor;
+        self.run_state.current_room = None;
+        self.run_state.in_ancient_room = false;
+        self.run_state.exit_event_room();
+        self.combat = None;
+        self.phase = Phase::MapChoice;
+        Ok(())
+    }
+
     /// Drop the run into `combat` as it stands — the workbench's state-import
     /// combat lane (GH #708): a fight rebuilt from a live-game paste
     /// (`sts2_wire::state_from_json`) grafted onto the run the run lane
@@ -1472,7 +1807,9 @@ impl RunManager {
         begin(&mut self.run_state, event_id);
         self.run_state.rng = rng;
         self.combat = None;
+        self.shop_inventory = None;
         self.phase = Phase::Event;
+        self.open_fake_merchant_if_bound();
     }
 
     /// Stand at a rest site ([`Phase::RestSite`]) and return the options it
@@ -1491,6 +1828,8 @@ impl RunManager {
     ) -> Vec<crate::runstate::RestSiteOption> {
         self.debug_set_room_type(crate::runstate::RoomType::RestSite);
         self.run_state.pending_choice = None;
+        self.run_state.cook_select_open = false;
+        self.run_state.deck_select_picked.clear();
         self.run_state.rest_site_taken = taken;
         self.resume_rest_site_after_rewards = false;
         self.combat = None;
@@ -1596,6 +1935,8 @@ impl RunManager {
         rs.pending_deck_enchants.clear();
         rs.pending_potion_swaps.clear();
         rs.pending_choice = None;
+        rs.deck_select_picked.clear();
+        rs.cook_select_open = false;
     }
 
     /// Queue a multi-pick card grant (Room Full of Cheese's Gorge, Sea Glass):
@@ -1626,6 +1967,23 @@ impl RunManager {
         self.run_state.pending_potion_swaps.push(kind);
     }
 
+    /// Open the reward screen ([`Phase::Rewards`], GH #1620) over `rewards`,
+    /// listed in the given order. Leaving it routes on as after a combat
+    /// room's rewards.
+    ///
+    /// Reconstruction surface, never call on a recorded or parity-pinned run.
+    pub fn debug_open_reward_screen(&mut self, rewards: Vec<crate::runstate::ScreenReward>) {
+        self.reward_screen_must_take = false;
+        self.reward_screen = Some(
+            rewards
+                .into_iter()
+                .enumerate()
+                .map(|(index, reward)| RewardScreenEntry { index, reward })
+                .collect(),
+        );
+        self.phase = Phase::Rewards;
+    }
+
     /// Open [`Phase::BossRelic`] offering `relics` — the post-boss relic pick,
     /// which is also how this engine models the Act 2/3 Ancient's choice.
     ///
@@ -1642,6 +2000,9 @@ impl RunManager {
     pub fn debug_open_boss_relic(&mut self, relics: Vec<crate::RelicId>) {
         self.boss_relic_options = relics;
         self.ancient_heal_done = true;
+        // Likewise the act-entry Ascender's Bane of a Dread run: the deck the
+        // caller rebuilt at this screen already holds it.
+        self.dread_act_entry_done = true;
         self.pending_boss_act_advance = false;
         self.combat = None;
         self.phase = Phase::BossRelic;
@@ -1652,7 +2013,251 @@ impl RunManager {
     /// `sts2-rs-7kl4f`.
     #[must_use]
     pub fn get_available_actions(&self) -> Vec<RunAction> {
+        let mut actions = self.phase_available_actions();
+        // A Blitz ware's deck pick is cancelable (C# `Cancelable = true`):
+        // the confirm with no card picked, last.
+        if self.blitz_pick.is_some() && self.deck_pick_pending() {
+            actions.push(RunAction::ConfirmDeckSelection);
+        }
+        if !actions.is_empty() {
+            self.push_potion_belt_actions(&mut actions);
+        }
+        actions
+    }
+
+    /// The potion popup's actions (GH #1606), appended after the phase's own
+    /// so a policy that takes the first action is unaffected: out of combat
+    /// one [`RunAction::UsePotionOutOfCombat`] per usable potion, then one
+    /// [`RunAction::DiscardPotion`] per held potion; in combat (the player's
+    /// turn, no open choice) the discards only. Only with
+    /// [`crate::runstate::RunState::ooc_potion_actions`] set.
+    ///
+    /// C# `NPotionPopup`: Discard is enabled whenever the potion is not
+    /// queued and `Player.CanUseOrRemovePotions` holds (`RefreshButtons`);
+    /// Use for a `PotionUsage.AnyTime` potion likewise, plus
+    /// `PassesCustomUsabilityCheck` (Foul Potion: a merchant to throw it
+    /// at). `CanUseOrRemovePotions` is false while The Future of Potions,
+    /// Stone of All Time or Ranwid the Elder runs (their `OnEventStarted`
+    /// clears it until `OnEventFinished`). The popup also stays available on
+    /// the reward, boss-relic and treasure screens; it is not offered while a
+    /// deck pick, a card grant, a potion swap or the Smith pick preempts the
+    /// phase (each is a card-select overlay the run loop resolves first).
+    fn push_potion_belt_actions(&self, actions: &mut Vec<RunAction>) {
+        if !self.run_state.ooc_potion_actions {
+            return;
+        }
+        if self.phase == Phase::Combat {
+            let Some(combat) = self.combat.as_ref() else {
+                return;
+            };
+            if combat.is_over || combat.pending_choice.is_some() {
+                return;
+            }
+            actions.extend(
+                (0..combat.player.potions.len())
+                    .map(|potion_slot| RunAction::DiscardPotion { potion_slot }),
+            );
+            return;
+        }
+        if self.run_state.potions.is_empty() || !self.ooc_potion_belt_open() {
+            return;
+        }
+        for (potion_slot, &kind) in self.run_state.potions.iter().enumerate() {
+            if self.potion_usable_out_of_combat(kind) {
+                actions.push(RunAction::UsePotionOutOfCombat { potion_slot });
+            }
+        }
+        actions.extend(
+            (0..self.run_state.potions.len())
+                .map(|potion_slot| RunAction::DiscardPotion { potion_slot }),
+        );
+    }
+
+    /// Whether the out-of-combat potion popup is interactable now: a main
+    /// out-of-combat screen with nothing preempting it, outside the three
+    /// events that set `CanUseOrRemovePotions = false`.
+    fn ooc_potion_belt_open(&self) -> bool {
+        use crate::events::EventId;
+        if !matches!(
+            self.phase,
+            Phase::MapChoice
+                | Phase::Event
+                | Phase::RestSite
+                | Phase::Shop
+                | Phase::CardReward
+                | Phase::BossRelic
+                | Phase::Treasure
+                | Phase::Rewards
+        ) {
+            return false;
+        }
+        if self.deck_pick_pending()
+            || self.blitz_pick.is_some()
+            || !self.run_state.pending_card_grants.is_empty()
+            || !self.run_state.pending_potion_swaps.is_empty()
+            || self.run_state.pending_choice.is_some()
+        {
+            return false;
+        }
+        !(self.phase == Phase::Event
+            && matches!(
+                self.run_state.current_event,
+                Some(
+                    EventId::TheFutureOfPotions | EventId::StoneOfAllTime | EventId::RanwidTheElder
+                )
+            ))
+    }
+
+    /// Whether `kind` can be drunk out of combat in the current phase:
+    /// `PotionUsage.AnyTime`, and Foul Potion only at a merchant shop
+    /// (`FoulPotion.PassesCustomUsabilityCheck`: a `MerchantRoom`; the Fake
+    /// Merchant event keeps its own throw option, GH #1607).
+    fn potion_usable_out_of_combat(&self, kind: crate::potions::PotionKind) -> bool {
+        if !kind.is_usable_any_time() {
+            return false;
+        }
+        if kind == crate::potions::PotionKind::FoulPotion {
+            return self.phase == Phase::Shop && self.shop_inventory.is_some();
+        }
+        true
+    }
+
+    /// Apply [`RunAction::UsePotionOutOfCombat`] / [`RunAction::DiscardPotion`]
+    /// (GH #1606). Refused (`InvalidForPhase`) unless the action is currently
+    /// offered.
+    fn do_potion_belt_action(&mut self, action: RunAction) -> ActionResult {
+        if !self.get_available_actions().contains(&action) {
+            return ActionResult::InvalidForPhase;
+        }
+        match action {
+            RunAction::DiscardPotion { potion_slot } => {
+                if self.phase == Phase::Combat {
+                    if let Some(combat) = self.combat.as_mut() {
+                        combat.discard_potion(potion_slot);
+                    }
+                } else {
+                    // C# `PotionCmd.Discard`: its only `AfterPotionDiscarded`
+                    // listener (Belt Buckle) acts in combat only.
+                    let _ = self.run_state.remove_potion_from_belt(potion_slot);
+                }
+                ActionResult::Advanced
+            }
+            RunAction::UsePotionOutOfCombat { potion_slot } => {
+                // C# `PotionModel.OnUseWrapper`: `RemoveBeforeUse` frees the
+                // slot first (Entropic Brew refills it), then `OnUse`. The
+                // Before/AfterPotionUsed listeners (Belt Buckle, Reptile
+                // Trinket) act in combat only.
+                let kind = self.run_state.remove_potion_from_belt(potion_slot);
+                self.use_potion_out_of_combat(kind);
+                ActionResult::Advanced
+            }
+            _ => ActionResult::InvalidForPhase,
+        }
+    }
+
+    /// A Foul Potion thrown at the Fake Merchant (GH #1607): C#
+    /// `FakeMerchant.FoulPotionThrown` →
+    /// `EnterCombatWithoutExitingEvent<FakeMerchantEventEncounter>(rewards,
+    /// shouldResumeAfterCombat: false)`. The extra rewards are
+    /// `FakeMerchantsRug`, then every relic still stocked, in shop order;
+    /// what was bought is gone (`IsStocked`). The shop page closes.
+    fn throw_foul_potion_at_fake_merchant(&mut self) {
+        use crate::runstate::{RelicReward, Reward};
+        let Some(inv) = self.shop_inventory.take() else {
+            return;
+        };
+        let mut rewards = vec![Reward::Relic(RelicReward::new(
+            crate::relics::RelicId::FakeMerchantsRug,
+        ))];
+        rewards.extend(
+            inv.relics
+                .iter()
+                .filter(|e| crate::shop::is_shop_entry_available(e.price))
+                .filter_map(|e| e.relic_id)
+                .map(|id| Reward::Relic(RelicReward::new(id))),
+        );
+        let req = crate::events::EventCombatRequest::no_resume(
+            crate::events::EventEncounter::FakeMerchant,
+            crate::events::EventId::FakeMerchant,
+            rewards,
+        );
+        self.run_state.event_combat = Some(req.clone());
+        if let Some(build) = self.callbacks.build_event_combat {
+            let combat = build(&mut self.run_state, &req);
+            let _ = self.enter_built_combat(combat);
+            return;
+        }
+        // No builder wired (raw-core tests): resolve as a won fight.
+        self.run_state.event_combat = None;
+        self.grant_event_combat_outcome(&req, true);
+        let _ = self.run_state.exit_event_room();
+        let _ = self.route_after_event_rewards();
+    }
+
+    /// The out-of-combat `OnUse` of the five `PotionUsage.AnyTime` potions.
+    fn use_potion_out_of_combat(&mut self, kind: crate::potions::PotionKind) {
+        use crate::potions::PotionKind;
+        let rs = &mut self.run_state;
+        match kind {
+            // `CreatureCmd.Heal(target, MaxHp * HealPercent / 100m)`;
+            // `HealInternal` truncates, as the combat port does.
+            PotionKind::BloodPotion => {
+                let _ = rs.heal(rs.max_hp.saturating_mul(20) / 100);
+            }
+            // Out of combat no `AmbergrisPower` (`if IsInProgress`).
+            PotionKind::Ambergris => {
+                let _ = rs.heal(rs.max_hp.saturating_mul(50) / 100);
+            }
+            // `CreatureCmd.GainMaxHp(target, 5)`: max HP, then a heal by it.
+            PotionKind::FruitJuice => rs.gain_max_hp(5),
+            // Thrown at the Fake Merchant: its fight (GH #1607).
+            PotionKind::FoulPotion
+                if self
+                    .shop_inventory
+                    .as_ref()
+                    .is_some_and(|i| i.fake_merchant) =>
+            {
+                self.throw_foul_potion_at_fake_merchant();
+            }
+            // Thrown at the merchant: `PlayerCmd.GainGold(100)`.
+            PotionKind::FoulPotion => rs.gain_gold(100),
+            // `while (HasOpenPotionSlots) { roll; if (!TryToProcure) break; }`:
+            // the roll comes first, so a Sozu veto still spends one roll.
+            PotionKind::EntropicBrew => {
+                let Some(roll) = self.callbacks.roll_entropic_brew_potion else {
+                    return;
+                };
+                while self.run_state.potions.len() < self.run_state.potion_belt_cap() {
+                    let Some(rolled) = roll(&mut self.run_state) else {
+                        break;
+                    };
+                    if !crate::run_effects::dispatch_should_procure_potion(&mut self.run_state)
+                        || !self.run_state.add_potion_to_belt(rolled)
+                    {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// [`Self::get_available_actions`] without the Blitz pick's cancel.
+    fn phase_available_actions(&self) -> Vec<RunAction> {
         use crate::runstate::RestSiteOption;
+        // A pick-N deck select on a `deck_select_screens` run (GH #1621): one
+        // pick per card still offered, then Cook's cancel while nothing is
+        // picked (GH #1619).
+        if let Some(sel) = self.deferred_deck_select() {
+            let picked = self.run_state.deck_select_picked.len();
+            let mut actions: Vec<RunAction> = (0..sel.offer_len.saturating_sub(picked))
+                .map(|idx| sel.kind.action(idx))
+                .collect();
+            if self.deck_select_cancelable() {
+                actions.push(RunAction::ConfirmDeckSelection);
+            }
+            return actions;
+        }
         // Interactive deck removal preempts the current phase's actions:
         // an on-obtain relic (e.g. Precise Scissors) queues removals that
         // the player resolves before the run continues, regardless of which
@@ -1921,6 +2526,25 @@ impl RunManager {
             Phase::BossRelic => (0..self.boss_relic_options.len())
                 .map(|idx| RunAction::PickBossRelic { idx })
                 .collect(),
+            // The C# host's order (`RefereeView` "rewards"): every take, every
+            // skip, then proceed.
+            Phase::Rewards => {
+                let entries = self.reward_screen.as_deref().unwrap_or_default();
+                let takes = entries
+                    .iter()
+                    .map(|e| RunAction::TakeReward { idx: e.index });
+                if self.reward_screen_must_take {
+                    return takes.collect();
+                }
+                takes
+                    .chain(
+                        entries
+                            .iter()
+                            .map(|e| RunAction::SkipReward { idx: e.index }),
+                    )
+                    .chain(std::iter::once(RunAction::ProceedRewards))
+                    .collect()
+            }
             Phase::Shop => {
                 // Bead sts2-rs-if6ry (W3): when an inventory is wired,
                 // emit one action per affordable, in-stock item plus
@@ -1928,6 +2552,16 @@ impl RunManager {
                 // SHOP_ENTRY_SOLD_OUT_PRICE) and slots with empty
                 // payloads are filtered out. With no inventory wired
                 // we keep the legacy skip-only behavior.
+                if let Some(blitz) = self.blitz_shop.as_ref() {
+                    // The Blitz merchant: its available wares while picks
+                    // remain, then leave (always allowed).
+                    let mut actions: Vec<RunAction> = (0..blitz.entries.len())
+                        .filter(|&idx| blitz.can_take(idx))
+                        .map(|idx| RunAction::BlitzChoice { idx })
+                        .collect();
+                    actions.push(RunAction::LeaveShop);
+                    return actions;
+                }
                 let Some(inv) = self.shop_inventory.as_ref() else {
                     return vec![RunAction::LeaveShop];
                 };
@@ -1938,8 +2572,7 @@ impl RunManager {
                 // `purchase_card_removal` already charge that discounted
                 // price, so affordability must compare it too.
                 let relics_now = self.run_state.active_relics();
-                let cost_of =
-                    |price: i32| crate::shop::merchant_price_with_modifiers(&relics_now, price);
+                let cost_of = |price: i32| inv.cost(&relics_now, price);
                 let mut actions: Vec<RunAction> = Vec::new();
                 let card_total = inv.cards.len() + inv.colorless_cards.len();
                 for idx in 0..card_total {
@@ -2027,9 +2660,14 @@ impl RunManager {
                 // `sts2-rs-z4qwd`.
                 if let Some(pc) = self.run_state.pending_choice.as_ref() {
                     if pc.kind == crate::ChoiceKind::CardSelect {
-                        return (0..pc.options.len())
+                        let mut actions: Vec<RunAction> = (0..pc.options.len())
                             .map(|idx| RunAction::SmithCard { idx })
                             .collect();
+                        // GH #1619: the game's Smith select is cancelable.
+                        if self.deck_select_cancelable() {
+                            actions.push(RunAction::ConfirmDeckSelection);
+                        }
+                        return actions;
                     }
                 }
                 // Enumerate one `RestOption{idx}` per option the rest site
@@ -2070,6 +2708,26 @@ impl RunManager {
                 debug_assert!(!actions.is_empty(), "rest site with no legal action");
                 actions
             }
+            // The Fake Merchant bound but its shop not yet opened (a host
+            // bound through the content callback): the shop's actions, which
+            // `take_action` opens it for (GH #1607).
+            Phase::Event if self.staged_fake_merchant().is_some() => {
+                let inv = self.staged_fake_merchant().expect("checked");
+                let gold = self.run_state.gold;
+                let mut actions: Vec<RunAction> = inv
+                    .relics
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| {
+                        crate::shop::is_shop_entry_available(e.price)
+                            && e.price <= gold
+                            && e.relic_id.is_some()
+                    })
+                    .map(|(idx, _)| RunAction::ShopBuyRelic { idx })
+                    .collect();
+                actions.push(RunAction::LeaveShop);
+                actions
+            }
             Phase::Event => {
                 // Bead sts2-rs-nzdz1: enumerate one EventChoice per
                 // option offered by the active event. When no
@@ -2100,7 +2758,16 @@ impl RunManager {
                     .map(|idx| RunAction::EventChoice { idx })
                     .collect()
             }
-            Phase::Treasure => vec![RunAction::CollectTreasure],
+            Phase::Treasure => match self.blitz_chest.as_ref() {
+                // A Blitz chest: take either relic still in it, or skip.
+                Some(chest) => chest
+                    .relics
+                    .iter()
+                    .map(|&(idx, _)| RunAction::TakeChestRelic { idx })
+                    .chain(std::iter::once(RunAction::SkipRelic))
+                    .collect(),
+                None => vec![RunAction::CollectTreasure],
+            },
         }
     }
 
@@ -2114,12 +2781,143 @@ impl RunManager {
     pub fn take_action(&mut self, action: RunAction) -> ActionResult {
         let result = self.take_action_inner(action);
         self.resume_lords_parasol_if_settled();
+        while self.take_forced_deck_picks() {
+            self.resume_lords_parasol_if_settled();
+        }
         result
+    }
+
+    /// Resolve the queued interactive deck picks the game takes without a
+    /// screen: C# `FromDeckForUpgrade`, `FromDeckForTransformation` and
+    /// `FromDeckGeneric` (behind `FromDeckForRemoval`) return the whole
+    /// eligible list when `list.Count <= prefs.MinSelect &&
+    /// !prefs.RequireManualConfirmation`, and `FromDeckForEnchantment` when
+    /// `cards.Count <= prefs.MinSelect` (v0.111.0 `CardSelectCmd.cs:546`,
+    /// `:598`, `:776`, `:691`; v0.113.1 `:375`, `:429`, `:611`, `:524`).
+    /// The engine queues an N-card select as N single picks, so the test is
+    /// eligible cards `<=` the queued picks of the front batch; the picks
+    /// then run in offer order through the same resolvers the actions use
+    /// (`idx` 0 each time), which is the order C#'s returned list is walked
+    /// in. A transform or enchant batch with fewer eligible cards than picks
+    /// drops its remaining picks, as C# acts on the shorter list only.
+    /// Returns whether anything was taken (GH #1624).
+    fn take_forced_deck_picks(&mut self) -> bool {
+        let mut took = false;
+        loop {
+            if !self.deck_pick_pending() {
+                self.run_state.deck_pick_manual_confirm = false;
+                break;
+            }
+            if self.phase == Phase::RunOver
+                || self.run_state.deck_pick_manual_confirm
+                || self.run_state.pending_claws_selection.is_some()
+                || !self.run_state.deck_select_picked.is_empty()
+                || self.run_state.cook_select_open
+            {
+                break;
+            }
+            let rs = &self.run_state;
+            if rs.pending_deck_removals > 0 {
+                let eligible = rs.removal_offer_order().len();
+                if eligible == 0 || eligible > rs.pending_deck_removals as usize {
+                    break;
+                }
+                for _ in 0..eligible {
+                    let _ = self.do_remove_deck_card_at(0);
+                }
+            } else if rs.pending_deck_upgrades > 0 {
+                let eligible = rs.master_deck.iter().filter(|c| c.is_upgradable()).count();
+                if eligible == 0 || eligible > rs.pending_deck_upgrades as usize {
+                    break;
+                }
+                for _ in 0..eligible {
+                    let _ = self.do_upgrade_deck_card_at(0);
+                }
+            } else if let Some(front) = rs.pending_deck_transforms.first().cloned() {
+                let batch = rs
+                    .pending_deck_transforms
+                    .iter()
+                    .take_while(|t| **t == front)
+                    .count();
+                let eligible = self.transform_eligible_deck_indices().len();
+                if eligible == 0 || eligible > batch {
+                    break;
+                }
+                for _ in 0..eligible {
+                    let _ = self.do_transform_deck_card_at(0);
+                }
+                // The replacements are eligible again; C# transformed the
+                // listed cards only, so the batch's other picks never happen.
+                let rest = (batch - eligible).min(
+                    self.run_state
+                        .pending_deck_transforms
+                        .iter()
+                        .take_while(|t| **t == front)
+                        .count(),
+                );
+                if rest > 0 {
+                    self.run_state.pending_deck_transforms.drain(..rest);
+                    let hp_loss = front.post_hp_loss * i32::try_from(rest).unwrap_or(0);
+                    if hp_loss > 0 {
+                        let _ = self.run_state.lose_hp(hp_loss);
+                        if self.run_state.current_hp <= 0 {
+                            self.run_state.is_over = true;
+                            self.run_state.player_won = false;
+                            self.phase = Phase::RunOver;
+                        }
+                    }
+                    self.settle_after_deck_pick();
+                }
+            } else if let Some(front) = rs.pending_deck_enchants.first().cloned() {
+                // An "up to N" screen (min 0) only skips when nothing is
+                // eligible, which no pick is queued for.
+                if front.optional {
+                    break;
+                }
+                let batch = rs
+                    .pending_deck_enchants
+                    .iter()
+                    .take_while(|e| **e == front)
+                    .count();
+                let eligible = self.enchant_eligible_deck_indices().len();
+                if eligible == 0 || eligible > batch {
+                    break;
+                }
+                for _ in 0..eligible {
+                    let _ = self.do_enchant_deck_card_at(0);
+                }
+                let rest = (batch - eligible).min(
+                    self.run_state
+                        .pending_deck_enchants
+                        .iter()
+                        .take_while(|e| **e == front)
+                        .count(),
+                );
+                if rest > 0 {
+                    self.run_state.pending_deck_enchants.drain(..rest);
+                    self.settle_after_deck_pick();
+                }
+            } else {
+                break;
+            }
+            took = true;
+        }
+        took
     }
 
     fn take_action_inner(&mut self, action: RunAction) -> ActionResult {
         if self.phase == Phase::RunOver {
             return ActionResult::RunOver;
+        }
+        // A Fake Merchant bound through the content callback directly is
+        // still on its event page; its actions are the shop's (GH #1607).
+        self.open_fake_merchant_if_bound();
+        // A pick-N deck select on a `deck_select_screens` run (GH #1621):
+        // the pick is recorded, and the last one applies them all.
+        if let Some(sel) = self.deferred_deck_select() {
+            if let Some(idx) = sel.kind.idx_of(action) {
+                return self.do_deferred_deck_pick(sel, idx);
+            }
         }
         // Phase-agnostic: a pending interactive deck removal is resolved
         // before any phase action (it preempts the action surface in
@@ -2138,6 +2936,13 @@ impl RunManager {
             return self.do_transform_deck_card_at(idx);
         }
         if let RunAction::ConfirmDeckSelection = action {
+            // GH #1619: cancel Smith's or Cook's select.
+            if self.deck_select_cancelable() {
+                return self.cancel_deck_select();
+            }
+            if self.blitz_pick.is_some() && self.deck_pick_pending() {
+                return self.cancel_blitz_pick();
+            }
             return self.do_confirm_deck_selection();
         }
         // Phase-agnostic: drain a pending interactive deck enchant
@@ -2154,6 +2959,13 @@ impl RunManager {
         // (GH #252).
         if let RunAction::PotionSwap { discard_slot } = action {
             return self.do_potion_swap(discard_slot);
+        }
+        // The potion popup (GH #1606), in and out of combat.
+        if matches!(
+            action,
+            RunAction::UsePotionOutOfCombat { .. } | RunAction::DiscardPotion { .. }
+        ) {
+            return self.do_potion_belt_action(action);
         }
         match (self.phase, action) {
             (Phase::MapChoice, RunAction::Move { col }) => self.do_map_move(col),
@@ -2182,8 +2994,35 @@ impl RunManager {
             (Phase::CardReward, RunAction::SkipRelic) => self.do_relic_reward_skip(),
             (Phase::CardReward, RunAction::SacrificeCardReward) => self.do_card_reward_sacrifice(),
             (Phase::BossRelic, RunAction::PickBossRelic { idx }) => self.do_boss_relic_pick(idx),
+            (
+                Phase::Rewards,
+                RunAction::TakeReward { .. }
+                | RunAction::SkipReward { .. }
+                | RunAction::ProceedRewards,
+            ) => self.do_reward_screen_action(action),
             (Phase::Shop, RunAction::LeaveShop) => {
+                // The Fake Merchant's Proceed (`NFakeMerchant.HideScreen`)
+                // finishes its event: leave the event room too.
+                if self
+                    .shop_inventory
+                    .as_ref()
+                    .is_some_and(|i| i.fake_merchant)
+                {
+                    let _ = self.run_state.exit_event_room();
+                }
                 self.shop_inventory = None;
+                self.blitz_shop = None;
+                self.phase = Phase::MapChoice;
+                ActionResult::Advanced
+            }
+            (Phase::Shop, RunAction::BlitzChoice { idx }) => self.do_blitz_choice(idx),
+            (Phase::Treasure, RunAction::TakeChestRelic { idx }) => self.do_take_chest_relic(idx),
+            (Phase::Treasure, RunAction::SkipRelic) if self.blitz_chest.is_some() => {
+                // The chest's one SKIP (`NTreasureRoom.cs:256`
+                // `SkipRelicLocally` -> `OnPicked(null)`): in single player
+                // the picking ends with nothing awarded and no shuffle
+                // (`TreasureRoomRelicSynchronizer.cs:222-226`).
+                self.blitz_chest = None;
                 self.phase = Phase::MapChoice;
                 ActionResult::Advanced
             }
@@ -2419,6 +3258,19 @@ impl RunManager {
             crate::runstate::RoomType::Monster
             | crate::runstate::RoomType::Elite
             | crate::runstate::RoomType::Boss => self.enter_combat_phase(resolved),
+            crate::runstate::RoomType::Shop if self.run_state.game_mode.is_blitz() => {
+                // C# `MerchantSynchronizer` builds `CreateForBlitzMerchant`
+                // for the player on entering the room
+                // (`MerchantSynchronizer.cs:51`): six free wares, no cards,
+                // relics, potions or removal, so none of the standard
+                // inventory's draws.
+                self.blitz_shop = self
+                    .callbacks
+                    .generate_blitz_merchant
+                    .map(|f| f(&mut self.run_state));
+                self.phase = Phase::Shop;
+                ActionResult::Advanced
+            }
             crate::runstate::RoomType::Shop => {
                 // Bead sts2-rs-if6ry (W3): build the active inventory
                 // via the content callback. When unwired (legacy thin-
@@ -2473,6 +3325,9 @@ impl RunManager {
         // discarding would desync the rewards/treasure streams for the rest of
         // the run. `after_room_entered` already incremented the counter in
         // `enter_room`, so `TreasureRoomsEntered == 1` here on the first chest.
+        if self.run_state.game_mode.is_blitz() {
+            return self.open_blitz_chest();
+        }
         if !crate::run_effects::dispatch_should_generate_treasure(&mut self.run_state) {
             self.phase = Phase::MapChoice;
             return ActionResult::Advanced;
@@ -2503,24 +3358,29 @@ impl RunManager {
         // the chest pays [31, 39] off the same RNG read. Bead
         // sts2-rs-40ikw.2 (2026-06-12 ascension audit).
         let mut gold = f64::from(self.run_state.rng.rewards.next_int(42, 52));
-        if self.run_state.ascension_level >= crate::runstate::POVERTY_ASCENSION_LEVEL {
+        if self.run_state.has_ascension(crate::AscensionLevel::Poverty) {
             gold *= crate::runstate::POVERTY_ASCENSION_GOLD_MULTIPLIER;
         }
         self.run_state.gain_gold(gold.trunc() as i32);
         // Spoils Map quest: paid right after the chest's gold
         // (`OneOffSynchronizer.cs:138-140`).
         let _ = self.run_state.try_complete_spoils_quest();
-        // Awarding the pick (`TreasureRoomRelicSynchronizer.AwardRelics`)
-        // runs `list.StableShuffle(_rng)` on the unclaimed-relic list, which
-        // is empty in single player. Before v0.113.0 an empty shuffle drew
-        // nothing; v0.113.0 seeds a child Rng off ONE TreasureRoomRelics
-        // draw whatever the length, so every chest costs two draws and
-        // the next chest's rarity roll lands one draw later.
-        let version = self.run_state.game_version;
-        self.run_state
-            .rng
-            .treasure_room
-            .shuffle_for::<u8>(version, &mut []);
+        if let (Some(id), true) = (picked, self.run_state.reward_screen) {
+            // The chest's relic waits on the reward screen, with its own
+            // skip (`NTreasureRoom.cs:248-262`, GH #1620); the gold was
+            // paid on opening (`OneOffSynchronizer.DoTreasureRoomRewards`).
+            // The award's shuffle draw waits for the take: a single
+            // player's skip returns before `AwardRelics`
+            // (`TreasureRoomRelicSynchronizer.OnPicked`).
+            self.reward_screen_must_take = false;
+            self.reward_screen = Some(vec![RewardScreenEntry {
+                index: 0,
+                reward: crate::runstate::ScreenReward::ChestRelic(id),
+            }]);
+            self.phase = Phase::Rewards;
+            return ActionResult::Advanced;
+        }
+        self.award_chest_relic_draw();
         if let Some(id) = picked {
             self.run_state.obtain_relic(id);
         }
@@ -2537,6 +3397,220 @@ impl RunManager {
             self.phase = Phase::MapChoice;
         }
         ActionResult::Advanced
+    }
+
+    /// A Blitz treasure room (GH #1347). C# `TreasureRoomRelicSynchronizer.
+    /// BeginRelicPicking` (`TreasureRoomRelicSynchronizer.cs:96-152`), all on
+    /// `Rng.TreasureRoomRelics`: the player's relic as in a standard chest
+    /// (`RollRarity` + `SharedRelicGrabBag.PullFromFront`, unless a
+    /// `ShouldGenerateTreasure` listener vetoes it), then in a solo Blitz run
+    /// ONE more relic the same way, not gated by that hook, with
+    /// `_roundsLeft = 2`. No gold: `OneOffSynchronizer.DoTreasureRoomRewards`
+    /// (`OneOffSynchronizer.cs:79-97`) skips the `Rewards.NextInt(42, 53)`
+    /// roll, the Poverty cut and the Spoils Map payout in Blitz.
+    ///
+    /// The relics are offered through [`Phase::Treasure`]
+    /// ([`RunAction::TakeChestRelic`] / [`RunAction::SkipRelic`]); an empty
+    /// bag pulls nothing (C# falls back to Circlet, which the engine does
+    /// not model, as in a standard chest).
+    fn open_blitz_chest(&mut self) -> ActionResult {
+        let mut pulled = Vec::new();
+        let mut pull = |rm: &mut Self| {
+            let rarity = match rm.run_state.roll_treasure_relic_rarity() {
+                crate::card_rewards::RewardRarity::Common => crate::runstate::RelicRarity::Common,
+                crate::card_rewards::RewardRarity::Uncommon => {
+                    crate::runstate::RelicRarity::Uncommon
+                }
+                crate::card_rewards::RewardRarity::Rare => crate::runstate::RelicRarity::Rare,
+            };
+            if let Some(id) = rm.run_state.pop_relic_from_shared_grab_bag(rarity) {
+                pulled.push(id);
+            }
+        };
+        if crate::run_effects::dispatch_should_generate_treasure(&mut self.run_state) {
+            pull(self);
+        }
+        pull(self);
+        if pulled.is_empty() {
+            self.phase = Phase::MapChoice;
+            return ActionResult::Advanced;
+        }
+        self.blitz_chest = Some(crate::blitz::Chest {
+            relics: pulled.into_iter().enumerate().collect(),
+        });
+        self.phase = Phase::Treasure;
+        ActionResult::Advanced
+    }
+
+    /// One round of a Blitz chest: C# `PickRelicLocally(index)` ->
+    /// `OnPicked` -> `AwardRelics` (`TreasureRoomRelicSynchronizer.cs:
+    /// 196-333`). The award shuffles the list of unpicked relic indices with
+    /// `list.StableShuffle(_rng)`, one `TreasureRoomRelics` draw whatever its
+    /// length (v0.113.0 `ListExtensions.cs:45-61`), then the picked relic
+    /// leaves the chest and is obtained. In round one the other relic stays
+    /// (`_roundsLeft > 1`: neither a consolation prize nor skipped); the
+    /// chest closes when it is empty.
+    fn do_take_chest_relic(&mut self, idx: usize) -> ActionResult {
+        let Some(chest) = self.blitz_chest.as_mut() else {
+            return ActionResult::InvalidForPhase;
+        };
+        let Some(pos) = chest.relics.iter().position(|&(i, _)| i == idx) else {
+            return ActionResult::InvalidForPhase;
+        };
+        let (_, relic) = chest.relics.remove(pos);
+        let mut unpicked: Vec<usize> = chest.relics.iter().map(|&(i, _)| i).collect();
+        if chest.relics.is_empty() {
+            self.blitz_chest = None;
+        }
+        let version = self.run_state.game_version;
+        self.run_state.rng.treasure_room.stable_shuffle_by_for(
+            version,
+            &mut unpicked,
+            &|a: usize, b: usize| a.cmp(&b),
+        );
+        self.run_state.obtain_relic(relic);
+        // `AfterObtained` may have queued a reward or a deck pick; the room
+        // resumes once it drains (`advance_after_card_reward`).
+        let opened_card_reward = self.drain_pending_rewards();
+        if opened_card_reward
+            || !self.run_state.relic_rewards.is_empty()
+            || !self.run_state.pending_card_selects.is_empty()
+        {
+            self.phase = Phase::CardReward;
+            self.advance_after_card_reward();
+        } else {
+            self.phase = self.blitz_room_phase();
+        }
+        ActionResult::Advanced
+    }
+
+    /// The phase a Blitz room that stays open across a reward screen returns
+    /// to: the chest while relics remain, the merchant until it is left, else
+    /// the map. [`Phase::MapChoice`] in every other mode.
+    fn blitz_room_phase(&self) -> Phase {
+        if self.blitz_chest.is_some() {
+            Phase::Treasure
+        } else if self.blitz_shop.is_some() {
+            Phase::Shop
+        } else {
+            Phase::MapChoice
+        }
+    }
+
+    /// The Blitz merchant's wares while its room is open (GH #1347).
+    #[must_use]
+    pub const fn blitz_shop(&self) -> Option<&crate::blitz::MerchantInventory> {
+        self.blitz_shop.as_ref()
+    }
+
+    /// The open Blitz chest, while relics remain in it.
+    #[must_use]
+    pub const fn blitz_chest(&self) -> Option<&crate::blitz::Chest> {
+        self.blitz_chest.as_ref()
+    }
+
+    /// Whether a Blitz ware's cancelable deck pick is open.
+    #[must_use]
+    pub const fn blitz_pick_open(&self) -> bool {
+        self.blitz_pick.is_some()
+    }
+
+    /// Take Blitz ware `idx`: C# `BlitzMerchantEntry.OnTryPurchaseInternal`
+    /// (`BlitzMerchantEntry.cs:131-145`). The ware's `OnTrySelect` runs in
+    /// the content layer up to its first player decision; on success the
+    /// ware is used and `MerchantInventory.UpdateEntries` spends a pick.
+    fn do_blitz_choice(&mut self, idx: usize) -> ActionResult {
+        let Some(inv) = self.blitz_shop.as_ref() else {
+            return ActionResult::InvalidForPhase;
+        };
+        if !inv.can_take(idx) {
+            return ActionResult::InvalidForPhase;
+        }
+        let entry = inv.entries[idx];
+        let Some(select) = self.callbacks.blitz_merchant_select else {
+            return ActionResult::NotImplemented;
+        };
+        match select(&mut self.run_state, &entry) {
+            crate::blitz::SelectOutcome::Refused => ActionResult::Advanced,
+            crate::blitz::SelectOutcome::DeckPick(pick) => {
+                self.blitz_pick = Some((idx, pick));
+                ActionResult::Advanced
+            }
+            crate::blitz::SelectOutcome::Taken => {
+                self.complete_blitz_purchase(idx);
+                ActionResult::Advanced
+            }
+        }
+    }
+
+    /// A taken ware: `SetUsed`, `MerchantInventory.UpdateEntries`
+    /// (`MerchantInventory.cs:265-285`), then whatever rewards the ware
+    /// queued are surfaced, coming back to the merchant afterwards.
+    fn complete_blitz_purchase(&mut self, idx: usize) {
+        if let Some(inv) = self.blitz_shop.as_mut() {
+            if inv.entries[idx].kind == crate::blitz::MerchantEntryType::TwoMoreChoices {
+                // `BlitzChoicesRemaining += 2` inside `OnTrySelect`, before
+                // `UpdateEntries` takes this pick.
+                inv.choices_remaining += 2;
+            }
+            inv.complete_purchase(idx);
+        }
+        // The ware's relics (Relic, TwoRelics) are taken as they are
+        // offered, like every relic reward the C# host auto-collects; a
+        // relic's own pickup rewards then drain with the ware's.
+        let _ = self.run_state.drain_relic_rewards_directly();
+        let opened_card_reward = self.drain_pending_rewards();
+        if opened_card_reward
+            || !self.run_state.relic_rewards.is_empty()
+            || !self.run_state.pending_card_selects.is_empty()
+        {
+            self.phase = Phase::CardReward;
+            self.advance_after_card_reward();
+        }
+    }
+
+    /// Cancel the open Blitz deck pick: C# returns no card from the
+    /// cancelable select, `OnTrySelect` returns false, and the ware stays
+    /// available with no pick spent.
+    fn cancel_blitz_pick(&mut self) -> ActionResult {
+        let Some((_, pick)) = self.blitz_pick.take() else {
+            return ActionResult::InvalidForPhase;
+        };
+        let rs = &mut self.run_state;
+        match pick {
+            crate::blitz::DeckPick::Upgrade => {
+                rs.pending_deck_upgrades = rs.pending_deck_upgrades.saturating_sub(1);
+            }
+            crate::blitz::DeckPick::Removal => {
+                rs.pending_deck_removals = rs.pending_deck_removals.saturating_sub(1);
+            }
+            crate::blitz::DeckPick::Transform => {
+                rs.pending_deck_transforms.pop();
+            }
+            crate::blitz::DeckPick::Enchant => {
+                rs.pending_deck_enchants.pop();
+            }
+        }
+        ActionResult::Advanced
+    }
+
+    /// Finish the Blitz ware whose deck pick just resolved, if one was open
+    /// and every pick has drained.
+    fn finish_blitz_pick_if_settled(&mut self) {
+        if self.blitz_pick.is_none() || self.deck_pick_pending() {
+            return;
+        }
+        let Some((idx, _)) = self.blitz_pick.take() else {
+            return;
+        };
+        if let (Some(after), Some(inv)) = (
+            self.callbacks.blitz_merchant_after_pick,
+            self.blitz_shop.as_ref(),
+        ) {
+            let entry = inv.entries[idx];
+            after(&mut self.run_state, &entry);
+        }
+        self.complete_blitz_purchase(idx);
     }
 
     fn enter_combat_phase(&mut self, room_type: crate::runstate::RoomType) -> ActionResult {
@@ -2816,6 +3890,40 @@ impl RunManager {
     }
 
     fn exit_combat_and_transition(&mut self) -> ActionResult {
+        // A reward-screen run (GH #1620): generate the room's set as always,
+        // capturing what auto-collect would grant, then open the screen.
+        if !(self.run_state.reward_screen && self.combat_reward_screen_due()) {
+            return self.exit_combat_and_offer_rewards();
+        }
+        let pending_before = self.run_state.pending_rewards.len();
+        self.run_state.reward_capture = Some(Vec::new());
+        let result = self.exit_combat_and_offer_rewards();
+        self.open_reward_screen(pending_before);
+        result
+    }
+
+    /// Whether the combat that just ended offers its room's reward set on a
+    /// screen: a won fight whose set C# offers (`RewardsCmd.OfferForRoomEnd`),
+    /// i.e. every map combat but the run's last boss, and an event fight that
+    /// grants its room rewards (see [`Self::finish_event_combat`]).
+    fn combat_reward_screen_due(&self) -> bool {
+        let Some(combat) = self.combat.as_ref() else {
+            return false;
+        };
+        if !combat.player_won {
+            return false;
+        }
+        if let Some(req) = self.run_state.event_combat.as_ref() {
+            return !req.resume
+                && !combat.event_combat_timed_out
+                && req.encounter.grants_base_room_rewards();
+        }
+        let is_boss = self.run_state.current_room.map(|r| r.room_type)
+            == Some(crate::runstate::RoomType::Boss);
+        !(is_boss && self.run_state.act_index >= 3 && !self.run_state.awaiting_second_boss())
+    }
+
+    fn exit_combat_and_offer_rewards(&mut self) -> ActionResult {
         let combat = self.combat.as_ref().expect("combat slot set");
         let player_won = combat.player_won;
         if let Some(exit) = self.callbacks.exit_combat {
@@ -2882,6 +3990,10 @@ impl RunManager {
         // deck-add listeners (Lucky Fysh's +15 gold). The harness auto-takes
         // it. One reward per stolen card, so one add each.
         for card in std::mem::take(&mut self.run_state.pending_swipe_returns) {
+            if let Some(capture) = self.run_state.reward_capture.as_mut() {
+                capture.push(crate::runstate::ScreenReward::SpecialCard(card));
+                continue;
+            }
             self.run_state
                 .add_card_to_deck_with_hooks(card, crate::relic_effects::AddSource::Reward);
         }
@@ -2924,9 +4036,25 @@ impl RunManager {
                 // no-op before it. Collected before the win is stamped.
                 self.run_state.grant_extra_reward_gold();
                 if !self.run_state.awaiting_second_boss() {
-                    self.run_state.is_over = true;
-                    self.run_state.player_won = true;
-                    self.phase = Phase::RunOver;
+                    // The kept `ExtraRewards` include Forbidden Grimoire's
+                    // `CardRemovalReward`s: C# offers them on the rewards
+                    // screen and only then enters TheArchitect, whose last
+                    // page calls `WinRun`. Resolve them before the win
+                    // (Dread act23 Necrobinder:1001 v0.113.0).
+                    let removal_queued = self
+                        .run_state
+                        .pending_rewards
+                        .iter()
+                        .any(|r| matches!(r, crate::runstate::Reward::RemoveCard { .. }));
+                    if removal_queued {
+                        self.pending_run_win = true;
+                        self.card_reward_options.clear();
+                        self.card_reward_upgraded.clear();
+                        self.card_reward_enchantments.clear();
+                        self.open_card_reward_phase();
+                        return ActionResult::Advanced;
+                    }
+                    self.stamp_run_won();
                     return ActionResult::Advanced;
                 }
                 // First boss of the A10 double-boss pair. C#
@@ -3005,6 +4133,9 @@ impl RunManager {
             // calls `advance_boss_act`.
             self.pending_boss_act_advance = true;
             let card_options = self.enter_card_reward_phase();
+            // Blitz: `[CardReward(Rare), PotionReward]`, populated in that
+            // order (`BlitzRunModel.cs:108-116`).
+            self.populate_blitz_room_potion(reward_room_type);
             self.populate_fixed_extra_gold_rewards();
             // LavaRock's two act-1 boss relics, Wongo's three (`LavaRock.cs:38`,
             // `WongosMysteryTicket.cs:80`).
@@ -3022,7 +4153,7 @@ impl RunManager {
             .run_state
             .current_room
             .map_or(crate::runstate::RoomType::Monster, |r| r.room_type);
-        self.offer_combat_room_rewards(reward_room_type, &[])
+        self.offer_combat_room_rewards(reward_room_type, &[], 0)
     }
 
     /// Grant a won Monster/Elite combat room's reward set and surface its
@@ -3052,6 +4183,7 @@ impl RunManager {
         &mut self,
         reward_room_type: crate::runstate::RoomType,
         extra_rewards: &[crate::runstate::Reward],
+        extra_random_relics: usize,
     ) -> ActionResult {
         // The relics whose `TryModifyRewards` runs below: the ones owned while
         // the set is generated, i.e. BEFORE the auto-collected Elite relic is
@@ -3068,9 +4200,12 @@ impl RunManager {
         // the `List.Sort` emulation below (`RewardsSet.cs:148`).
         let mut reward_set = Vec::new();
         // C# adds a Monster room's `GoldReward` only for `GoldProportion > 0`
-        // (`RewardsSet.cs:228`); Elite / Boss always.
-        if reward_room_type != crate::runstate::RoomType::Monster
-            || self.run_state.last_combat_gold_proportion > 0.0
+        // (`RewardsSet.cs:228`); Elite / Boss always. A Blitz room's
+        // replaced set has no gold reward (`BlitzRunModel.cs:90-118`).
+        let blitz = self.run_state.game_mode.is_blitz();
+        if !blitz
+            && (reward_room_type != crate::runstate::RoomType::Monster
+                || self.run_state.last_combat_gold_proportion > 0.0)
         {
             reward_set.push((1, RewardSlot::Other));
         }
@@ -3079,15 +4214,22 @@ impl RunManager {
         }
         reward_set.push((5, RewardSlot::Room));
         self.roll_card_reward_options();
+        // Blitz Monster room: `[CardReward(Common), PotionReward?]`, the
+        // potion populated after the card.
+        if self.populate_blitz_room_potion(reward_room_type) {
+            reward_set.push((2, RewardSlot::Other));
+        }
         let relics_before_card_reward = self.run_state.relics.len();
         let card_options = if self.run_state.game_version >= crate::GameVersion::V0_111_0 {
             self.card_reward_options.clone()
         } else {
             Vec::new()
         };
+        self.offer_extra_random_relics(extra_random_relics);
         self.collect_extra_combat_rewards(extra_rewards);
         self.open_card_reward_phase();
         let mut elite_relic = None;
+        let queued_before_elite = self.run_state.relic_rewards.len();
         // Elite rooms append a 5th reward: C# `RewardsSet.GenerateRewardsFor`
         // (Elite case) adds `new RelicReward(player)` LAST, whose `Populate`
         // runs AFTER the card reward — `RelicFactory.RollRarity` reads one
@@ -3103,7 +4245,12 @@ impl RunManager {
         // `sts2-rs-jenwp` (M4 live reward stream — Elite follow-up).
         if reward_room_type == crate::runstate::RoomType::Elite {
             let queued = self.run_state.relic_rewards.len();
-            self.run_state.offer_random_relic_rewards(1, &[None]);
+            // A Blitz elite's replaced set holds TWO `RelicReward`s after
+            // its card reward (`BlitzRunModel.cs:103-105`), each populated
+            // like the standard one.
+            let relic_rewards = if blitz { 2 } else { 1 };
+            self.run_state
+                .offer_random_relic_rewards(relic_rewards, &[None, None]);
             elite_relic = self.run_state.relic_rewards.get(queued).map(|r| r.relic_id);
             // The C# headless oracle auto-collects the Elite `RelicReward`
             // (along with gold + potion) the moment rewards are generated —
@@ -3125,6 +4272,9 @@ impl RunManager {
             // its end.
         }
         if elite_relic.is_some() {
+            reward_set.push((3, RewardSlot::Other));
+        }
+        if blitz && self.run_state.relic_rewards.len() > queued_before_elite + 1 {
             reward_set.push((3, RewardSlot::Other));
         }
         reward_set.extend(
@@ -3170,6 +4320,17 @@ impl RunManager {
             hook_relics,
         );
         ActionResult::Advanced
+    }
+
+    /// Blitz only: the `PotionReward` of a won room's replaced reward set
+    /// ([`ContentCallbacks::blitz_room_potion`]). `false`, with nothing
+    /// rolled, in every other mode.
+    fn populate_blitz_room_potion(&mut self, room_type: crate::runstate::RoomType) -> bool {
+        self.run_state.game_mode.is_blitz()
+            && self
+                .callbacks
+                .blitz_room_potion
+                .is_some_and(|f| f(&mut self.run_state, room_type))
     }
 
     /// Whether the relic-reward queue is offered BEFORE the open card reward:
@@ -3547,6 +4708,21 @@ impl RunManager {
     /// (`SpecialCardReward.OnSelect` → `CardPileCmd.Add(card, Deck)`). A gold
     /// extra is gained on the spot (`GoldReward.OnSelect`); any other kind is
     /// queued on `pending_rewards` (GH #817).
+    /// The room's extra `new RelicReward(player)`s
+    /// ([`crate::events::EventEncounter::extra_random_relics`]): each rolls its
+    /// rarity off `rewards` and pulls the grab bag when the set is populated,
+    /// after the card reward (like an Elite's relic), then rides the
+    /// PickRelicReward/SkipRelic surface like a fixed extra relic.
+    fn offer_extra_random_relics(&mut self, count: usize) {
+        if count == 0 {
+            return;
+        }
+        self.run_state.offer_random_relic_rewards(count, &[]);
+        if self.run_state.direct_event_relic_grant {
+            let _ = self.run_state.drain_relic_rewards_directly();
+        }
+    }
+
     fn collect_extra_combat_rewards(&mut self, extra_rewards: &[crate::runstate::Reward]) {
         use crate::runstate::Reward;
         const fn rewards_set_index(reward: &Reward) -> u8 {
@@ -3569,7 +4745,7 @@ impl RunManager {
         ordered.sort_by_key(|r| rewards_set_index(r));
         for reward in ordered {
             match reward {
-                Reward::Gold { amount } => self.run_state.gain_gold(*amount),
+                Reward::Gold { amount } => self.run_state.gain_reward_gold(*amount),
                 Reward::Relic(rr) => {
                     self.run_state.offer_relic_rewards(rr.relic_id, 1);
                     if self.run_state.direct_event_relic_grant {
@@ -3595,10 +4771,27 @@ impl RunManager {
                                 card.enchantments = *ench;
                             }
                         }
+                        if let Some(capture) = self.run_state.reward_capture.as_mut() {
+                            capture.push(crate::runstate::ScreenReward::SpecialCard(card));
+                            continue;
+                        }
                         self.run_state.add_card_to_deck_with_hooks(
                             card,
                             crate::relic_effects::AddSource::Reward,
                         );
+                    }
+                }
+                // `PotionReward.Populate` rolls with the set, before the
+                // hook additions (Prayer Wheel's card reads the `Rewards`
+                // stream after it): rolled here, not when the screen drains.
+                Reward::Potion(p) if !p.direct && p.potion_kind.is_none() => {
+                    let mut p = *p;
+                    p.potion_kind = self
+                        .callbacks
+                        .roll_potion_reward_kind
+                        .and_then(|f| f(&mut self.run_state));
+                    if p.potion_kind.is_some() {
+                        self.run_state.pending_rewards.push(Reward::Potion(p));
                     }
                 }
                 other => self.run_state.pending_rewards.push(other.clone()),
@@ -3678,6 +4871,11 @@ impl RunManager {
         self.card_offer_choose_screen = false;
         self.card_offer_can_skip = true;
         self.phase = Phase::CardReward;
+        // A reward-screen set is still being generated (GH #1620): the screen
+        // routes onward once it is left.
+        if self.run_state.reward_capture.is_some() {
+            return;
+        }
         // If the offering came back empty (no card callback wired, or an
         // exhausted pool), route onward immediately rather than stranding
         // the caller on a zero-action CardReward screen. With a non-empty
@@ -3911,6 +5109,346 @@ impl RunManager {
         ActionResult::Advanced
     }
 
+    /// Open the reward screen over the set a [`Self::exit_combat_and_transition`]
+    /// just generated under capture (GH #1620): the captured gold, potions,
+    /// relics and special cards, any relic still queued, the room's card
+    /// reward and the set's queued card rewards and card removals (those
+    /// queued on `pending_rewards` from `pending_before` on), sorted by C#
+    /// `RewardsSetIndex` (`RewardsSet.cs:148`; stable here). An empty set
+    /// routes onward as the auto-collect path does.
+    fn open_reward_screen(&mut self, pending_before: usize) {
+        use crate::runstate::{Reward, ScreenReward};
+        let Some(mut items) = self.run_state.reward_capture.take() else {
+            return;
+        };
+        items.extend(
+            self.run_state
+                .relic_rewards
+                .drain(..)
+                .map(|r| ScreenReward::Relic {
+                    relic: r.relic_id,
+                    is_wax: r.is_wax,
+                }),
+        );
+        if self.phase == Phase::CardReward
+            && !self.card_reward_options.is_empty()
+            && self.card_reward_bundles.is_none()
+            && !self.card_offer_choose_screen
+        {
+            items.push(ScreenReward::Card(crate::runstate::CardReward {
+                options: std::mem::take(&mut self.card_reward_options),
+                upgraded: std::mem::take(&mut self.card_reward_upgraded),
+                enchantments: std::mem::take(&mut self.card_reward_enchantments),
+                for_room: None,
+            }));
+        }
+        let mut i = pending_before;
+        while i < self.run_state.pending_rewards.len() {
+            let item = match &self.run_state.pending_rewards[i] {
+                Reward::Card(r) if !r.options.is_empty() => ScreenReward::Card(r.clone()),
+                Reward::RemoveCard { count } => ScreenReward::CardRemoval(*count),
+                Reward::Potion(p) if !p.direct && p.potion_kind.is_some() => {
+                    ScreenReward::Potion(p.potion_kind.expect("checked"))
+                }
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            };
+            self.run_state.pending_rewards.remove(i);
+            items.push(item);
+        }
+        items.sort_by_key(ScreenReward::rewards_set_index);
+        if items.is_empty() {
+            // Nothing to take: on as `open_card_reward_phase` would have.
+            if self.phase == Phase::CardReward && self.card_reward_options.is_empty() {
+                self.advance_after_card_reward();
+            }
+            return;
+        }
+        self.reward_screen_must_take = false;
+        self.reward_screen = Some(
+            items
+                .into_iter()
+                .enumerate()
+                .map(|(index, reward)| RewardScreenEntry { index, reward })
+                .collect(),
+        );
+        self.phase = Phase::Rewards;
+    }
+
+    /// [`RunAction::TakeReward`] / [`RunAction::SkipReward`] /
+    /// [`RunAction::ProceedRewards`] on the open reward screen (GH #1620).
+    /// The chest award's shuffle (`TreasureRoomRelicSynchronizer.AwardRelics`
+    /// runs `list.StableShuffle(_rng)` on the unclaimed-relic list, which is
+    /// empty in single player). Before v0.113.0 an empty shuffle drew
+    /// nothing; v0.113.0 seeds a child Rng off ONE TreasureRoomRelics draw
+    /// whatever the length, so a taken chest costs two draws and the next
+    /// chest's rarity roll lands one draw later.
+    fn award_chest_relic_draw(&mut self) {
+        let version = self.run_state.game_version;
+        self.run_state
+            .rng
+            .treasure_room
+            .shuffle_for::<u8>(version, &mut []);
+    }
+
+    fn do_reward_screen_action(&mut self, action: RunAction) -> ActionResult {
+        if !self.get_available_actions().contains(&action) {
+            return ActionResult::InvalidForPhase;
+        }
+        let (take, idx) = match action {
+            RunAction::TakeReward { idx } => (true, idx),
+            RunAction::SkipReward { idx } => (false, idx),
+            _ => {
+                // Every reward still listed is skipped (`OnSkipped` only
+                // writes run history).
+                self.reward_screen = None;
+                self.leave_reward_screen();
+                return ActionResult::Advanced;
+            }
+        };
+        let Some(screen) = self.reward_screen.as_mut() else {
+            return ActionResult::InvalidForPhase;
+        };
+        let Some(pos) = screen.iter().position(|e| e.index == idx) else {
+            return ActionResult::InvalidForPhase;
+        };
+        let entry = screen.remove(pos);
+        if screen.is_empty() {
+            self.reward_screen = None;
+        }
+        if take {
+            self.take_screen_reward(entry.reward);
+        } else if self.reward_screen.is_none() {
+            self.leave_reward_screen();
+        }
+        ActionResult::Advanced
+    }
+
+    /// The reward screen is done (left, or its last reward taken or skipped):
+    /// on as after a resolved card reward (the boss relic, the next act, the
+    /// map).
+    /// Bring back the reward screen under the one just left (GH #1641), if
+    /// any.
+    fn pop_outer_reward_screen(&mut self) {
+        let (screen, must_take) = self.outer_reward_screens.pop().unzip();
+        self.reward_screen = screen;
+        self.reward_screen_must_take = must_take.unwrap_or(false);
+    }
+
+    fn leave_reward_screen(&mut self) {
+        // The screen under this one, if any (GH #1641), comes back once
+        // whatever is still queued has been surfaced.
+        self.pop_outer_reward_screen();
+        self.phase = Phase::CardReward;
+        self.advance_after_card_reward();
+    }
+
+    /// Open the reward screen over an event's or relic's own reward set
+    /// (C# `RewardsCmd.OfferCustom` → `RewardsSet.Offer` → `NRewardsScreen`,
+    /// GH #1641) on a [`crate::runstate::RunState::reward_screen`] run: the
+    /// queued card rewards and potion rewards (`pending_rewards`, populated
+    /// here in queue order, as `GenerateWithoutOffering` populates the list)
+    /// and the queued relic rewards, sorted by `RewardsSetIndex`. A screen
+    /// already open stays under it. Returns `true` iff a screen opened.
+    ///
+    /// Not while a combat room's set is being captured (that screen is
+    /// [`Self::open_reward_screen`]'s) or a card pick is up. A direct potion
+    /// procure (`PotionCmd.TryToProcure`) and a card removal are not set
+    /// rewards here and stay queued.
+    fn open_custom_reward_screen(&mut self) -> bool {
+        use crate::runstate::{Reward, ScreenReward};
+        if !self.run_state.reward_screen
+            || self.run_state.reward_capture.is_some()
+            || !self.card_reward_options.is_empty()
+            || self.card_reward_bundles.is_some()
+        {
+            return false;
+        }
+        let queued = !self.run_state.relic_rewards.is_empty()
+            || self.run_state.pending_rewards.iter().any(|r| match r {
+                Reward::Card(_) => true,
+                Reward::Potion(p) => !p.direct,
+                _ => false,
+            });
+        if !queued {
+            return false;
+        }
+        let mut items: Vec<ScreenReward> = Vec::new();
+        let mut i = 0;
+        while i < self.run_state.pending_rewards.len() {
+            match &self.run_state.pending_rewards[i] {
+                Reward::Card(_) => {
+                    let Reward::Card(reward) = self.run_state.pending_rewards.remove(i) else {
+                        unreachable!("matched above");
+                    };
+                    let slate = self.roll_card_reward_slate(reward);
+                    if !slate.options.is_empty() {
+                        items.push(ScreenReward::Card(slate));
+                    }
+                }
+                Reward::Potion(p) if !p.direct => {
+                    let kind = p.potion_kind;
+                    self.run_state.pending_rewards.remove(i);
+                    let kind = kind.or_else(|| {
+                        self.callbacks
+                            .roll_potion_reward_kind
+                            .and_then(|f| f(&mut self.run_state))
+                    });
+                    if let Some(kind) = kind {
+                        items.push(ScreenReward::Potion(kind));
+                    }
+                }
+                _ => i += 1,
+            }
+        }
+        items.extend(
+            self.run_state
+                .relic_rewards
+                .drain(..)
+                .map(|r| ScreenReward::Relic {
+                    relic: r.relic_id,
+                    is_wax: r.is_wax,
+                }),
+        );
+        items.sort_by_key(ScreenReward::rewards_set_index);
+        if items.is_empty() {
+            self.run_state.reward_set_must_take = false;
+            return false;
+        }
+        if let Some(outer) = self.reward_screen.take() {
+            self.outer_reward_screens
+                .push((outer, self.reward_screen_must_take));
+        }
+        self.reward_screen_must_take = std::mem::take(&mut self.run_state.reward_set_must_take);
+        self.reward_screen = Some(
+            items
+                .into_iter()
+                .enumerate()
+                .map(|(index, reward)| RewardScreenEntry { index, reward })
+                .collect(),
+        );
+        self.phase = Phase::Rewards;
+        true
+    }
+
+    /// Take one reward off the screen: C# `Reward.OnSelect`, as the
+    /// auto-collect path grants it.
+    fn take_screen_reward(&mut self, reward: crate::runstate::ScreenReward) {
+        use crate::runstate::ScreenReward;
+        match reward {
+            ScreenReward::Gold(amount) => self.run_state.gain_gold(amount),
+            ScreenReward::Potion(kind) => {
+                // A full belt parks the swap decision (or drops it), as the
+                // host's `NotePotionRewardOutcome`.
+                let _ = self.run_state.claim_potion_reward(kind);
+            }
+            ScreenReward::SpecialCard(card) => {
+                self.run_state
+                    .add_card_to_deck_with_hooks(card, crate::relic_effects::AddSource::Reward);
+            }
+            ScreenReward::Relic { relic, is_wax } => {
+                if is_wax {
+                    self.run_state.wax_relics.insert(relic);
+                }
+                self.obtain_screen_relic(relic);
+            }
+            ScreenReward::ChestRelic(relic) => {
+                self.award_chest_relic_draw();
+                self.obtain_screen_relic(relic);
+            }
+            ScreenReward::CardRemoval(count) => {
+                // As `drain_pending_rewards` resolves a `CardRemovalReward`.
+                if self.run_state.interactive_card_removal {
+                    self.run_state.deck_pick_manual_confirm = true;
+                }
+                let _ = self.run_state.remove_cards_from_deck(count as usize);
+            }
+            ScreenReward::Card(reward) => {
+                // `CardReward.OnSelect` opens its pick; a pick or a skip
+                // comes back to the screen (`advance_after_card_reward`).
+                self.card_reward_options = reward.options;
+                self.card_reward_upgraded = reward.upgraded;
+                self.card_reward_enchantments = reward.enchantments;
+                self.card_offer_choose_screen = false;
+                self.card_offer_can_skip = true;
+                self.phase = Phase::CardReward;
+                return;
+            }
+        }
+        self.route_after_screen_take();
+    }
+
+    /// Obtain a relic taken off the reward screen. A card reward still on the
+    /// screen hears its `RelicObtained` (`CardReward.OnRelicObtained`, so a
+    /// taken egg upgrades its matching options); follow-up relic rewards are
+    /// taken at once on a direct-grant host, as after any obtain.
+    fn obtain_screen_relic(&mut self, relic: crate::RelicId) {
+        let relics_before = self.run_state.relics.len();
+        self.run_state.obtain_relic(relic);
+        let new_eggs: Vec<crate::RelicId> = self
+            .run_state
+            .relics
+            .get(relics_before..)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .filter(|id| {
+                matches!(
+                    id,
+                    crate::RelicId::FrozenEgg
+                        | crate::RelicId::MoltenEgg
+                        | crate::RelicId::ToxicEgg
+                )
+            })
+            .collect();
+        if !new_eggs.is_empty() {
+            let mut screen = self.reward_screen.take();
+            for entry in screen.iter_mut().flatten() {
+                if let crate::runstate::ScreenReward::Card(reward) = &mut entry.reward {
+                    if let Some(upgraded) =
+                        self.eggs_over_slate(&new_eggs, &reward.options, &reward.upgraded)
+                    {
+                        reward.upgraded = upgraded;
+                    }
+                }
+            }
+            self.reward_screen = screen;
+        }
+        if self.run_state.direct_event_relic_grant {
+            let _ = self.run_state.drain_relic_rewards_directly();
+        }
+    }
+
+    /// After a take: surface whatever it queued (a relic's follow-up rewards
+    /// or card select; a deck pick preempts on its own), else back to the
+    /// screen, or on once it is empty.
+    fn route_after_screen_take(&mut self) {
+        let opened_card_reward = self.drain_pending_rewards();
+        if opened_card_reward
+            || !self.run_state.relic_rewards.is_empty()
+            || !self.run_state.pending_card_selects.is_empty()
+            || !self.run_state.pending_bundles.is_empty()
+        {
+            self.phase = Phase::CardReward;
+            self.advance_after_card_reward();
+        } else if self.reward_screen.is_some() {
+            self.phase = Phase::Rewards;
+        } else {
+            self.leave_reward_screen();
+        }
+    }
+
+    /// The open reward screen (GH #1620): the rewards not yet taken or
+    /// skipped, in screen order. `None` unless a
+    /// [`crate::runstate::RunState::reward_screen`] run has one open (it
+    /// stays `Some` while a reward taken off it is being resolved).
+    #[must_use]
+    pub fn reward_screen(&self) -> Option<&[RewardScreenEntry]> {
+        self.reward_screen.as_deref()
+    }
+
     fn do_relic_reward_skip(&mut self) -> ActionResult {
         let _ = self.run_state.relic_rewards.pop();
         self.advance_after_card_reward();
@@ -3945,6 +5483,11 @@ impl RunManager {
     /// [`Reward`]: crate::runstate::Reward
     fn drain_pending_rewards(&mut self) -> bool {
         use crate::runstate::Reward;
+        // A reward-screen run (GH #1641): an event's or relic's own set waits
+        // on the screen instead.
+        if self.open_custom_reward_screen() {
+            return true;
+        }
         // Walk the queue IN ORDER: C# `RewardsCmd.OfferCustom` populates the
         // offered rewards in list order, so a `[Card, Potion]` queue (Lost
         // Coffer) must consume the Rewards stream as [card rolls, potion
@@ -4030,57 +5573,93 @@ impl RunManager {
                     // (`pending_deck_removals`); parity mode auto-removes
                     // `count` from the deck front. Either way this is the
                     // `CardRemovalReward.OnSelect` → `DoLocalCardRemoval` analog.
+                    // `DoUnsyncedCardRemoval` asks for manual confirmation
+                    // (`RewardSynchronizer.cs:326`). Doors of Light and Dark's
+                    // dark door also routes here although its C# is a plain
+                    // `FromDeckForRemoval(1)`; it differs only on a 1-card deck.
+                    if self.run_state.interactive_card_removal {
+                        self.run_state.deck_pick_manual_confirm = true;
+                    }
                     let _ = self.run_state.remove_cards_from_deck(count as usize);
                 }
                 Resolve::SurfaceCard(pre_resolved, pre_upgraded, pre_enchantments, for_room) => {
-                    let room_roll = for_room
-                        .filter(|_| pre_resolved.is_empty())
-                        .and_then(|room| {
-                            self.callbacks
-                                .roll_hook_card_reward
-                                .map(|f| f(&mut self.run_state, room))
-                        });
-                    if let Some(reward) = room_roll {
-                        // `CardCreationOptions.ForRoom(player, room)` (Dream
-                        // Catcher's rest-heal card): an `Encounter`-source
-                        // roll with the room's odds, like Prayer Wheel's.
-                        self.card_reward_options = reward.options;
-                        self.card_reward_upgraded = reward.upgraded;
-                        self.card_reward_enchantments = reward.enchantments;
-                    } else if pre_resolved.is_empty() {
-                        // Non-combat (`CardCreationSource.Other`) reward: roll
-                        // BASE odds, NOT the pity-updating combat roller. These
-                        // sentinels (Lost Coffer, Orrery, event card grants)
-                        // must not mutate the run pity counter — doing so
-                        // over-accumulated the offset and flipped a later
-                        // combat reward's rarity (PARITY132). Falls back to the
-                        // pity roller only if the base-odds callback is unwired.
-                        let roller = self
-                            .callbacks
-                            .generate_noncombat_card_reward_options
-                            .or(self.callbacks.generate_card_reward_options);
-                        self.card_reward_options =
-                            roller.map(|f| f(&mut self.run_state)).unwrap_or_default();
-                        self.card_reward_upgraded =
-                            std::mem::take(&mut self.run_state.card_reward_upgraded_flags);
-                        self.card_reward_enchantments =
-                            std::mem::take(&mut self.run_state.card_reward_enchantments);
-                    } else {
-                        self.card_reward_options = pre_resolved;
-                        // Empty unless the caller built the reward with
-                        // `CardReward::from_cards` (v0.111.0 BrainLeech Rip,
-                        // CrystalSphere, …): the offered upgrade flags and
-                        // relic-stamped enchantments (FresnelLens / Glitter /
-                        // WingCharm) travel to the pick. GH #806.
-                        self.card_reward_upgraded = pre_upgraded;
-                        self.card_reward_enchantments = pre_enchantments;
-                    }
+                    let slate = self.roll_card_reward_slate(crate::runstate::CardReward {
+                        options: pre_resolved,
+                        upgraded: pre_upgraded,
+                        enchantments: pre_enchantments,
+                        for_room,
+                    });
+                    self.card_reward_options = slate.options;
+                    self.card_reward_upgraded = slate.upgraded;
+                    self.card_reward_enchantments = slate.enchantments;
                     opened = true;
                 }
             }
             // Do not advance `i`: the vector shifted left.
         }
         opened
+    }
+
+    /// The options a queued [`crate::runstate::CardReward`] offers once it is
+    /// populated (C# `CardReward.Populate`), with their upgrade flags and
+    /// enchantments in [`crate::runstate::CardReward::options`] order.
+    fn roll_card_reward_slate(
+        &mut self,
+        reward: crate::runstate::CardReward,
+    ) -> crate::runstate::CardReward {
+        let crate::runstate::CardReward {
+            options: pre_resolved,
+            upgraded: pre_upgraded,
+            enchantments: pre_enchantments,
+            for_room,
+        } = reward;
+        let room_roll = for_room
+            .filter(|_| pre_resolved.is_empty())
+            .and_then(|room| {
+                self.callbacks
+                    .roll_hook_card_reward
+                    .map(|f| f(&mut self.run_state, room))
+            });
+        if let Some(reward) = room_roll {
+            // `CardCreationOptions.ForRoom(player, room)` (Dream
+            // Catcher's rest-heal card): an `Encounter`-source roll with
+            // the room's odds, like Prayer Wheel's.
+            return crate::runstate::CardReward {
+                options: reward.options,
+                upgraded: reward.upgraded,
+                enchantments: reward.enchantments,
+                for_room: None,
+            };
+        }
+        if pre_resolved.is_empty() {
+            // Non-combat (`CardCreationSource.Other`) reward: roll BASE
+            // odds, NOT the pity-updating combat roller. These sentinels
+            // (Lost Coffer, Orrery, event card grants) must not mutate the
+            // run pity counter — doing so over-accumulated the offset and
+            // flipped a later combat reward's rarity (PARITY132). Falls back
+            // to the pity roller only if the base-odds callback is unwired.
+            let roller = self
+                .callbacks
+                .generate_noncombat_card_reward_options
+                .or(self.callbacks.generate_card_reward_options);
+            let options = roller.map(|f| f(&mut self.run_state)).unwrap_or_default();
+            return crate::runstate::CardReward {
+                options,
+                upgraded: std::mem::take(&mut self.run_state.card_reward_upgraded_flags),
+                enchantments: std::mem::take(&mut self.run_state.card_reward_enchantments),
+                for_room: None,
+            };
+        }
+        // Empty flags unless the caller built the reward with
+        // `CardReward::from_cards` (v0.111.0 BrainLeech Rip, CrystalSphere,
+        // …): the offered upgrade flags and relic-stamped enchantments
+        // (FresnelLens / Glitter / WingCharm) travel to the pick. GH #806.
+        crate::runstate::CardReward {
+            options: pre_resolved,
+            upgraded: pre_upgraded,
+            enchantments: pre_enchantments,
+            for_room: None,
+        }
     }
 
     /// Move a pending Scroll Boxes bundle choice (`run_state.pending_bundles`)
@@ -4109,6 +5688,11 @@ impl RunManager {
 
     fn advance_after_card_reward(&mut self) {
         if !self.card_reward_options.is_empty() {
+            return;
+        }
+        // A reward-screen run (GH #1641): a queued custom set (relics only
+        // included) opens its screen.
+        if self.open_custom_reward_screen() {
             return;
         }
         if !self.run_state.relic_rewards.is_empty() {
@@ -4197,6 +5781,16 @@ impl RunManager {
             self.advance_after_card_reward();
             return;
         }
+        // A reward taken off the open reward screen (a card pick, what a relic
+        // queued) has resolved: back to the screen (GH #1620), or to the one
+        // under it once that screen is done (GH #1641).
+        if self.reward_screen.is_none() {
+            self.pop_outer_reward_screen();
+        }
+        if self.reward_screen.is_some() {
+            self.phase = Phase::Rewards;
+            return;
+        }
         // Fall-through reached ONLY when nothing above re-entered: the reward
         // queues drained without surfacing a fresh card/relic select. A
         // chained POTION reward (PhialHolster's 2 procured potions, queued on
@@ -4266,6 +5860,17 @@ impl RunManager {
         // C# starts the Ancient only after the whole set resolves, so Tanx /
         // Pael read the post-removal deck (parity Necrobinder 6125 v0.111.0).
         // `settle_after_deck_pick` re-enters here once the picks drain.
+        if self.pending_run_win {
+            // The final boss's reward set: wait for its interactive picks,
+            // then the run is won.
+            if self.deck_pick_pending() {
+                self.phase = Phase::CardReward;
+                return;
+            }
+            self.pending_run_win = false;
+            self.stamp_run_won();
+            return;
+        }
         if self.pending_boss_act_advance
             && self.boss_relic_options.is_empty()
             && self.deck_pick_pending()
@@ -4274,6 +5879,14 @@ impl RunManager {
             return;
         }
         if self.pending_boss_act_advance && self.boss_relic_options.is_empty() {
+            // Dread: the next act is entered, and `AfterActEntered` adds its
+            // Ascender's Bane, BEFORE that act's Ancient starts
+            // (`Runs/RunManager.cs:1462-1491`), so the offers below are
+            // rolled over a deck that holds it (GH #1346).
+            if !self.dread_act_entry_done {
+                self.dread_after_act_entered();
+                self.dread_act_entry_done = true;
+            }
             if let Some(gen) = self.callbacks.generate_boss_relic_pool {
                 self.boss_relic_options = gen(&mut self.run_state);
             }
@@ -4316,8 +5929,9 @@ impl RunManager {
         if std::mem::take(&mut self.pending_boss_act_advance) {
             self.advance_boss_act();
         }
-        // Nothing left — back to map.
-        self.phase = Phase::MapChoice;
+        // Nothing left — back to map (or, in Blitz, to the merchant or the
+        // chest whose reward screen just drained).
+        self.phase = self.blitz_room_phase();
     }
 
     fn do_boss_relic_pick(&mut self, idx: usize) -> ActionResult {
@@ -4406,6 +6020,7 @@ impl RunManager {
     /// `sts2-rl-agent@01c094d:sts2_env/run/run_manager.py:1331-1345`.
     fn advance_boss_act(&mut self) {
         let ancient_heal_done = std::mem::take(&mut self.ancient_heal_done);
+        let dread_act_entry_done = std::mem::take(&mut self.dread_act_entry_done);
         if self.run_state.act_index < 3
             && self.run_state.current_room.map(|r| r.room_type)
                 == Some(crate::runstate::RoomType::Boss)
@@ -4413,6 +6028,12 @@ impl RunManager {
             self.run_state.advance_act();
             let new_act = self.run_state.act_index;
             self.carry_to_next_act();
+            // Dread's act-entry bane, unless the Ancient screen's roll
+            // already ran it. Before the Ancient's heal, as in C#
+            // (`AfterActEntered`, then the Ancient event starts).
+            if !dread_act_entry_done {
+                self.dread_after_act_entered();
+            }
             // Ancient-event entry heal (C# AncientEventModel.BeforeEventStarted):
             // the new act's Ancient event heals the player — to full at base
             // ascension, 80% of missing HP at A2 WearyTraveler. Mirror of the
@@ -4457,10 +6078,12 @@ impl RunManager {
             // (`MapPointTypeCounts.cs:15`). This seam previously passed a
             // hardcoded 0, so acts 2/3 dropped back to 5 elites at A1+.
             // Fixed per the 2026-06-12 ascension audit (sts2-rs-40ikw.2).
-            let ascension_level = i32::from(self.run_state.ascension_level);
-            let mut act_map = {
+            let ascension_level = self.run_state.map_ascension();
+            let mut act_map = if let Some(blitz) = self.run_state.blitz_act_map(new_act) {
+                blitz
+            } else {
                 let rng = self.run_state.rng.map_rng(act_idx_rng_arg);
-                crate::map_generator::generate_act_map_for(
+                let mut act_map = crate::map_generator::generate_act_map_for(
                     self.run_state.game_version,
                     num_rooms,
                     rng,
@@ -4468,9 +6091,10 @@ impl RunManager {
                     false,
                     act_idx_gen,
                     None,
-                )
+                );
+                self.run_state.modify_generated_map(&mut act_map, new_act);
+                act_map
             };
-            self.run_state.modify_generated_map(&mut act_map, new_act);
             // A10 DoubleBoss: the final act's map carries the second boss
             // node (C# threads `Act.HasSecondBoss` into the map ctor,
             // `StandardActMap.cs:96`). No RNG. Bead sts2-rs-40ikw.2.
@@ -4540,9 +6164,15 @@ impl RunManager {
     }
 
     fn restock_slot_if_courier(&mut self, slot: crate::shop::ShopSlot) {
+        // `Hook.ShouldRefillMerchantEntry` is asked only in a `MerchantRoom`
+        // (`MerchantEntry.cs`): the Fake Merchant's slots stay bought.
         if !self
             .run_state
             .owns_active_relic(crate::relics::RelicId::TheCourier)
+            || self
+                .shop_inventory
+                .as_ref()
+                .is_some_and(|i| i.fake_merchant)
         {
             return;
         }
@@ -4647,7 +6277,7 @@ impl RunManager {
                         == crate::shop::ShopPurchaseOutcome::Bought
                     {
                         self.restock_slot_if_courier(crate::shop::ShopSlot::Potion(idx));
-                        self.drain_pending_rewards();
+                        self.drain_bought_potion();
                     }
                 }
                 ParasolStep::Potion(_) => {
@@ -4699,8 +6329,11 @@ impl RunManager {
         inv.removal_used = true;
         inv.removal_cost = crate::shop::card_removal_cost(
             self.run_state.card_shop_removals_used,
-            self.run_state.ascension_level,
+            self.run_state.shop_ascension(),
         );
+        // `DoMerchantCardRemoval` asks for manual confirmation
+        // (`OneOffSynchronizer.cs:91`).
+        self.run_state.deck_pick_manual_confirm = true;
         self.run_state.pending_deck_removals += 1;
     }
 
@@ -4756,6 +6389,15 @@ impl RunManager {
         }
     }
 
+    /// Put a bought potion (queued by `buy_potion` as a `PotionReward`) on
+    /// the belt. A purchase is no reward set, so it never opens a reward
+    /// screen (GH #1641).
+    fn drain_bought_potion(&mut self) {
+        let screen = std::mem::replace(&mut self.run_state.reward_screen, false);
+        self.drain_pending_rewards();
+        self.run_state.reward_screen = screen;
+    }
+
     fn do_shop_buy_potion(&mut self, idx: usize) -> ActionResult {
         let Some(inv) = self.shop_inventory.as_mut() else {
             return ActionResult::InvalidForPhase;
@@ -4777,7 +6419,7 @@ impl RunManager {
                 // re-roll consumes `Shops` RNG while the pending-reward drain
                 // is RNG-free — so the stream position stays C#-aligned.
                 self.restock_slot_if_courier(crate::shop::ShopSlot::Potion(idx));
-                self.drain_pending_rewards();
+                self.drain_bought_potion();
                 ActionResult::Advanced
             }
             // A full belt (or procure veto) is a graceful no-op in C#:
@@ -5041,7 +6683,10 @@ impl RunManager {
     /// `card_reward_options`. The shared settle gate for the two post-pick
     /// drains below.
     fn grant_batch_settled(&self) -> bool {
-        !self.run_state.has_pending_grant_choice() && self.card_reward_options.is_empty()
+        !self.run_state.has_pending_grant_choice()
+            && self.card_reward_options.is_empty()
+            && self.reward_screen.is_none()
+            && self.outer_reward_screens.is_empty()
     }
 
     /// Grant the next relic a multi-grant listener deferred
@@ -5113,8 +6758,8 @@ impl RunManager {
             {
                 self.phase = Phase::CardReward;
                 self.advance_after_card_reward();
-            } else if self.pending_boss_act_advance
-                && self.boss_relic_options.is_empty()
+            } else if (self.pending_run_win
+                || (self.pending_boss_act_advance && self.boss_relic_options.is_empty()))
                 && self.phase == Phase::CardReward
                 && self.card_reward_options.is_empty()
                 && self.card_reward_bundles.is_none()
@@ -5125,6 +6770,7 @@ impl RunManager {
             }
         }
         self.drain_post_pick_deck_cards_if_settled();
+        self.finish_blitz_pick_if_settled();
     }
 
     /// True while an interactive deck pick (removal / upgrade / transform /
@@ -5276,6 +6922,18 @@ impl RunManager {
         // no enchantment yet, so `card_exhausts_inst` is the keyword check.
         let requires_exhaust =
             front.is_some_and(|e| e.enchantment == crate::cards::EnchantmentId::SoulsPower);
+        // `Spiral.CanEnchant` (`Spiral.cs:17-28`): a Basic card tagged Strike
+        // or Defend (SpiralingWhirlpool's Observe pick, GH #1493). Rarity via
+        // the content-registered rank fn (C# `Basic == 1`); unregistered
+        // (raw-core tests) ⇒ every card counts as Basic.
+        let requires_basic_strike_or_defend =
+            front.is_some_and(|e| e.enchantment == crate::cards::EnchantmentId::Spiral);
+        let rarity_rank = crate::lookup_card_rarity_rank();
+        let basic_strike_or_defend = |c: &crate::cards::Card| {
+            rarity_rank.is_none_or(|f| f(c.card_id, self.run_state.game_version) == 1)
+                && (c.tags.contains(crate::cards::CardTag::Strike)
+                    || c.tags.contains(crate::cards::CardTag::Defend))
+        };
         // A deck card keeps the v0.107.1 POD until it enters a combat, so read
         // its keywords in this build: v0.111.0 drops Times Up's Exhaust and
         // gives Eidolon one, and the C# selector lists exactly the live
@@ -5303,6 +6961,7 @@ impl RunManager {
                     // `Nimble.CanEnchant` → `CardModel.GainsBlock` (GH #1021).
                     && (!requires_block || c.gains_block_for(self.run_state.game_version))
                     && (!requires_exhaust || souls_power_keywords_ok(c))
+                    && (!requires_basic_strike_or_defend || basic_strike_or_defend(c))
                     && restriction
                         .is_none_or(|t| c.card_type == t || secondary == Some(c.card_type))
             })
@@ -5395,6 +7054,212 @@ impl RunManager {
         ActionResult::Advanced
     }
 
+    /// The open pick-N deck select whose picks wait for the last one, on a
+    /// [`crate::runstate::RunState::deck_select_screens`] run (GH #1621).
+    /// `None` without the flag, for a single pick (it applies at once, as
+    /// before), for Claws and the Blitz wares (their own selects) and for an
+    /// "up to N" enchant (confirmed early through
+    /// [`Self::decline_optional_deck_enchants`]). The front select is the one
+    /// [`Self::phase_available_actions`] offers: removals, then upgrades,
+    /// transforms (the leading run of equal entries) and enchants.
+    fn deferred_deck_select(&self) -> Option<DeferredDeckSelect> {
+        let rs = &self.run_state;
+        if !rs.deck_select_screens
+            || self.blitz_pick.is_some()
+            || rs.pending_claws_selection.is_some()
+        {
+            return None;
+        }
+        let (kind, n, offer_len) = if rs.pending_deck_removals > 0 {
+            (
+                DeckSelectKind::Removal,
+                rs.pending_deck_removals as usize,
+                rs.removal_offer_order().len(),
+            )
+        } else if rs.pending_deck_upgrades > 0 {
+            (
+                DeckSelectKind::Upgrade,
+                rs.pending_deck_upgrades as usize,
+                rs.master_deck.iter().filter(|c| c.is_upgradable()).count(),
+            )
+        } else if let Some(front) = rs.pending_deck_transforms.first() {
+            (
+                DeckSelectKind::Transform,
+                rs.pending_deck_transforms
+                    .iter()
+                    .take_while(|t| *t == front)
+                    .count(),
+                self.transform_eligible_deck_indices().len(),
+            )
+        } else {
+            let front = rs.pending_deck_enchants.first()?;
+            if front.optional {
+                return None;
+            }
+            (
+                DeckSelectKind::Enchant,
+                rs.pending_deck_enchants
+                    .iter()
+                    .take_while(|e| *e == front)
+                    .count(),
+                self.enchant_eligible_deck_indices().len(),
+            )
+        };
+        let target = n.min(offer_len);
+        (n >= 2 && target > 0).then_some(DeferredDeckSelect {
+            kind,
+            offer_len,
+            target,
+        })
+    }
+
+    /// Record one pick of the open pick-N select: `idx` is a position among
+    /// the cards still offered (the select's offer minus the picks so far).
+    /// The last pick applies them all through the single-pick resolvers, in
+    /// the order C# walks the selected list: transforms ascending
+    /// (`CardCmd.Transform` sorts by pile index; each original leaves and its
+    /// replacement is appended at the tail, so a later position moves down by
+    /// the earlier picks), the others descending (a removed, upgraded or
+    /// enchanted card leaves the offer, the positions below it stay put).
+    fn do_deferred_deck_pick(&mut self, sel: DeferredDeckSelect, idx: usize) -> ActionResult {
+        let picked = &self.run_state.deck_select_picked;
+        let Some(pos) = (0..sel.offer_len).filter(|p| !picked.contains(p)).nth(idx) else {
+            return ActionResult::InvalidForPhase;
+        };
+        self.run_state.deck_select_picked.push(pos);
+        if self.run_state.deck_select_picked.len() < sel.target {
+            return ActionResult::Advanced;
+        }
+        let mut picks = std::mem::take(&mut self.run_state.deck_select_picked);
+        picks.sort_unstable();
+        if sel.kind == DeckSelectKind::Transform {
+            for (k, p) in picks.iter().enumerate() {
+                if self.phase == Phase::RunOver {
+                    break;
+                }
+                let _ = self.do_transform_deck_card_at(p - k);
+            }
+        } else {
+            for &p in picks.iter().rev() {
+                let _ = match sel.kind {
+                    DeckSelectKind::Removal => self.do_remove_deck_card_at(p),
+                    DeckSelectKind::Upgrade => self.do_upgrade_deck_card_at(p),
+                    DeckSelectKind::Enchant | DeckSelectKind::Transform => {
+                        self.do_enchant_deck_card_at(p)
+                    }
+                };
+            }
+        }
+        if self.run_state.cook_select_open && self.run_state.pending_deck_removals == 0 {
+            // Cook's two removals and its max HP are in: the option is used.
+            self.run_state.cook_select_open = false;
+            if self.phase == Phase::RestSite {
+                self.phase = Phase::MapChoice;
+                self.finish_rest_site_option(crate::runstate::RestSiteOption::Cook {
+                    enabled: true,
+                });
+            }
+        }
+        if self.phase == Phase::RunOver {
+            return ActionResult::RunOver;
+        }
+        ActionResult::Advanced
+    }
+
+    /// Whether the open select can be cancelled with
+    /// [`RunAction::ConfirmDeckSelection`] (GH #1619): on a
+    /// [`crate::runstate::RunState::deck_select_screens`] run, Smith's upgrade
+    /// select, and Cook's removal select while no card is picked. C#
+    /// `SmithRestSiteOption` / `CookRestSiteOption.OnSelect` open their select
+    /// with `Cancelable = true`; an empty selection returns `false`, so the
+    /// option is not used and the campfire keeps every option. (The game also
+    /// lets Cook cancel after one pick; that ends the same way, so it is not
+    /// offered twice.)
+    #[must_use]
+    pub fn deck_select_cancelable(&self) -> bool {
+        let rs = &self.run_state;
+        if !rs.deck_select_screens {
+            return false;
+        }
+        if rs.cook_select_open {
+            return rs.deck_select_picked.is_empty();
+        }
+        self.phase == Phase::RestSite
+            && !self.deck_pick_pending()
+            && rs
+                .pending_choice
+                .as_ref()
+                .is_some_and(|pc| pc.kind == crate::ChoiceKind::CardSelect)
+    }
+
+    /// Picks made so far in the open pick-N deck select (GH #1621), as
+    /// positions in its offer; empty when none is open.
+    #[must_use]
+    pub fn deck_select_picked(&self) -> &[usize] {
+        &self.run_state.deck_select_picked
+    }
+
+    /// The open pick-N deck select's kind once a pick is made (GH #1790):
+    /// `"removal"`, `"upgrade"`, `"transform"` or `"enchant"`; `None` when no
+    /// such select is open or nothing is picked yet. Its picks index the offer
+    /// list of that kind (`removal_offer_order`, the upgradable cards,
+    /// [`Self::transform_eligible_deck_indices`],
+    /// [`Self::enchant_eligible_deck_indices`]).
+    #[must_use]
+    pub fn deck_select_picked_kind(&self) -> Option<&'static str> {
+        if self.run_state.deck_select_picked.is_empty() {
+            return None;
+        }
+        self.deferred_deck_select().map(|s| match s.kind {
+            DeckSelectKind::Removal => "removal",
+            DeckSelectKind::Upgrade => "upgrade",
+            DeckSelectKind::Transform => "transform",
+            DeckSelectKind::Enchant => "enchant",
+        })
+    }
+
+    /// Master-deck positions of the picks made so far in the open pick-N deck
+    /// select (GH #1790), in pick order; empty when none is open. The deck
+    /// does not change until the last pick, so these stay valid.
+    #[must_use]
+    pub fn deck_select_picked_deck_indices(&self) -> Vec<usize> {
+        let rs = &self.run_state;
+        if rs.deck_select_picked.is_empty() {
+            return Vec::new();
+        }
+        let Some(sel) = self.deferred_deck_select() else {
+            return Vec::new();
+        };
+        let offer: Vec<usize> = match sel.kind {
+            DeckSelectKind::Removal => rs.removal_offer_order(),
+            DeckSelectKind::Upgrade => (0..rs.master_deck.len())
+                .filter(|&i| rs.master_deck[i].is_upgradable())
+                .collect(),
+            DeckSelectKind::Transform => self.transform_eligible_deck_indices(),
+            DeckSelectKind::Enchant => self.enchant_eligible_deck_indices(),
+        };
+        rs.deck_select_picked
+            .iter()
+            .filter_map(|p| offer.get(*p).copied())
+            .collect()
+    }
+
+    /// Cancel Smith's or Cook's select (GH #1619): back to the campfire, the
+    /// option unused.
+    fn cancel_deck_select(&mut self) -> ActionResult {
+        let rs = &mut self.run_state;
+        if rs.cook_select_open {
+            rs.cook_select_open = false;
+            rs.deck_select_picked.clear();
+            rs.pending_deck_removals = 0;
+            rs.pending_post_removal_max_hp_gain = 0;
+            rs.deck_pick_manual_confirm = false;
+        } else {
+            rs.pending_choice = None;
+        }
+        ActionResult::Advanced
+    }
+
     /// Close Claws' select: transform every picked card into its Maul in one
     /// `CardCmd.Transform` (originals leave, Mauls are appended in original
     /// deck order — [`crate::runstate::RunState::transform_specific_cards`]).
@@ -5467,6 +7332,9 @@ impl RunManager {
             // (Kifuda's "up to 3" enchant); resume the walk like
             // `take_action` does.
             self.resume_lords_parasol_if_settled();
+            while self.take_forced_deck_picks() {
+                self.resume_lords_parasol_if_settled();
+            }
         }
         dropped
     }
@@ -5601,6 +7469,16 @@ impl RunManager {
         // every event visit. (Same restore should land on every other
         // phase whose resolve callback may call `enter_room`; doing
         // event here pre-emptively until the broader sweep lands.)
+        // An unbound room binds its event first, as the game does on entry:
+        // the Fake Merchant then opens its shop page instead of resolving an
+        // option (GH #1607). The lazy pick inside `resolve_event_at` is the
+        // same draw.
+        if self.run_state.current_event.is_none() {
+            self.bind_pending_event();
+            if self.phase == Phase::Shop {
+                return ActionResult::Advanced;
+            }
+        }
         let coord_keep = self.run_state.current_room.and_then(|r| r.map_coord);
         let point_keep = self.run_state.current_room.and_then(|r| r.map_point_type);
         if let Some(resolve) = self.callbacks.resolve_event_at {
@@ -5859,6 +7737,7 @@ impl RunManager {
             let result = self.offer_combat_room_rewards(
                 crate::runstate::RoomType::Monster,
                 &req.victory_rewards,
+                req.encounter.extra_random_relics(),
             );
             self.run_state.combat_gold_bounds_override = None;
             return result;
@@ -6022,6 +7901,9 @@ impl RunManager {
         // combat-only slot. Bead `sts2-rs-oo78v` (P9.2.g.2).
         self.carry_to_next_act();
 
+        // Dread: `DreadRunModel.AfterActEntered`, before the Ancient event.
+        self.dread_after_act_entered();
+
         // Ancient-event entry heal (C# AncientEventModel.BeforeEventStarted):
         // entering the new act's Ancient event heals the player — to full at
         // base ascension, or 80% of the missing HP at A2 WearyTraveler. This
@@ -6056,9 +7938,11 @@ impl RunManager {
             });
         let act_idx_rng_arg = i32::from(new_act).saturating_sub(1);
         let act_idx_gen = i32::from(new_act);
-        let mut act_map = {
+        let mut act_map = if let Some(blitz) = self.run_state.blitz_act_map(new_act) {
+            blitz
+        } else {
             let rng = self.run_state.rng.map_rng(act_idx_rng_arg);
-            crate::map_generator::generate_act_map_for(
+            let mut act_map = crate::map_generator::generate_act_map_for(
                 self.run_state.game_version,
                 num_rooms,
                 rng,
@@ -6066,9 +7950,10 @@ impl RunManager {
                 false,
                 act_idx_gen,
                 None,
-            )
+            );
+            self.run_state.modify_generated_map(&mut act_map, new_act);
+            act_map
         };
-        self.run_state.modify_generated_map(&mut act_map, new_act);
         // A10 DoubleBoss: the final act's map carries the second boss node
         // (C# `StandardActMap.cs:96` via `Act.HasSecondBoss`). No RNG.
         // Bead sts2-rs-40ikw.2.
@@ -6079,6 +7964,34 @@ impl RunManager {
         // Then the Ancient EventRoom is entered (EventRoom.cs:81).
         self.fire_ancient_room_entered();
         Some(act_map)
+    }
+
+    /// C# `DreadRunModel.AfterActEntered` (`Models.Dread/DreadRunModel.cs:
+    /// 17-29`, v0.113.0, GH #1346) for an act after the first
+    /// (`CurrentActIndex > 0`): the player gets one more `AscendersBane`
+    /// through `CardPileCmd.AddCursesToDeck` -> `CardPileCmd.Add(card,
+    /// PileType.Deck)` (`Commands/CardPileCmd.cs:1271-1285`), so
+    /// `Hook.ModifyCardBeingAddedToDeck` and the deck-add listeners run
+    /// ([`RunState::add_card_to_deck_with_hooks`]) — unlike the A5 bane of
+    /// run start, which `AscensionManager.ApplyEffectsTo` appends silently.
+    /// The act's dominion, the hook's other half, is derived on demand
+    /// ([`RunState::act_dominion`]). A no-op outside Dread.
+    ///
+    /// C# dispatches `Hook.AfterActEntered` at the end of `EnterAct`
+    /// (`Runs/RunManager.cs:1462-1491`): after the old act's boss rewards
+    /// and the new act's map room, before the new act's Ancient event (its
+    /// heal, its option roll, its relic). `DreadRunModel` and the
+    /// `CursedRun` modifier are the hook's only C# listeners, so nothing
+    /// else has an order against it. Called once per act entered, by
+    /// whichever of the Ancient-offer roll and the act advance comes first.
+    fn dread_after_act_entered(&mut self) {
+        if !self.run_state.game_mode.is_dread() {
+            return;
+        }
+        self.run_state.add_card_to_deck_with_hooks(
+            ascenders_bane_card(),
+            crate::relic_effects::AddSource::Other,
+        );
     }
 
     /// Fire `after_room_entered(Event)` for the act-2/3 opening Ancient room
@@ -6135,6 +8048,13 @@ impl RunManager {
         self.run_state.player_won = true;
         self.phase = Phase::RunOver;
         true
+    }
+
+    /// Stamp the run as won (the final boss's reward set has resolved).
+    fn stamp_run_won(&mut self) {
+        self.run_state.is_over = true;
+        self.run_state.player_won = true;
+        self.phase = Phase::RunOver;
     }
 
     /// Debug/coverage override mirroring the scalar subset of the C#
@@ -6331,10 +8251,13 @@ impl RunManager {
             .map_or(crate::acts::DEFAULT_ACT_NUM_ROOMS, |a| {
                 i32::from(a.num_rooms)
             });
-        let ascension_level = i32::from(self.ascension_level);
-        let mut act_map = {
+        let ascension_level = self.run_state.map_ascension();
+        let act_index = self.run_state.act_index;
+        let act_map = if let Some(blitz) = self.run_state.blitz_act_map(act_index) {
+            blitz
+        } else {
             let rng = self.run_state.rng.map_rng(act_idx_rng_arg);
-            crate::map_generator::generate_act_map_for(
+            let mut act_map = crate::map_generator::generate_act_map_for(
                 self.run_state.game_version,
                 num_rooms,
                 rng,
@@ -6342,10 +8265,10 @@ impl RunManager {
                 false,
                 act_idx_gen,
                 None,
-            )
+            );
+            self.run_state.modify_generated_map(&mut act_map, act_index);
+            act_map
         };
-        let act_index = self.run_state.act_index;
-        self.run_state.modify_generated_map(&mut act_map, act_index);
 
         // Step 7: fire after_act_entered for the run's starting act.
         let _ = crate::run_effects::dispatch_after_act_entered(&mut self.run_state, act_index);
@@ -6492,10 +8415,19 @@ impl RunManager {
         let outcome = self.run_state.do_rest_site_action(chosen);
         use crate::runstate::RestSiteActionOutcome as O;
         match outcome {
+            // GH #1619: Cook's removal select is cancelable; the option is
+            // used only once both cards are picked (`do_deferred_deck_pick`).
+            O::Cooked
+                if self.run_state.deck_select_screens
+                    && self.run_state.pending_deck_removals > 0 =>
+            {
+                self.run_state.cook_select_open = true;
+            }
             O::Rested { .. }
             | O::SmithUpgraded { .. }
             | O::Hatched
             | O::Evolved
+            | O::Restored
             | O::Dug { .. }
             | O::Kindled
             | O::Lifted
@@ -6610,6 +8542,48 @@ impl RunManager {
     pub const fn card_offer_can_skip(&self) -> bool {
         self.card_offer_can_skip
     }
+}
+
+/// Which deck select [`RunManager::deferred_deck_select`] found open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeckSelectKind {
+    Removal,
+    Upgrade,
+    Transform,
+    Enchant,
+}
+
+impl DeckSelectKind {
+    /// The pick action at `idx`.
+    const fn action(self, idx: usize) -> RunAction {
+        match self {
+            Self::Removal => RunAction::RemoveDeckCard { idx },
+            Self::Upgrade => RunAction::UpgradeDeckCard { idx },
+            Self::Transform => RunAction::TransformDeckCard { idx },
+            Self::Enchant => RunAction::EnchantDeckCard { idx },
+        }
+    }
+
+    /// `idx` when `action` is this select's pick.
+    const fn idx_of(self, action: RunAction) -> Option<usize> {
+        match (self, action) {
+            (Self::Removal, RunAction::RemoveDeckCard { idx })
+            | (Self::Upgrade, RunAction::UpgradeDeckCard { idx })
+            | (Self::Transform, RunAction::TransformDeckCard { idx })
+            | (Self::Enchant, RunAction::EnchantDeckCard { idx }) => Some(idx),
+            _ => None,
+        }
+    }
+}
+
+/// An open pick-N deck select whose picks wait for the last one (GH #1621).
+#[derive(Clone, Copy, Debug)]
+struct DeferredDeckSelect {
+    kind: DeckSelectKind,
+    /// Cards the select offered when it opened.
+    offer_len: usize,
+    /// Picks that complete it: N, or every card when fewer are offered.
+    target: usize,
 }
 
 /// Where a reward of a combat room's set lives once populated, for
@@ -8120,6 +10094,57 @@ mod tests {
         let (elite_advance, elite) = card_rewards_after_room_win(RoomType::Elite, &wheel);
         assert_eq!(elite_advance, elite_base, "no PrayerWheel roll on an Elite");
         assert_eq!(elite, vec![vec![CardId::Bash]]);
+    }
+
+    /// An event fight's extra `PotionReward` (Punch Off's prize) populates
+    /// with the set, in the extras' list order, BEFORE the hook additions:
+    /// Prayer Wheel's second card reward reads the `Rewards` stream after
+    /// it (`RewardsSet.GenerateWithoutOffering`). Rolled only when drained,
+    /// after the card pick, it took the card's draws and the card the
+    /// potion's (Spire Bench seed 170000019: Power Potion and Bloodletting /
+    /// Rampage / Sword Boomerang natively, Blessing of the Forge and Havoc /
+    /// Stampede / Hemokinesis in the game).
+    #[test]
+    fn an_event_fights_extra_potion_rolls_before_the_prayer_wheel_card() {
+        use crate::cards::CardId;
+        use crate::runstate::{PotionReward, Reward, RoomType};
+        use std::cell::RefCell;
+        thread_local! {
+            static ROLLS: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+        }
+        fn base_cards(_rs: &mut RunState) -> Vec<CardId> {
+            ROLLS.with(|r| r.borrow_mut().push("room card"));
+            vec![CardId::Bash]
+        }
+        fn hook_cards(_rs: &mut RunState, _room: RoomType) -> crate::runstate::CardReward {
+            ROLLS.with(|r| r.borrow_mut().push("prayer wheel card"));
+            crate::runstate::CardReward::from_options(vec![CardId::Anger])
+        }
+        #[allow(clippy::unnecessary_wraps)] // the callback's signature
+        fn potion(_rs: &mut RunState) -> Option<crate::potions::PotionKind> {
+            ROLLS.with(|r| r.borrow_mut().push("extra potion"));
+            Some(crate::potions::PotionKind::PowerPotion)
+        }
+        let cb = ContentCallbacks {
+            generate_card_reward_options: Some(base_cards),
+            roll_hook_card_reward: Some(hook_cards),
+            roll_potion_reward_kind: Some(potion),
+            ..ContentCallbacks::default()
+        };
+        let mut rm = RunManager::new(7, CharacterId::Ironclad).with_content_callbacks(cb);
+        rm.run_state.relics.push(crate::RelicId::PrayerWheel);
+        rm.run_state.last_combat_gold_proportion = 1.0;
+        rm.run_state.current_room = Some(crate::runstate::Room::new(RoomType::Monster));
+        let _ = rm.offer_combat_room_rewards(
+            RoomType::Monster,
+            &[Reward::Potion(PotionReward::empty())],
+            0,
+        );
+        while rm.phase() == Phase::CardReward && !rm.card_reward_options.is_empty() {
+            let _ = rm.take_action(RunAction::PickCardReward { idx: None });
+        }
+        let rolls = ROLLS.with(|r| r.borrow().clone());
+        assert_eq!(rolls, ["room card", "extra potion", "prayer wheel card"]);
     }
 
     /// C# sorts a room's reward set by `RewardsSetIndex` with the unstable
@@ -9859,12 +11884,9 @@ mod tests {
         rm.run_state.pending_deck_removals = 2;
         // The upgraded Strike is not offered.
         assert_eq!(rm.run_state.removal_offer_order(), vec![1, 2]);
-        for _ in 0..2 {
-            assert_eq!(
-                rm.take_action(RunAction::RemoveDeckCard { idx: 0 }),
-                ActionResult::Advanced
-            );
-        }
+        // Two upgradable cards for `prefs(5)`: C# takes both without a
+        // screen (GH #1624), in offer order.
+        assert!(rm.take_forced_deck_picks());
         assert!(!rm.run_state.pending_removal_paels_tooth);
         let stored: Vec<_> = rm
             .run_state
@@ -10772,6 +12794,7 @@ mod tests {
             }],
             removal_cost: 75,
             removal_used: false,
+            fake_merchant: false,
         }
     }
 
@@ -11803,6 +13826,217 @@ mod tests {
     /// A10 map-gen: the FINAL act's map carries the second-boss node
     /// (Boss-typed, one row above the boss, the boss's only child —
     /// C# `StandardActMap.cs:79-82`/`:208-210`); act 1 never does.
+    /// GH #1346: `with_game_mode(Dread)` marks an ascension-10 v0.113.0 run
+    /// as Dread; everything A10 already set up stays.
+    #[test]
+    fn with_game_mode_dread_marks_an_a10_run() {
+        let rm = RunManager::with_ascension(7, CharacterId::Ironclad, 10)
+            .with_game_version(crate::GameVersion::V0_113_0)
+            .with_game_mode(crate::GameMode::Dread);
+        assert_eq!(rm.run_state.game_mode, crate::GameMode::Dread);
+        assert!(rm.run_state.has_double_boss);
+        let standard = RunManager::with_ascension(7, CharacterId::Ironclad, 10)
+            .with_game_version(crate::GameVersion::V0_113_0);
+        assert_eq!(standard.run_state.game_mode, crate::GameMode::Standard);
+        assert_ne!(
+            crate::hashing::run_hash(&rm),
+            crate::hashing::run_hash(&standard),
+            "the mode is part of the run digest"
+        );
+    }
+
+    // ── Dread: one more Ascender's Bane per act entered (GH #1346) ──
+
+    fn banes(rs: &RunState) -> usize {
+        rs.master_deck
+            .iter()
+            .filter(|c| c.card_id == crate::cards::CardId::AscendersBane)
+            .count()
+    }
+
+    /// An ascension-10 v0.113.0 run in `mode`, standing on a won boss fight
+    /// of `act`, with a one-card boss reward and `pool` as the next act's
+    /// Ancient offers.
+    fn boss_won_in(
+        mode: crate::GameMode,
+        act: u8,
+        pool: fn(&mut RunState) -> Vec<RelicId>,
+    ) -> RunManager {
+        fn cards(_rs: &mut RunState) -> Vec<crate::cards::CardId> {
+            vec![crate::cards::CardId::Bash]
+        }
+        let cb = ContentCallbacks {
+            generate_card_reward_options: Some(cards),
+            generate_boss_relic_pool: Some(pool),
+            ..ContentCallbacks::default()
+        };
+        let mut rm = RunManager::with_ascension(7, CharacterId::Ironclad, 10)
+            .with_game_version(crate::GameVersion::V0_113_0)
+            .with_game_mode(mode)
+            .with_content_callbacks(cb);
+        rm.run_state.act_index = act;
+        rm.run_state.current_room =
+            Some(crate::runstate::Room::new(crate::runstate::RoomType::Boss));
+        rm.combat = Some(crate::CombatState {
+            is_over: true,
+            player_won: true,
+            ..crate::CombatState::default()
+        });
+        rm.set_phase(Phase::Combat);
+        let _ = rm.exit_combat_and_transition();
+        assert_eq!(rm.phase(), Phase::CardReward);
+        rm
+    }
+
+    /// C# `DreadRunModel.AfterActEntered` (`Models.Dread/DreadRunModel.cs:
+    /// 17-29`): on entering acts 2 and 3 (`CurrentActIndex > 0`) each player
+    /// gets one `AscendersBane` through `CardPileCmd.AddCursesToDeck`. A
+    /// standard ascension-10 run keeps the single A5 bane (1); a Dread run
+    /// has 2 in act 2 and 3 in act 3.
+    ///
+    /// `Hook.AfterActEntered` runs at the end of `EnterAct`
+    /// (`Runs/RunManager.cs:1462-1491`), before the act's Ancient event
+    /// starts, so the Ancient's option roll already reads a deck with the
+    /// new bane, and the bane sits in the deck ahead of anything the Ancient
+    /// then gives.
+    #[test]
+    fn dread_adds_an_ascenders_bane_on_entering_acts_two_and_three() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static BANES_AT_ANCIENT_ROLL: AtomicUsize = AtomicUsize::new(usize::MAX);
+        fn pool(rs: &mut RunState) -> Vec<RelicId> {
+            BANES_AT_ANCIENT_ROLL.store(banes(rs), Ordering::SeqCst);
+            vec![RelicId::Anchor]
+        }
+        for (mode, act, at_roll, after) in [
+            (crate::GameMode::Standard, 1, 1, 1),
+            (crate::GameMode::Standard, 2, 1, 1),
+            (crate::GameMode::Dread, 1, 2, 2),
+            (crate::GameMode::Dread, 2, 2, 2),
+        ] {
+            let mut rm = boss_won_in(mode, act, pool);
+            assert_eq!(banes(&rm.run_state), 1, "the A5 bane");
+            let _ = rm.take_action(RunAction::PickCardReward { idx: Some(0) });
+            assert_eq!(rm.phase(), Phase::BossRelic, "{mode} act {act}");
+            assert_eq!(
+                BANES_AT_ANCIENT_ROLL.load(Ordering::SeqCst),
+                at_roll,
+                "{mode} act {act}: the deck the Ancient reads"
+            );
+            let bane_at = rm
+                .run_state
+                .master_deck
+                .iter()
+                .rposition(|c| c.card_id == crate::cards::CardId::AscendersBane)
+                .expect("a bane");
+            let bash_at = rm
+                .run_state
+                .master_deck
+                .iter()
+                .rposition(|c| c.card_id == crate::cards::CardId::Bash)
+                .expect("the boss reward pick");
+            assert_eq!(
+                bane_at > bash_at,
+                mode.is_dread(),
+                "{mode}: the new bane follows the boss reward card"
+            );
+            let _ = rm.take_action(RunAction::PickBossRelic { idx: 0 });
+            assert_eq!(rm.run_state.act_index, act + 1);
+            assert_eq!(banes(&rm.run_state), after, "{mode} into act {}", act + 1);
+        }
+    }
+
+    /// The same add when the next act's Ancient offers nothing and the act
+    /// advances straight from the boss rewards: once, not twice.
+    #[test]
+    fn dread_bane_is_added_once_when_the_ancient_offers_nothing() {
+        fn empty(_rs: &mut RunState) -> Vec<RelicId> {
+            Vec::new()
+        }
+        for (mode, want) in [(crate::GameMode::Standard, 1), (crate::GameMode::Dread, 2)] {
+            let mut rm = boss_won_in(mode, 1, empty);
+            let _ = rm.take_action(RunAction::PickCardReward { idx: None });
+            assert_eq!(rm.run_state.act_index, 2);
+            assert_eq!(banes(&rm.run_state), want, "{mode}");
+        }
+    }
+
+    /// `CardPileCmd.AddCursesToDeck` -> `CardPileCmd.Add(card, PileType.Deck)`
+    /// (`Commands/CardPileCmd.cs:1271-1285`): unlike the silent A5 bane of
+    /// run start (`AscensionManager.cs:80-92`, `Deck.AddInternal`), the
+    /// per-act one fires the deck-add hooks, once, as a Curse.
+    #[test]
+    fn dread_bane_fires_the_deck_add_hooks() {
+        use crate::run_effects::{register_on_card_added_to_deck, CardAddedRunCtx};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CURSES_ADDED: AtomicUsize = AtomicUsize::new(0);
+        fn listener(
+            _rs: &mut RunState,
+            ctx: &CardAddedRunCtx,
+        ) -> crate::card_effects::EffectResult {
+            if ctx.card_id == crate::cards::CardId::AscendersBane
+                && ctx.card_type == crate::cards::CardType::Curse
+            {
+                CURSES_ADDED.fetch_add(1, Ordering::SeqCst);
+            }
+            crate::card_effects::EffectResult::Resolved
+        }
+        register_on_card_added_to_deck(RelicId::DarkstonePeriapt, listener);
+        fn pool(_rs: &mut RunState) -> Vec<RelicId> {
+            vec![RelicId::Anchor]
+        }
+        let mut rm = boss_won_in(crate::GameMode::Dread, 1, pool);
+        assert_eq!(
+            CURSES_ADDED.load(Ordering::SeqCst),
+            0,
+            "the A5 bane is silent"
+        );
+        let _ = rm.take_action(RunAction::PickCardReward { idx: None });
+        let _ = rm.take_action(RunAction::PickBossRelic { idx: 0 });
+        assert_eq!(CURSES_ADDED.load(Ordering::SeqCst), 1);
+        let added = rm.run_state.master_deck.last().expect("deck");
+        assert_eq!(added.card_id, crate::cards::CardId::AscendersBane);
+        assert_eq!(added.card_type, crate::cards::CardType::Curse);
+        assert_eq!(added.cost, crate::CardEnergyCost::new(-1));
+    }
+
+    /// [`RunManager::advance_act_on_boss_kill`], the direct act advance, runs
+    /// the same `AfterActEntered`: standard A10 1 bane, Dread 2 then 3.
+    #[test]
+    fn dread_bane_on_the_direct_act_advance() {
+        for (mode, want) in [
+            (crate::GameMode::Standard, [1, 1]),
+            (crate::GameMode::Dread, [2, 3]),
+        ] {
+            let mut rm = RunManager::with_ascension(7, CharacterId::Ironclad, 10)
+                .with_game_version(crate::GameVersion::V0_113_0)
+                .with_game_mode(mode);
+            for banes_after in want {
+                enter_boss_room(&mut rm);
+                let _ = rm
+                    .advance_act_on_boss_kill(&combat_after_boss_win(), 10)
+                    .expect("advances");
+                assert_eq!(banes(&rm.run_state), banes_after, "{mode}");
+            }
+            assert_eq!(rm.run_state.act_index, 3);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "ascension-10 run")]
+    fn a_dread_run_below_ascension_10_is_refused() {
+        let _ = RunManager::with_ascension(7, CharacterId::Ironclad, 9)
+            .with_game_version(crate::GameVersion::V0_113_0)
+            .with_game_mode(crate::GameMode::Dread);
+    }
+
+    #[test]
+    #[should_panic(expected = "Dread exists from v0.113.0")]
+    fn a_dread_run_before_v0113_is_refused() {
+        let _ = RunManager::with_ascension(7, CharacterId::Ironclad, 10)
+            .with_game_version(crate::GameVersion::V0_111_0)
+            .with_game_mode(crate::GameMode::Dread);
+    }
+
     #[test]
     fn ascension_a10_final_act_map_has_second_boss_node() {
         let mut rm = RunManager::with_ascension(7, CharacterId::Ironclad, 10);
@@ -11990,6 +14224,81 @@ mod tests {
         assert!(rm.run_state.player_won);
         assert_eq!(rm.run_state.gold, gold_before + 40);
         assert!(rm.run_state.pending_extra_reward_gold.is_empty());
+    }
+
+    /// v0.113.0 offers the final boss room's `ExtraRewards`
+    /// (`RewardsSet.cs:96-103`) before `WinRun`, so Forbidden Grimoire's
+    /// `CardRemovalReward` still removes a card: the run ended at the kill
+    /// with the removal queued (Dread act23 Necrobinder:1001 v0.113.0,
+    /// deck 29 in C# against 30).
+    #[test]
+    fn final_boss_win_resolves_a_queued_card_removal_before_the_win() {
+        let mut rm = RunManager::new(0, CharacterId::Necrobinder)
+            .with_game_version(crate::GameVersion::V0_113_0);
+        rm.run_state.act_index = 3;
+        rm.run_state.current_room =
+            Some(crate::runstate::Room::new(crate::runstate::RoomType::Boss));
+        rm.run_state.master_deck = (1..=3u32)
+            .map(|i| crate::Card {
+                uid: crate::CardUid::new(i).expect("nz"),
+                card_id: crate::cards::CardId::StrikeNecrobinder,
+                ..crate::Card::pod_defaults()
+            })
+            .collect();
+        let deck_before = rm.run_state.master_deck.len();
+        rm.run_state.add_card_removal_reward(1);
+        rm.combat = Some(crate::CombatState {
+            is_over: true,
+            player_won: true,
+            ..crate::CombatState::default()
+        });
+        rm.set_phase(Phase::Combat);
+
+        let _ = rm.exit_combat_and_transition();
+
+        assert_eq!(rm.run_state.master_deck.len(), deck_before - 1);
+        assert_eq!(rm.phase(), Phase::RunOver);
+        assert!(rm.run_state.is_over && rm.run_state.player_won);
+    }
+
+    /// The interactive host picks the card: the final boss stays on the
+    /// rewards step until the removal is chosen, then the win is stamped.
+    #[test]
+    fn final_boss_win_waits_for_an_interactive_card_removal() {
+        let mut rm = RunManager::new(0, CharacterId::Necrobinder)
+            .with_game_version(crate::GameVersion::V0_113_0);
+        rm.run_state.interactive_card_removal = true;
+        rm.run_state.act_index = 3;
+        rm.run_state.current_room =
+            Some(crate::runstate::Room::new(crate::runstate::RoomType::Boss));
+        rm.run_state.master_deck = (1..=3u32)
+            .map(|i| crate::Card {
+                uid: crate::CardUid::new(i).expect("nz"),
+                card_id: crate::cards::CardId::StrikeNecrobinder,
+                ..crate::Card::pod_defaults()
+            })
+            .collect();
+        let deck_before = rm.run_state.master_deck.len();
+        rm.run_state.add_card_removal_reward(1);
+        rm.combat = Some(crate::CombatState {
+            is_over: true,
+            player_won: true,
+            ..crate::CombatState::default()
+        });
+        rm.set_phase(Phase::Combat);
+
+        let _ = rm.exit_combat_and_transition();
+        assert!(!rm.run_state.is_over, "the removal is still to pick");
+        let pick = rm
+            .get_available_actions()
+            .into_iter()
+            .find(|a| matches!(a, RunAction::RemoveDeckCard { .. }))
+            .expect("a deck removal pick");
+        let _ = rm.take_action(pick);
+
+        assert_eq!(rm.run_state.master_deck.len(), deck_before - 1);
+        assert_eq!(rm.phase(), Phase::RunOver);
+        assert!(rm.run_state.player_won);
     }
 
     /// v0.113.0's A10 first final-act boss offers only its `ExtraRewards`
@@ -14307,5 +16616,434 @@ mod tests {
                 "{version}"
             );
         }
+    }
+}
+
+/// GH #1606: the potion popup — out-of-combat Use, Discard in and out of
+/// combat, Foul Potion at a merchant. Agent mode only.
+#[cfg(test)]
+mod potion_belt_tests {
+    use super::*;
+    use crate::potions::PotionKind;
+
+    fn agent_rm(phase: Phase, belt: &[PotionKind]) -> RunManager {
+        let mut rm = RunManager::new(0, CharacterId::Ironclad);
+        rm.run_state.set_agent_decisions();
+        rm.run_state.ooc_potion_actions = true;
+        rm.run_state.max_potion_slots = 3;
+        rm.run_state.potions = belt.to_vec();
+        rm.run_state.potion_slot_indices.clear();
+        rm.set_phase(phase);
+        rm
+    }
+
+    fn belt_actions(rm: &RunManager) -> Vec<RunAction> {
+        rm.get_available_actions()
+            .into_iter()
+            .filter(|a| {
+                matches!(
+                    a,
+                    RunAction::UsePotionOutOfCombat { .. } | RunAction::DiscardPotion { .. }
+                )
+            })
+            .collect()
+    }
+
+    fn shop_inventory(potion_price: i32) -> crate::shop::ShopInventory {
+        let mut inv = crate::shop::ShopInventory::default();
+        inv.potions.push(crate::shop::ShopPotionEntry {
+            potion_rarity: crate::shop::ShopPotionRarity::Common,
+            potion_kind: Some(PotionKind::BlockPotion),
+            price: potion_price,
+        });
+        inv.removal_used = true;
+        inv
+    }
+
+    #[test]
+    fn parity_mode_offers_no_potion_popup() {
+        let mut rm = agent_rm(Phase::MapChoice, &[PotionKind::BloodPotion]);
+        rm.run_state = {
+            let mut rs = rm.run_state.clone();
+            rs.ooc_potion_actions = false;
+            rs
+        };
+        assert!(belt_actions(&rm).is_empty());
+    }
+
+    #[test]
+    fn map_offers_use_for_any_time_potions_and_discard_for_all() {
+        let rm = agent_rm(
+            Phase::MapChoice,
+            &[
+                PotionKind::BlockPotion,
+                PotionKind::BloodPotion,
+                PotionKind::FoulPotion,
+            ],
+        );
+        assert_eq!(
+            belt_actions(&rm),
+            vec![
+                RunAction::UsePotionOutOfCombat { potion_slot: 1 },
+                RunAction::DiscardPotion { potion_slot: 0 },
+                RunAction::DiscardPotion { potion_slot: 1 },
+                RunAction::DiscardPotion { potion_slot: 2 },
+            ],
+            "Block Potion is combat-only; Foul Potion needs a merchant"
+        );
+    }
+
+    #[test]
+    fn potion_actions_come_after_the_phase_actions() {
+        let mut rm = agent_rm(Phase::Shop, &[PotionKind::BloodPotion]);
+        rm.shop_inventory = Some(shop_inventory(10));
+        let actions = rm.get_available_actions();
+        let leave = actions
+            .iter()
+            .position(|a| *a == RunAction::LeaveShop)
+            .expect("leave");
+        let first_belt = actions
+            .iter()
+            .position(|a| matches!(a, RunAction::UsePotionOutOfCombat { .. }))
+            .expect("use");
+        assert!(leave < first_belt, "{actions:?}");
+    }
+
+    #[test]
+    fn blood_potion_heals_twenty_percent_out_of_combat() {
+        let mut rm = agent_rm(Phase::MapChoice, &[PotionKind::BloodPotion]);
+        rm.run_state.max_hp = 80;
+        rm.run_state.current_hp = 30;
+        assert_eq!(
+            rm.take_action(RunAction::UsePotionOutOfCombat { potion_slot: 0 }),
+            ActionResult::Advanced
+        );
+        assert_eq!(rm.run_state.current_hp, 46);
+        assert!(rm.run_state.potions.is_empty());
+    }
+
+    #[test]
+    fn ambergris_heals_half_and_fruit_juice_raises_max_hp() {
+        let mut rm = agent_rm(
+            Phase::RestSite,
+            &[PotionKind::Ambergris, PotionKind::FruitJuice],
+        );
+        rm.run_state.max_hp = 75;
+        rm.run_state.current_hp = 10;
+        assert_eq!(
+            rm.take_action(RunAction::UsePotionOutOfCombat { potion_slot: 0 }),
+            ActionResult::Advanced
+        );
+        assert_eq!(rm.run_state.current_hp, 47, "37 = 75 * 50 / 100 truncated");
+        assert_eq!(
+            rm.take_action(RunAction::UsePotionOutOfCombat { potion_slot: 0 }),
+            ActionResult::Advanced
+        );
+        assert_eq!((rm.run_state.current_hp, rm.run_state.max_hp), (52, 80));
+    }
+
+    #[test]
+    fn foul_potion_is_thrown_at_the_merchant_for_100_gold() {
+        let mut rm = agent_rm(Phase::Shop, &[PotionKind::FoulPotion]);
+        rm.shop_inventory = Some(shop_inventory(10));
+        rm.run_state.gold = 7;
+        assert!(belt_actions(&rm).contains(&RunAction::UsePotionOutOfCombat { potion_slot: 0 }));
+        assert_eq!(
+            rm.take_action(RunAction::UsePotionOutOfCombat { potion_slot: 0 }),
+            ActionResult::Advanced
+        );
+        assert_eq!(rm.run_state.gold, 107);
+        assert!(rm.run_state.potions.is_empty());
+        assert_eq!(rm.phase(), Phase::Shop, "throwing does not leave the shop");
+    }
+
+    #[test]
+    fn foul_potion_is_not_usable_away_from_a_merchant() {
+        for phase in [Phase::MapChoice, Phase::Event, Phase::RestSite] {
+            let mut rm = agent_rm(phase, &[PotionKind::FoulPotion]);
+            assert_eq!(
+                rm.take_action(RunAction::UsePotionOutOfCombat { potion_slot: 0 }),
+                ActionResult::InvalidForPhase,
+                "{phase:?}"
+            );
+            assert_eq!(rm.run_state.potions, vec![PotionKind::FoulPotion]);
+        }
+    }
+
+    #[test]
+    fn full_belt_shop_hides_buy_until_a_discard_frees_a_slot() {
+        let mut rm = agent_rm(
+            Phase::Shop,
+            &[
+                PotionKind::BlockPotion,
+                PotionKind::FirePotion,
+                PotionKind::WeakPotion,
+            ],
+        );
+        rm.shop_inventory = Some(shop_inventory(10));
+        rm.run_state.gold = 100;
+        let actions = rm.get_available_actions();
+        assert!(!actions.contains(&RunAction::ShopBuyPotion { idx: 0 }));
+        assert!(actions.contains(&RunAction::DiscardPotion { potion_slot: 1 }));
+        assert_eq!(
+            rm.take_action(RunAction::DiscardPotion { potion_slot: 1 }),
+            ActionResult::Advanced
+        );
+        assert_eq!(
+            rm.run_state.potions,
+            vec![PotionKind::BlockPotion, PotionKind::WeakPotion]
+        );
+        assert!(rm
+            .get_available_actions()
+            .contains(&RunAction::ShopBuyPotion { idx: 0 }));
+        assert_eq!(rm.phase(), Phase::Shop);
+    }
+
+    #[test]
+    fn discard_keeps_the_emptied_slot_a_hole() {
+        let mut rm = agent_rm(
+            Phase::MapChoice,
+            &[PotionKind::BlockPotion, PotionKind::FirePotion],
+        );
+        let _ = rm.take_action(RunAction::DiscardPotion { potion_slot: 0 });
+        assert!(rm.run_state.add_potion_to_belt(PotionKind::WeakPotion));
+        assert_eq!(
+            rm.run_state.potions,
+            vec![PotionKind::WeakPotion, PotionKind::FirePotion],
+            "the next potion fills the discarded slot 0"
+        );
+    }
+
+    #[test]
+    fn three_events_lock_the_belt() {
+        for event in [
+            crate::events::EventId::TheFutureOfPotions,
+            crate::events::EventId::StoneOfAllTime,
+            crate::events::EventId::RanwidTheElder,
+        ] {
+            let mut rm = agent_rm(Phase::Event, &[PotionKind::BloodPotion]);
+            rm.run_state.current_event = Some(event);
+            assert!(belt_actions(&rm).is_empty(), "{event:?}");
+        }
+        let mut rm = agent_rm(Phase::Event, &[PotionKind::BloodPotion]);
+        rm.run_state.current_event = Some(crate::events::EventId::FakeMerchant);
+        assert_eq!(
+            belt_actions(&rm),
+            vec![
+                RunAction::UsePotionOutOfCombat { potion_slot: 0 },
+                RunAction::DiscardPotion { potion_slot: 0 },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_preempting_deck_pick_hides_the_belt() {
+        let mut rm = agent_rm(Phase::MapChoice, &[PotionKind::BloodPotion]);
+        rm.run_state.master_deck.push(crate::Card {
+            uid: crate::CardUid::new(9).expect("nz"),
+            card_id: crate::cards::CardId::Anger,
+            ..crate::Card::pod_defaults()
+        });
+        rm.run_state.pending_deck_removals = 1;
+        assert!(belt_actions(&rm).is_empty());
+    }
+
+    #[test]
+    fn entropic_brew_fills_every_open_slot_out_of_combat() {
+        #[allow(clippy::unnecessary_wraps)] // the callback's signature
+        fn roll(_: &mut RunState) -> Option<PotionKind> {
+            Some(PotionKind::FirePotion)
+        }
+        let mut rm = agent_rm(
+            Phase::MapChoice,
+            &[PotionKind::EntropicBrew, PotionKind::BlockPotion],
+        );
+        rm.callbacks.roll_entropic_brew_potion = Some(roll);
+        assert_eq!(
+            rm.take_action(RunAction::UsePotionOutOfCombat { potion_slot: 0 }),
+            ActionResult::Advanced
+        );
+        assert_eq!(
+            rm.run_state.potions,
+            vec![
+                PotionKind::FirePotion,
+                PotionKind::BlockPotion,
+                PotionKind::FirePotion
+            ],
+            "the Brew's own slot refills first"
+        );
+    }
+
+    fn combat_rm(belt: &[PotionKind]) -> RunManager {
+        let mut rm = RunManager::new(0, CharacterId::Ironclad);
+        rm.run_state.set_agent_decisions();
+        rm.run_state.ooc_potion_actions = true;
+        rm.phase = Phase::Combat;
+        let mut combat = crate::CombatState {
+            phase: crate::CombatPhase::PlayerPlayPhase,
+            ..crate::CombatState::default()
+        };
+        let _ = combat.init_player_creature();
+        for &k in belt {
+            combat.player.potions.push(k);
+        }
+        rm.combat = Some(combat);
+        rm
+    }
+
+    #[test]
+    fn combat_offers_discard_per_slot_and_no_out_of_combat_use() {
+        let rm = combat_rm(&[PotionKind::BloodPotion, PotionKind::FairyInABottle]);
+        assert_eq!(
+            belt_actions(&rm),
+            vec![
+                RunAction::DiscardPotion { potion_slot: 0 },
+                RunAction::DiscardPotion { potion_slot: 1 },
+            ]
+        );
+        let mut parity = combat_rm(&[PotionKind::BloodPotion]);
+        parity.run_state.ooc_potion_actions = false;
+        assert!(belt_actions(&parity).is_empty());
+    }
+}
+
+/// GH #1624: a deck select with no more eligible cards than it requires
+/// takes them without a screen (C# `list.Count <= MinSelect &&
+/// !RequireManualConfirmation`).
+#[cfg(test)]
+mod forced_deck_pick_tests {
+    use super::*;
+    use crate::cards::{Card, CardId};
+
+    fn card(id: CardId) -> Card {
+        let mut c = Card::pod_defaults();
+        c.card_id = id;
+        c
+    }
+
+    fn agent_rm(deck: &[CardId]) -> RunManager {
+        let mut rm = RunManager::new(0, CharacterId::Ironclad);
+        rm.run_state.set_agent_decisions();
+        rm.run_state.master_deck = deck.iter().map(|&id| card(id)).collect();
+        rm.set_phase(Phase::MapChoice);
+        rm
+    }
+
+    fn ids(rm: &RunManager) -> Vec<CardId> {
+        rm.run_state.master_deck.iter().map(|c| c.card_id).collect()
+    }
+
+    #[test]
+    fn removal_with_no_more_cards_than_picks_takes_them() {
+        let mut rm = agent_rm(&[CardId::StrikeIronclad, CardId::DefendIronclad]);
+        rm.run_state.pending_deck_removals = 2;
+        assert!(rm.take_forced_deck_picks());
+        assert!(rm.run_state.master_deck.is_empty());
+        assert_eq!(rm.run_state.pending_deck_removals, 0);
+        assert!(!rm.deck_pick_pending());
+    }
+
+    #[test]
+    fn removal_with_a_real_choice_still_asks_through_the_batch() {
+        let mut rm = agent_rm(&[CardId::StrikeIronclad, CardId::DefendIronclad, CardId::Bash]);
+        rm.run_state.pending_deck_removals = 2;
+        assert!(!rm.take_forced_deck_picks());
+        assert_eq!(
+            rm.take_action(RunAction::RemoveDeckCard { idx: 2 }),
+            ActionResult::Advanced
+        );
+        // One pick left over two cards: still the player's choice.
+        assert_eq!(rm.run_state.pending_deck_removals, 1);
+        assert_eq!(rm.get_available_actions().len(), 2);
+    }
+
+    #[test]
+    fn manual_confirmation_keeps_asking_until_the_batch_drains() {
+        let mut rm = agent_rm(&[CardId::StrikeIronclad, CardId::DefendIronclad]);
+        rm.run_state.pending_deck_removals = 2;
+        rm.run_state.deck_pick_manual_confirm = true;
+        assert!(!rm.take_forced_deck_picks());
+        assert_eq!(rm.run_state.master_deck.len(), 2);
+        for _ in 0..2 {
+            assert_eq!(
+                rm.take_action(RunAction::RemoveDeckCard { idx: 0 }),
+                ActionResult::Advanced
+            );
+        }
+        assert!(
+            !rm.run_state.deck_pick_manual_confirm,
+            "cleared once drained"
+        );
+    }
+
+    #[test]
+    fn cook_removal_asks_on_a_two_card_deck() {
+        let mut rm = agent_rm(&[CardId::StrikeIronclad, CardId::DefendIronclad]);
+        rm.run_state.cook();
+        assert!(!rm.take_forced_deck_picks());
+        assert_eq!(rm.run_state.pending_deck_removals, 2);
+    }
+
+    #[test]
+    fn upgrade_with_one_upgradable_card_takes_it() {
+        let mut rm = agent_rm(&[CardId::StrikeIronclad, CardId::Bash]);
+        let version = rm.run_state.game_version;
+        rm.run_state.master_deck[1].upgrade_for(version);
+        assert_eq!(rm.run_state.upgrade_random_cards(1), 0);
+        assert_eq!(rm.run_state.pending_deck_upgrades, 1);
+        assert!(rm.take_forced_deck_picks());
+        assert!(rm.run_state.master_deck[0].upgraded);
+        assert_eq!(rm.run_state.pending_deck_upgrades, 0);
+    }
+
+    #[test]
+    fn transform_of_the_one_transformable_card_takes_it() {
+        #[allow(clippy::unnecessary_wraps)]
+        fn fake_roll(
+            _rs: &mut RunState,
+            _original: CardId,
+            _event_stream: Option<(&'static str, u32)>,
+        ) -> Option<Card> {
+            Some(card(CardId::Anger))
+        }
+        let mut rm = agent_rm(&[CardId::StrikeRegent]);
+        rm.callbacks.roll_transform_replacement = Some(fake_roll);
+        assert!(rm.run_state.offer_transform_cards_reward(1));
+        assert!(rm.take_forced_deck_picks());
+        assert!(rm.run_state.pending_deck_transforms.is_empty());
+        assert_eq!(ids(&rm), vec![CardId::Anger]);
+        assert!(rm
+            .get_available_actions()
+            .iter()
+            .all(|a| !matches!(a, RunAction::TransformDeckCard { .. })));
+    }
+
+    #[test]
+    fn transform_with_a_real_choice_still_asks() {
+        let mut rm = agent_rm(&[CardId::StrikeRegent, CardId::DefendRegent]);
+        assert!(rm.run_state.offer_transform_cards_reward(1));
+        assert!(!rm.take_forced_deck_picks());
+        assert_eq!(rm.run_state.pending_deck_transforms.len(), 1);
+    }
+
+    #[test]
+    fn enchant_of_the_one_enchantable_card_takes_it() {
+        let mut rm = agent_rm(&[CardId::StrikeIronclad]);
+        rm.run_state
+            .pending_deck_enchants
+            .push(crate::runstate::PendingDeckEnchant {
+                enchantment: crate::cards::EnchantmentId::Sharp,
+                amount: 1,
+                type_restriction: None,
+                secondary_type: None,
+                optional: false,
+            });
+        assert_eq!(rm.enchant_eligible_deck_indices().len(), 1);
+        assert!(rm.take_forced_deck_picks());
+        assert!(rm.run_state.pending_deck_enchants.is_empty());
+        assert_eq!(
+            rm.run_state.master_deck[0].enchantment(crate::cards::EnchantmentId::Sharp),
+            1
+        );
     }
 }

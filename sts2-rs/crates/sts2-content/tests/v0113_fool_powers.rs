@@ -382,6 +382,36 @@ fn show_off_raises_the_cards_aim_on_a_kill() {
     assert_eq!(player_power(&s, PowerKind::ShowOff), 0);
 }
 
+/// `ShowOffPower.AfterDeath` requires `target.Powers.All(p =>
+/// p.ShouldOwnerDeathTriggerFatal())`: a Minion's death (`MinionPower.cs:20`)
+/// is not Fatal, so the power stays and the card's Aim does not grow.
+/// (Fool:1003 in the Blitz deep lockstep: a Torch Head Amalgam minion died to
+/// Wah Sweep; C# kept ShowOff 2, the engine removed it and raised the Aim.)
+#[test]
+fn show_off_ignores_a_minions_death() {
+    let mut s = fool_state();
+    let card = new_card(&mut s, CardId::ShowOffCard, false);
+    add_player_power(&mut s, 90, PowerKind::ShowOff, 2);
+    for p in s.powers.iter_mut().filter(|p| p.kind == PowerKind::ShowOff) {
+        p.counter = i32::try_from(card.0.get()).expect("fits");
+    }
+    let e = first_enemy(&s);
+    sts2_core::card_effects::apply_power_to_creature(&mut s, e, PowerKind::Minion, 1);
+    sts2_core::damage::apply_damage(
+        &mut s,
+        hooks::CreatureRef::Player,
+        e,
+        500,
+        hooks::ValueProps::MOVE,
+        None,
+    );
+    assert_eq!(
+        s.cards[card.0.get() as usize - 1].combat_var(sts2_core::cards::VarKey::Generic),
+        0
+    );
+    assert_eq!(player_power(&s, PowerKind::ShowOff), 2);
+}
+
 fn discard_ids(state: &CombatState) -> Vec<CardId> {
     state
         .player
@@ -581,6 +611,25 @@ fn stretch_latches_on_harmonic_shield() {
     play(&mut s, CardId::HarmonicShield, false, None);
     assert_eq!(s.player.block, 6);
     assert_eq!(player_power(&s, PowerKind::Stretch), 0);
+}
+
+/// v0.113.1 `StretchPower.GainsBlock`: an Adroit enchantment gains Block, so
+/// Adroit on Ki Hop (an Attack with no Block of its own) latches the play and
+/// takes the Stretch bonus. Without Adroit, Ki Hop leaves Stretch alone.
+#[test]
+fn stretch_latches_on_an_adroit_card_without_block() {
+    let mut s = fool_state();
+    add_player_power(&mut s, 95, PowerKind::Stretch, 6);
+    play(&mut s, CardId::KiHop, false, Some(0));
+    assert_eq!(s.player.block, 0);
+    assert_eq!(player_power(&s, PowerKind::Stretch), 6, "plain Ki Hop");
+
+    let i = push_hand(&mut s, CardId::KiHop, false);
+    let uid = s.player.hand[usize::from(i)];
+    s.cards[uid.get() as usize - 1].set_enchantment(sts2_core::cards::EnchantmentId::Adroit, 3);
+    let _ = sts2_core::combat_loop::play_card(&mut s, i, Some(0));
+    assert_eq!(s.player.block, 3 + 6, "Adroit 3 + Stretch 6");
+    assert_eq!(player_power(&s, PowerKind::Stretch), 0, "spent");
 }
 
 /// `WahHammer.ModifyDamageMultiplicative` is an ordinary multiplicative

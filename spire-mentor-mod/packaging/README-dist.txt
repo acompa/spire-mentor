@@ -13,11 +13,14 @@ you ask. Press F8 in game to switch it off (the game is then vanilla: no
 HUD, no AI, no modified behaviour). To keep it off at launch, untick "Turn
 the coach on when the game starts" on the mod settings page.
 
-PANELS IN THEIR OWN WINDOW (on by default, Windows): the coach's panels sit
+PANELS IN THEIR OWN WINDOW (on by default, Windows and Linux): the coach's panels sit
 in a window around the game, so they never cover the board. Close that
 window to put the panels back in the game; the toolbar's Panels menu (or
 the settings tickbox "Panels in their own window, around the game") brings
-it back. Needs the WebView2 runtime, which Windows 10/11 include.
+it back. Needs the WebView2 runtime, which Windows 10/11 include. On Linux
+it needs python3 with PyGObject, GTK 3 and WebKitGTK (webkit2gtk-4.1), and
+the game on X11 or XWayland (its default); without them the panels stay in
+the game.
 
 REMEMBERED: Hints or Coach, Search or Instinct, the game speed and the
 panels' window are kept as you left them for the next start. New installs
@@ -25,7 +28,7 @@ start in Hints, with Instinct (where it plays) and the panels' window on.
 
 IMPORTANT — VERSION PIN
 -----------------------
-Built against game v0.107.1 and BaseLib v3.4.1. A game update can break
+Built for game v0.111.1 (stable) and v0.113.0 (beta), BaseLib v3.4.1. A game update can break
 this mod SILENTLY (it patches game internals and clicks concrete UI scene
 paths). If the game has updated and things misbehave, disable the mod and
 wait for a rebuilt release.

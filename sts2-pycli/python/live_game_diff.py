@@ -69,7 +69,10 @@ IGNORE: tuple[str, ...] = (
     "act_name",
     "*.stats",
     "*.after_upgrade",
-    "card_reward.gold_earned",
+    # RealGame estimates it from its last combat snapshot; gold lost after
+    # that (a turn-end drain the fight ends on) skews it (#1287, Regent seed
+    # 1009: 36 vs the host's 39, both at 47 gold). `player.gold` is compared.
+    "gold_earned",
     "event_name",
     # Rule text: the host sends the localization template ("Deal
     # {Damage:diff()} damage."), the game the rendered BBCode ("Deal 6
@@ -84,6 +87,10 @@ IGNORE: tuple[str, ...] = (
     # ("HealRestSiteOption"), the game the button text ("Rest"). Both send
     # the same `option_id` ("HEAL"), which is compared.
     "options[].name",
+    # Mad Science's Tinker Time rider: no bridge field, RealGame always sends
+    # None (sts2_realgame docstring). What the card does is still compared
+    # through the fight it is played in.
+    "*tinker_time_rider",
 )
 
 #: Fields RealGame fills with ``None`` when the bridge message at hand does not
@@ -112,6 +119,25 @@ def _is_crystal_sphere(decision: dict[str, Any]) -> bool:
     """The game's dig screen, as RealGame translates it."""
     return _kind(decision) == "event_choice" and any(
         str(o.get("title", "")).startswith("Cell (") for o in decision.get("options") or []
+    )
+
+
+#: More lines than any of The Architect's conversations has: a side still on a
+#: line after this many is left for the comparison to report.
+_ARCHITECT_MAX_LINES = 12
+
+
+def _is_architect_line(decision: dict[str, Any], raw: dict[str, Any] | None = None) -> bool:
+    """A line of The Architect's dialogue, not yet its Proceed.
+
+    The host's options carry ``text_key``; RealGame's do not, so the game's
+    side is read from the mod's raw message.
+    """
+    if _kind(decision) != "event_choice":
+        return False
+    options = (raw or {}).get("options") if raw is not None else decision.get("options")
+    return any(
+        str(o.get("text_key", "")).startswith("THE_ARCHITECT.dialogue.") for o in options or []
     )
 
 
@@ -194,6 +220,39 @@ def _sold_out_blanked(host: dict[str, Any], real: dict[str, Any]) -> tuple[dict,
                 hs[i] = rs[i] = {"is_stocked": False}
         host[key], real[key] = hs, rs
     return host, real
+
+
+def _powers_sorted(decision: dict[str, Any]) -> dict[str, Any]:
+    """The player's powers in id order, not the order they were applied.
+
+    A pick at the start of a turn lets the turn's other hooks run first in the
+    game's UI and the host, but not under the mod's card selector (#1367):
+    Toasty Mittens's Strength and Diamond Diadem's Blur came out in opposite
+    orders with the same amounts. Ids and amounts are still compared.
+    """
+    powers = decision.get("player_powers")
+    if not isinstance(powers, list) or len(powers) < 2:
+        return decision
+    ordered = sorted(powers, key=lambda p: str(p.get("id", "")) if isinstance(p, dict) else "")
+    return {**decision, "player_powers": ordered}
+
+
+#: Text that counts something kept on the save profile, not in the run: the
+#: Test Subject is named ``#C{TestSubjectKills + 8}`` (``TestSubject.Title``,
+#: ``SaveManager.Instance.Progress``), so the game's profile and the host's
+#: give it different numbers on the same seed.
+_PROFILE_COUNTED = re.compile(r"(Test Subject #C)\d+")
+
+
+def _profile_counts_blanked(node: Any) -> Any:
+    """Every string with its profile-dependent count replaced by ``N``."""
+    if isinstance(node, str):
+        return _PROFILE_COUNTED.sub(r"\1N", node)
+    if isinstance(node, list):
+        return [_profile_counts_blanked(x) for x in node]
+    if isinstance(node, dict):
+        return {k: _profile_counts_blanked(v) for k, v in node.items()}
+    return node
 
 
 def _map_choices_sorted(decision: dict[str, Any]) -> dict[str, Any]:
@@ -290,11 +349,24 @@ def _bridge_blind_spots(host: dict[str, Any], real: dict[str, Any]) -> tuple[dic
       selector ``(cards, 0, 1)`` whatever ``canSkip`` says
       (``CardSelectCmd.FromChooseACardScreen``), so the mod reports 0 where
       the real screen offers no skip. The host's number follows ``canSkip``.
+    * ``player`` on a card selection asked mid-combat. A pick during the
+      player's turn setup (Foregone Conclusion, ``BeforeHandDraw``) pauses
+      the setup in the game's UI and in the host, and the turn start goes on
+      to ``AfterSideTurnStart`` while the player picks (``CombatManager``:
+      ``WaitForPauseOrCompletionWithoutAssigningTask``). The mod installs a
+      ``CardSelectCmd.Selector``, which skips ``SignalPlayerChoiceBegun``, so
+      the game it drives runs those hooks only after the pick: a relic
+      counter they move reads one step behind (GH #1367). The cards on
+      offer are still compared, and the next combat decision compares the
+      whole player, so a lasting effect of that order still stops the run.
     """
     if _kind(host) != "combat_play":
         host, real = _without_block(host), _without_block(real)
     if host.get("source") == "FromChooseACardScreen" and real.get("min_select") == 0:
         real = {**real, "min_select": host.get("min_select")}
+    if _kind(host) == "card_select" and isinstance(host.get("combat"), dict):
+        host = {k: v for k, v in host.items() if k != "player"}
+        real = {k: v for k, v in real.items() if k != "player"}
     return host, real
 
 
@@ -327,6 +399,42 @@ def _x_cost_blind(decision: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _x_listed_costs_blind(
+    host: dict[str, Any], real: dict[str, Any], raw: dict[str, Any] | None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """An offered card list (``cards``) with X-cost cards' ``cost`` left out.
+
+    The same blind spot as :func:`_x_cost_blind`, on a pick's list: the host
+    states ``GetResolved``, the X last paid (Cascade picked from the discard
+    pile after a 6-energy play said 6), the mod 0. Neither side's normalized
+    card says it is an X card, so the mod's raw ``costs_x`` marks them (#1287,
+    Ironclad A10 seed 1009).
+    """
+    xs = {
+        i
+        for i, c in enumerate((raw or {}).get("cards") or [])
+        if isinstance(c, dict) and c.get("costs_x")
+    }
+    if not xs:
+        return host, real
+
+    def blind(decision: dict[str, Any]) -> dict[str, Any]:
+        cards = decision.get("cards")
+        if not isinstance(cards, list):
+            return decision
+        return {
+            **decision,
+            "cards": [
+                {k: v for k, v in c.items() if k != "cost"}
+                if i in xs and isinstance(c, dict)
+                else c
+                for i, c in enumerate(cards)
+            ],
+        }
+
+    return blind(host), blind(real)
+
+
 def _buyable(shop: dict[str, Any]) -> bool:
     """Whether the host's shop has anything the player can pay for now."""
     gold = (shop.get("player") or {}).get("gold") or 0
@@ -355,7 +463,9 @@ def compare(
         content.append({"path": "<kind>", "host": kh, "real": kr})
         return content, []
     host, real = _sold_out_blanked(host, real)
+    host, real = _profile_counts_blanked(host), _profile_counts_blanked(real)
     host, real = _map_choices_sorted(host), _map_choices_sorted(real)
+    host, real = _powers_sorted(host), _powers_sorted(real)
     host, real = _bridge_keywords(host), _bridge_keywords(real)
     host = _run_floor(host)
     real = _x_cost_blind(_dead_split(real))
@@ -484,6 +594,7 @@ class LockstepGame:
         else:
             self._host_rejected = False
             r = self._play_crystal_sphere(h, self.real.send(self._for_game(cmd)))
+        h, r = self._skip_architect_dialogue(h, r)
         self._check(cmd, h, r)
         return h
 
@@ -514,6 +625,30 @@ class LockstepGame:
             r = self.real.send(cmd)
         return r
 
+    def _skip_architect_dialogue(
+        self, h: dict[str, Any], r: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Walk each side through The Architect's lines to its Proceed.
+
+        The run is won by then. Which conversation plays is picked from the
+        save profile's wins (``TheArchitect.LoadDialogue``: the character's
+        ``TotalWins`` and the profile's ``Wins``), so the game's profile and
+        the host's run different lines, a different number of them (#1287,
+        Ironclad seed 1007). Only the Proceed that ends the run is compared.
+        """
+        choose = {"cmd": "action", "action": "choose_option", "args": {"option_index": 0}}
+        for _ in range(_ARCHITECT_MAX_LINES):
+            if not _is_architect_line(h):
+                break
+            self._write(choose, h, r, [], [], note="host's Architect line skipped")
+            h = self.host.send(choose)
+        for _ in range(_ARCHITECT_MAX_LINES):
+            if not _is_architect_line(r, getattr(self.real, "last_raw", None)):
+                break
+            self._write(choose, h, r, [], [], note="game's Architect line skipped")
+            r = self.real.send(choose)
+        return h, r
+
     def _for_game(self, cmd: dict[str, Any]) -> dict[str, Any]:
         """``cmd`` with a host target number turned into the game's.
 
@@ -539,7 +674,8 @@ class LockstepGame:
             self._skipped_shop_reply = r
             self._write(cmd, h, r, [], [], note="game skipped a shop with nothing to buy")
             return
-        content, shape = compare(h, r, ignore=self.ignore)
+        hc, rc = _x_listed_costs_blind(h, r, getattr(self.real, "last_raw", None))
+        content, shape = compare(hc, rc, ignore=self.ignore)
         self.shape_counts.update(shape)
         self._write(cmd, h, r, content, shape)
         if content:

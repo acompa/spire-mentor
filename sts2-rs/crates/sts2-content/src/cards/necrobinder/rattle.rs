@@ -66,7 +66,10 @@ pub(crate) fn play_rattle(state: &mut CombatState, target: Option<CreatureUid>) 
     // Hit count = 1 + (Osty attacks already made this turn). C# computes the
     // count ONCE (`WithHitCount`) from history, so the extra hits this card
     // deals must NOT feed back into their own count — snapshot before looping.
-    let hits = resolving_preview(state, preview_rattle, target);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_rattle, target),
+    );
     if osty_dealer_ref(state).is_some() {
         // All the hits are ONE `AttackCommand`, so they add one entry to the
         // tally, not one per hit (AttackCommand.cs:672).

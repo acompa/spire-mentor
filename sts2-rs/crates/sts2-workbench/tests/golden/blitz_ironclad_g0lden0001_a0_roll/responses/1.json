@@ -1,0 +1,403 @@
+{
+ "details": [],
+ "error": null,
+ "label": "Choose: Blitz",
+ "step": {
+  "action_label": "",
+  "assets_base": "https://assets.test",
+  "chosen_action": null,
+  "decision": "card_select",
+  "idx": 0,
+  "meta": {
+   "act": 1,
+   "act_name": "Overgrowth",
+   "bg_col": null,
+   "bg_row": null,
+   "bg_seed": "11180935036767329045",
+   "floor": 1,
+   "step_no": 0,
+   "turn": null
+  },
+  "pv": null,
+  "scores": [],
+  "source": "live",
+  "state": {
+   "act": 1,
+   "act1": "overgrowth",
+   "act_name": "Overgrowth",
+   "ascension": 0,
+   "bg_seed": "11180935036767329045",
+   "can_skip": false,
+   "cards": [
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Deal 10 damage.\nDouble the enemy's Vulnerable.\nExhaust.",
+     "description_rich": "Deal 10 damage.\nDouble the enemy's Vulnerable.\n[gold]Exhaust[/gold].",
+     "id": "MOLTEN_FIST",
+     "image": "https://assets.test/card_atlas/ironclad/molten_fist.png",
+     "index": 0,
+     "name": "Molten Fist",
+     "rarity": "Common",
+     "type": "Attack",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Gain 6 Block.\nApply 1 Vulnerable.",
+     "description_rich": "Gain 6 Block.\nApply 1 Vulnerable.",
+     "id": "TAUNT",
+     "image": "https://assets.test/card_atlas/ironclad/taunt.png",
+     "index": 1,
+     "name": "Taunt",
+     "rarity": "Common",
+     "type": "Skill",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Deal 5 damage X times.",
+     "description_rich": "Deal 5 damage X times.",
+     "id": "TWIN_STRIKE",
+     "image": "https://assets.test/card_atlas/ironclad/twin_strike.png",
+     "index": 2,
+     "name": "Twin Strike",
+     "rarity": "Common",
+     "type": "Attack",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Gain 5 Block.\nUpgrade a card in your Hand.",
+     "description_rich": "Gain 5 Block.\nUpgrade a card in your Hand.",
+     "id": "ARMAMENTS",
+     "image": "https://assets.test/card_atlas/ironclad/armaments.png",
+     "index": 3,
+     "name": "Armaments",
+     "rarity": "Common",
+     "type": "Skill",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Deal 4 damage and apply 1 Vulnerable to ALL enemies.",
+     "description_rich": "Deal 4 damage and apply 1 Vulnerable to ALL enemies.",
+     "id": "THUNDERCLAP",
+     "image": "https://assets.test/card_atlas/ironclad/thunderclap.png",
+     "index": 4,
+     "name": "Thunderclap",
+     "rarity": "Common",
+     "type": "Attack",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Exhaust all non-Attack cards in your Hand. Gain 5 Block for each card Exhausted.",
+     "description_rich": "Exhaust all non-Attack cards in your Hand. Gain 5 Block for each card Exhausted.",
+     "id": "SECOND_WIND",
+     "image": "https://assets.test/card_atlas/ironclad/second_wind.png",
+     "index": 5,
+     "name": "Second Wind",
+     "rarity": "Uncommon",
+     "type": "Skill",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 0,
+     "description": "Deal 5 damage.\nIf you lost HP this turn,\nhits X times.",
+     "description_rich": "Deal 5 damage.\nIf you lost HP this turn,\nhits X times.",
+     "id": "SPITE",
+     "image": "https://assets.test/v0.113.0/card_atlas/ironclad/spite.png",
+     "index": 6,
+     "name": "Spite",
+     "rarity": "Uncommon",
+     "type": "Attack",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Whenever you lose HP on your turn, gain 1 Strength.",
+     "description_rich": "Whenever you lose HP on your turn, gain 1 Strength.",
+     "id": "RUPTURE",
+     "image": "https://assets.test/card_atlas/ironclad/rupture.png",
+     "index": 7,
+     "name": "Rupture",
+     "rarity": "Uncommon",
+     "type": "Power",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 1,
+     "description": "Gain 4 Plating.",
+     "description_rich": "Gain 4 Plating.",
+     "id": "STONE_ARMOR",
+     "image": "https://assets.test/card_atlas/ironclad/stone_armor.png",
+     "index": 8,
+     "name": "Stone Armor",
+     "rarity": "Uncommon",
+     "type": "Power",
+     "upgraded": false
+    },
+    {
+     "color": "red",
+     "cost": 3,
+     "description": "At the start of your turn, gain 3 Strength.",
+     "description_rich": "At the start of your turn, gain 3 Strength.",
+     "id": "DEMON_FORM",
+     "image": "https://assets.test/card_atlas/ironclad/demon_form.png",
+     "index": 9,
+     "name": "Demon Form",
+     "rarity": "Rare",
+     "type": "Power",
+     "upgraded": false
+    }
+   ],
+   "context": "grant",
+   "decision": "card_select",
+   "floor": 1,
+   "game_mode": "blitz",
+   "game_version": "v0.113.0",
+   "max_select": 3,
+   "min_select": 3,
+   "options": [
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "0"
+     },
+     "enabled": true,
+     "label": "MOLTEN_FIST.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "1"
+     },
+     "enabled": true,
+     "label": "TAUNT.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "2"
+     },
+     "enabled": true,
+     "label": "TWIN_STRIKE.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "3"
+     },
+     "enabled": true,
+     "label": "ARMAMENTS.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "4"
+     },
+     "enabled": true,
+     "label": "THUNDERCLAP.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "5"
+     },
+     "enabled": true,
+     "label": "SECOND_WIND.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "6"
+     },
+     "enabled": true,
+     "label": "SPITE.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "7"
+     },
+     "enabled": true,
+     "label": "RUPTURE.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "8"
+     },
+     "enabled": true,
+     "label": "STONE_ARMOR.title"
+    },
+    {
+     "action": "select_cards",
+     "args": {
+      "indices": "9"
+     },
+     "enabled": true,
+     "label": "DEMON_FORM.title"
+    }
+   ],
+   "player": {
+    "block": 0,
+    "deck": [
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 0,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 1,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 2,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 3,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Deal 6 damage.",
+      "description_rich": "Deal 6 damage.",
+      "id": "STRIKE_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/strike_ironclad.png",
+      "index": 4,
+      "name": "Strike",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 5,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 6,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 7,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 1,
+      "description": "Gain 5 Block.",
+      "description_rich": "Gain 5 Block.",
+      "id": "DEFEND_IRONCLAD",
+      "image": "https://assets.test/card_atlas/ironclad/defend_ironclad.png",
+      "index": 8,
+      "name": "Defend",
+      "rarity": "Basic",
+      "type": "Skill",
+      "upgraded": false
+     },
+     {
+      "color": "red",
+      "cost": 2,
+      "description": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "description_rich": "Deal 8 damage.\nApply 2 Vulnerable.",
+      "id": "BASH",
+      "image": "https://assets.test/card_atlas/ironclad/bash.png",
+      "index": 9,
+      "name": "Bash",
+      "rarity": "Basic",
+      "type": "Attack",
+      "upgraded": false
+     }
+    ],
+    "gold": 99,
+    "hp": 80,
+    "max_hp": 80,
+    "name": "Ironclad",
+    "potion_slots": 3,
+    "potions": [],
+    "relics": [
+     {
+      "description": "At the end of combat, heal 6 HP.",
+      "id": "BURNING_BLOOD",
+      "image": "https://assets.test/relic_atlas/burning_blood.png",
+      "name": "Burning Blood"
+     }
+    ]
+   }
+  }
+ }
+}

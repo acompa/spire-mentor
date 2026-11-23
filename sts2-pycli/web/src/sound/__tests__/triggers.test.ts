@@ -268,6 +268,17 @@ describe("cuesForCombat", () => {
     expect(cuesForCombat(events, ctx).map((c) => c.event)).toEqual(["event:/sfx/buff"]);
   });
 
+  // `GodByrdPower` strikes and removes itself at turn start; the wire shows
+  // only the power going away.
+  it("plays a power's spent sound when it leaves, not when it lands", () => {
+    const strike = "event:/sfx/byrdpip/byrd_2_attack";
+    const m: SfxMap = { ...MAP, powerSpent: { "God Byrd": strike } };
+    const gone: EffectEvent[] = [{ kind: "powerRemove", target: { side: "player" }, power: "God Byrd" }];
+    const landed: EffectEvent[] = [{ kind: "powerAdd", target: { side: "player" }, power: "God Byrd" }];
+    expect(cuesForCombat(gone, { ...ctx, map: m }).map((c) => c.event)).toContain(strike);
+    expect(cuesForCombat(landed, { ...ctx, map: m }).map((c) => c.event)).not.toContain(strike);
+  });
+
   it("inverts on removal: losing a buff plays the debuff (bad-news) sound", () => {
     const events: EffectEvent[] = [
       { kind: "powerRemove", target: { side: "player" }, power: "Strength" },
@@ -450,6 +461,7 @@ const RHYTHM: SfxMap = {
     cardExhaust: "res://debug_audio/card_exhaust.mp3",
     summon: "event:/sfx/characters/necrobinder/necrobinder_summon",
     enemyFade: "event:/sfx/enemy/enemy_fade",
+    arrowDislodge: "event:/sfx/characters/fool/fool_dislodge",
   },
   orbs: {
     Frost: {
@@ -511,6 +523,20 @@ describe("cuesForCombat — turn rhythm", () => {
   it("plays the summon when Osty first appears", () => {
     expect(rhythm({}, { osty: { name: "Osty", hp: 10, max_hp: 10, alive: true } } as Partial<CombatState>))
       .toEqual(["event:/sfx/characters/necrobinder/necrobinder_summon"]);
+  });
+
+  it("plays the dislodge when a Fool arrow comes back out of an enemy", () => {
+    expect(rhythm({ arrows: ["away", "retrieved"] }, { arrows: ["retrieved", "retrieved"] }))
+      .toEqual(["event:/sfx/characters/fool/fool_dislodge"]);
+  });
+
+  // Mutation caught: counting `retrieved` slots instead of comparing slot by
+  // slot. A slot gained mid-combat arrives `retrieved` without leaving
+  // anything, and an arrow destroyed in the enemy never flies back.
+  it("plays no dislodge for a new slot, a shot, or a destroyed arrow", () => {
+    expect(rhythm({ arrows: ["retrieved"] }, { arrows: ["retrieved", "retrieved"] })).toEqual([]);
+    expect(rhythm({ arrows: ["retrieved"] }, { arrows: ["away"] })).toEqual([]);
+    expect(rhythm({ arrows: ["away"] }, { arrows: ["destroyed"] })).toEqual([]);
   });
 });
 

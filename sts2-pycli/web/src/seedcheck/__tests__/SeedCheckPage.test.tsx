@@ -88,7 +88,7 @@ describe("SeedCheckPage", () => {
     expect(text.value).toContain("Lava Rock");
     const link = screen.getByText(/Open the winning run/).closest("a")!;
     expect(link.getAttribute("href")).toBe(`/?open=${encodeURIComponent("x_Ironclad_game_1SNVTCEXKR0Q.jsonl")}`);
-    expect(api.saveLog).toHaveBeenCalledWith("1SNVTCEXKR0Q", 10, [0], "check", 0);
+    expect(api.saveLog).toHaveBeenCalledWith("1SNVTCEXKR0Q", 10, [0], "check", 0, "Ironclad");
     expect(pool.jobs[0]).toMatchObject({ seq: "check", ascension: 10, startK: 0, stopOnWin: true, capMs: 300_000 });
   });
 
@@ -174,7 +174,7 @@ describe("SeedCheckPage", () => {
     });
     render(<SeedCheckPage api={api} makePool={() => fakePool(() => ({ results: [], reason: "done", nextK: 0, errors: [], pending: [] }))} />);
     fireEvent.change(screen.getByLabelText("seed"), { target: { value: "1SNV" } });
-    await waitFor(() => expect(api.preview).toHaveBeenCalledWith("1SNV", 10));
+    await waitFor(() => expect(api.preview).toHaveBeenCalledWith("1SNV", 10, "Ironclad"));
     fireEvent.change(screen.getByLabelText("seed"), { target: { value: "1SNV-" } });
     await screen.findByText(/not in the game's alphabet/);
     release!();
@@ -183,16 +183,24 @@ describe("SeedCheckPage", () => {
     expect((screen.getByRole("button", { name: "Check" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("offers every character and build but only Ironclad v0.111.0 is selectable", async () => {
+  it("offers every character and build; the five characters on v0.111.0 are selectable", async () => {
     render(<SeedCheckPage api={fakeApi()} makePool={() => fakePool(() => ({ results: [], reason: "done", nextK: 0, errors: [], pending: [] }))} />);
     const options = (label: string) =>
       [...(screen.getByLabelText(label) as HTMLSelectElement).options].map((o) => [o.value, o.disabled] as const);
     expect(options("character")).toEqual([
-      ["Ironclad", false], ["Silent", true], ["Defect", true], ["Necrobinder", true], ["Regent", true],
+      ["Ironclad", false], ["Silent", false], ["Defect", false], ["Necrobinder", false], ["Regent", false],
     ]);
     expect(options("version")).toEqual([["v0.111.0", false], ["v0.107.1", true]]);
     expect(options("ascension").map(([v]) => v)).toEqual(Array.from({ length: 11 }, (_, a) => String(a)));
     expect((screen.getByLabelText("ascension") as HTMLSelectElement).value).toBe("10");
+  });
+
+  it("previews the picked character's run (GH #1197)", async () => {
+    const api = fakeApi();
+    render(<SeedCheckPage api={api} makePool={() => fakePool(() => ({ results: [], reason: "done", nextK: 0, errors: [], pending: [] }))} />);
+    await typeSeed("1SNVTCEXKR0Q");
+    fireEvent.change(screen.getByLabelText("character"), { target: { value: "Silent" } });
+    await waitFor(() => expect(api.preview).toHaveBeenLastCalledWith("1SNVTCEXKR0Q", 10, "Silent"));
   });
 
   it("plays the picked ascension and names it in the verdict", async () => {
@@ -202,14 +210,14 @@ describe("SeedCheckPage", () => {
     await typeSeed("1SNVTCEXKR0Q");
     fireEvent.change(screen.getByLabelText("ascension"), { target: { value: "4" } });
     await screen.findByText(/Instinct trained at A10; it plays A4/);
-    await waitFor(() => expect(api.preview).toHaveBeenLastCalledWith("1SNVTCEXKR0Q", 4));
+    await waitFor(() => expect(api.preview).toHaveBeenLastCalledWith("1SNVTCEXKR0Q", 4, "Ironclad"));
     await screen.findByText(/Vantom → The Insatiable → Aeonglass$/);
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
     const text = (await screen.findByLabelText("Verdict text")) as HTMLTextAreaElement;
     expect(text.value).toContain("Ironclad A4, v0.111.0");
     expect(pool.jobs[0].ascension).toBe(4);
-    expect(api.summary).toHaveBeenCalledWith("1SNVTCEXKR0Q", 4, [0]);
-    expect(api.saveLog).toHaveBeenCalledWith("1SNVTCEXKR0Q", 4, [0], "check", 0);
+    expect(api.summary).toHaveBeenCalledWith("1SNVTCEXKR0Q", 4, [0], "Ironclad");
+    expect(api.saveLog).toHaveBeenCalledWith("1SNVTCEXKR0Q", 4, [0], "check", 0, "Ironclad");
   });
 
   it("follows the best attempt's route when nothing won", async () => {
@@ -222,6 +230,6 @@ describe("SeedCheckPage", () => {
     await typeSeed("1SNVTCEXKR0Q");
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
     await screen.findByLabelText("Verdict text");
-    expect(api.summary).toHaveBeenCalledWith("1SNVTCEXKR0Q", 10, [1]);
+    expect(api.summary).toHaveBeenCalledWith("1SNVTCEXKR0Q", 10, [1], "Ironclad");
   });
 });

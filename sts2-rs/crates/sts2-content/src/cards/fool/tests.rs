@@ -84,8 +84,9 @@ fn every_fool_card_is_v0113_only_with_a_spec() {
 }
 
 /// Every new card class in the v0.113.0 decomp is a Fool card, an already
-/// registered v0.113.0 card, or one of the two non-Fool cards still out of
-/// scope (GodByrd, an event card; Amnesia, Dread mode).
+/// registered v0.113.0 card, Dread's Amnesia token (registered as
+/// `CardId::Amnesia`, GH #1346, and not a Fool card), or the one card still
+/// out of scope (GodByrd, an event card).
 #[test]
 fn fool_cards_are_every_new_fool_class() {
     if decomp("Models.CardPools", "FoolCardPool.cs").is_none() {
@@ -99,7 +100,15 @@ fn fool_cards_are_every_new_fool_class() {
         &decomp("Models.CardPools", "TokenCardPool.cs").unwrap(),
         "GenerateAllCards",
     );
-    // The Fool tokens are the tokens v0.113.0 adds, minus Dread's Amnesia.
+    // The Fool tokens are the tokens v0.113.0 adds, minus Dread's Amnesia,
+    // which `TokenCardPool.cs` must still list and the engine must know.
+    assert!(tokens.iter().any(|t| t == "Amnesia"));
+    assert_eq!(class_name(CardId::Amnesia), "Amnesia");
+    assert!(!is_fool_card(CardId::Amnesia));
+    assert_eq!(
+        spec_for_card_id(CardId::Amnesia).map(|s| s.id),
+        Some(CardId::Amnesia)
+    );
     let old_tokens = [
         "Disintegration",
         "Fuel",
@@ -115,12 +124,12 @@ fn fool_cards_are_every_new_fool_class() {
         "SovereignBlade",
         "SweepingGaze",
         "WasteAway",
-        "Amnesia",
     ];
+    let not_fool = ["Amnesia"];
     want.extend(
         tokens
             .into_iter()
-            .filter(|t| !old_tokens.contains(&t.as_str())),
+            .filter(|t| !old_tokens.contains(&t.as_str()) && !not_fool.contains(&t.as_str())),
     );
     want.push("Sadness".to_string());
     let ours: Vec<String> = FOOL_CARDS.iter().map(|&id| class_name(id)).collect();

@@ -14,6 +14,7 @@
 /// (`sts2_srchash::ENGINE_CRATES`); see `sts2_core::SRC_HASH`.
 pub const SRC_HASH: &str = env!("STS2_E2E_SRC_HASH");
 
+pub mod build;
 pub mod contracts;
 pub mod env;
 pub mod intent_log;

@@ -552,6 +552,37 @@ class TestLiveLog:
         assert json.loads(_fetch(control, "/log?stat=1")[2])["name"] == Path(wlog.path or "").name
 
 
+class TestRunLogs:
+    def test_lists_and_serves_earlier_logs_from_the_logs_dir_only(
+        self, plane, tmp_path: Path
+    ) -> None:
+        control, _, _ = plane
+        assert json.loads(_fetch(control, "/logs")[2]) == {"logs": []}
+        (tmp_path / "a_run.jsonl").write_text('{"a": 1}\n', encoding="utf-8")
+        (tmp_path / "b_run.jsonl").write_text('{"b": 1}\n{"to', encoding="utf-8")
+        (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+        (tmp_path / ".hidden.jsonl").write_text("x\n", encoding="utf-8")
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "c.jsonl").write_text("x\n", encoding="utf-8")
+        control.set_logs_dir(tmp_path)
+        names = sorted(r["name"] for r in json.loads(_fetch(control, "/logs")[2])["logs"])
+        assert names == ["a_run.jsonl", "b_run.jsonl"]
+        code, _, body = _fetch(control, "/log?name=b_run.jsonl")
+        assert code == 200 and json.loads(body)["text"] == '{"b": 1}\n'
+        stat = json.loads(_fetch(control, "/log?name=a_run.jsonl&stat=1")[2])
+        assert "text" not in stat and stat["size"] == 9
+        for bad in ("..%2Fa_run.jsonl", "sub%2Fc.jsonl", ".hidden.jsonl", "notes.txt"):
+            assert _fetch(control, f"/log?name={bad}")[0] == 400, bad
+        assert _fetch(control, "/log?name=gone.jsonl")[0] == 404
+        assert _fetch(control, "/log")[0] == 404  # the live log is still unset
+
+    def test_falls_back_to_the_live_logs_directory(self, plane, tmp_path: Path) -> None:
+        control, _, _ = plane
+        (tmp_path / "old.jsonl").write_text("{}\n", encoding="utf-8")
+        control.set_log_path(str(tmp_path / "new.jsonl"))
+        assert [r["name"] for r in json.loads(_fetch(control, "/logs")[2])["logs"]] == ["old.jsonl"]
+
+
 # -- bug reports (the bundled workbench's 🐞 Report button) -----------------
 
 

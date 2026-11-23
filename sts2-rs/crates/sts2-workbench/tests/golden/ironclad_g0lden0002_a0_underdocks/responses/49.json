@@ -1111,7 +1111,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Molten Fist"
+   ],
    "error": false,
    "floor": 2,
    "id": 20,
@@ -2143,7 +2145,9 @@
    "child_ids": [],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Sword Boomerang"
+   ],
    "error": false,
    "floor": 3,
    "id": 41,

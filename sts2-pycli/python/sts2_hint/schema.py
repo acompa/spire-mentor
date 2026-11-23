@@ -50,7 +50,7 @@ Phase = Literal[
 
 Side = Literal["Player", "Enemy"]
 
-PlayerClass = Literal["ironclad", "silent", "defect", "necrobinder", "regent"]
+PlayerClass = Literal["ironclad", "silent", "defect", "necrobinder", "regent", "fool"]
 
 CardKind = Literal["card", "status", "curse"]
 

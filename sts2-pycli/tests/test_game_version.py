@@ -43,9 +43,26 @@ def test_normalize_accepts_both_spellings(raw) -> None:
     assert sts2_client.normalize_game_version(raw) == "v0.111.0"
 
 
-def test_normalize_rejects_unsupported() -> None:
+@pytest.mark.parametrize("raw", ["v0.103.2", "v0.114.0", "v0.107.0", "v0.113.1-beta"])
+def test_normalize_rejects_unsupported(raw) -> None:
     with pytest.raises(ValueError, match="unsupported game version"):
-        sts2_client.normalize_game_version("v0.103.2")
+        sts2_client.normalize_game_version(raw)
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        ("v0.113.1", "v0.113.0"),
+        ("0.113.1", "v0.113.0"),
+        ("v0.113.10", "v0.113.0"),
+        ("v0.111.1", "v0.111.0"),
+        ("v0.111.4", "v0.111.0"),
+        ("v0.107.2", "v0.107.1"),
+    ],
+)
+def test_normalize_maps_a_hotfix_to_its_base_build(raw, want) -> None:
+    assert sts2_client.normalize_game_version(raw) == want
+    assert sts2_client.hotfix_base(raw if raw.startswith("v") else "v" + raw) == want
 
 
 def test_resolve_reads_env(monkeypatch) -> None:

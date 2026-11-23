@@ -58,7 +58,10 @@ pub(crate) fn play_pull_from_below(
     // C# `.WithHitCount(CalculatedHits)` = Base(0) + Extra(1) * (# ethereal cards
     // the owner played this combat). No core counter exists yet — see BLOCKER
     // above. `hits` is 0 until the infra lands; do NOT fabricate a count.
-    let hits = resolving_preview(state, preview_pull_from_below, target);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_pull_from_below, target),
+    );
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, dmg);
     }

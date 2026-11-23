@@ -1,0 +1,71 @@
+# GH #1541: forced deck inclusion's default card lists (`ppo.e2e.forced`).
+#
+# Per character, cards the e2e all-character net (600M decisions, EMA 0.999) was
+# offered at least 100 times as its own card reward and picked at most 1% of the
+# time: DEV seeds from 160,000,000, A10, 1,000 Ironclad / 500 per other
+# character, greedy eval (the table in #1541). Refresh from the latest DEV eval.
+# Ids are `RunManager.force_add_card` ids (tests/e2e/test_forced.py checks them).
+
+Ironclad = [
+    "BREAKTHROUGH",
+    "WHIRLWIND",
+    "HOWL_FROM_BEYOND",
+    "HEMOKINESIS",
+    "PACTS_END",
+    "ONE_TWO_PUNCH",
+]
+Silent = [
+    "FLICK_FLACK",
+    "RICOCHET",
+    "UNTOUCHABLE",
+    "ACCELERANT",
+    "TACTICIAN",
+    "REFLEX",
+    "BUBBLE_BUBBLE",
+    "MIRAGE",
+    "PINPOINT",
+    "KNIFE_TRAP",
+    "NIGHTMARE",
+    "STORM_OF_STEEL",
+    "BURST",
+    "BULLET_TIME",
+]
+Defect = [
+    "HOTFIX",
+    "BARRAGE",
+    "CLAW",
+    "COMPILE_DRIVER",
+    "TESLA_COIL",
+    "TEMPEST",
+    "CHAOS",
+    "DARKNESS",
+    "SYNCHRONIZE",
+    "TRASH_TO_TREASURE",
+    "VOLTAIC",
+    "MULTI_CAST",
+    "RAINBOW",
+]
+Regent = [
+    "GUIDING_STAR",
+    "HIDDEN_CACHE",
+    "ASTRAL_PULSE",
+    "BLACK_HOLE",
+    "TERRAFORMING",
+    "ROYAL_GAMBLE",
+    "SEEKING_EDGE",
+    "FOREGONE_CONCLUSION",
+    "THE_SMITH",
+]
+Necrobinder = [
+    "FLATTEN",
+    "SNAP",
+    "SCOURGE",
+    "CALCIFY",
+    "HAUNT",
+    "BONE_SHARDS",
+    "NO_ESCAPE",
+    "SIC_EM",
+    "HIGH_FIVE",
+    "TIMES_UP",
+    "SEANCE",
+]

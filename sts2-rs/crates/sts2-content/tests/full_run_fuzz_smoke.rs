@@ -78,10 +78,14 @@ fn invincible_run_is_deterministic() {
 /// `Lost`. `slow_` (nightly only) — ~30s, vs the 500-step sibling above.
 ///
 /// NOTE: this does *not* drive a run to completion, and must not be
-/// described as if it did. Random play + invincibility gets wedged in an
-/// act-2 combat it cannot win, so every cap — 5k through 100k — ends
-/// `MaxSteps` in `Phase::Combat` at `act_index == 2`. The cap only sets how
-/// long the soak runs.
+/// described as if it did. Random play + invincibility gets wedged in a
+/// combat it cannot win and ends `MaxSteps` in `Phase::Combat` (at
+/// `act_index == 3` since GH #1471). The cap only sets how long the soak
+/// runs.
+///
+/// Before #1471 the run reached TheInsatiable, whose Sandpit countdown
+/// force-kills the player at 0 regardless of HP, and ended `Lost`.
+/// `apply_invincible_buffs` now holds that countdown off as well.
 ///
 /// The cap is explicit because step cost is **quadratic**, not linear
 /// (measured, debug build: 5k → 5s, 10k → 28s, 20k → 131s, 100k → >25min).

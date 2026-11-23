@@ -27,6 +27,7 @@ import os
 from pathlib import Path
 
 import pytest
+import realgame_instinct
 import sts2_client
 from sts2_client import Game, OracleUnavailable, oracle_available
 
@@ -48,7 +49,19 @@ def pytest_addoption(parser):
     )
 
 
+#: Math-library thread pools an xdist worker gets. Each of the `-n auto`
+#: workers otherwise sizes torch's and BLAS's pools to every core, so 48
+#: workers ran ~48 threads each and the torch-heavy tests spent their time
+#: contending (2026-11-16, v0.111.0 suite on 48 cores: 85 -> 60 CPU-minutes;
+#: `turnplan/test_train.py::test_learns_synthetic_best_feature` 93 s -> 1 s).
+#: Set before any test module imports torch; an explicit setting wins.
+_WORKER_THREAD_VARS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
+
+
 def pytest_configure(config):
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        for var in _WORKER_THREAD_VARS:
+            os.environ.setdefault(var, "1")
     requested = config.getoption("--game-version")
     if requested:
         try:
@@ -82,6 +95,15 @@ _MONO = _PYCLI.parent
 _REQUIREMENTS: dict[str, tuple[Path, str]] = {
     "localization": (_PYCLI / "localization_eng" / "cards.json", "just import-game --tier oracle"),
     "wiki_data": (_MONO / "sts2-wiki" / "data" / "v0.107.1" / "cards.json", "just import-game"),
+    # The newer builds' wiki data stays private (unit-mono.toml ships v0.107.1's).
+    "wiki_data_v0111": (
+        _MONO / "sts2-wiki" / "data" / "v0.111.0" / "cards.json",
+        "just import-game",
+    ),
+    "wiki_data_v0113": (
+        _MONO / "sts2-wiki" / "data" / "v0.113.0" / "cards.json",
+        "just import-game",
+    ),
     "card_db": (_PYCLI / "python" / "workbench" / "data" / "card_db.json", "just import-game"),
     "checkpoints": (
         _PYCLI / "data" / "ppo" / "ppo_fullrun_it350.pt",
@@ -108,6 +130,16 @@ _REQUIREMENTS: dict[str, tuple[Path, str]] = {
     "decomp_v0111": (
         _MONO / "sts2-wiki" / "decompiled" / "v0.111.0",
         "the C# decompilation (decompiled/ is not exported)",
+    ),
+    "decomp_all": (
+        _MONO / "sts2-wiki" / "decompiled" / "v0.113.1",
+        "the C# decompilation of every supported build (decompiled/ is not exported)",
+    ),
+    # The net the advisors load, so a swap of the net cannot turn this into a
+    # silent skip on the private repo.
+    "instinct_net": (
+        _PYCLI / realgame_instinct.WEIGHTS_RELPATH,
+        "the private Instinct net (data/e2e is not exported)",
     ),
 }
 
@@ -141,6 +173,14 @@ _NEEDS: dict[str, str] = {
     "test_mcp_recommend_combat_mcts.py::TestRecommendCombatMctsHappyPath": "wiki_data",
     "test_mcp_recommend_combat_mcts.py::TestRecommendCombatUntouched": "wiki_data",
     "test_advisor_mirror.py::test_a_potion_screen_is_searched_end_to_end": "wiki_data",
+    # --- a newer build's glossary: the generator reads that build's wiki data
+    # and the shipped file sits in web/public/<ver>/, both private (GH #1615)
+    "workbench/test_gen_glossary.py::test_shipped_glossary_is_fresh[v0.111.0]": "wiki_data_v0111",
+    "workbench/test_gen_glossary.py::test_shipped_glossary_is_fresh[v0.113.0]": "wiki_data_v0113",
+    "workbench/test_gen_glossary.py::test_glossary_names_what_the_page_reads": "wiki_data_v0113",
+    "workbench/test_gen_glossary.py::test_shipped_zh_glossary_is_fresh[v0.111.0]": "wiki_data_v0111",
+    "workbench/test_gen_glossary.py::test_shipped_zh_glossary_is_fresh[v0.113.0]": "wiki_data_v0113",
+    "workbench/test_gen_glossary.py::test_zh_glossary_is_the_english_one_in_the_games_chinese": "wiki_data_v0113",
     # --- the extracted card database the deck analyzer reads
     "workbench/test_deck_analysis.py": "card_db",
     # --- torch checkpoints (only the champion .onnx files are published)
@@ -175,6 +215,8 @@ _NEEDS: dict[str, str] = {
     # --- the rollout-net recipe's boss800 holdout list (private logs/)
     "test_combat_ctx.py::test_jobs_hold_out_every_holdout_run": "rollout_recipe",
     "test_realgame_instinct_live.py": "instinct_corpus",
+    "test_realgame_advisor_replay.py": "instinct_corpus",
+    "test_board_import_parity.py::test_every_live_board_gets_the_same_wire_from_rust_and_python": "instinct_corpus",
     # --- the combat-PPO start pool subtracts every combat-bench run
     "test_combat_ppo.py::test_train_pool_holds_out_every_holdout_run": "combat_bench",
     "test_elite_gap_tools.py::test_takeover_forces_a_human_line_exactly": "combat_bench",
@@ -183,8 +225,12 @@ _NEEDS: dict[str, str] = {
     # --- the e2e F9 ledger's card types, checked against the v0.111.0 decomp
     # --- the reviewed override table (and the decomp the IlPatcher rows hash)
     "test_host_override_fingerprints.py": "host_overrides",
+    # --- the content universe and the id lists, checked against every build's decomp
+    "test_content_universe.py": "decomp_all",
     "e2e/test_e2e_invariants.py::test_no_v0111_power_is_typed_as_a_non_power": "decomp_v0111",
     "e2e/test_e2e_invariants.py::test_the_instanced_powers_match_the_decomp": "decomp_v0111",
+    # --- the shipped Instinct net (GH #1531)
+    "test_stage_advisor.py::test_the_staged_instinct_net_is_the_one_both_advisors_load": "instinct_net",
 }
 
 
@@ -202,6 +248,65 @@ _FLAKY_ON_GITHUB_ACTIONS: dict[str, str] = {
         "the stall watchdog's sub-second window fires early on a slow runner"
     ),
 }
+
+
+#: Tests that run a training loop (an optimizer step, a learner or trainer
+#: iteration, or the training lane's supervisor). They get the `training`
+#: marker, which the default run and the per-PR gate deselect; `just
+#: test-training` and `just gate-full` run them. Keys are node-id prefixes as
+#: in `_NEEDS`; a key with `[...]` names one parametrization.
+_TRAINING: frozenset[str] = frozenset(
+    {
+        "e2e/test_learner.py",
+        "e2e/test_e2e_ops_watchdog.py",
+        "turnplan/test_train.py",
+        "test_combat_ppo.py",
+        "test_ppo_plasticity.py::test_a_real_iteration_writes_the_diagnostic_to_stats_jsonl",
+        "test_ppo_wheel_guard.py::test_a_training_run_records_what_its_workers_ran",
+        "test_ppo_trainer_units.py::test_bf16_update_trains_in_fp32_weights_and_leaves_fp32_bit_identical",
+        "e2e/test_e2e_mix.py::test_mix_share_resume_invariant",
+    }
+)
+
+#: Tests the per-PR gate leaves to `just test-slow` (and `gate-full`) because
+#: of their wall time: each took 20-60 s on 2026-11-16 (v0.111.0, 48 cores,
+#: one thread per worker) and set the suite's tail. Where a test is
+#: parametrized, a cheaper parametrization stays in the fast suite. They get
+#: the `slow` marker, exactly as if decorated. Keys as in `_TRAINING`.
+_SLOW_BY_WALL_TIME: frozenset[str] = frozenset(
+    {
+        "test_ppo_env_event_surface.py::test_event_rooms_reach_the_policy_with_an_identity[seed1000]",
+        "test_ppo_env_event_surface.py::test_event_rooms_reach_the_policy_with_an_identity[seed1003]",
+        "test_ppo_env_event_surface.py::test_event_rooms_reach_the_policy_with_an_identity[seed1005]",
+        "test_ppo_env_event_surface.py::test_ordinary_events_reach_the_policy",
+        "workbench/test_run_mode.py::test_run_mode_step_finishes_a_run[ppo]",
+        "test_ppo_card_reward_upgrade.py::test_the_training_obs_ships_flags_aligned_with_the_ids[seed1000]",
+        "e2e/test_e2e_devboss.py::test_capture_play_read_on_the_engine",
+        "test_workbench_faithful_parity.py::test_faithful_step_endpoint_loops_to_completion",
+        "test_workbench_faithful_parity.py::test_faithful_step_loop_completes",
+        "test_workbench_faithful_parity.py::test_workbench_play_to_end_completes[1]",
+        "test_realgame_advisor_replay.py::test_a_replay_is_reproducible",
+        "test_realgame_advisor_replay.py::test_every_recorded_request_gets_one_reply[search]",
+        "test_event_coverage.py::TestSubsetIsClean::test_no_world_failure_on_any_option[TRIAL]",
+        "test_event_coverage.py::TestSubsetIsClean::test_known_residuals_are_still_real",
+        "workbench/test_workbench_blitz_saves.py",
+        "test_bc_human_rebuild_roster.py::test_replay_rebuild_rolls_decimillipede_openers",
+        "e2e/test_e2e_f7check.py::test_the_packed_serving_path_passes_and_sees_a_leak",
+        "e2e/test_e2e_f7check.py::test_the_launch_student_passes",
+        "test_referee_rng.py::test_the_same_key_and_actions_reproduce_the_game_and_another_key_does_not",
+        "e2e/test_e2e_chars.py::test_lockstep_all_characters[Necrobinder]",
+        "e2e/test_e2e_recorder.py::test_recording_is_deterministic",
+    }
+)
+
+
+def _listed(nodeid: str, keys: frozenset[str]) -> bool:
+    """Whether a node-id prefix in `keys` covers `nodeid` (with or without its parameters)."""
+    rel = nodeid.split("tests/", 1)[-1]
+    if rel in keys:
+        return True
+    parts = rel.split("[", 1)[0].split("::")
+    return any("::".join(parts[:n]) in keys for n in range(len(parts), 0, -1))
 
 
 def _flaky_on_github_actions(nodeid: str) -> str | None:
@@ -242,7 +347,7 @@ PENDING_BUILDS: dict[str, tuple[frozenset[str], str, type[BaseException] | None]
         None,
     ),
     "e2e_tables": (
-        frozenset({"v0.113.0"}),
+        frozenset(),
         "e2e static tables not generated for this build yet (GH #1303)",
         KeyError,
     ),
@@ -271,6 +376,10 @@ def pytest_collection_modifyitems(items):
     oracle_skip = _oracle_skip_reason()
     for item in items:
         _mark_pending(item)
+        if _listed(item.nodeid, _TRAINING):
+            item.add_marker(pytest.mark.training)
+        if _listed(item.nodeid, _SLOW_BY_WALL_TIME):
+            item.add_marker(pytest.mark.slow)
         if "game" in getattr(item, "fixturenames", ()):
             item.add_marker(pytest.mark.oracle)
         if oracle_skip and item.get_closest_marker("oracle"):

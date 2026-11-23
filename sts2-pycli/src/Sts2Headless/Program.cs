@@ -51,17 +51,22 @@ class Program
 
         // Referee mode (STS2_REFEREE=1): keyed RNG, installed before any game
         // code can draw. See RefereeRng.
-        if (Referee.Mode)
+        if (Referee.Keyed)
             RefereeRng.Install();
 
         // GH #1283: count every error the game swallows (all modes).
         HostFaults.InstallGameHooks();
+
+        // GH #1710: which draw-pile positions a player knows (all modes).
+        KnownDrawOrder.Install();
+        ShopRemovalUsed.Install();
 
         var sim = new RunSimulator();
         WriteLine(new Dictionary<string, object?>
         {
             ["type"] = "ready",
             ["referee"] = Referee.Mode,
+            ["keyed_rng"] = Referee.Keyed,
             ["version"] = "0.2.0",
             // The game build this oracle links against (GH #789); the Python
             // client checks it against the version it asked for.
@@ -91,7 +96,7 @@ class Program
                 if (Referee.Mode) result["code"] = "internal";
             }
 
-            if (Referee.Mode && RefereeRng.Audit() is string fault)
+            if (Referee.Keyed && RefereeRng.Audit() is string fault)
             {
                 WriteLine(new Dictionary<string, object?> { ["type"] = "referee_fault", ["message"] = fault });
                 Environment.Exit(3);
@@ -114,10 +119,11 @@ class Program
             {
                 if (Referee.Mode)
                 {
-                    // The map screen shows the whole act; the map decision
-                    // alone lists only the reachable nodes.
+                    // The player can open the act map at any time, so every
+                    // decision carries it; the map decision alone lists only
+                    // the reachable nodes.
                     result.TryGetValue("decision", out var kind);
-                    if (kind as string == "map_select")
+                    if (kind is string k && k != "game_over")
                     {
                         var map = sim.GetFullMap();
                         if (map.TryGetValue("type", out var mapType) && mapType as string == "map")
@@ -177,9 +183,20 @@ class Program
                     ["view"] = payload == null ? null : RefereeView.Render(payload, JsonOpts, record),
                 };
             }
+            if (cmdType == "referee_chaotic")
+            {
+                // Diagnostic: draws from Rng.Chaotic, the game's cosmetic
+                // generator. They must depend on the episode key alone, never
+                // on the wall clock or on how many draws came before.
+                int n = cmd.TryGetProperty("count", out var c) ? c.GetInt32() : 3;
+                var draws = new List<int>();
+                for (int i = 0; i < n; i++)
+                    draws.Add(MegaCrit.Sts2.Core.Random.Rng.Chaotic.NextInt(101, 999));
+                return new Dictionary<string, object?> { ["type"] = "referee_chaotic", ["draws"] = draws };
+            }
             if (cmdType == "host_faults" && !Referee.Diagnostics)
                 return new Dictionary<string, object?> { ["type"] = "error", ["code"] = "not_available", ["message"] = "'host_faults' needs STS2_REFEREE_DIAG=1" };
-            if (cmdType is not ("start_run" or "action" or "quit" or "referee_stats" or "referee_selftest" or "host_faults"))
+            if (cmdType is not ("start_run" or "action" or "quit" or "referee_stats" or "referee_selftest" or "referee_chaotic" or "host_faults"))
                 return new Dictionary<string, object?> { ["type"] = "error", ["code"] = "not_available", ["message"] = $"'{cmdType}' is not available in referee mode" };
             if (cmdType == "action")
             {
@@ -207,6 +224,14 @@ class Program
             if (cmdType == "referee_selftest")
                 return RefereeRng.SelfTest(cmd.TryGetProperty("samples", out var sm) ? sm.GetInt32() : 100000);
         }
+        else if (Referee.Keyed && cmdType == "start_run")
+        {
+            // STS2_KEYED_RNG: the referee's dice behind the full view.
+            var keyHex = cmd.TryGetProperty("rng_key", out var rk) ? rk.GetString() : null;
+            if (keyHex == null || keyHex.Length != 64)
+                return new Dictionary<string, object?> { ["type"] = "error", ["code"] = "bad_request", ["message"] = "STS2_KEYED_RNG needs start_run.rng_key (64 hex chars)" };
+            RefereeRng.Arm(Convert.FromHexString(keyHex));
+        }
         switch (cmdType)
         {
             case "start_run":
@@ -218,12 +243,35 @@ class Program
                     cmd.TryGetProperty("played_save", out var ps) && ps.GetBoolean(),
                     // "overgrowth" | "underdocks" | "roll". Omit for the historical
                     // default (GetDefaultList => Overgrowth). See RunSimulator.
-                    cmd.TryGetProperty("act1", out var a1) ? a1.GetString() : (Referee.Mode ? "roll" : null),
+                    cmd.TryGetProperty("act1", out var a1) ? a1.GetString() : (Referee.Keyed ? "roll" : null),
                     // GH #1069: surface a `potion_swap` decision when a potion
                     // reward finds a full belt, instead of dropping it.
                     // Referee runs always surface it: a silent drop is not the game.
-                    Referee.Mode || (cmd.TryGetProperty("interactive_potion_swap", out var ips) && ips.GetBoolean())
+                    Referee.Keyed || (cmd.TryGetProperty("interactive_potion_swap", out var ips) && ips.GetBoolean()),
+                    // GH #1346: "standard" (default) | "dread" (v0.113.0+).
+                    // GH #1347: | "blitz" (v0.113.0+; ascension = Blitz level 0..5).
+                    cmd.TryGetProperty("game_mode", out var gmode) ? gmode.GetString() : null,
+                    // GH #1286: the player's unlocks, for replaying recorded runs.
+                    cmd.TryGetProperty("profile", out var prof) && prof.ValueKind == JsonValueKind.Object ? ParseProfile(prof) : null
                 );
+
+            case "epochs":
+                return sim.Epochs();
+
+            case "probe_profiles":
+            {
+                var specs = new List<RunSimulator.ProfileSpec>();
+                if (cmd.TryGetProperty("profiles", out var pl) && pl.ValueKind == JsonValueKind.Array)
+                    foreach (var pe in pl.EnumerateArray())
+                        specs.Add(ParseProfile(pe));
+                return sim.ProbeProfiles(
+                    cmd.TryGetProperty("character", out var pch) ? pch.GetString() ?? "Ironclad" : "Ironclad",
+                    cmd.TryGetProperty("ascension", out var pasc) ? pasc.GetInt32() : 0,
+                    cmd.TryGetProperty("seed", out var pseed) ? pseed.GetString() : null,
+                    specs,
+                    cmd.TryGetProperty("up_front", out var puf) && puf.ValueKind == JsonValueKind.Number ? puf.GetInt32() : null
+                );
+            }
 
             case "roll_acts":
                 return sim.RollActs(
@@ -259,6 +307,9 @@ class Program
                             JsonValueKind.String => prop.Value.GetString(),
                             JsonValueKind.True => true,
                             JsonValueKind.False => false,
+                            // "None" (a potion_swap decline): stringified it
+                            // was "", which no int argument parses (GH #1682).
+                            JsonValueKind.Null => null,
                             _ => prop.Value.ToString(),
                         };
                     }
@@ -340,6 +391,12 @@ class Program
             case "legal_actions":
                 return sim.LegalActions();
 
+            // GH #1610: the potion popup's Use/Discard per held slot (what a
+            // referee observation appends as use_potion / discard_potion), for
+            // the agent-mode parity lane. Read-only.
+            case "potion_belt":
+                return sim.PotionBelt();
+
             // GH #1299: hash every game method a host prefix can skip.
             case "override_fingerprints":
                 return OverrideFingerprints.Collect(cmd.TryGetProperty("dump", out var dmp) && dmp.GetBoolean());
@@ -402,6 +459,24 @@ class Program
             default:
                 return new Dictionary<string, object?> { ["type"] = "error", ["message"] = $"Unknown command: {cmdType}" };
         }
+    }
+
+    static RunSimulator.ProfileSpec ParseProfile(JsonElement prof)
+    {
+        var spec = new RunSimulator.ProfileSpec();
+        void Fill(string key, HashSet<string> into)
+        {
+            if (prof.TryGetProperty(key, out var arr) && arr.ValueKind == JsonValueKind.Array)
+                foreach (var e in arr.EnumerateArray())
+                    if (e.GetString() is { } id)
+                        into.Add(id);
+        }
+        Fill("locked_epochs", spec.LockedEpochs);
+        Fill("unseen_encounters", spec.UnseenEncounters);
+        Fill("undiscovered_acts", spec.UndiscoveredActs);
+        if (prof.TryGetProperty("number_of_runs", out var n) && n.ValueKind == JsonValueKind.Number)
+            spec.NumberOfRuns = n.GetInt32();
+        return spec;
     }
 
     static void WriteLine(Dictionary<string, object?> data)

@@ -22,6 +22,7 @@
 //     numbers" setting.
 
 import type { ChoiceRankRow, PpoOption, Score } from "../api";
+import { t } from "../i18n";
 
 /** How loud a mark is. Ordered: a higher tier is louder. */
 export type MarkTier = "alt" | "good" | "best";
@@ -283,11 +284,11 @@ export function gradeOf(v: Verdict): Grade | null {
 }
 
 export const GRADE_TEXT: Record<Grade, string> = {
-  best: "✓ Best",
-  good: "✓ Good",
-  okay: "Okay",
-  weak: "?! Weak",
-  mistake: "?? Mistake",
+  best: t("✓ Best"),
+  good: t("✓ Good"),
+  okay: t("Okay"),
+  weak: t("?! Weak"),
+  mistake: t("?? Mistake"),
 };
 
 /** Is a grade on the AI's line (counted by the fight's accuracy line)? */

@@ -89,7 +89,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "Upgraded Strike → Strike+"
+   ],
    "error": false,
    "floor": 1,
    "id": 2,
@@ -716,7 +718,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Molten Fist"
+   ],
    "error": false,
    "floor": 2,
    "id": 16,
@@ -767,7 +771,10 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Dark Embrace",
+    "−Card Strike+"
+   ],
    "error": false,
    "floor": 3,
    "id": 19,
@@ -1477,7 +1484,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Molten Fist"
+   ],
    "error": false,
    "floor": 4,
    "id": 34,

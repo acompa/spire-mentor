@@ -58,7 +58,11 @@ _DEFAULT_OUT = _REPO_ROOT / "deploy"
 
 
 def build_manifest(
-    images_root: Path, audio_root: Path | None = None, *, overlays: Iterable[str] = ()
+    images_root: Path,
+    audio_root: Path | None = None,
+    *,
+    overlays: Iterable[str] = (),
+    exclude_audio: Iterable[str] = (),
 ) -> list[str]:
     """Return the sorted list of art (+ audio) file paths.
 
@@ -78,8 +82,13 @@ def build_manifest(
     so the manifest entry has to carry that prefix to match. *audio_root* is
     optional (and skipped when the directory doesn't exist) so a checkout
     without the audio tree still produces an images-only manifest.
+
+    *exclude_audio* (paths relative to *audio_root*) leaves out sound a later
+    build added to the shared audio tree (``added_audio_of``), so the default
+    build's manifest does not move when that build's sound is imported.
     """
     wanted = set(overlays)
+    skip_audio = set(exclude_audio)
     rels: list[str] = []
     for path in images_root.rglob("*"):
         if not path.is_file():
@@ -96,9 +105,23 @@ def build_manifest(
             if not path.is_file():
                 continue
             rel = path.relative_to(audio_root).as_posix()
-            rels.append(f"audio/{rel}")
+            if rel not in skip_audio:
+                rels.append(f"audio/{rel}")
     rels.sort()
     return rels
+
+
+def added_audio_of(wiki_data_root: Path, versions: Iterable[str]) -> set[str]:
+    """The audio files *versions* added to the shared tree: the union of their
+    ``<wiki data>/<version>/added_audio.json`` records (written by
+    ``scripts/import_game.py``'s sound step; absent until that build's sound
+    is imported). Paths are relative to the audio tree."""
+    out: set[str] = set()
+    for version in versions:
+        record = wiki_data_root / version / "added_audio.json"
+        if record.is_file():
+            out.update(json.loads(record.read_text(encoding="utf-8")))
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -43,6 +43,13 @@ Test Subject are drawn at a size their own scene does not ask for) and eleven
 entries with no `%Bounds` box to extract at all. ``--merge`` writes `bounds_w`
 and `bounds_h` and leaves every other field alone.
 
+It also emits where the Fool's arrow sticks in a creature with no arrow slots
+in its rig: ``arrow_x`` / ``arrow_y``, the scene's ``ArrowPosition`` marker
+when it has one (only the Mecha Knight does), else ``%CenterPos`` (the
+creature's ``VfxSpawnPosition``) — ``NImpaledArrowVfx.ImpaleArrowIntoCreature``.
+Both markers are children of the creature root, so the position is scene px
+from the creature origin on the ground line.
+
 Usage (from `sts2-wiki/`)::
 
     uv run python -m scripts.extract_creature_bounds \\
@@ -61,10 +68,11 @@ from scripts.extract_bg_layers import _f, _vec2, parse_scene
 from scripts.extract_rooms import make_reader, read_pck_index
 
 CREATURE_PREFIX = "scenes/creature_visuals/"
+ARROW_KEYS = ("arrow_x", "arrow_y")
 
 
 def creature_bounds(pck_path: str) -> dict[str, dict[str, float]]:
-    """``{slug: {"scale", "bounds_w", "bounds_h"}}`` for every creature scene."""
+    """``{slug: {"scale", "bounds_w", "bounds_h", "arrow_x", "arrow_y"}}`` per creature scene."""
     index = read_pck_index(pck_path)
     read = make_reader(pck_path, index)
 
@@ -85,12 +93,17 @@ def creature_bounds(pck_path: str) -> dict[str, dict[str, float]]:
             # Sign is a facing flip, not a size — the consumers all take the
             # magnitude, and `creature_scales.json` keeps the signed value.
             entry["scale"] = _vec2(visuals, "scale", (1.0, 1.0))[0]
+        # `visuals.GetNodeOrNull("ArrowPosition")` / `%CenterPos`: root children.
+        markers = {n.name: n for n in nodes if n.parent == "."}
+        arrow = markers.get("ArrowPosition") or markers.get("CenterPos")
+        if arrow is not None:
+            entry["arrow_x"], entry["arrow_y"] = _vec2(arrow, "position", (0.0, 0.0))
         out[Path(path).stem] = entry
     return out
 
 
 def merge(existing: dict[str, Any], fresh: dict[str, dict[str, float]]) -> dict[str, Any]:
-    """Write both authored `%Bounds` edges over what is there, keeping `scale`.
+    """Write both authored `%Bounds` edges and the arrow anchor over what is there, keeping `scale`.
 
     `scale` is the one field a scene does not always win: three creatures are
     drawn at a hand-picked size their own scene does not ask for (see the module
@@ -109,6 +122,9 @@ def merge(existing: dict[str, Any], fresh: dict[str, dict[str, float]]) -> dict[
         if slug in out:
             out[slug]["bounds_w"] = entry["bounds_w"]
             out[slug]["bounds_h"] = entry["bounds_h"]
+            for key in ARROW_KEYS:
+                if key in entry:
+                    out[slug][key] = entry[key]
         else:
             # Nothing to preserve for a creature the table has never carried,
             # so it gets the authored row whole.

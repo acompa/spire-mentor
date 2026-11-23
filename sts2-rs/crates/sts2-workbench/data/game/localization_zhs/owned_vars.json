@@ -1,0 +1,984 @@
+{
+ "AKABEKO": {
+  "vigor": 8
+ },
+ "ALCHEMICAL_COFFER": {
+  "potionslots": 4
+ },
+ "AMBERGRIS": {
+  "healpercent": 50
+ },
+ "AMETHYST_AUBERGINE": {
+  "gold": 15
+ },
+ "ANCHOR": {
+  "block": 10
+ },
+ "ARCANE_SCROLL": {
+  "cards": 1
+ },
+ "ARCHAIC_TOOTH": {},
+ "ART_OF_WAR": {
+  "energy": 1
+ },
+ "ASHWATER": {},
+ "ASTROLABE": {
+  "cards": 3
+ },
+ "ATTACK_POTION": {},
+ "BAG_OF_MARBLES": {
+  "vulnerable": 1
+ },
+ "BAG_OF_PREPARATION": {
+  "cards": 2
+ },
+ "BATH_ROBES": {},
+ "BATH_TOWEL": {
+  "heal": 8
+ },
+ "BEATING_REMNANT": {
+  "maxhploss": 20
+ },
+ "BEAUTIFUL_BRACELET": {
+  "cards": 4,
+  "swift": 2
+ },
+ "BEETLE_JUICE": {
+  "damagedecrease": 30,
+  "repeat": 4
+ },
+ "BELLOWS": {},
+ "BELT_BUCKLE": {
+  "dexterity": 2
+ },
+ "BIG_HAT": {
+  "cards": 2
+ },
+ "BIG_MUSHROOM": {
+  "cards": 2,
+  "maxhp": 20
+ },
+ "BIIIG_HUG": {
+  "cards": 4
+ },
+ "BING_BONG": {},
+ "BIZARRE_LAMP": {},
+ "BLACK_BLOOD": {
+  "heal": 12
+ },
+ "BLACK_STAR": {},
+ "BLESSED_ANTLER": {
+  "cards": 3,
+  "energy": 1
+ },
+ "BLESSING_OF_THE_FORGE": {},
+ "BLOCK_POTION": {
+  "block": 12
+ },
+ "BLOOD_POTION": {
+  "healpercent": 20
+ },
+ "BLOOD_SOAKED_ROSE": {
+  "energy": 1
+ },
+ "BLOOD_VIAL": {
+  "heal": 2
+ },
+ "BONE_BREW": {
+  "summon": 15
+ },
+ "BONE_FLUTE": {
+  "block": 2
+ },
+ "BONE_TEA": {},
+ "BOOKMARK": {},
+ "BOOK_OF_FIVE_RINGS": {
+  "cards": 5,
+  "heal": 20
+ },
+ "BOOK_REPAIR_KNIFE": {
+  "heal": 3
+ },
+ "BOOMING_CONCH": {
+  "cards": 2,
+  "energy": 1
+ },
+ "BOTTLED_POTENTIAL": {
+  "cards": 5
+ },
+ "BOTTLED_SONG": {},
+ "BOUND_PHYLACTERY": {
+  "summon": 1
+ },
+ "BOWLER_HAT": {},
+ "BREAD": {},
+ "BRILLIANT_SCARF": {
+  "cards": 6
+ },
+ "BRIMSTONE": {},
+ "BRONZE_SCALES": {
+  "thorns": 3
+ },
+ "BURNING_BLOOD": {
+  "heal": 6
+ },
+ "BURNING_STICKS": {},
+ "BYRDINE": {},
+ "BYRDPIP": {
+  "repeat": 6
+ },
+ "CALLING_BELL": {
+  "relics": 3
+ },
+ "CANDELABRA": {
+  "energy": 2
+ },
+ "CAPTAINS_WHEEL": {
+  "block": 18
+ },
+ "CAULDRON": {
+  "potions": 5
+ },
+ "CENTENNIAL_PUZZLE": {
+  "cards": 3
+ },
+ "CHANDELIER": {
+  "energy": 3
+ },
+ "CHARONS_ASHES": {
+  "damage": 3
+ },
+ "CHEMICAL_X": {
+  "increase": 2
+ },
+ "CHOICES_PARADOX": {
+  "cards": 5
+ },
+ "CHOSEN_CHEESE": {
+  "maxhp": 1
+ },
+ "CIRCLET": {},
+ "CLARITY": {
+  "cards": 1,
+  "clarity": 3
+ },
+ "CLAWS": {
+  "cards": 6
+ },
+ "CLOAK_CLASP": {
+  "block": 1
+ },
+ "COLORLESS_POTION": {},
+ "CONDUCTORS_BATON": {},
+ "COSMIC_CONCOCTION": {
+  "cards": 3
+ },
+ "CRACKED_CORE": {
+  "lightning": 1
+ },
+ "CROSSBOW": {},
+ "CRYSTALLINE_EUPHORIA": {
+  "cards": 3
+ },
+ "CUNNING_POTION": {
+  "cards": 3
+ },
+ "CURE_ALL": {
+  "cards": 2,
+  "energy": 1
+ },
+ "CURSED_PEARL": {
+  "gold": 333
+ },
+ "DARKSTONE_PERIAPT": {
+  "maxhp": 6
+ },
+ "DATA_DISK": {
+  "focus": 1
+ },
+ "DAUGHTER_OF_THE_WIND": {
+  "block": 1
+ },
+ "DELICATE_FROND": {},
+ "DEMON_TONGUE": {},
+ "DEPRECATED_POTION": {},
+ "DEXTERITY_POTION": {
+  "dexterity": 2
+ },
+ "DIAMOND_DIADEM": {
+  "block": 20
+ },
+ "DINGY_RUG": {},
+ "DISTILLED_CHAOS": {
+  "repeat": 3
+ },
+ "DISTINGUISHED_CAPE": {
+  "cards": 3,
+  "curses": 2
+ },
+ "DIVINE_DESTINY": {
+  "stars": 7
+ },
+ "DIVINE_RIGHT": {
+  "stars": 3
+ },
+ "DOLLYS_MIRROR": {},
+ "DOWSING_ROD": {},
+ "DRAGON_FRUIT": {
+  "maxhp": 1
+ },
+ "DREAM_CATCHER": {},
+ "DRIFTWOOD": {},
+ "DROPLET_OF_PRECOGNITION": {},
+ "DUPLICATOR": {},
+ "DUSTY_TOME": {},
+ "ECTOPLASM": {
+  "energy": 1
+ },
+ "ELECTRIC_SHRYMP": {},
+ "EMBER_TEA": {
+  "strength": 2
+ },
+ "EMOTION_CHIP": {},
+ "EMPTY_CAGE": {
+  "cards": 2
+ },
+ "ENERGY_POTION": {
+  "energy": 2
+ },
+ "ENTROPIC_BREW": {},
+ "ESSENCE_OF_DARKNESS": {},
+ "ETERNAL_FEATHER": {
+  "cards": 5,
+  "heal": 3
+ },
+ "EXERCISE_MAT": {
+  "stretch": 6
+ },
+ "EXPLOSIVE_AMPOULE": {
+  "damage": 10
+ },
+ "FAIRY_IN_A_BOTTLE": {},
+ "FAKE_ANCHOR": {
+  "block": 4
+ },
+ "FAKE_BLOOD_VIAL": {
+  "heal": 1
+ },
+ "FAKE_HAPPY_FLOWER": {
+  "energy": 1,
+  "turns": 5
+ },
+ "FAKE_LEES_WAFFLE": {
+  "heal": 10
+ },
+ "FAKE_MANGO": {
+  "maxhp": 3
+ },
+ "FAKE_MERCHANTS_RUG": {},
+ "FAKE_ORICHALCUM": {
+  "block": 3
+ },
+ "FAKE_SNECKO_EYE": {},
+ "FAKE_STRIKE_DUMMY": {
+  "extradamage": 1
+ },
+ "FAKE_VENERABLE_TEA_SET": {
+  "energy": 1
+ },
+ "FENCING_MANUAL": {
+  "forge": 10
+ },
+ "FERTILIZER": {
+  "strength": 1
+ },
+ "FESTIVE_POPPER": {
+  "damage": 9
+ },
+ "FIDDLE": {
+  "cards": 2
+ },
+ "FIRE_POTION": {
+  "damage": 20
+ },
+ "FISHING_ROD": {
+  "combats": 3
+ },
+ "FLEX_POTION": {
+  "strength": 5
+ },
+ "FOCUS_POTION": {
+  "focus": 2
+ },
+ "FORGOTTEN_SOUL": {
+  "damage": 1
+ },
+ "FORTIFIER": {},
+ "FOUL_POTION": {
+  "damage": 12,
+  "gold": 100
+ },
+ "FRAGRANT_MUSHROOM": {
+  "cards": 2,
+  "hploss": 15
+ },
+ "FRESNEL_LENS": {
+  "nimbleamount": 2
+ },
+ "FROZEN_EGG": {},
+ "FRUIT_JUICE": {
+  "maxhp": 5
+ },
+ "FUNERARY_MASK": {
+  "cards": 3
+ },
+ "FUR_COAT": {
+  "combats": 8
+ },
+ "FYSH_OIL": {
+  "dexterity": 1,
+  "strength": 1
+ },
+ "GALACTIC_DUST": {
+  "block": 10,
+  "stars": 10
+ },
+ "GAMBLERS_BREW": {},
+ "GAMBLING_CHIP": {},
+ "GAME_PIECE": {
+  "cards": 1
+ },
+ "GHOST_IN_A_JAR": {
+  "intangible": 1
+ },
+ "GHOST_SEED": {},
+ "GIGANTIFICATION_POTION": {
+  "gigantification": 1
+ },
+ "GIRYA": {},
+ "GLASS_EYE": {},
+ "GLITTER": {},
+ "GLOWWATER_POTION": {
+  "cards": 10
+ },
+ "GNARLED_HAMMER": {
+  "cards": 3,
+  "sharpamount": 3
+ },
+ "GOLDEN_COMPASS": {},
+ "GOLDEN_PEARL": {
+  "gold": 150
+ },
+ "GOLD_PLATED_CABLES": {},
+ "GORGET": {
+  "plating": 4
+ },
+ "GREMLIN_HORN": {
+  "cards": 1,
+  "energy": 1
+ },
+ "HAND_DRILL": {
+  "vulnerable": 2
+ },
+ "HAPPY_FLOWER": {
+  "energy": 1,
+  "turns": 3
+ },
+ "HEART_OF_IRON": {
+  "plating": 7
+ },
+ "HEFTY_TABLET": {
+  "cards": 3
+ },
+ "HELICAL_DART": {
+  "dexterity": 1
+ },
+ "HISTORY_COURSE": {},
+ "HORN_CLEAT": {
+  "block": 14
+ },
+ "ICE_CREAM": {},
+ "INFUSED_CORE": {
+  "extradamage": 1,
+  "lightning": 3
+ },
+ "INTIMIDATING_HELMET": {
+  "block": 4,
+  "energy": 2
+ },
+ "IRON_CLUB": {
+  "cards": 4
+ },
+ "IVORY_TILE": {
+  "energy": 1
+ },
+ "JEWELED_MASK": {},
+ "JEWELRY_BOX": {},
+ "JOSS_PAPER": {
+  "cards": 1,
+  "exhaustamount": 5
+ },
+ "JUZU_BRACELET": {},
+ "KALEIDOSCOPE": {
+  "cards": 2
+ },
+ "KIFUDA": {
+  "cards": 3
+ },
+ "KINGS_COURAGE": {
+  "forge": 15
+ },
+ "KUNAI": {
+  "cards": 3,
+  "dexterity": 1
+ },
+ "KUSARIGAMA": {
+  "cards": 3,
+  "damage": 6
+ },
+ "LANTERN": {
+  "energy": 1
+ },
+ "LARGE_CAPSULE": {
+  "relics": 2
+ },
+ "LASTING_CANDY": {},
+ "LAVA_LAMP": {},
+ "LAVA_ROCK": {
+  "relics": 2
+ },
+ "LEAD_PAPERWEIGHT": {},
+ "LEAFY_POULTICE": {
+  "maxhp": 12
+ },
+ "LEES_WAFFLE": {
+  "maxhp": 7
+ },
+ "LETTER_OPENER": {
+  "cards": 3,
+  "damage": 5
+ },
+ "LIQUID_BRONZE": {
+  "thorns": 3
+ },
+ "LIQUID_MEMORIES": {},
+ "LIZARD_TAIL": {
+  "heal": 50
+ },
+ "LOOMING_FRUIT": {
+  "maxhp": 31
+ },
+ "LORDS_PARASOL": {},
+ "LOST_COFFER": {},
+ "LOST_WISP": {
+  "damage": 8
+ },
+ "LUCKY_FYSH": {
+  "gold": 15
+ },
+ "LUCKY_TONIC": {
+  "buffer": 1
+ },
+ "LUNAR_PASTRY": {
+  "stars": 1
+ },
+ "MANGO": {
+  "maxhp": 14
+ },
+ "MASSIVE_SCROLL": {},
+ "MAW_BANK": {
+  "gold": 12
+ },
+ "MAZALETHS_GIFT": {
+  "ritual": 1
+ },
+ "MEAL_TICKET": {
+  "heal": 15
+ },
+ "MEAT_CLEAVER": {},
+ "MEAT_ON_THE_BONE": {
+  "heal": 12,
+  "hpthreshold": 50
+ },
+ "MEMBERSHIP_CARD": {
+  "discount": 50
+ },
+ "MERCURY_HOURGLASS": {
+  "damage": 3
+ },
+ "METRONOME": {
+  "damage": 30,
+  "orbcount": 7
+ },
+ "MIGHTY_WINGS": {
+  "damagethreshold": 30,
+  "strength": 2
+ },
+ "MINIATURE_CANNON": {
+  "extradamage": 3
+ },
+ "MINIATURE_TENT": {},
+ "MINI_REGENT": {
+  "strength": 1
+ },
+ "MOLTEN_EGG": {},
+ "MR_STRUGGLES": {},
+ "MUMMIFIED_HAND": {},
+ "MUSIC_BOX": {},
+ "MYSTIC_LIGHTER": {
+  "damage": 9
+ },
+ "NEOWS_BONES": {
+  "curses": 1,
+  "relics": 2
+ },
+ "NEOWS_SACRIFICE": {},
+ "NEOWS_TALISMAN": {},
+ "NEOWS_TORMENT": {},
+ "NEW_LEAF": {
+  "cards": 1
+ },
+ "NINJA_SCROLL": {
+  "shivs": 3
+ },
+ "NUNCHAKU": {
+  "cards": 10,
+  "energy": 1
+ },
+ "NUTRITIOUS_OYSTER": {
+  "maxhp": 11
+ },
+ "NUTRITIOUS_SOUP": {},
+ "OBSIDIAN_VICE": {
+  "damage": 1
+ },
+ "OCARINA": {},
+ "ODDLY_SMOOTH_STONE": {
+  "dexterity": 1
+ },
+ "OLD_COIN": {
+  "gold": 300
+ },
+ "ORANGE_DOUGH": {
+  "cards": 2
+ },
+ "ORICHALCUM": {
+  "block": 6
+ },
+ "ORNAMENTAL_FAN": {
+  "block": 4,
+  "cards": 3
+ },
+ "OROBIC_ACID": {},
+ "ORRERY": {
+  "cards": 5
+ },
+ "PAELS_BLOOD": {
+  "cards": 1
+ },
+ "PAELS_CLAW": {
+  "cards": 3
+ },
+ "PAELS_EYE": {},
+ "PAELS_FLESH": {
+  "energy": 1
+ },
+ "PAELS_GROWTH": {},
+ "PAELS_HORN": {},
+ "PAELS_LEGION": {
+  "turns": 2
+ },
+ "PAELS_TEARS": {
+  "energy": 2
+ },
+ "PAELS_TOOTH": {
+  "cards": 5
+ },
+ "PAELS_WING": {
+  "sacrifices": 2
+ },
+ "PANDORAS_BOX": {},
+ "PANTOGRAPH": {
+  "heal": 25
+ },
+ "PAPER_KRANE": {},
+ "PAPER_PHROG": {},
+ "PARRYING_SHIELD": {
+  "block": 10,
+  "damage": 6
+ },
+ "PEAR": {
+  "maxhp": 10
+ },
+ "PENDULUM": {
+  "cards": 1,
+  "turns": 3
+ },
+ "PEN_NIB": {},
+ "PERMAFROST": {
+  "block": 7
+ },
+ "PETRIFIED_TOAD": {},
+ "PHIAL_HOLSTER": {
+  "potions": 2,
+  "potionslots": 1
+ },
+ "PHILOSOPHERS_STONE": {
+  "energy": 1,
+  "strength": 1
+ },
+ "PHYLACTERY_UNBOUND": {},
+ "PLANISPHERE": {
+  "heal": 5
+ },
+ "POCKETWATCH": {
+  "cards": 3,
+  "cardthreshold": 3
+ },
+ "POISON_POTION": {
+  "poison": 6
+ },
+ "POLLINOUS_CORE": {
+  "cards": 2,
+  "turns": 4
+ },
+ "POMANDER": {
+  "cards": 1
+ },
+ "POTION_BELT": {
+  "potionslots": 2
+ },
+ "POTION_OF_BINDING": {
+  "vulnerable": 1,
+  "weak": 1
+ },
+ "POTION_OF_CAPACITY": {
+  "repeat": 2
+ },
+ "POTION_OF_DOOM": {
+  "doom": 33
+ },
+ "POTION_SHAPED_ROCK": {
+  "damage": 15
+ },
+ "POT_OF_GHOULS": {
+  "cards": 2
+ },
+ "POWDERED_DEMISE": {
+  "demise": 9
+ },
+ "POWER_CELL": {
+  "cards": 2
+ },
+ "POWER_POTION": {},
+ "PRAYER_WHEEL": {},
+ "PRECARIOUS_SHEARS": {
+  "cards": 2,
+  "damage": 16
+ },
+ "PRECISE_SCISSORS": {
+  "cards": 1
+ },
+ "PRECISION_POTION": {
+  "aim": 21
+ },
+ "PRESERVED_FOG": {
+  "cards": 3
+ },
+ "PRISMATIC_GEM": {
+  "energy": 1
+ },
+ "PUMPKIN_CANDLE": {
+  "combatcount": 5,
+  "energy": 1
+ },
+ "PUNCH_DAGGER": {
+  "momentum": 5
+ },
+ "RADIANT_PEARL": {
+  "cards": 1
+ },
+ "RADIANT_TINCTURE": {
+  "energy": 1,
+  "radiance": 3
+ },
+ "RAINBOW_RING": {
+  "dexterity": 1,
+  "strength": 1
+ },
+ "RAZOR_TOOTH": {},
+ "RED_MASK": {
+  "weak": 1
+ },
+ "RED_SKULL": {
+  "hpthreshold": 50,
+  "strength": 3
+ },
+ "REGALITE": {
+  "block": 4
+ },
+ "REGAL_PILLOW": {
+  "heal": 15
+ },
+ "REGEN_POTION": {
+  "regen": 5
+ },
+ "REPTILE_TRINKET": {
+  "strength": 3
+ },
+ "RINGING_TRIANGLE": {},
+ "RING_OF_THE_DRAKE": {
+  "cards": 2,
+  "turns": 3
+ },
+ "RING_OF_THE_SNAKE": {
+  "cards": 2
+ },
+ "RIPPLE_BASIN": {
+  "block": 4
+ },
+ "ROYAL_POISON": {
+  "damage": 4
+ },
+ "ROYAL_STAMP": {
+  "cards": 1
+ },
+ "RUINED_HELMET": {},
+ "RUNIC_CAPACITOR": {
+  "repeat": 3
+ },
+ "RUNIC_PYRAMID": {},
+ "SAI": {
+  "block": 7
+ },
+ "SAND_CASTLE": {
+  "cards": 6
+ },
+ "SCREAMING_FLAGON": {
+  "damage": 20
+ },
+ "SCROLL_BOXES": {},
+ "SEAL_OF_GOLD": {
+  "energy": 1,
+  "gold": 3
+ },
+ "SEA_GLASS": {
+  "cards": 15
+ },
+ "SELF_FORMING_CLAY": {
+  "blocknextturn": 3
+ },
+ "SERE_TALON": {
+  "hploss": 9,
+  "wishes": 3
+ },
+ "SHACKLING_POTION": {
+  "strength": 7
+ },
+ "SHIP_IN_A_BOTTLE": {
+  "block": 10
+ },
+ "SHOVEL": {},
+ "SHURIKEN": {
+  "cards": 3,
+  "strength": 1
+ },
+ "SIGNET_RING": {
+  "gold": 888
+ },
+ "SILKEN_TRESS": {},
+ "SILVER_CRUCIBLE": {
+  "cards": 3
+ },
+ "SKILL_POTION": {},
+ "SLING_OF_COURAGE": {
+  "strength": 2
+ },
+ "SMALL_CAPSULE": {},
+ "SNECKO_EYE": {
+  "cards": 2
+ },
+ "SNECKO_OIL": {
+  "cards": 7
+ },
+ "SNECKO_SKULL": {
+  "poison": 1
+ },
+ "SOLDIERS_STEW": {},
+ "SONG_BOW": {
+  "aim": 6
+ },
+ "SOZU": {
+  "energy": 1
+ },
+ "SPARKLING_ROUGE": {
+  "dexterity": 1,
+  "strength": 1
+ },
+ "SPEED_POTION": {
+  "dexterity": 5
+ },
+ "SPIKED_GAUNTLETS": {
+  "energy": 1
+ },
+ "STABLE_SERUM": {
+  "repeat": 2
+ },
+ "STAR_POTION": {
+  "stars": 3
+ },
+ "STONE_CALENDAR": {
+  "damage": 52,
+  "damageturn": 7
+ },
+ "STONE_CRACKER": {
+  "cards": 2
+ },
+ "STONE_HUMIDIFIER": {
+  "maxhp": 5
+ },
+ "STORYBOOK": {},
+ "STORYTELLER": {
+  "aim": 12
+ },
+ "STRAWBERRY": {
+  "maxhp": 7
+ },
+ "STRENGTH_POTION": {
+  "strength": 2
+ },
+ "STRIKE_DUMMY": {
+  "extradamage": 3
+ },
+ "STURDY_CLAMP": {
+  "block": 10
+ },
+ "SWIFT_POTION": {
+  "cards": 3
+ },
+ "SWORD_OF_JADE": {
+  "strength": 3
+ },
+ "SWORD_OF_STONE": {
+  "elites": 5
+ },
+ "SYMBIOTIC_VIRUS": {
+  "dark": 1
+ },
+ "TANXS_WHISTLE": {},
+ "TEA_OF_DISCOURTESY": {
+  "dazedcount": 2,
+  "heal": 1
+ },
+ "THE_ABACUS": {
+  "block": 6
+ },
+ "THE_BOOT": {
+  "damageminimum": 5,
+  "damagethreshold": 4
+ },
+ "THE_COURIER": {
+  "discount": 20
+ },
+ "THROWING_AXE": {},
+ "THUMBSCREW": {},
+ "TINGSHA": {
+  "damage": 3
+ },
+ "TINY_MAILBOX": {},
+ "TOASTY_MITTENS": {
+  "strength": 1
+ },
+ "TOOLBOX": {
+  "cards": 3
+ },
+ "TORMENTOUS_COLLAR": {
+  "weak": 2
+ },
+ "TOUCH_OF_INSANITY": {},
+ "TOUCH_OF_OROBAS": {},
+ "TOUGH_BANDAGES": {
+  "block": 3
+ },
+ "TOXIC_EGG": {},
+ "TOY_BOX": {
+  "combats": 3,
+  "relics": 5
+ },
+ "TRI_BOOMERANG": {
+  "cards": 3
+ },
+ "TUNGSTEN_ROD": {
+  "hplossreduction": 1
+ },
+ "TUNING_FORK": {
+  "block": 7,
+  "cards": 10
+ },
+ "TWINE": {
+  "block": 4
+ },
+ "TWISTED_FUNNEL": {
+  "poison": 4
+ },
+ "UNCEASING_TOP": {},
+ "UNDYING_SIGIL": {},
+ "UNSETTLING_LAMP": {},
+ "VAJRA": {
+  "strength": 1
+ },
+ "VAMBRACE": {},
+ "VELVET_CHOKER": {
+  "cards": 6,
+  "energy": 1
+ },
+ "VENERABLE_TEA_SET": {
+  "energy": 2
+ },
+ "VERY_HOT_COCOA": {
+  "energy": 4
+ },
+ "VEXING_PUZZLEBOX": {},
+ "VITRUVIAN_MINION": {},
+ "VULNERABLE_POTION": {
+  "vulnerable": 3
+ },
+ "WAR_HAMMER": {
+  "cards": 4
+ },
+ "WAR_PAINT": {
+  "cards": 2
+ },
+ "WEAK_POTION": {
+  "weak": 3
+ },
+ "WHETSTONE": {
+  "cards": 2
+ },
+ "WHISPERING_EARRING": {
+  "energy": 1
+ },
+ "WHITE_BEAST_STATUE": {},
+ "WHITE_STAR": {},
+ "WHITTLING_KNIFE": {
+  "aim": 5
+ },
+ "WINGED_BOOTS": {
+  "rooms": 3
+ },
+ "WING_CHARM": {
+  "swiftamount": 1
+ },
+ "WONGOS_MYSTERY_TICKET": {
+  "remainingcombats": 5,
+  "repeat": 3
+ },
+ "WONGO_CUSTOMER_APPRECIATION_BADGE": {},
+ "WUPPY": {
+  "currenthp": 0,
+  "maxhp": 0
+ },
+ "YUMMY_COOKIE": {
+  "cards": 4
+ }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import Plotly from "plotly.js-dist-min";
+import { t } from "../i18n";
 
 export interface BoxSeries {
   /** Strategy name — drives trace name + color (one trace per strategy). */
@@ -60,15 +61,15 @@ export function BoxChart({ series, title }: { series: BoxSeries[]; title: string
           x: s.outliers.map(() => s.deck),
           y: s.outliers,
           marker: { color: s.color, symbol: "x" as const, size: 7 },
-          hovertemplate: "outlier %{y}<extra>" + s.strategy + "</extra>",
+          hovertemplate: t("outlier") + " %{y}<extra>" + s.strategy + "</extra>",
         });
       }
     }
     Plotly.react(node, data, {
       title: { text: title },
       boxmode: "group",
-      xaxis: { title: { text: "deck" } },
-      yaxis: { title: { text: "damage taken" } },
+      xaxis: { title: { text: t("deck") } },
+      yaxis: { title: { text: t("damage taken") } },
       // Legend above the plot area (matches DistChart).
       margin: { t: 80, r: 16 },
       legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom" },

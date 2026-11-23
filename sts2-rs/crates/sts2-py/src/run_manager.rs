@@ -18,14 +18,8 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
-use sts2_content::run_callbacks::{
-    new_ironclad_run_manager_with_deck_and_hp, new_run_manager_for_character,
-    new_run_manager_for_character_from_string_seed, new_run_manager_for_character_with_ascension,
-};
-use sts2_core::act_selection::ActVariant;
 use sts2_core::cards::CardId;
 use sts2_core::map::MapPointType;
-use sts2_core::potions::CharacterId;
 use sts2_core::run_manager::{ActionResult, RunAction, RunManager};
 use sts2_wire::emit::names::{character_str, result_str};
 use sts2_wire::emit::run_manager as emit_rm;
@@ -33,9 +27,6 @@ use sts2_wire::emit::run_manager as emit_rm;
 /// The `phase()` vocabulary, re-exported so the agent modules keep reading it
 /// from here.
 pub(crate) use sts2_wire::emit::names::phase_str;
-fn character_from_str(s: &str) -> PyResult<CharacterId> {
-    sts2_wire::emit::names::character_from_str(s).map_err(PyValueError::new_err)
-}
 
 /// A `sts2_wire::graft` rejection, raised as `ValueError`.
 #[allow(clippy::needless_pass_by_value)] // the `map_err` shape
@@ -162,7 +153,7 @@ impl PyRunManager {
 #[pymethods]
 impl PyRunManager {
     #[new]
-    #[pyo3(signature = (seed = 0, character = "Ironclad", deck = None, max_hp = None, string_seed = None, ascension_level = 0, neow_start = false, interactive_card_removal = None, direct_event_relic_grant = None, interactive_card_upgrade = None, interactive_card_transform = None, interactive_potion_swap = false, act1 = "roll", game_version = None, mode = None))]
+    #[pyo3(signature = (seed = 0, character = "Ironclad", deck = None, max_hp = None, string_seed = None, ascension_level = 0, neow_start = false, interactive_card_removal = None, direct_event_relic_grant = None, interactive_card_upgrade = None, interactive_card_transform = None, interactive_potion_swap = false, act1 = "roll", game_version = None, mode = None, game_mode = None, ooc_potion_actions = false, deck_select_screens = false, reward_screen = false))]
     // A PyO3 constructor mirroring the optional-kwarg surface; the arg list
     // tracks the run's configurable knobs (seed forms, deck/hp overrides,
     // neow-start, C#-faithful UI toggles) rather than a bundled options struct.
@@ -186,178 +177,36 @@ impl PyRunManager {
         act1: &str,
         game_version: Option<&str>,
         mode: Option<&str>,
+        game_mode: Option<&str>,
+        ooc_potion_actions: bool,
+        deck_select_screens: bool,
+        reward_screen: bool,
     ) -> PyResult<Self> {
-        // GH #981: `mode` names the whole deck-decision bundle at once, so a
-        // host cannot turn on three flags and forget the fourth. It and the
-        // individual flags are mutually exclusive — mixing them would make
-        // "which one wins" a silent rule.
-        let bundle = [
-            ("interactive_card_removal", interactive_card_removal),
-            ("interactive_card_upgrade", interactive_card_upgrade),
-            ("interactive_card_transform", interactive_card_transform),
-            ("direct_event_relic_grant", direct_event_relic_grant),
-        ];
-        let agent_mode = match mode {
-            None => None,
-            Some(m @ ("parity" | "agent")) => {
-                if let Some((name, _)) = bundle.iter().find(|(_, v)| v.is_some()) {
-                    return Err(PyValueError::new_err(format!(
-                        "pass either mode={m:?} or {name}=…, not both: the mode \
-                         sets the whole deck-decision bundle"
-                    )));
-                }
-                Some(m == "agent")
-            }
-            Some(other) => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown mode {other:?} (expected \"parity\" or \"agent\")"
-                )))
-            }
-        };
-        let cid = character_from_str(character)?;
-        let game_version = crate::parse_game_version(game_version)?;
-        // Bead `sts2-rs-livck`: Ironclad / Silent / Necrobinder / Regent
-        // / Defect now route through the character-parameterised
-        // factories in `sts2-content::run_callbacks`. Defect's
-        // starter deck currently falls back to the Ironclad starter
-        // deck because the Defect starter-card factory isn't ported
-        // yet — runs will succeed but the deck won't match the C# pin
-        // until `starters::starter_deck_for(Defect)` lands real content.
-        // When `string_seed` is provided, it takes precedence — this is
-        // the C#-game-style 10-char alphanumeric seed (e.g. "3ACCFREXKR")
-        // as emitted by scraped .run files. We canonicalise + hash to the
-        // same i32 the C# game uses, ignoring any explicit `seed` arg.
-        //
-        // GH #788: the hash is the game build's `RunRngSet` rule — the old
-        // 32-bit hash in v0.107.1, XxHash64 in v0.111.0 (whose 64-bit master
-        // is applied below via `with_run_seed`; `effective_seed` is its i32
-        // view). An integer `seed` is a `uint` master in both builds.
-        let master_seed: u64 = match string_seed {
-            Some(s) => game_version.run_seed_hash(&sts2_core::canonicalize_seed(s)),
-            None => u64::from(seed as u32),
-        };
-        let effective_seed = master_seed as i32;
-        let inner = match deck {
-            None => {
-                // When `ascension_level > 0`, route through the ascension
-                // factory so A3 gold, A4 potion-slot, A5 AscendersBane,
-                // A7 Scarcity (etc.) are applied. String-seed canonicalisation
-                // is preserved by passing the already-hashed `effective_seed`.
-                let mut rm = if ascension_level > 0 {
-                    new_run_manager_for_character_with_ascension(
-                        effective_seed,
-                        cid,
-                        ascension_level,
-                    )
-                } else {
-                    match string_seed {
-                        Some(s) => new_run_manager_for_character_from_string_seed(s, cid),
-                        None => new_run_manager_for_character(effective_seed, cid),
-                    }
-                };
-                if let Some(hp) = max_hp {
-                    rm.run_state.max_hp = hp;
-                    rm.run_state.current_hp = hp;
-                }
-                rm
-            }
-            Some(d) => {
-                if ascension_level > 0 {
-                    return Err(PyValueError::new_err(
-                        "ascension_level + custom deck override is not yet supported",
-                    ));
-                }
-                if !matches!(cid, CharacterId::Ironclad) {
-                    return Err(PyValueError::new_err(format!(
-                        "custom `deck` override is currently Ironclad-only \
-                         (factory `new_ironclad_run_manager_with_deck_and_hp` \
-                         hardcodes the character); character {character:?} \
-                         must use the starter-deck path. Bead sts2-rs-livck \
-                         follow-up."
-                    )));
-                }
-                let cards = d
-                    .iter()
-                    .map(|s| card_id_from_str(s))
-                    .collect::<PyResult<Vec<_>>>()?;
-                new_ironclad_run_manager_with_deck_and_hp(effective_seed, cards, max_hp)
-            }
-        };
-        // GH #787: the game build, threaded like ascension. Must precede
-        // Neow-start / act-1 selection / run setup — everything the run
-        // rolls from here on may depend on it. A no-op at the default.
-        let inner = inner
-            .with_game_version(game_version)
-            .with_run_seed(master_seed);
-        // Bead `sts2-rs-g24zv`: opt-in Neow-start. When `neow_start=True`,
-        // the run lands in `Phase::Event` with `current_event=Neow` and
-        // the 3-relic offers cached on `run_state.neow_offers`. Required
-        // for corpus replay (every scraped v0.103.2 run begins at
-        // `first_room_type=ancient`).
-        let mut inner = if neow_start {
-            inner.with_neow_start()
-        } else {
-            inner
-        };
-        // Opt-in interactive deck removal: on-obtain card-removal relics
-        // (Precise Scissors, …) present a player card_select instead of the
-        // default front-of-deck auto-removal. The workbench sets this for
-        // C#-faithful Neow; default off keeps the parity-fuzz behavior.
-        inner.run_state.interactive_card_removal = interactive_card_removal.unwrap_or(false);
-        // Opt-in interactive deck upgrade: on-obtain card-upgrade relics
-        // (Pomander) present a player card_select instead of the default
-        // random rewards-stream auto-upgrade, matching C#
-        // `Pomander.AfterObtained` → `CardSelectCmd.FromDeckForUpgrade`. The
-        // workbench / `run_parity` lockstep set this; default off keeps the
-        // parity-fuzz behavior. Bead `sts2-rs-1hiht`.
-        inner.run_state.interactive_card_upgrade = interactive_card_upgrade.unwrap_or(false);
-        // Opt-in interactive deck transform: on-obtain card-transform relics
-        // (NewLeaf) present a player card_select whose replacement is rolled
-        // off `Rng.Niche` only after the pick, matching C#
-        // `NewLeaf.AfterObtained` → `CardSelectCmd.FromDeckForTransformation`
-        // → `CardCmd.TransformToRandom`. Bead 6ynt.4.deck-add / GH #34.
-        inner.run_state.interactive_card_transform = interactive_card_transform.unwrap_or(false);
-        // Opt-in interactive full-belt potion swap: a potion reward landing
-        // on a full belt surfaces a `potion_swap` discard-to-claim decision
-        // instead of being silently dropped, matching C#'s TooFull reward +
-        // `DiscardPotionGameAction` flow. Default off keeps the historical
-        // (and headless-oracle) silent drop. GH #252.
-        inner.run_state.interactive_potion_swap = interactive_potion_swap;
-        // Grant Neow blessing relics directly (no extra Take relic/Skip
-        // confirmation), matching C#. See `RunState::direct_event_relic_grant`.
-        inner.run_state.direct_event_relic_grant = direct_event_relic_grant.unwrap_or(false);
-        // `mode="agent"` is `RunState::set_agent_decisions` — the same one
-        // definition the arena and the workbench use. `mode="parity"` (and
-        // no mode at all) leaves the bundle off, the headless-C# behaviour
-        // the parity suite pins.
-        if agent_mode == Some(true) {
-            inner.run_state.set_agent_decisions();
-        }
-        // GH #544: which of the two Act-1 models this run walks. Must be set
-        // BEFORE `initialize_run_setup`, which pre-generates every act's
-        // rooms off `up_front`. Defaults to `"roll"`, the real game's
-        // seed-driven pick with everything unlocked and discovered; the C#
-        // host defaults the same way, so a parity pair that passes neither
-        // still agrees. `"overgrowth"` / `"underdocks"` pin a variant (the
-        // default was `"overgrowth"` before this change).
-        let mut inner = match act1 {
-            "overgrowth" => inner.with_act1(ActVariant::Overgrowth),
-            "underdocks" => inner.with_act1(ActVariant::Underdocks),
-            "roll" => inner.with_rolled_act1(),
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown act1 {other:?} (expected \"overgrowth\", \"underdocks\" or \"roll\")"
-                )))
-            }
-        };
-        // C#-faithful run setup: populate the relic grab bags (player +
-        // shared) and pre-roll all acts' room contents off the `up_front`
-        // stream, then re-pin act 1's boss to the generated identity. The bare
-        // run factories omit this; every full-run driver (this binding, the
-        // run-AI arena / labeler / exporter / calibrator) calls the one shared
-        // function so they cannot diverge. See `initialize_run_setup` for the
-        // verified `up_front` read order (beads mcesz / 7e04v / jenwp).
-        sts2_content::run_callbacks::initialize_run_setup(&mut inner);
+        // The one constructor, shared with the native advisor (GH #1426):
+        // `sts2_wire::run_builder` carries the rationale for every knob.
+        let (inner, effective_seed) =
+            sts2_wire::run_builder::build_run(&sts2_wire::run_builder::RunOptions {
+                seed,
+                character,
+                deck,
+                max_hp,
+                string_seed,
+                ascension_level,
+                neow_start,
+                interactive_card_removal,
+                direct_event_relic_grant,
+                interactive_card_upgrade,
+                interactive_card_transform,
+                interactive_potion_swap,
+                ooc_potion_actions,
+                deck_select_screens,
+                reward_screen,
+                act1,
+                game_version,
+                mode,
+                game_mode,
+            })
+            .map_err(PyValueError::new_err)?;
         Ok(Self {
             inner,
             seed: effective_seed,
@@ -371,7 +220,8 @@ impl PyRunManager {
         self.seed
     }
 
-    /// The deck-decision bundle this run was built with (GH #981):
+    /// The agent-decision bundle this run was built with (GH #981; the four
+    /// deck-decision flags plus the Crystal Sphere digger):
     /// `"agent"` (every flag `RunState::set_agent_decisions` sets is on),
     /// `"parity"` (all off — the headless C# runner's auto-resolution), or
     /// `"custom"` (a hand-picked mix of the individual flags).
@@ -391,6 +241,33 @@ impl PyRunManager {
     #[getter]
     fn game_version(&self) -> String {
         self.inner.game_version.to_string()
+    }
+
+    /// The run's game mode: `"standard"`, `"dread"` (GH #1346) or `"blitz"`
+    /// (GH #1347).
+    #[getter]
+    fn game_mode(&self) -> &'static str {
+        self.inner.run_state.game_mode.as_str()
+    }
+
+    /// The Dread dominion of the current act as its model entry
+    /// (`"QUEEN_DOMINION"`), or `None` in a standard run (GH #1346). The
+    /// act's boss fights drop it; see the combat state's `dominion`.
+    #[getter]
+    fn act_dominion(&self) -> Option<&'static str> {
+        self.inner
+            .run_state
+            .act_dominion()
+            .map(sts2_core::Dominion::entry)
+    }
+
+    /// The Dread dominion in force where the run stands (GH #1346), as its
+    /// model entry, or `None`: the act's, except in a boss room (the game
+    /// removes it on entering one), and the next act's on that act's
+    /// Ancient screen. `emit::run_manager::current_dominion`.
+    #[getter]
+    fn current_dominion(&self) -> Option<&'static str> {
+        emit_rm::current_dominion(&self.inner)
     }
 
     /// The run's own hashed master seed, as `u32` — the value every RNG
@@ -458,6 +335,89 @@ impl PyRunManager {
         self.inner.run_state.interactive_potion_swap
     }
 
+    /// Whether the run offers the potion popup (GH #1606): `use_potion_ooc`
+    /// on the potions the game lets you drink out of combat (Foul Potion
+    /// only in a shop, for +100 gold) and `discard_potion` on every potion,
+    /// in and out of combat. Off by default (the parity mode); a host turns
+    /// it on only when its policy scores these actions.
+    #[getter]
+    fn ooc_potion_actions(&self) -> bool {
+        self.inner.run_state.ooc_potion_actions
+    }
+
+    #[setter]
+    fn set_ooc_potion_actions(&mut self, on: bool) {
+        self.inner.run_state.ooc_potion_actions = on;
+    }
+
+    /// Whether the deck selects behave as the game's select screens (GH
+    /// #1619, #1621): Smith's and Cook's selects can be cancelled
+    /// (`confirm_deck_selection` with nothing picked), and a pick-N deck select
+    /// is one select over the deck as it was when it opened, applied on its
+    /// last pick. Off by default (the parity mode).
+    #[getter]
+    fn deck_select_screens(&self) -> bool {
+        self.inner.run_state.deck_select_screens
+    }
+
+    #[setter]
+    fn set_deck_select_screens(&mut self, on: bool) {
+        self.inner.run_state.deck_select_screens = on;
+    }
+
+    /// Whether a won combat room's rewards and the treasure chest's relic are
+    /// offered on the game's reward screen (GH #1620): phase `"rewards"`,
+    /// `take_reward {idx}` / `skip_reward {idx}` per reward, then
+    /// `proceed_rewards`. Off by default (the parity mode: auto-collect).
+    #[getter]
+    fn reward_screen(&self) -> bool {
+        self.inner.run_state.reward_screen
+    }
+
+    #[setter]
+    fn set_reward_screen(&mut self, on: bool) {
+        self.inner.run_state.reward_screen = on;
+    }
+
+    /// The open reward screen (GH #1620), or `None`: one dict per reward still
+    /// on it, in screen order, as `{"index", "type", ...}` with `type` one of
+    /// `gold` (`amount`), `potion` (`id`), `relic` (`id`, `wax`),
+    /// `special_card` (`id`, `upgraded`), `card` (`options`, `upgraded`),
+    /// `card_removal` (`count`), `chest_relic` (`id`). `index` is what
+    /// `take_reward` / `skip_reward` name. It stays set while a taken card
+    /// reward's pick is open.
+    fn reward_screen_entries(&self, py: Python<'_>) -> PyResult<PyObject> {
+        crate::value_to_py(py, &emit_rm::reward_screen(&self.inner)).map(Bound::unbind)
+    }
+
+    /// Whether `confirm_deck_selection` now cancels the open Smith or Cook
+    /// select, back to the campfire (GH #1619). Only on a
+    /// `deck_select_screens` run.
+    #[getter]
+    fn deck_select_cancelable(&self) -> bool {
+        self.inner.deck_select_cancelable()
+    }
+
+    /// Picks made so far in the open pick-N deck select (GH #1621), as
+    /// positions in its offer when it opened; empty when none is open.
+    #[getter]
+    fn deck_select_picked(&self) -> Vec<usize> {
+        self.inner.deck_select_picked().to_vec()
+    }
+
+    /// The open pick-N deck select's kind once a pick is made (`"removal"`,
+    /// `"upgrade"`, `"transform"`, `"enchant"`), else `None` (GH #1790).
+    #[getter]
+    fn deck_select_picked_kind(&self) -> Option<&'static str> {
+        self.inner.deck_select_picked_kind()
+    }
+
+    /// Master-deck positions of the open pick-N select's picks (GH #1790).
+    #[getter]
+    fn deck_select_picked_deck_indices(&self) -> Vec<usize> {
+        self.inner.deck_select_picked_deck_indices()
+    }
+
     /// Debug/test helper (plan 2026-08-20-ppo-potion-bootstrap P2),
     /// `set_player`-style: replace the run belt with `potions` and enqueue
     /// `pending` as full-belt swap offers, both as UPPER_SNAKE python
@@ -469,21 +429,7 @@ impl PyRunManager {
         potions: Vec<String>,
         pending: Vec<String>,
     ) -> PyResult<()> {
-        let parse = |name: &str| {
-            crate::state_dict::potion_kind_from_python_name(name).ok_or_else(|| {
-                pyo3::exceptions::PyValueError::new_err(format!("unknown potion {name:?}"))
-            })
-        };
-        let rs = &mut self.inner.run_state;
-        rs.potions.clear();
-        for name in &potions {
-            rs.potions.push(parse(name)?);
-        }
-        rs.pending_potion_swaps.clear();
-        for name in &pending {
-            rs.pending_potion_swaps.push(parse(name)?);
-        }
-        Ok(())
+        sts2_wire::graft::set_potion_state(&mut self.inner, &potions, &pending).map_err(graft_err)
     }
 
     #[getter]
@@ -705,6 +651,37 @@ impl PyRunManager {
         emit_rm::boss_relic_options(&self.inner)
     }
 
+    /// Stamp the live fight won at the player's current HP and run its real
+    /// reward bridge (`RunManager::resolve_combat_fast(0.0, true)`), for
+    /// tests that are about the rooms rather than the fights. Returns the
+    /// action result (`"advanced"`), or `"invalid_for_phase"` outside combat.
+    fn debug_win_combat(&mut self) -> &'static str {
+        sts2_wire::emit::names::result_str(&self.inner.resolve_combat_fast(0.0, true))
+    }
+
+    /// The Blitz merchant while its room is open (GH #1347), else `None`:
+    /// `{"choices_remaining": n, "entries": [{"kind", "status", "cursed",
+    /// "rare", "title", "description", "enchantment", "enchantment_amount",
+    /// "character"}, ..]}`,
+    /// `entries[i]` being the ware `blitz_choice {"idx": i}` takes.
+    fn blitz_shop(&self, py: Python<'_>) -> PyResult<PyObject> {
+        crate::value_to_py(py, &emit_rm::blitz_shop(&self.inner)).map(Bound::unbind)
+    }
+
+    /// The relics still in an open Blitz chest, `[{"index", "id"}, ..]`
+    /// (`take_chest_relic {"idx": index}`), else `None`.
+    fn blitz_chest(&self, py: Python<'_>) -> PyResult<PyObject> {
+        crate::value_to_py(py, &emit_rm::blitz_chest(&self.inner)).map(Bound::unbind)
+    }
+
+    /// `True` while a Blitz ware's cancelable deck pick is open: the pick's
+    /// `card_select` may be cancelled with `confirm_deck_selection`, which
+    /// leaves the ware available.
+    #[getter]
+    fn blitz_pick_open(&self) -> bool {
+        self.inner.blitz_pick_open()
+    }
+
     /// `(option_id, enabled)` for every rest-site option the site
     /// offers, in the order a `RestOption{idx}` action indexes them.
     /// `option_id` is the game's own `RestSiteOption.OptionId`
@@ -757,17 +734,8 @@ impl PyRunManager {
         positive_2: &str,
         cursed: &str,
     ) -> PyResult<()> {
-        let parse = |name: &str| {
-            let id = name.strip_prefix("RELIC.").unwrap_or(name);
-            sts2_core::NeowRelic::from_snake_case_id(id)
-                .ok_or_else(|| PyValueError::new_err(format!("{name:?} is not a Neow relic")))
-        };
-        self.inner.run_state.neow_offers = Some(sts2_core::NeowOffers {
-            positive_1: parse(positive_1)?,
-            positive_2: parse(positive_2)?,
-            cursed: parse(cursed)?,
-        });
-        Ok(())
+        sts2_wire::graft::set_neow_offers(&mut self.inner, positive_1, positive_2, cursed)
+            .map_err(graft_err)
     }
 
     #[getter]
@@ -824,42 +792,11 @@ impl PyRunManager {
         run_seed: u64,
         counters: &Bound<'_, PyDict>,
     ) -> PyResult<Vec<String>> {
-        if counters.is_empty() {
-            return Err(PyValueError::new_err(
-                "debug_set_rng_counters: empty counters — a seed without \
-                 cursors rebuilds every stream at count 0, which destroys \
-                 more lineage than it restores. Pass the whole block or none.",
-            ));
-        }
-        // `RunRngSet.Seed`: ≤ u32::MAX in v0.107.1, a full u64 in v0.111.0
-        // (GH #788). The caller passes the unsigned view (a negative 32-bit
-        // seed is normalised by `state_import._rng_block`).
-        let ours = self.inner.run_state.rng.seed;
-        if run_seed != ours {
-            return Err(PyValueError::new_err(format!(
-                "debug_set_rng_counters: run_seed {run_seed} is not this run's \
-                 seed ({ours}) — these cursors belong to a different run"
-            )));
-        }
-        let mut ignored: Vec<String> = Vec::new();
-        for (key, value) in counters.iter() {
-            let name: String = key.extract()?;
-            let target: u32 = value.extract()?;
-            let Some(stream) = self.inner.run_state.rng.stream_mut(&name) else {
-                ignored.push(name);
-                continue;
-            };
-            let current = stream.counter();
-            if target < current {
-                return Err(PyValueError::new_err(format!(
-                    "debug_set_rng_counters: stream {name:?} is already at \
-                     {current}, cannot rewind to {target}"
-                )));
-            }
-            stream.fast_forward_counter(target);
-        }
-        ignored.sort();
-        Ok(ignored)
+        let counters = counters
+            .iter()
+            .map(|(k, v)| Ok((k.extract::<String>()?, v.extract::<u32>()?)))
+            .collect::<PyResult<Vec<_>>>()?;
+        sts2_wire::graft::set_rng_counters(&mut self.inner, run_seed, &counters).map_err(graft_err)
     }
 
     /// Place this run on `act`'s map at `(col, row)` without walking to it.
@@ -1163,9 +1100,11 @@ impl PyRunManager {
                     .iter()
                     .map(|name| {
                         let stripped = name.strip_prefix("RELIC.").unwrap_or(name);
-                        // The parser's roster omits `RelicId::V0111_ONLY`, but a
-                        // v0.111 run can already own one (Neow's Sacrifice).
-                        sts2_content::names::relic_id_from_str(stripped)
+                        // The parser's roster omits the build-only relics
+                        // (`RelicId::V0111_ONLY` / `V0113_ONLY`): resolve against
+                        // the run's build. A run can also already own one
+                        // (Neow's Sacrifice).
+                        sts2_wire::graft::resolve_relic_id(stripped, version)
                             .or_else(|| {
                                 let owned = self.inner.run_state.relics.iter();
                                 owned.copied().find(|r| r.to_python_name() == stripped)
@@ -1198,10 +1137,20 @@ impl PyRunManager {
     /// hook sets only when the run has none — true of a fresh run).
     /// Diagnostics only (GH #777): the run's deck, relics and map position
     /// are NOT made consistent with the fight.
+    ///
+    /// `encounter` names the fight's encounter (`CombatState.Encounter.Id.Entry`,
+    /// e.g. `"TUNNELER_WEAK"`): the run then reports it as
+    /// `combat_state().encounter_id`, which the e2e student reads (RUNCTX
+    /// `X_ID_AUX`, GH #1197). An event fight's id (`PUNCH_OFF_EVENT_ENCOUNTER`)
+    /// stages that event fight's request, as the event does
+    /// (`sts2_wire::graft::set_combat_encounter`, GH #1477). An id the sim has
+    /// no fight for raises `ValueError` and installs nothing.
+    #[pyo3(signature = (state, room_type, encounter = None))]
     fn debug_enter_combat(
         &mut self,
         state: &crate::PyCombatState,
         room_type: &str,
+        encounter: Option<&str>,
     ) -> PyResult<()> {
         use sts2_core::runstate::RoomType;
         let rt = match room_type {
@@ -1214,6 +1163,12 @@ impl PyRunManager {
                 )))
             }
         };
+        // First: a bad id writes nothing (the setter fails before any write),
+        // and entering the fight leaves the encounter alone.
+        if let Some(id) = encounter {
+            sts2_wire::graft::set_combat_encounter(&mut self.inner, id)
+                .map_err(|e| PyValueError::new_err(format!("debug_enter_combat: {e}")))?;
+        }
         self.inner.debug_enter_combat(state.inner.clone(), rt);
         Ok(())
     }
@@ -1577,18 +1532,7 @@ impl PyRunManager {
     /// type without going through the diverged relic-reward RNG.
     /// Bead `sts2-rs-i6h9i.1`.
     fn force_add_relic(&mut self, relic_id: &str) -> PyResult<bool> {
-        let stripped = relic_id.strip_prefix("RELIC.").unwrap_or(relic_id);
-        let rid = sts2_content::names::relic_id_from_str(stripped)
-            .ok_or_else(|| PyValueError::new_err(format!("unknown relic id {relic_id:?}")))?;
-        let rs = &mut self.inner.run_state;
-        if rs.relics.contains(&rid) {
-            return Ok(false);
-        }
-        rs.relics.push(rid);
-        rs.last_obtained_relic = Some(rid);
-        let _ = sts2_core::run_effects::dispatch_after_obtained(rs);
-        rs.last_obtained_relic = None;
-        Ok(true)
+        sts2_wire::graft::force_add_relic(&mut self.inner, relic_id).map_err(graft_err)
     }
 
     /// Active-event option list as `[(option_id, label), …]`, or `None`
@@ -1648,6 +1592,9 @@ impl PyRunManager {
     /// or `None` when no event is active and none could be picked.
     fn materialize_event(&mut self) -> Option<String> {
         sts2_content::events::dispatch::bind_pending_event_callback(&mut self.inner.run_state);
+        // The Fake Merchant's page is its shop: the phase turns `shop`
+        // (GH #1607).
+        self.inner.open_fake_merchant_if_bound();
         self.inner
             .run_state
             .current_event
@@ -2294,6 +2241,14 @@ impl PyRunManager {
         self.clone()
     }
 
+    /// Re-roll the room contents the player cannot see yet (the unfought
+    /// tail of this act's encounter queues, the unvisited event order, later
+    /// acts whole). Call after `reseed_run`: it follows the reseeded
+    /// `up_front` stream. Research tool for honest rollouts; not C# behaviour.
+    fn redeal_hidden_rooms(&mut self) {
+        self.inner.run_state.redeal_hidden_rooms();
+    }
+
     /// Re-seed the run-level RNG set in place, replacing every sub-stream
     /// cursor with a fresh draw from `seed`. The act map and current state
     /// (deck / HP / relics / phase) are left untouched — only *future* rolls
@@ -2329,6 +2284,8 @@ impl PyRunManager {
 #[cfg(test)]
 mod reseed_tests {
     use super::*;
+    use sts2_content::run_callbacks::new_run_manager_for_character;
+    use sts2_core::potions::CharacterId;
     use sts2_core::{GameVersion, RunRngSet};
 
     fn rm_on(version: GameVersion) -> PyRunManager {

@@ -176,82 +176,6 @@ fn lantern_key_fight_stages_card_reward_no_resume() {
 }
 
 #[test]
-fn fake_merchant_throw_foul_stages_full_inventory_and_consumes_potion() {
-    use sts2_core::potions::PotionKind;
-    use sts2_core::runstate::Reward;
-    let mut rs = RunState::new();
-    // The player holds the FoulPotion they throw (+ an unrelated potion to
-    // prove only one FoulPotion is consumed).
-    rs.potions = vec![PotionKind::FoulPotion, PotionKind::FoulPotion];
-    rs.enter_event_room(EventId::FakeMerchant);
-    let out = dispatch::resolve(&mut rs, "throw_foul").expect("event active");
-    assert!(!out.finished, "throw_foul defers finish to post-combat");
-
-    // Exactly one FoulPotion consumed (the thrown one).
-    assert_eq!(
-        rs.potions,
-        vec![PotionKind::FoulPotion],
-        "one FoulPotion thrown/consumed"
-    );
-
-    let req = rs.event_combat.as_ref().expect("combat staged");
-    assert!(!req.resume);
-    assert_eq!(req.encounter, EventEncounter::FakeMerchant);
-    // FakeMerchantsRug + the 6 stocked fake-inventory relics (C# extra rewards).
-    assert_eq!(
-        req.victory_rewards.len(),
-        7,
-        "Rug + 6 stocked fake relics, got {:?}",
-        req.victory_rewards
-    );
-    assert!(
-        matches!(&req.victory_rewards[0], Reward::Relic(rr) if rr.relic_id == RelicId::FakeMerchantsRug),
-        "first extra reward is FakeMerchantsRug"
-    );
-    // Every reward is a relic, the 6 stock entries are distinct fake relics.
-    let mut stock_ids: Vec<RelicId> = req.victory_rewards[1..]
-        .iter()
-        .map(|r| match r {
-            Reward::Relic(rr) => rr.relic_id,
-            other => panic!("non-relic extra reward: {other:?}"),
-        })
-        .collect();
-    let before_dedup = stock_ids.len();
-    stock_ids.sort_unstable();
-    stock_ids.dedup();
-    assert_eq!(stock_ids.len(), before_dedup, "stocked relics are distinct");
-}
-
-#[test]
-fn fake_merchant_buy_purchases_a_stocked_fake_relic_for_50() {
-    // The 9 fake-inventory relics (C# FakeMerchant._inventoryRelics).
-    const FAKE_INVENTORY: [RelicId; 9] = [
-        RelicId::FakeAnchor,
-        RelicId::FakeBloodVial,
-        RelicId::FakeHappyFlower,
-        RelicId::FakeLeesWaffle,
-        RelicId::FakeMango,
-        RelicId::FakeOrichalcum,
-        RelicId::FakeSneckoEye,
-        RelicId::FakeStrikeDummy,
-        RelicId::FakeVenerableTeaSet,
-    ];
-    let mut rs = RunState::new();
-    rs.gold = 100;
-    rs.direct_event_relic_grant = true; // a merchant purchase is obtained inline
-    rs.enter_event_room(EventId::FakeMerchant);
-    let out = dispatch::resolve(&mut rs, "buy").expect("event active");
-    assert!(out.finished);
-    assert_eq!(rs.gold, 50, "paid the 50-gold relic cost");
-    assert_eq!(rs.relics.len(), 1, "obtained exactly one relic");
-    assert!(
-        FAKE_INVENTORY.contains(&rs.relics[0]),
-        "bought a stocked fake-inventory relic, got {:?}",
-        rs.relics[0]
-    );
-}
-
-#[test]
 fn battleworn_resume_grants_only_on_clean_victory() {
     // Setting1: clean victory queues a potion reward; a timeout grants nothing.
     let mut win = RunState::new();
@@ -543,10 +467,18 @@ fn fake_merchant_fight_win_grants_300_gold_relics_and_card_reward() {
         let mut rm = run_in_event(EventId::FakeMerchant, version);
         // Poverty would cut a base-getter bound to 0.75x; the override skips it.
         rm.run_state.ascension_level = 3;
-        rm.run_state
-            .potions
-            .push(sts2_core::potions::PotionKind::FoulPotion);
-        choose(&mut rm, "throw_foul");
+        rm.run_state.ooc_potion_actions = true;
+        rm.run_state.potions = vec![sts2_core::potions::PotionKind::FoulPotion];
+        rm.run_state.potion_slot_indices.clear();
+        // The Fake Merchant is a shop page (GH #1607); the potion is thrown
+        // from it.
+        dispatch::begin_event_in_entered_room(&mut rm.run_state, EventId::FakeMerchant);
+        rm.bind_pending_event();
+        assert_eq!(rm.phase(), Phase::Shop, "{version:?}");
+        assert_eq!(
+            rm.take_action(RunAction::UsePotionOutOfCombat { potion_slot: 0 }),
+            ActionResult::Advanced
+        );
         assert_eq!(rm.phase(), Phase::Combat);
         let req = rm.run_state.event_combat.clone().expect("fight staged");
         let extras: Vec<RelicId> = req
@@ -572,17 +504,6 @@ fn fake_merchant_fight_win_grants_300_gold_relics_and_card_reward() {
         rm.take_action(RunAction::PickCardReward { idx: Some(0) });
         assert_eq!(rm.phase(), Phase::MapChoice);
     }
-}
-
-/// FakeMerchant's `Buy` still finishes the event straight to the map.
-#[test]
-fn fake_merchant_buy_still_finishes_the_event() {
-    let mut rm = run_in_event(EventId::FakeMerchant, sts2_core::GameVersion::V0_111_0);
-    rm.run_state.gold = 200;
-    choose(&mut rm, "buy");
-    assert_eq!(rm.run_state.gold, 150);
-    assert!(rm.run_state.current_event.is_none());
-    assert_eq!(rm.phase(), Phase::MapChoice);
 }
 
 /// C# `DenseVegetation.Rest` awaits `PlayerCmd.MimicRestSiteHeal`, whose
@@ -616,5 +537,121 @@ fn dense_vegetation_rest_offers_dream_catcher_card_before_fight() {
         assert!(rm.run_state.pending_rewards.is_empty(), "nothing deferred");
         rm.take_action(RunAction::PickCardReward { idx: None });
         assert_eq!(rm.phase(), Phase::MapChoice, "one card reward only");
+    }
+}
+
+// ── PunchOff: the "I Can Take Them" fight ──
+
+/// C# `PunchOffEventEncounter`: two Punch Constructs, the first opening on
+/// FAST_PUNCH and the second on READY, each `StartingHpReduction =
+/// NextInt(2, 10)` off the encounter's own Rng (seeded like a map fight's at
+/// this floor), applied to current HP after its Artifact. The HP itself was
+/// rolled off `niche` when the Combat-layout room was entered, so the fight
+/// rolls none.
+#[test]
+fn build_event_combat_punch_off_spawns_two_staggered_worn_constructs() {
+    for version in VERSIONS {
+        let mut rs = RunState::new();
+        rs.game_version = version;
+        rs.total_floor = 7;
+        let req = sts2_core::events::EventCombatRequest::no_resume(
+            EventEncounter::PunchOff,
+            EventId::PunchOff,
+            Vec::new(),
+        );
+        let niche_before = rs.rng.niche.counter();
+        let combat = build_event_combat(&mut rs, &req);
+        assert_eq!(rs.rng.niche.counter(), niche_before, "no second niche roll");
+        let constructs: Vec<&sts2_core::Creature> = combat
+            .creatures
+            .iter()
+            .filter(|c| c.species.is_some())
+            .collect();
+        assert_eq!(constructs.len(), 2);
+        assert!(constructs
+            .iter()
+            .all(|c| c.species == Some(MonsterKind::PunchConstruct)));
+        let opening: Vec<&str> = constructs
+            .iter()
+            .map(|c| c.ai.as_ref().expect("construct ai").current_move().id)
+            .collect();
+        assert_eq!(opening, ["FAST_PUNCH", "READY"], "{version:?}");
+
+        let mut enc = rs.rng.named_at(
+            i64::from(rs.total_floor + i32::from(rs.act_index)),
+            "PUNCH_OFF_EVENT_ENCOUNTER",
+        );
+        for c in &constructs {
+            let reduction = enc.next_int_exclusive(2, 10);
+            assert!((2..=9).contains(&reduction));
+            assert_eq!(c.max_hp, 55, "A0 max HP (60 from Tough Enemies), untouched");
+            assert_eq!(c.current_hp, c.max_hp - reduction, "{version:?}");
+        }
+        assert!(enemy_has_power(&combat, PowerKind::Artifact));
+    }
+}
+
+#[test]
+fn punch_off_take_them_opens_the_fight_page_and_fight_stages_the_combat() {
+    let mut rs = RunState::new();
+    rs.enter_event_room(EventId::PunchOff);
+    let page0: Vec<&str> = dispatch::present(&rs)
+        .expect("event active")
+        .iter()
+        .map(|o| o.option_id)
+        .collect();
+    assert_eq!(page0, ["nab", "take_them"]);
+    let out = dispatch::resolve_by_index(&mut rs, 1).expect("event active");
+    assert!(!out.finished);
+    assert!(rs.event_combat.is_none(), "no fight before FIGHT");
+    let page1: Vec<&str> = dispatch::present(&rs)
+        .expect("event active")
+        .iter()
+        .map(|o| o.option_id)
+        .collect();
+    assert_eq!(page1, ["fight"]);
+    let out = dispatch::resolve_by_index(&mut rs, 0).expect("event active");
+    assert!(!out.finished, "the fight defers the event's finish");
+    let req = rs.event_combat.as_ref().expect("combat staged");
+    assert_eq!(req.encounter, EventEncounter::PunchOff);
+    assert!(!req.resume);
+    assert_eq!(req.parent_event, EventId::PunchOff);
+    assert!(matches!(
+        req.victory_rewards.as_slice(),
+        [sts2_core::runstate::Reward::Potion(_)]
+    ));
+    assert_eq!(EventEncounter::PunchOff.extra_random_relics(), 1);
+    assert!(rs.pending_rewards.is_empty(), "nothing granted up front");
+}
+
+/// The won fight grants the Monster-room rewards plus PunchOff's extras: a
+/// relic rolled at populate time and a potion.
+#[test]
+fn punch_off_fight_win_grants_room_rewards_a_rolled_relic_and_a_potion() {
+    for version in VERSIONS {
+        let mut rm = run_in_event(EventId::PunchOff, version);
+        choose(&mut rm, "take_them");
+        assert_eq!(rm.phase(), Phase::Event, "page 1: FIGHT");
+        choose(&mut rm, "fight");
+        assert_eq!(rm.phase(), Phase::Combat);
+        assert_eq!(
+            rm.run_state.event_combat.as_ref().map(|r| r.encounter),
+            Some(EventEncounter::PunchOff)
+        );
+        let relics_before = rm.run_state.relics.len();
+        let gold_before = rm.run_state.gold;
+        assert_eq!(rm.resolve_combat_fast(0.0, true), ActionResult::Advanced);
+
+        let gained = rm.run_state.gold - gold_before;
+        assert!((10..=20).contains(&gained), "Monster gold, got {gained}");
+        assert_eq!(
+            rm.run_state.relics.len(),
+            relics_before + 1,
+            "one rolled relic ({version:?})"
+        );
+        assert!(!rm.run_state.relics.contains(&RelicId::Astrolabe));
+        assert!(rm.run_state.current_event.is_none());
+        assert_eq!(rm.phase(), Phase::CardReward);
+        assert_eq!(rm.card_reward_options().len(), 3);
     }
 }

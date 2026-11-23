@@ -56,6 +56,7 @@ fn ppo_policy_completes_short_run(seed: i32) {
         max_steps: 3000,
         livelock_stall_limit: DEFAULT_LIVELOCK_STALL_LIMIT,
         act1: sts2_runai::arena::Act1Choice::default(),
+        game_version: sts2_core::GameVersion::default(),
         audit: false,
         ablate: None,
     };

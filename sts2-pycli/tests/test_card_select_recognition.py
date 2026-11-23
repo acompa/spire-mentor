@@ -142,7 +142,9 @@ class TestRecognizeCardSelect:
         This is the static half of the unparked audit: it fails when the game
         adds a caller, not 90 minutes into a sweep.
         """
-        from combat_mirror import _GENERATIVE_SOURCES
+        import sts2_rs
+
+        generative_sources = dict(sts2_rs.card_select_generative_sources())
 
         # AfterObtained relics -- run-level card pickers, never seen by the
         # combat mirror. KnowledgeDemon has its own `monster_curse_select` arm.
@@ -167,14 +169,14 @@ class TestRecognizeCardSelect:
             "Toolbox",
         }
         want = v0_107_1_callers - non_combat_or_special
-        assert want <= set(_GENERATIVE_SOURCES), (
-            f"unclassified FromChooseACardScreen callers: {sorted(want - set(_GENERATIVE_SOURCES))}"
+        assert want <= set(generative_sources), (
+            f"unclassified FromChooseACardScreen callers: {sorted(want - set(generative_sources))}"
         )
         # Free vs non-free is the whole point of the split -- getting it
         # backwards hands the search a card the game charges for.
-        assert _GENERATIVE_SOURCES["Toolbox"] == "add_generated_to_hand"
-        assert _GENERATIVE_SOURCES["Quasar"] == "add_generated_to_hand"
-        assert _GENERATIVE_SOURCES["Splash"] == "add_generated_free_to_hand"
+        assert generative_sources["Toolbox"] == "add_generated_to_hand"
+        assert generative_sources["Quasar"] == "add_generated_to_hand"
+        assert generative_sources["Splash"] == "add_generated_free_to_hand"
 
     def test_knowledge_demon_curse_pick(self) -> None:
         # The REAL wire dialect: `state_to_dict` encounter entries carry
@@ -259,6 +261,26 @@ class TestRecognizeCardSelect:
             # passes the hand `Cards` with no OrderBy).
             assert [(o["pile"], o["index"]) for o in options] == [("hand", 2), ("hand", 0)]
 
+    def test_toasty_mittens_screen_is_a_turn_start_relic_block(self) -> None:
+        # GH #1696: v0.111.0 Toasty Mittens exhausts one hand card on every
+        # turn; the host names the relic by its Id.Entry.
+        hand = [
+            {"id": "STRIKE_IRONCLAD", "upgraded": False},
+            {"id": "BASH", "upgraded": True},
+        ]
+        options = [dict(c) for c in hand]
+        kind, blocked_on = recognize_card_select(
+            parked=None,
+            options=options,
+            board=_board(hand=hand, relics=[{"id": "TOASTY_MITTENS"}], round_=3),
+            wire=_wire(hand=hand),
+            min_select=1,
+            source_model="TOASTY_MITTENS",
+        )
+        assert kind == "exhaust_from_hand"
+        assert blocked_on == TurnStartBlock("relic", "TOASTY_MITTENS")
+        assert [(o["pile"], o["index"]) for o in options] == [("hand", 0), ("hand", 1)]
+
     def test_a_turn_start_power_screen_the_hand_cannot_account_for_is_refused(self) -> None:
         # The locator pass is the safety net: an option that is not in the
         # mirror's hand means the board the mirror was seeded from is not the
@@ -340,52 +362,6 @@ class TestRecognizeCardSelect:
         assert blocked_on == TurnStartBlock("relic", "Gambling Chip")
 
 
-class _RecordingMirror:
-    """Minimal CombatMirror stand-in that records the call order.
-
-    ``alive`` is False so ``pick_card_select_mirrored`` takes the
-    minimum-legal early return after the injection — the test only cares
-    that recognition fired and the resume was armed BEFORE any search.
-    """
-
-    alive = False
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, Any]] = []
-
-    def reconcile(self, wire: dict[str, Any]) -> list[Any]:
-        self.calls.append(("reconcile", None))
-        return []
-
-    def parked_choice(self) -> dict[str, Any] | None:
-        self.calls.append(("parked_choice", None))
-        return None
-
-    def inject_choice(self, kind: str, options: list[dict[str, Any]], *args: Any, **kwargs: Any):
-        self.calls.append(("inject_choice", (kind, copy.deepcopy(options))))
-        return []
-
-    def arm_turn_start_resume(self, after_relic: str) -> bool:
-        self.calls.append(("arm_turn_start_resume", after_relic))
-        return True
-
-    def arm_turn_start_resume_after_power(self, after_power: str) -> bool:
-        self.calls.append(("arm_turn_start_resume_after_power", after_power))
-        return True
-
-    def arm_turn_start_resume_for(self, block: TurnStartBlock) -> bool:
-        # The REAL dispatcher, not a stub: the two engine surfaces are not
-        # interchangeable, so a test that recorded the call without routing it
-        # would pass on a mirror that armed the wrong one.
-        if block.source == "power":
-            return self.arm_turn_start_resume_after_power(block.id)
-        return self.arm_turn_start_resume(block.id)
-
-    def search(self, cfg: Any) -> Any:  # pragma: no cover - must not be reached
-        self.calls.append(("search", None))
-        raise AssertionError("search must not run on a dead mirror")
-
-
 class TestSkipArityFromWorld:
     """``min_select <= 0`` is not the skippability test for every screen.
 
@@ -462,50 +438,68 @@ class TestLivePathGamblingChip:
         }
 
     def test_recognizes_and_arms_before_any_search(self) -> None:
+        """Same order as the DLL driver: inject, then arm, then search. The
+        picker stands in for the search and sees the mirror as it searches."""
+        from combat_mirror import CombatMirror, MirrorPolicy
         from realgame_mcts import pick_card_select_mirrored
         from sts2_hint.recommender import RecommendConfig
 
-        mirror = _RecordingMirror()
+        mirror = CombatMirror(RecommendConfig(), policy=MirrorPolicy.OBSERVE)
         state = self._card_select_state()
-        action, picks = pick_card_select_mirrored(state, RecommendConfig(), mirror)
+        seen: dict[str, Any] = {}
 
-        names = [n for n, _ in mirror.calls]
-        assert "inject_choice" in names and "arm_turn_start_resume" in names
-        assert names.index("inject_choice") < names.index("arm_turn_start_resume"), (
-            "same order as the DLL driver: inject, then arm, then search"
-        )
-        assert "search" not in names
+        def picker(m: Any, **arity: int) -> list[int]:
+            seen["choice"] = m.state.pending_choice()
+            seen["armed"] = m.state.has_suspended_walk()
+            seen["arity"] = arity
+            return []
 
-        kind, options = next(a for n, a in mirror.calls if n == "inject_choice")
-        assert kind == "discard_from_hand_and_draw"
+        action, picks = pick_card_select_mirrored(state, RecommendConfig(), mirror, picker=picker)
+
+        assert seen["choice"]["kind"] == "discard_from_hand_and_draw"
         n_hand = len(state["combat"]["hand"])
-        assert sorted((o["pile"], o["index"]) for o in options) == [
+        assert sorted((o["pile"], o["index"]) for o in seen["choice"]["cards"]) == [
             ("hand", i) for i in range(n_hand)
         ], "every option must be located onto a distinct hand slot"
-
-        armed = next(a for n, a in mirror.calls if n == "arm_turn_start_resume")
-        assert "GAMBLING" in str(armed).upper().replace(" ", "_")
-
-        # Dead-mirror early return: min_select 0 -> skip, picks None (the
-        # caller must not replay anything onto a dropped mirror).
+        assert seen["armed"], "the rest of turn setup is parked behind the pick"
+        assert seen["arity"] == {"n_options": n_hand, "min_select": 0, "max_select": n_hand}
+        # A mulligan of nothing is legal: skip, with no picks to replay.
         assert action == {"action": "skip"}
-        assert picks is None
+        assert picks == []
 
     def test_parked_screen_does_not_arm(self) -> None:
         """A screen the engine derived itself keeps its kind and never arms."""
-        from realgame_mcts import pick_card_select_mirrored
-        from sts2_hint.recommender import RecommendConfig
+        from realgame_adapter import combat_wire, to_headless_combat_play
 
-        class _ParkedMirror(_RecordingMirror):
-            def parked_choice(self) -> dict[str, Any] | None:
-                self.calls.append(("parked_choice", None))
-                return {"kind": "put_from_discard_on_draw", "cards": []}
-
-        mirror = _ParkedMirror()
         state = self._card_select_state()
-        pick_card_select_mirrored(state, RecommendConfig(), mirror)
-
-        names = [n for n, _ in mirror.calls]
-        assert "arm_turn_start_resume" not in names
-        kind, _ = next(a for n, a in mirror.calls if n == "inject_choice")
+        board = to_headless_combat_play(state["combat"])
+        wire = combat_wire(state["combat"], character="Ironclad", ascension=0)
+        options = [{"id": c["id"], "upgraded": False} for c in wire["deck"]["hand"]]
+        kind, blocked_on = recognize_card_select(
+            parked={"kind": "put_from_discard_on_draw", "cards": []},
+            options=options,
+            board=board,
+            wire=wire,
+            min_select=0,
+            prompt_key=state["prompt_key"],
+        )
         assert kind == "put_from_discard_on_draw"
+        assert blocked_on is None
+
+
+def test_a_choose_a_card_offer_matching_a_held_card_is_generated() -> None:
+    """GH #1746: Toolbox offered a Scrawl to a deck holding one; the screen
+    still offers generated cards, so it is not answered as a pile screen."""
+    board = {"round": 1, "hand": [], "player": {"relics": [{"id": "TOOLBOX"}]}}
+    wire = {"deck": {"draw_pile": [{"id": "SCRAWL"}]}, "encounter": []}
+    options = [{"id": i, "upgraded": False} for i in ("SPLASH", "SEEKER_STRIKE", "SCRAWL")]
+    kind, _ = recognize_card_select(
+        parked=None,
+        options=options,
+        board=board,
+        wire=wire,
+        min_select=1,
+        prompt_key="TO_OBTAIN",
+        source="FromChooseACardScreen",
+    )
+    assert kind == "add_generated_to_hand"

@@ -4,6 +4,7 @@
  * without a network.
  */
 import type { Catalog, CatalogEncounter, CatalogMonster, CatalogNamed } from "./api";
+import { t } from "../i18n";
 
 export type CatalogKind = "card" | "relic" | "potion" | "power" | "monster";
 
@@ -70,7 +71,7 @@ export function encounterOf(cat: Catalog, id: string | null): CatalogEncounter |
 export function encounterGroups(cat: Catalog): { label: string; items: CatalogEncounter[] }[] {
   const groups = new Map<string, CatalogEncounter[]>();
   for (const e of cat.encounters) {
-    const label = `Act ${e.act} · ${e.actName} · ${e.tier}`;
+    const label = `${t("Act {n}", { n: e.act })} · ${e.actName} · ${e.tier}`;
     groups.set(label, [...(groups.get(label) ?? []), e]);
   }
   return [...groups.entries()].map(([label, items]) => ({ label, items }));

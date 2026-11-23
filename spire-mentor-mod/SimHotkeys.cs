@@ -24,8 +24,9 @@
 //   Shift+F7 autobattle (toggle): the AI plays the fights, I make every
 //       run-level decision (Autobattle.cs)
 //   F8  AI on / off in the current style (from Autopilot: stop the AI and take over)
-//   Shift+F8 advisor brain (toggle): Search <-> Instinct (AdvisorBrainRules).
-//       An F-key chord like Shift+F6 / Shift+F7, not Ctrl: streaming drops those.
+//   Shift+F8 nothing: it was the Search / Instinct switch (0.11.7 and older);
+//       Instinct is the only brain now (AdvisorBrainRules). Plain F8 ignores
+//       it, so the old chord does not turn the AI off.
 //   F9  game speed down to the next speed (1x, 2x, 3x, 4x, 6x, 8x)
 //   F10 game speed up to the next speed (1x, 2x, 3x, 4x, 6x, 8x)
 //   Ctrl+Shift+B report a bug (SimBugReport): B is unbound in the game's
@@ -66,7 +67,6 @@ public static class SimHotkeys
     private const string ActionAiAuto = "spirementor_ai_auto";
     private const string ActionAutobattle = "spirementor_autobattle";
     private const string ActionToggleAdvisor = "spirementor_toggle_advisor";
-    private const string ActionToggleBrain = "spirementor_toggle_brain";
     private const string ActionSpeedDown = "spirementor_speed_down";
     private const string ActionSpeedUp = "spirementor_speed_up";
     private const string ActionUndoTurn = "spirementor_undo_turn";
@@ -122,7 +122,6 @@ public static class SimHotkeys
             RegisterAction(ActionAiAuto, Key.F7);
             RegisterAction(ActionAutobattle, Key.F7, shift: true);
             RegisterAction(ActionToggleAdvisor, Key.F8);
-            RegisterAction(ActionToggleBrain, Key.F8, shift: true);
             RegisterAction(ActionSpeedDown, Key.F9);
             RegisterAction(ActionSpeedUp, Key.F10);
             // Ctrl-chorded, not F-keys: Z alone is a card hotkey surface and
@@ -144,7 +143,7 @@ public static class SimHotkeys
             BindActions(manager);
 
             _installed = true;
-            GD.Print("[SpireMentor] Hotkeys installed: F1=help, F4=HUD, Ctrl+L=log, Ctrl+H=hide all, F5=peek (Coach), F6=AI once, Shift+F6=AI partner go, F7=AI auto, Shift+F7=autobattle, F8=AI on/off, Shift+F8=advisor brain, F9/F10=speed -/+, Ctrl+Z=undo turn, Ctrl+Shift+Z=restart room, Ctrl+Shift+C=copy state, Ctrl+Shift+B=report a bug");
+            GD.Print("[SpireMentor] Hotkeys installed: F1=help, F4=HUD, Ctrl+L=log, Ctrl+H=hide all, F5=peek (Coach), F6=AI once, Shift+F6=AI partner go, F7=AI auto, Shift+F7=autobattle, F8=AI on/off, F9/F10=speed -/+, Ctrl+Z=undo turn, Ctrl+Shift+Z=restart room, Ctrl+Shift+C=copy state, Ctrl+Shift+B=report a bug");
         }
         catch (Exception ex)
         {
@@ -197,8 +196,9 @@ public static class SimHotkeys
         });
         SimGameApi.PushHotkeyPressedBinding(manager, ActionAutobattle, () =>
             SimActions.ToggleAutobattle("Shift+F7 (autobattle: the AI fights, you decide the run)"));
-        // Shift+F8 also presses plain F8 (non-exact modifiers, as above):
-        // switching the brain must not also turn the AI off.
+        // Shift+F8 also presses plain F8 (non-exact modifiers, as above).
+        // It switched the brain in 0.11.7 and older; a player's habit must not turn
+        // the AI off now.
         SimGameApi.PushHotkeyPressedBinding(manager, ActionToggleAdvisor, () =>
         {
             if (!Input.IsKeyPressed(Key.Shift))
@@ -206,8 +206,6 @@ public static class SimHotkeys
                 SimActions.ToggleAdvisor();
             }
         });
-        SimGameApi.PushHotkeyPressedBinding(manager, ActionToggleBrain, () =>
-            SimActions.ToggleBrain("Shift+F8 (advisor brain)"));
         SimGameApi.PushHotkeyPressedBinding(manager, ActionSpeedDown, () => SimActions.StepSpeed(-1));
         SimGameApi.PushHotkeyPressedBinding(manager, ActionSpeedUp, () => SimActions.StepSpeed(1));
         SimGameApi.PushHotkeyPressedBinding(manager, ActionUndoTurn, SimActions.UndoTurn);

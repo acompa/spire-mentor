@@ -41,10 +41,10 @@ internal static class TieBandText
         {
             moves += $" (+{inBand.Count - MaxNamed})";
         }
-        string line = "about equal: " + moves;
+        string line = L10n.F("about equal: {0}", moves);
         if (gapHp is double hp && Math.Abs(hp) >= 0.5)
         {
-            line += $" (~{Math.Abs(hp).ToString("0", CultureInfo.InvariantCulture)} HP)";
+            line += L10n.F(" (~{0} HP)", Math.Abs(hp).ToString("0", CultureInfo.InvariantCulture));
         }
         lines.Add(line);
         if (!string.IsNullOrEmpty(reason))

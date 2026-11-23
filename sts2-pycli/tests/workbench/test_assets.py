@@ -83,6 +83,15 @@ def test_monster_alias_resolves_flyconid(tmp_path: Path):
     assert r.monster("Flyconid") == "monsters/flying_mushrooms.png"
 
 
+def test_dense_vegetation_wriggler_uses_wriggler_art(tmp_path: Path):
+    # Bug report wb-051e996f0beacb35: the event's four wrigglers drew as empty
+    # boxes, the engine-only variant having no art of its own.
+    (tmp_path / "monsters").mkdir()
+    (tmp_path / "monsters" / "wriggler.png").write_bytes(b"x")
+    r = AssetResolver(tmp_path)
+    assert r.monster("Dense Vegetation Wriggler") == "monsters/wriggler.png"
+
+
 def test_monster_alias_resolves_ruby_raiders(tmp_path: Path):
     # The Ruby Raiders display as "<Role> Raider" but their sprites keep the
     # internal "<role>_ruby_raider" key, so the alias bridges the two.

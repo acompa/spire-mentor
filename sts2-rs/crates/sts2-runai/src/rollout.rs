@@ -766,13 +766,17 @@ fn probe_one(
     // same two-stream shape as the live builder
     // (`run_callbacks::build_combat_for_room`).
     let mut enc_rng = Rng::with_name(seed, enc.id);
-    let roster_kinds = enc.roster(&mut enc_rng);
+    // The run's game mode rides along (GH #1346): a Dread run's what-if
+    // fight has the Dread roster (The Kin's third follower) and Dread HP.
+    let roster_kinds = enc.roster_in(&mut enc_rng, rs.game_mode);
     let kinds: Vec<MonsterKind> = roster_kinds.iter().map(|&(k, _)| k).collect();
-    let hps = sts2_core::monsters::roll_unique_max_hps_for(
+    let combat_ascension = rs.combat_ascension();
+    let hps = sts2_core::monsters::roll_unique_max_hps_in(
         &kinds,
         &mut rs.rng.niche,
-        rs.ascension_level,
+        combat_ascension,
         rs.game_version,
+        rs.game_mode,
     );
     let roster: Vec<(MonsterKind, MonsterSpawnArgs, i32)> = roster_kinds
         .iter()
@@ -787,7 +791,7 @@ fn probe_one(
     let mut combat = enter_combat_from_roster_in_slots(
         &rs,
         &roster,
-        enc.member_slots(),
+        enc.member_slots_in(rs.game_mode),
         sts2_core::runstate::RoomType::Unknown,
     );
     let start_hp = combat.player.current_hp;
@@ -1312,7 +1316,7 @@ pub fn candidates_for_surface(
                     break;
                 }
                 let deck_idx = view.deck.iter().enumerate().position(|(i, c)| {
-                    c.card_id == opt.card_id && !c.upgraded && !used.contains(&i)
+                    c.card_id == opt.card_id && c.takes_another_upgrade() && !used.contains(&i)
                 });
                 if let Some(deck_idx) = deck_idx {
                     used.push(deck_idx);

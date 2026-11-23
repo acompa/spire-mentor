@@ -139,7 +139,13 @@ pub enum MonsterSpawnArgs {
     /// C# `StartsWithStrongPunch` → `StartsWithFastPunch` (decomp
     /// `v0.107.1/…/PunchConstruct.cs:45`); `PunchOffEventEncounter` sets it
     /// true for the first construct. Bead `…wb8lk.11`.
-    PunchConstruct { starts_with_fast_punch: bool },
+    /// `starting_hp_reduction` is C# `StartingHpReduction`: the PunchOff
+    /// constructs start that many HP down (`AfterAddedToRoom`, floor 1, max
+    /// HP untouched); 0 for the map encounter.
+    PunchConstruct {
+        starts_with_fast_punch: bool,
+        starting_hp_reduction: u8,
+    },
     // ── Act 1 alternate (Underdocks) — GH #544 ──
     /// `CorpseSlug`'s `StarterMoveIdx`, which `% 3` selects the opener
     /// (0=WHIP_SLAP, 1=GLOMP, 2=GOOP). The Corpse Slug encounters roll ONE
@@ -223,6 +229,33 @@ pub fn build_ai_for_version(
     position: SpawnPosition,
     ascension: u8,
     version: sts2_core::GameVersion,
+) -> MonsterAi {
+    build_ai_for_mode(
+        kind,
+        args,
+        position,
+        ascension,
+        version,
+        sts2_core::GameMode::Standard,
+    )
+}
+
+/// [`build_ai_for_version`] for a run of game mode `mode` (GH #1346).
+/// `GameMode::Standard` is [`build_ai_for_version`] exactly. `GameMode::Dread`
+/// (v0.113.0, always ascension 10) builds what C# builds while
+/// `AscensionHelper.IsDread()` is true: the Queen opens on
+/// `DREAD_INITIAL_MOVE` (`Queen.cs:168`), and the moves in
+/// [`crate::dread_bosses::DREAD_MOVE_DELTAS`] carry their Dread numbers.
+/// Every path that builds an AI for a live combat passes the combat's
+/// `game_mode`.
+#[must_use]
+pub fn build_ai_for_mode(
+    kind: MonsterKind,
+    args: MonsterSpawnArgs,
+    position: SpawnPosition,
+    ascension: u8,
+    version: sts2_core::GameVersion,
+    mode: sts2_core::GameMode,
 ) -> MonsterAi {
     let v0111 = version >= sts2_core::GameVersion::V0_111_0;
     let mut ai = match kind {
@@ -459,6 +492,9 @@ pub fn build_ai_for_version(
         MonsterKind::Osty => create_osty_ai(),
         MonsterKind::SoulNexus => create_soul_nexus_ai(),
         MonsterKind::Aeonglass => create_aeonglass_ai(),
+        MonsterKind::Queen if mode.is_dread() => {
+            crate::monsters::act3_glory::create_queen_dread_ai()
+        }
         MonsterKind::Queen => create_queen_ai(),
         MonsterKind::TestSubject => create_test_subject_ai(),
         // ── Shared (sts2-rs-qz5p / parent sts2-rs-78ks) ──
@@ -486,6 +522,7 @@ pub fn build_ai_for_version(
             let starts_with_fast_punch = match args {
                 MonsterSpawnArgs::PunchConstruct {
                     starts_with_fast_punch,
+                    ..
                 } => starts_with_fast_punch,
                 _ => false,
             };
@@ -571,12 +608,16 @@ pub fn build_ai_for_version(
     crate::ascension_scaling::apply_v0111_attack_values(&mut ai, kind, ascension, version);
     // v0.113.0 re-valued moves (no-op before v0.113.0), GH #1303.
     crate::ascension_scaling::apply_v0113_attack_values(&mut ai, kind, ascension, version);
+    // Dread's `IsDread()` numbers, on top of the ascension ones (no-op in a
+    // standard run), GH #1346.
+    crate::dread_bosses::apply_dread_values(&mut ai, kind, mode);
     ai
 }
 
 /// The AI of a creature added MID-COMBAT (C# `CreatureCmd.Add`: a summon, a
-/// respawn, an on-death spawn) — exactly what [`build_ai_for_version`] builds
-/// for an encounter member, at the combat's own ascension and game build.
+/// respawn, an on-death spawn) — exactly what [`build_ai_for_mode`] builds
+/// for an encounter member, at the combat's own ascension, game build and
+/// game mode.
 ///
 /// C# resolves every `GetValueIfAscension(DeadlyEnemies, …)` on the added
 /// model the same way it does for the roster (`AscensionHelper.cs:22`, a
@@ -603,21 +644,37 @@ pub fn build_spawned_ai(
     kind: MonsterKind,
     args: MonsterSpawnArgs,
 ) -> MonsterAi {
-    type Key = (MonsterKind, MonsterSpawnArgs, u8, sts2_core::GameVersion);
+    type Key = (
+        MonsterKind,
+        MonsterSpawnArgs,
+        u8,
+        sts2_core::GameVersion,
+        sts2_core::GameMode,
+    );
     thread_local! {
         static MEMO: std::cell::RefCell<Vec<(Key, MonsterAi)>> =
             const { std::cell::RefCell::new(Vec::new()) };
     }
     let build = || {
-        build_ai_for_version(
+        build_ai_for_mode(
             kind,
             args,
             SpawnPosition::default(),
             state.ascension,
             state.game_version,
+            state.game_mode,
         )
     };
-    let key: Key = (kind, args, state.ascension, state.game_version);
+    // The game mode is part of the key: a Dread fight and a standard one on
+    // the same thread (a search over both, a test binary) must never share
+    // an AI (GH #1346).
+    let key: Key = (
+        kind,
+        args,
+        state.ascension,
+        state.game_version,
+        state.game_mode,
+    );
     let ai = MEMO.with(|memo| {
         if let Some((_, ai)) = memo.borrow().iter().find(|(k, _)| *k == key) {
             return ai.clone();
@@ -1160,6 +1217,7 @@ mod tests {
                 MonsterKind::PunchConstruct,
                 MonsterSpawnArgs::PunchConstruct {
                     starts_with_fast_punch: true,
+                    starting_hp_reduction: 0,
                 },
             ),
             "FAST_PUNCH",

@@ -88,7 +88,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Ultimate Strike"
+   ],
    "error": false,
    "floor": 1,
    "id": 2,
@@ -798,7 +800,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Bloodletting"
+   ],
    "error": false,
    "floor": 2,
    "id": 17,
@@ -1489,7 +1493,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card True Grit"
+   ],
    "error": false,
    "floor": 3,
    "id": 31,

@@ -11,7 +11,10 @@ pub(crate) fn play_celestial_might(
     let dmg = current_damage(state);
     // C# `CelestialMight.cs` `OnUpgrade` bumps `RepeatVar` 3→4
     // (`UpgradeValueBy(1m)`). Bead `sts2-rs-i9wg8` (continuation).
-    let hits = if current_card_upgraded(state) { 4 } else { 3 };
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        if current_card_upgraded(state) { 4 } else { 3 },
+    );
     for _ in 0..hits {
         let alive = state
             .creatures

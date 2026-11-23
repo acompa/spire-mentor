@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WpaReview as Review, WpaTurningPoint, WpaVerify } from "../api";
+import { t } from "../i18n";
 
 /**
  * WPA run review — the run-level twin of the post-combat RegretReview dock
@@ -54,7 +55,7 @@ function Curve({ review, onSeek }: { review: Review; onSeek?: (p: WpaTurningPoin
       viewBox={`0 0 ${CURVE_W} ${CURVE_H}`}
       style={{ width: "100%", height: CURVE_H, display: "block" }}
       role="img"
-      aria-label="run outlook curve"
+      aria-label={t("run outlook curve")}
     >
       <polyline
         points={line}
@@ -83,13 +84,13 @@ function Curve({ review, onSeek }: { review: Review; onSeek?: (p: WpaTurningPoin
 }
 
 function VerifyResult({ v }: { v: WpaVerify }) {
-  const outcome = (a: { label: string; won: boolean }) => `“${a.label}” → ${a.won ? "WIN" : "LOSS"}`;
+  const outcome = (a: { label: string; won: boolean }) => `“${a.label}” → ${a.won ? t("WIN") : t("LOSS")}`;
   const verdictText =
     v.verdict === "same"
-      ? "same outcome either way — this choice didn't decide the run"
+      ? t("same outcome either way — this choice didn't decide the run")
       : v.verdict === "alternative_better"
-        ? "the alternative won where your line lost"
-        : "your pick held up — the alternative lost";
+        ? t("the alternative won where your line lost")
+        : t("your pick held up — the alternative lost");
   return (
     <div style={{ marginTop: 6, fontSize: 12 }}>
       <div>
@@ -135,7 +136,7 @@ function TurningPointRow({
     try {
       setVerify(await onVerify(tp));
     } catch (e) {
-      setVerifyError(e instanceof Error ? e.message : "verify failed");
+      setVerifyError(e instanceof Error ? e.message : t("verify failed"));
     } finally {
       setVerifying(false);
     }
@@ -155,7 +156,7 @@ function TurningPointRow({
         <button
           type="button"
           onClick={onSeek ? () => onSeek(tp) : undefined}
-          title={onSeek ? "jump to this decision" : undefined}
+          title={onSeek ? t("jump to this decision") : undefined}
           style={{
             all: "unset",
             cursor: onSeek ? "pointer" : "default",
@@ -167,16 +168,16 @@ function TurningPointRow({
           {tp.swing.toFixed(3)}
         </button>
         <span style={{ color: "var(--muted)", fontSize: 12 }}>
-          {tp.floor != null ? `floor ${tp.floor}` : `step ${tp.idx}`} · {tp.decision}
+          {tp.floor != null ? t("floor {floor}", { floor: tp.floor }) : t("step {n}", { n: tp.idx })} · {tp.decision}
         </span>
         {canVerify && !verify && (
           <button
             onClick={() => void runVerify()}
             disabled={verifying}
-            title="spot-check this turning point: the agent finishes the run twice — your line vs the AI's preferred alternative (slow)"
+            title={t("spot-check this turning point: the agent finishes the run twice — your line vs the AI's preferred alternative (slow)")}
             style={{ marginLeft: "auto", fontSize: 11 }}
           >
-            {verifying ? "verifying… (plays the run out twice)" : "🔬 verify"}
+            {verifying ? t("verifying… (plays the run out twice)") : t("🔬 verify")}
           </button>
         )}
       </div>
@@ -240,7 +241,7 @@ export default function WpaReview({
       ref={rootRef}
       className="mono"
       role="region"
-      aria-label="WPA Run Review"
+      aria-label={t("WPA Run Review")}
       style={{
         position: "fixed",
         left: 0,
@@ -267,47 +268,46 @@ export default function WpaReview({
         }}
       >
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <b>Run review — turning points{live ? " · live run" : ""}</b>
+          <b>{t("Run review — turning points")}{live ? ` · ${t("live run")}` : ""}</b>
           <span style={{ color: "var(--muted)", fontSize: 11 }}>
-            outlook score, not a win % {onSeek ? "· click a point to jump there" : ""}
+            {t("outlook score, not a win %")} {onSeek ? t("· click a point to jump there") : ""}
           </span>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {onRerun && (
             <button
               onClick={onRerun}
-              aria-label="Re-run analysis"
-              title="re-run the analysis (e.g. after more moves)"
+              aria-label={t("Re-run analysis")}
+              title={t("re-run the analysis (e.g. after more moves)")}
             >
-              ↻ re-run
+              {t("↻ re-run")}
             </button>
           )}
-          <button onClick={onClose} aria-label="Close">
+          <button onClick={onClose} aria-label={t("Close")}>
             ✕
           </button>
         </div>
       </div>
       <div style={{ padding: 16, overflow: "auto" }}>
-        {review == null && <div style={{ color: "var(--muted)", fontSize: 12 }}>analyzing…</div>}
+        {review == null && <div style={{ color: "var(--muted)", fontSize: 12 }}>{t("analyzing…")}</div>}
         {review != null && !review.available && (
           <div style={{ color: "var(--muted)", fontSize: 13 }}>
-            {review.reason ?? "no run-level value data for this run"}
+            {review.reason ?? t("no run-level value data for this run")}
           </div>
         )}
         {review != null && review.available && (
           <>
             <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 8 }}>
-              {s?.n_points ?? 0} decisions scored · outlook {s?.first_value?.toFixed(3)} →{" "}
-              {s?.final_value?.toFixed(3)}
-              {s?.won != null ? (s.won ? " · run WON" : " · run LOST") : ""}
+              {t("{n} decisions scored · outlook {from} → {to}", { n: s?.n_points ?? 0, from: s?.first_value?.toFixed(3) ?? "", to: s?.final_value?.toFixed(3) ?? "" })}
+              {s?.won != null ? ` · ${s.won ? t("run WON") : t("run LOST")}` : ""}
             </div>
             <Curve review={review} onSeek={onSeek} />
             <div style={{ color: "var(--muted)", fontSize: 11, margin: "12px 0 8px" }}>
-              turning points — the decisions your run swung on:
+              {t("turning points — the decisions your run swung on:")}
             </div>
             {review.turning_points.length === 0 && (
               <div style={{ color: "var(--accent-strong)", fontSize: 13 }}>
-                steady run — no outlook swing above the threshold. ✔
+                {t("steady run — no outlook swing above the threshold. ✔")}
               </div>
             )}
             {review.turning_points.map((tp) => (

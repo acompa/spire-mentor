@@ -20,6 +20,7 @@ import MiniMap from "./components/MiniMap";
 import MapChoices from "./components/MapChoices";
 import DecisionScreen from "./components/DecisionScreen";
 import AutobattlePanel from "./components/AutobattlePanel";
+import AutobattleFloat from "./components/AutobattleFloat";
 import GameHud from "./components/GameHud";
 import { InspectProvider } from "./inspect/InspectContext";
 import InspectSheet from "./inspect/InspectSheet";
@@ -42,7 +43,7 @@ import SaveLoadDialog from "./components/SaveLoadDialog";
 import ImportStateDialog from "./components/ImportStateDialog";
 import BridgeConnectDialog from "./components/BridgeConnectDialog";
 import { bridgeBase, servedByControlPlane, setBridgeBase } from "./bridge";
-import { mirrorLiveLog } from "./liveLog";
+import { importAdvisorLogs, mirrorLiveLog } from "./liveLog";
 
 /** The run log the live advisor is writing, as a path `/api/load` opens, or
  *  null. The bundled workbench cannot read the advisor's file, so it mirrors
@@ -65,8 +66,8 @@ import {
 } from "./gameVersion";
 import { bestAction, toggleHintsLatch } from "./hint";
 import { createActionGate } from "./actionGate";
-import { HintsProvider } from "./hints/HintsContext";
-import { useHints } from "./hints/useHints";
+import { HintsProvider, HintsQuiet } from "./hints/HintsContext";
+import { quietHints, useHints } from "./hints/useHints";
 import { isStaticMode, onRestoreProgress } from "./transport";
 import { bugReportEndpointAvailable } from "./bugreport";
 import OfflineButton from "./components/OfflineButton";
@@ -84,6 +85,9 @@ import { CombatAdvice, PolicyAdvice } from "./advice/AdvicePanel";
 import { buildCommands } from "./topbar/commands";
 import { usePaletteChord } from "./topbar/paletteEntries";
 import TreasureReveal from "./components/TreasureReveal";
+import RunGainsToast from "./components/RunGainsToast";
+import { runGains, type Gain } from "./runGains";
+import { setGlossaryVersion } from "./glossary";
 import { addE2eTiming, debugSettingsLine, debugStepLine, e2eTimingLine, type E2eTiming } from "./debugLog";
 import { shouldRerunRegret } from "./regretCache";
 import { panelVisible, reasoningView, type LastSearch } from "./searchPanel";
@@ -97,12 +101,15 @@ import { cueForUi, type UiCueKind } from "./sound/runCues";
 import { actionCues, steppedActionCues } from "./sound/appSoundCues";
 import RunEnded from "./components/RunEnded";
 import RunLauncher, { type OffCombatBrain } from "./components/RunLauncher";
-import { ADVISOR_KEY, E2E_CHARACTER, E2E_GAME_VERSION, e2eAdvisable, readAdvisorPref } from "./advisor";
+import { DREAD_ASCENSION, effectiveGameMode, gameModeBody, type GameMode } from "./dread";
+import { aiReach, blitzLevel, isBlitz } from "./blitz";
+import { ADVISOR_KEY, E2E_CHARACTER, e2eAdvisable, e2eGameVersion, isE2eCharacter, readAdvisorPref } from "./advisor";
 import { generateSeed } from "./seed";
 import { computeRunEnd, shouldShowViewToggle, type EndedRun } from "./runControl";
 import { parseFollowParams, parseOpenParam, resolveRunPath, seekIndex } from "./followUrl";
 import ClaudeDock, { ClaudeLinkToggle } from "./claude/ClaudeDock";
 import { useClaudeLink } from "./claude/useClaudeLink";
+import { t } from "./i18n";
 
 // Live moves whose parent is a combat decision — the ones the regret coach can
 // judge against the MCTS line.
@@ -158,6 +165,10 @@ export default function App() {
     </HintsProvider>
   );
 }
+
+/** What an AI key does where there is no AI to ask (a Blitz run outside a
+ *  fight). */
+const noAi = () => {};
 
 /** Stable identity of the chest reveal a state carries, or ``null`` for none.
  *
@@ -296,6 +307,13 @@ function AppBody() {
   const [gameVersions, setGameVersions] = useState<string[]>([LEGACY_GAME_VERSION]);
   const [serverDefaultVersion, setServerDefaultVersion] = useState(LEGACY_GAME_VERSION);
   const gameVersion = effectiveGameVersion(gameVersionPick, gameVersions, serverDefaultVersion);
+  // GH #1346: the mode a new run starts in. The pick is kept as picked; what
+  // is SENT is `gameMode`, Dread only where the engine and build can run it.
+  const [gameModePick, setGameModePick] = useState<GameMode>("standard");
+  // GH #1347: the Blitz level (0..5) is its own pick, so the standard
+  // ascension is still there when the mode goes back to Standard.
+  const [blitzAscension, setBlitzAscension] = useState(0);
+  const gameMode = effectiveGameMode(gameModePick, backend, backend === "rust" ? gameVersion : LEGACY_GAME_VERSION);
   // The build the CURRENT live session plays, read off the live step itself
   // (`state.game_version`; writers omit the default). Derived, not tracked, so
   // every path that replaces `live` -- restore, start, faithful, import,
@@ -304,6 +322,8 @@ function AppBody() {
   // The build the SHOWN run plays -- the live session's, or the replayed
   // recording's in replay -- for the per-build display tables (GH #877).
   const shownGameVersion = mode === "replay" ? (step ? declaredGameVersion(step) : null) : liveGameVersion;
+  // The hover tips and the enchantment tabs read the shown build's glossary.
+  useEffect(() => { setGlossaryVersion(shownGameVersion); }, [shownGameVersion]);
   // Feature flags from the same probe: a control whose route this deployment
   // cannot answer is hidden rather than left as a button whose every call
   // answers 501. Absent flags (the classic backend) mean everything is on.
@@ -311,8 +331,17 @@ function AppBody() {
   // advisors (M2), run mode (M3), state import and the SimLab sandbox (M5),
   // so gating any of them on `isStaticMode()` now hides something that works.
   const [features, setFeatures] = useState<CapabilityFeatures>({});
-  const advisors = features.advisors !== false;
-  const runMode = features.run_mode !== false;
+  // GH #1347: in a Blitz run the AI answers in a fight only. A fight is the
+  // same game in every mode, so the advisors (hint, search tree, in-fight
+  // choice ranking, turn grade, autoplay of the fight) are offered there.
+  // The run policies and the autoplayers know neither the Blitz merchant
+  // nor its map (the server answers their routes 409), so everywhere else
+  // the controls are hidden like any other route this run cannot answer.
+  const shownStep = mode === "replay" ? step : live;
+  const blitzShown = isBlitz(shownStep?.state);
+  const ai = aiReach(features, shownStep, mode === "replay");
+  const advisors = ai.advisors;
+  const runMode = ai.runMode;
   const simlab = features.simlab !== false;
   // Opt-in, unlike the flags above: only the Rust engine has the e2e student.
   const e2eAvailable = features.e2e === true;
@@ -478,7 +507,10 @@ function AppBody() {
   const [liveAttack, setLiveAttack] = useState<{ target: number; nonce: number } | null>(null);
   // One switch for every AI opinion in the app — combat hints included. Default
   // OFF: a human plays the game, and asking what the AI thinks is deliberate.
-  const hints = useHints();
+  // Where a Blitz run has no AI (outside a fight) the page itself reads the
+  // switch as quiet, like every surface under `HintsQuiet` below (GH #1347).
+  const storedHints = useHints();
+  const hints = useMemo(() => quietHints(storedHints, ai.quiet), [storedHints, ai.quiet]);
   const autoHints = hints.on && advisors;
   // The engine's own numbers beside the advice (Tools → engine numbers).
   const [engineNumbers, setEngineNumbers] = useEngineNumbersPref();
@@ -501,6 +533,17 @@ function AppBody() {
   // The run policy's distribution over the screen on show (see policyWanted).
   const [policy, setPolicy] = useState<import("./api").PpoPolicyPayload | null>(null);
   const [dismissedReveal, setDismissedReveal] = useState<string | null>(null);
+  // What the last run-level step changed (relics, cards, potions, gold, HP),
+  // shown as a banner: the game animates each of these, the board alone did
+  // not say. Set only by moves (yours or the AI's), never by a seek or load.
+  const [gains, setGains] = useState<{ list: Gain[]; nonce: number } | null>(null);
+  const dismissGains = useCallback(() => setGains(null), []);
+  const noteGains = useCallback((prev: Step | null | undefined, next: Step | null | undefined) => {
+    // Every move replaces the banner: it says what THIS step changed and
+    // stays up until the next one (GH #1596), so a quiet step clears it.
+    const list = runGains(prev, next);
+    setGains(list.length > 0 ? { list, nonce: Date.now() } : null);
+  }, []);
   const [hintBusy, setHintBusy] = useState(false);
   const [recommendBusy, setRecommendBusy] = useState(false);
   // Pressing H asks for the machine's read of the position in front of you — a
@@ -565,28 +608,31 @@ function AppBody() {
   // combat MCTS agent, which always runs regardless of brain). Both
   // axes are posted server-side via `api.live.runMode` and then driven move-
   // by-move by the single unified `api.live.runModeStep` stepper.
-  const [offCombatBrain, setOffCombatBrain] = useState<OffCombatBrain>("ppo");
-  // The e2e student plays only Ironclad on v0.111.0: picking it fixes both,
-  // and picking another character while it is chosen falls back to PPO.
-  // Until the user picks a brain, Ironclad's is Instinct wherever the build
-  // has it (owner, 2026-11-12), on the game build it reads; another
-  // character gets PPO and the build that was picked before.
+  const [offCombatBrain, setOffCombatBrain] = useState<OffCombatBrain>("heuristic");
+  // The e2e student plays its five characters on v0.111.0 only: picking it
+  // fixes the build (and a character it does not play falls back to
+  // Ironclad); picking such a character while it is chosen falls back to the heuristic.
+  // Until the user picks a brain, a character it plays gets Instinct wherever
+  // the build has it (owner, 2026-11-12; all five since GH #1197), on the game
+  // build it reads; another character gets the heuristic and the build picked before.
   const brainPickedRef = useRef(false);
   const versionBeforeE2eRef = useRef<string | null>(null);
   const pickBrain = (b: OffCombatBrain) => {
     brainPickedRef.current = true;
     setOffCombatBrain(b);
     if (b === "e2e") {
-      setCharacter(E2E_CHARACTER);
-      setGameVersionPick(E2E_GAME_VERSION);
+      const who = isE2eCharacter(character) ? character : E2E_CHARACTER;
+      if (who !== character) setCharacter(who);
+      setGameVersionPick(e2eGameVersion(who));
       // Picking the student to watch picks it to advise you, too.
       pickAdvisor("e2e");
     }
   };
   // Who advises a hand-played run: the search (combat MCTS + run PPO) or the
   // e2e student. A preference (persisted here and posted to the engine, which
-  // applies it to every run it installs that the student can read: Ironclad,
-  // v0.111.0); the chip and the launcher's picker offer it only there.
+  // applies it to every run it installs that the student can read: any of
+  // `E2E_CHARACTERS`, each on its student's build, `e2eGameVersion`); the chip and the launcher's
+  // picker offer it only there.
   const [advisor, setAdvisor] = useState<Advisor>(readAdvisorPref);
   // The e2e advice could not be had for this position (no net, a position the
   // student cannot read): said where the hint would be.
@@ -618,21 +664,22 @@ function AppBody() {
         autoHintedRef.current = false;
         setLive((s) => (s ? { ...s, scores: [], pv: null } : s));
       })
-      .catch((e) => setAdvisorNote(`could not switch the advisor: ${e}`));
+      .catch((e) => setAdvisorNote(t("could not switch the advisor: {e}", { e: String(e) })));
   };
   const pickCharacter = (c: string) => {
     setCharacter(c);
-    if (offCombatBrain === "e2e" && c !== E2E_CHARACTER) {
-      setOffCombatBrain("ppo");
+    if (offCombatBrain === "e2e" && !isE2eCharacter(c)) {
+      setOffCombatBrain("heuristic");
       if (!brainPickedRef.current && versionBeforeE2eRef.current) setGameVersionPick(versionBeforeE2eRef.current);
     }
   };
-  const e2eVersionOffered = gameVersions.includes(E2E_GAME_VERSION);
+  const e2eVersion = e2eGameVersion(character);
+  const e2eVersionOffered = gameVersions.includes(e2eVersion);
   useEffect(() => {
-    if (brainPickedRef.current || !e2eAvailable || !e2eVersionOffered || character !== E2E_CHARACTER) return;
-    if (gameVersionPick !== E2E_GAME_VERSION) {
+    if (brainPickedRef.current || !e2eAvailable || !e2eVersionOffered || !isE2eCharacter(character)) return;
+    if (gameVersionPick !== e2eVersion) {
       versionBeforeE2eRef.current = gameVersionPick;
-      setGameVersionPick(E2E_GAME_VERSION);
+      setGameVersionPick(e2eVersion);
     }
     setOffCombatBrain("e2e");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the default, applied when the character or the build's offer changes
@@ -708,7 +755,15 @@ function AppBody() {
       /* listing runs is best-effort; a failure must not break the run flow */
     }
   }, []);
-  useEffect(() => { void refreshRunList(); }, [refreshRunList]);
+  useEffect(() => {
+    void refreshRunList();
+    // The bundled workbench: pull in the advisor's runs this page never saw
+    // (played with no workbench open, or in an earlier session), then list
+    // again if any arrived.
+    if (servedByControlPlane()) {
+      void importAdvisorLogs().then((n) => { if (n > 0) void refreshRunList(); });
+    }
+  }, [refreshRunList]);
   // `?follow=1[&run=<path>][&step=<idx>]` (the mod's "Open Workbench" button,
   // and its coach chips / recap / autopsy "open in workbench"): open the
   // named run — or the newest one — in the replay view with Follow on, at
@@ -719,7 +774,7 @@ function AppBody() {
     const path = parseOpenParam(window.location.search);
     if (!path) return;
     setMode("replay");
-    loadRun(path).catch((e: unknown) => setLiveError(`could not open ${path}: ${e}`));
+    loadRun(path).catch((e: unknown) => setLiveError(t("could not open {path}: {e}", { path, e: String(e) })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -1096,7 +1151,7 @@ function AppBody() {
       setWpa(await (live ? api.live.wpaReview({}) : api.wpaReview({})));
     } catch {
       setWpa({
-        available: false, reason: "review failed — is a run loaded?",
+        available: false, reason: t("review failed — is a run loaded?"),
         points: [], turning_points: [], summary: {}, caveats: [],
       });
     }
@@ -1155,13 +1210,19 @@ function AppBody() {
     let s: Step;
     try {
       s = await api.live.start({
-        character, seed: runSeed, ascension, backend, act1,
+        character, seed: runSeed, backend, act1,
+        // A Dread run is an ascension-10 run (GH #1346); the engine forces
+        // it too, this keeps the request honest. A Blitz run (GH #1347)
+        // sends its own level, 0..5.
+        ascension: gameMode === "dread" ? DREAD_ASCENSION
+          : gameMode === "blitz" ? blitzLevel(blitzAscension).level : ascension,
         // Only the Rust engine plays a non-default build; the C# oracle
         // 400s on one, so it always gets the default (#855).
         ...gameVersionBody(backend === "rust" ? gameVersion : null),
+        ...gameModeBody(gameMode),
       });
     } catch (e) {
-      setLiveError(`start failed: ${e}`);
+      setLiveError(t("start failed: {e}", { e: String(e) }));
       return;
     }
     setLive(s);
@@ -1202,14 +1263,14 @@ function AppBody() {
       setLive(s);
       await refreshTimeline();
     } catch (e) {
-      setLiveError(`play-from-here failed: ${e}`);
+      setLiveError(t("play-from-here failed: {e}", { e: String(e) }));
     } finally {
       setPlayFromHereBusy(false);
     }
   }
   async function endRun() {
     if (!live) return;
-    if (!window.confirm("End this run? The in-progress game will be closed.")) return;
+    if (!window.confirm(t("End this run? The in-progress game will be closed."))) return;
     // Snapshot for the summary, then end WITHOUT letting a quit() failure strand
     // the run on screen: computeRunEnd swallows the reject (e.g. 400 "no live
     // run" when the run already reached game over) so the teardown below always
@@ -1241,7 +1302,7 @@ function AppBody() {
       // blank replay view, and say so instead of failing silently.
       setEndedRun(ended);
       setMode("play");
-      setLiveError("this run left no recorded log to replay");
+      setLiveError(t("this run left no recorded log to replay"));
       return;
     }
     setLiveError(null);
@@ -1264,14 +1325,14 @@ function AppBody() {
   }
   async function saveLive() {
     if (!live) return;
-    const name = window.prompt("Save name:");
+    const name = window.prompt(t("Save name:"));
     if (!name || !name.trim()) return;
     try {
       const r = await api.live.save(name.trim());
       setLiveError(null);
-      window.alert(`Saved “${r.name}” (${r.step_count} steps).`);
+      window.alert(t("Saved “{name}” ({n} steps).", { name: r.name, n: r.step_count }));
     } catch (e) {
-      setLiveError(`save failed: ${e}`);
+      setLiveError(t("save failed: {e}", { e: String(e) }));
     }
   }
   async function openLoadDialog() {
@@ -1280,7 +1341,7 @@ function AppBody() {
       setSaveList(saves);
       setLoadOpen(true);
     } catch (e) {
-      setLiveError(`could not list saves: ${e}`);
+      setLiveError(t("could not list saves: {e}", { e: String(e) }));
     }
   }
   async function loadSaved(name: string) {
@@ -1300,7 +1361,7 @@ function AppBody() {
       await refreshTimeline();
     } catch (e) {
       setLoadOpen(false);
-      setLiveError(`load failed: ${e}`);
+      setLiveError(t("load failed: {e}", { e: String(e) }));
     } finally {
       setLoadingSave(null);
     }
@@ -1327,7 +1388,7 @@ function AppBody() {
       setLive(s);
       await refreshTimeline();
     } catch (e) {
-      setLiveError(`import failed: ${e}`);
+      setLiveError(t("import failed: {e}", { e: String(e) }));
     }
   }
   /** Open SimLab's sandbox on the current board.
@@ -1345,7 +1406,7 @@ function AppBody() {
       const url = `/simlab.html#p=${encodePositionHash(r.position)}`;
       window.open(url, "_blank", "noopener");
     } catch (e) {
-      setLiveError(`SimLab from here failed: ${e}`);
+      setLiveError(t("SimLab from here failed: {e}", { e: String(e) }));
     } finally {
       setSimlabBusy(false);
     }
@@ -1367,7 +1428,7 @@ function AppBody() {
       if (autobattleWatch) await watchAutobattleLeg();
       else await skipAutobattleLeg();
     } catch (e) {
-      setLiveError(`autobattle failed: ${e}`);
+      setLiveError(t("autobattle failed: {e}", { e: String(e) }));
     } finally {
       autoHintedRef.current = false;
       setAutobattleBusy(false);
@@ -1492,11 +1553,12 @@ function AppBody() {
     const { step: s, error } = await api.live.action(action, args);
     setLive(s);
     setLiveError(error ?? null);
+    if (!error) noteGains(live, s);
     // The fight is over: one line on how many of your graded moves were on
     // the AI's line (the mod's fight accuracy line).
     if (!error && fromCombat && s.decision !== "combat_play" && !isCombatChoiceStep(s)) {
-      const t = fightTallyRef.current;
-      if (t.graded > 0) setFightLine(`This fight: ${t.onLine} of ${t.graded} moves on the AI's line`);
+      const tally = fightTallyRef.current;
+      if (tally.graded > 0) setFightLine(t("This fight: {on} of {n} moves on the AI's line", { on: tally.onLine, n: tally.graded }));
       fightTallyRef.current = { graded: 0, onLine: 0 };
       setMoveGrade(null);
     } else if (!error && !fromCombat && s.decision === "combat_play") {
@@ -1522,7 +1584,8 @@ function AppBody() {
     // auto-hint search in a fight), and while the gate was held a click on the
     // screen that had already appeared was silently dropped. A grade that
     // lands after the next move is stale and dropped by `isFresh`.
-    if (feedbackOn && !error && !COMBAT_VERBS.has(action)) {
+    // (A Blitz run has no run policy to agree with: GH #1347.)
+    if (feedbackOn && !blitzShown && !error && !COMBAT_VERBS.has(action)) {
       const grade = api.live.lastChoiceGrade().then((g) => {
         if (isFresh(coachGen, coachGenRef.current)) {
           setChoiceGrade(g);
@@ -1621,6 +1684,7 @@ function AppBody() {
   const undoNode = undoPath.length > 1 ? undoPath[undoPath.length - 2] : null;
   async function seekTo(nodeId: number) {
     if (seekBusy) return;
+    setGains(null); // the banner described a step this jump leaves behind
     autoHintedRef.current = false;
     setHintShown(false);
     setLiveError(null);
@@ -1654,7 +1718,7 @@ function AppBody() {
       const exact = entriesAtOrBelow.filter((sn) => sn.floor === floor).pop();
       const target = exact ?? entriesAtOrBelow.pop();
       if (!target) {
-        setBridgeError(`no save point at or below floor ${floor} in this run`);
+        setBridgeError(t("no save point at or below floor {n} in this run", { n: floor }));
         return;
       }
       await api.bridge.seek(undefined, target.id);
@@ -1686,7 +1750,7 @@ function AppBody() {
         cur = byId.get(cur.parent_id);
       }
       if (!cur || cur.seekable === false) {
-        setBridgeError("no save point at or before that node yet");
+        setBridgeError(t("no save point at or before that node yet"));
         return;
       }
       target = cur.id;
@@ -1715,7 +1779,7 @@ function AppBody() {
     } catch (e) {
       // The e2e advisor without its net (a failed download) answers 424:
       // say so where the hint would be instead of failing silently.
-      if (liveAdvisorRef.current === "e2e") setAdvisorNote(`Instinct unavailable: ${e instanceof Error ? e.message : String(e)}`);
+      if (liveAdvisorRef.current === "e2e") setAdvisorNote(t("Instinct unavailable: {e}", { e: e instanceof Error ? e.message : String(e) }));
       throw e;
     } finally {
       hintInFlight.current = false;
@@ -1754,7 +1818,7 @@ function AppBody() {
   async function peekNext() {
     if (!live || autoRunning || live.decision === "game_over") return;
     if (hints.on) {
-      setPeek("P peeks in Coach style — Hints already shows the AI's opinion.");
+      setPeek(t("P peeks in Coach style — Hints already shows the AI's opinion."));
       return;
     }
     peekedRef.current = true;
@@ -1770,9 +1834,9 @@ function AppBody() {
         label = peekLabelFromAction(await api.live.autoAction(), live.state.options ?? []);
       }
       if (gen !== coachGenRef.current) return; // you acted meanwhile
-      setPeek(label ? `AI's next action: ${label}` : "The AI has no pick for this screen.");
+      setPeek(label ? t("AI's next action: {label}", { label }) : t("The AI has no pick for this screen."));
     } catch {
-      if (gen === coachGenRef.current) setPeek("Peek failed — no AI pick available here.");
+      if (gen === coachGenRef.current) setPeek(t("Peek failed — no AI pick available here."));
     }
   }
   async function playRecommended() {
@@ -1933,6 +1997,7 @@ function AppBody() {
         setAutoStepElapsed(0);
         const r = await api.live.runModeStep();
         emitSteppedCues(cur, r.debug?.action);
+        noteGains(cur, r.step);
         cur = r.step;
         setLive(r.step);
         // Off-combat steps carry no search; keep the last combat one on screen
@@ -1943,7 +2008,7 @@ function AppBody() {
         trackProgress(r.step);
         if (r.debug?.summary) pushDebug(debugStepLine(r.debug));
         await liveRefresh();
-        if (r.error) { setLiveError(`run stopped: ${r.error}`); break; }
+        if (r.error) { setLiveError(t("run stopped: {e}", { e: String(r.error) })); break; }
         if (r.done || r.over) break;
       }
     } catch (e) {
@@ -1951,7 +2016,7 @@ function AppBody() {
       // and resumable. Mark it paused so the in-mode Resume affordance appears —
       // otherwise the only resume path (F / Board) would strand the run in a
       // half-stepped state.
-      setLiveError(`autoplay error: ${e}`);
+      setLiveError(t("autoplay error: {e}", { e: String(e) }));
       if (cur.decision !== "game_over") setAutoPaused(true);
     } finally {
       autoHintedRef.current = false;
@@ -2000,9 +2065,9 @@ function AppBody() {
         if (runSeed !== seed) setSeed(runSeed);
         started = await api.live.startFaithful(
           offCombatBrain === "e2e"
-            ? // The engine forces the student's run (Ironclad, v0.111.0,
-              // act 1 rolled, potion swap on); only seed + ascension vary.
-              { character: E2E_CHARACTER, seed: runSeed, ascension, e2e: true }
+            ? // The engine forces the student's run (v0.111.0, act 1
+              // rolled, potion swap on); character, seed + ascension vary.
+              { character: isE2eCharacter(character) ? character : E2E_CHARACTER, seed: runSeed, ascension, e2e: true }
             : {
                 character,
                 seed: runSeed,
@@ -2035,7 +2100,7 @@ function AppBody() {
       });
       setAppliedBudget({ monster: monsterSims, boss: bossSims });
     } catch (e) {
-      setLiveError(`play-to-end failed: ${e}`);
+      setLiveError(t("play-to-end failed: {e}", { e: String(e) }));
       setAutoRunning(false);
       autoRunningRef.current = false;
       return;
@@ -2062,7 +2127,7 @@ function AppBody() {
       setAppliedBudget({ monster: monsterSims, boss: bossSims });
       pushDebug(`⚙ combat budget → mon ${monsterSims} / boss ${bossSims}`);
     } catch (e) {
-      setLiveError(`could not change the sim budget: ${e}`);
+      setLiveError(t("could not change the sim budget: {e}", { e: String(e) }));
     }
   }
 
@@ -2072,13 +2137,16 @@ function AppBody() {
       setIdx((i) =>
         d === "home" ? 0 : d === "end" ? Math.max(0, count - 1) : Math.max(0, Math.min(count - 1, i + d)),
       ),
-    onRecommend: recommend,
+    // GH #1347: where a Blitz run has no AI its keys do nothing rather than
+    // raise the server's refusal as an error.
+    onRecommend: blitzShown ? noAi : recommend,
     onChoose: liveAction,
     // G / A ask the run policy for the answer to the screen you are on. Both
     // are press-first, so neither follows the hints switch — same as the
-    // buttons they mirror.
-    onPlayBest: playBestChoice,
-    onPlayToEnd: playToEnd,
+    // buttons they mirror. In a Blitz fight G still answers an in-fight
+    // choice (the combat search's pick); play-to-end is the run's agent.
+    onPlayBest: ai.quiet ? noAi : playBestChoice,
+    onPlayToEnd: blitzShown ? noAi : playToEnd,
     onPeek: advisors ? peekNext : undefined,
     autoRunning,
     onStart: startLive,
@@ -2097,6 +2165,7 @@ function AppBody() {
     stepDecision: step?.decision ?? null,
     replayCount: count,
     advisors,
+    fightOnly: blitzShown,
     stateImport,
     staticMode: isStaticMode(),
     analyzeInTopbar,
@@ -2131,8 +2200,8 @@ function AppBody() {
   const whereLabel = (() => {
     const src = mode === "replay" ? here : mode === "play" && live ? live.meta : null;
     if (!src) return null;
-    const act = src.act_name ?? (src.act != null ? `Act ${src.act}` : "");
-    return `${act}${src.floor != null ? ` · floor ${src.floor}` : ""}` || null;
+    const act = (src.act_name ? t(src.act_name) : null) ?? (src.act != null ? t("Act {n}", { n: src.act }) : "");
+    return `${act}${src.floor != null ? t(" · floor {n}", { n: src.floor }) : ""}` || null;
   })();
 
   // The Claude link (src/claude/): a terminal Claude Code session reads what
@@ -2200,7 +2269,7 @@ function AppBody() {
         setLive(s);
         setLiveError(null);
       } catch (e) {
-        setLiveError(`could not re-read the run after Claude's ${path}: ${e}`);
+        setLiveError(t("could not re-read the run after Claude's {path}: {e}", { path, e: String(e) }));
       }
       await refreshTimeline();
     },
@@ -2229,11 +2298,13 @@ function AppBody() {
     }
     hints.setStyle(m);
   };
-  const aiPlaysDisabled = !live ? "start a run first"
-    : live.decision === "game_over" ? "the run is over"
-    : !runMode && live.decision !== "combat_play" ? "the AI plays fights only in this build"
+  const aiPlaysDisabled = !live ? t("start a run first")
+    : live.decision === "game_over" ? t("the run is over")
+    : !runMode && live.decision !== "combat_play"
+      ? (blitzShown ? t("the AI plays fights only in Blitz") : t("the AI plays fights only in this build"))
     : undefined;
-  const brainShown = liveAdvisable && advisors;
+  // The Brain switch offers Instinct, a run-level net: never in Blitz.
+  const brainShown = liveAdvisable && advisors && !blitzShown;
   const mentorBar: MentorBarProps | undefined = mode === "play" && advisors ? {
     mode: mentorMode,
     setMode: setMentorMode,
@@ -2245,17 +2316,25 @@ function AppBody() {
     onPeek: hints.style === "coach" && live ? peekNext : undefined,
     letAiPick: live ? {
       run: () => void (live.decision === "combat_play" ? playRecommended() : playBestChoice()),
-      disabledReason: autoRunning ? "the AI is playing" : live.decision === "game_over" ? "the run is over" : undefined,
+      disabledReason: autoRunning ? t("the AI is playing") : live.decision === "game_over" ? t("the run is over") : undefined,
     } : undefined,
     autobattle: live && runMode ? {
       on: autobattleOn,
       toggle: () => {
         // Leaving autobattle mode drops the drill state so re-entering
         // starts a fresh diff window rather than resuming a stale one.
-        setAutobattleOn((v) => !v);
+        const turningOn = !autobattleOn;
+        setAutobattleOn(turningOn);
         setAutobattleDiff(null);
         setAutobattleVerdict(null);
         setAutobattleOver({ over: false, won: false });
+        // Turning it on starts the leg at once: mid-fight the agent takes the
+        // fight over, at a run-level decision it only opens the diff window.
+        // It used to wait for the panel's "Start autobattle", and that panel
+        // lives in the side panel, hidden by default at <=1200px: the toggle
+        // then looked like it did nothing. Turning it off stops a watched leg.
+        if (turningOn) void advanceAutobattle();
+        else stopAutoRef.current = true;
       },
     } : undefined,
     status: mentorStatus({
@@ -2271,11 +2350,26 @@ function AppBody() {
       : null,
   } : undefined;
 
+  // One autobattle panel, shown in the side panel or, while that is hidden,
+  // floating over the board (draggable, and folding itself out of the way).
+  const autobattleProps = autobattleOn && mode === "play" && live ? {
+    diff: autobattleDiff,
+    verdict: autobattleVerdict,
+    busy: autobattleBusy,
+    over: autobattleOver.over,
+    won: autobattleOver.won,
+    watch: autobattleWatch,
+    onWatchChange: setAutobattleWatch,
+    onAdvance: advanceAutobattle,
+    onStop: () => { stopAutoRef.current = true; },
+    timing: e2eTiming ? e2eTimingLine(e2eTiming) : null,
+  } : null;
+
   // The run policy's read of a non-combat screen (PPO, or Instinct when it
   // advises): fetched in Hints only — it IS the answer to the screen — and
   // shared by the screens' marks and the side panel's ranked list. It used to
   // be the bottom dock's own fetch (PpoPolicyPanel).
-  const policyWanted = mode === "play" && advisors && !!live && hints.on
+  const policyWanted = mode === "play" && advisors && !blitzShown && !!live && hints.on
     && live.decision !== "combat_play" && live.decision !== "game_over";
   useEffect(() => {
     if (!policyWanted) {
@@ -2322,6 +2416,7 @@ function AppBody() {
   if (reportId) return <BugReportView id={reportId} />;
 
   return (
+    <HintsQuiet quiet={ai.quiet}>
     <EffectsProvider autoplaying={autoRunning}>
     <SoundProvider gameVersion={shownGameVersion}>
     <SoundBridge soundRef={soundRef} live={live} mode={mode} />
@@ -2333,8 +2428,8 @@ function AppBody() {
       <div className="wb-main">
         {barSheet && (
           <button type="button" className="wb-chrome-toggle" onClick={() => setChromeOpen((v) => !v)}
-            aria-label="workbench tools" aria-expanded={chromeOpen}
-            title={chromeOpen ? "hide the workbench tool row" : "show the workbench tool row"}>
+            aria-label={t("workbench tools")} aria-expanded={chromeOpen}
+            title={chromeOpen ? t("hide the workbench tool row") : t("show the workbench tool row")}>
             {chromeOpen ? "✕" : "≡"}
           </button>
         )}
@@ -2354,7 +2449,8 @@ function AppBody() {
             follow, setFollow, followIsLive, followFromUrl: followFromUrlRef.current, bridgeError,
           } : undefined}
           tools={{
-            simlabLink: advisors && simlab,
+            // Another page, not this run's AI: offered whatever the run is.
+            simlabLink: features.advisors !== false && simlab,
             gameVersion: shownGameVersion,
             debug: { on: debugEnabled, toggle: toggleDebug },
             engineNumbers: { on: engineNumbers, toggle: () => setEngineNumbers(!engineNumbers) },
@@ -2378,24 +2474,27 @@ function AppBody() {
             ],
           }}
           where={whereLabel}
-          whereTitle={mode === "play" ? "the act this run is walking · Act 1 has two models (Overgrowth / Underdocks)" : undefined}
+          whereTitle={mode === "play" ? t("the act this run is walking · Act 1 has two models (Overgrowth / Underdocks)") : undefined}
           palette={{ open: paletteOpen, setOpen: setPaletteOpen }}
           phoneActions={phone ? {
             undo: mode === "play" && live ? {
               run: () => { if (undoNode != null) void seekTo(undoNode); },
-              disabledReason: autoRunning ? "the AI is playing" : seekBusy ? "going back…"
-                : undoNode == null ? "nothing to take back yet" : undefined,
+              disabledReason: autoRunning ? t("the AI is playing") : seekBusy ? t("going back…")
+                : undoNode == null ? t("nothing to take back yet") : undefined,
             } : undefined,
             log: { open: sideVisible, toggle: () => setSideOpen(!sideVisible) },
+            // "Let AI pick" on the bar itself: on a phone it otherwise lives
+            // in the Menu, and it is the button you press over and over.
+            aiStep: mentorBar?.letAiPick,
           } : undefined}
           trailing={
             /* Outside the scroller, so the way back from a drawer that is covering
                the board is always on screen. On a tablet in landscape the 320px
                panel costs the game a third of its width; this hides it. */
             <button className="wb-side-toggle" onClick={() => setSideOpen(!sideVisible)}
-              aria-label="side panel" aria-pressed={sideVisible}
-              title={sideVisible ? "hide the side panel (map, history, reasoning)"
-                : "show the side panel (map, history, reasoning)"}>
+              aria-label={t("side panel")} aria-pressed={sideVisible}
+              title={sideVisible ? t("hide the side panel (map, history, reasoning)")
+                : t("show the side panel (map, history, reasoning)")}>
               {sideVisible ? "▨" : "▤"}
             </button>
           }
@@ -2408,6 +2507,10 @@ function AppBody() {
             PPO dock under them. */}
         <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
           paddingBottom: regretHeight + wpaHeight + coachHeight }}>
+          {/* Autobattle's change-diff, verdict and controls float over the board
+              while the side panel is hidden (its default at <=1200px), so the
+              mode never runs out of sight. */}
+          {!sideVisible && autobattleProps && <AutobattleFloat {...autobattleProps} />}
           {/* Replay's copy of the error banner. The other two live inside the
               play-mode branches, so a failed "play from here" in replay mode set
               liveError and NOTHING rendered it — the button read as inert. */}
@@ -2424,7 +2527,7 @@ function AppBody() {
           {restoreProgress && (
             <div className="mono" role="status" style={{ margin: "8px 12px 0", padding: "6px 8px", borderRadius: 4,
               color: "var(--muted)", border: "1px solid var(--border)", fontSize: 11 }}>
-              Restoring run {restoreProgress.done}/{restoreProgress.total}…
+              {t("Restoring run {done}/{total}…", { done: restoreProgress.done, total: restoreProgress.total })}
             </div>
           )}
           {mode === "play" && importNotes.length > 0 && (
@@ -2432,12 +2535,12 @@ function AppBody() {
               color: "var(--warn, #c90)", border: "1px solid var(--warn, #c90)", fontSize: 11,
               display: "flex", gap: 8, alignItems: "flex-start" }}>
               <div style={{ flex: 1 }}>
-                <b>imported position — not everything carried over:</b>
+                <b>{t("imported position — not everything carried over:")}</b>
                 <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
                   {importNotes.map((n, i) => <li key={i}>{n}</li>)}
                 </ul>
               </div>
-              <button onClick={() => setImportNotes([])} aria-label="Dismiss import notes"
+              <button onClick={() => setImportNotes([])} aria-label={t("Dismiss import notes")}
                 style={{ border: "none", background: "none", color: "inherit", cursor: "pointer" }}>
                 ✕
               </button>
@@ -2454,14 +2557,14 @@ function AppBody() {
           {mode === "play" && autoRunning && (() => {
             const d = live?.decision;
             const label =
-              (autoBrain ?? offCombatBrain) === "e2e" ? "Instinct deciding…"
-              : d === "combat_play" ? "searching combat (MCTS)…"
-              : d === "card_reward" ? "evaluating card rewards…"
-              : d === "card_select" ? "choosing card…"
-              : d === "map_select" ? "choosing path…"
-              : d === "shop" ? "shopping…"
-              : d === "event_choice" ? "resolving event…"
-              : "thinking…";
+              (autoBrain ?? offCombatBrain) === "e2e" ? t("Instinct deciding…")
+              : d === "combat_play" ? t("searching combat (MCTS)…")
+              : d === "card_reward" ? t("evaluating card rewards…")
+              : d === "card_select" ? t("choosing card…")
+              : d === "map_select" ? t("choosing path…")
+              : d === "shop" ? t("shopping…")
+              : d === "event_choice" ? t("resolving event…")
+              : t("thinking…");
             // Estimate run progress from the current floor; clamp shy of 100% so
             // a longer-than-typical run doesn't read as finished early.
             const frac = autoFloor != null
@@ -2474,7 +2577,7 @@ function AppBody() {
             const estSteps = autoFloor != null && autoStepNum > 0
               ? Math.round(autoStepNum / frac)
               : null;
-            const where = [autoAct != null ? `A${autoAct}` : null, autoFloor != null ? `floor ${autoFloor}` : null]
+            const where = [autoAct != null ? `A${autoAct}` : null, autoFloor != null ? t("floor {n}", { n: autoFloor }) : null]
               .filter(Boolean).join(" ");
             return (
               <div className="mono wb-autobar" style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 5,
@@ -2482,23 +2585,23 @@ function AppBody() {
                 padding: "5px 12px", borderBottom: "1px solid var(--border)", fontSize: 12,
                 background: "var(--bg)", boxShadow: "0 2px 6px rgba(0,0,0,0.35)" }}>
                 <span style={{ color: "var(--muted)" }}>
-                  ▶ {label} · step {autoStepNum}{estSteps ? ` / ~${estSteps}` : ""}
-                  {where ? ` · ${where}` : ""} · ~{pct}% · {fmtDuration(autoRunElapsed)} elapsed
-                  {eta != null ? ` · ETA ${fmtDuration(eta)}` : ""}
-                  {autoStepElapsed >= 1 ? ` · this step ${autoStepElapsed.toFixed(1)}s` : ""}
+                  ▶ {label} · {t("step {n}", { n: autoStepNum })}{estSteps ? ` / ~${estSteps}` : ""}
+                  {where ? ` · ${where}` : ""} · ~{pct}% · {t("{d} elapsed", { d: fmtDuration(autoRunElapsed) })}
+                  {eta != null ? t(" · ETA {d}", { d: fmtDuration(eta) }) : ""}
+                  {autoStepElapsed >= 1 ? t(" · this step {s}s", { s: autoStepElapsed.toFixed(1) }) : ""}
                   {e2eTiming ? ` · ${e2eTimingLine(e2eTiming)}` : ""}
                 </span>
-                <div className="auto-progress" title={`~${pct}% (estimated from floor ${autoFloor ?? "?"} of ~${EST_TOTAL_FLOORS})`}
+                <div className="auto-progress" title={t("~{pct}% (estimated from floor {n} of ~{total})", { pct, n: autoFloor ?? "?", total: EST_TOTAL_FLOORS })}
                   style={{ flex: 1, minWidth: 80, height: 6, borderRadius: 3,
                     overflow: "hidden", background: "var(--field-bg)" }}>
                   <div style={{ height: "100%", width: `${pct}%`, borderRadius: "inherit",
                     background: "var(--accent)", transition: "width 0.3s ease" }} />
                 </div>
                 <button type="button" onClick={() => { stopAutoRef.current = true; }}
-                  title="stop the run (Esc) — it stays open and you can resume"
+                  title={t("stop the run (Esc) — it stays open and you can resume")}
                   style={{ padding: "1px 8px", border: "1px solid var(--hp)", borderRadius: 4,
                     background: "var(--bg)", color: "var(--hp)", cursor: "pointer", font: "inherit" }}>
-                  ⏹ stop
+                  {t("⏹ stop")}
                 </button>
               </div>
             );
@@ -2524,7 +2627,7 @@ function AppBody() {
                 onApply={applyBudget}
               />
               <span style={{ color: "var(--muted)", fontSize: 11 }}>
-                searching at {appliedBudget.monster}/{appliedBudget.boss}
+                {t("searching at {monster}/{boss}", { monster: appliedBudget.monster, boss: appliedBudget.boss })}
               </span>
             </div>
           )}
@@ -2560,44 +2663,44 @@ function AppBody() {
                       // group doesn't jump sideways when stop / resume swap.
                       <span style={{ display: "inline-flex", gap: 4, minWidth: 300 }}>
                         <button type="button" onClick={playBestChoice} disabled={autoRunning}
-                          title="take the recommended best option for this screen (G / A)"
+                          title={t("take the recommended best option for this screen (G / A)")}
                           style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4,
                             background: "var(--bg)", cursor: autoRunning ? "default" : "pointer", font: "inherit" }}>
-                          ▶ best (G)
+                          {t("▶ best (G)")}
                         </button>
                         <button type="button" onClick={playToEnd} disabled={autoRunning}
-                          title="play the whole run out — map, rewards, fights, bosses — until it ends or you press Esc (F)"
+                          title={t("play the whole run out — map, rewards, fights, bosses — until it ends or you press Esc (F)")}
                           style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4,
                             background: "var(--bg)", cursor: autoRunning ? "default" : "pointer", font: "inherit" }}>
-                          ⏭ play to end (F)
+                          {t("⏭ play to end (F)")}
                         </button>
                         {autoRunning && (
                           <button type="button" onClick={() => { stopAutoRef.current = true; }}
-                            title="stop autoplay (Esc)"
+                            title={t("stop autoplay (Esc)")}
                             style={{ padding: "2px 8px", border: "1px solid var(--hp)", borderRadius: 4,
                               background: "var(--bg)", color: "var(--hp)", cursor: "pointer", font: "inherit" }}>
-                            ⏹ stop (Esc)
+                            {t("⏹ stop (Esc)")}
                           </button>
                         )}
                         {autoPaused && !autoRunning && live && live.decision !== "game_over" && (
                           <button type="button" onClick={() => runAutoplay()}
-                            title="resume playing this run to the end"
+                            title={t("resume playing this run to the end")}
                             style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4,
                               background: "var(--bg)", cursor: "pointer", font: "inherit" }}>
-                            ⏵ resume
+                            {t("⏵ resume")}
                           </button>
                         )}
                       </span>
                     )}
                     {deck.length > 0 && (
-                      <button type="button" onClick={openAnalysis} title="grade this deck: damage / block / velocity"
+                      <button type="button" onClick={openAnalysis} title={t("grade this deck: damage / block / velocity")}
                         style={{ padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 4,
                           background: "var(--bg)", cursor: "pointer", font: "inherit" }}>
-                        📊 analyze
+                        {t("📊 analyze")}
                       </button>
                     )}
                     {versionTag && (
-                      <span data-testid="run-game-version" title="this run plays a non-default game build"
+                      <span data-testid="run-game-version" title={t("this run plays a non-default game build")}
                         style={{ marginLeft: "auto", color: "var(--muted)" }}>
                         {gameVersionLabel(versionTag)}
                       </span>
@@ -2642,6 +2745,9 @@ function AppBody() {
               />
             );
           })()}
+          {mode === "play" && live && gains && (
+            <RunGainsToast gains={gains.list} nonce={gains.nonce} onDismiss={dismissGains} />
+          )}
           {mode === "mcts" ? (
             <MctsRuns onOpen={openMctsRun} />
           ) : mode === "play" ? (
@@ -2660,6 +2766,8 @@ function AppBody() {
                   act1={act1} onAct1={setAct1}
                   backend={backend} onBackend={setBackend} backends={backends}
                   gameVersion={gameVersion} onGameVersion={setGameVersionPick} gameVersions={gameVersions}
+                  gameMode={gameModePick} onGameMode={setGameModePick}
+                  blitzAscension={blitzAscension} onBlitzAscension={setBlitzAscension}
                   onPlay={startLive}
                   onWatch={runMode ? launchAutoplay : undefined}
                   busy={autoRunning}
@@ -2688,7 +2796,7 @@ function AppBody() {
                   scores={live.scores}
                   onPlayRecommended={advisors ? playRecommended : undefined}
                   onAutoplay={advisors ? autoplay : undefined}
-                  onAutoplayToEnd={advisors ? playToEnd : undefined}
+                  onAutoplayToEnd={advisors && !blitzShown ? playToEnd : undefined}
                   onSearch={advisors ? () => openSearchTree() : undefined}
                   hintBusy={hintBusy || autoRunning}
                   showScores={showScores}
@@ -2744,7 +2852,7 @@ function AppBody() {
             </>
           ) : (
             <>
-              {!step && <div className="mono" style={{ padding: 20, color: "var(--muted)" }}>no run loaded</div>}
+              {!step && <div className="mono" style={{ padding: 20, color: "var(--muted)" }}>{t("no run loaded")}</div>}
               {step && step.decision === "combat_play" && (
                 <Board step={step} />
               )}
@@ -2767,14 +2875,14 @@ function AppBody() {
             fontSize: 11, background: "var(--field-bg)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 12px",
               color: "var(--muted)" }}>
-              <span>🐞 debug log · {debugLog.length} lines</span>
+              <span>{t("🐞 debug log · {n} lines", { n: debugLog.length })}</span>
               <button type="button" onClick={() => setDebugLog([])}
                 style={{ padding: "0 6px", border: "1px solid var(--border)", borderRadius: 4,
                   background: "var(--bg)", color: "var(--muted)", cursor: "pointer", font: "inherit" }}>
-                clear
+                {t("clear")}
               </button>
               <button type="button" onClick={() => setDebugCollapsed((c) => !c)}
-                title={debugCollapsed ? "expand debug log" : "collapse debug log"}
+                title={debugCollapsed ? t("expand debug log") : t("collapse debug log")}
                 style={{ marginLeft: "auto", padding: "0 6px", border: "1px solid var(--border)",
                   borderRadius: 4, background: "var(--bg)", color: "var(--muted)", cursor: "pointer",
                   font: "inherit" }}>
@@ -2784,7 +2892,7 @@ function AppBody() {
             {!debugCollapsed && (
               <div style={{ height: 140, overflow: "auto", padding: "0 12px 6px" }}>
                 {debugLog.length === 0 ? (
-                  <div style={{ color: "var(--muted)" }}>… no entries yet</div>
+                  <div style={{ color: "var(--muted)" }}>{t("… no entries yet")}</div>
                 ) : debugLog.map((line, i) => (
                   <div key={i} style={{ whiteSpace: "pre-wrap", lineHeight: 1.5,
                     color: line.includes("·") ? "var(--text)" : "var(--muted)" }}>{line}</div>
@@ -2796,8 +2904,8 @@ function AppBody() {
       </div>
       <div className={`wb-side${narrow ? " wb-side--overlay" : ""}`} hidden={!sideVisible}>
         <div className="wb-side-head">
-          <span>Map, history &amp; reasoning</span>
-          <button type="button" onClick={() => setSideOpen(false)}>✕ Close</button>
+          <span>{t("Map, history & reasoning")}</span>
+          <button type="button" onClick={() => setSideOpen(false)}>{t("✕ Close")}</button>
         </div>
         {/* Persistent minimap: always on screen (vs the on-demand overlay) so
             the run's position and the path ahead stay visible on every screen.
@@ -2815,7 +2923,7 @@ function AppBody() {
         )}
         {mode === "mcts" ? (
           <div className="mono" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, color: "var(--muted)" }}>
-            click a run to open it in the replay timeline
+            {t("click a run to open it in the replay timeline")}
           </div>
         ) : mode === "play" ? (
           <>
@@ -2867,7 +2975,7 @@ function AppBody() {
                 the fight's, as the mod has one advice panel for everything. */}
             {live && live.decision !== "combat_play" && policy && (
               <ReasoningDock
-                title={policy.policy === "e2e" ? "Instinct" : null}
+                title={policy.policy === "e2e" ? t("Instinct") : null}
                 collapsed={reasoningCollapsed}
                 onToggle={() => setReasoningCollapsed(!reasoningCollapsed)}
                 height={reasoningHeight}
@@ -2890,45 +2998,32 @@ function AppBody() {
                     ⚠ {liveError}
                   </div>
                 )}
-                {autobattleOn && mode === "play" && live && (
-                  <AutobattlePanel
-                    diff={autobattleDiff}
-                    verdict={autobattleVerdict}
-                    busy={autobattleBusy}
-                    over={autobattleOver.over}
-                    won={autobattleOver.won}
-                    watch={autobattleWatch}
-                    onWatchChange={setAutobattleWatch}
-                    onAdvance={advanceAutobattle}
-                    onStop={() => { stopAutoRef.current = true; }}
-                    timing={e2eTiming ? e2eTimingLine(e2eTiming) : null}
-                  />
-                )}
+                {sideVisible && autobattleProps && <AutobattlePanel {...autobattleProps} />}
                 {peek && mode === "play" && <PeekBanner text={peek} onDismiss={() => setPeek(null)} />}
                 {fightLine && (
                   <div className="wb-fight-line" role="status" data-testid="fight-line">
                     <span>{fightLine}</span>
-                    <button type="button" aria-label="dismiss" onClick={() => setFightLine(null)}>✕</button>
+                    <button type="button" aria-label={t("dismiss")} onClick={() => setFightLine(null)}>✕</button>
                   </div>
                 )}
                 {turnGrade && <TurnChip record={turnGrade} onDismiss={() => setTurnGrade(null)} />}
                 {choiceGrade && <ChoiceChip key={choiceGrade.node_id} grade={choiceGrade} onDismiss={() => setChoiceGrade(null)} />}
                 {liveTimeline && liveTimeline.nodes.length > 1 && (
                   <button type="button" onClick={() => setTreeOpen(true)}
-                    title="open the branch tree" style={{ marginBottom: 12, padding: "3px 10px",
+                    title={t("open the branch tree")} style={{ marginBottom: 12, padding: "3px 10px",
                       border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg)",
                       cursor: "pointer", font: "inherit", fontSize: 11 }}>
-                    ⛶ branch tree
-                    {liveTimeline.nodes.some((n) => n.child_ids.length > 1) ? " (forked)" : ""}
+                    {t("⛶ branch tree")}
+                    {liveTimeline.nodes.some((n) => n.child_ids.length > 1) ? t(" (forked)") : ""}
                   </button>
                 )}
                 {liveTimeline && liveTimeline.nodes.length > 0 && (
                   <div className="mono" style={{ display: "flex", alignItems: "baseline",
                     justifyContent: "space-between", marginBottom: 4 }}>
                     <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      history
+                      {t("history")}
                     </span>
-                    <span style={{ fontSize: 10, color: "var(--muted)" }}>click a step to rewind</span>
+                    <span style={{ fontSize: 10, color: "var(--muted)" }}>{t("click a step to rewind")}</span>
                   </div>
                 )}
               </div>
@@ -3120,6 +3215,7 @@ function AppBody() {
     </AdviceMarksProvider>
     </SoundProvider>
     </EffectsProvider>
+    </HintsQuiet>
   );
 }
 
@@ -3158,11 +3254,11 @@ function ReasoningDock({ title, collapsed, onToggle, height, onResize, children 
         gap: 6, padding: "10px 16px 5px", fontSize: 10, color: "var(--muted)",
         borderBottom: collapsed ? undefined : "1px solid var(--border)", margin: "0 0 4px" }}>
         <CollapseButton collapsed={collapsed} onToggle={onToggle}
-          label="the machine-reasoning panel" />
-        <span style={{ flex: "0 0 auto", whiteSpace: "nowrap" }}>Advice</span>
+          label={t("the machine-reasoning panel")} />
+        <span style={{ flex: "0 0 auto", whiteSpace: "nowrap" }}>{t("Advice")}</span>
         {title && (
           <span
-            title="the search that chose this move — its rows score the position BEFORE it was played, not the board below"
+            title={t("the search that chose this move — its rows score the position BEFORE it was played, not the board below")}
             style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
           >
             · {title}
@@ -3177,7 +3273,7 @@ function ReasoningDock({ title, collapsed, onToggle, height, onResize, children 
           </div>
           <PanelGrip
             grow="down"
-            label="drag to resize the reasoning panel"
+            label={t("drag to resize the reasoning panel")}
             min={REASONING_MIN_H}
             max={REASONING_MAX_H}
             measure={() => bodyRef.current?.offsetHeight ?? height}
@@ -3193,8 +3289,9 @@ function EffectsToggle() {
   const { toggle, setToggle } = useEffectsMode();
   const next = { full: "reduced", reduced: "off", off: "full" } as const;
   return (
-    <button title="combat effects: full → reduced → off" onClick={() => setToggle(next[toggle])}>
-      fx: {toggle}
+    <button title={t("combat effects: full → reduced → off")} onClick={() => setToggle(next[toggle])}>
+      {/* `toggle` is one of full / reduced / off, each listed in zh/app.ts. */}
+      {t("fx: {mode}", { mode: t(toggle) })}
     </button>
   );
 }
@@ -3222,18 +3319,18 @@ function SoundToggle() {
     <>
       <button onClick={() => setOn(!on)} aria-pressed={on}
         title={silencedByFx
-          ? "game sounds are on, but muted while combat effects (fx) are off"
-          : "game sounds (on by default; the choice is remembered)"}
+          ? t("game sounds are on, but muted while combat effects (fx) are off")
+          : t("game sounds (on by default; the choice is remembered)")}
         style={{
           color: on ? "var(--accent-strong)" : undefined,
           opacity: silencedByFx ? 0.5 : undefined,
         }}>
-        {on ? "🔊 sound ✓" : "🔇 sound"}
+        {on ? t("🔊 sound ✓") : t("🔇 sound")}
       </button>
       {on && (
         <input
           type="range" min={0.05} max={1} step={0.05} value={volume}
-          aria-label="sound volume"
+          aria-label={t("sound volume")}
           onChange={(e) => setVolume(Number(e.target.value))}
         />
       )}

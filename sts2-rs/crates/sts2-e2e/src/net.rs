@@ -581,6 +581,17 @@ impl E2eNet {
             .is_some_and(|f| f.iter().any(|e| e == event))
     }
 
+    /// The build whose tables the net reads: its header's `game_version`
+    /// (v0.111.0 when unstamped). Hosts enter it (`build::Scope::enter`)
+    /// around every step and row of a run this net plays.
+    ///
+    /// # Errors
+    ///
+    /// A stamp naming a build no e2e lane plays.
+    pub fn build(&self) -> Result<sts2_core::GameVersion, String> {
+        crate::build::resolve(self.header().game_version.as_deref())
+    }
+
     /// The parsed header (stamps: `schema_sha256`, `vocab_sha256`,
     /// `prior_sha256`, `game_version`, `variant`, `filled`; net config; layout).
     pub fn header(&self) -> &E2ewHeader {
@@ -932,6 +943,19 @@ fn id_index(v: i16, rows: usize) -> Result<usize, String> {
         Ok(i) if i < rows => Ok(i),
         _ => Err(format!("e2e row: id {v} outside 0..{rows}")),
     }
+}
+
+/// Softmax in f64 (max-subtracted), as the workbench's `e2e::softmax`:
+/// the class probabilities every host reports.
+#[must_use]
+pub fn softmax(logits: &[f32]) -> Vec<f64> {
+    let m = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let e: Vec<f64> = logits
+        .iter()
+        .map(|&x| (f64::from(x) - f64::from(m)).exp())
+        .collect();
+    let z: f64 = e.iter().sum();
+    e.into_iter().map(|x| x / z).collect()
 }
 
 /// The index of the first maximum (torch's `argmax`); 0 for an empty slice.

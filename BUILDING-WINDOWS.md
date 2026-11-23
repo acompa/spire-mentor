@@ -128,11 +128,24 @@ $env:PYO3_PYTHON = "$py\python.exe"; $env:Path = "$py;$env:Path"
 
 ## Line endings
 
-The census/parity golden files under `sts2-rs/tests/parity/` are compared
-byte-for-byte against `\n`-built strings. `sts2-rs/.gitattributes` pins them
-(and `*.rs`) to `eol=lf` so `core.autocrlf=true` doesn't check them out as CRLF
-and fail every golden comparison. Leave that rule in place; if goldens still
-show CRLF locally, re-checkout them or strip `\r`.
+Every text file is LF, in the repo and in the working tree, on every OS: the
+root `.gitattributes` sets `* text=auto eol=lf`, which overrides Git for
+Windows' default `core.autocrlf=true`. Only `*.bat`, `*.cmd` and `*.ps1` check
+out as CRLF. Before that rule (2026-11-19) checkouts were CRLF while the repo
+stored LF, so anything that wrote a plain `\n` left mixed files, "LF will be
+replaced by CRLF" warnings and `\r` in greps. The census/parity golden files
+under `sts2-rs/tests/parity/` are also compared byte-for-byte against
+`\n`-built strings; `sts2-rs/.gitattributes` still pins them (and `*.rs`) to
+`eol=lf`.
+
+A checkout made before the rule keeps its CRLF files until they are checked
+out again. In a worktree with nothing uncommitted, convert it all at once:
+
+```sh
+git ls-files -z | xargs -0 rm -f && git checkout -- .
+```
+
+A new worktree or clone needs nothing.
 
 ## Caveats
 

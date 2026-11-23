@@ -1,58 +1,104 @@
 {
-  "_provenance": "Envelope (run_state, master_deck, relics, potions) from the real capture in event.json (logs/realgame/20260711T000139Z.jsonl step 55), moved to act 2 with 160 gold. The options, player_gold and stock are what SimEventRoomHandler.RunFakeMerchantAsync sends for the Fake Merchant (GH #873) with no Foul Potion held; no live capture of this event exists yet.",
+  "_provenance": "Envelope (run_state, master_deck, relics, potions) from the real capture in event.json (logs/realgame/20260711T000139Z.jsonl step 55), moved to act 2 with 160 gold. The options, player_gold, stock and event_name are what SimEventRoomHandler.RunFakeMerchantAsync sends for the Fake Merchant as a shop (GH #1607), at prices in the CalcCost band (50 x 0.85..1.15); no live capture of this event exists yet.",
   "state": {
-    "type": "event",
+    "type": "shop",
     "options": [
       {
         "index": 0,
-        "id": "event_choice",
-        "action": "event_choice",
-        "label": "Buy a Relic (50g)",
-        "description": "Purchase a fake relic: FAKE_SNECKO_EYE.",
-        "enabled": true,
-        "event_id": "FAKE_MERCHANT",
-        "text_key": "FAKE_MERCHANT.options.BUY",
-        "relic_id": "FAKE_SNECKO_EYE",
-        "will_kill_player": false,
-        "gold_delta": -50,
-        "hp_delta": 0,
-        "max_hp_delta": 0,
-        "relics_gained": 1,
-        "potions_lost": 0
+        "id": "leave_shop",
+        "action": "leave_shop",
+        "label": "Leave",
+        "enabled": true
       },
       {
         "index": 1,
-        "id": "event_choice",
-        "action": "event_choice",
-        "label": "Throw Foul Potion",
-        "description": "No Foul Potion to throw.",
-        "enabled": false,
-        "event_id": "FAKE_MERCHANT",
-        "text_key": "FAKE_MERCHANT.options.THROW_FOUL",
-        "relic_id": "",
-        "will_kill_player": false,
-        "gold_delta": 0,
-        "hp_delta": 0,
-        "max_hp_delta": 0,
-        "relics_gained": 0,
-        "potions_lost": 1
+        "id": "buy_relic",
+        "action": "buy_relic",
+        "label": "FAKE_SNECKO_EYE",
+        "description": "Cost: 48",
+        "enabled": true,
+        "price": 48,
+        "item": {
+          "id": "FAKE_SNECKO_EYE",
+          "name": "FAKE_SNECKO_EYE",
+          "description": "",
+          "counter": null
+        }
       },
       {
         "index": 2,
-        "id": "event_choice",
-        "action": "event_choice",
-        "label": "Leave",
-        "description": "Leave the merchant.",
+        "id": "buy_relic",
+        "action": "buy_relic",
+        "label": "FAKE_ANCHOR",
+        "description": "Cost: 52",
         "enabled": true,
-        "event_id": "FAKE_MERCHANT",
-        "text_key": "FAKE_MERCHANT.options.LEAVE",
-        "relic_id": "",
-        "will_kill_player": false,
-        "gold_delta": 0,
-        "hp_delta": 0,
-        "max_hp_delta": 0,
-        "relics_gained": 0,
-        "potions_lost": 0
+        "price": 52,
+        "item": {
+          "id": "FAKE_ANCHOR",
+          "name": "FAKE_ANCHOR",
+          "description": "",
+          "counter": null
+        }
+      },
+      {
+        "index": 3,
+        "id": "buy_relic",
+        "action": "buy_relic",
+        "label": "FAKE_MANGO",
+        "description": "Cost: 55",
+        "enabled": true,
+        "price": 55,
+        "item": {
+          "id": "FAKE_MANGO",
+          "name": "FAKE_MANGO",
+          "description": "",
+          "counter": null
+        }
+      },
+      {
+        "index": 4,
+        "id": "buy_relic",
+        "action": "buy_relic",
+        "label": "FAKE_ORICHALCUM",
+        "description": "Cost: 44",
+        "enabled": true,
+        "price": 44,
+        "item": {
+          "id": "FAKE_ORICHALCUM",
+          "name": "FAKE_ORICHALCUM",
+          "description": "",
+          "counter": null
+        }
+      },
+      {
+        "index": 5,
+        "id": "buy_relic",
+        "action": "buy_relic",
+        "label": "FAKE_LEES_WAFFLE",
+        "description": "Cost: 57",
+        "enabled": true,
+        "price": 57,
+        "item": {
+          "id": "FAKE_LEES_WAFFLE",
+          "name": "FAKE_LEES_WAFFLE",
+          "description": "",
+          "counter": null
+        }
+      },
+      {
+        "index": 6,
+        "id": "buy_relic",
+        "action": "buy_relic",
+        "label": "FAKE_BLOOD_VIAL",
+        "description": "Cost: 50",
+        "enabled": true,
+        "price": 50,
+        "item": {
+          "id": "FAKE_BLOOD_VIAL",
+          "name": "FAKE_BLOOD_VIAL",
+          "description": "",
+          "counter": null
+        }
       }
     ],
     "seed": "101",
@@ -332,7 +378,7 @@
         {
           "id": "PERFECTED_STRIKE",
           "name": "Perfected Strike",
-          "description": "Deal 6 damage.\nDeals 2 additional damage for ALL your cards containing \u201cStrike\u201d.",
+          "description": "Deal 6 damage.\nDeals 2 additional damage for ALL your cards containing “Strike”.",
           "cost": 2,
           "base_cost": 2,
           "effective_cost": 2,
@@ -386,45 +432,88 @@
       {
         "kind": "buy_relic",
         "label": "FAKE_SNECKO_EYE",
-        "price": 50,
+        "price": 48,
         "stocked": true,
-        "affordable": true
+        "affordable": true,
+        "item": {
+          "id": "FAKE_SNECKO_EYE",
+          "name": "FAKE_SNECKO_EYE",
+          "description": "",
+          "counter": null
+        },
+        "option": 1
       },
       {
         "kind": "buy_relic",
         "label": "FAKE_ANCHOR",
-        "price": 50,
+        "price": 52,
         "stocked": true,
-        "affordable": true
+        "affordable": true,
+        "item": {
+          "id": "FAKE_ANCHOR",
+          "name": "FAKE_ANCHOR",
+          "description": "",
+          "counter": null
+        },
+        "option": 2
       },
       {
         "kind": "buy_relic",
         "label": "FAKE_MANGO",
-        "price": 50,
+        "price": 55,
         "stocked": true,
-        "affordable": true
+        "affordable": true,
+        "item": {
+          "id": "FAKE_MANGO",
+          "name": "FAKE_MANGO",
+          "description": "",
+          "counter": null
+        },
+        "option": 3
       },
       {
         "kind": "buy_relic",
         "label": "FAKE_ORICHALCUM",
-        "price": 50,
+        "price": 44,
         "stocked": true,
-        "affordable": true
+        "affordable": true,
+        "item": {
+          "id": "FAKE_ORICHALCUM",
+          "name": "FAKE_ORICHALCUM",
+          "description": "",
+          "counter": null
+        },
+        "option": 4
       },
       {
         "kind": "buy_relic",
         "label": "FAKE_LEES_WAFFLE",
-        "price": 50,
+        "price": 57,
         "stocked": true,
-        "affordable": true
+        "affordable": true,
+        "item": {
+          "id": "FAKE_LEES_WAFFLE",
+          "name": "FAKE_LEES_WAFFLE",
+          "description": "",
+          "counter": null
+        },
+        "option": 5
       },
       {
         "kind": "buy_relic",
         "label": "FAKE_BLOOD_VIAL",
         "price": 50,
         "stocked": true,
-        "affordable": true
+        "affordable": true,
+        "item": {
+          "id": "FAKE_BLOOD_VIAL",
+          "name": "FAKE_BLOOD_VIAL",
+          "description": "",
+          "counter": null
+        },
+        "option": 6
       }
-    ]
+    ],
+    "event_name": "FAKE_MERCHANT"
   }
 }

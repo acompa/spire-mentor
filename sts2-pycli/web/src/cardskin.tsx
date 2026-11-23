@@ -10,6 +10,7 @@
  * Static fixtures only — no backend. `npm run dev` then open /cardskin.html.
  */
 import { StrictMode } from "react";
+import { t } from "./i18n";
 import { createRoot } from "react-dom/client";
 import CardFrame from "./components/CardFrame";
 import type { Card } from "./api";
@@ -167,13 +168,13 @@ function Row({ title, cards, width }: { title: string; cards: Card[]; width: num
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <div style={{ padding: 28, background: "#0d1117", minHeight: "100vh" }}>
-      <Row title="Matched against the live deck screen" cards={AGAINST_GAME} width={228} />
-      <Row title="Cost glyphs — Regent star cost, and inline energy/star runs" cards={COSTS} width={228} />
-      <Row title="Pool → frame tint" cards={POOLS} width={200} />
-      <Row title="Rarity → banner / plaque / portrait border" cards={RARITIES} width={200} />
-      <Row title="Type → frame texture, and edge cases" cards={TYPES} width={200} />
-      <StateRow title="Hand states — playable / unaffordable / Bound / Bound and spent" width={228} />
-      <Row title="Hand size (112px)" cards={POOLS} width={112} />
+      <Row title={t("Matched against the live deck screen")} cards={AGAINST_GAME} width={228} />
+      <Row title={t("Cost glyphs — Regent star cost, and inline energy/star runs")} cards={COSTS} width={228} />
+      <Row title={t("Pool → frame tint")} cards={POOLS} width={200} />
+      <Row title={t("Rarity → banner / plaque / portrait border")} cards={RARITIES} width={200} />
+      <Row title={t("Type → frame texture, and edge cases")} cards={TYPES} width={200} />
+      <StateRow title={t("Hand states — playable / unaffordable / Bound / Bound and spent")} width={228} />
+      <Row title={t("Hand size (112px)")} cards={POOLS} width={112} />
     </div>
   </StrictMode>
 );

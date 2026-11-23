@@ -29,18 +29,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol, runtime_checkable
 
 import numpy as np
 
+from . import build as _build
+
 SCHEMA_NAME: Final = "ironclad-e2e-v111"
 # Bumped by hand on every change before G-schema; after G-schema the schema is
 # frozen and only reserved ids and reserved columns may start carrying data
 # (which leaves `schema_sha256` unchanged; see `FILL_EVENTS`).
 SCHEMA_REVISION: Final = 2
-GAME_VERSION: Final = "v0.111.0"
+# The lane build (`ppo.e2e.build`, GH #1535): part of the schema hash, so a
+# v0.113.0 lane never reads a v0.111.0 artifact unmigrated.
+GAME_VERSION: Final = _build.GAME_VERSION
 
 
 class SchemaError(ValueError):
@@ -113,7 +118,7 @@ SCTX_STUDENT_SLOTS: Final = (
 )
 # `tokens.vocab().digest()` on the W1 engine wheel (879e44015). A table is
 # `[names..., UNK, PAD]`; PAD (= size - 1) is the absent value of a slot.
-SCTX_TABLE_SIZES: Final[Mapping[str, int]] = {
+_SCTX_TABLE_SIZES_V0111: Final[Mapping[str, int]] = {
     "card": 601,
     "upgraded": 4,
     "relic": 299,
@@ -130,6 +135,22 @@ SCTX_TABLE_SIZES: Final[Mapping[str, int]] = {
     "choice_pile": 8,
     "rl2key": 1267,
 }
+# A v0.113.0 lane's content tables read every build's registries (`combat_ctx.
+# tokens._kinds`, GH #1535); the student never embeds them, so only these sizes and
+# the PAD values move. `tokens.vocab()` with STS2_E2E_GAME_VERSION=v0.113.0.
+_SCTX_TABLE_SIZES_V0113: Final[Mapping[str, int]] = {
+    **_SCTX_TABLE_SIZES_V0111,
+    "card": 722,
+    "relic": 318,
+    "potion": 69,
+    "power": 321,
+    "monster": 124,
+    "rl2key": 1512,
+}
+SCTX_TABLE_SIZES: Final[Mapping[str, int]] = {
+    "v0.111.0": _SCTX_TABLE_SIZES_V0111,
+    "v0.113.0": _SCTX_TABLE_SIZES_V0113,
+}[_build.GAME_VERSION]
 SCTX_PAD: Final[tuple[int, ...]] = tuple(SCTX_TABLE_SIZES[s] - 1 for s in SCTX_SLOTS)
 SCTX_INTENT_KINDS: Final = (
     "Attack",
@@ -309,9 +330,14 @@ SECTIONS: Final = _SECTION_TABLE
 N_SECTION: Final = 64  # section-embedding table size
 SEC: Final[Mapping[str, int]] = {s: i for i, s in enumerate(SECTIONS)}
 PRIV_SECTIONS: Final = frozenset({21, 48, 49, 50, 51, 52, 53, 54, 55})
-# The sections no fill event has taken ("chars" took RES_44 and RES_45, section 4b).
+# The sections no fill event has taken ("chars" took RES_44 and RES_45, section 4b;
+# "ooc-potion" took RES_OPT_POTION_USE, section 4c; "#1069" took RES_OPT_REWARD,
+# section 4d; "fool" took RES_46 and RES_47, section 4e).
 RESERVED_SECTIONS: Final = frozenset(
-    i for i, s in enumerate(SECTIONS) if s.startswith("RES_") and s not in ("RES_44", "RES_45")
+    i
+    for i, s in enumerate(SECTIONS)
+    if s.startswith("RES_")
+    and s not in ("RES_44", "RES_45", "RES_46", "RES_47", "RES_OPT_POTION_USE", "RES_OPT_REWARD")
 )
 SUMMARY_SECTIONS: Final = (24, 25, 26, 27, 28)
 OOC_OPTION_SECTIONS: Final = frozenset(range(32, 39)) | frozenset({39, 40, 41, 42, 43})
@@ -762,6 +788,13 @@ CHARS_CONT: Final[Mapping[str, str]] = {
     "C_ORB_PASSIVE": "X_C_RES0",
     "C_ORB_EVOKE": "X_C_RES1",
     "E_DOOMED": "X_C_RES2",
+    # GH #1197: the corrected and new per-character inputs.
+    "C_STAR_COST": "X_C_RES3",
+    "E_DIES_FIRST": "X_C_RES4",
+    "S_DISCARDS_TURN": "X_C_RES5",
+    "S_ATTACKS_TURN": "X_C_RES6",
+    "S_PLAYER_DOOMED": "X_C_RES7",
+    "R_ARMED": "R_RES0",
 }
 # What each alias holds (documentation; SCHEMA.md section 13 repeats it).
 CHARS_DOC: Final[Mapping[str, str]] = {
@@ -771,19 +804,71 @@ CHARS_DOC: Final[Mapping[str, str]] = {
     "C_ORB_PASSIVE": "ORB: passive value with Focus / 10",
     "C_ORB_EVOKE": "ORB: evoke value with Focus / 20",
     "E_DOOMED": "ENEMY flag: Doom >= hp, the enemy dies at the end of its turn",
+    "C_STAR_COST": "HAND, ACT_PLAY: the card's star cost now / 5 (star-X: the stars / 5; 0: none)",
+    "E_DIES_FIRST": "ENEMY flag: certain to die before its move (turn-end damage, then Poison)",
+    "S_DISCARDS_TURN": "STATE: cards discarded this turn / 10",
+    "S_ATTACKS_TURN": "STATE: Attacks played this turn / 10",
+    "S_PLAYER_DOOMED": "STATE flag: the player's Doom >= hp, it dies at the end of its turn",
+    "R_ARMED": "RELIC flag: the relic fires on its next trigger (Emotion Chip, Mini Regent, Regalite)",
 }
 # An orb belt has at most 10 slots (OrbCmd.AddSlots caps the capacity at 10).
 MAX_ORB_TOKENS: Final = 10
-MAX_ALLY_TOKENS: Final = 1
+# The pets: Necrobinder's Osty ("chars"), then v0.113.0's Wuppy ("fool").
+MAX_ALLY_TOKENS: Final = 2
 
 SEC.update({a: SEC[r] for a, r in CHARS_SECTIONS.items()})  # type: ignore[attr-defined]
 XC.update({a: XC[r] for a, r in CHARS_CAT.items()})  # type: ignore[attr-defined]
 XF.update({a: XF[r] for a, r in CHARS_CONT.items()})  # type: ignore[attr-defined]
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 4e. The "fool" fill event (GH #1535): v0.113.0's mechanics.
+#
+#    v0.113.0 adds the Fool's arrows and melody (`sts2_core::fool`) and the
+#    Wuppy pet (any character, from the WuppyInTrouble event). The tokenizers
+#    read them from `$.player.fool` and `$.player.wuppy` of the live board, so
+#    only a row that carries "chars" data (`player` given) can carry them, and
+#    only on a v0.113.0 board. Like "chars", it takes reserved sections and
+#    the spare categorical columns under alias names; `schema_sha256` does not
+#    move and the event's inputs start at zero weight.
+#
+#    * ARROW (RES_46): one token per arrow slot in gain order (at most
+#      `MAX_ARROW_TOKENS`; a pending Shoot slot counts as one more ready
+#      arrow, appended last): X_POS the slot, X_FOOL1 its status (1 ready,
+#      2 away, 3 destroyed), X_FOOL2 = 1 + quietus + 2 * next (quietus: the
+#      arrow is destroyed after impaling; next: the next shot uses it).
+#    * MELODY (RES_47): one token while the Fool state exists: X_FOOL1-3 the
+#      Wah, Cho and Ki plays finished this turn (capped at 15), X_POS = 1 +
+#      the melody cards finished this turn.
+#    * ENEMY: X_FOOL1 = the player's arrows impaled in it (capped at 15).
+#    * ALLY: a second token for the Wuppy, in the Osty's columns, after it.
+# ═══════════════════════════════════════════════════════════════════════════
+
+FILL_FOOL: Final = "fool"
+FOOL_SECTIONS: Final[Mapping[str, str]] = {"ARROW": "RES_46", "MELODY": "RES_47"}
+FOOL_CAT: Final[Mapping[str, str]] = {"X_FOOL1": "X_RES1", "X_FOOL2": "X_RES2", "X_FOOL3": "X_RES3"}
+FOOL_DOC: Final[Mapping[str, str]] = {
+    "ARROW": "one token per arrow slot, gain order; a pending Shoot slot last",
+    "MELODY": "one token while the Fool state exists: this turn's notes",
+    "X_FOOL1": "ARROW: status (1 ready, 2 away, 3 destroyed); MELODY: Wah plays this turn; "
+    "ENEMY: the player's arrows impaled in it",
+    "X_FOOL2": "ARROW: 1 + quietus + 2 * next; MELODY: Cho plays this turn",
+    "X_FOOL3": "MELODY: Ki plays this turn",
+}
+# A player starts with one slot and gains one per Shoot card without a slot;
+# 8 covers every observed board (the tokenizer drops slots past it).
+MAX_ARROW_TOKENS: Final = 8
+# The cap of a count in an X_FOOL column (the columns have 16 rows).
+FOOL_COUNT_CAP: Final = 15
+
+SEC.update({a: SEC[r] for a, r in FOOL_SECTIONS.items()})  # type: ignore[attr-defined]
+XC.update({a: XC[r] for a, r in FOOL_CAT.items()})  # type: ignore[attr-defined]
+
 # Sections that sit between the BOSS tokens and the S_ctx block of a combat
 # row, in this order. They never occur out of combat.
-COMBAT_EXT_SECTIONS: Final = (SEC["ALLY"], SEC["ORB"])
+COMBAT_EXT_SECTIONS: Final = (SEC["ALLY"], SEC["ORB"], SEC["ARROW"], SEC["MELODY"])
 CHARS_SECTION_IDS: Final = frozenset(SEC[a] for a in CHARS_SECTIONS)
+FOOL_SECTION_IDS: Final = frozenset(SEC[a] for a in FOOL_SECTIONS)
 
 # The live columns the event adds: new sections, and columns on old ones.
 _CHARS_LIVE: Final[Mapping[int, tuple[tuple[int, ...], tuple[int, ...]]]] = {
@@ -793,7 +878,18 @@ _CHARS_LIVE: Final[Mapping[int, tuple[tuple[int, ...], tuple[int, ...]]]] = {
     ),
     SEC["ORB"]: (_cat("X_ID_MAIN", "X_POS"), (XF["C_ORB_PASSIVE"], XF["C_ORB_EVOKE"])),
     SEC["RUNCTX"]: (_cat("X_CHAR"), ()),
-    SEC["ENEMY"]: ((), (XF["E_DOOMED"],)),
+    SEC["ENEMY"]: ((), (XF["E_DOOMED"], XF["E_DIES_FIRST"])),
+    # GH #1197 (SCHEMA.md 13.5).
+    SEC["HAND"]: ((), (XF["C_STAR_COST"],)),
+    SEC["ACT_PLAY"]: ((), (XF["C_STAR_COST"],)),
+    SEC["STATE"]: (
+        (),
+        tuple(XF[a] for a in ("S_DISCARDS_TURN", "S_ATTACKS_TURN", "S_PLAYER_DOOMED")),
+    ),
+    SEC["RELIC"]: ((), (XF["R_ARMED"],)),
+    # Sly on a choice option. (A pile card's SLY / SLY_TURN / RETAIN_TURN, from its
+    # `pile_flags`, are S_ctx card columns the pile sections already have live.)
+    SEC["ACT_CHOOSE"]: ((), (SCTX_C["SLY"],)),
 }
 
 
@@ -808,10 +904,122 @@ def _with_fill(
     return out
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 4c. The "ooc-potion" fill event (GH #1606): the potion popup.
+#
+#    The game lets the player drink a potion out of combat (the AnyTime ones:
+#    Blood Potion, Fruit Juice, Entropic Brew, Ambergris; Foul Potion only at a
+#    merchant, for 100 gold) and discard any potion, from the belt, on every
+#    out-of-combat screen. The engine offers them on a run with
+#    `ooc_potion_actions` (`use_potion_ooc {potion_slot}`, `discard_potion
+#    {potion_slot}`), after the screen's own actions; a launch that declares
+#    the event builds its runs so (`factory.fill_ooc_potion`).
+#
+#    The options ride INSIDE the screen's decision (its decision type stays
+#    MAP, SHOP, EVENT, ...): kinds USE_POTION_OOC and DISCARD_POTION, one token
+#    each in RES_OPT_POTION_USE (X_KIND, the potion in X_ID_MAIN, X_POS). The
+#    reserved POTION_MENU decision type stays unused: a separate menu would need
+#    an "open the belt" option on every screen and a "close" option in the menu,
+#    and the hashed tables have no kind for either. The kind statuses, the
+#    decision types' kind sets and KIND_SECTION are hashed, so the event adds
+#    its kinds through the tables below; `schema_sha256` does not move.
+# ═══════════════════════════════════════════════════════════════════════════
+
+FILL_OOC_POTION: Final = "ooc-potion"
+OOC_POTION_SECTION: Final = SEC["RES_OPT_POTION_USE"]
+# USE_POTION_OOC and DISCARD_POTION (section 5 names them; asserted there).
+OOC_POTION_KINDS: Final = frozenset({54, 55})
+_OOC_POTION_LIVE: Final[Mapping[int, tuple[tuple[int, ...], tuple[int, ...]]]] = {
+    OOC_POTION_SECTION: (_cat("X_KIND", "X_ID_MAIN", "X_POS"), ()),
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 4d. The "#1069" fill event (GH #1620): the game's reward screen.
+#
+#    After a won combat room and at a treasure chest the game lists every
+#    reward on a screen (NRewardsScreen): take or skip each, in any order, and
+#    proceed to leave the rest; the chest relic has its own skip
+#    (NTreasureRoom SkipRelicLocally). The engine offers it on a run with
+#    `reward_screen` (`take_reward {idx}`, `skip_reward {idx}`,
+#    `proceed_rewards`; `available_actions()` names each reward in `reward`,
+#    `id`, `amount`); a launch that declares the event builds its runs so
+#    (`factory.fill_reward_screen`). The event is the schema's own reserved
+#    "#1069" (SCHEMA.md section 2.2: RES_OPT_REWARD is "#1069's reward
+#    screen"), so its reserved kinds and decision type go live by status.
+#
+#    A combat room's screen is decision type REWARD_SCREEN, one kind per
+#    (take | skip, reward type) plus PROCEED_REWARDS; the kinds without a
+#    reserved name take OOC and gap spares, named in `REWARD_KIND_NAMES`
+#    (unhashed). The chest's screen is TREASURE_CHOICE: COLLECT_TREASURE takes
+#    the relic, SKIP_TREASURE leaves it (its proceed does the same), and the
+#    relic rides in an OFFER token. Option tokens of a reward sit in
+#    RES_OPT_REWARD (X_KIND, the potion / relic / card in X_ID_MAIN, X_POS,
+#    gold in O_PRICE); a card reward's cards stay hidden until it is taken.
+#    `schema_sha256` does not move.
+# ═══════════════════════════════════════════════════════════════════════════
+
+FILL_REWARD_SCREEN: Final = "#1069"
+REWARD_SCREEN_SECTION: Final = SEC["RES_OPT_REWARD"]
+_REWARD_SCREEN_LIVE: Final[Mapping[int, tuple[tuple[int, ...], tuple[int, ...]]]] = {
+    REWARD_SCREEN_SECTION: (_cat("X_KIND", "X_ID_MAIN", "X_POS"), (XF["O_PRICE"],)),
+}
+# The spare action kinds the event names (section 5 asserts they are spare).
+REWARD_KIND_NAMES: Final[Mapping[int, str]] = {
+    42: "SKIP_REWARD_GOLD",
+    43: "TAKE_REWARD_RELIC",
+    44: "SKIP_REWARD_RELIC",
+    45: "TAKE_REWARD_CARD",
+    46: "SKIP_REWARD_CARD",
+    47: "PROCEED_REWARDS",
+    58: "TAKE_REWARD_SPECIAL_CARD",
+    59: "SKIP_REWARD_SPECIAL_CARD",
+    60: "TAKE_REWARD_CARD_REMOVAL",
+    61: "SKIP_REWARD_CARD_REMOVAL",
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 4e. The "deck-select" fill event (GH #1790): the game's deck select screens.
+#
+#    A pick-N deck select (Morphic Grove and Trial transform 2, Yummy Cookie
+#    upgrade 4, Cook and the relic removals of 2+) is one select over the deck
+#    as it was when it opened: each pick takes a card off the offer, and the
+#    last applies them all (`CardSelectCmd.FromDeckFor*`, then the effect per
+#    card). The engine plays it so on a run with `deck_select_screens`; a launch
+#    that declares the event builds its runs so (`factory.fill_deck_select`).
+#    The decision types and kinds stay the frozen ones; the cards already
+#    picked are their own DECK tokens with K_PICKED (live in HAND and the piles
+#    already), and the options are the offer minus them. Smith's and Cook's
+#    cancel is never offered (`env.mask_rejectable`). `schema_sha256` does not
+#    move.
+# ═══════════════════════════════════════════════════════════════════════════
+
+FILL_DECK_SELECT: Final = "deck-select"
+_DECK_SELECT_LIVE: Final[Mapping[int, tuple[tuple[int, ...], tuple[int, ...]]]] = {
+    SEC["DECK"]: ((), (XF["K_PICKED"],)),
+}
+# The process declares the deck select screens when this is "1"; the learner
+# sets it from `--filled` (`factory.set_fill_deck_select`).
+DECK_SELECT_ENV: Final = "STS2_E2E_DECK_SELECT"
+
+
+def deck_select_declared() -> bool:
+    """Whether this process declares the "deck-select" fill event."""
+    return os.environ.get(DECK_SELECT_ENV, "") == "1"
+
+
 # Every section's live columns: the frozen table plus the fill events' slots.
 # `schema_sha256` hashes `_SECTION_LIVE_BASE` only.
+_FOOL_LIVE: Final[Mapping[int, tuple[tuple[int, ...], tuple[int, ...]]]] = {
+    SEC["ARROW"]: ((XC["X_POS"], XC["X_FOOL1"], XC["X_FOOL2"]), ()),
+    SEC["MELODY"]: ((XC["X_POS"], XC["X_FOOL1"], XC["X_FOOL2"], XC["X_FOOL3"]), ()),
+    SEC["ENEMY"]: ((XC["X_FOOL1"],), ()),
+}
 SECTION_LIVE: Final[Mapping[int, tuple[tuple[int, ...], tuple[int, ...]]]] = _with_fill(
-    _SECTION_LIVE_BASE, _CHARS_LIVE
+    _with_fill(
+        _with_fill(_with_fill(_SECTION_LIVE_BASE, _CHARS_LIVE), _OOC_POTION_LIVE),
+        _REWARD_SCREEN_LIVE,
+    ),
+    _with_fill(_FOOL_LIVE, _DECK_SELECT_LIVE),
 )
 # The reserved inputs each fill event outside the column statuses takes
 # (`net.layout(filled)` inits them live for a launch that declares the event).
@@ -820,7 +1028,20 @@ FILL_SLOTS: Final[Mapping[str, Mapping[str, tuple[int, ...]]]] = {
         "sections": tuple(sorted(CHARS_SECTION_IDS)),
         "cat": tuple(XC[a] for a in CHARS_CAT),
         "cont": tuple(XF[a] for a in CHARS_CONT),
-    }
+    },
+    FILL_OOC_POTION: {"sections": (OOC_POTION_SECTION,)},
+    # The reward screen's spare kinds, the chest's skip and the chest's decision
+    # type (reserved for "treasure", which the event plays).
+    FILL_REWARD_SCREEN: {
+        "sections": (REWARD_SCREEN_SECTION,),
+        "kinds": (*sorted(REWARD_KIND_NAMES), 51),
+        "dtypes": (41,),
+    },
+    FILL_FOOL: {
+        "sections": tuple(sorted(FOOL_SECTION_IDS)),
+        "cat": tuple(XC[a] for a in FOOL_CAT),
+        "cont": (),
+    },
 }
 # `rm.*` reads a fill event adds to the policy facade (`POLICY_CALLS` is hashed).
 FILL_POLICY_CALLS: Final[Mapping[str, frozenset[str]]] = {FILL_CHARS: frozenset({"rm.character"})}
@@ -903,7 +1124,28 @@ _ACTION_KIND_TABLE: Final[tuple[Kind, ...]] = (
 )
 ACTION_KINDS: Final = _ACTION_KIND_TABLE
 N_ACTION_KIND: Final = 128  # X_KIND table size; ids 96-127 are never assigned
-AK: Final[Mapping[str, int]] = {k.name: k.id for k in ACTION_KINDS}
+assert all(ACTION_KINDS[k].status == "spare" for k in REWARD_KIND_NAMES)
+# Every kind by name: the frozen table's, and the reward screen's names for the
+# spare ids it takes (section 4d; not hashed).
+AK: Final[Mapping[str, int]] = {k.name: k.id for k in ACTION_KINDS} | {
+    n: k for k, n in REWARD_KIND_NAMES.items()
+}
+assert {AK["USE_POTION_OOC"], AK["DISCARD_POTION"]} == OOC_POTION_KINDS
+
+
+def kind_name(k: int) -> str:
+    """An action kind's name: `ACTION_KINDS[k].name`, or the reward screen's name
+    for a spare id it takes (section 4d)."""
+    return REWARD_KIND_NAMES.get(int(k)) or ACTION_KINDS[int(k)].name
+
+
+# The reward screen's kinds (section 4d): every take, skip and proceed of a combat
+# room's screen, and the chest's skip.
+REWARD_SCREEN_KINDS: Final = frozenset(
+    {AK["TAKE_REWARD_POTION"], AK["SKIP_REWARD_POTION"], AK["TAKE_REWARD_GOLD"]}
+    | set(REWARD_KIND_NAMES)
+)
+REWARD_FILL_KINDS: Final = REWARD_SCREEN_KINDS | {AK["SKIP_TREASURE"]}
 LIVE_ACTION_KINDS: Final = frozenset(k.id for k in ACTION_KINDS if k.status == "live" and k.id)
 COMBAT_ACTION_KINDS: Final = frozenset(range(1, 16))
 
@@ -1059,6 +1301,56 @@ KIND_SECTION: Final[Mapping[int, int]] = {
         )
     },
 }
+# The "ooc-potion" kinds (section 4c) and the reward screen's (section 4d): their
+# section, and the decision types whose screens offer the popup. Not hashed (the
+# events add them).
+FILL_KIND_SECTION: Final[Mapping[int, int]] = {
+    **{k: OOC_POTION_SECTION for k in OOC_POTION_KINDS},
+    **{k: REWARD_SCREEN_SECTION for k in REWARD_SCREEN_KINDS - {AK["PROCEED_REWARDS"]}},
+    AK["PROCEED_REWARDS"]: SEC["OPT_FIXED"],
+    AK["SKIP_TREASURE"]: SEC["OPT_FIXED"],
+}
+# The reward screen's decision types (section 4d).
+REWARD_SCREEN_DTYPES: Final = frozenset({DT["REWARD_SCREEN"], DT["TREASURE_CHOICE"]})
+# The process declares the reward screen ("#1069") when this is "1"; the learner
+# sets it from `--filled` (`factory.set_fill_reward_screen`).
+REWARD_SCREEN_ENV: Final = "STS2_E2E_REWARD_SCREEN"
+
+
+def reward_screen_declared() -> bool:
+    """Whether this process declares the "#1069" (reward screen) fill event."""
+    return os.environ.get(REWARD_SCREEN_ENV, "") == "1"
+
+
+OOC_POTION_HOST_DTYPES: Final = frozenset(
+    DT[n]
+    for n in (
+        "NEOW",
+        "MAP",
+        "CARD_REWARD",
+        "CARD_BUNDLE",
+        "RELIC_REWARD",
+        "BOSS_RELIC",
+        "SHOP",
+        "REST",
+        "EVENT",
+        "TREASURE",
+        "REWARD_SCREEN",
+        "TREASURE_CHOICE",
+    )
+)
+
+
+def dtype_kinds(dtype: int) -> frozenset[int]:
+    """The action kinds a decision of type `dtype` may offer: `DType.kinds`, on a
+    screen with the potion popup the "ooc-potion" kinds (section 4c), and on the
+    reward screen its kinds (section 4d)."""
+    kinds = DECISION_TYPES[dtype].kinds
+    if dtype == DT["REWARD_SCREEN"]:
+        kinds = kinds | REWARD_SCREEN_KINDS
+    return kinds | OOC_POTION_KINDS if dtype in OOC_POTION_HOST_DTYPES else kinds
+
+
 # Out-of-combat body sections between the head and the option tokens, in
 # their fixed order (SCHEMA.md section 2.1).
 OOC_BODY_SECTIONS: Final = (SEC["DECK"], SEC["RELIC"], SEC["POTION"], SEC["OFFER"], SEC["MAPNODE"])
@@ -1107,7 +1399,16 @@ TF_KNOWN: Final = TF_OPTION | TF_REP | TF_HIDDEN | TF_TEACHER | TF_POOLED
 
 # Reserved columns and ids start carrying data only at these events. The
 # schema hash does not move; the `filled` stamp records which happened.
-FILL_EVENTS: Final = ("WP-ENG-1", "content-prior", "D9", "#1069", FILL_CHARS)
+FILL_EVENTS: Final = (
+    "WP-ENG-1",
+    "content-prior",
+    "D9",
+    "#1069",
+    FILL_CHARS,
+    FILL_OOC_POTION,
+    FILL_FOOL,
+    FILL_DECK_SELECT,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1134,6 +1435,9 @@ _OOC_SIMPLE: Final[Mapping[str, str]] = {
     "upgrade_deck_card": "UPGRADE_DECK_CARD",
     "transform_deck_card": "TRANSFORM_DECK_CARD",
     "enchant_deck_card": "ENCHANT_DECK_CARD",
+    # The "ooc-potion" fill event (section 4c); never a leading kind.
+    "use_potion_ooc": "USE_POTION_OOC",
+    "discard_potion": "DISCARD_POTION",
 }
 
 # Leading kind -> decision type, checked in this order.
@@ -1161,9 +1465,38 @@ _DTYPE_BY_KIND: Final = (
     ("ENCHANT_DECK_CARD", "CARD_ENCHANT"),
     ("GRANT_DECK_CARD", "CARD_GRANT"),
     ("GRANT_CONFIRM", "CARD_GRANT"),
+    # The reward screen (section 4d): a combat room's always offers proceed, the
+    # chest's always its skip.
+    ("PROCEED_REWARDS", "REWARD_SCREEN"),
+    ("SKIP_TREASURE", "TREASURE_CHOICE"),
     ("COLLECT_TREASURE", "TREASURE"),
     ("EVENT_CHOICE", "EVENT"),
 )
+
+# The reward screen's reward types (`available_actions()` `reward`) -> kind stem.
+_REWARD_KIND_STEM: Final[Mapping[str, str]] = {
+    "gold": "REWARD_GOLD",
+    "potion": "REWARD_POTION",
+    "relic": "REWARD_RELIC",
+    "card": "REWARD_CARD",
+    "special_card": "REWARD_SPECIAL_CARD",
+    "card_removal": "REWARD_CARD_REMOVAL",
+}
+
+
+def _reward_action_kind(action: Mapping[str, Any]) -> int:
+    """The kind of a reward-screen action (section 4d), from the reward it names."""
+    a = action.get("action")
+    if a == "proceed_rewards":
+        return AK["SKIP_TREASURE"] if action.get("chest") else AK["PROCEED_REWARDS"]
+    take = a == "take_reward"
+    reward = action.get("reward")
+    if reward == "chest_relic":
+        return AK["COLLECT_TREASURE"] if take else AK["SKIP_TREASURE"]
+    stem = _REWARD_KIND_STEM.get(str(reward))
+    if stem is None:
+        raise SchemaError(f"{a} names no known reward: {reward!r}")
+    return AK[("TAKE_" if take else "SKIP_") + stem]
 
 
 def ooc_action_kind(
@@ -1199,6 +1532,8 @@ def ooc_action_kind(
         if not 0 <= idx < grant_n_options:
             raise SchemaError(f"grant_deck_card idx {idx} outside 0..{grant_n_options}")
         return AK["GRANT_DECK_CARD"]
+    if a in ("take_reward", "skip_reward", "proceed_rewards"):
+        return _reward_action_kind(action)
     name = _OOC_SIMPLE.get(str(a))
     if name is None:
         raise SchemaError(f"unknown out-of-combat action kind {a!r}")
@@ -1236,7 +1571,7 @@ def classify_ooc(
     if not actions:
         raise SchemaError("a decision needs at least one action")
     kinds = [ooc_action_kind(a, bundles=bundles, grant_n_options=grant_n_options) for a in actions]
-    names = {ACTION_KINDS[k].name for k in kinds}
+    names = {kind_name(k) for k in kinds}
     for kind, dtype in _DTYPE_BY_KIND:
         if kind in names:
             if dtype == "EVENT" and event_name == "Neow":
@@ -1261,9 +1596,9 @@ def classify_combat(
 
 
 def check_kinds(dtype: int, kinds: Sequence[int]) -> None:
-    """Raise unless every kind is allowed for `dtype`."""
-    allowed = DECISION_TYPES[dtype].kinds
-    bad = sorted({ACTION_KINDS[k].name for k in kinds if k not in allowed})
+    """Raise unless every kind is allowed for `dtype` (`dtype_kinds`)."""
+    allowed = dtype_kinds(dtype)
+    bad = sorted({kind_name(k) for k in kinds if k not in allowed})
     if bad:
         raise SchemaError(f"{DECISION_TYPES[dtype].name} cannot offer {bad}")
 
@@ -1316,6 +1651,21 @@ def choice_option_key(
     return _canon({k: opt.get(k) for k in ("id", "upgraded", "type", "pile")})
 
 
+def _in_unordered_pile(choice: Mapping[str, Any], s: int, piles: Mapping[str, Any]) -> bool:
+    """Option `s` is a card of the draw, discard or exhaust pile (`choice_option_key`'s
+    full-card branch, not the hand)."""
+    opt = (choice.get("cards") or choice.get("options") or [])[s]
+    name = str(opt.get("pile"))
+    pile = piles.get(_PILES.get(name, ""), None)
+    idx = opt.get("index")
+    return (
+        name in ("draw", "discard", "exhaust")
+        and pile is not None
+        and isinstance(idx, int)
+        and 0 <= idx < len(pile)
+    )
+
+
 def combat_class_keys(
     legal: Sequence[Mapping[str, Any]],
     hand: Sequence[Mapping[str, Any]],
@@ -1359,8 +1709,16 @@ def combat_class_keys(
         elif kind in (AK["CHOOSE"], AK["CHOOSE_DONE"]):
             if outcome is None or choice is None:
                 raise SchemaError("choose actions need choice and outcome")
-            sel = [choice_option_key(choice, int(x), piles or {}) for x in a.get("selection") or []]
-            keys.append(_canon(["choose", outcome(i), sorted(sel)]))
+            picks = [int(x) for x in a.get("selection") or []]
+            sel = [choice_option_key(choice, x, piles or {}) for x in picks]
+            # GH #1800: a pick made only of cards from the draw, discard or
+            # exhaust pile (sent sorted, so identical copies are one card to
+            # the player) keys on content alone. Its outcome adds only how the
+            # engine's uids happen to order the pile under a random draw.
+            unordered = bool(picks) and all(
+                _in_unordered_pile(choice, x, piles or {}) for x in picks
+            )
+            keys.append(_canon(["choose", "" if unordered else outcome(i), sorted(sel)]))
         else:
             keys.append(_canon([ACTION_KINDS[kind].name, i]))
     return keys
@@ -1683,8 +2041,11 @@ def validate_row_batch(
     one practice cell, and the run closed by its last row, which is its only
     done or bootstrap row (a terminal, a cut or a practice end). Leave
     `runs=False` for derived batches: minibatches, strata, and the learner's
-    table with held rows.
+    table with held rows. A compact batch (`COMPACT_ROW_FIELDS`) is checked as its
+    dense rows (`dense_rows`).
     """
+    if "ccont" in b:
+        b = dense_rows(b)
     for f in ROW_FIELDS:
         if f.name not in b:
             _fail(f"missing field {f.name!r}")
@@ -1748,8 +2109,14 @@ def validate_row_batch(
     end = boot & b["done"]
     if (end & ((b["cell"] == CELL_NONE) | comb)).any():
         _fail("done on a bootstrap row marks a practice segment's out-of-combat end only")
-    ok_dt = LIVE_DTYPES | (
-        frozenset(d.id for d in DECISION_TYPES if d.status != "live") if allow_reserved else set()
+    ok_dt = (
+        LIVE_DTYPES
+        | (REWARD_SCREEN_DTYPES if reward_screen_declared() else frozenset())
+        | (
+            frozenset(d.id for d in DECISION_TYPES if d.status != "live")
+            if allow_reserved
+            else set()
+        )
     )
     for d in np.unique(b["dtype"]):
         if int(d) not in ok_dt:
@@ -1757,10 +2124,17 @@ def validate_row_batch(
     combat_dt = np.isin(b["dtype"], list(COMBAT_DTYPES))
     if (combat_dt != comb).any():
         _fail("is_combat disagrees with dtype")
-    ok_kind = LIVE_ACTION_KINDS | (
-        frozenset(k.id for k in ACTION_KINDS if k.status != "live" and k.id)
-        if allow_reserved
-        else set()
+    # The "ooc-potion" kinds (section 4c) and the reward screen's (section 4d) ride
+    # on a run that declares the event.
+    ok_kind = (
+        LIVE_ACTION_KINDS
+        | OOC_POTION_KINDS
+        | REWARD_FILL_KINDS
+        | (
+            frozenset(k.id for k in ACTION_KINDS if k.status != "live" and k.id)
+            if allow_reserved
+            else set()
+        )
     )
     sec, psec = b["sec"].astype(np.int64), b["psec"].astype(np.int64)
     if ((sec < 0) | (sec >= N_SECTION)).any() or ((psec < 0) | (psec >= N_SECTION)).any():
@@ -1811,11 +2185,11 @@ _IS_SUM_SEC: Final = _sec_mask(SUMMARY_SECTIONS)
 _IS_ACT_SEC: Final = _sec_mask(SCTX_ACT_SECTIONS)
 _IS_OPT_SEC: Final = _sec_mask(OPTION_SECTIONS)
 _KIND_SEC: Final = np.full(256, -1, np.int64)
-for _k, _s in KIND_SECTION.items():
+for _k, _s in {**KIND_SECTION, **FILL_KIND_SECTION}.items():
     _KIND_SEC[_k] = _s
 _DTYPE_KIND: Final = np.zeros((N_DTYPE, 256), bool)
 for _d in DECISION_TYPES:
-    _DTYPE_KIND[_d.id, list(_d.kinds)] = True
+    _DTYPE_KIND[_d.id, list(dtype_kinds(_d.id))] = True
 _IS_EXT_SEC: Final = _sec_mask(COMBAT_EXT_SECTIONS)
 _EXT_RANK: Final = np.full(N_SECTION, -1, np.int64)
 for _r, _s in enumerate(COMBAT_EXT_SECTIONS):
@@ -1875,13 +2249,17 @@ def _check_row(
         n_ext += 1
     ext = sec[body0 : body0 + n_ext]
     if (np.diff(_EXT_RANK[ext]) < 0).any():
-        _fail(f"{where}: the ALLY and ORB tokens must come in that order")
+        _fail(f"{where}: the ALLY, ORB, ARROW and MELODY tokens must come in that order")
     if int((ext == SEC["ALLY"]).sum()) > MAX_ALLY_TOKENS:
-        _fail(f"{where}: more than {MAX_ALLY_TOKENS} ALLY token")
+        _fail(f"{where}: more than {MAX_ALLY_TOKENS} ALLY tokens")
     if int((ext == SEC["ORB"]).sum()) > MAX_ORB_TOKENS:
         _fail(f"{where}: more than {MAX_ORB_TOKENS} ORB tokens")
+    if int((ext == SEC["ARROW"]).sum()) > MAX_ARROW_TOKENS:
+        _fail(f"{where}: more than {MAX_ARROW_TOKENS} ARROW tokens")
+    if int((ext == SEC["MELODY"]).sum()) > 1:
+        _fail(f"{where}: more than one MELODY token")
     if _IS_EXT_SEC[sec[body0 + n_ext :]].any():
-        _fail(f"{where}: an ALLY or ORB token outside a combat row's head")
+        _fail(f"{where}: an ALLY, ORB, ARROW or MELODY token outside a combat row's head")
     if cat[0, XC["X_CHAR"]] == 0 and (n_ext or (b["cont"][t0:t1][:, XF["E_DOOMED"]] != 0).any()):
         _fail(f'{where}: "chars" inputs on a row without X_CHAR')
     body0 += n_ext
@@ -2102,6 +2480,138 @@ def from_compact(
         if lf:
             cont[np.ix_(rows, list(lf))] = ccont[of[rows][:, None] + np.arange(len(lf))]
     return cat, cont
+
+
+# The compact ROW layout (#1550): a row batch whose four dense token matrices are
+# replaced by their compact arrays (`to_compact`), on ragged axes of their own.
+# A row's entries on such an axis follow from its tokens' sections, so the axes
+# carry no count field (`compact_counts`). Everything else is `ROW_FIELDS`.
+DENSE_TOKEN_FIELDS: Final = ("cat", "cont", "pcat", "pcont")
+_COMPACT_OF: Final = {
+    "cat": Field("ccat", "int16", "ccat", 0, "`cat`'s live columns (`to_compact`)"),
+    "cont": Field("ccont", "float16", "ccont", 0, "`cont`'s live columns"),
+    "pcat": Field("pccat", "int16", "pccat", 0, "`pcat`'s live columns"),
+    "pcont": Field("pccont", "float16", "pccont", 0, "`pcont`'s live columns"),
+}
+COMPACT_ROW_FIELDS: Final[tuple[Field, ...]] = tuple(_COMPACT_OF.get(f.name, f) for f in ROW_FIELDS)
+#: Compact axis -> (the axis of its tokens, their section field, per-section width).
+COMPACT_AXES: Final[Mapping[str, tuple[str, str, np.ndarray]]] = {
+    "ccat": ("tok", "sec", _W_CAT),
+    "ccont": ("tok", "sec", _W_CONT),
+    "pccat": ("priv", "psec", _W_CAT),
+    "pccont": ("priv", "psec", _W_CONT),
+}
+
+
+def _live_table(k: int) -> np.ndarray:
+    """`[N_SECTION, widest]`: each section's live columns, padded with 0."""
+    w = max(1, int((_W_CAT if k == 0 else _W_CONT).max()))
+    out = np.zeros((N_SECTION, w), np.int64)
+    for s in range(N_SECTION):
+        live = SECTION_LIVE.get(s, ((), ()))[k]
+        out[s, : len(live)] = live
+    return out
+
+
+LIVE_CAT_TABLE: Final = _live_table(0)
+LIVE_CONT_TABLE: Final = _live_table(1)
+
+
+def is_compact(rb: Mapping[str, Any]) -> bool:
+    """Whether `rb` is a compact row batch (`COMPACT_ROW_FIELDS`)."""
+    return "ccont" in rb
+
+
+def row_fields(rb: Mapping[str, Any]) -> tuple[Field, ...]:
+    """The field list of row batch `rb`: `COMPACT_ROW_FIELDS` or `ROW_FIELDS`."""
+    return COMPACT_ROW_FIELDS if "ccont" in rb else ROW_FIELDS
+
+
+def compact_places(
+    sec: np.ndarray, width: np.ndarray, live: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Each compact entry's `(token, dense column)`, in the compact order: token by
+    token, a token's live columns in `SECTION_LIVE` order."""
+    s64 = np.asarray(sec, np.int64)
+    w = width[s64]
+    tok = np.repeat(np.arange(len(s64)), w)
+    j = np.arange(len(tok)) - np.repeat(np.cumsum(w) - w, w)
+    return tok, live[s64[tok], j]
+
+
+def _nonzero_f16(x: np.ndarray) -> int:
+    """How many values of float16 `x` are not zero (-0.0 is zero), on its bits:
+    numpy counts non-zero float16 values ~20 times slower."""
+    if x.dtype != np.float16:
+        return int(np.count_nonzero(x))
+    return int(np.count_nonzero(np.ascontiguousarray(x).view(np.uint16) & np.uint16(0x7FFF)))
+
+
+def _compact_pair(
+    cat: np.ndarray, cont: np.ndarray, sec: np.ndarray, what: str
+) -> tuple[np.ndarray, np.ndarray]:
+    """`to_compact` in one gather per matrix, with a count check in place of
+    `check_compact_lossless`: as many non-absent values after as before."""
+    tok, col = compact_places(sec, _W_CAT, LIVE_CAT_TABLE)
+    ccat = np.ascontiguousarray(cat).reshape(-1).take(tok * N_CAT + col)
+    if int((cat != _ABSENT_CAT[None, :]).sum()) != int((ccat != _ABSENT_CAT[col]).sum()):
+        _fail(f"{what}: a categorical value outside its section's live columns")
+    tok, col = compact_places(sec, _W_CONT, LIVE_CONT_TABLE)
+    ccont = np.ascontiguousarray(cont).reshape(-1).take(tok * N_CONT + col)
+    if _nonzero_f16(cont) != _nonzero_f16(ccont):
+        _fail(f"{what}: a continuous value outside its section's live columns")
+    return ccat, ccont
+
+
+def compact_rows(rb: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    """Row batch `rb` in the compact row layout (`COMPACT_ROW_FIELDS`); a compact
+    batch comes back as it is. Raises `SchemaError` unless nothing is lost."""
+    if is_compact(rb):
+        return dict(rb)
+    out = {f.name: rb[f.name] for f in ROW_FIELDS if f.name not in DENSE_TOKEN_FIELDS}
+    out["ccat"], out["ccont"] = _compact_pair(rb["cat"], rb["cont"], rb["sec"], "tokens")
+    out["pccat"], out["pccont"] = _compact_pair(rb["pcat"], rb["pcont"], rb["psec"], "PRIV tokens")
+    return {f.name: out[f.name] for f in COMPACT_ROW_FIELDS}
+
+
+def _dense_pair(
+    ccat: np.ndarray, ccont: np.ndarray, sec: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    n = len(sec)
+    cat = np.tile(_ABSENT_CAT, (n, 1))
+    tok, col = compact_places(sec, _W_CAT, LIVE_CAT_TABLE)
+    if len(tok) != len(ccat):
+        raise SchemaError("compact arrays do not match the sections' live widths")
+    cat.reshape(-1)[tok * N_CAT + col] = ccat
+    cont = np.zeros((n, N_CONT), np.float16)
+    tok, col = compact_places(sec, _W_CONT, LIVE_CONT_TABLE)
+    if len(tok) != len(ccont):
+        raise SchemaError("compact arrays do not match the sections' live widths")
+    cont.reshape(-1)[tok * N_CONT + col] = ccont
+    return cat, cont
+
+
+def dense_rows(rb: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    """Row batch `rb` in the dense layout (`ROW_FIELDS`), `compact_rows`' inverse; a
+    dense batch comes back as it is."""
+    if not is_compact(rb):
+        return {f.name: rb[f.name] for f in ROW_FIELDS}
+    out = {f.name: rb[f.name] for f in ROW_FIELDS if f.name not in DENSE_TOKEN_FIELDS}
+    out["cat"], out["cont"] = _dense_pair(rb["ccat"], rb["ccont"], rb["sec"])
+    out["pcat"], out["pcont"] = _dense_pair(rb["pccat"], rb["pccont"], rb["psec"])
+    return {f.name: out[f.name] for f in ROW_FIELDS}
+
+
+def compact_counts(rb: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    """Each row's entry count on every compact axis (int64 `[B]`), from its tokens'
+    sections."""
+    out = {}
+    for axis, (tok_axis, sec_name, width) in COMPACT_AXES.items():
+        n = np.asarray(rb[_AXIS_COUNT[tok_axis]], np.int64)
+        cum = np.concatenate([[0], np.cumsum(width[np.asarray(rb[sec_name], np.int64)])])
+        ends = np.cumsum(n)
+        out[axis] = cum[ends] - cum[ends - n]
+    return out
 
 
 def row_offsets(b: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -2351,6 +2861,14 @@ _OOC_RAW: Final[Mapping[int, frozenset[str]]] = {
     AK["POTION_SWAP_DECLINE"]: frozenset({"potion_swap"}),
     AK["GRANT_DECK_CARD"]: frozenset({"grant_deck_card"}),
     AK["GRANT_CONFIRM"]: frozenset({"grant_deck_card"}),
+    # The reward screen (section 4d).
+    **{
+        k: frozenset({"take_reward" if kind_name(k).startswith("TAKE_") else "skip_reward"})
+        for k in REWARD_SCREEN_KINDS - {AK["PROCEED_REWARDS"]}
+    },
+    AK["PROCEED_REWARDS"]: frozenset({"proceed_rewards"}),
+    AK["COLLECT_TREASURE"]: frozenset({"collect_treasure", "take_reward"}),
+    AK["SKIP_TREASURE"]: frozenset({"skip_reward", "proceed_rewards"}),
 }
 
 
@@ -2489,7 +3007,8 @@ def validate_decision(d: EnvDecision, *, allow_reserved: bool = False) -> None:
     if not 0 < d.dtype < N_DTYPE:
         _fail(f"dtype {d.dtype} outside 1..{N_DTYPE - 1}")
     dt = DECISION_TYPES[d.dtype]
-    if dt.status == "spare" or (dt.status != "live" and not allow_reserved):
+    reward = d.dtype in REWARD_SCREEN_DTYPES and reward_screen_declared()  # section 4d
+    if dt.status == "spare" or (dt.status != "live" and not allow_reserved and not reward):
         _fail(f"decision type {dt.name} is {dt.status}")
     m = len(d.actions)
     if not 1 <= m <= MAX_MEMBERS:
@@ -2506,7 +3025,7 @@ def validate_decision(d: EnvDecision, *, allow_reserved: bool = False) -> None:
                 _fail(f"combat action {a!r} is not kind {ACTION_KINDS[k].name}")
         elif k in _OOC_RAW:
             if a.get("action") not in _OOC_RAW[k]:
-                _fail(f"action {a.get('action')!r} cannot be kind {ACTION_KINDS[k].name}")
+                _fail(f"action {a.get('action')!r} cannot be kind {kind_name(k)}")
         elif ACTION_KINDS[k].status == "live":
             _fail(f"no raw action names for live kind {ACTION_KINDS[k].name}")
     cls, rep = merge_classes(d.keys)

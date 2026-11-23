@@ -712,7 +712,7 @@ pub fn build_scenario_state_with_run_rng(
         relics: relics_vec.into(),
         potions: Vec::new(),
         player,
-        allies: SmallVec::new(),
+        allies: Vec::new(),
         enemy_uids: SmallVec::new(),
         pending_choice: None,
         resolving_card: None,
@@ -730,6 +730,7 @@ pub fn build_scenario_state_with_run_rng(
         pending_autoplay_resume: None,
         autoplay_inline_resolve: false,
         vakuu_selector: false,
+        interactive_turn_start_picks: false,
         pending_curse_choice: None,
         pending_potion_hook_resume: None,
         pending_enemy_exec_resume: None,
@@ -762,11 +763,14 @@ pub fn build_scenario_state_with_run_rng(
         is_boss,
         act_index: 1,
         total_floor: 0,
+        game_mode: sts2_core::GameMode::Standard,
+        dominion: None,
         active_attack: None,
         energy_wasted: 0,
         cards_drawn: 0,
         pending_run_gold_loss: 0,
         last_drawn_card: None,
+        enemy_turn_end_last_participant: None,
     };
 
     // Monsters 1..n first, then the player's mirror creature, then every
@@ -808,7 +812,12 @@ pub fn build_scenario_state_with_run_rng(
 /// PotionBelt / PhialHolster, which the builder does not model) keeps them
 /// all rather than silently losing one.
 fn scenario_potion_slots(ascension: u8, held: usize) -> u8 {
-    let base: u8 = if ascension >= sts2_core::runstate::TIGHT_BELT_ASCENSION_LEVEL {
+    // A scenario is a standard-mode fight.
+    let base: u8 = if sts2_core::ascension::has_level(
+        sts2_core::GameMode::Standard,
+        ascension,
+        sts2_core::AscensionLevel::TightBelt,
+    ) {
         2
     } else {
         3

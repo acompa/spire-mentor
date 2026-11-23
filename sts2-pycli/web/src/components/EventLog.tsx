@@ -3,6 +3,7 @@ import { hasReadableRow } from "../combatlog";
 import { endedSelection } from "../textSelection";
 import { DetailToggle, StepEvents, TurnHeader } from "./turnLedger";
 import { turnChips, useDetailMode } from "./turnLedgerState";
+import { t } from "../i18n";
 
 /**
  * The loaded-run history: one clickable row per recorded decision.
@@ -16,8 +17,8 @@ import { turnChips, useDetailMode } from "./turnLedgerState";
  */
 
 function headerFor(e: TimelineEntry): string {
-  const act = e.act_name ?? (e.act != null ? `Act ${e.act}` : "?");
-  return e.floor != null ? `${act} · floor ${e.floor}` : act;
+  const act = (e.act_name ? t(e.act_name) : null) ?? (e.act != null ? t("Act {n}", { n: e.act }) : "?");
+  return e.floor != null ? `${act} · ${t("floor {floor}", { floor: e.floor })}` : act;
 }
 
 export default function EventLog({ entries, current, onPick }: {
@@ -62,11 +63,11 @@ export default function EventLog({ entries, current, onPick }: {
       <div className="mono" style={{ display: "flex", justifyContent: "space-between",
         alignItems: "baseline", fontSize: 10, color: "var(--muted)",
         borderBottom: "1px solid var(--border)", paddingBottom: 5, margin: "18px 0 9px" }}>
-        <span>Event log</span>
+        <span>{t("Event log")}</span>
         {anyRows && <DetailToggle mode={mode} onChange={setMode} />}
       </div>
       {entries.length === 0 && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>load a run to see its history</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>{t("load a run to see its history")}</div>
       )}
       {entries.map((e, i) => {
         const header = headerFor(e);

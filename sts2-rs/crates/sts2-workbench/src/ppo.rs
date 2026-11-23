@@ -20,6 +20,7 @@
 use serde_json::{json, Value};
 use sts2_core::run_manager::{Phase, RunAction, RunManager};
 
+use crate::i18n::trf;
 use crate::rmx;
 
 #[cfg(feature = "ppo")]
@@ -80,8 +81,14 @@ pub fn load(character: &str, bytes: &[u8]) -> Result<Net, String> {
 #[must_use]
 pub fn missing_net_error(character: &str, reason: Option<&str>) -> String {
     match reason {
-        Some(r) if !r.is_empty() => format!("no PPO net loaded for {character}: {r}"),
-        _ => format!("no PPO net loaded for {character}"),
+        Some(r) if !r.is_empty() => trf(
+            "no PPO net loaded for {character}: {reason}",
+            &[("character", &character), ("reason", &r)],
+        ),
+        _ => trf(
+            "no PPO net loaded for {character}",
+            &[("character", &character)],
+        ),
     }
 }
 
@@ -231,9 +238,22 @@ pub fn evaluate(net: Option<&Net>, net_error: &str, rm: &mut RunManager) -> Opti
 pub fn shop_remove_label(deck: &[(String, bool)], deck_idx: i64) -> Option<String> {
     let idx = usize::try_from(deck_idx).ok()?;
     let (card_id, upgraded) = deck.get(idx)?;
-    let name = camel_split(card_id);
+    let zh = crate::localization::display_zh()
+        .then(|| {
+            let key = crate::simlab::camel_to_upper_snake(card_id);
+            crate::data::zh_tables()
+                .cards
+                .get(&format!("{key}.title"))
+                .filter(|t| !t.is_empty())
+                .cloned()
+        })
+        .flatten();
+    let name = zh.unwrap_or_else(|| camel_split(card_id));
     let plus = if *upgraded { "+" } else { "" };
-    Some(format!("Remove {name}{plus} (deck #{deck_idx})"))
+    Some(trf(
+        "Remove {name}{plus} (deck #{n})",
+        &[("name", &name), ("plus", &plus), ("n", &deck_idx)],
+    ))
 }
 
 /// `_CAMEL_SPLIT.sub(" ", s)`: a space before each `[A-Z]` that follows a

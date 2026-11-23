@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { t } from "../i18n";
 
 export interface BugReportResult {
   id: string;
@@ -69,14 +70,14 @@ export default function BugReportToast({
   }
 
   return (
-    <div role="dialog" aria-label="Bug report"
+    <div role="dialog" aria-label={t("Bug report")}
       style={{ position: "fixed", right: 16, bottom: 16, zIndex: 60, maxWidth: "min(560px, 92vw)",
         background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10,
         boxShadow: "0 12px 40px oklch(30% 0.04 255 / .4)", padding: "10px 12px",
         display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <b>{error ? "🐞 Report failed" : "🐞 Report captured"}</b>
-        <button type="button" onClick={onDismiss} aria-label="dismiss">✕</button>
+        <b>{error ? t("🐞 Report failed") : t("🐞 Report captured")}</b>
+        <button type="button" onClick={onDismiss} aria-label={t("dismiss")}>✕</button>
       </div>
       {error ? (
         <span className="bugreport-error">{error}</span>
@@ -85,15 +86,15 @@ export default function BugReportToast({
           <code>{result?.id}</code>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input ref={input} className="mono" readOnly value={result?.url ?? ""}
-              aria-label="report URL" onFocus={(e) => e.currentTarget.select()}
+              aria-label={t("report URL")} onFocus={(e) => e.currentTarget.select()}
               style={{ flex: "1 1 auto", minWidth: 0 }} />
-            <button type="button" onClick={() => void copy()} title="Copy report URL">
-              {copied ? "copied ✓" : /^https?:/.test(result?.url ?? "") ? "copy link" : "copy path"}
+            <button type="button" onClick={() => void copy()} title={t("Copy report URL")}>
+              {copied ? t("copied ✓") : /^https?:/.test(result?.url ?? "") ? t("copy link") : t("copy path")}
             </button>
           </div>
           {result?.detail && <span className="wb-hint" data-testid="bugreport-detail">{result.detail}</span>}
           {copied === false && (
-            <span className="wb-hint">clipboard refused — the link is selected, copy it with ctrl-C</span>
+            <span className="wb-hint">{t("clipboard refused — the link is selected, copy it with ctrl-C")}</span>
           )}
         </>
       )}

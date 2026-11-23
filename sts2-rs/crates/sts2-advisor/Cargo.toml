@@ -1,0 +1,38 @@
+[package]
+name = "sts2-advisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The live advisor's logic, ported from sts2-pycli piece by piece (GH #1426): JSON in, JSON out; its one I/O is the run log file (`workbench_log`). sts2_rs exposes it to the Python advisor until the native advisor binary takes over."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+# `display_names::load`: the localization tables in file order.
+serde = { workspace = true }
+# `display_names::load`: the packaged mod ships its tables gzipped.
+flate2 = "1"
+# `mirror_state`: the mirror's operations on an engine state.
+sts2-core = { workspace = true }
+sts2-wire = { workspace = true }
+smallvec = { workspace = true }
+# `turn_plan`: the board labels (`enemy_labels`).
+sts2-workbench = { workspace = true }
+# `combat_advice`: the win-probability buckets.
+sts2-mcts = { workspace = true }
+# `route`: the run AI's HP projection tables and the map labels.
+sts2-runai = { path = "../sts2-runai", default-features = false }
+# `instinct::evaluate`: the Instinct student (`E2eNet`, `Driver`).
+sts2-e2e = { path = "../sts2-e2e" }
+# `instinct_combat`: the live fight's encounter (`encounters::find`).
+sts2-content = { workspace = true }
+
+[build-dependencies]
+# `SRC_HASH`: linked into `sts2_rs`, so part of its content identity
+# (`sts2_srchash::ENGINE_CRATES`).
+sts2-srchash = { path = "../sts2-srchash" }

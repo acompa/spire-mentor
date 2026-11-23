@@ -9,9 +9,11 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
+using HarmonyLib;
 using MegaCrit.Sts2.Core.AutoSlay.Handlers;
 using MegaCrit.Sts2.Core.AutoSlay.Helpers;
 using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
@@ -42,7 +44,7 @@ public class SimCardRewardScreenHandler : IScreenHandler, IHandler
         var screen = (NCardRewardSelectionScreen)NOverlayStack.Instance!.Peek()!;
         await Task.Delay(InitialSettleMs, ct);
 
-        List<NCardHolder> holders = UiHelper.FindAll<NCardHolder>(screen);
+        List<NCardHolder> holders = InOptionOrder(screen, UiHelper.FindAll<NCardHolder>(screen));
         if (holders.Count == 0)
         {
             Logger.Log("[SimCardReward] No card holders on the screen");
@@ -140,6 +142,35 @@ public class SimCardRewardScreenHandler : IScreenHandler, IHandler
         await WaitHelper.Until(() => !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree(),
             ct, CloseWait, "Card reward screen did not close after choosing");
         Logger.Log("[SimCardReward] Card reward screen closed");
+    }
+
+    private static readonly FieldInfo? OptionsField =
+        AccessTools.Field(typeof(NCardRewardSelectionScreen), "_options");
+
+    /// <summary>
+    /// The holders in the reward's own order (the screen's <c>_options</c>,
+    /// which it lays out left to right), not the row's child order: a
+    /// focused holder moves itself to the end of the row
+    /// (<c>NGridCardHolder.OnFocus</c> → <c>MoveToFrontSafely</c>), so a
+    /// pointer resting on the first card listed it last (GH #1287, Regent A10
+    /// seed 1000). Unknown holders keep their place after the known ones.
+    /// </summary>
+    private static List<NCardHolder> InOptionOrder(NCardRewardSelectionScreen screen, List<NCardHolder> holders)
+    {
+        if (OptionsField?.GetValue(screen) is not IReadOnlyList<CardCreationResult> options)
+        {
+            return holders;
+        }
+        int Rank(NCardHolder holder)
+        {
+            for (int i = 0; i < options.Count; i++)
+            {
+                if (ReferenceEquals(options[i].Card, holder.CardModel))
+                    return i;
+            }
+            return int.MaxValue;
+        }
+        return holders.OrderBy(Rank).ToList();
     }
 
     private static void SkipOrLog(NCardRewardSelectionScreen screen)

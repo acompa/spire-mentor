@@ -74,6 +74,13 @@ pub(crate) const BASIC_DEFEND_IDS: &[CardId] = &[
     CardId::DefendFool,
 ];
 
+/// A Basic Strike or Defend: the cards Ghost Seed makes Ethereal (C#
+/// `GhostSeed.CanAffect`).
+#[must_use]
+pub fn is_basic_strike_or_defend(id: CardId) -> bool {
+    BASIC_STRIKE_IDS.contains(&id) || BASIC_DEFEND_IDS.contains(&id)
+}
+
 /// Register the W9 Neow-relic run-side listeners. Called from
 /// [`crate::relics::dispatch::install_default_registry`]. Idempotent.
 pub fn install_pool() {
@@ -404,6 +411,20 @@ fn listener_neows_bones(rs: &mut RunState) -> EffectResult {
         .take(2)
         .filter_map(|nr| nr.to_relic_id())
         .collect();
+    if rs.reward_screen {
+        // A reward-screen run (GH #1641): the set waits on its screen, which
+        // offers no skip (`WithSkippingDisallowed`); each relic is obtained
+        // on its take. The curse below waits for the screen to close.
+        for rid in to_grant {
+            rs.relic_rewards.push(RelicReward::new(rid));
+        }
+        rs.reward_set_must_take = true;
+        rs.last_obtained_relic = Some(RelicId::NeowsBones);
+        rs.pending_neows_bones_curses = rs
+            .pending_neows_bones_curses
+            .saturating_add(NEOWS_BONES_CURSES as u32);
+        return EffectResult::Resolved;
+    }
     let mut remaining = to_grant.into_iter();
     if let Some(first) = remaining.next() {
         rs.relic_rewards.push(RelicReward::new(first));
@@ -624,6 +645,7 @@ fn listener_phial_holster(rs: &mut RunState) -> EffectResult {
         // potion instead of offering a swap (GH #1069).
         let _ = rs.procure_potion(PotionReward::direct(kind));
     }
+    rs.settle_waiting_potions();
 
     EffectResult::Resolved
 }

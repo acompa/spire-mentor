@@ -1123,6 +1123,23 @@ fn resolve_boss_carry(env_value: Option<&str>) -> BossCarry {
 /// (`sts2-wire`, which does not depend on this crate) applies the same rule.
 use sts2_mcts::boss_win_carry;
 
+/// [`boss_win_carry`] for a fight of `run`.
+///
+/// The rule thresholds the ascension on WearyTraveler alone (the Ancient's
+/// heal after an act-1 or act-2 boss), so it is handed the run's view of
+/// that level: the plain ascension outside Blitz, and in a Blitz run (which
+/// holds WearyTraveler from Blitz level 1, `AscensionHelper.cs:71`) a number
+/// that crosses the threshold exactly when the run holds the level
+/// (GH #1347).
+fn run_boss_win_carry(run: &sts2_core::runstate::RunState, is_boss: bool) -> Option<(f32, f32)> {
+    boss_win_carry(
+        is_boss,
+        run.is_last_act(),
+        run.awaiting_second_boss(),
+        run.ascension_view(&[sts2_core::AscensionLevel::WearyTraveler]),
+    )
+}
+
 /// Parsed `STS2_RUNAI_MCTS_OVERRIDES` bundle — one optional slot per
 /// tunable [`MctsConfig`] search knob, shared vocabulary with
 /// `sts2-bench`'s `combat_asc_eval` example's `Knobs::apply`. `None`
@@ -2343,12 +2360,7 @@ impl<M: RunPolicy> MctsCombatPolicy<M> {
             && config.win_potion_carry.is_none()
         {
             let run = &rm.run_state;
-            let carry = boss_win_carry(
-                is_boss,
-                run.is_last_act(),
-                run.awaiting_second_boss(),
-                run.ascension_level,
-            );
+            let carry = run_boss_win_carry(run, is_boss);
             let last_boss = is_boss && run.is_last_act() && !run.awaiting_second_boss();
             if let Some((hp, potions)) =
                 carry.filter(|_| last_boss || self.boss_carry == BossCarry::All)
@@ -3872,6 +3884,45 @@ mod tests {
         assert_eq!(boss_win_carry(true, false, false, 1), Some((0.0, 1.0)));
         assert_eq!(boss_win_carry(true, false, false, 2), Some((0.2, 1.0)));
         assert_eq!(boss_win_carry(true, false, false, 10), Some((0.2, 1.0)));
+    }
+
+    /// A Blitz run holds WearyTraveler from Blitz level 1
+    /// (`AscensionHelper.GetLevelForBlitz`, `AscensionHelper.cs:71`), so the
+    /// Ancient after an act-1 boss heals 80% of the missing HP
+    /// (`AncientEventModel.cs:177`) and HP carries 0.2 there. A standard A1
+    /// run does not hold it.
+    #[test]
+    fn boss_win_carry_reads_weary_traveler_by_mode() {
+        use sts2_core::{GameMode, GameVersion};
+        let run = |mode: GameMode, level: u8| {
+            let rm = if level > 0 {
+                sts2_content::run_callbacks::new_run_manager_for_character_with_ascension(
+                    7,
+                    CharacterId::Ironclad,
+                    level,
+                )
+            } else {
+                sts2_content::run_callbacks::new_run_manager_for_character(7, CharacterId::Ironclad)
+            };
+            rm.with_game_version(GameVersion::V0_113_0)
+                .with_game_mode(mode)
+        };
+        for (level, hp) in [(0u8, 0.0f32), (1, 0.2), (2, 0.2), (3, 0.2), (5, 0.2)] {
+            let rm = run(GameMode::Blitz, level);
+            assert_eq!(
+                run_boss_win_carry(&rm.run_state, true),
+                Some((hp, 1.0)),
+                "Blitz {level}"
+            );
+        }
+        for (level, hp) in [(0u8, 0.0f32), (1, 0.0), (2, 0.2), (10, 0.2)] {
+            let rm = run(GameMode::Standard, level);
+            assert_eq!(
+                run_boss_win_carry(&rm.run_state, true),
+                Some((hp, 1.0)),
+                "A{level}"
+            );
+        }
     }
 
     #[test]

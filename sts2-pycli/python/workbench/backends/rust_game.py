@@ -133,6 +133,8 @@ _PHASE_TO_DECISION = {
     "event": "event_choice",
     "treasure": "event_choice",
     "boss_relic": "event_choice",
+    # GH #1620: the game's reward screen, on a ``reward_screen`` run.
+    "rewards": "rewards",
     "run_over": "game_over",
 }
 
@@ -248,13 +250,36 @@ def _map_disagreements(rm: Any, snapshot: Any) -> list[str]:
     ]
 
 
+def _stamp_enchantment(card: dict[str, Any], enchants: list[Any], idx: int) -> dict[str, Any]:
+    """Copy deck card ``idx``'s enchantment onto ``card`` (GH #1600).
+
+    ``enchants`` is an engine ``*_enchantments()`` list, index-aligned with
+    the deck view ``idx`` points into: ``(UPPER_SNAKE id, amount)`` or None.
+    An unenchanted card gets no keys.
+    """
+    ench = enchants[idx] if 0 <= idx < len(enchants) else None
+    if ench:
+        card["enchantment"], card["enchantment_amount"] = ench[0], int(ench[1])
+    return card
+
+
 class RustGame(GameBackend):
     """Drives an ``sts2_rs.RunManager`` through the :class:`GameBackend` interface."""
 
     def __init__(
-        self, *, target_convention: str = "native", game_version: str | None = None
+        self,
+        *,
+        target_convention: str = "native",
+        game_version: str | None = None,
+        agent_lane: bool = False,
     ) -> None:
         self.rm: Any = None
+        # GH #1610: the agent-mode parity lane. The run is built in full agent
+        # mode (``mode="agent"``, with ``ooc_potion_actions``) while still
+        # speaking the C# dialect (``target_convention="csharp"``), and the
+        # combat reward relics are NOT auto-collected, so every choice the
+        # engine offers an agent reaches the lane's offer comparison.
+        self._agent_lane = agent_lane
         # The game build every run this backend constructs simulates (GH #801):
         # ``"v0.107.1"`` / ``"v0.111.0"``. ``None`` defers to the process-wide
         # selection (``sts2_client.GAME_VERSION``) — the parity harnesses rely
@@ -322,11 +347,16 @@ class RustGame(GameBackend):
         ascension: int,
         act1: str = "overgrowth",
         interactive_potion_swap: bool = False,
+        game_mode: str | None = None,
     ) -> dict[str, Any]:
         import sts2_rs
 
         self.character = character
         self.act1 = act1
+        # GH #1346: `"dread"` starts a Dread run (ascension forced to 10, as
+        # in the game). Passed only when set, so standard runs build exactly
+        # as before.
+        mode_kwargs: dict[str, Any] = {} if game_mode is None else {"game_mode": game_mode}
         self.rm = rs_engine_call(
             sts2_rs.RunManager,
             version=self.game_version,
@@ -341,7 +371,7 @@ class RustGame(GameBackend):
             # directly with no "Take relic / Skip" step. One definition:
             # `RunState::set_agent_decisions`, shared with the arena, the PPO
             # env and the browser workbench.
-            mode="agent",
+            **self._decision_kwargs(),
             # GH #544: STS2 ships TWO acts at index 0 and the real lobby rolls
             # between them off the `act_selection` stream. `"roll"` reproduces
             # that pick, which is what makes a workbench run match the player's
@@ -353,6 +383,7 @@ class RustGame(GameBackend):
             # GH #1069: full-belt potion rewards surface a `potion_swap`
             # decision instead of being dropped (the oracle's matching flag).
             interactive_potion_swap=interactive_potion_swap,
+            **mode_kwargs,
         )
         # Apply the remembered play-log recording preference now that the
         # RunManager exists (set_record_card_plays no-ops while rm is None).
@@ -361,6 +392,35 @@ class RustGame(GameBackend):
         if self._record_combat_log and hasattr(self.rm, "set_record_combat_log"):
             self.rm.set_record_combat_log(True)
         return self._serialize()
+
+    def _decision_kwargs(self) -> dict[str, Any]:
+        """The ``RunManager`` decision bundle :meth:`start` builds with.
+
+        ``mode="agent"`` for the engine's own lanes. With
+        ``target_convention="csharp"`` this run shadows the C# headless
+        oracle, which plays the Crystal Sphere with its fixed sweep
+        (``RunSimulator.PlayCrystalSphereHeadless``), and agent mode would
+        click the digger's cells instead: other items revealed, other rewards
+        (act23 Fool:1007 at v0.113.0, in both the A10 and the Dread sweep).
+        The four deck-decision flags spelled out are agent mode minus the
+        digger, so the engine keeps the oracle's sweep
+        (``RunState::crystal_sphere_digger`` stays off).
+        """
+        if self._agent_lane:
+            return {
+                "mode": "agent",
+                "ooc_potion_actions": True,
+                "deck_select_screens": True,
+                "reward_screen": True,
+            }
+        if self._target_convention == "csharp":
+            return {
+                "interactive_card_removal": True,
+                "interactive_card_upgrade": True,
+                "interactive_card_transform": True,
+                "direct_event_relic_grant": True,
+            }
+        return {"mode": "agent"}
 
     def force_event(self, name: str) -> dict[str, Any]:
         """Bind a SPECIFIC named event onto the current room and serialize it.
@@ -378,7 +438,9 @@ class RustGame(GameBackend):
             return _err(f"unknown event {name!r}")
         return self._serialize()
 
-    def start_faithful(self, *, character: str, seed: int, ascension: int = 0) -> dict[str, Any]:
+    def start_faithful(
+        self, *, character: str, seed: int, ascension: int = 0, act1: str = "roll"
+    ) -> dict[str, Any]:
         """Start a run constructed IDENTICALLY to the PPO training env.
 
         This is the *third* mirror of the one parity-pinned recipe — the other
@@ -401,13 +463,12 @@ class RustGame(GameBackend):
         import sts2_rs
 
         self.character = character
-        # NOT act1-parameterised, on purpose. This constructor's contract is to
-        # mirror `PpoRunEnv.__post_init__` statement for statement, and that env
-        # does not pass `act1` — it trains on Overgrowth. Serving the deployed
-        # net an Underdocks run here would put it out of distribution, which is
-        # the exact failure this mirror exists to prevent. When training moves
-        # to the rolled mixture, this and `ppo/env.py` change together.
-        self.act1 = "overgrowth"
+        # `act1="roll"` for a new run, like `PpoRunEnv` (whose default rolls
+        # since 7320dbe99) and the game: the seed picks Overgrowth or the
+        # Underdocks. A rebuild passes the act its save recorded; saves from
+        # before the roll carry "overgrowth". Rust twin: `game.rs`
+        # `build_faithful_run_manager`.
+        self.act1 = act1
         self.rm = rs_engine_call(
             sts2_rs.RunManager,
             version=self.game_version,
@@ -415,6 +476,7 @@ class RustGame(GameBackend):
             character=character,
             ascension_level=ascension,
             neow_start=True,
+            act1=self.act1,
             mode="agent",  # GH #981: see `start` above
         )
         if self._record_card_plays and hasattr(self.rm, "set_record_card_plays"):
@@ -684,6 +746,19 @@ class RustGame(GameBackend):
         """The in-process ``RunManager`` (``None`` before :meth:`start`)."""
         return self.rm
 
+    def mark_pre_action(self) -> None:
+        """Snapshot what the next move may change, for the treasure reveal.
+
+        :meth:`act` and :meth:`GameBackend.take_native` call this; so must
+        anything that moves ``self.rm`` directly (the native run agent's
+        ``step``). Without it every AI move (Let AI pick, AI plays,
+        autobattle, native replay) compared against a stale snapshot, and a
+        chest the AI walked into never showed what it held (GH #1438). A
+        no-op before :meth:`start`.
+        """
+        if self.rm is not None:
+            self._pre_action = self._room_snapshot()
+
     def recommended_action(self) -> tuple[str, dict[str, Any]] | None:
         """The ``(verb, args)`` the out-of-combat heuristic policy would take at
         the current decision, or ``None`` in combat / at a finished run.
@@ -718,6 +793,7 @@ class RustGame(GameBackend):
         if not offers:
             return _err("card removal is not available here")
         deck = self.rm.master_deck_detailed()
+        enchants = self.rm.master_deck_enchantments()
         cards = []
         for a in offers:
             i = int(a.get("deck_idx", -1))
@@ -735,6 +811,7 @@ class RustGame(GameBackend):
                     "type": "card",
                 }
             )
+            _stamp_enchantment(cards[-1], enchants, i)
         self._shop_removal_pick = True
         state = self._serialize()
         state["decision"] = "card_select"
@@ -762,9 +839,11 @@ class RustGame(GameBackend):
         if self.rm is None:
             return _err("no live run")
         # What this action is about to change, for the treasure-reveal panel.
-        # Taken here (the single funnel every action passes through) rather
-        # than per-branch, so it is correct no matter which return fires.
-        self._pre_action = self._room_snapshot()
+        # Taken here (the single funnel every verb passes through) rather
+        # than per-branch, so it is correct no matter which return fires. A
+        # native move gets the same snapshot from ``take_native`` /
+        # ``mark_pre_action``.
+        self.mark_pre_action()
         # Shop card-removal service: ``remove_card`` opens a synthetic
         # card_select over the engine's own ``shop_remove_card`` offers, and
         # the follow-up ``select_cards`` / ``skip_select`` resolves or cancels
@@ -861,7 +940,14 @@ class RustGame(GameBackend):
                 result = self.rm.take_action({"action": "enchant_deck_card", "idx": i})
                 if result not in ("advanced", "run_over"):
                     return _err(f"{action} rejected by engine: {result}")
-            if optional and getattr(self.rm, "pending_enchant_optional", False):
+            # ``keep_open``: one pick of several, played like the run env
+            # (``run_policy._picks_on_an_up_to_n_screen``); ``skip_select``
+            # confirms later.
+            if (
+                optional
+                and not args.get("keep_open")
+                and getattr(self.rm, "pending_enchant_optional", False)
+            ):
                 self.rm.decline_optional_deck_enchants()
             return self._serialize()
         # Skipping an "up to N" enchant screen is confirming it with no card:
@@ -904,7 +990,10 @@ class RustGame(GameBackend):
                 return _err("select_cards requires an index")
             total = len(self.rm.card_grant_options())
             steps = [i - n for n, i in enumerate(idxs)]
-            if optional and len(idxs) < total:
+            # ``keep_open`` (one pick of several, as the run env plays the
+            # grid; ``run_policy._picks_on_an_up_to_n_screen``) leaves the
+            # confirm to a later ``skip_select``.
+            if optional and len(idxs) < total and not args.get("keep_open"):
                 steps.append(total - len(idxs))
             for idx in steps:
                 result = self.rm.take_action({"action": "grant_deck_card", "idx": idx})
@@ -1071,6 +1160,13 @@ class RustGame(GameBackend):
                 return {"action": "pick_card_reward", "idx": None}
             if getattr(self.rm, "pending_claws_select", False):
                 return {"action": "confirm_deck_selection"}
+            # GH #1619: cancel Smith's or Cook's select, back to the campfire.
+            if getattr(self.rm, "deck_select_cancelable", False):
+                return {"action": "confirm_deck_selection"}
+            # GH #1347: a Blitz ware's deck pick is cancelable; the cancel
+            # leaves the ware available.
+            if getattr(self.rm, "blitz_pick_open", False):
+                return {"action": "confirm_deck_selection"}
             raise _Unsupported("skip_select not valid here")
         if action == "select_card_reward":
             return {"action": "pick_card_reward", "idx": args["card_index"]}
@@ -1085,6 +1181,28 @@ class RustGame(GameBackend):
             # no-skip CardReward fan-out, so the pack index IS the
             # ``pick_card_reward`` idx (which adds the whole pack to the deck).
             return {"action": "pick_card_reward", "idx": args["bundle_index"]}
+        if action == "blitz_choice":
+            # GH #1347: the oracle numbers the Blitz merchant's wares 1..6
+            # (option 0 leaves); the engine indexes them from 0.
+            return {"action": "blitz_choice", "idx": int(args["index"]) - 1}
+        if phase == "rewards" and action in ("take_reward", "skip_reward", "proceed"):
+            # GH #1620: the reward screen of a ``reward_screen`` run, indexed
+            # as the oracle's (the index each reward was first listed under).
+            if action == "proceed":
+                return {"action": "proceed_rewards"}
+            return {"action": action, "idx": int(args["reward_index"])}
+        if action in ("take_reward", "skip_reward") or (
+            action == "proceed" and self._blitz_chest() is not None
+        ):
+            # GH #1347: a Blitz chest is the oracle's ``rewards`` screen:
+            # take a relic (by the index it was first listed at), or close
+            # the chest with one skip (``skip_reward`` on either relic, or
+            # ``proceed``).
+            if self._blitz_chest() is None:
+                raise _Unsupported(f"{action} is only valid at a Blitz chest")
+            if action == "take_reward":
+                return {"action": "take_chest_relic", "idx": int(args["reward_index"])}
+            return {"action": "skip_relic"}
         if action == "buy_card":
             return {"action": "shop_buy_card", "idx": args["card_index"]}
         if action == "buy_relic":
@@ -1121,6 +1239,13 @@ class RustGame(GameBackend):
             return self._first_action(phase)
         raise _Unsupported(f"action {action!r} not supported by the rust backend")
 
+    def _blitz_chest(self) -> list[dict[str, Any]] | None:
+        """The open Blitz chest's relics (GH #1347), ``None`` when there is
+        none. Read through ``getattr``: run objects older than Blitz (test
+        fakes, an older wheel) have no such accessor."""
+        chest = getattr(self.rm, "blitz_chest", None)
+        return chest() if callable(chest) else None
+
     def _combat_choice_open(self) -> bool:
         """True when an in-combat ``pending_choice`` (Headbutt etc.) is open."""
         cs = self.rm.combat_state()
@@ -1152,7 +1277,14 @@ class RustGame(GameBackend):
         engine landed on.
         """
         state = self._serialize_state()
-        reveal = _treasure_reveal(self._pre_action, self._room_snapshot(), self.rm.act_index)
+        mode = getattr(self.rm, "game_mode", None)
+        # A Blitz chest is a decision (GH #1347: two relics over two rounds),
+        # not a room the engine resolves, so it has no reveal.
+        reveal = (
+            None
+            if mode == "blitz"
+            else _treasure_reveal(self._pre_action, self._room_snapshot(), self.rm.act_index)
+        )
         if reveal is not None:
             state["room_reveal"] = reveal
         # GH #544: which Act 1 this run walks. The C# oracle reports the act
@@ -1182,6 +1314,16 @@ class RustGame(GameBackend):
         version = getattr(self.rm, "game_version", None)
         if isinstance(version, str) and version != LEGACY_GAME_VERSION:
             state["game_version"] = version
+        # GH #1346: a Dread run names its mode and the dominion in force
+        # where the run stands (its model entry; ``None`` in a boss room,
+        # where the game removes it); a Blitz run (GH #1347) names its mode
+        # only. A standard run carries neither key, so its states, and the
+        # goldens recorded from them, keep their bytes.
+        if isinstance(mode, str) and mode != "standard":
+            state["game_mode"] = mode
+        if mode == "dread":
+            dominion = getattr(self.rm, "current_dominion", None)
+            state["dominion"] = dominion if isinstance(dominion, str) else None
         # The run's master RNG seed and the map node this room sits on. The game
         # rolls a combat room's layer variants from
         # `Rng(runSeed + row + col * 747)`
@@ -1213,6 +1355,11 @@ class RustGame(GameBackend):
     def _serialize_state(self) -> dict[str, Any]:
         rm = self.rm
         phase = rm.phase()
+        if phase == "event":
+            # Binding is idempotent and RNG-free; the Fake Merchant's page
+            # then opens as its shop (GH #1607), so render that.
+            rm.materialize_event()
+            phase = rm.phase()
 
         # csharp dialect ONLY: the real Sts2Headless DLL auto-collects combat
         # reward relics/gold/potions (RunSimulator.cs `DetectPostCombatState`,
@@ -1223,7 +1370,7 @@ class RustGame(GameBackend):
         # deck upgrade/removal) is caught by the normal preempt checks below,
         # and so the state dict built further down reflects post-collection
         # reality (gold/relics/phase already advanced).
-        if self._target_convention == "csharp" and phase == "card_reward":
+        if self._target_convention == "csharp" and phase == "card_reward" and not self._agent_lane:
             self._csharp_auto_collect_combat_relic_rewards()
             phase = rm.phase()
 
@@ -1237,6 +1384,11 @@ class RustGame(GameBackend):
             if getattr(rm, counter, 0) > 0:
                 state = self._base_state("card_select")
                 fill(self, state)
+                # GH #1347: a Blitz ware's deck pick is cancelable (C#
+                # ``Cancelable = true``); ``skip_select`` backs out of it and
+                # the ware stays available.
+                if getattr(rm, "blitz_pick_open", False):
+                    state["can_skip"] = True
                 return state
         # GH #1069: a full-belt potion reward parked for a swap preempts the
         # phase next, in the engine's own legal-action order.
@@ -1264,6 +1416,10 @@ class RustGame(GameBackend):
             state["victory"] = bool(rm.player_won)
         elif phase == "boss_relic":
             self._fill_boss_relic(state)
+        elif phase == "treasure" and self._blitz_chest() is not None:
+            self._fill_blitz_chest(state)
+        elif phase == "rewards":
+            self._fill_rewards(state)
         else:
             # treasure / combat-relic reward → generic option list.
             self._fill_generic(state, phase)
@@ -1302,10 +1458,10 @@ class RustGame(GameBackend):
         rm = self.rm
         relics = [_owned_entry(rid, None) for rid in rm.relics()]
         potions = [_owned_entry(pid, None) for pid in rm.potions()]
-        deck = [
-            self._deck_card(i, cid, upgraded)
-            for i, (cid, upgraded) in enumerate(rm.master_deck_detailed())
-        ]
+        enchants = rm.master_deck_enchantments()
+        deck = []
+        for i, (cid, upgraded) in enumerate(rm.master_deck_detailed()):
+            deck.append(_stamp_enchantment(self._deck_card(i, cid, upgraded), enchants, i))
         return {
             "name": self.character,
             "hp": rm.current_hp,
@@ -1457,6 +1613,7 @@ class RustGame(GameBackend):
         # position). Using raw ``master_deck_detailed`` order removed the wrong
         # card whenever a curse sat mid-deck (RP94 Necrobinder).
         cards = []
+        enchants = self.rm.card_removal_option_enchantments()
         for i, (cid, upgraded) in enumerate(self.rm.card_removal_options()):
             loc = display_maps.loc_id(cid)
             cards.append(
@@ -1469,6 +1626,7 @@ class RustGame(GameBackend):
                     "type": "card",
                 }
             )
+            _stamp_enchantment(cards[-1], enchants, i)
         count = int(getattr(self.rm, "pending_deck_removals", 1) or 1)
         # Can't remove more cards than the deck holds.
         count = max(1, min(count, len(cards)))
@@ -1476,6 +1634,10 @@ class RustGame(GameBackend):
         state["min_select"] = count
         state["max_select"] = count
         state["can_skip"] = False
+        # Cook's select is cancelable on a ``deck_select_screens`` run (GH #1619).
+        if getattr(self.rm, "deck_select_cancelable", False):
+            state["can_skip"] = True
+            state["cancelable"] = True
         state["context"] = "remove"
 
     def _fill_card_transform(self, state: dict[str, Any]) -> None:
@@ -1571,6 +1733,7 @@ class RustGame(GameBackend):
         options whose ``index`` is the SUBSET position (the engine action's
         ``idx`` space), not the raw deck position."""
         deck = self.rm.master_deck_detailed()
+        enchants = self.rm.master_deck_enchantments()
         cards = []
         for subset_idx, deck_idx in enumerate(deck_indices):
             cid, upgraded = deck[deck_idx]
@@ -1585,6 +1748,7 @@ class RustGame(GameBackend):
                     "type": "card",
                 }
             )
+            _stamp_enchantment(cards[-1], enchants, deck_idx)
         return cards
 
     def _fill_card_upgrade(self, state: dict[str, Any]) -> None:
@@ -1603,6 +1767,7 @@ class RustGame(GameBackend):
         subset_idx = 0
         deck = self.rm.master_deck_detailed()
         eligible = set(self.rm.upgrade_select_deck_indices())
+        enchants = self.rm.master_deck_enchantments()
         for deck_idx, (cid, _upgraded) in enumerate(deck):
             if deck_idx not in eligible:
                 continue
@@ -1617,10 +1782,16 @@ class RustGame(GameBackend):
                     "type": "card",
                 }
             )
+            _stamp_enchantment(cards[-1], enchants, deck_idx)
             subset_idx += 1
+        # A ``deck_select_screens`` run asks a pick-N upgrade (Yummy Cookie,
+        # Trial) as one select, as C# ``FromDeckForUpgrade(N)`` does (GH #1621).
+        count = 1
+        if getattr(self.rm, "deck_select_screens", False):
+            count = max(1, min(int(self.rm.pending_deck_upgrades or 1), len(cards)))
         state["cards"] = cards
-        state["min_select"] = 1
-        state["max_select"] = 1
+        state["min_select"] = count
+        state["max_select"] = count
         state["can_skip"] = False
         state["context"] = "upgrade"
 
@@ -1672,18 +1843,23 @@ class RustGame(GameBackend):
             self._fill_relic_reward(state)
             return
         ids = rm.card_reward_option_ids()
+        # An offer the engine pre-upgraded (a Blitz "Upgraded Card Reward"
+        # ware, Silver Crucible, Molten Egg) is granted upgraded, so it must
+        # also be SHOWN upgraded (bug report wb-b32d2b48efda19c7).
+        upgraded = rm.card_reward_option_upgraded()
         cards = []
         for i, raw in enumerate(ids):
             cid = display_maps.loc_id(raw)
-            cards.append(
-                {
-                    "index": i,
-                    "id": cid,
-                    "name": f"{cid}.title",
-                    "description": f"{cid}.description",
-                    "type": "card",
-                }
-            )
+            card: dict[str, Any] = {
+                "index": i,
+                "id": cid,
+                "name": f"{cid}.title",
+                "description": f"{cid}.description",
+                "type": "card",
+            }
+            if i < len(upgraded) and upgraded[i]:
+                card["upgraded"] = True
+            cards.append(card)
         state["cards"] = cards
         state["can_skip"] = any(
             a.get("action") == "pick_card_reward" and a.get("idx") is None for a in actions
@@ -1693,9 +1869,12 @@ class RustGame(GameBackend):
         # true)``) is a ``card_select`` in the C# headless decision
         # vocabulary, not a ``card_reward``; picks still resolve through
         # ``pick_card_reward``. GH #34.
+        # A forced grid (Brain Leech's Share Knowledge, ``Cancelable =
+        # false``) offers no skip, so it must pick one (GH #1610: the view
+        # said min 0 while the engine refused the skip).
         if getattr(rm, "card_offer_choose_screen", False):
             state["decision"] = "card_select"
-            state["min_select"] = 0
+            state["min_select"] = 0 if state["can_skip"] else 1
             state["max_select"] = 1
 
     def _fill_bundle_select(self, state: dict[str, Any], bundles_raw: list[list[str]]) -> None:
@@ -1746,6 +1925,106 @@ class RustGame(GameBackend):
                 options.append({"index": i, "title": _action_label(a), "is_locked": False})
         state["options"] = options
 
+    def _fill_blitz_chest(self, state: dict[str, Any]) -> None:
+        """A Blitz chest (GH #1347) as the oracle's ``rewards`` screen: the
+        relics still in it, each under the index it was first listed at, and
+        ``chest_picks_left`` (2, then 1)."""
+        rewards = []
+        for entry in self._blitz_chest() or []:
+            loc = display_maps.loc_id(entry["id"])
+            rewards.append(
+                {
+                    "index": entry["index"],
+                    "type": "relic",
+                    "id": loc,
+                    "name": f"{loc}.title",
+                    "description": f"{loc}.description",
+                }
+            )
+        state["decision"] = "rewards"
+        state["rewards"] = rewards
+        state["chest_picks_left"] = len(rewards)
+
+    def _fill_rewards(self, state: dict[str, Any]) -> None:
+        """The oracle's ``rewards`` view (GH #1620, ``RunSimulator.RewardItem``):
+        ``{"index", "type", ...}`` per reward still on the screen. A chest
+        relic is a ``relic`` there, and a card reward shows no cards until it
+        is taken."""
+        rewards: list[dict[str, Any]] = []
+        for e in self.rm.reward_screen_entries() or []:
+            kind = e.get("type")
+            item: dict[str, Any] = {"index": e.get("index")}
+            if kind == "gold":
+                item.update(type="gold", amount=e.get("amount"))
+            elif kind in ("relic", "chest_relic"):
+                item.update(type="relic", id=e.get("id"))
+            elif kind == "potion":
+                item.update(type="potion", id=e.get("id"))
+            elif kind == "special_card":
+                # The engine's id (``IterationCard``) to the game's (``ITERATION``).
+                cid = display_maps.loc_id(str(e.get("id")))
+                item.update(type="special_card", id=cid, upgraded=e.get("upgraded"))
+            elif kind in ("card", "card_removal"):
+                item["type"] = kind
+            else:
+                item["type"] = "other"
+            rewards.append(item)
+        state["rewards"] = rewards
+        # A set built WithSkippingDisallowed (Neow's Bones, GH #1641) offers
+        # no skip and no proceed, as the host's ``can_skip: false``.
+        if not any(a.get("action") == "proceed_rewards" for a in self.rm.available_actions()):
+            state["can_skip"] = False
+
+    def _fill_blitz_shop(self, state: dict[str, Any], shop: dict[str, Any]) -> None:
+        """The Blitz merchant (GH #1347) in the oracle's shape: the standard
+        shop keys, empty; ``blitz_choices_remaining``; and ``options`` with
+        option 0 leaving and options 1..6 the wares in inventory order (a
+        taken or disabled ware stays listed with ``enabled: false``)."""
+        remaining = int(shop["choices_remaining"])
+        options: list[dict[str, Any]] = [
+            {
+                "index": 0,
+                "id": "leave_shop",
+                "action": "leave_shop",
+                "label": "leave_shop",
+                "enabled": True,
+            }
+        ]
+        for i, entry in enumerate(shop["entries"]):
+            item = {
+                "blitz_kind": entry["kind"],
+                "cursed": entry["cursed"],
+                "rare": entry["rare"],
+                # The game's own text, rich-text tags kept (the engine's
+                # ``blitz_ware_text``).
+                "title": entry.get("title"),
+                "description": entry.get("description"),
+            }
+            if entry.get("enchantment"):
+                item["enchantment"] = entry["enchantment"]
+                item["enchantment_amount"] = entry["enchantment_amount"]
+            if entry.get("character"):
+                item["character"] = entry["character"]
+            options.append(
+                {
+                    "index": i + 1,
+                    "id": "blitz_choice",
+                    "action": "blitz_choice",
+                    "label": f"blitz:{entry['kind']}",
+                    "description": "Cost: 0",
+                    "enabled": entry["status"] == "Available",
+                    "price": 0,
+                    "status": entry["status"],
+                    "item": item,
+                }
+            )
+        state["cards"] = []
+        state["relics"] = []
+        state["potions"] = []
+        state["card_removal_cost"] = None
+        state["blitz_choices_remaining"] = remaining
+        state["options"] = options
+
     def _fill_shop(self, state: dict[str, Any]) -> None:
         """Render the merchant inventory from ``rm.shop_inventory()``.
 
@@ -1763,6 +2042,10 @@ class RustGame(GameBackend):
         leaves those wares untouched and just paints the price red.
         """
         rm = self.rm
+        blitz_shop = rm.blitz_shop() if hasattr(rm, "blitz_shop") else None
+        if blitz_shop is not None:
+            self._fill_blitz_shop(state, blitz_shop)
+            return
         inv = rm.shop_inventory() or {}
         gold = state["player"]["gold"]
 
@@ -1827,6 +2110,10 @@ class RustGame(GameBackend):
         state["cards"] = cards
         state["relics"] = relics
         state["potions"] = potions
+        # The Fake Merchant's shopfront (GH #1607), named as the C# host
+        # names it (``RunSimulator.FakeMerchantShopState``).
+        if inv.get("fake_merchant"):
+            state["event_name"] = "FAKE_MERCHANT"
         # Card-removal service: advertise the price while the engine still
         # offers ``shop_remove_card`` actions (they vanish once the service is
         # used or unaffordable). The C# backend sets the same field; the
@@ -1919,7 +2206,12 @@ class RustGame(GameBackend):
         state["cards"] = cards
         state["min_select"] = 1
         state["max_select"] = 1
-        state["can_skip"] = False
+        # The game's Smith select is cancelable (``SmithRestSiteOption.cs:60``);
+        # on a ``deck_select_screens`` run so is the engine's (GH #1619).
+        cancel = bool(getattr(self.rm, "deck_select_cancelable", False))
+        state["can_skip"] = cancel
+        if cancel:
+            state["cancelable"] = True
         state["context"] = "upgrade"
 
     def _fill_event(self, state: dict[str, Any]) -> None:

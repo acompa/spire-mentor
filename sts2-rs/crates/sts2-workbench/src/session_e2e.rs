@@ -163,7 +163,7 @@ fn score_row(
         "target_index": args.get("target_index").cloned().unwrap_or(Value::Null),
         "pick_rank": rank,
         "in_band": false,
-        "pick_reason": if is_best { json!("Instinct greedy") } else { Value::Null },
+        "pick_reason": if is_best { json!(crate::i18n::tr("Instinct greedy")) } else { Value::Null },
     })
 }
 
@@ -227,11 +227,21 @@ impl Session {
     /// retries).
     fn e2e_net(&self) -> Result<e2e::Net, SessionError> {
         self.e2e.net.clone().ok_or_else(|| {
+            let file = e2e::character(&self.character).map_or(e2e::E2E_FILE, e2e::file_for);
             SessionError::new(
                 e2e::NO_NET_STATUS,
-                e2e::missing_net_error(self.e2e.error.as_deref()),
+                e2e::missing_net_error_for(file, self.e2e.error.as_deref()),
             )
         })
+    }
+
+    /// This run's e2e tables (`sts2_e2e::build::Scope`): an e2e run is on
+    /// its student's build (v0.113.0 for the Fool's), so its env and rows
+    /// read that build's tables. `None` on a build no student plays.
+    pub(crate) fn e2e_tables(&self) -> Option<sts2_e2e::build::Scope> {
+        sts2_e2e::build::resolve(Some(self.game_version.as_str()))
+            .ok()
+            .map(sts2_e2e::build::Scope::enter)
     }
 
     /// Whether the student keeps its per-node state as the run goes: it
@@ -240,33 +250,26 @@ impl Session {
         self.is_e2e_brain() || self.advisor_is_e2e()
     }
 
-    /// 400 unless the student can read this run: Ironclad on its build.
+    /// 400 unless the student can read this run: one of its characters on
+    /// its build.
     pub(crate) fn e2e_check_run(&self) -> Result<(), SessionError> {
-        self.e2e_check_character()?;
-        if self.game_version.as_str() == e2e::GAME_VERSION {
+        let who = e2e::character(&self.character).map_err(|e| SessionError::new(400, e))?;
+        let want = e2e::build_for(who);
+        if self.game_version == want {
             Ok(())
         } else {
             Err(SessionError::new(
                 400,
-                format!(
-                    "Instinct plays {} only (this run is {})",
-                    e2e::GAME_VERSION,
-                    self.game_version.as_str()
-                ),
-            ))
-        }
-    }
-
-    fn e2e_check_character(&self) -> Result<(), SessionError> {
-        if self.character.eq_ignore_ascii_case(e2e::CHARACTER) {
-            Ok(())
-        } else {
-            Err(SessionError::new(
-                400,
-                format!(
-                    "Instinct plays {} only (this run is {})",
-                    e2e::CHARACTER,
-                    self.character
+                crate::i18n::trf(
+                    "Instinct plays {character} on {build} only (this run is {run})",
+                    &[
+                        (
+                            "character",
+                            &crate::render::character_title(&self.character),
+                        ),
+                        ("build", &want.as_str()),
+                        ("run", &self.game_version.as_str()),
+                    ],
                 ),
             ))
         }
@@ -288,6 +291,7 @@ impl Session {
 
     /// Seed the root's state (a fresh run the student will play).
     pub(crate) fn e2e_seed_root(&mut self) {
+        let _tables = self.e2e_tables();
         if let Some(root) = self.active_id {
             let seed = self.e2e_run_seed();
             self.e2e.snaps.insert(root, E2eState::new(seed));
@@ -307,6 +311,7 @@ impl Session {
     /// copy of the run from the deepest node that has one, peeking at every
     /// position the way the env would have.
     pub(crate) fn e2e_rebuild(&mut self, target: u64) -> Result<(), SessionError> {
+        let _tables = self.e2e_tables();
         let path = self.path_to(target);
         let from = path.iter().rposition(|id| self.e2e.snaps.contains_key(id));
         let (from, mut st) = if let Some(i) = from {
@@ -366,6 +371,7 @@ impl Session {
     /// live position. `None` unless the e2e brain drives and the node has a
     /// state (a node without one is rebuilt when the student next plays).
     pub(crate) fn e2e_pre_external(&mut self) -> Option<E2ePre> {
+        let _tables = self.e2e_tables();
         if !self.e2e_tracks() {
             return None;
         }
@@ -378,6 +384,7 @@ impl Session {
 
     /// After that move landed as `node`: count it and store the state.
     pub(crate) fn e2e_post_external(&mut self, pre: Option<E2ePre>, node: u64) {
+        let _tables = self.e2e_tables();
         let Some(mut pre) = pre else {
             return;
         };
@@ -393,6 +400,7 @@ impl Session {
     /// probabilities. `None` when the run is over, the student has no net,
     /// or the pick has no workbench verb.
     pub(crate) fn e2e_evaluate(&mut self) -> Option<E2eEval> {
+        let _tables = self.e2e_tables();
         let adv = self.e2e_advice().ok()?;
         if adv["available"] != json!(true) || adv["pick"].is_null() {
             return None;
@@ -434,6 +442,7 @@ impl Session {
     /// 424 when the net is not loaded (the host fetches it and retries); 400
     /// with no live run.
     pub fn e2e_advice(&mut self) -> Result<Value, SessionError> {
+        let _tables = self.e2e_tables();
         let node_id = self.active()?.id;
         if let Some(v) = self.e2e.advice.get(&node_id) {
             return Ok(v.clone());
@@ -444,7 +453,10 @@ impl Session {
             Ok(()) => match self.e2e_state_at_active() {
                 Err(e) => unavailable(
                     node_id,
-                    format!("Instinct could not follow this run: {}", e.message),
+                    crate::i18n::trf(
+                        "Instinct could not follow this run: {error}",
+                        &[("error", &e.message)],
+                    ),
                 ),
                 Ok(st) => self.e2e_advice_at(node_id, &net, st)?,
             },
@@ -479,13 +491,18 @@ impl Session {
             match next {
                 Next::Terminal(t) => {
                     let reason = match (t.outcome, t.error, t.cap) {
-                        ("error", Some(e), _) => {
-                            format!("Instinct cannot read this position: {e}")
-                        }
-                        ("capped", _, Some(cap)) => {
-                            format!("Instinct stops here (its {cap} cap)")
-                        }
-                        (outcome, _, _) => format!("the run is over ({outcome})"),
+                        ("error", Some(e), _) => crate::i18n::trf(
+                            "Instinct cannot read this position: {error}",
+                            &[("error", &e)],
+                        ),
+                        ("capped", _, Some(cap)) => crate::i18n::trf(
+                            "Instinct stops here (its {cap} cap)",
+                            &[("cap", &cap)],
+                        ),
+                        (outcome, _, _) => crate::i18n::trf(
+                            "the run is over ({outcome})",
+                            &[("outcome", &outcome)],
+                        ),
                     };
                     return Ok(unavailable(node_id, reason));
                 }
@@ -499,7 +516,10 @@ impl Session {
                         Err(e) => {
                             return Ok(unavailable(
                                 node_id,
-                                format!("Instinct cannot read this position: {e}"),
+                                crate::i18n::trf(
+                                    "Instinct cannot read this position: {error}",
+                                    &[("error", &e)],
+                                ),
                             ))
                         }
                     };
@@ -617,6 +637,7 @@ impl Session {
     ///
     /// 424 without the net.
     pub fn e2e_hint(&mut self) -> Result<Option<Value>, SessionError> {
+        let _tables = self.e2e_tables();
         if self.active()?.decision != "combat_play" {
             return Ok(None);
         }
@@ -642,6 +663,7 @@ impl Session {
     ///
     /// 424 without the net.
     pub fn e2e_recommended(&mut self) -> Result<Option<Value>, SessionError> {
+        let _tables = self.e2e_tables();
         let adv = self.e2e_advice()?;
         Ok(
             (adv["available"] == json!(true) && !adv["pick"].is_null())
@@ -658,6 +680,7 @@ impl Session {
     ///
     /// 424 without the net.
     pub fn e2e_policy_panel(&mut self) -> Result<Option<Value>, SessionError> {
+        let _tables = self.e2e_tables();
         let decision = self.active()?.decision.clone();
         if decision == "combat_play" || decision == "game_over" {
             return Ok(None);
@@ -699,6 +722,7 @@ impl Session {
     ///
     /// 424 without the net.
     pub fn e2e_rank_choice(&mut self) -> Result<Option<Value>, SessionError> {
+        let _tables = self.e2e_tables();
         if self.active()?.decision != "card_select" {
             return Ok(None);
         }
@@ -747,6 +771,7 @@ impl Session {
     /// The column of the map node the student picks at the active
     /// `map_select` node (seeds the map overlay's route), `None` elsewhere.
     pub(crate) fn e2e_map_col(&mut self) -> Option<i32> {
+        let _tables = self.e2e_tables();
         let adv = self.e2e_advice().ok()?;
         if adv["pick"]["action"].as_str() != Some("select_map_node") {
             return None;
@@ -761,6 +786,7 @@ impl Session {
     /// or build the plain map when it has none. Call only once the active
     /// node is the live position.
     pub(crate) fn e2e_reseed_map(&mut self, state: &mut Value) {
+        let _tables = self.e2e_tables();
         if !self.advisor_is_e2e()
             || state.get("decision").and_then(Value::as_str) != Some("map_select")
         {
@@ -798,6 +824,7 @@ impl Session {
     /// way). Forced steps are applied as usual; the net still scores the
     /// decision so the node keeps its probabilities.
     pub(crate) fn e2e_step_with(&mut self, pick: Option<usize>) -> Result<Value, SessionError> {
+        let _tables = self.e2e_tables();
         let net = self.e2e_net()?;
         self.e2e_check_run()?;
         let parent = self.active()?;
@@ -872,6 +899,8 @@ impl Session {
         let result = {
             let game = self.require_game()?;
             let (rcp, rcl) = game.play_log_flags();
+            // A chest Instinct walks into shows what it held (`room_reveal`).
+            game.mark_pre_action();
             let rm = game
                 .native_run_mut()
                 .ok_or_else(|| SessionError::new(400, "no live run"))?;
@@ -918,6 +947,7 @@ impl Session {
             details,
             combat_rows,
         );
+        self.set_label_en(node, parent_id, &verb, &wb_args);
         self.active_id = Some(node);
         self.faithful_steps += 1;
         self.e2e.snaps.insert(node, st);
@@ -1173,16 +1203,22 @@ mod tests {
         assert_eq!(s.active().expect("active").id, before);
     }
 
+    /// GH #1197: the all-character net plays the other four characters.
     #[test]
-    fn the_brain_refuses_other_characters() {
+    fn the_brain_plays_every_character() {
         let Some(net) = net() else {
             return;
         };
-        let mut s = Session::new_for(GameVersion::V0_111_0);
-        s.set_e2e(Some(net), None);
-        s.start_run_mode("Silent", 3, 0, "e2e", "rust", 1000, 4000, 1, None)
-            .expect("start");
-        assert_eq!(s.run_mode_step().expect_err("silent").status, 400);
+        for c in ["Silent", "Defect", "Regent", "Necrobinder"] {
+            let mut s = Session::new_for(GameVersion::V0_111_0);
+            s.set_e2e(Some(net.clone()), None);
+            s.set_e2e_setup(true);
+            s.start_run_mode(c, 3, 10, "e2e", "rust", 1000, 4000, 1, None)
+                .expect("start");
+            assert!(s.character.eq_ignore_ascii_case(c), "{}", s.character);
+            let out = s.run_mode_step().expect(c);
+            assert_eq!(out["debug"]["brain"], json!("e2e"), "{c}: {out}");
+        }
     }
 
     #[test]

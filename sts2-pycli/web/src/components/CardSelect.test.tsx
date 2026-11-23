@@ -148,6 +148,13 @@ describe("CardSelect upgrade preview", () => {
       // …and the copy stops asking for a hover the device cannot do.
       expect(screen.getByText("Pick a card to preview its upgrade")).toBeTruthy();
 
+      // A mouseenter is no hover here (a tap's compatibility events, or the
+      // pointer left over a card by the tap that opened the screen): the box
+      // stays empty (GH #1613).
+      fireEvent.mouseEnter(screen.getByText("Deal 8 damage.").closest("div.gs-card")!.parentElement!);
+      expect(screen.queryByText("Deal 10 damage.")).toBeNull();
+      expect(screen.getByTestId("upgrade-preview-row").style.height).toBe("");
+
       // A tap still fills it, at which point it takes its full height again.
       fireEvent.click(screen.getByText("Deal 8 damage.").closest("div.gs-card")!);
       expect(screen.getByText("Deal 10 damage.")).toBeTruthy();
@@ -231,6 +238,47 @@ describe("CardSelect choice-ranker chips", () => {
     const spy = stubFetch(() => RANKING);
     render(<CardSelect step={step("card_select")} />);
     expect(spy.mock.calls.some(([u]) => String(u).includes("/api/live/choice-ranker"))).toBe(false);
+  });
+});
+
+// GH #1347: a choice a card opens inside a Blitz fight is the fight's own:
+// its search ranks the options. The EV analysis forks the run and plays the
+// act out with a run policy, which a Blitz run has none of.
+describe("CardSelect in a Blitz fight", () => {
+  function blitzChoice(): Step {
+    const s = step("add_generated_free_to_hand");
+    Object.assign(s.state as object, { game_mode: "blitz", enemies: [{ index: 0, hp: 10 }] });
+    return s;
+  }
+
+  it("ranks the options with the fight's search", async () => {
+    const spy = stubFetch(() => RANKING);
+    render(
+      <HintsFixture on>
+        <MarksFixture marks={[]} showNumbers>
+          <CardSelect step={blitzChoice()} onChoose={() => {}} />
+        </MarksFixture>
+      </HintsFixture>,
+    );
+    await waitFor(() => expect(screen.getByText(/61(\.\d)?%/)).toBeTruthy());
+    expect(spy.mock.calls.some(([u]) => String(u).includes("/api/live/choice-ranker"))).toBe(true);
+  });
+
+  it("does not offer the EV analysis, which a standard fight's choice keeps", () => {
+    stubFetch(() => RANKING);
+    const blitz = render(
+      <HintsFixture on>
+        <CardSelect step={blitzChoice()} onChoose={() => {}} />
+      </HintsFixture>,
+    );
+    expect(screen.queryByText(/analyze options/)).toBeNull();
+    blitz.unmount();
+    render(
+      <HintsFixture on>
+        <CardSelect step={step("add_generated_free_to_hand")} onChoose={() => {}} />
+      </HintsFixture>,
+    );
+    expect(screen.getByText(/analyze options/)).toBeTruthy();
   });
 });
 

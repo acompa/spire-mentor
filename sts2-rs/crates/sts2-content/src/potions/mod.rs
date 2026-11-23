@@ -25,14 +25,12 @@ pub mod dispatch;
 // PotionEffect — on-drink effect AST
 // ---------------------------------------------------------------------------
 
-/// Pure-data on-drink effect for a potion. The Phase-7 dispatcher
-/// (umbrella bead `sts2-rs-h9u`) will consume this enum from the
-/// matching `on_drink` hook. For now the AST has a single `Noop`
-/// variant — all 63 potions carry it; the registry-side acceptance
-/// for this bead is "no longer `NotImplemented` for any `PotionKind`".
+/// Vestigial data field on [`PotionSpec`]: every spec carries `Noop`.
+/// On-drink behaviour is not read from here — each potion's effect is a
+/// function registered in [`dispatch`] (one entry per `PotionKind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PotionEffect {
-    /// No on-drink effect — placeholder for potions not yet ported.
+    /// The only variant; see the enum docs.
     Noop,
 }
 

@@ -454,16 +454,9 @@ impl Rng {
     /// Inclusive `[low, high]` integer sample. Increments counter by 1.
     pub fn next_int(&mut self, low: i32, high: i32) -> i32 {
         assert!(low <= high, "low must be <= high");
-        self.counter += 1;
-        let exclusive_high = i64::from(high) + 1;
-        let range_size = exclusive_high - i64::from(low);
-        // v0.107.1: C# `_random.Next(min, max)` == `(int)(NextDouble() * (max-min)) + min`
-        // for both the small (`NextInner(int)`) and large (`NextInner(long)`)
-        // branches — a single `sample()` per draw, no special large-range path
-        // (MegaRandom dropped System.Random's GetSampleForLargeRange).
-        let scaled = (self.base.sample() * (range_size as f64)) as i64;
-        let result = (scaled + i64::from(low)) as i32;
+        let result = self.next_int_untraced(low, high);
         if rng_trace_enabled() {
+            let exclusive_high = i64::from(high) + 1;
             // Normalize to C#'s logged form: 1-arg `NextInt(maxExclusive)`
             // (min 0) vs 2-arg `NextInt(min, maxExclusive)`. `exclusive_high`
             // == C#'s maxExclusive (Rust's `high` is inclusive).
@@ -480,6 +473,22 @@ impl Rng {
             }
         }
         result
+    }
+
+    /// [`Self::next_int`] without the bounds assert and the trace hook: the
+    /// draw itself (counter +1, one `sample()`). Callers guarantee
+    /// `low <= high` and handle tracing.
+    #[inline]
+    fn next_int_untraced(&mut self, low: i32, high: i32) -> i32 {
+        self.counter += 1;
+        let exclusive_high = i64::from(high) + 1;
+        let range_size = exclusive_high - i64::from(low);
+        // v0.107.1: C# `_random.Next(min, max)` == `(int)(NextDouble() * (max-min)) + min`
+        // for both the small (`NextInner(int)`) and large (`NextInner(long)`)
+        // branches — a single `sample()` per draw, no special large-range path
+        // (MegaRandom dropped System.Random's GetSampleForLargeRange).
+        let scaled = (self.base.sample() * (range_size as f64)) as i64;
+        (scaled + i64::from(low)) as i32
     }
 
     /// Half-open `[low, high)` integer sample.
@@ -557,8 +566,18 @@ impl Rng {
             return;
         }
         let mut index = len - 1;
+        if rng_trace_enabled() {
+            while index > 0 {
+                let swap_index = self.next_int(0, index as i32) as usize;
+                lst.swap(index, swap_index);
+                index -= 1;
+            }
+            return;
+        }
+        // Untraced fast path: the same draws as `next_int(0, index)` (whose
+        // `0 <= index` assert always holds here), inlined.
         while index > 0 {
-            let swap_index = self.next_int(0, index as i32) as usize;
+            let swap_index = self.next_int_untraced(0, index as i32) as usize;
             lst.swap(index, swap_index);
             index -= 1;
         }

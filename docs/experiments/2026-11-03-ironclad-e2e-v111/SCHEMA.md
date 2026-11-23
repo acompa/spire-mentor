@@ -113,7 +113,7 @@ event (section 2.12). The section-embedding table has 64 rows.
 
 Columns are listed as indices (section 2.12 names them). Reserved sections:
 39 `RES_SHOP_SHELF` (unaffordable shelf items), 40 `RES_OPT_REWARD` (#1069's
-reward screen), 41 `RES_OPT_SPHERE` (Crystal Sphere), 42 `RES_OPT_POTION_USE`
+reward screen, live with the "#1069" fill event, section 17), 41 `RES_OPT_SPHERE` (Crystal Sphere), 42 `RES_OPT_POTION_USE`
 (OOC potion use and discard), 43 `RES_OPT_MERCHANT` (the Fake Merchant),
 44-47 spare, 50-55 spare PRIV, 56-63 spare.
 
@@ -362,6 +362,15 @@ current node, nearest rows first. Each has `X_ROOM` (the visible node type;
 over the paths from its node to the boss (`M_ELITE_MIN`, `M_ELITE_MAX`,
 `M_REST_MIN`, `M_REST_MAX`, `M_SHOP_MAX`, `M_UNKNOWN_MAX`) plus
 `M_FIGHTS_TO_REST` and `M_ROWS_LEFT`. Only the current act's map is read.
+
+At an act's first move the run has no current node (`current_coord` is
+null) and the moves are the start node's children on row 1. The start node
+(the row-0 Ancient, the only node of row 0) counts as the current node: the
+cone starts at its children, they carry `N_NEXT` and `N_ROW_OFF` 1/17, and
+each move has its route summary. Before GH #1616 both tokenizers read the
+start row itself as the next row there, so those rows flagged no node, put
+the Ancient in the cone one row too far, and left every `M_*` column at 0
+(about 0.44% of all rows: one per act entered).
 
 ### 2.9 Trailing combat columns
 
@@ -728,6 +737,13 @@ the D9 block; 96-127 are never assigned.
 | 55 | DISCARD_POTION | reserved:ooc-potion | discard a potion out of combat |
 | 56 | MERCHANT_BUY | reserved:fake-merchant | Fake Merchant: buy one item |
 | 57 | MERCHANT_LEAVE | reserved:fake-merchant | Fake Merchant: leave |
+
+The "#1069" fill event (section 17) names ten spare ids outside the hashed
+table (`contracts.REWARD_KIND_NAMES`): 42 SKIP_REWARD_GOLD, 43
+TAKE_REWARD_RELIC, 44 SKIP_REWARD_RELIC, 45 TAKE_REWARD_CARD, 46
+SKIP_REWARD_CARD, 47 PROCEED_REWARDS, 58 TAKE_REWARD_SPECIAL_CARD, 59
+SKIP_REWARD_SPECIAL_CARD, 60 TAKE_REWARD_CARD_REMOVAL, 61
+SKIP_REWARD_CARD_REMOVAL. They stay `spare` in the table above.
 
 ### 6.2 Decision types
 
@@ -1231,9 +1247,10 @@ not change.
 - **A row carries the event or it does not; `X_CHAR` says which.** Every row
   of a Silent, Defect, Regent or Necrobinder run carries it. An Ironclad row
   carries it only in a launch that declares the event. Without the
-  declaration an Ironclad row has `X_CHAR` 0, no `ALLY` or `ORB` token and
-  `E_DOOMED` 0: it is bit for bit what it was (section 13.4), which is what
-  the trained Ironclad net and its fixtures need.
+  declaration an Ironclad row has `X_CHAR` 0, no `ALLY` or `ORB` token, none
+  of the event's columns and none of its live values (section 13.5): it is bit
+  for bit what it was (section 13.4), which is what the trained Ironclad net
+  and its fixtures need.
 - **A declared Ironclad launch shows orbs and Doom.** An Ironclad can hold
   orbs (Potion of Capacity, Essence of Darkness, Infused Core, Runic
   Capacitor) and face Doom (Potion of Doom, Undying Sigil). With "chars" in
@@ -1275,6 +1292,12 @@ not change.
 | `C_ORB_PASSIVE` | `X_C_RES0` (cont 202) | `ORB` | passive value with Focus / 10 |
 | `C_ORB_EVOKE` | `X_C_RES1` (cont 203) | `ORB` | evoke value with Focus / 20 |
 | `E_DOOMED` | `X_C_RES2` (cont 204) | `ENEMY` | flag: Doom >= hp, so the enemy dies at the end of its turn (`DoomPower.IsOwnerDoomed`) |
+| `C_STAR_COST` | `X_C_RES3` (cont 205) | `HAND`, `ACT_PLAY` | the card's star cost now (`star_cost_live`: Void Form, Brilliant Scarf, free-this-turn riders) / 5; a star-X card (Stardust, -1) the stars it would spend, the player's stars / 5; 0 for a card without a star cost (GH #1197) |
+| `E_DIES_FIRST` | `X_C_RES4` (cont 206) | `ENEMY` | flag: alive and certain to die before its move resolves: the engine's deterministic walk of the player's turn end (orb passives and evokes, The Bomb, ...), then Poison at its turn start (`end_live.dies`, `tactical.dies_before_acting`) (GH #1197) |
+| `S_DISCARDS_TURN` | `X_C_RES5` (cont 207) | `STATE` | cards the player discarded this turn / 10 (wire `discards_this_turn`) (GH #1197) |
+| `S_ATTACKS_TURN` | `X_C_RES6` (cont 208) | `STATE` | Attacks the player played this turn / 10 (wire `attacks_played_this_turn`) (GH #1197) |
+| `S_PLAYER_DOOMED` | `X_C_RES7` (cont 209) | `STATE` | flag: the player's Doom >= its HP, so it dies at the end of its own turn (`tactical.player_doomed`) (GH #1197) |
+| `R_ARMED` | `R_RES0` (cont 145) | `RELIC` | flag: the relic fires on its next trigger (wire `armed`: Emotion Chip's pulse pending, Mini Regent and Regalite while their relic counter is 0 (`relic_effects::relic_armed`)) (GH #1197) |
 
 The `ALLY` and `ORB` tokens sit between the `BOSS` tokens and the S_ctx block,
 in that order, so `sctx_lo` = 6 + bosses + their count. The S_ctx block and
@@ -1303,7 +1326,7 @@ holds it.
 | all | the character | `X_CHAR` | yes (0 on an undeclared Ironclad row) |
 | Necrobinder | Osty: alive, HP, max HP | `ALLY` | yes |
 | Necrobinder | Osty soaks unblocked attack damage | `S_HP_LOSS_END` | yes |
-| Necrobinder | Osty's attacks (Poke, Unleash, ...) | hand `DMG_PREV`, `E_MAXDMG`, `E_KILLABLE` | yes: `card_damage_preview` prices an Osty attack from Osty as the dealer |
+| Necrobinder | Osty's attacks (Poke, Unleash, ...) | hand `DMG_PREV`, `E_MAXDMG`, `E_KILLABLE` | yes, since GH #1197 (section 13.5): `card_damage_live` prices an Osty attack with Osty as the dealer. Until then this row was wrong: `card_damage_preview` applied the player's modifiers (Strength, ...) to it |
 | Necrobinder | Osty's block | - | not needed: a hit on Osty spends its owner's block (`CreatureCmd.Damage`), which `STATE` has |
 | Necrobinder | powers on Osty | - | not needed: the only one is Die For You, which every Osty has (GH #760's finding); no card, potion or monster move puts another on it |
 | Necrobinder | Doom on an enemy | `EPOWER` (amount), `E_DOOMED` | yes |
@@ -1311,8 +1334,9 @@ holds it.
 | Defect | orb belt: kinds, order, passive, evoke, empty slots | `ORB` | yes |
 | Defect | Focus | `PPOWER` | yes (and inside the orb numbers) |
 | Defect | Frost block at the end of the turn | `S_HP_LOSS_END` | yes |
-| Defect | Lightning and Glass passive damage at the end of the turn | `ORB` only | not in `E_MAXDMG` or `E_KILLABLE`: the targets are random |
-| Defect | orb-slot choices (`orb_slot` choice kind) | `ACT_CHOOSE`, `STATE` | yes (S_ctx) |
+| Defect | Lightning and Glass passive damage at the end of the turn | `ORB`, `E_DIES_FIRST` | not in `E_MAXDMG` or `E_KILLABLE`. Corrected: Glass's passive hits every enemy (`GlassOrb.Passive`), so it is certain and `E_DIES_FIRST` counts it; Lightning's target is random unless one enemy is hittable, and only then is it counted |
+| Defect | orb-slot choices (`orb_slot` choice kind) | - | not applicable. Corrected: the engine never opens an `orb_slot` choice (`ChoiceKind::OrbSlot` is built only in tests and the name tables; its resolver arm is a no-op), so no row has one |
+| Necrobinder | Rocket's Surrounded on Osty | - | not needed: Rocket applies Surrounded to the player and Osty, but on Osty it is inert. An enemy attack targets the player, and the hit moves to Osty only after its damage is computed (`DieForYouPower.ModifyUnblockedDamageTarget`), so Osty's own `SurroundedPower.ModifyDamageMultiplicative` (`target == Owner`) never applies |
 | Regent | stars | `STATE` `STARS` | yes (S_ctx) |
 | Regent | forge / Sovereign Blade | the Sovereign Blade card's own tokens | as that card's numbers only; no forge total on `STATE` (not audited further here) |
 | Silent | Shivs, Sly, poison | card and power tokens | yes |
@@ -1346,4 +1370,328 @@ Left for later, on purpose:
   not move with `X_CHAR` or `E_DOOMED`; the fill check; and
   `rsenv_lockstep` on each other character (the Rust training env's rows
   equal the Python env's, PRIV included).
+- GH #1197: `test_undeclared_ironclad_rows_unchanged` commits the check
+  above. `tests/e2e/undeclared_rows.py` plays 96 random-play Ironclad A10 runs
+  (2,501 rows) without the event and hashes every policy and PRIV array of
+  every row; `tests/e2e/data/undeclared_ironclad_rows.json` holds the hashes
+  of f6716cae7 (main before GH #1197) with its own wheel, and this checkout
+  must give the same. `test_combat_ctx_rows_unchanged` does the same for
+  `ppo.combat_ctx`'s own S_ctx tokens of the 2,142 combat decisions among
+  them. `test_chars_row_values` checks section 13.5's values on scripted
+  fights per character, `test_lockstep_all_characters` the Rust training
+  env's rows against the Python env's on all five characters (Ironclad
+  declared), and `test_fill_check_declared` the fill check on the new columns.
 - Not measured: learning. No lane has trained on these rows yet.
+
+### 13.5 Live values on a "chars" row (GH #1197)
+
+A row that carries the event prices its tactical inputs from the engine's live
+numbers, not the previews. A row without it keeps the old values (section
+13.4). The tokenizer makes a live copy of the snapshot on such a row and only
+there (`snapshot::live_snapshot` / `tactical.live_snapshot`); the env's
+snapshot, the merge key and `ppo.combat_ctx` are unchanged, and an undeclared
+row pays for none of the engine walks. The live copy adds, per hand card,
+`dmg_live` (`card_damage_live`: `[damage per hit, hits]` per enemy),
+`gen_live` (`card_gen_live`), `blk_live` (`card_block_live`) and
+`star_cost_live`, the top-level `end_live` (`end_turn_live`), and each pile
+card's `pile_flags` in its `flags`.
+
+Columns that keep their name and meaning but take a live value on such a row:
+
+| Column | Section | Undeclared row | "chars" row |
+|---|---|---|---|
+| `E_MAXDMG`, `E_KILLABLE` | `ENEMY` | `max_damage`: the preview per hit x the content prior's hit count | `max_damage_live`: `dmg_live` (dmg x hits) plus the play's generated damage (Shivs, Knife Trap, orb evokes; End of Days' Doom kills), a knapsack over energy and stars |
+| `S_HP_LOSS_END` | `STATE` | `hp_loss` (with the Frost and Osty terms of section 13.2 on another character's row before GH #1197) | `hp_loss_live`: the engine's walk of the turn end (`end_live`: block gained or lost, certain deaths, the turn end's own HP cost, Buffer, Beating Remnant), then hit by hit as `CreatureCmd.Damage` resolves each |
+| `DMG_PREV` | `HAND`, `ACT_PLAY` (S_ctx) | the preview's highest per-enemy damage / 30 | the highest `dmg x hits` of `dmg_live` / 30 |
+| `T_DMG` | `ACT_PLAY` (S_ctx) | the preview's damage to the target / 30 | `dmg x hits` of `dmg_live` to the target / 30 |
+| `BLK_PREV` | `HAND`, `ACT_PLAY` (S_ctx) | the block preview / 20 | `card_block_live` / 20 (adds Sovereign Blade's Parry and the calculated-block cards) |
+| `SLY`, `SLY_TURN`, `RETAIN_TURN` | pile sections (S_ctx) | 0: the honest snapshot names them on hand cards only | from the card's `pile_flags`. A multiset entry (`DRAW_UNK`, `DISCARD`, `EXHAUST`) splits where they differ, so such a row can have more pile tokens than the honest snapshot |
+| `SLY` | `ACT_CHOOSE` (S_ctx) | 0 (not live there before) | 1 when the option's card is Sly now: the keyword or Sly this turn, in its hand `flags` or pile `pile_flags`. A generated option (no pile card) reads 0 |
+
+An action token (`ACT_PLAY`, `ACT_CHOOSE`) takes its class representative's
+live values, as the potion slot does (section 5): the env applies the
+representative, and the honest merge key does not see a per-instance live
+value, so the members of a class stay token-identical. A `HAND` token keeps
+its own card's.
+
+One live value does split a class (GH #1407). On another character's fight
+(the wire's `player.class` is not Ironclad's) the env refines a play key by
+the card's `star_cost_live` where it differs from `base_star_cost`: two
+Falling Stars, one free this turn, are two classes, and the policy can choose
+the free one. A copy at its printed cost keeps the schema's key. The
+refinement sits next to the face variables (`env.combat_keys`, both twins),
+not in the frozen dedupe of `contracts`. An Ironclad fight keeps the schema's
+classes whether or not its rows carry the event, so no Ironclad class, action
+log or fixture moves; an Ironclad holding such a pair still merges it. A pile
+card's Sly this turn (`pile_flags`) is still outside the choose key: two pile
+copies that differ only there merge, and the `ACT_CHOOSE` token shows the
+representative's.
+
+The S_ctx block keeps its columns' meaning; on a declared Ironclad row the
+combat teacher's slice therefore sees the live values too. `ppo.combat_ctx`
+callers (the combat PPO) are not touched.
+
+Orb overflow in `gen_live` (`card_gen_live`): every channelling card of the
+engine's table (`sts2_core::card_mechanics`, 22 cards) channels its orbs one
+by one as `OrbCmd.Channel` does. A full belt evokes its front orb before the
+new one goes in at the back, so a long play evokes the orbs it channelled
+itself; a character without base orb slots gets one on an empty zero-slot
+belt; a random orb (Chaos) evokes for 0. Tempest's X Lightning (+1 upgraded,
+X through `ModifyXValue`, Chemical X) is not linear in X, so its damage goes
+into `gen_live.by_x`, a list by the energy spent that `max_damage_live` reads
+at the energy the X card gets. The same table carries every X card whose
+damage stops being linear in the energy (stars for Stardust) spent: with an X
+modifier (`Hook.ModifyXValue`, Chemical X +2, CardModel.cs:1117-1146) the X
+attacks (Whirlwind, Skewer, Eradicate, Volley, Repeat Shot, Stardust) and
+Multi-Cast's evokes, and Heavenly Drill once its X can reach 4 (it doubles
+there, HeavenlyDrill.cs:32-37). A table replaces the card's linear
+`attack x X` / `per_energy` term in the knapsack. Voltaic channels the combat's Lightning count
+so far (read before it channels). Ignition channels on its target teammate:
+per enemy, the most any living teammate's overflow evoke deals, priced from
+that teammate's seat; solo there is no teammate and the card is unplayable.
+
+Known limits of the live values, on purpose or for later:
+
+- **Extra plays from powers and relics are not in the bound.** Echo Form,
+  Burst and Duplication replay a card; `max_damage_live` counts each card
+  once.
+- **Pael's Eye's extra turn over-counts the HP loss** (known). When Pael's
+  Eye gives the player another turn, the enemies do not act after this one,
+  but `hp_loss_live` still counts their hits and Poison ticks.
+- **The content prior's hit count for Ice Lance is wrong** (3; the decomp's
+  Ice Lance hits once). The prior is hashed (`prior_sha256`), so it stays;
+  the live path reads the hit count from the card (`live_attack`: 1), and only
+  the undeclared rows' `max_damage` uses the prior's.
+- `PRIV_DRAW` cards carry no `pile_flags` (a PRIV input, not a policy one).
+
+**Checkpoints trained before GH #1197 (a caveat, not a stamp).** A Regent or
+Necrobinder "chars" checkpoint trained before GH #1197 saw the old values in
+the table above; it now reads live ones in `E_MAXDMG`, `E_KILLABLE`,
+`S_HP_LOSS_END`, `DMG_PREV`, `T_DMG` and `BLK_PREV`. Silent pile tokens
+now carry `SLY`, and a pile can split into more tokens. The new columns
+`X_C_RES3`-`X_C_RES7` (`C_STAR_COST`, `E_DIES_FIRST`, `S_DISCARDS_TURN`,
+`S_ATTACKS_TURN`, `S_PLAYER_DOOMED`) and `R_RES0` (`R_ARMED`) were zero in
+those runs, and the net's weights for them are the zero-init, never trained.
+No stamp moves (the hashed tables are unchanged), so nothing refuses such a
+checkpoint, and a resume continues on shifted inputs. Those lanes are paused
+experiments; treat their checkpoints as a different input distribution, not
+as a warm start to trust.
+
+### 13.6 v0.113.0's mechanics: the "fool" fill event (GH #1535)
+
+v0.113.0 adds the Fool's arrows and melody (`sts2_core::fool`) and the Wuppy,
+a pet any character can gain (the WuppyInTrouble event). A second fill event,
+`"fool"` (`contracts` section 4e), carries them on "chars" rows of a v0.113.0
+board. It takes the next reserved sections and the spare categorical columns,
+so `schema_sha256` does not move and a net that does not declare it keeps the
+inputs at zero weight. The source is the wire's `$.player.fool` (emitted only
+on v0.113.0 once a Fool mechanic touched the board) and `$.player.wuppy`.
+
+| Alias | Reserved name | Where | Meaning |
+|---|---|---|---|
+| `ARROW` | `RES_46` (section 46) | combat head | one token per arrow slot in gain order, at most 8; a pending Shoot slot (`shoot_slot_pending`: counts as one more ready arrow) last. `X_POS` = 1 + slot |
+| `MELODY` | `RES_47` (section 47) | combat head | one token while the Fool state exists: `X_FOOL1-3` = Wah, Cho, Ki plays finished this turn (cap 15), `X_POS` = 1 + melody cards finished this turn |
+| `X_FOOL1` | `X_RES1` | `ARROW`, `MELODY`, `ENEMY` | ARROW: status 1 ready, 2 away (impaled), 3 destroyed; MELODY: Wah plays; ENEMY: the player's arrows impaled in it (cap 15) |
+| `X_FOOL2` | `X_RES2` | `ARROW`, `MELODY` | ARROW: 1 + quietus (destroyed after impaling) + 2 × next (the slot the next shot uses, the last ready one); MELODY: Cho plays |
+| `X_FOOL3` | `X_RES3` | `MELODY` | Ki plays finished this turn |
+
+The Wuppy is a second `ALLY` token after the Osty's, with the same columns
+(`X_ID_MAIN` = monster `Wuppy`); a row has at most 2 `ALLY` tokens. The
+`ARROW` and `MELODY` tokens follow the `ORB` tokens, so the combat head is
+`ALLY*, ORB*, ARROW*, MELODY?`. The fill check (`fillcheck`) wants an `ARROW`
+token on 95% of the Fool's combat rows when the event is declared, and counts
+any of these tokens, an `X_FOOL` value or a Wuppy `ALLY` token as a stray when
+it is not. Not tokenized: the Lullaby relic's proc of this turn.
+
+## 14. The potion popup: the "ooc-potion" fill event (GH #1606)
+
+The game lets the player drink a potion out of combat and discard any potion, from
+the belt, on every out-of-combat screen (`NPotionPopup`). Only the `AnyTime` potions
+can be drunk there: Blood Potion (heal 20% of max HP), Fruit Juice (+5 max HP),
+Entropic Brew (fills the open slots), Ambergris (heal 50%), and Foul Potion, only at
+a merchant, for 100 gold. The events TheFutureOfPotions, StoneOfAllTime and
+RanwidTheElder lock the belt.
+
+### 14.1 The rule
+
+The engine offers the popup only on a run with `ooc_potion_actions` (a per-host
+flag, outside the agent bundle; default off, the parity mode). A launch that
+declares "ooc-potion" in `--filled` builds its runs with it
+(`factory.fill_ooc_potion`, `STS2_E2E_OOC_POTION=1`, set by the learner); every
+other launch builds them without it, so its rows, fixtures and checkpoints stay
+byte-identical (`test_undeclared_ironclad_rows_unchanged`). `factory.check_run`
+refuses a run whose flag differs from the declaration.
+
+### 14.2 What the event adds
+
+- The run actions `use_potion_ooc {potion_slot}` (kind 54 USE_POTION_OOC) and
+  `discard_potion {potion_slot}` (kind 55 DISCARD_POTION), after the screen's own
+  actions: one use per drinkable potion, then one discard per potion. They ride
+  INSIDE the screen's decision; its type stays NEOW, MAP, CARD_REWARD,
+  CARD_BUNDLE, RELIC_REWARD, BOSS_RELIC, SHOP, REST, EVENT or TREASURE
+  (`contracts.OOC_POTION_HOST_DTYPES`, `dtype_kinds`). A deck pick, a pending
+  choice or a potion swap preempts the belt, so those types never carry them.
+- One option token per popup option in section 42 `RES_OPT_POTION_USE`
+  (`contracts.OOC_POTION_SECTION`): X_KIND, the potion's id in X_ID_MAIN, X_POS.
+  Options key on their position (they never merge).
+- Nothing in combat: the env plays fights from `cs.legal_actions()`. A fight's
+  run-level `discard_potion` only marks the action list as a fight's
+  (`COMBAT_RUN_KINDS`).
+
+The kind statuses, the decision types' kind sets and KIND_SECTION are hashed, so
+the event adds its kinds through unhashed tables (`FILL_KIND_SECTION`,
+`OOC_POTION_HOST_DTYPES`, `FILL_SLOTS["ooc-potion"]`); `schema_sha256` does not
+move and an undeclared checkpoint loads unchanged. `net.layout(filled)` inits the
+section row and the two kind rows live only for a declaring launch.
+
+The reserved decision type 43 POTION_MENU stays unused. A separate menu would need an
+"open the belt" option on every screen and a "close" option inside the menu, and the
+hashed tables have no kind for either.
+
+### 14.3 What the event does not cover
+
+- The run teacher (a `RunPolicyNet`) has no surface for the popup: its encoder gives
+  those options blank tokens (`assert_encodable` checks only the screen's own
+  actions). A declaring launch should run with the run teacher's KS weight at 0, or
+  accept that its target puts noise on the popup options.
+- No run-PPO champion, heuristic, arena cell or advisor scores the popup; they build
+  their runs without the flag, and the run-PPO policy drops the actions if a run
+  offers them (`mask_rejectable`).
+
+## 15. The Fake Merchant: the SHOP decision (GH #1607)
+
+The game's Fake Merchant (`FakeMerchant`, act 2+) has no event options: its page is
+`NFakeMerchant`, a merchant inventory of six fake relics that `BeforeEventStarted`
+draws from the event's stream at prices rolled off the shared `Shops` stream
+(`MerchantRelicEntry.CalcCost`, 50 x 0.85..1.15, no merchant discount in an event
+room). The player buys any of them while gold lasts, throws a Foul Potion at the
+merchant (the fight, with the unsold stock as rewards), or leaves.
+
+The engine used to play it as three event options (buy the first stocked relic and
+leave, throw, leave). It now plays it as `Phase::Shop` over that inventory, so the
+env classifies it by its action set as type 14 SHOP: `shop_buy_relic {idx}` (kind 25
+SHOP_BUY_RELIC) per affordable relic and `leave_shop` (kind 28 LEAVE). The rows were
+EVENT rows with three EVENT_CHOICE options before; a checkpoint trained on them
+loads and acts unchanged (the kinds, sections and hashes are the live SHOP ones), but
+it never saw this shop and will need training to use it.
+
+The reserved type 44 FAKE_MERCHANT and kinds 56 MERCHANT_BUY / 57 MERCHANT_LEAVE stay
+unused, and no fill event is needed: the decision IS a shop (the same buy and leave
+as a merchant room, with relics only), and the SHOP tokens already carry each
+relic's id and price. A separate type would split the net's shop experience in two
+for no information gain.
+
+The throw is the "ooc-potion" event's `use_potion_ooc` on the Foul Potion (section
+14), riding inside the SHOP decision; an undeclared launch offers no throw.
+
+
+## 16. The game's deck select screens: the "deck-select" fill event (GH #1619, #1621, #1790)
+
+A pick-N deck select (Yummy Cookie upgrade 4, Trial upgrade 2 and transform 2,
+Morphic Grove transform 2, Cook and the relic removals of 2+) is one select over
+the deck as it was when it opened: the game selects every card first, then
+applies the effect to each (`CardSelectCmd.FromDeckForTransformation(..., 2)`,
+then `CardCmd.TransformToRandom` per card: `MorphicGrove.cs:47-50`,
+`Trial.cs:192-195`). Smith's and Cook's selects are cancelable
+(`SmithRestSiteOption` / `CookRestSiteOption.OnSelect`, `Cancelable = true`).
+
+### 16.1 The rule
+
+The engine plays the selects so only on a run with `deck_select_screens` (a
+per-host flag outside the agent bundle; default off, the parity mode, where each
+pick applies at once and a transform's second pick can take the first one's
+replacement, audit row 19). A launch that declares "deck-select" in `--filled`
+builds its runs with it (`factory.fill_deck_select`, `STS2_E2E_DECK_SELECT=1`,
+set by the learner); every other launch builds them without it, so its rows,
+fixtures and checkpoints stay byte-identical. `factory.check_run` refuses a run
+whose flag differs from the declaration. `schema_sha256` does not move.
+
+### 16.2 What the event adds
+
+- The decision types and kinds are the frozen ones (CARD_TRANSFORM,
+  CARD_UPGRADE, CARD_REMOVE, CARD_ENCHANT); each pick is one decision.
+- The options are the offer minus the cards already picked, as the pick actions
+  index it (`do_deferred_deck_pick`): `ppo.env.observe` drops the picked
+  positions from the open kind's offer list (`_drop_deck_select_picks`, Rust
+  `drop_deck_select_picks`).
+- The deck does not change until the last pick, so the picked cards are marked:
+  each is its own DECK token (grouped apart from its unpicked copies) with
+  K_PICKED = 1 (`deck_select_picked_deck`, the engine's
+  `deck_select_picked_deck_indices`). K_PICKED is a live column of HAND and the
+  piles already; the event makes it live in DECK (`SECTION_LIVE`, unhashed).
+  The fill check counts a marked DECK token on an undeclared launch as a stray.
+- The cancel is never offered (`env.mask_rejectable` drops
+  `confirm_deck_selection` while `deck_select_cancelable`): it leaves the
+  campfire as it was, and no kind names it. Claws' confirm is unaffected (it
+  stays a forced step, GH #1353).
+
+### 16.3 What the event does not cover
+
+- RUNCTX `R_SEL_MIN/MAX/PICKED` stay at their default on these decisions; the
+  mark and the shrinking offer carry the select's progress.
+- No run-PPO champion, heuristic, arena cell or advisor builds its runs with the
+  flag.
+
+## 17. The game's reward screen: the "#1069" fill event (GH #1620)
+
+After a won combat room the game lists every reward on `NRewardsScreen`: the
+player takes or skips each, in any order, and proceeds to leave the rest
+(`RewardsSetSynchronizer.SkipRewardsSet`). A treasure chest's relic has its own
+skip (`NTreasureRoom.cs:248-262`, `SkipRelicLocally`); the chest's gold is paid
+on opening. A potion taken on a full belt parks the potion swap, a taken card
+reward opens its pick (a skip there is final), a taken card removal its deck
+select.
+
+### 17.1 The rule
+
+The engine offers the screen only on a run with `reward_screen` (a per-host
+flag outside the agent bundle; default off, the parity mode, where every reward
+is collected in the set's order). A launch that declares "#1069" in `--filled`
+builds its runs with it (`factory.fill_reward_screen`,
+`STS2_E2E_REWARD_SCREEN=1`, set by the learner); every other launch builds them
+without it, so its rows, fixtures and checkpoints stay byte-identical.
+`factory.check_run` refuses a run whose flag differs from the declaration.
+
+The event is the schema's own reserved "#1069" (section 2.2), so the reserved
+kinds 48-50 and decision type 40 go live by their status; the chest's type 41
+TREASURE_CHOICE and kind 51 SKIP_TREASURE (`reserved:treasure`) and the spare
+kinds of section 6.1 go live through `FILL_SLOTS["#1069"]` (`net.layout`
+reads its `kinds` and `dtypes`). `schema_sha256` does not move.
+
+### 17.2 What the event adds
+
+- `available_actions()` names each reward on its take and skip: `reward`
+  (`gold`, `potion`, `relic`, `chest_relic`, `special_card`, `card`,
+  `card_removal`), `id` (PascalCase) or `amount` (gold); `proceed_rewards`
+  carries `chest`. A card reward's cards stay hidden until it is taken, as on
+  the game's button.
+- A combat room's screen is type 40 REWARD_SCREEN: one kind per (take or skip,
+  reward type) and PROCEED_REWARDS (`contracts._reward_action_kind`). Option
+  tokens sit in section 40 `RES_OPT_REWARD`: X_KIND, the potion, relic or
+  special card in X_ID_MAIN, X_POS, gold in O_PRICE (amount / 300). Proceed is
+  content-free (OPT_FIXED). Options key on their position.
+- The chest's screen is type 41 TREASURE_CHOICE: COLLECT_TREASURE takes the
+  relic, SKIP_TREASURE leaves it; its proceed leaves it too, so it is a second
+  SKIP_TREASURE. The relic rides in an OFFER token (X_KIND COLLECT_TREASURE,
+  X_ID_MAIN the relic).
+- The potion popup ("ooc-potion", section 14) rides on both types.
+- An event's or relic's own reward set (`RewardsCmd.OfferCustom`: an event's
+  card, potion or relic grants, Dream Catcher, Tiny Mailbox, Lost Coffer,
+  Orrery, Toy Box, …) is the same type 40 screen with the same kinds
+  (GH #1641); it has no gold, card removal or special card, and its card
+  rewards are rolled when it opens, in the set's order. A relic taken off a
+  screen whose `AfterObtained` offers its own set opens that set on top; the
+  screen under it comes back once it is left. An event that goes on after its
+  set (a multi-page event) shows its next page after the screen. Neow's
+  Bones' two relics (`WithSkippingDisallowed`) are listed with takes only.
+
+### 17.3 What the event does not cover
+
+- The run teacher (a `RunPolicyNet`) has no surface for the screen
+  (`assert_encodable` skips its actions); a declaring launch should run with
+  the run teacher's KS weight at 0, or accept noise on these decisions.
+- No run-PPO champion, heuristic, arena cell or advisor plays the screen; they
+  build their runs without the flag, and the run-PPO policy auto-takes the
+  first reward if a run offers it (`mask_rejectable`), which is the
+  auto-collect order.
+

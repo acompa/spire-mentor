@@ -19,9 +19,16 @@ text wins (default: the default build). The default build's table is
 ``web/public/<ver>/card_text.json`` (what ``web/src/catalog/main.ts`` fetches
 for that build), so a v0.111.0 card is described with v0.111.0 text.
 
+``--lang zhs`` writes the game's Simplified Chinese card text
+(``localization_zhs/``, one set for every build) to
+``web/public/zh/[<ver>/]card_text.json``, which the catalog reads when the
+page runs in Chinese. It has exactly the English table's cards; a title or
+text the Chinese table lacks, or whose template the build's values cannot
+fill, stays English.
+
 Usage::
 
-    PYTHONPATH=python uv run python python/synergy/gen_card_text.py [--version VER]
+    PYTHONPATH=python uv run python python/synergy/gen_card_text.py [--version VER] [--lang zhs]
 """
 
 from __future__ import annotations
@@ -33,10 +40,13 @@ import sys
 from pathlib import Path
 
 from sts2_client import LEGACY_GAME_VERSION, SUPPORTED_GAME_VERSIONS
+from workbench.gen_glossary import LANGS, english_unknown, public_dir_for, zh_render, zh_table
 from workbench.localization import (
     _ENGINE_WIKI_VERSION,
     _KEYWORDS_AFTER_DESCRIPTION,
     _KEYWORDS_BEFORE_DESCRIPTION,
+    build_workbench_loc,
+    card_var_value,
     engine_wiki_version,
 )
 
@@ -48,11 +58,14 @@ _PUBLIC = Path(__file__).parent.parent.parent / "web" / "public"
 _DEFAULT_OUT = _PUBLIC / "card_text.json"
 
 
-def out_path_for(version: str | None = None) -> Path:
-    """``web/public/card_text.json`` for the default build, else
-    ``web/public/<ver>/card_text.json``."""
+def out_path_for(version: str | None = None, lang: str = "eng") -> Path:
+    """``web/public/[zh/]card_text.json`` for the default build, else
+    ``web/public/[zh/]<ver>/card_text.json``."""
     key = version or LEGACY_GAME_VERSION
-    return _DEFAULT_OUT if key == LEGACY_GAME_VERSION else _PUBLIC / key / "card_text.json"
+    if lang == "eng":
+        return _DEFAULT_OUT if key == LEGACY_GAME_VERSION else _PUBLIC / key / "card_text.json"
+    base = public_dir_for(lang)
+    return base / "card_text.json" if key == LEGACY_GAME_VERSION else base / key / "card_text.json"
 
 
 def _strip_tags(text: str) -> str:
@@ -74,6 +87,55 @@ def _entry(card: dict) -> dict[str, str]:
         "title": card.get("title", card["loc_key"]),
         "description": "\n".join(lines),
     }
+
+
+def _zh_tables(version: str | None = None) -> tuple[dict[str, str], dict[str, str]]:
+    """``(cards, card_keywords)`` in Chinese for build ``version``
+    (``gen_glossary.zh_table``); empty when absent."""
+    return zh_table("cards", version), zh_table("card_keywords", version)
+
+
+def _zh_entry(
+    key: str,
+    card: dict,
+    english: dict[str, str],
+    loc: dict[str, str],
+    zh_cards: dict[str, str],
+    zh_kw: dict[str, str],
+) -> dict[str, str]:
+    """``english`` in Chinese: the card's own title, and its template filled
+    with the build's base values (spelled out, tags stripped), keyword
+    lines included."""
+    title = zh_cards.get(f"{key}.title") or english["title"]
+    en_template = loc.get(f"{key}.description") or card.get("description_template") or ""
+    template = zh_cards.get(f"{key}.description")
+    # A card with no text of its own (Dazed: "Unplayable. Ethereal.") is its
+    # keyword lines alone, in both languages.
+    body = (
+        ""
+        if not template and not en_template and f"{key}.title" in zh_cards
+        else zh_render(
+            template,
+            lambda var: card_var_value(key, var, False, loc),
+            icons=False,
+            english=en_template,
+            english_plain=english["description"],
+            unknown_as_x=english_unknown(english["description"]),
+        )
+    )
+    if body is None:
+        return {"title": title, "description": english["description"]}
+    have = set(card.get("keywords") or [])
+    period = zh_kw.get("PERIOD") or "。"
+
+    def kw(k: str) -> str:
+        return f"{zh_kw.get(f'{k.upper()}.title') or k}{period}"
+
+    before = [kw(k) for k in reversed(_KEYWORDS_BEFORE_DESCRIPTION) if k in have]
+    after = [kw(k) for k in _KEYWORDS_AFTER_DESCRIPTION if k in have]
+    body = _strip_tags(body)
+    lines = before + ([body] if body else []) + after
+    return {"title": title, "description": "\n".join(lines)}
 
 
 def _version_key(name: str) -> tuple[int, ...]:
@@ -100,8 +162,12 @@ def _manifests(wiki_data: Path, version: str | None = None) -> list[Path]:
     return [p for p in found if p not in pinned] + pinned
 
 
-def generate(wiki_data: Path, out_path: Path, version: str | None = None) -> None:
+def generate(
+    wiki_data: Path, out_path: Path, version: str | None = None, lang: str = "eng"
+) -> None:
+    public_dir_for(lang)  # validate
     result: dict[str, dict] = {}
+    rows: dict[str, dict] = {}
     for manifest in _manifests(wiki_data, version):
         cards = json.loads(manifest.read_text(encoding="utf-8"))
         if isinstance(cards, dict):
@@ -109,8 +175,16 @@ def generate(wiki_data: Path, out_path: Path, version: str | None = None) -> Non
         for card in cards or []:
             if card.get("loc_key"):
                 result[card["loc_key"]] = _entry(card)
+                rows[card["loc_key"]] = card
+    if lang == "zhs":
+        zh_cards, zh_kw = _zh_tables(version)
+        loc, _ = build_workbench_loc(wiki_data, version=version)
+        result = {k: _zh_entry(k, rows[k], v, loc, zh_cards, zh_kw) for k, v in result.items()}
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    # LF on every OS: the shipped file is LF on disk (root .gitattributes).
+    out_path.write_text(
+        json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+    )
     print(f"Wrote {len(result)} entries to {out_path}", file=sys.stderr)
 
 
@@ -129,10 +203,18 @@ def main(argv: list[str] | None = None) -> None:
         help="Game build whose text wins (default: the default build)",
     )
     parser.add_argument(
+        "--lang", choices=LANGS, default="eng", help="eng (default) or zhs (Simplified Chinese)"
+    )
+    parser.add_argument(
         "--out", type=Path, default=None, help="Output card_text.json path (default: per build)"
     )
     args = parser.parse_args(argv)
-    generate(args.wiki_data, args.out or out_path_for(args.version), args.version)
+    generate(
+        args.wiki_data,
+        args.out or out_path_for(args.version, args.lang),
+        args.version,
+        args.lang,
+    )
 
 
 if __name__ == "__main__":

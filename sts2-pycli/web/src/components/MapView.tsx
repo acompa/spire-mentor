@@ -6,6 +6,7 @@ import { useHints } from "../hints/useHints";
 import "../skins/map.css";
 import { nodeMeta, bossArt } from "./mapArt";
 import { usePhone } from "../phone";
+import { t } from "../i18n";
 
 const coordKey = (c: { col: number; row: number }) => `${c.col},${c.row}`;
 /** Undirected edge key so the plan-route highlight matches drawn edges. */
@@ -302,7 +303,8 @@ function FullMapGraph({ fm, selectable, onSelect, jumpTargets, onJump, scale = 1
   const fs = (px: number) => px * scale;
   // On a phone the lattice sits at its narrow fit floor, where the hit disc
   // (R + 9) comes out ~32 px across. The disc is invisible, so it is padded up
-  // to a 44 px diameter; the narrowest pitch (44 px, `MIN_COL_FIT`) keeps neighbours apart.
+  // to a 44 px diameter (at the narrowest pitch, 36 px, `MIN_COL_FIT`, two
+  // rooms side by side in a row share a few px of it).
   const phone = usePhone() !== null;
   const nodes: FullMapNode[] = (fm.rows || []).flat();
   if (fm.boss && !nodes.some((n) => n.row === fm.boss!.row && n.col === fm.boss!.col)) {
@@ -481,7 +483,7 @@ function FullMapGraph({ fm, selectable, onSelect, jumpTargets, onJump, scale = 1
           const b = bossFor(n);
           const art = bossArt(b, n.icon, gameVersion);
           const second = sameCoord(fm.second_boss, n);
-          const role = second ? "the act's second boss" : "the act boss";
+          const role = second ? t("the act's second boss") : t("the act boss");
           return (
             <g key={`${n.col},${n.row}`} transform={`translate(${p.x},${p.y})`}
               data-current={isCurrent || undefined}
@@ -490,9 +492,9 @@ function FullMapGraph({ fm, selectable, onSelect, jumpTargets, onJump, scale = 1
               tabIndex={canSelect || jump ? 0 : undefined}
               role={canSelect || jump ? "button"
                 : art.name ? "img" : undefined}
-              aria-label={canSelect ? `Go to ${role}${art.name ? ` (${art.name})` : ""}`
-                : jump ? `Jump to floor ${jump.floor ?? "?"}`
-                : art.name ? `${second ? "Second boss" : "Act boss"}: ${art.name}` : undefined}
+              aria-label={canSelect ? t("Go to {room}", { room: role }) + (art.name ? ` (${art.name})` : "")
+                : jump ? t("Jump to floor {n}", { n: jump.floor ?? "?" })
+                : art.name ? `${second ? t("Second boss") : t("Act boss")}: ${art.name}` : undefined}
               onClick={activate}
               onKeyDown={activate ? (e) => {
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); }
@@ -524,7 +526,7 @@ function FullMapGraph({ fm, selectable, onSelect, jumpTargets, onJump, scale = 1
                   <text textAnchor="middle" y={-R * 0.2} fontSize={fs(15)} fontWeight={700}
                     fill={INK} opacity={0.9} pointerEvents="none"
                     style={{ letterSpacing: 1.5 }}>
-                    {art.name ?? "BOSS"}
+                    {art.name ?? t("BOSS")}
                   </text>
                 } />
             </g>
@@ -537,15 +539,15 @@ function FullMapGraph({ fm, selectable, onSelect, jumpTargets, onJump, scale = 1
             data-jump={jump ? true : undefined}
             tabIndex={canSelect || jump ? 0 : undefined}
             role={canSelect || jump ? "button" : undefined}
-            aria-label={canSelect ? `Go to ${n.type ?? "node"} (${n.col},${n.row})`
-              : jump ? `Jump to floor ${jump.floor ?? "?"}` : undefined}
+            aria-label={canSelect ? `${t("Go to {room}", { room: roomLabel(n.type) })} (${n.col},${n.row})`
+              : jump ? t("Jump to floor {n}", { n: jump.floor ?? "?" }) : undefined}
             onClick={activate}
             onKeyDown={activate ? (e) => {
               if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); }
             } : undefined}
             style={canSelect || jump ? { cursor: "pointer" } : undefined}>
-            {canSelect && <title>Go to {n.type ?? "node"} ({n.col},{n.row}){skipHere ? " — keeps an elite-skip option" : ""}</title>}
-            {jump && <title>Jump to floor {jump.floor ?? "?"}</title>}
+            {canSelect && <title>{t("Go to {room}", { room: roomLabel(n.type) })} ({n.col},{n.row}){skipHere ? ` — ${t("keeps an elite-skip option")}` : ""}</title>}
+            {jump && <title>{t("Jump to floor {n}", { n: jump.floor ?? "?" })}</title>}
             {/* larger transparent hit target for easier clicking */}
             {(canSelect || jump) && <circle data-hit r={Math.max(R + 9 * scale, phone && rich ? 22 : 0)} fill="transparent" />}
             {/* visited/current nodes are lassoed in ink — a heavy hand-drawn
@@ -670,24 +672,24 @@ function ReconstructedRows({ rows, currentIdx, onJump }: {
           // nothing to find here and fell through to its lattice-shaped
           // fallback.
           data-current={r.idx === currentIdx || undefined}
-          title={onJump ? `Jump to floor ${r.floor ?? "?"}` : undefined}
+          title={onJump ? t("Jump to floor {n}", { n: r.floor ?? "?" }) : undefined}
           style={{ display: "flex", alignItems: "center", gap: 16, padding: "4px 8px", borderRadius: 6,
           cursor: onJump ? "pointer" : undefined,
           background: r.idx === currentIdx ? "rgba(60, 44, 20, 0.18)" : "transparent",
           outline: r.idx === currentIdx ? "1px solid rgba(51, 40, 26, 0.6)" : "none" }}>
-          <span className="gsm-muted-parch" style={{ width: 60, fontSize: 12, fontWeight: 600 }}>floor {r.floor}</span>
+          <span className="gsm-muted-parch" style={{ width: 60, fontSize: 12, fontWeight: 600 }}>{t("floor {n}", { n: r.floor ?? "" })}</span>
           <div style={{ display: "flex", gap: 22 }}>
             {r.nodes.map((n) => {
               const m = meta(n.type);
               return (
-                <div key={`${n.col},${n.row}`} title={n.type ?? "unknown"}
+                <div key={`${n.col},${n.row}`} title={n.type ? roomLabel(n.type) : t("unknown")}
                   className={n.chosen ? undefined : "gsm-node-future"}
                   style={{ width: 34, height: 34, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 15, color: n.chosen ? "#f0e6cd" : m.color,
                     background: n.icon ? "transparent" : n.chosen ? m.color : "var(--gsm-parch-hi, #d9c49a)",
                     border: n.icon ? "none" : `2px solid ${m.color}`, overflow: "hidden" }}>
                   {n.icon
-                    ? <img src={n.icon} alt={n.type ?? "node"} style={{ width: 30, height: 30, objectFit: "contain" }} />
+                    ? <img src={n.icon} alt={roomLabel(n.type)} style={{ width: 30, height: 30, objectFit: "contain" }} />
                     : m.glyph}
                 </div>
               );
@@ -724,9 +726,13 @@ const PARCH_PAD_X = 46;
 const MIN_FIT = 0.6;
 const MIN_FIT_NARROW = 0.5;
 /** The tightest column pitch on a phone-width sheet, as a scale of
- *  `RICH_COLW`: 44 px, one tap disc (`FullMapGraph`'s 22 px radius). Only a
- *  sheet under ~7 x 44 px of paper still scrolls sideways. */
-const MIN_COL_FIT = 44 / RICH_COLW;
+ *  `RICH_COLW`: 36 px. At 44 (one whole tap disc) the act's seven columns
+ *  filled a 412 px phone's paper edge to edge, the outer column's ink on the
+ *  deckle; 36 keeps a gutter of paper on both sides down to a 375 px phone.
+ *  The stamps are ~23 px across there, so neighbours still read apart, and
+ *  the 44 px tap discs overlap by a few px only between two rooms side by
+ *  side in one row. Only a sheet under ~7 x 36 px of paper scrolls sideways. */
+const MIN_COL_FIT = 36 / RICH_COLW;
 
 /** Mirrors `--gsm-sheet-inset` in map.css: the parchment layers are 1920 px
  *  wide but the hide itself starts this far in on each side, so the paper the
@@ -739,11 +745,15 @@ const SHEET_INSET = 0.084;
  *  the surface's own tooltip (each node also states its own action in a
  *  <title>, which is where a click actually lands). */
 function mapHint(hasGraph: boolean, canPick: boolean, canJump: boolean): string {
-  if (!hasGraph) return "reconstructed path — re-record the run to capture the full graph";
-  if (canPick) return "click a highlighted node to continue";
-  if (canJump) return "click a visited node to jump the replay there";
-  return "map";
+  if (!hasGraph) return t("reconstructed path — re-record the run to capture the full graph");
+  if (canPick) return t("click a highlighted node to continue");
+  if (canJump) return t("click a visited node to jump the replay there");
+  return t("map");
 }
+
+/** A map node's room type for display. Runtime key: the engine's closed set
+ *  of room types (Monster, Elite, Boss, …), all listed in i18n/zh/screens.ts. */
+const roomLabel = (ty: string | null | undefined): string => t(ty ?? "node");
 
 const REGIONS = ["overgrowth", "hive", "glory", "underdocks"];
 /** Map act name → parchment region set. Only trusts an explicit region name in
@@ -780,6 +790,7 @@ export default function MapView({ rows, graphs, currentIdx, selectable, onSelect
   // graph, so gating only one of them would leak the answer anyway.
   const hints = useHints();
   const showPlan = !live || hints.on;
+  const phone = usePhone() !== null;
   // Prefer the full graph whose step is at or most recently before the current step.
   const graph = graphs.filter((g) => g.idx <= currentIdx).slice(-1)[0] ?? graphs[0];
   // The act is taller than the viewport: keep the you-are-here marker in view
@@ -810,8 +821,12 @@ export default function MapView({ rows, graphs, currentIdx, selectable, onSelect
       const el = bodyRef.current;
       if (!el) return;
       const cs = typeof getComputedStyle === "function" ? getComputedStyle(el) : null;
-      const padX = cs ? parseFloat(cs.paddingLeft) || PARCH_PAD_X : PARCH_PAD_X;
-      const avail = el.clientWidth * (1 - 2 * SHEET_INSET) - padX * 2;
+      // Both sides: on a phone they differ (map.css: the art's hide sits
+      // left of centre, so the right gutter is the wider one).
+      const padX = cs
+        ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) || PARCH_PAD_X * 2
+        : PARCH_PAD_X * 2;
+      const avail = el.clientWidth * (1 - 2 * SHEET_INSET) - padX;
       if (avail <= 0) return;
       const floor = el.clientWidth < 760 ? MIN_FIT_NARROW : MIN_FIT;
       const next = Math.max(floor, Math.min(1.12, Math.round((avail / natW) * 50) / 50));
@@ -869,7 +884,7 @@ export default function MapView({ rows, graphs, currentIdx, selectable, onSelect
   } as CSSProperties;
 
   if (rows.length === 0 && !graph) {
-    return <div className="gs-map" style={{ padding: 24, color: "var(--muted)", fontFamily: "var(--game-font, Georgia, serif)" }}>no map data in this run</div>;
+    return <div className="gs-map" style={{ padding: 24, color: "var(--muted)", fontFamily: "var(--game-font, Georgia, serif)" }}>{t("no map data in this run")}</div>;
   }
 
   if (compact) {
@@ -896,12 +911,19 @@ export default function MapView({ rows, graphs, currentIdx, selectable, onSelect
         (best, r) => (best == null || r.idx < best ? r.idx : best), null)
     : null;
   const proceedTitle = nextMapIdx != null
-    ? "jump to the next map decision in this run"
+    ? t("jump to the next map decision in this run")
     : onSelect
-      ? "pick a node on the map to continue — the map is the picker here"
-      : "no later map decision in this run";
+      ? t("pick a node on the map to continue — the map is the picker here")
+      : t("no later map decision in this run");
+  // A phone has no room for a banner that does nothing. Drawn disabled (live
+  // play, where the map is the picker, or a replay past its last map
+  // decision) it sat over the bottom rows of rooms, the ones you are choosing
+  // between, until you scrolled (#1443). It is left out there, and the sheet's
+  // bottom padding, which exists to scroll past it, shrinks with it (map.css,
+  // `.gs-map--no-proceed`). Replay keeps it whenever it can jump.
+  const showProceed = !!graph && (nextMapIdx != null || !phone);
   return (
-    <div ref={sceneRef} className="gs-map gs-map--scene" style={parchVars}
+    <div ref={sceneRef} className={`gs-map gs-map--scene${graph && !showProceed ? " gs-map--no-proceed" : ""}`} style={parchVars}
       title={mapHint(!!graph, !!onSelect && (selectable?.size ?? 0) > 0,
         !onSelect && !!onJump && jumpTargets.size > 0)}>
       {/* The rock the sheet hangs on. Two silhouette walls with a cold rim
@@ -938,14 +960,15 @@ export default function MapView({ rows, graphs, currentIdx, selectable, onSelect
           </div>
         </div>
         {graph && (
-          <aside className="gsm-legend" aria-label="Legend">
-            <div className="gsm-legend-title">Legend</div>
+          <aside className="gsm-legend" aria-label={t("Legend")}>
+            <div className="gsm-legend-title">{t("Legend")}</div>
             {LEGEND.map(({ label, rel, coin }) => (
               <div key={label} className="gsm-legend-row">
                 <span className={coin ? "gsm-legend-ico gsm-legend-ico--coin" : "gsm-legend-ico"}>
                   <img src={assetUrl(rel)} alt="" aria-hidden="true" />
                 </span>
-                <span>{label}</span>
+                {/* Runtime key: one of the LEGEND labels (listed in i18n/zh/screens.ts). */}
+                <span>{t(label)}</span>
               </div>
             ))}
             {/* The run-AI's route is the one thing on this screen the game does
@@ -961,29 +984,32 @@ export default function MapView({ rows, graphs, currentIdx, selectable, onSelect
                 // line and the policy panel could name different next rooms
                 // and neither said which one the run would take.
                 (plan.first_col != null
-                  ? `first move ${plan.first_col === plan.best_col ? "agreed by" : "taken from"} the run policy${
-                      plan.first_col === plan.best_col ? "" : ` (pathing preferred col ${plan.best_col})`}; the rest is the pathing plan`
+                  ? (plan.first_col === plan.best_col
+                      ? t("first move agreed by the run policy; the rest is the pathing plan")
+                      : t("first move taken from the run policy (pathing preferred col {col}); the rest is the pathing plan",
+                          { col: plan.best_col }))
                   : plan.diverged
-                    ? `re-routed off the hard-max line (col ${plan.baseline_col} → ${plan.best_col}) to keep options open`
-                    : "keeps the most options open")
+                    ? t("re-routed off the hard-max line (col {from} → {to}) to keep options open",
+                        { from: plan.baseline_col ?? "?", to: plan.best_col })
+                    : t("keeps the most options open"))
                 + (plan.columns.some((c) => c.can_skip_elite)
-                  ? " · ⤳ marks first moves that keep an elite-skip option" : "")}>
+                  ? ` · ${t("⤳ marks first moves that keep an elite-skip option")}` : "")}>
                 <span className="gsm-legend-ico" aria-hidden="true">
                   <svg viewBox="0 0 28 28" width="28" height="28">
                     <path d="M3 24 Q 13 17 15 12 T 25 4" fill="none" stroke={PLAN}
                       strokeWidth="3" strokeLinecap="round" />
                   </svg>
                 </span>
-                <span>planned route to boss</span>
+                <span>{t("planned route to boss")}</span>
               </div>
             )}
           </aside>
         )}
-        {graph && (
+        {showProceed && (
           <button type="button" className="gsm-proceed" title={proceedTitle}
             disabled={nextMapIdx == null}
             onClick={nextMapIdx != null ? () => onJump!(nextMapIdx) : undefined}>
-            <span>Proceed</span>
+            <span>{t("Proceed")}</span>
           </button>
         )}
       </div>

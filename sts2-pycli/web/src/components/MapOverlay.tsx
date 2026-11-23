@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { MapRow, MapGraph } from "../api";
 import MapView from "./MapView";
+import { t } from "../i18n";
 
 /**
  * A modal overlay that shows the run's map on demand — openable from any
@@ -42,7 +43,7 @@ export default function MapOverlay({
   }, [onClose]);
 
   return (
-    <div role="dialog" aria-label="Map" onClick={onClose}
+    <div role="dialog" aria-label={t("Map")} onClick={onClose}
       style={{ position: "fixed", inset: 0, zIndex: 50, background: "oklch(20% 0.02 255 / .55)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       {/* A definite height (not just a max) so the sheet inside can run full
@@ -54,9 +55,9 @@ export default function MapOverlay({
           position: "relative", display: "flex", flexDirection: "column",
           boxShadow: "0 12px 40px rgba(0, 0, 0, 0.55)" }}>
         {loading ? (
-          <div style={{ padding: 24, color: "var(--muted)", fontFamily: "var(--game-font, Georgia, serif)" }}>loading map…</div>
+          <div style={{ padding: 24, color: "var(--muted)", fontFamily: "var(--game-font, Georgia, serif)" }}>{t("loading map…")}</div>
         ) : (
-          <div style={{ flex: "1 1 auto", minHeight: 0 }}>
+          <div className="gsm-overlay-sheet" style={{ flex: "1 1 auto", minHeight: 0 }}>
             <MapView rows={rows} graphs={graphs} currentIdx={currentIdx} onJump={onJump} live={live} gameVersion={gameVersion} />
           </div>
         )}
@@ -64,7 +65,7 @@ export default function MapOverlay({
             real close affordance, so the furniture carries an interaction
             rather than being painted on. (The dedicated map screen has nothing
             to go back TO, so it gets no wedge.) */}
-        <button onClick={onClose} aria-label="Close" className="gsm-back" title="close the map (Esc)">
+        <button onClick={onClose} aria-label={t("Close")} className="gsm-back" title={t("close the map (Esc)")}>
           <span aria-hidden="true">↩</span>
         </button>
       </div>

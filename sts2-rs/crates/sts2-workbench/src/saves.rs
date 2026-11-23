@@ -1,7 +1,7 @@
 //! Named saves — the payload shape of `sts2-pycli/python/workbench/saves.py`.
 //!
 //! A save captures the **active line** of a session: the run identity
-//! `(character, seed, ascension, act1, backend, run_mode, game_version)` plus the ordered
+//! `(character, seed, ascension, act1, backend, run_mode, game_version, game_mode)` plus the ordered
 //! `(action, args)` pairs from the root to the active leaf. Loading replays
 //! that line, so a save is only valid against the engine that recorded it.
 //!
@@ -9,7 +9,7 @@
 //! only builds and reads the JSON.
 
 use serde_json::{json, Map, Value};
-use sts2_core::GameVersion;
+use sts2_core::{GameMode, GameVersion};
 
 use crate::session::Progress;
 
@@ -60,6 +60,7 @@ pub fn build_save(
     run_mode: bool,
     act1: &str,
     game_version: GameVersion,
+    game_mode: GameMode,
     progress: &Progress,
     line: &[Value],
     node_values: &[Option<f64>],
@@ -82,6 +83,11 @@ pub fn build_save(
     // GH #801: always written, so a save names its build;
     // `RunIdentity::from_save` reads absence (an older save) as v0.107.1.
     out["game_version"] = json!(game_version.as_str());
+    // GH #1346: named only off standard, so a standard save keeps its
+    // bytes; `RunIdentity::from_save` reads absence as a standard run.
+    if !game_mode.is_default() {
+        out["game_mode"] = json!(game_mode.as_str());
+    }
     out
 }
 
@@ -120,6 +126,10 @@ pub struct RunIdentity {
     /// carries no `game_version` (GH #801). An unknown value also reads as
     /// the default here — `Workbench::restore_save` rejects it first.
     pub game_version: GameVersion,
+    /// The run's game mode; standard when the save carries no `game_mode`
+    /// (GH #1346). An unknown value also reads as standard here —
+    /// `Workbench::restore_save` rejects it first.
+    pub game_mode: GameMode,
     /// The run was built as the e2e student's training run (run-mode only;
     /// absent = false).
     pub e2e_setup: bool,
@@ -149,6 +159,7 @@ impl RunIdentity {
             act1: s("act1", DEFAULT_ACT1),
             run_mode: payload.get("run_mode").and_then(Value::as_bool),
             game_version: crate::session::game_version_of(payload).unwrap_or_default(),
+            game_mode: crate::session::game_mode_of(payload).unwrap_or_default(),
             e2e_setup: payload
                 .get("e2e_setup")
                 .and_then(Value::as_bool)
@@ -211,7 +222,7 @@ mod tests {
             hp: json!(80),
             max_hp: json!(80),
         };
-        let args = |v| {
+        let args_in = |v, mode| {
             build_save(
                 "n",
                 "t",
@@ -222,11 +233,13 @@ mod tests {
                 false,
                 "roll",
                 v,
+                mode,
                 &progress,
                 &[],
                 &[],
             )
         };
+        let args = |v| args_in(v, GameMode::Standard);
         // Every save names its build, the legacy one included.
         let old = args(GameVersion::V0_107_1);
         assert_eq!(old["game_version"], "v0.107.1");
@@ -236,5 +249,11 @@ mod tests {
             RunIdentity::from_save(&new).game_version,
             GameVersion::V0_111_0
         );
+        // GH #1346: only a Dread save names its mode.
+        assert!(new.get("game_mode").is_none());
+        assert_eq!(RunIdentity::from_save(&new).game_mode, GameMode::Standard);
+        let dread = args_in(GameVersion::V0_113_0, GameMode::Dread);
+        assert_eq!(dread["game_mode"], "dread");
+        assert_eq!(RunIdentity::from_save(&dread).game_mode, GameMode::Dread);
     }
 }

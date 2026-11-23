@@ -72,6 +72,9 @@ _MONSTER_ALIASES = {
     "battle_friend_v2_0": "battleworn_dummy",
     "battle_friend_v3_0": "battleworn_dummy",
     "big_dummy": "battleworn_dummy",
+    # The Dense Vegetation event's fight is ordinary Wrigglers in the game;
+    # `DenseVegetationWriggler` is an engine-only variant (its slot AI).
+    "dense_vegetation_wriggler": "wriggler",
 }
 
 # Monsters that are TWO (or more) targetable combatants sharing ONE big Spine rig

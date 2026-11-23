@@ -1,15 +1,16 @@
 //! The e2e content-ID table (`ppo.e2e.vocab`): one id per content name,
 //! shared by every `X_ID_*` column and the pool entries.
 //!
-//! The table is `ppo/e2e/vocab.tsv` (game version v0.111.0), embedded
-//! verbatim as `data/vocab_v0111.tsv`. Id 0 is NONE, ids 1-11 are
+//! The table is the lane build's (`crate::build`): `ppo/e2e/vocab.tsv`
+//! (v0.111.0), embedded verbatim as `data/vocab_v0111.tsv`, or
+//! `ppo/e2e/vocab_v0113.tsv` as `data/vocab_v0113.tsv`. Id 0 is NONE, ids 1-11 are
 //! `UNK_<registry>`. Names are looked up through each registry's canonical
 //! form (`CANON`).
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 const TSV: &str = include_str!("../data/vocab_v0111.tsv");
+const TSV_V0113: &str = include_str!("../data/vocab_v0113.tsv");
 
 /// A registry block of the table (`REGISTRIES`, in block order).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -170,11 +171,17 @@ impl Vocab {
     }
 }
 
-/// The committed table (`vocab.load()`).
+/// The current build's committed table (`vocab.load()`; `build::current`).
 #[must_use]
 pub fn load() -> &'static Vocab {
-    static V: OnceLock<Vocab> = OnceLock::new();
-    V.get_or_init(|| Vocab::parse(TSV))
+    static V: crate::build::PerBuild<Vocab> = crate::build::PerBuild::new();
+    V.get(|| {
+        Vocab::parse(if crate::build::later() {
+            TSV_V0113
+        } else {
+            TSV
+        })
+    })
 }
 
 #[cfg(test)]

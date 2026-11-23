@@ -4,6 +4,7 @@ import { hasReadableRow } from "../combatlog";
 import { endedSelection } from "../textSelection";
 import { DetailToggle, StepEvents, TurnHeader } from "./turnLedger";
 import { turnChips, useDetailMode } from "./turnLedgerState";
+import { t } from "../i18n";
 
 /**
  * The live-run event log, rendered from the server's branch tree.
@@ -91,11 +92,11 @@ export default function LiveLog({
     displayPath.forEach((id, i) => {
       const n = byId.get(id);
       if (!n) return;
-      const t = actingTurn(n);
-      if (t !== lastTurn) {
+      const tn = actingTurn(n);
+      if (tn !== lastTurn) {
         flush();
         start = i;
-        lastTurn = t;
+        lastTurn = tn;
         rowsAcc = [];
         detAcc = [];
       }
@@ -154,7 +155,7 @@ export default function LiveLog({
           <div key={id} style={{ display: "flex", flexDirection: "column" }}>
             {showAct && (
               <div
-                aria-label={`Act ${act}`}
+                aria-label={t("Act {n}", { n: act })}
                 style={{
                   display: "flex", alignItems: "center", gap: 8,
                   margin: "12px 0 5px", fontSize: 10, letterSpacing: ".08em",
@@ -163,20 +164,20 @@ export default function LiveLog({
               >
                 <span aria-hidden style={{ height: 1, flex: 1, background: "currentColor", opacity: 0.4 }} />
                 <span style={{ fontWeight: 700 }}>
-                  Act {act}{floor != null ? ` · floor ${floor}` : ""}
+                  {t("Act {n}", { n: act })}{floor != null ? ` · ${t("floor {floor}", { floor })}` : ""}
                 </span>
                 <span aria-hidden style={{ height: 1, flex: 1, background: "currentColor", opacity: 0.4 }} />
               </div>
             )}
             {showFloor && (
               <div
-                aria-label={`Floor ${floor}`}
+                aria-label={t("Floor {floor}", { floor: floor ?? "" })}
                 style={{
                   fontSize: 9.5, color: "var(--muted)", letterSpacing: ".04em",
                   margin: "8px 0 2px", paddingTop: 5, borderTop: "1px solid var(--border)",
                 }}
               >
-                floor {floor}
+                {t("floor {floor}", { floor: floor ?? "" })}
               </div>
             )}
             {showTurn && (
@@ -198,7 +199,7 @@ export default function LiveLog({
                 onSeek(id);
               }}
               aria-current={isLeaf ? "step" : undefined}
-              title={isLeaf ? "current position" : isFuture ? "jump forward to this step" : "rewind the run to this step"}
+              title={isLeaf ? t("current position") : isFuture ? t("jump forward to this step") : t("rewind the run to this step")}
               style={{
                 display: "flex", alignItems: "baseline", gap: 6, width: "100%", textAlign: "left",
                 border: "none", borderLeft: `2px solid ${isLeaf ? "var(--accent, #6aa0ff)" : "transparent"}`,
@@ -213,7 +214,7 @@ export default function LiveLog({
                 {isLeaf ? "▸" : isFuture ? "▹" : "↺"}
               </span>
               <span style={{ flex: 1 }}>{n.error ? `⚠ ${n.label}` : n.label}</span>
-              {isLeaf && <span style={{ fontSize: 9.5, color: "var(--muted)", flexShrink: 0, userSelect: "none" }}>now</span>}
+              {isLeaf && <span style={{ fontSize: 9.5, color: "var(--muted)", flexShrink: 0, userSelect: "none" }}>{t("now")}</span>}
             </div>
 
             <StepEvents rows={n.combat_log ?? []} details={n.details} mode={mode} dim={isFuture} />
@@ -221,7 +222,7 @@ export default function LiveLog({
             {siblings.length > 0 && (
               <div style={{ paddingLeft: 24, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", margin: "1px 0 2px" }}>
                 <span style={{ fontSize: 10, color: "var(--muted)" }}>
-                  other line{siblings.length > 1 ? "s" : ""}:
+                  {siblings.length > 1 ? t("other lines:") : t("other line:")}
                 </span>
                 {siblings.map((sid) => (
                   <button
@@ -229,7 +230,7 @@ export default function LiveLog({
                     type="button"
                     disabled={busy}
                     onClick={() => onSeek(sid)}
-                    title={`switch to this branch: ${byId.get(sid)?.label ?? ""}`}
+                    title={t("switch to this branch: {label}", { label: byId.get(sid)?.label ?? "" })}
                     style={{
                       fontSize: 10, padding: "0 7px", border: "1px dashed var(--border)",
                       borderRadius: 10, background: "transparent", cursor: busy ? "wait" : "pointer",
@@ -248,7 +249,7 @@ export default function LiveLog({
 
       {(hasForks || forward.length > 0) && (
         <div style={{ marginTop: 6, fontSize: 9.5, color: "var(--muted)", lineHeight: 1.4 }}>
-          ↺ rewind · ▸ current · ▹ jump forward{hasForks ? " · dashed = an alternate branch you can switch to" : ""}
+          {t("↺ rewind · ▸ current · ▹ jump forward")}{hasForks ? ` · ${t("dashed = an alternate branch you can switch to")}` : ""}
         </div>
       )}
     </div>

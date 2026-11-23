@@ -141,3 +141,187 @@ fn a_teammates_compost_gives_every_player_energy() {
     assert_eq!(state.player.energy, ours + 1);
     assert_eq!(state.allies[0].energy, mates + 1);
 }
+
+/// A power's amount on teammate `ally`, read with them seated.
+fn ally_power(state: &mut CombatState, ally: usize, kind: PowerKind) -> i32 {
+    let mut amount = 0;
+    sts2_core::coop::with_ally_seated(state, ally, |state| {
+        amount = state.player_power_amount(kind);
+    });
+    amount
+}
+
+/// `Yoga.cs` (AllAllies): "ALL players gain Stretch" — the owner and every
+/// living teammate get 6 (+2).
+#[test]
+fn yoga_gives_every_player_stretch() {
+    for (upgraded, n) in [(false, 6), (true, 8)] {
+        let (mut state, _) = fight();
+        play(&mut state, CardId::Yoga, upgraded);
+        assert_eq!(state.player_power_amount(PowerKind::Stretch), n);
+        assert_eq!(
+            ally_power(&mut state, 0, PowerKind::Stretch),
+            n,
+            "upgraded={upgraded}"
+        );
+    }
+}
+
+/// A dead teammate gets no Stretch (`c.IsAlive`).
+#[test]
+fn yoga_skips_a_dead_teammate() {
+    let (mut state, _) = fight();
+    state.allies[0].current_hp = 0;
+    play(&mut state, CardId::Yoga, false);
+    assert_eq!(state.player_power_amount(PowerKind::Stretch), 6);
+    assert_eq!(ally_power(&mut state, 0, PowerKind::Stretch), 0);
+}
+
+/// `Enrapture.cs` (AnyAlly): "Give another player Vigor and Stretch" — both
+/// land on the target teammate, none on the owner.
+#[test]
+fn enrapture_buffs_the_target_teammate_not_the_owner() {
+    for (upgraded, n) in [(false, 6), (true, 9)] {
+        let (mut state, _) = fight();
+        let uid = mint(&mut state, CardId::Enrapture, upgraded);
+        state.player.hand.push(uid);
+        let hand_index = u8::try_from(state.player.hand.len() - 1).expect("fits");
+        let _ = sts2_core::apply(
+            &mut state,
+            Action::PlayCardAtAlly {
+                hand_index,
+                ally: 0,
+            },
+        );
+        assert!(!state.player.hand.contains(&uid), "Enrapture was played");
+        assert_eq!(state.player_power_amount(PowerKind::Vigor), 0);
+        assert_eq!(state.player_power_amount(PowerKind::Stretch), 0);
+        assert_eq!(ally_power(&mut state, 0, PowerKind::Vigor), n);
+        assert_eq!(ally_power(&mut state, 0, PowerKind::Stretch), n);
+    }
+}
+
+/// Put `amount` of `kind` on teammate `ally`.
+fn give_ally(state: &mut CombatState, ally: usize, kind: PowerKind, amount: i32) {
+    sts2_core::coop::with_ally_seated(state, ally, |state| {
+        let uid = state.player.creature_uid.expect("the teammate's creature");
+        sts2_core::card_effects::apply_power_to_creature(state, uid, kind, amount);
+    });
+}
+
+fn give_us(state: &mut CombatState, kind: PowerKind, amount: i32) {
+    let uid = state.player.creature_uid.expect("our creature");
+    sts2_core::card_effects::apply_power_to_creature(state, uid, kind, amount);
+}
+
+/// Teammate `ally` plays `id` from their hand.
+fn ally_plays(state: &mut CombatState, ally: usize, id: CardId) {
+    let uid = mint(state, id, false);
+    state.allies[ally].hand.push(uid);
+    let hand_index = u8::try_from(state.allies[ally].hand.len() - 1).expect("fits");
+    let _ = sts2_core::coop::apply_as(
+        state,
+        ally,
+        Action::PlayCard {
+            hand_index,
+            target: None,
+        },
+    );
+    assert!(!state.allies[ally].hand.contains(&uid), "{id:?} was played");
+}
+
+/// Yoga from the teammate's hand reaches us too.
+#[test]
+fn a_teammates_yoga_gives_every_player_stretch() {
+    let (mut state, _) = fight();
+    ally_plays(&mut state, 0, CardId::Yoga);
+    assert_eq!(state.player_power_amount(PowerKind::Stretch), 6);
+    assert_eq!(ally_power(&mut state, 0, PowerKind::Stretch), 6);
+}
+
+/// `CoveringFirePower.AfterArrowShot`: the owner's card-sourced shot gives
+/// every OTHER living player Amount block; the owner gets none. The hook
+/// fires with no arrow to shoot (`ArrowCmd.TryShootArrow`), and the power
+/// never reads the arrow.
+#[test]
+fn covering_fire_blocks_the_teammates_on_a_card_shot() {
+    let (mut state, _) = fight();
+    play(&mut state, CardId::CoveringFireCard, false);
+    assert_eq!(state.player_power_amount(PowerKind::CoveringFire), 8);
+    let (ours, mates) = (state.player.block, state.allies[0].block);
+    let _ = sts2_core::fool::try_shoot_arrow(&mut state, true);
+    assert_eq!(state.player.block, ours);
+    assert_eq!(state.allies[0].block, mates + 8);
+    // `source == null` (a shot no card made): nothing.
+    let _ = sts2_core::fool::try_shoot_arrow(&mut state, false);
+    assert_eq!(state.allies[0].block, mates + 8);
+}
+
+/// A teammate's Covering Fire answers the teammate's shots, with us the
+/// "other player"; our shots do not trigger it.
+#[test]
+fn a_teammates_covering_fire_blocks_us() {
+    let (mut state, _) = fight();
+    give_ally(&mut state, 0, PowerKind::CoveringFire, 11);
+    let ours = state.player.block;
+    let _ = sts2_core::fool::try_shoot_arrow(&mut state, true);
+    assert_eq!(state.player.block, ours, "our shot is not the owner's");
+    sts2_core::coop::with_ally_seated(&mut state, 0, |state| {
+        let _ = sts2_core::fool::try_shoot_arrow(state, true);
+    });
+    assert_eq!(state.player.block, ours + 11);
+}
+
+#[test]
+fn covering_fire_skips_a_dead_teammate() {
+    let (mut state, _) = fight();
+    give_us(&mut state, PowerKind::CoveringFire, 8);
+    state.allies[0].current_hp = 0;
+    let _ = sts2_core::fool::try_shoot_arrow(&mut state, true);
+    assert_eq!(state.allies[0].block, 0);
+}
+
+/// `EnsemblePower`: the OTHER players' cards cost 0 while it lasts, and each
+/// card another player plays spends one stack.
+#[test]
+fn a_teammates_ensemble_frees_our_cards_and_counts_them() {
+    let (mut state, _) = fight();
+    give_ally(&mut state, 0, PowerKind::Ensemble, 2);
+    let energy = state.player.energy;
+    play(&mut state, CardId::Yoga, false);
+    assert_eq!(state.player.energy, energy, "free under Ensemble");
+    assert_eq!(ally_power(&mut state, 0, PowerKind::Ensemble), 1);
+    play(&mut state, CardId::Yoga, false);
+    assert_eq!(state.player.energy, energy);
+    assert_eq!(ally_power(&mut state, 0, PowerKind::Ensemble), 0);
+    play(&mut state, CardId::Yoga, false);
+    assert_eq!(state.player.energy, energy - 1, "Ensemble is spent");
+}
+
+/// Our Ensemble frees the teammate's cards, not ours, and only their plays
+/// spend it.
+#[test]
+fn our_ensemble_frees_the_teammates_cards_not_ours() {
+    let (mut state, _) = fight();
+    play(&mut state, CardId::EnsembleCard, false);
+    assert_eq!(state.player_power_amount(PowerKind::Ensemble), 4);
+    let energy = state.player.energy;
+    play(&mut state, CardId::Yoga, false);
+    assert_eq!(state.player.energy, energy - 1, "the holder pays");
+    assert_eq!(state.player_power_amount(PowerKind::Ensemble), 4);
+    let mates = state.allies[0].energy;
+    ally_plays(&mut state, 0, CardId::Yoga);
+    assert_eq!(state.allies[0].energy, mates);
+    assert_eq!(state.player_power_amount(PowerKind::Ensemble), 3);
+}
+
+/// A dead holder's Ensemble frees nothing.
+#[test]
+fn a_dead_teammates_ensemble_frees_nothing() {
+    let (mut state, _) = fight();
+    give_ally(&mut state, 0, PowerKind::Ensemble, 2);
+    state.allies[0].current_hp = 0;
+    let energy = state.player.energy;
+    play(&mut state, CardId::Yoga, false);
+    assert_eq!(state.player.energy, energy - 1);
+}

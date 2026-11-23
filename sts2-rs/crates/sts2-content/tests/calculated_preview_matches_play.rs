@@ -61,6 +61,7 @@ fn push_card(state: &mut CombatState, card_id: CardId, base_damage: i32) -> Card
         card_type: CardType::Attack,
         target_type: TargetType::Enemy,
         upgraded: false,
+        extra_upgrades: 0,
         base_damage,
         base_block: 0,
         combat_vars: CombatVars::new(),

@@ -456,6 +456,31 @@ fn transplant_carries_hidden_instance_state_but_not_current() {
     );
 }
 
+/// GH #1687: a move that edits its own numbers (Waterfall Giant's
+/// PRESSURE_GUN, +5 per hit) keeps them across a rebuild of the same machine.
+#[test]
+fn transplant_carries_a_move_table_the_moves_edited() {
+    let mut mirror = MonsterAi::new(transplant_graph(), "X");
+    if let Some(MonsterState::Move(m)) = Arc::make_mut(&mut mirror.states).get_mut("Y") {
+        m.intents = smallvec![Intent::Attack { damage: 28 }];
+    }
+    let damage = |ai: &MonsterAi| match ai.states.get("Y") {
+        Some(MonsterState::Move(m)) => m.intents.to_vec(),
+        _ => Vec::new(),
+    };
+    let mut rebuilt = MonsterAi::new(transplant_graph(), "X");
+    rebuilt.transplant_instance_state_from(&mirror);
+    assert_eq!(damage(&rebuilt), vec![Intent::Attack { damage: 28 }]);
+    assert_eq!(rebuilt.current_state_id(), "X");
+
+    // Another machine's table does not ride across.
+    let mut other = BTreeMap::new();
+    other.insert("X", move_state("X", 1, "X", false));
+    let mut stranger = MonsterAi::new(other, "X");
+    stranger.transplant_instance_state_from(&mirror);
+    assert!(stranger.states.get("Y").is_none());
+}
+
 /// The slot is the one field where the *fresh* build wins if it has one:
 /// dynamically-slotted spawns (Ovicopter eggs, Fabricator bots) carry no
 /// slot on the wire, so an unset slot inherits the mirror's — but an already

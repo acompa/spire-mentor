@@ -2,6 +2,7 @@
 // one-line summary. Kept out of ChoiceChip.tsx so that file exports only the
 // component (react-refresh/only-export-components).
 import type { ChoiceCheck } from "../api";
+import { t } from "../i18n";
 
 /** The rollout check's one-line summary: win rates and HP, you vs the AI.
  *  A win-rate gap inside two standard errors reads "within noise" — a
@@ -15,9 +16,10 @@ export function checkSummary(check: ChoiceCheck): string | null {
   const se = Math.sqrt((you.win_rate * (1 - you.win_rate)) / Math.max(you.n, 1)
     + (ai.win_rate * (1 - ai.win_rate)) / Math.max(ai.n, 1));
   const gap = Math.abs(you.win_rate - ai.win_rate);
-  const close = gap === 0 || gap < 2 * se ? " · within noise" : "";
-  return `rollouts to end of act (n=${you.n}): you ${pct(you.win_rate)} · AI ${pct(ai.win_rate)}${close}`
-    + ` · avg HP ${Math.round(you.avg_final_hp)} vs ${Math.round(ai.avg_final_hp)}`;
+  const close = gap === 0 || gap < 2 * se ? t(" · within noise") : "";
+  return t("rollouts to end of act (n={n}): you {you} · AI {ai}", { n: you.n, you: pct(you.win_rate), ai: pct(ai.win_rate) })
+    + close
+    + t(" · avg HP {you} vs {ai}", { you: Math.round(you.avg_final_hp), ai: Math.round(ai.avg_final_hp) });
 }
 
 /** A light rollout budget: the check runs in the engine worker and every

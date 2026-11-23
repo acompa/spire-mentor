@@ -210,6 +210,8 @@
      "name": "Shrinker Beetle",
      "powers": [],
      "rig": "https://assets.test/monster_rigs/shrinker_beetle/shrinker_beetle",
+     "rig_arrow_x": 0.0,
+     "rig_arrow_y": -68.0,
      "rig_bounds_h": 161.0,
      "rig_bounds_w": 240.0,
      "rig_scale": 0.25,
@@ -487,6 +489,8 @@
      }
     ],
     "rig": "https://assets.test/character_rigs/ironclad/ironclad",
+    "rig_arrow_x": 4.0,
+    "rig_arrow_y": -168.0,
     "rig_bounds_h": 278.0,
     "rig_bounds_w": 242.0,
     "rig_scale": 0.28

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { HintsCtx, type AdviceStyle, type HintsValue } from "./useHints";
+import { HintsCtx, quietHints, useHints, type AdviceStyle, type HintsValue } from "./useHints";
 
 // Supplies the advice style (Off / Coach / Hints) — what it means and the hook
 // that reads it live in useHints.ts.
@@ -46,6 +46,14 @@ export function HintsProvider({ children }: { children: ReactNode }) {
     }
   }, [style]);
   const value = useMemo(() => valueOf(style, setStyle), [style]);
+  return <HintsCtx.Provider value={value}>{children}</HintsCtx.Provider>;
+}
+
+/** Silence every advice surface below while `quiet` holds (see
+ *  `quietHints`). */
+export function HintsQuiet({ quiet, children }: { quiet: boolean; children: ReactNode }) {
+  const outer = useHints();
+  const value = useMemo(() => quietHints(outer, quiet), [quiet, outer]);
   return <HintsCtx.Provider value={value}>{children}</HintsCtx.Provider>;
 }
 

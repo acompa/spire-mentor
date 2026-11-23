@@ -217,7 +217,14 @@ pub fn chance_outcome_hash(state: &CombatState) -> u64 {
     hash_enemies_cards_items_pending_skipping::<FastEncoding, _>(state, &mut h, |c| {
         uid_bound.binary_search(&c.uid.get()).is_err()
     });
-    h.finish()
+    let out = h.finish();
+    #[cfg(debug_assertions)]
+    debug_assert_eq!(
+        out,
+        chance_reference::chance_outcome_hash(state),
+        "chance_outcome_hash drifted from its reference byte stream"
+    );
+    out
 }
 
 /// Splits the card arena for [`chance_outcome_hash`] (GH #785): which cards
@@ -251,43 +258,58 @@ fn chance_dedup_arena_split(
     smallvec::SmallVec<[crate::CardUid; 8]>,
 ) {
     let p = &state.player;
-    let mut uid_bound: smallvec::SmallVec<[u32; 8]> = p
-        .pinned_top
-        .iter()
-        .chain(&p.pinned_bottom)
-        .map(|u| u.get())
-        .collect();
+    let mut uid_bound: smallvec::SmallVec<[u32; 8]> = smallvec::SmallVec::new();
+    for u in p.pinned_top.iter().chain(&p.pinned_bottom) {
+        uid_bound.push(u.get());
+    }
     for a in &state.allies {
-        uid_bound.extend(
-            a.hand
-                .iter()
-                .chain(&a.draw)
-                .chain(&a.discard)
-                .chain(&a.exhaust)
-                .chain(&a.play)
-                .map(|u| u.get()),
-        );
+        for u in a
+            .hand
+            .iter()
+            .chain(&a.draw)
+            .chain(&a.discard)
+            .chain(&a.exhaust)
+            .chain(&a.play)
+        {
+            uid_bound.push(u.get());
+        }
     }
     uid_bound.sort_unstable();
-    let mut in_player_pile: smallvec::SmallVec<[u32; 64]> = p
+    // Membership over uid values as a bitset (one bit per uid) instead of a
+    // sorted list and two binary searches per arena card: same set, same
+    // arena-order output.
+    let mut named: smallvec::SmallVec<[u64; 8]> =
+        smallvec::smallvec![0; state.cards.len() / 64 + 1];
+    let mut mark = |u: u32| {
+        let (w, b) = ((u / 64) as usize, u % 64);
+        if w >= named.len() {
+            named.resize(w + 1, 0);
+        }
+        named[w] |= 1 << b;
+    };
+    for &u in &uid_bound {
+        mark(u);
+    }
+    for u in p
         .hand
         .iter()
         .chain(&p.draw)
         .chain(&p.discard)
         .chain(&p.exhaust)
         .chain(&p.play)
-        .map(|u| u.get())
-        .collect();
-    in_player_pile.sort_unstable();
-    let loose = state
-        .cards
-        .iter()
-        .map(|c| c.uid)
-        .filter(|u| {
-            uid_bound.binary_search(&u.get()).is_err()
-                && in_player_pile.binary_search(&u.get()).is_err()
-        })
-        .collect();
+    {
+        mark(u.get());
+    }
+    let mut loose = smallvec::SmallVec::new();
+    for c in &state.cards {
+        let u = c.uid.get();
+        let named_bit = named
+            .get((u / 64) as usize)
+            .is_some_and(|w| w & (1 << (u % 64)) != 0);
+        if !named_bit {
+            loose.push(c.uid);
+        }
+    }
     (uid_bound, loose)
 }
 
@@ -367,6 +389,24 @@ fn hash_scalars<H: Hasher>(state: &CombatState, h: &mut H) {
     if !state.game_version.is_default() {
         0x0Eu8.hash(h);
         state.game_version.hash(h);
+    }
+    // Game mode and Dread dominion (GH #1346), only when set, so every
+    // standard-run digest keeps its bytes.
+    if !state.game_mode.is_default() || state.dominion.is_some() {
+        0xD0u8.hash(h);
+        state.game_mode.hash(h);
+        state.dominion.hash(h);
+    }
+    // `WaterfallGiantDominion`'s two per-combat notes (GH #1346): the
+    // Explosive amount of the entry roster and the encounter's `IsWeak`. A
+    // summon's Explosive reads them once no enemy on the board holds the
+    // power, and nothing else here records either. Only when set, so every
+    // other digest keeps its bytes. (`dread_knowledge_choice_opened` is a
+    // latch, not state: see its field doc.)
+    if state.combat_log.dread_explosive != 0 || state.combat_log.dread_weak_encounter {
+        0xD1u8.hash(h);
+        state.combat_log.dread_explosive.hash(h);
+        state.combat_log.dread_weak_encounter.hash(h);
     }
     // Co-op: whether the next enemy turn still lands on the teammates, and
     // which of them have yet to play. The seat stashes are fixed by the root
@@ -701,7 +741,7 @@ fn hash_run_rng_set<H: Hasher>(rr: &RunRngSet, h: &mut H) {
         hash_rng_seed(rr.non_combat_generation.seed(), h);
         rr.non_combat_generation.counter().hash(h);
     }
-    // `map_rngs` is a `BTreeMap` — deterministic key iteration order.
+    // `map_rngs` iterates in ascending act order (a sorted map).
     for (act_index, rng) in &rr.map_rngs {
         act_index.hash(h);
         hash_rng_seed(rng.seed(), h);
@@ -1145,11 +1185,14 @@ fn hash_draw_pile_chance_dedup<H: Hasher>(p: &PlayerCombatState, state: &CombatS
 fn hash_pile_observational<H: Hasher>(pile: &[crate::CardUid], state: &CombatState, h: &mut H) {
     // Stack buffer sized like `unknown_middle_uids`' (a hand never comes
     // close); the sorted `u64`s are the same whatever holds them.
-    let mut keys: smallvec::SmallVec<[u64; 32]> = pile
-        .iter()
-        .filter_map(|uid| crate::card_by_uid(&state.cards, *uid))
-        .map(card_observational_key)
-        .collect();
+    // Filled in place (`extend` on a local) rather than `collect`ed, which
+    // returns the 264-byte vector by value and copies it out.
+    let mut keys: smallvec::SmallVec<[u64; 32]> = smallvec::SmallVec::new();
+    keys.extend(
+        pile.iter()
+            .filter_map(|uid| crate::card_by_uid(&state.cards, *uid))
+            .map(card_observational_key),
+    );
     keys.sort_unstable();
     (keys.len() as u64).hash(h);
     for k in &keys {
@@ -1198,17 +1241,16 @@ fn hash_powers<H: Hasher>(power_uids: &[crate::PowerUid], state: &CombatState, h
     // allocation in this hot helper). `uid` is the unique primary sort
     // key, so the kind only ever acts as an unreachable tiebreak — the
     // canonical order is identical to the prior string-keyed sort.
-    let mut rows: smallvec::SmallVec<[(u32, crate::PowerKind, i32, i32, u32); 16]> = power_uids
-        .iter()
-        .filter_map(|puid| {
-            let p = state.powers.get_by_id(puid.0)?;
-            let applier_key = p.applier.map_or(0u32, |uid| uid.0.get());
-            Some((puid.get(), p.kind, p.amount, p.counter, applier_key))
-        })
-        .collect();
+    let mut rows: smallvec::SmallVec<[(u32, crate::PowerKind, i32, i32, u32); 16]> =
+        smallvec::SmallVec::new();
+    rows.extend(power_uids.iter().filter_map(|puid| {
+        let p = state.powers.get_by_id(puid.0)?;
+        let applier_key = p.applier.map_or(0u32, |uid| uid.0.get());
+        Some((puid.get(), p.kind, p.amount, p.counter, applier_key))
+    }));
     rows.sort_unstable();
     (rows.len() as u64).hash(h);
-    for (uid, kind, amount, counter, applier_key) in rows {
+    for &(uid, kind, amount, counter, applier_key) in &rows {
         uid.hash(h);
         kind.hash(h);
         amount.hash(h);
@@ -1228,17 +1270,16 @@ fn hash_powers_observational<H: Hasher>(
     state: &CombatState,
     h: &mut H,
 ) {
-    let mut rows: smallvec::SmallVec<[(crate::PowerKind, i32, i32, u32, bool); 16]> = power_uids
-        .iter()
-        .filter_map(|puid| {
-            let p = state.powers.get_by_id(puid.0)?;
-            let applier_key = p.applier.map_or(0u32, |uid| uid.0.get());
-            Some((p.kind, p.amount, p.counter, applier_key, p.skip_next_tick))
-        })
-        .collect();
+    let mut rows: smallvec::SmallVec<[(crate::PowerKind, i32, i32, u32, bool); 16]> =
+        smallvec::SmallVec::new();
+    rows.extend(power_uids.iter().filter_map(|puid| {
+        let p = state.powers.get_by_id(puid.0)?;
+        let applier_key = p.applier.map_or(0u32, |uid| uid.0.get());
+        Some((p.kind, p.amount, p.counter, applier_key, p.skip_next_tick))
+    }));
     rows.sort_unstable();
     (rows.len() as u64).hash(h);
-    for row in rows {
+    for row in &rows {
         row.hash(h);
     }
 }
@@ -1406,6 +1447,25 @@ mod legacy_run {
         if !rm.game_version.is_default() {
             rm.game_version.hash(&mut h);
         }
+        // Game mode (GH #1346): only when non-default.
+        if !rm.run_state.game_mode.is_default() {
+            rm.run_state.game_mode.hash(&mut h);
+        }
+        // The Blitz merchant and chest (GH #1347): only while one is open,
+        // which is never the case outside a Blitz run.
+        if let Some(shop) = rm.blitz_shop() {
+            0xB1u8.hash(&mut h);
+            shop.choices_remaining.hash(&mut h);
+            for e in &shop.entries {
+                (e.kind, e.status, e.character).hash(&mut h);
+                e.enchantment.map(|(id, n)| (id as u8, n)).hash(&mut h);
+            }
+            rm.blitz_pick_open().hash(&mut h);
+        }
+        if let Some(chest) = rm.blitz_chest() {
+            0xB2u8.hash(&mut h);
+            chest.relics.hash(&mut h);
+        }
 
         // ── Run scalars ─────────────────────────────────────────────────
         (tag_base + 1).hash(&mut h);
@@ -1427,6 +1487,13 @@ mod legacy_run {
         rs.pending_deck_upgrades.hash(&mut h);
         rs.interactive_card_upgrade.hash(&mut h);
         rs.card_shop_removals_used.hash(&mut h);
+        // An open pick-N select's picks and Cook's open select (GH #1619,
+        // #1621): only while set, so every other run hash stays frozen.
+        if !rs.deck_select_picked.is_empty() || rs.cook_select_open {
+            "deck_select".hash(&mut h);
+            rs.deck_select_picked.hash(&mut h);
+            rs.cook_select_open.hash(&mut h);
+        }
 
         // ── Master deck (Vec order is observable) ───────────────────────
         (tag_base + 2).hash(&mut h);
@@ -1457,6 +1524,12 @@ mod legacy_run {
             for rid in &rs.melted_relics {
                 format!("melted:{rid:?}").hash(&mut h);
             }
+        }
+        // The Wuppy relic's saved `MaxHp` (v0.113.0), folded in only when
+        // set so every run without one keeps its historical hash.
+        if rs.wuppy_max_hp != 0 {
+            "wuppy_max_hp".hash(&mut h);
+            rs.wuppy_max_hp.hash(&mut h);
         }
         (rs.potions.len() as u64).hash(&mut h);
         for p in &rs.potions {
@@ -1509,6 +1582,135 @@ mod legacy_run {
     #[must_use]
     pub(super) fn run_search_hash(rm: &RunManager) -> u64 {
         run_hash_impl(rm, 0xB0, false, search_hash)
+    }
+}
+
+/// The pre-2026-11-18 [`chance_outcome_hash`] pipeline, kept verbatim as
+/// the reference the restructured one must match value-for-value (checked
+/// by a `debug_assert!` on every call and by `chance_hash_matches_reference`).
+#[cfg(any(test, debug_assertions))]
+mod chance_reference {
+    use super::{
+        card_observational_key, hash_enemies_cards_items_pending_skipping, hash_player,
+        hash_player_tail, hash_scalars, new_hasher, CombatState, FastEncoding, Hash, Hasher,
+        PileKind, PlayerCombatState,
+    };
+
+    pub(super) fn chance_outcome_hash(state: &CombatState) -> u64 {
+        let mut h = new_hasher();
+        hash_scalars(state, &mut h);
+        0x03u8.hash(&mut h);
+        hash_player_chance_dedup(&state.player, &mut h, state);
+        0x04u8.hash(&mut h);
+        (state.allies.len() as u64).hash(&mut h);
+        for ally in &state.allies {
+            hash_player::<FastEncoding, _>(ally, &mut h, state);
+        }
+        let (uid_bound, loose) = chance_dedup_arena_split(state);
+        0x0Au8.hash(&mut h);
+        hash_pile_observational(&loose, state, &mut h);
+        hash_enemies_cards_items_pending_skipping::<FastEncoding, _>(state, &mut h, |c| {
+            uid_bound.binary_search(&c.uid.get()).is_err()
+        });
+        h.finish()
+    }
+
+    fn chance_dedup_arena_split(
+        state: &CombatState,
+    ) -> (
+        smallvec::SmallVec<[u32; 8]>,
+        smallvec::SmallVec<[crate::CardUid; 8]>,
+    ) {
+        let p = &state.player;
+        let mut uid_bound: smallvec::SmallVec<[u32; 8]> = p
+            .pinned_top
+            .iter()
+            .chain(&p.pinned_bottom)
+            .map(|u| u.get())
+            .collect();
+        for a in &state.allies {
+            uid_bound.extend(
+                a.hand
+                    .iter()
+                    .chain(&a.draw)
+                    .chain(&a.discard)
+                    .chain(&a.exhaust)
+                    .chain(&a.play)
+                    .map(|u| u.get()),
+            );
+        }
+        uid_bound.sort_unstable();
+        let mut in_player_pile: smallvec::SmallVec<[u32; 64]> = p
+            .hand
+            .iter()
+            .chain(&p.draw)
+            .chain(&p.discard)
+            .chain(&p.exhaust)
+            .chain(&p.play)
+            .map(|u| u.get())
+            .collect();
+        in_player_pile.sort_unstable();
+        let loose = state
+            .cards
+            .iter()
+            .map(|c| c.uid)
+            .filter(|u| {
+                uid_bound.binary_search(&u.get()).is_err()
+                    && in_player_pile.binary_search(&u.get()).is_err()
+            })
+            .collect();
+        (uid_bound, loose)
+    }
+
+    fn hash_player_chance_dedup<H: Hasher>(p: &PlayerCombatState, h: &mut H, state: &CombatState) {
+        for (kind, pile) in [
+            (PileKind::Hand, p.hand.as_slice()),
+            (PileKind::Discard, p.discard.as_slice()),
+            (PileKind::Exhaust, p.exhaust.as_slice()),
+            (PileKind::Play, p.play.as_slice()),
+        ] {
+            kind.hash(h);
+            hash_pile_observational(pile, state, h);
+        }
+        PileKind::Draw.hash(h);
+        hash_draw_pile_chance_dedup(p, state, h);
+        hash_player_tail::<FastEncoding, H>(p, h, state);
+    }
+
+    fn hash_draw_pile_chance_dedup<H: Hasher>(
+        p: &PlayerCombatState,
+        state: &CombatState,
+        h: &mut H,
+    ) {
+        (p.draw.len() as u64).hash(h);
+        (p.pinned_top.len() as u64).hash(h);
+        for uid in &p.pinned_top {
+            uid.get().hash(h);
+        }
+        let middle = crate::cards::unknown_middle_uids(p);
+        hash_pile_observational(&middle, state, h);
+        (p.pinned_bottom.len() as u64).hash(h);
+        for uid in &p.pinned_bottom {
+            uid.get().hash(h);
+        }
+    }
+
+    fn hash_pile_observational<H: Hasher>(pile: &[crate::CardUid], state: &CombatState, h: &mut H) {
+        // Stack buffer sized like `unknown_middle_uids`' (a hand never comes
+        // close); the sorted `u64`s are the same whatever holds them.
+        // Filled in place (`extend` on a local) rather than `collect`ed, which
+        // returns the 264-byte vector by value and copies it out.
+        let mut keys: smallvec::SmallVec<[u64; 32]> = smallvec::SmallVec::new();
+        keys.extend(
+            pile.iter()
+                .filter_map(|uid| crate::card_by_uid(&state.cards, *uid))
+                .map(card_observational_key),
+        );
+        keys.sort_unstable();
+        (keys.len() as u64).hash(h);
+        for k in &keys {
+            k.hash(h);
+        }
     }
 }
 
@@ -1588,6 +1790,44 @@ mod tests {
             s.player.draw.push(uid);
         }
         s
+    }
+
+    #[test]
+    fn chance_hash_matches_reference() {
+        use crate::cards::CardId;
+        let ids = [CardId::StrikeIronclad, CardId::Bash, CardId::DefendIronclad];
+        let deck: Vec<(CardId, bool)> = (0..150).map(|i| (ids[i % 3], i % 7 == 0)).collect();
+        let uid = |n: u32| CardUid::new(n).expect("non-zero");
+        let check = |s: &CombatState, what: &str| {
+            assert_eq!(
+                chance_outcome_hash(s),
+                chance_reference::chance_outcome_hash(s),
+                "{what}"
+            );
+        };
+        // 150 cards: uids past 64 and 128 exercise every bitset word.
+        let mut s = draw_state(&deck);
+        check(&s, "all in draw");
+        for n in [3, 70, 140] {
+            s.player.draw.retain(|u| *u != uid(n));
+        }
+        s.player.hand.push(uid(3));
+        s.player.discard.push(uid(70));
+        check(&s, "hand/discard, one loose card (uid 140)");
+        s.player.pinned_top.push(uid(5));
+        s.player.pinned_bottom.push(uid(130));
+        check(&s, "pinned draw cards");
+        s.player.exhaust.push(uid(400));
+        check(&s, "a pile uid with no arena entry, past the bitset");
+        let mut ally = s.player.clone();
+        ally.hand.clear();
+        ally.draw = vec![uid(140), uid(9)].into();
+        ally.discard.clear();
+        ally.exhaust.clear();
+        ally.pinned_top.clear();
+        ally.pinned_bottom.clear();
+        s.allies.push(ally);
+        check(&s, "an ally naming a loose card and a player card");
     }
 
     #[test]

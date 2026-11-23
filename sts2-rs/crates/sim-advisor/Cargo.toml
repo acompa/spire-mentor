@@ -1,0 +1,35 @@
+[package]
+name = "sim-advisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "SimAdvisor: the live-game advisor the Spire Mentor mod launches, as one native binary (GH #1426). Replaced the PyInstaller bundle of sts2-pycli's realgame_advisor."
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "sim_advisor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "SimAdvisor"
+path = "src/main.rs"
+
+[dependencies]
+sts2-advisor = { path = "../sts2-advisor" }
+# `--smoke`: Instinct self-plays a few decisions on the bundled net.
+sts2-e2e = { path = "../sts2-e2e" }
+serde_json = { workspace = true }
+clap = { workspace = true }
+# The replay corpora and goldens are gzipped JSONL.
+flate2 = "1"
+# The control plane's HTTP server (`src/control_http.rs`).
+tiny_http = "0.12"
+# Its bug-report forward to the hosted workbench (HTTPS, rustls).
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+# The global allocator the engine is tuned on (`src/allocator.rs`).
+mimalloc = { workspace = true }

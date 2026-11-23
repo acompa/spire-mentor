@@ -47,6 +47,7 @@ pub mod act2_hive;
 pub mod act2_hive_wave_b;
 pub mod act3_glory;
 pub mod crystal_sphere;
+pub mod crystal_sphere_digger;
 pub mod dispatch;
 pub mod neow_blessing;
 pub mod shared;
@@ -220,13 +221,12 @@ pub fn deck_has_basic_card(state: &RunState) -> bool {
     }
 }
 
-/// Generic enchant-pool gate (`FieldOfManSizedHoles` /
-/// `SpiralingWhirlpool`): any deck card the C# base
-/// `EnchantmentModel.CanEnchant` accepts — not Status/Curse-typed, no
+/// Generic enchant-pool gate (`FieldOfManSizedHoles`): any deck card the C#
+/// base `EnchantmentModel.CanEnchant` accepts — not Status/Curse-typed, no
 /// existing enchantment, concrete cost (`cost >= 0` folds Unplayable and
-/// X-cost). PerfectFit has no override; Spiral's Basic Strike/Defend extra
-/// is approximated by the base filter. `GraveOfTheForgotten` has its own
-/// gate ([`grave_of_the_forgotten_allowed`]).
+/// X-cost). PerfectFit has no override. `GraveOfTheForgotten` and
+/// `SpiralingWhirlpool` have their own gates
+/// ([`grave_of_the_forgotten_allowed`], Spiral's Basic Strike/Defend).
 #[must_use]
 pub fn any_enchantable_deck_card(state: &RunState) -> bool {
     use sts2_core::cards::CardType;

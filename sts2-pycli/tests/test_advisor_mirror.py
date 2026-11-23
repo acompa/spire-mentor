@@ -814,18 +814,18 @@ def test_a_card_select_answer_rebuilds_at_the_run_ascension(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GH #848: the answer's rebuild reads the run's ascension, not A0."""
-    from sts2_hint import adapter
+    import realgame_advisor_mirror
 
     advisor, screen = _potion_screen()
     screen["run_state"]["ascension"] = 10
     seen: list[int] = []
-    real = adapter.translate
+    real = realgame_advisor_mirror.combat_wire
 
     def spy(*args: Any, **kwargs: Any) -> dict[str, Any]:
         seen.append(kwargs.get("ascension", 0))
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(adapter, "translate", spy)
+    monkeypatch.setattr(realgame_advisor_mirror, "combat_wire", spy)
     assert advisor.answer_card_select(screen, HONEST, 8) is not None
     assert seen and set(seen) == {10}
 
@@ -1005,13 +1005,12 @@ def test_a_fight_already_on_the_choice_needs_no_replay() -> None:
 
     # The source is a POWER -- unreplayable, and beside the point.
     assert not advisor.source_is_replayable("WELL_LAID_PLANS_POWER", "power")
-    advisor.declines.clear()
-    advisor._said.clear()
+    declined = advisor.declines
 
     assert advisor.replay_opening_play(
         "WELL_LAID_PLANS_POWER", sts2_rs.state_to_dict(world), source_kind="power"
     ), "an already-parked fight is answerable whatever opened the screen"
-    assert not advisor.declines, advisor.declines
+    assert advisor.declines == declined, advisor.declines
     assert advisor.stats["replays_attempted"] == 0, "nothing was replayed, so nothing was tried"
 
 
@@ -1495,34 +1494,6 @@ def test_an_already_parked_fight_needs_no_end_turn_replay() -> None:
     assert advisor.stats["replays_attempted"] == 0, "nothing was replayed"
 
 
-def test_a_card_mid_play_blocks_the_end_turn_replay() -> None:
-    """A power hook fired from inside a card play is not a turn ending.
-
-    Belt-and-braces, and pinned with a stub because the engine does not come
-    to REST with a play suspended and no choice open -- the guard exists for
-    the case the gate in `answer_card_select` cannot see, so the
-    test must be able to present it.
-    """
-
-    class _MidPlay:
-        @staticmethod
-        def pending_choice() -> None:
-            return None
-
-        @staticmethod
-        def has_pending_play() -> bool:
-            return True
-
-    class _Mirror:
-        alive = True
-        state = _MidPlay()
-
-    advisor = AdvisorMirror(HONEST)
-    assert not advisor.replay_end_turn({}, on=_Mirror())
-    assert "a card is mid-play, so the turn is not ending" in advisor.declines
-    assert advisor.stats["replays_attempted"] == 0
-
-
 def _drifted_enemy_hp(board: dict[str, Any], hp: int) -> dict[str, Any]:
     """The same board with the first enemy on a different HP -- a drifted mirror.
 
@@ -1653,28 +1624,28 @@ def test_a_well_laid_plans_screen_is_searched_end_to_end() -> None:
 
 
 def _captured_character(monkeypatch: Any, screen: dict[str, Any], cfg: Any) -> Any:
-    """Run the rung and report the `character` it handed the adapter."""
-    from sts2_hint import adapter
+    """Run the rung and report the `character` it handed the board import."""
+    import realgame_advisor_mirror
 
     seen: dict[str, Any] = {}
-    real = adapter.translate
+    real = realgame_advisor_mirror.combat_wire
 
-    def spy(headless: Any, **kw: Any) -> Any:
+    def spy(board: Any, **kw: Any) -> Any:
         seen["character"] = kw.get("character")
-        return real(headless, **kw)
+        return real(board, **kw)
 
-    monkeypatch.setattr(adapter, "translate", spy)
+    monkeypatch.setattr(realgame_advisor_mirror, "combat_wire", spy)
     board = _wlp_board()
     advisor = _advisor_at_play_phase(board)
     advisor.answer_card_select(screen, cfg, 8)
-    return seen.get("character", "translate was never called")
+    return seen.get("character", "the board import was never called")
 
 
 def test_the_screens_own_run_state_names_the_character(monkeypatch: Any) -> None:
     """`serve()` builds its config with no character, so the screen must say.
 
     Passing `cfg.character` straight through left it None on this path, and
-    `adapter.translate` then inferred the class from card-id PREFIXES. That
+    the import then inferred the class from card-id PREFIXES. That
     works on nearly every board and fails on one with no prefixed card: live
     run 002-silent-a8-0825-0259 hit `Scare | Corrosive Wave | Shadowmeld` and
     lost 12 selections to `$.player.class: could not infer character class`
@@ -1696,14 +1667,14 @@ def test_a_search_that_cannot_run_is_counted_not_just_logged(monkeypatch: Any) -
     while nine of its fourteen ranked decisions had fallen to the rarity sort
     through here -- the stat line read clean because this arm only logged.
     """
-    from sts2_hint import adapter
+    import realgame_advisor_mirror
 
     def boom(*_a: Any, **_k: Any) -> Any:
         raise ValueError("no")
 
     board = _wlp_board()
     advisor = _advisor_at_play_phase(board)  # seeded BEFORE the sabotage
-    monkeypatch.setattr(adapter, "translate", boom)
+    monkeypatch.setattr(realgame_advisor_mirror, "combat_wire", boom)
 
     assert advisor.answer_card_select(_wlp_screen(board), HONEST, 8) is None
     assert "the search could not run (ValueError)" in advisor.declines

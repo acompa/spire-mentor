@@ -17,6 +17,8 @@
 //     HashCode(string)
 //   CardSelectCmd.UseSelector /       (ICardSelector)             (ICardSelector,
 //     PushSelector                                                 bool localOnly = false)
+//   PlayerChoiceContext.Signal-       (PlayerChoiceOptions)       (Player,
+//     PlayerChoiceBegun                                            PlayerChoiceOptions)
 //
 // v0.113.0 (beta) moved more:
 //
@@ -47,6 +49,9 @@ using MegaCrit.Sts2.Core.AutoSlay;
 using MegaCrit.Sts2.Core.AutoSlay.Helpers;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Merchant;
+using MegaCrit.Sts2.Core.Entities.Multiplayer;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Random;
@@ -92,6 +97,24 @@ internal static class SimGameApi
     // selector section below).
     private static readonly MethodInfo? UseSelectorMethod = SelectorMethod("UseSelector");
     private static readonly MethodInfo? PushSelectorMethod = SelectorMethod("PushSelector");
+
+    private static readonly MethodInfo? SignalBegunMethod =
+        typeof(PlayerChoiceContext).GetMethod("SignalPlayerChoiceBegun", Instance);
+
+    /// <summary>
+    /// <c>context.SignalPlayerChoiceBegun(...)</c> in the running build's
+    /// shape: <c>(options)</c> on v0.107.1, <c>(chooser, options)</c> since
+    /// v0.111.0. Virtual dispatch reaches the context's own override.
+    /// </summary>
+    public static Task SignalPlayerChoiceBegun(
+        PlayerChoiceContext context, Player chooser, PlayerChoiceOptions options)
+    {
+        MethodInfo method = SignalBegunMethod ?? throw Missing("PlayerChoiceContext.SignalPlayerChoiceBegun");
+        object[] args = method.GetParameters().Length == 2
+            ? new object[] { chooser, options }
+            : new object[] { options };
+        return (Task)method.Invoke(context, args)!;
+    }
 
     /// <summary>
     /// The run's once-hashed master seed, boxed as the running build declares

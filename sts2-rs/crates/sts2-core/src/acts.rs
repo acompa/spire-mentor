@@ -391,6 +391,59 @@ mod tests {
         );
     }
 
+    /// GH #1500: the legacy per-act event lists (the Python-sim pin's) still
+    /// feed `initialize_run`'s `!rooms_generated` shuffle before v0.113.0, so
+    /// every name must be a real event of the build's C# pools
+    /// (`run_room_gen`). A stale or misspelled name is silently dropped by
+    /// `pick_event`'s `filter_map(EventId::from_python_name)`.
+    ///
+    /// Membership is checked against the union of the three acts' pools, not
+    /// the same act's: the Python pin grouped events differently from the C#
+    /// acts (act 1 lists Amalgamator, a Hive event), and the C#-faithful pick
+    /// reads `run_room_gen`'s pools instead.
+    /// Ancients the Python pin rolled as ordinary act events. The C# rolls an
+    /// act's Ancient separately (`run_room_gen`'s `own_ancients`), so they are
+    /// in no C# event pool.
+    const LEGACY_ANCIENTS: &[&str] = &[
+        "Darv",
+        "Nonupeipe",
+        "Orobas",
+        "Pael",
+        "Tanx",
+        "Tezcatara",
+        "Vakuu",
+    ];
+
+    #[test]
+    fn legacy_event_lists_name_only_events_of_the_csharp_pools() {
+        use crate::act_selection::ActVariant;
+        use crate::run_room_gen::act_event_pool_for;
+        use crate::{EventId, GameVersion};
+        for version in [GameVersion::V0_107_1, GameVersion::V0_111_0] {
+            let pool: std::collections::BTreeSet<&str> = (0..3)
+                .flat_map(|i| {
+                    [ActVariant::Overgrowth, ActVariant::Underdocks]
+                        .into_iter()
+                        .flat_map(move |v| act_event_pool_for(version, v, i))
+                })
+                .collect();
+            for (i, cfg) in all_acts().iter().enumerate() {
+                for name in cfg.event_ids {
+                    assert!(
+                        EventId::from_python_name(name).is_some(),
+                        "act {} lists unknown event {name}",
+                        i + 1
+                    );
+                    assert!(
+                        pool.contains(name) || LEGACY_ANCIENTS.contains(name),
+                        "act {} lists {name}, which no C# act pool has at {version:?}",
+                        i + 1
+                    );
+                }
+            }
+        }
+    }
+
     /// Smoke: events_visited starts at 0 on every fresh `act_n()`.
     #[test]
     fn events_visited_starts_at_zero() {

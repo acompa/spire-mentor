@@ -61,6 +61,7 @@ class GameBackend:
         ascension: int,
         act1: str = "overgrowth",
         interactive_potion_swap: bool = False,
+        game_mode: str | None = None,
     ) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -91,11 +92,40 @@ class GameBackend:
         """
         return None
 
+    def mark_pre_action(self) -> None:
+        """Note what the state stands at before a move applied OUTSIDE :meth:`act`.
+
+        :meth:`act` does this itself. A caller that hands the native run to
+        something that moves it directly (a native agent's ``step(rm)``) calls
+        this first, so the next rendered state can report what that move did
+        (the treasure-room reveal, GH #1438). A no-op without that panel.
+        """
+
+    def take_native(self, action: dict[str, Any]) -> str:
+        """Apply a raw engine ``RunAction`` dict (an AI move or its replay).
+
+        The one funnel for native moves: it calls :meth:`mark_pre_action`
+        before the engine applies *action*, exactly as :meth:`act` does for a
+        verb, so a chest the AI walks into shows what it held (GH #1438).
+        Returns the engine's result string (``"advanced"``, ``"run_over"``,
+        or a rejection); the caller decides what a rejection means.
+
+        Raises:
+            UnsupportedOperation: the backend has no native run.
+        """
+        rm = self.native_run()
+        if rm is None:
+            raise UnsupportedOperation("native actions require the rust backend")
+        self.mark_pre_action()
+        return rm.take_action(action)
+
     def combat_state(self) -> Any | None:
         """The native ``sts2_rs`` combat state while a fight is live, else ``None``."""
         return None
 
-    def start_faithful(self, *, character: str, seed: int, ascension: int = 0) -> dict[str, Any]:
+    def start_faithful(
+        self, *, character: str, seed: int, ascension: int = 0, act1: str = "roll"
+    ) -> dict[str, Any]:
         """Start a run the way the offline benchmark / PPO env does (integer
         seed, Neow start). Only the native engine can."""
         raise UnsupportedOperation("run-mode play requires the rust backend")
@@ -166,10 +196,13 @@ class DuckTypedBackend(GameBackend):
         ascension: int,
         act1: str = "overgrowth",
         interactive_potion_swap: bool = False,
+        game_mode: str | None = None,
     ) -> dict[str, Any]:
         # Forwarded only when set, so a duck-typed engine without the
         # keyword keeps working.
-        extra = {"interactive_potion_swap": True} if interactive_potion_swap else {}
+        extra: dict[str, Any] = {"interactive_potion_swap": True} if interactive_potion_swap else {}
+        if game_mode is not None:
+            extra["game_mode"] = game_mode
         return self._game.start(
             character=character, seed=seed, ascension=ascension, act1=act1, **extra
         )

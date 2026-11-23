@@ -816,6 +816,11 @@ pub struct MultiPageEventState {
     /// card-type codes on page 1, then the two offered rider codes on
     /// page 2).
     pub scratch: Vec<i16>,
+    /// The Fake Merchant's shop as `BeforeEventStarted` stocked it (GH
+    /// #1607): its six shuffled fake relics at their rolled prices. The run
+    /// manager moves it onto the shop page
+    /// (`RunManager::open_fake_merchant_if_bound`) on the event's first page.
+    pub fake_merchant: Option<crate::shop::ShopInventory>,
 }
 
 // ── EventEffect ────────────────────────────────────────────────────────
@@ -958,9 +963,26 @@ pub enum EventEncounter {
     /// `DenseVegetationEventEncounter` (DenseVegetation "Rest" → "Fight"):
     /// four `Wriggler`s in slots `wriggler1..4`, `StartStunned = false`.
     DenseVegetation,
+    /// `PunchOffEventEncounter` (PunchOff "I Can Take Them" → "Fight"): two
+    /// `PunchConstruct`s, the first opening on FAST_PUNCH, each starting
+    /// 2..=9 HP down (`PunchOffEventEncounter.cs`).
+    PunchOff,
 }
 
 impl EventEncounter {
+    /// How many `new RelicReward(player)` (a relic rolled when the reward set
+    /// is populated) the event adds to the fight room's `ExtraRewards`, ahead
+    /// of the request's `victory_rewards`. PunchOff's `Fight` adds one
+    /// (`PunchOff.cs:121-137`); the request's `Reward::Relic` carries only a
+    /// fixed relic, so the roll lives here.
+    #[must_use]
+    pub const fn extra_random_relics(self) -> usize {
+        match self {
+            Self::PunchOff => 1,
+            _ => 0,
+        }
+    }
+
     /// Whether a won fight against this encounter grants the encounter's
     /// NORMAL combat-room rewards (gold, potion odds, card reward) on top of
     /// the request's `victory_rewards`.

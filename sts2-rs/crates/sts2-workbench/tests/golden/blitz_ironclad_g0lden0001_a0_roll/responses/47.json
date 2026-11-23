@@ -1,0 +1,177 @@
+{
+ "graphs": [
+  {
+   "act": 1,
+   "act_name": "Overgrowth",
+   "floor": 3,
+   "full_map": {
+    "boss": {
+     "col": 3,
+     "icon": "https://assets.test/run_history/ceremonial_beast_boss.png",
+     "id": "CEREMONIAL_BEAST_BOSS",
+     "kind": "CeremonialBeast",
+     "name": "Ceremonial Beast",
+     "row": 7,
+     "type": "Boss"
+    },
+    "current_coord": {
+     "col": 3,
+     "row": 2
+    },
+    "path_plan": {
+     "baseline_col": 3,
+     "best_col": 3,
+     "columns": [
+      {
+       "baseline_score": 0.3868,
+       "can_skip_elite": false,
+       "col": 3,
+       "is_pick": true,
+       "max_elites": 1,
+       "min_elites": 1,
+       "n_paths": 1,
+       "score": 0.3868
+      }
+     ],
+     "diverged": false,
+     "first_col": null,
+     "route": [
+      {
+       "col": 3,
+       "row": 3
+      },
+      {
+       "col": 3,
+       "row": 4
+      },
+      {
+       "col": 3,
+       "row": 5
+      },
+      {
+       "col": 3,
+       "row": 6
+      }
+     ]
+    },
+    "rows": [
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 1
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/ancient.png",
+       "row": 0,
+       "type": "Ancient",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 2
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/monster.png",
+       "row": 1,
+       "type": "Monster",
+       "visited": true
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 3
+        }
+       ],
+       "col": 3,
+       "current": true,
+       "icon": "https://assets.test/run_history/monster.png",
+       "row": 2,
+       "type": "Monster",
+       "visited": true
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 4
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/shop.png",
+       "row": 3,
+       "type": "Shop",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 5
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/elite.png",
+       "row": 4,
+       "type": "Elite",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 6
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/treasure.png",
+       "row": 5,
+       "type": "Treasure",
+       "visited": false
+      }
+     ],
+     [
+      {
+       "children": [
+        {
+         "col": 3,
+         "row": 7
+        }
+       ],
+       "col": 3,
+       "current": false,
+       "icon": "https://assets.test/run_history/rest_site.png",
+       "row": 6,
+       "type": "RestSite",
+       "visited": false
+      }
+     ]
+    ],
+    "second_boss": null
+   },
+   "idx": 0
+  }
+ ],
+ "rows": []
+}

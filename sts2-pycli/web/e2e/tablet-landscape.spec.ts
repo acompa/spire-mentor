@@ -21,12 +21,20 @@ import { menuItem } from "./topbarMenu";
  */
 test.use({ ...devices["Galaxy Tab S9 landscape"] });
 
+/** The AI's "play this decision" button. It reads "play best (G)" on the
+ *  board and "▶ best (G)" over a choice screen, such as the one a potion's
+ *  "choose a card" opens mid-fight; matching only the first stalled the walk
+ *  there for good. */
+function bestButton(page: Page) {
+  return page.getByRole("button", { name: /\bbest \(G\)/ });
+}
+
 /** Walk on from the first fight until the card reward for winning it opens.
  *  The workbench's own "play best" button drives the fight — this test is about
  *  the screen AFTER it, not about how the cards were played. */
 async function reachCardReward(page: Page): Promise<void> {
   await reachCombat(page);
-  const best = page.getByRole("button", { name: /play best/ });
+  const best = bestButton(page);
   for (let i = 0; i < 40; i++) {
     if (await page.locator(".gs-cardreward-wrap").count()) {
       await page.waitForTimeout(800); // let the card art land before measuring
@@ -52,7 +60,7 @@ async function reachRestSiteSmith(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Play yourself" }).click();
   await expect(page.locator(".gs-hud")).toBeVisible({ timeout: 90_000 });
 
-  const best = page.getByRole("button", { name: /play best/ });
+  const best = bestButton(page);
   for (let i = 0; i < 80; i++) {
     const smith = page.getByRole("button", { name: /Smith/i }).first();
     if (await smith.isVisible().catch(() => false)) {
@@ -63,7 +71,12 @@ async function reachRestSiteSmith(page: Page): Promise<void> {
     // Prefer a rest node whenever the map offers one; otherwise take anything.
     const rest = page.locator('g[data-can][aria-label*="Rest"]').first();
     if (await rest.count()) { await rest.click(); await page.waitForTimeout(1200); continue; }
-    if ((await best.count()) && (await best.first().isEnabled())) {
+    // Never the AI's button at the rest site or on its upgrade screen: it
+    // takes Smith (or Rest) itself there, and then picks the card to upgrade,
+    // so the preview under test was already filled (210 px, not empty).
+    const atRest = (await page.locator(".gs-rest").count()) > 0
+      || await page.getByRole("heading", { name: "Upgrade a card" }).isVisible().catch(() => false);
+    if (!atRest && (await best.count()) && (await best.first().isEnabled())) {
       await best.first().click();
       await page.waitForTimeout(700);
       continue;
@@ -229,15 +242,18 @@ test.describe("tablet in landscape", () => {
     await expect(slots).toHaveCount(before);
 
     // Raised means readable: the card's whole box is inside the stage's clip.
-    const lifted = await page.evaluate(() => {
+    // The raise is animated here (a tablet, unlike a phone, keeps the lift's
+    // transition), so the box is read once it has settled: read the moment
+    // `gs-hovered` lands it was still 29 px below the stage, mid-rise.
+    const lifted = () => page.evaluate(() => {
       const stage = document.querySelector(".gs-arena-stage")!.getBoundingClientRect();
       const r = document
         .querySelector(".gs-handslot.gs-hovered .gs-handslot-lift")!
         .getBoundingClientRect();
       return { above: Math.round(stage.top - r.top), below: Math.round(r.bottom - stage.bottom) };
     });
-    expect(lifted.above).toBeLessThanOrEqual(0);
-    expect(lifted.below).toBeLessThanOrEqual(0);
+    await expect.poll(async () => (await lifted()).below, { timeout: 3000 }).toBeLessThanOrEqual(0);
+    expect((await lifted()).above).toBeLessThanOrEqual(0);
 
     // Second tap commits it.
     await first.click();

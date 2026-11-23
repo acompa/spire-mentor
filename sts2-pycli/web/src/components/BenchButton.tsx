@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { isStaticMode } from "../transport";
 import { runBench } from "./benchRun";
+import { t } from "../i18n";
 
 export function BenchButton({ inCombat }: { inCombat: boolean }) {
   const [busy, setBusy] = useState(false);
@@ -14,15 +15,15 @@ export function BenchButton({ inCombat }: { inCombat: boolean }) {
       } catch {
         /* clipboard needs a secure context + gesture; the alert still shows it */
       }
-      window.alert(`${report}\n\n(copied to the clipboard)`);
+      window.alert(`${report}\n\n${t("(copied to the clipboard)")}`);
     } finally {
       setBusy(false);
     }
   };
   return (
     <button onClick={run} disabled={busy}
-      title="time the combat search at the advisor presets (200/800/1000/4000 sims) on THIS device and copy the numbers">
-      {busy ? "⏱ …" : "⏱ bench"}
+      title={t("time the combat search at the advisor presets (200/800/1000/4000 sims) on THIS device and copy the numbers")}>
+      {busy ? "⏱ …" : t("⏱ bench")}
     </button>
   );
 }

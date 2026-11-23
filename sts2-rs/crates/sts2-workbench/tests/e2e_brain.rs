@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use sts2_core::GameVersion;
 use sts2_e2e::env::{E2eEnv, Step};
 use sts2_e2e::net::E2eNet;
-use sts2_e2e::tokens::{encode, TokCache};
+use sts2_e2e::tokens::{encode_for, TokCache};
 use sts2_workbench::api::{Config, Workbench};
 
 fn new_wb() -> Workbench {
@@ -44,8 +44,8 @@ fn without_weights_the_brain_answers_424_and_capabilities_say_e2e() {
     assert_eq!(err.status, 424);
     assert!(wb.load_e2e(b"garbage").is_err());
 
-    // The run starts without the net (it is the student's run, forced
-    // Ironclad v0.111.0 A10); the first step asks for the weights.
+    // The run starts without the net (it is the student's run: the asked
+    // character, forced v0.111.0, A10); the first step asks for the weights.
     let start = call(
         &mut wb,
         "POST",
@@ -60,6 +60,11 @@ fn without_weights_the_brain_answers_424_and_capabilities_say_e2e() {
         .unwrap();
     assert_eq!(rm.game_version, GameVersion::V0_111_0);
     assert_eq!(rm.ascension_level, 10);
+    assert_eq!(
+        format!("{:?}", rm.character_id),
+        "Silent",
+        "the asked character plays"
+    );
     let err = wb
         .call("POST", "/api/live/run-mode-step", &json!({}))
         .expect_err("no net yet");
@@ -69,6 +74,35 @@ fn without_weights_the_brain_answers_424_and_capabilities_say_e2e() {
         .call("POST", "/api/live/run-mode-step", &json!({}))
         .expect_err("still no net");
     assert!(err.detail.contains("fetch failed"), "{}", err.detail);
+
+    // The Fool plays on its own net and build (GH #1535): a v0.113.0 run,
+    // and its 424 names the Fool's file, so the worker fetches that one.
+    let s = call(
+        &mut wb,
+        "POST",
+        "/api/live/start-faithful",
+        json!({"e2e": true, "character": "Fool", "seed": "run_3"}),
+    );
+    assert_eq!(s["state"]["game_version"], json!("v0.113.0"));
+    let err = wb
+        .call("POST", "/api/live/run-mode-step", &json!({}))
+        .expect_err("no Fool net yet");
+    assert_eq!(err.status, 424);
+    assert!(
+        err.detail.contains(sts2_workbench::e2e::E2E_FOOL_FILE),
+        "{}",
+        err.detail
+    );
+
+    // A character no student plays is refused, not swapped.
+    let err = wb
+        .call(
+            "POST",
+            "/api/live/start-faithful",
+            &json!({"e2e": true, "character": "Watcher", "seed": "run_3"}),
+        )
+        .expect_err("no student plays the Watcher");
+    assert_eq!(err.status, 400, "{}", err.detail);
 }
 
 #[test]
@@ -123,7 +157,7 @@ fn selfplay_matches_the_native_env() {
         match s {
             Step::Terminal(t) => break t.won,
             Step::Decision(d) => {
-                let c = net.act_greedy(&encode(&d, env.rm(), &mut cache).unwrap().into());
+                let c = net.act_greedy(&encode_for(&net, &d, env.rm(), &mut cache).unwrap().into());
                 chosen.push(c);
                 s = env.step(c);
             }

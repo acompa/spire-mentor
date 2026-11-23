@@ -24,7 +24,10 @@ pub(crate) fn play_eradicate(state: &mut CombatState, target: Option<CreatureUid
     let dmg = current_damage(state);
     // C# `.WithHitCount(ResolveEnergyXValue())` — X = energy spent on this card.
     // X-cost reads the stamped `energy_spent`, NOT `player.energy` (already drained).
-    let hits = current_card_energy_spent(state);
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        current_card_energy_spent(state),
+    );
     for _ in 0..hits {
         let _ = deal_damage_player_to_enemy(state, t, dmg);
     }

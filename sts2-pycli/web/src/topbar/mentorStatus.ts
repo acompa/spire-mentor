@@ -1,5 +1,7 @@
 // The Mode bar's vocabulary and its status in words (MentorBar.tsx draws it).
 
+import { t } from "../i18n";
+
 export type MentorMode = "off" | "coach" | "hints" | "aiplays";
 export type Brain = "search" | "instinct";
 
@@ -19,14 +21,14 @@ export function mentorStatus(s: {
   /** The step a whole-run autoplay is on, for "AI playing · step 12". */
   aiStep?: number;
 }): { text: string; state: MentorState } {
-  const who = s.brain === "instinct" ? "Instinct" : "Search";
+  const who = s.brain === "instinct" ? t("Instinct") : t("Search");
   if (s.aiPlaying) {
-    return { text: `AI playing${s.aiStep ? ` · step ${s.aiStep}` : ""}`, state: "ai" };
+    return { text: s.aiStep ? t("AI playing · step {n}", { n: s.aiStep }) : t("AI playing"), state: "ai" };
   }
-  if (s.mode === "off") return { text: "AI off", state: "off" };
-  if (s.thinking) return { text: `${who} thinking…`, state: "thinking" };
-  if (s.autobattle) return { text: "Autobattle: the AI fights, you decide the run", state: "idle" };
+  if (s.mode === "off") return { text: t("AI off"), state: "off" };
+  if (s.thinking) return { text: t("{who} thinking…", { who }), state: "thinking" };
+  if (s.autobattle) return { text: t("Autobattle: the AI fights, you decide the run"), state: "idle" };
   return s.mode === "coach"
-    ? { text: "Coach: your call — P to peek", state: "idle" }
-    : { text: `${who} ready`, state: "idle" };
+    ? { text: t("Coach: your call — P to peek"), state: "idle" }
+    : { text: t("{who} ready", { who }), state: "idle" };
 }

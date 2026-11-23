@@ -16,6 +16,12 @@ use super::prelude::*;
 /// as base Armaments/Headbutt under `sts2-rs-8ukqd`.
 pub(crate) fn play_hologram(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
     gain_block_player(state, current_card_block(state));
+    // C# `FromCombatPile` returns nothing once the combat is ending (`IsEnding`, v0.111.0 `CardSelectCmd.cs:452`),
+    // before its lone-candidate shortcut: a block that Juggernaut turned into
+    // the killing blow leaves no pick at all (GH #1623).
+    if sts2_core::combat_loop::combat_is_ending(state) {
+        return EffectResult::Resolved;
+    }
     // C# `CardSelectCmd.FromSimpleGrid(discard, prefs(prompt, 1))` →
     // `CardPileCmd.Add(_, Hand)`: auto-returns the lone card at ≤1 (no prompt,
     // no RNG), opens a single-pick player choice at ≥2 (same surface as

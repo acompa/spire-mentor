@@ -542,6 +542,18 @@ pub fn all_boss_encounter_ids() -> Vec<&'static str> {
     ids
 }
 
+/// C# `EncounterModel.IsWeak` (`Models/EncounterModel.cs:57`, overridden to
+/// `true` by the fifteen `Models.Encounters/*Weak.cs`) for the encounter with
+/// `Id.Entry == id`; `false` for an id no act lists. Dread's
+/// `WaterfallGiantDominion.GetExplosiveAmount` reads it (GH #1346).
+#[must_use]
+pub fn encounter_is_weak(id: &str) -> bool {
+    ALL_ACT_MODELS
+        .iter()
+        .flat_map(|a| a.encounters.iter())
+        .any(|e| e.weak && e.id == id)
+}
+
 /// `GrabBag<EncounterModel>` (`MegaCrit.Sts2.Core.Helpers/GrabBag.cs`) — weighted
 /// draw-without-replacement with `NextDouble`-driven `GrabIndex`. All weights are
 /// `1.0` here (`grabBag.Add(e, 1.0)`).
@@ -666,8 +678,11 @@ fn generate_act_rooms(
     act: &ActGenData,
     subset_ancients: usize,
     version: crate::GameVersion,
+    mode: crate::GameMode,
 ) -> GeneratedActRooms {
     let enc = act.encounters;
+    // `int num = isBlitz ? 1 : NumberOfWeakEncounters` (ActModel.cs:339).
+    let num_weak = if mode.is_blitz() { 1 } else { act.num_weak };
 
     // (a) events: `AllEvents.Concat(AllSharedEvents).UnstableShuffle(up_front)`.
     // Pre-shuffle order is `own ++ shared` (no epoch filtering under the headless
@@ -698,7 +713,7 @@ fn generate_act_rooms(
     // (b1) weak encounters
     let mut bag = GrabBag::new();
     let mut last: Option<&'static GenEnc> = None;
-    for _ in 0..act.num_weak {
+    for _ in 0..num_weak {
         if !bag.any() {
             for e in &weak {
                 bag.add(e);
@@ -712,7 +727,7 @@ fn generate_act_rooms(
 
     // (b2) regular encounters (`NumberOfWeakEncounters .. GetNumberOfRooms`)
     let mut bag = GrabBag::new();
-    for _ in act.num_weak..act.base_rooms {
+    for _ in num_weak..act.base_rooms {
         if !bag.any() {
             for e in &regular {
                 bag.add(e);
@@ -815,6 +830,30 @@ pub fn generate_all_rooms_for(
     has_double_boss: bool,
     act1: ActVariant,
 ) -> Vec<GeneratedActRooms> {
+    generate_all_rooms_in(
+        version,
+        crate::GameMode::Standard,
+        up_front,
+        has_double_boss,
+        act1,
+    )
+}
+
+/// [`generate_all_rooms_for`] for a run of `mode` (GH #1347). In Blitz each
+/// act generates ONE weak encounter instead of its `NumberOfWeakEncounters`
+/// (C# `ActModel.GenerateRooms(rng, unlockState, isMultiplayer, isBlitz)`,
+/// `ActModel.cs:336-342`: `num = isBlitz ? 1 : NumberOfWeakEncounters`); the
+/// regular loop still runs up to `GetNumberOfRooms`, so the same number of
+/// encounters is drawn with a different weak / regular split. Every other
+/// mode generates as before.
+#[must_use]
+pub fn generate_all_rooms_in(
+    version: crate::GameVersion,
+    mode: crate::GameMode,
+    up_front: &mut Rng,
+    has_double_boss: bool,
+    act1: ActVariant,
+) -> Vec<GeneratedActRooms> {
     let acts = acts_for(act1);
     // (1) SharedAncients.UnstableShuffle — 1 element ([Darv]): 0 reads before
     // v0.113.0; from v0.113.0 the shuffle seeds its child Rng with one
@@ -831,7 +870,7 @@ pub fn generate_all_rooms_for(
 
     (0..3)
         .map(|i| {
-            let mut rooms = generate_act_rooms(up_front, acts[i], subset[i], version);
+            let mut rooms = generate_act_rooms(up_front, acts[i], subset[i], version, mode);
             if i == 2 && has_double_boss {
                 // Last act only (`i == State.Acts.Count - 1`,
                 // `RunManager.cs:501`): pick the second boss from the
@@ -852,6 +891,65 @@ pub fn generate_all_rooms_for(
             rooms
         })
         .collect()
+}
+
+impl crate::runstate::RunState {
+    /// Re-roll every room contents the player cannot see yet, for honest
+    /// (non-clairvoyant) rollouts from a cloned run. Pair with a run-RNG
+    /// reseed (`RunRngSet::new_for`); this reads a COPY of the current
+    /// `rng.up_front`, so call it after the reseed and the result follows the
+    /// reseed.
+    ///
+    /// Current act: the not-yet-fought tail of the normal and elite queues
+    /// is replaced by a fresh roll's tail (cursors `monster_combats_this_act`
+    /// / `elite_combats_this_act`); the unvisited tail of the event order is
+    /// re-shuffled; the act boss (visible on the map) is kept; a hidden A10
+    /// second boss is re-rolled from the fresh roll when it differs from the
+    /// visible boss. Later acts: replaced whole (encounters, events, boss,
+    /// second boss, ancient). Past acts are untouched.
+    ///
+    /// Not C# behaviour; a research tool (snapshot-pool path probe). The
+    /// fresh tail does not see the no-repeat-tag rule across the cursor seam.
+    pub fn redeal_hidden_rooms(&mut self) {
+        if self.generated_rooms.is_empty() {
+            return;
+        }
+        let mut r = self.rng.up_front.clone();
+        let fresh =
+            generate_all_rooms_for(self.game_version, &mut r, self.has_double_boss, self.act1);
+        let cur = usize::from(self.act_index.max(1)) - 1;
+        let m = self.monster_combats_this_act as usize;
+        let e = self.elite_combats_this_act as usize;
+        let ev_cursor = self.acts.get(cur).map_or(0, |a| a.events_visited as usize);
+        for (i, f) in fresh.into_iter().enumerate() {
+            let Some(g) = self.generated_rooms.get_mut(i) else {
+                break;
+            };
+            if i < cur {
+                continue;
+            }
+            if i > cur {
+                *g = f;
+                continue;
+            }
+            let splice = |old: &mut Vec<&'static str>, new: &[&'static str], at: usize| {
+                if at < old.len() && at <= new.len() {
+                    old.truncate(at);
+                    old.extend_from_slice(&new[at..]);
+                }
+            };
+            splice(&mut g.normal_encounters, &f.normal_encounters, m);
+            splice(&mut g.elite_encounters, &f.elite_encounters, e);
+            if ev_cursor < g.events_shuffled.len() {
+                r.shuffle(&mut g.events_shuffled[ev_cursor..]);
+            }
+            if let (Some(_), Some(s)) = (g.second_boss_id, f.second_boss_id) {
+                if s != g.boss_id {
+                    g.second_boss_id = Some(s);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

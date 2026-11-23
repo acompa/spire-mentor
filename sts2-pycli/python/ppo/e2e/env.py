@@ -87,7 +87,7 @@ import functools
 import hashlib
 import itertools
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -142,8 +142,19 @@ COMBAT_RUN_KINDS = frozenset(
         "drink_potion",
         "combat_resolve_choice",
         "combat_resolve_choice_take_first",
+        # A fight's potion discard, on a run with the potion popup ("ooc-potion",
+        # GH #1606). The env plays combat from `cs.legal_actions()`, which has none.
+        "discard_potion",
     }
 )
+# The potion popup's run actions (the "ooc-potion" fill event, GH #1606). They ride
+# on every out-of-combat screen of a run that declares it, after the screen's own.
+OOC_POTION_ACTIONS = frozenset({"use_potion_ooc", "discard_potion"})
+# The reward screen's run actions (the "#1069" fill event, GH #1620): the run
+# encoder has no surface for them; the e2e tokens carry the reward each names.
+REWARD_SCREEN_ACTIONS = frozenset({"take_reward", "skip_reward", "proceed_rewards"})
+# Run actions the run encoder need not encode (the fill events' own).
+FILL_RUN_ACTIONS = OOC_POTION_ACTIONS | REWARD_SCREEN_ACTIONS
 
 # One key per segment for the F9 floor watermark (unique within the process).
 _SEGMENT_SERIAL = itertools.count()
@@ -189,16 +200,57 @@ def ooc_keys(actions: list[dict[str, Any]], kinds: list[int], obs: dict[str, Any
 # ── construction (plan §3.1: `ppo.e2e.factory` is the only construction site) ──
 
 
-def make_run_manager(seed: int) -> Any:
+def make_run_manager(
+    seed: int, *, character: str | None = None, forced_card: str | None = None
+) -> Any:
     """The campaign `RunManager` for `seed`: `factory.new_run`, which builds and reads back
-    Ironclad A10 on v0.111.0 in agent mode with the interactive potion swap."""
-    return factory.new_run(int(seed))
+    `character` (None: the process's) A10 on v0.111.0 in agent mode with the interactive
+    potion swap; with `forced_card` (GH #1541, `ppo.e2e.forced`) that card is appended to
+    the starting deck."""
+    rm = factory.new_run(int(seed), character=character)
+    if forced_card is not None:
+        rm.force_add_card(str(forced_card))
+    return rm
 
 
-def check_campaign_run(rm: Any) -> Any:
+def _build_run(seed: int, rm: Any, cfg: EnvConfig) -> tuple[Any, str | None]:
+    """The env's run and its forced card: `rm` as given, or a new one for `seed` (with
+    `cfg.forced_card`, or turned into `cfg.human_start`). A forced card or a human start
+    needs a run the env builds itself."""
+    if rm is not None:
+        if cfg.forced_card is not None or cfg.human_start is not None:
+            raise ValueError(
+                "EnvConfig.forced_card / human_start need a run the env builds (rm=None)"
+            )
+        return rm, None
+    if cfg.human_start is not None:
+        from .human import apply_start
+
+        if cfg.forced_card is not None:
+            raise ValueError("EnvConfig: a run has a forced card or a human start, not both")
+        start = cfg.human_start
+        if cfg.character is not None and cfg.character != start["character"]:
+            raise ValueError(f"human start of {start['character']} for a {cfg.character} run")
+        rm = make_run_manager(seed, character=start["character"])
+        apply_start(rm, start, seed)
+        return rm, None
+    card = cfg.forced_card
+    return make_run_manager(seed, character=cfg.character, forced_card=card), card
+
+
+def check_campaign_run(rm: Any, *, characters: Collection[str] | None = None) -> Any:
     """`factory.check_run`: raise unless `rm` reads back as a campaign run (build, mode,
-    swap flag, character, ascension). Called on every run the env did not build."""
-    return factory.check_run(rm)
+    swap flag, one of `characters` (None: the process's), ascension). Called on every run
+    the env did not build."""
+    return factory.check_run(rm, characters=characters)
+
+
+def run_characters(cfg: EnvConfig) -> tuple[str, ...] | None:
+    """The characters an env with `cfg` accepts: the lane's (`cfg.characters`), else the
+    one it builds (`cfg.character`), else None (the process's)."""
+    if cfg.characters is not None:
+        return tuple(cfg.characters)
+    return None if cfg.character is None else (str(cfg.character),)
 
 
 # ── what ends a segment, and what ends the process ───────────────────────────
@@ -262,9 +314,23 @@ FACE_VARS = (
 FAST_PATHS = True
 
 
-def _face_vars(raw_card: dict[str, Any]) -> dict[str, Any]:
+# The wire's `player.class` of the launch character (`state_to_dict`). Its rows keep the
+# frozen schema's play classes; another character's also split on the star cost (GH #1407).
+_BASE_CLASS = "ironclad"
+
+
+def _face_vars(raw_card: dict[str, Any], *, stars: bool = False) -> dict[str, Any]:
+    """What refines a play key: the card's `FACE_VARS`, and with `stars` its star cost now
+    (`star_cost_live`) where that is not the printed one (free this turn or this combat,
+    Void Form, Brilliant Scarf). A copy at its printed cost adds nothing, so its key is
+    the schema's."""
     cv = raw_card.get("combat_vars") or {}
-    return {k: cv[k] for k in FACE_VARS if cv.get(k)}
+    fv = {k: cv[k] for k in FACE_VARS if cv.get(k)}
+    if stars:
+        live = raw_card.get("star_cost_live")
+        if live is not None and live != raw_card.get("base_star_cost"):
+            fv["star_cost_live"] = live
+    return fv
 
 
 def _shared_selections(choice: Any, acts: Any, piles: dict[str, Any]) -> set[int]:
@@ -287,6 +353,11 @@ def combat_keys(
     """One merge key per action: `contracts.combat_class_keys`, with each play key refined
     by the card's per-copy face variables (`FACE_VARS`; the T6 deviation in the module
     docstring). `acts` must be in `bv`'s index space (`snapshot.obs_actions`).
+
+    On another character's fight (`d_bv`'s `player.class` is not Ironclad's) a play key is
+    also refined by a star cost that differs from the printed one, so a copy that is free
+    this turn and a paid copy are two classes (GH #1407). An Ironclad fight keeps the
+    schema's classes, with or without the "chars" event.
 
     A choose keys on its outcome and its selected content, so its outcome only matters
     when another choose selects the same content. With `FAST_PATHS` the env computes it
@@ -315,11 +386,12 @@ def combat_keys(
         return choose_outcome_key(c)
 
     keys = C.combat_class_keys(acts, hand, pots, choice=choice, outcome=outcome, piles=deck)
+    stars = d_bv["player"].get("class", _BASE_CLASS) != _BASE_CLASS
     out = []
     for k, a in zip(keys, acts, strict=True):
         if a.get("action") == "play":
             i = int(a["card_index"])
-            fv = _face_vars(hand[i]) if i < len(hand) else {}
+            fv = _face_vars(hand[i], stars=stars) if i < len(hand) else {}
             if fv:
                 k = json.dumps([k, fv], sort_keys=True, default=str)
         out.append(k)
@@ -356,8 +428,12 @@ def _belief(cs: Any) -> tuple[Any, dict[str, Any]]:
 
 
 def _snapshot(bv: Any, d_bv: dict[str, Any], room: str) -> dict[str, Any]:
+    """The honest snapshot. A "chars" row's live keys are the tokenizer's
+    (`tactical.live_snapshot`, GH #1197): a row without the event pays for none."""
     from ppo.combat_ctx.snapshot import snapshot_from_parts
 
+    # A corpse's telegraph without the powers C# drops at death (GH #1835).
+    d_bv = bv.corpse_intents(d_bv) or d_bv
     return snapshot_from_parts(
         d_bv, bv.card_damage_preview(), bv.card_block_preview(), bv.pending_choice(), room
     )
@@ -477,7 +553,7 @@ class _RunEnv(PpoRunEnv):
         env = object.__new__(cls)
         env.seed = int(seed)
         env.ascension = int(rm.ascension_level)
-        env.character = factory.CHARACTER
+        env.character = str(rm.character)  # the run's own (a mix lane's runs differ)
         env.sims = 0
         env.boss_sims = 0
         env.max_steps = int(max_steps)
@@ -534,6 +610,7 @@ class _RunEnv(PpoRunEnv):
             phase = rm.phase()
             if phase == "event":
                 rm.materialize_event()  # #302: bind before the options are counted
+                phase = rm.phase()  # the Fake Merchant opens as a shop (GH #1607)
             actions = rm.available_actions()
             if not actions:
                 return self._terminal("no_actions")
@@ -545,7 +622,11 @@ class _RunEnv(PpoRunEnv):
                 self._take(_claws_auto_pick(actions))
                 self.steps += 1
                 continue
-            assert_encodable(actions, phase=phase)
+            # The run encoder has no surface for the potion popup or the reward
+            # screen; every other screen's own actions must still have one.
+            assert_encodable(
+                [a for a in actions if a.get("action") not in FILL_RUN_ACTIONS], phase=phase
+            )
             surface = classify_surface(phase, actions)
             if len(actions) == 1:
                 self.forced[_forced_name(actions, rm)] += 1
@@ -1000,6 +1081,18 @@ class EnvConfig:
     # `E2EEnv`, its rows tokenized with this `sts2_rs.E2eRareMap` (None: no RareMap).
     rust: bool = False
     rust_rare: Any = None
+    # The character a new run (`rm=None`) is built for; None: the process's
+    # (`factory.CHARACTER`). A mix lane's worker sets it per run (`ppo.e2e.mix`).
+    character: str | None = None
+    # The characters the run check accepts (a mix lane's set: its practice starts come
+    # from any of its runs); None: `character`'s, or the process's.
+    characters: tuple[str, ...] | None = None
+    # GH #1541: the card id a new run (`rm=None`) adds to its starting deck
+    # (`ppo.e2e.forced`); None: an ordinary run. A worker sets it per run.
+    forced_card: str | None = None
+    # A human start (`ppo.e2e.human`, a bank record) a new run (`rm=None`) is turned
+    # into before its first decision; None: an ordinary run. A worker sets it per run.
+    human_start: dict[str, Any] | None = None
 
 
 @dataclass
@@ -1029,12 +1122,13 @@ class E2EEnv:
         self.cfg = cfg or EnvConfig()
         self.seed = int(seed)
         self.segment = segment
-        if rm is None:
-            rm = make_run_manager(self.seed)
+        rm, self.forced_card = _build_run(self.seed, rm, self.cfg)
+        self.human_start = self.cfg.human_start if segment.kind == "run" else None
         if not self.cfg.allow_any_run:
-            check_campaign_run(rm)
+            check_campaign_run(rm, characters=run_characters(self.cfg))
         self.run = _RunEnv.wrap(rm, self.seed, max_steps=self.cfg.max_run_steps)
         self.rm = rm
+        self.character = str(rm.character)
         if self.cfg.on_capture is not None and segment.kind == "run":
             self.run.move_hook = self._on_move
         # rows and reward

@@ -299,6 +299,18 @@ def enchantment_norm(name: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", s).strip("_")
 
 
+def _kinds() -> dict[str, str]:
+    """The engine registry kind of each content table: the frozen universes, or, in a
+    process whose e2e lane plays a later build (`ppo.e2e.build`, GH #1535), every
+    build's (`card_any`, ...), so that build's content has rows of its own. The Rust
+    twin is `sts2_e2e::sctx` (`sts2_e2e::build::later`)."""
+    from ppo.e2e import build
+
+    if build.GAME_VERSION == build.DEFAULT_BUILD:
+        return {"card": "card", "potion": "potion", "relic": "relic", "power": "power"}
+    return {"card": "card_any", "potion": "potion_any", "relic": "relic_any", "power": "power_any"}
+
+
 @lru_cache(maxsize=1)
 def vocab() -> Vocab:
     """The full-universe vocabularies (engine registries; no data)."""
@@ -306,18 +318,25 @@ def vocab() -> Vocab:
 
     from ppo import vocab as ppo_vocab
 
-    cards = ppo_vocab.cards()
-    potions = ppo_vocab.potions()
+    k = _kinds()
+    later = k["card"] != "card"
+    cards = ppo_vocab.Registry(k["card"]) if later else ppo_vocab.cards()
+    potions = ppo_vocab.Registry(k["potion"]) if later else ppo_vocab.potions()
     ench = ppo_vocab.enchantments()
-    card_names = list(sts2_rs.list_registry_names("card"))
-    potion_names = list(sts2_rs.list_registry_names("potion"))
+    card_names = list(sts2_rs.list_registry_names(k["card"]))
+    potion_names = list(sts2_rs.list_registry_names(k["potion"]))
+    species = (
+        list(sts2_rs.list_registry_names("monster_any"))
+        if later
+        else list(sts2_rs.monster_species())
+    )
     tables = (
         Table(cards.names, ppo_vocab.canonical),
         Table(["0", "1"]),
-        Table(list(sts2_rs.list_registry_names("relic"))),
+        Table(list(sts2_rs.list_registry_names(k["relic"]))),
         Table(potions.names, ppo_vocab.canonical),
-        Table(list(sts2_rs.list_registry_names("power"))),
-        Table(list(sts2_rs.monster_species())),
+        Table(list(sts2_rs.list_registry_names(k["power"]))),
+        Table(species),
         Table(ench.names, enchantment_norm),
         Table(list(AFFLICTIONS)),
         Table(list(INTENT_KINDS)),

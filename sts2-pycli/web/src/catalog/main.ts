@@ -1,8 +1,9 @@
 import type { Catalog, CatalogEdge, QuadrantSet, SortKey, SortDir } from "./data";
 import { filterByQuadrant, sortRows } from "./data";
 import { renderHeatmap } from "./heatmap";
-import { versionedPublicPath } from "../gameVersion";
+import { localizedPublicPath, versionedPublicPath } from "../gameVersion";
 import type { CardTextEntry } from "./heatmap";
+import { t } from "../i18n";
 
 type Quadrant = CatalogEdge["quadrant"];
 
@@ -16,44 +17,44 @@ const QUADRANT_COLOR: Record<Quadrant, string> = {
 };
 
 const QUADRANT_LABEL: Record<Quadrant, string> = {
-  confirmed: "Confirmed",
-  myth: "Myth",
-  undiscovered: "Undiscovered",
-  noise: "Noise",
+  confirmed: t("Confirmed"),
+  myth: t("Myth"),
+  undiscovered: t("Undiscovered"),
+  noise: t("Noise"),
 };
 
 // Columns: key is either a SortKey or "pair"
 const TABLE_COLS: { key: string; label: string; tip?: string }[] = [
-  { key: "pair", label: "Pair", tip: "The two cards in this synergy pair. Hover a pair to see card descriptions." },
+  { key: "pair", label: t("Pair"), tip: t("The two cards in this synergy pair. Hover a pair to see card descriptions.") },
   {
     key: "pmi",
     label: "PMI",
-    tip: "Pointwise Mutual Information: log P(A,B) / (P(A)·P(B)). How much more often the pair appears together than chance. Signal of believed synergy, not proof.",
+    tip: t("Pointwise Mutual Information: log P(A,B) / (P(A)·P(B)). How much more often the pair appears together than chance. Signal of believed synergy, not proof."),
   },
   {
     key: "econ_S",
-    label: "Econ S",
-    tip: "Economy synergy: value-net second difference V(D+A+B)−V(D+A)−V(D+B)+V(D). Cheap causal run-economy signal (null if not computed).",
+    label: t("Econ S"),
+    tip: t("Economy synergy: value-net second difference V(D+A+B)−V(D+A)−V(D+B)+V(D). Cheap causal run-economy signal (null if not computed)."),
   },
   {
     key: "combat_S",
-    label: "Combat S",
-    tip: "Combat synergy: forced-deck four-cell interaction in fight outcome. The authoritative causal 'does the combo actually fire' measure (null if not computed).",
+    label: t("Combat S"),
+    tip: t("Combat synergy: forced-deck four-cell interaction in fight outcome. The authoritative causal 'does the combo actually fire' measure (null if not computed)."),
   },
   {
     key: "confidence",
-    label: "Confidence",
-    tip: "Derived from the Combat S confidence interval width: higher = tighter CI, farther from zero. Null when Combat S is not computed.",
+    label: t("Confidence"),
+    tip: t("Derived from the Combat S confidence interval width: higher = tighter CI, farther from zero. Null when Combat S is not computed."),
   },
   {
     key: "sample_n",
-    label: "Sample N",
-    tip: "Number of (baseline × encounter × seed) combos behind Combat S, or contexts behind Econ S. Larger = more reliable estimate.",
+    label: t("Sample N"),
+    tip: t("Number of (baseline × encounter × seed) combos behind Combat S, or contexts behind Econ S. Larger = more reliable estimate."),
   },
   {
     key: "quadrant",
-    label: "Quadrant",
-    tip: "Observational × causal classification. See legend below for definitions.",
+    label: t("Quadrant"),
+    tip: t("Observational × causal classification. See legend below for definitions."),
   },
 ];
 
@@ -103,7 +104,7 @@ function renderMeta(): void {
   if (!catalog) return;
   const date = new Date(catalog.generated_at).toLocaleDateString();
   metaEl.textContent =
-    `${catalog.character} · ${catalog.run_count.toLocaleString()} runs · generated ${date}`;
+    `${catalog.character} · ${t("{n} runs", { n: catalog.run_count.toLocaleString() })} · ${t("generated {date}", { date })}`;
 }
 
 // ── Render: quadrant filter checkboxes + legend ───────────────────────────────
@@ -144,24 +145,24 @@ function renderFilters(): void {
   const helpBtn = document.createElement("button");
   helpBtn.className = "help-btn";
   helpBtn.textContent = "?";
-  helpBtn.title = "Show/hide quadrant and metric definitions";
+  helpBtn.title = t("Show/hide quadrant and metric definitions");
 
   const helpBody = document.createElement("div");
   helpBody.className = "help-body";
   helpBody.style.display = "none";
   helpBody.innerHTML = `
-    <strong>Quadrant definitions</strong>
+    <strong>${t("Quadrant definitions")}</strong>
     <ul>
       <li><span class="help-swatch" style="background:${QUADRANT_COLOR.confirmed}"></span>
-        <strong>Confirmed</strong> — high observational <em>and</em> high causal: real synergy, the catalog core.</li>
+        <strong>${QUADRANT_LABEL.confirmed}</strong> — ${t("high observational <em>and</em> high causal: real synergy, the catalog core.")}</li>
       <li><span class="help-swatch" style="background:${QUADRANT_COLOR.myth}"></span>
-        <strong>Myth</strong> — high observational, causal ≤ 0: community habit, not proven to actually synergize in combat.</li>
+        <strong>${QUADRANT_LABEL.myth}</strong> — ${t("high observational, causal ≤ 0: community habit, not proven to actually synergize in combat.")}</li>
       <li><span class="help-swatch" style="background:${QUADRANT_COLOR.undiscovered}"></span>
-        <strong>Undiscovered</strong> — low observational, high causal: combos players underuse but that test out.</li>
+        <strong>${QUADRANT_LABEL.undiscovered}</strong> — ${t("low observational, high causal: combos players underuse but that test out.")}</li>
       <li><span class="help-swatch" style="background:${QUADRANT_COLOR.noise}"></span>
-        <strong>Noise</strong> — low on both metrics.</li>
+        <strong>${QUADRANT_LABEL.noise}</strong> — ${t("low on both metrics.")}</li>
     </ul>
-    <p class="help-note">With only the observational layer loaded (no <code>--combat</code> run), every pair is Myth or Noise until causal columns are computed.</p>
+    <p class="help-note">${t("With only the observational layer loaded (no <code>--combat</code> run), every pair is Myth or Noise until causal columns are computed.")}</p>
   `;
 
   helpBtn.addEventListener("click", () => {
@@ -211,7 +212,7 @@ function renderTable(): void {
 
   if (sorted.length === 0) {
     const p = document.createElement("p");
-    p.textContent = "No edges match the selected quadrants.";
+    p.textContent = t("No edges match the selected quadrants.");
     tableContainer.appendChild(p);
     return;
   }
@@ -332,7 +333,7 @@ function catalogUrl(character: string): string {
 }
 
 async function loadCharacter(character: string): Promise<void> {
-  setStatus(`Loading ${character}…`);
+  setStatus(t("Loading {character}…", { character }));
   try {
     let res = await fetch(catalogUrl(character));
     if (!res.ok && character === DEFAULT_CHARACTER) {
@@ -346,13 +347,13 @@ async function loadCharacter(character: string): Promise<void> {
     renderMeta();
     renderAll();
   } catch (err) {
-    setStatus(`Error loading ${character} catalog: ${String(err)}`);
+    setStatus(t("Error loading {character} catalog: {err}", { character, err: String(err) }));
   }
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 async function init(): Promise<void> {
-  setStatus("Loading…");
+  setStatus(t("Loading…"));
 
   // Card text is shared across characters — fetch once. Per game build
   // (GH #877): the workbench opens this page with `?game_version=<ver>` for a
@@ -362,7 +363,14 @@ async function init(): Promise<void> {
   // from a scraped v0.107 run corpus, so a card new in a later build simply
   // has no pairs here.
   const gameVersion = new URLSearchParams(window.location.search).get("game_version");
-  const cardTextUrls = [versionedPublicPath("card_text.json", gameVersion), "/card_text.json"];
+  // In Chinese the game's own Chinese text comes first (`./zh/…`), then the
+  // English tables.
+  const cardTextUrls = [
+    localizedPublicPath("card_text.json", gameVersion),
+    localizedPublicPath("card_text.json", null),
+    versionedPublicPath("card_text.json", gameVersion),
+    "/card_text.json",
+  ];
   for (const url of new Set(cardTextUrls)) {
     try {
       const cardTextRes = await fetch(`.${url}`);

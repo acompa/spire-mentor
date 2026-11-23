@@ -399,6 +399,45 @@ def test_csharp_relic_reward_title_resolves() -> None:
     assert "Skip" in titles
 
 
+class _ChooseScreenRM:
+    """A choose-a-card screen; ``can_skip`` decides whether the engine fans
+    out the ``pick_card_reward {idx: None}`` skip."""
+
+    act1 = "overgrowth"
+    card_offer_choose_screen = True
+
+    def __init__(self, can_skip: bool) -> None:
+        self.can_skip = can_skip
+
+    def card_reward_bundles(self):
+        return []
+
+    def available_actions(self):
+        acts = [{"action": "pick_card_reward", "idx": i} for i in range(2)]
+        if self.can_skip:
+            acts.append({"action": "pick_card_reward", "idx": None})
+        return acts
+
+    def card_reward_option_ids(self):
+        return ["ANGER", "BASH"]
+
+    def card_reward_option_upgraded(self):
+        return [False, False]
+
+
+def test_forced_choose_screen_is_a_pick_one_select() -> None:
+    """Brain Leech's Share Knowledge grid is ``Cancelable = false``
+    (``BrainLeech.cs:68``): the engine offers no skip, so the view must
+    say min 1, as the C# host does (GH #1610 lane: it said min 0)."""
+    g = RustGame(target_convention="csharp")
+    for can_skip, lo in ((False, 1), (True, 0)):
+        g.rm = _ChooseScreenRM(can_skip)
+        state: dict = {"decision": "card_reward"}
+        g._fill_card_reward(state)
+        assert state["decision"] == "card_select"
+        assert (state["min_select"], state["max_select"], state["can_skip"]) == (lo, 1, can_skip)
+
+
 class _RelicAutoCollectRM:
     # The Act-1 model the run walks (GH #544). `_serialize` reports it,
     # so a RunManager stand-in has to carry it like the real one does.
@@ -433,6 +472,9 @@ class _RelicAutoCollectRM:
         return 3
 
     def master_deck_detailed(self):
+        return []
+
+    def master_deck_enchantments(self):
         return []
 
     def card_reward_bundles(self):
@@ -529,6 +571,9 @@ def test_serialize_boss_relic_wiring_native_vs_csharp() -> None:
         def master_deck_detailed(self):
             return []
 
+        def master_deck_enchantments(self):
+            return []
+
         def available_actions(self):
             return [
                 {"action": "pick_boss_relic", "idx": 0},
@@ -580,6 +625,9 @@ def test_rest_site_labels_and_smith_substate() -> None:
             return []
 
         def master_deck_detailed(self):
+            return []
+
+        def master_deck_enchantments(self):
             return []
 
         def total_floor(self):
@@ -1159,6 +1207,45 @@ def test_skip_select_declines_the_optional_sea_glass_grid() -> None:
     assert g.rm.pending_card_grants == 0
     assert view.get("decision") != "card_select"
     assert repr(g.rm.master_deck()) == deck_before
+
+
+def test_keep_open_picks_take_several_cards_from_the_sea_glass_grid() -> None:
+    """The run env plays Sea Glass one ``grant_deck_card`` per pick, then a
+    confirm. A ``select_cards`` marked ``keep_open`` is one such pick: the
+    grid stays open for the next, and ``skip_select`` confirms (GH #1361).
+    Without the mark one ``select_cards`` is the whole selection."""
+    g = RustGame()
+    g.start(character="Ironclad", seed="4023", ascension=0)
+    assert g.rm.force_add_relic("SEA_GLASS")
+    deck_len = len(g.rm.master_deck())
+    total = len(g.rm.card_grant_options())
+    for _ in range(2):
+        view = g.act("select_cards", indices="0", keep_open=True)
+        assert not view.get("error"), view
+        assert g.rm.pending_card_grants > 0
+    assert len(g.rm.card_grant_options()) == total - 2
+    view = g.act("skip_select")
+    assert not view.get("error"), view
+    assert g.rm.pending_card_grants == 0
+    assert len(g.rm.master_deck()) == deck_len + 2
+
+
+def test_keep_open_picks_enchant_several_cards_on_an_up_to_n_screen() -> None:
+    """Kifuda's "up to 3" enchant, played pick by pick like the run env."""
+    g = _new()
+    g.start(character="Defect", seed="1001", ascension=0)
+    assert g.rm.force_add_relic("KIFUDA")
+    batch = g.rm.pending_deck_enchants
+    assert batch >= 2 and g.rm.pending_enchant_optional
+    view = g.act("select_cards", indices="0", keep_open=True)
+    assert not view.get("error"), view
+    assert g.rm.pending_deck_enchants == batch - 1
+    assert g.rm.pending_enchant_optional
+    view = g.act("select_cards", indices="0", keep_open=True)
+    assert not view.get("error"), view
+    view = g.act("skip_select")
+    assert not view.get("error"), view
+    assert g.rm.pending_deck_enchants == 0
 
 
 def test_set_player_grafts_a_loadout_without_on_obtain_hooks() -> None:

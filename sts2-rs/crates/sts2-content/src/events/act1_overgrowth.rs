@@ -30,7 +30,7 @@
 
 use sts2_core::{
     CardReward, EventId, EventOptionInfo, EventOutcome, EventVarSpec, PotionReward, RelicId,
-    RelicReward, Reward, RunState,
+    Reward, RunState,
 };
 
 use super::{allowed_act_1_or_2, default_option_info_from_spec, EventOptionSpec, EventSpec};
@@ -382,22 +382,18 @@ fn lose_gold_saturating(state: &mut RunState, amount: i32) {
 
 fn tea_master_bone_tea(state: &mut RunState) -> EventOutcome {
     lose_gold_saturating(state, TEA_MASTER_BONE_COST);
-    state.relic_rewards.push(RelicReward::new(RelicId::BoneTea));
+    state.grant_event_relic(RelicId::BoneTea);
     EventOutcome::finished("Paid 50g, gained Bone Tea relic.")
 }
 
 fn tea_master_ember_tea(state: &mut RunState) -> EventOutcome {
     lose_gold_saturating(state, TEA_MASTER_EMBER_COST);
-    state
-        .relic_rewards
-        .push(RelicReward::new(RelicId::EmberTea));
+    state.grant_event_relic(RelicId::EmberTea);
     EventOutcome::finished("Paid 150g, gained Ember Tea relic.")
 }
 
 fn tea_master_discourtesy(state: &mut RunState) -> EventOutcome {
-    state
-        .relic_rewards
-        .push(RelicReward::new(RelicId::TeaOfDiscourtesy));
+    state.grant_event_relic(RelicId::TeaOfDiscourtesy);
     EventOutcome::finished("Gained Tea of Discourtesy relic.")
 }
 

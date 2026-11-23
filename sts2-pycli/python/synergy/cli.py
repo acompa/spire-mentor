@@ -621,7 +621,7 @@ def _build_parser() -> argparse.ArgumentParser:
     eo.add_argument(
         "--build-ids",
         default="v0.107.1",
-        help="Comma-separated accepted build ids (default: v0.107.1).",
+        help="Comma-separated accepted build ids (default: v0.107.1, the human corpus's largest build slice, which past studies used; not the simulator's default build).",
     )
     eo.add_argument(
         "--n-boot",
@@ -734,7 +734,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ec.add_argument(
         "--build-ids",
         default="v0.107.1",
-        help="Comma-separated accepted build ids for the null (default: v0.107.1).",
+        help="Comma-separated accepted build ids for the null (default: v0.107.1, the human corpus's largest build slice, which past studies used; not the simulator's default build).",
     )
     ec.add_argument(
         "--character",
@@ -799,7 +799,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ea.add_argument(
         "--build-ids",
         default="v0.107.1",
-        help="Comma-separated accepted build ids (default: v0.107.1).",
+        help="Comma-separated accepted build ids (default: v0.107.1, the human corpus's largest build slice, which past studies used; not the simulator's default build).",
     )
     ea.add_argument(
         "--character",

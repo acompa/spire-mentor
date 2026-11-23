@@ -63,6 +63,9 @@ class RunIdentity:
     # The game build the run simulates (GH #801). Sources that predate the
     # field carry none and were all played on the default build.
     game_version: str = saves.LEGACY_GAME_VERSION
+    # The run's game mode (GH #1346). Sources without the field are standard
+    # runs: writers name it only off standard (Dread, Blitz).
+    game_mode: str = saves.STANDARD_GAME_MODE
 
     @classmethod
     def from_save(cls, payload: dict[str, Any]) -> RunIdentity:
@@ -75,6 +78,7 @@ class RunIdentity:
             act1=payload.get("act1", saves.DEFAULT_ACT1),
             run_mode=payload.get("run_mode", saves.UNKNOWN_RUN_MODE),
             game_version=payload.get("game_version") or saves.LEGACY_GAME_VERSION,
+            game_mode=payload.get("game_mode") or saves.STANDARD_GAME_MODE,
         )
 
     @classmethod
@@ -89,6 +93,7 @@ class RunIdentity:
             act1=ident["act1"],
             run_mode=ident["run_mode"],
             game_version=ident.get("game_version") or saves.LEGACY_GAME_VERSION,
+            game_mode=ident.get("game_mode") or saves.STANDARD_GAME_MODE,
         )
 
     def restore_attempts(self) -> list[bool]:
@@ -168,16 +173,20 @@ class LiveRuns:
         return self._loc_for(game_version)
 
     # -- the slot ------------------------------------------------------------
-    def new_session(self, backend: str, game_version: str | None = None) -> BranchingLiveSession:
-        """An unstarted session on *backend*; 400 for an unknown engine or a
-        build the engine cannot run. ``game_version=None`` is the session's
-        own default: the default build on the Rust engine, the process's
-        oracle build on the C# one."""
+    def new_session(
+        self, backend: str, game_version: str | None = None, game_mode: str | None = None
+    ) -> BranchingLiveSession:
+        """An unstarted session on *backend*; 400 for an unknown engine, a
+        build the engine cannot run, or a game mode that backend and build
+        cannot be (GH #1346). ``game_version=None`` is the session's own
+        default: the default build on the Rust engine, the process's oracle
+        build on the C# one. ``game_mode=None`` is a standard run."""
         try:
             sess = BranchingLiveSession(
                 logs_dir=self._logs_dir,
                 backend=backend,
                 game_version=game_version,
+                game_mode=game_mode,
             )
         except ValueError as exc:
             raise RestoreError(str(exc), status=400) from exc
@@ -214,9 +223,18 @@ class LiveRuns:
         act1: str,
         backend: str,
         game_version: str | None = None,
+        game_mode: str | None = None,
     ) -> dict[str, Any]:
-        """A fresh interactive run, replacing any current one."""
-        sess = self.new_session(backend, game_version)
+        """A fresh interactive run, replacing any current one. ``game_mode``
+        ``"dread"`` starts a Dread run (GH #1346): ascension is forced to 10.
+        ``"blitz"`` starts a Blitz run (GH #1347): ``ascension`` is the Blitz
+        level 0..5, and anything else is a 400."""
+        sess = self.new_session(backend, game_version, game_mode)
+        try:
+            saves.check_mode_ascension(sess.game_mode, ascension)
+        except ValueError as exc:
+            sess.discard()
+            raise RestoreError(str(exc), status=400) from exc
 
         def build() -> tuple[BranchingLiveSession, dict[str, Any]]:
             try:
@@ -285,7 +303,7 @@ class LiveRuns:
         failures: list[str] = []
         for run_mode in ident.restore_attempts():
             try:
-                sess = self.new_session(ident.backend, ident.game_version)
+                sess = self.new_session(ident.backend, ident.game_version, ident.game_mode)
             except RestoreError as exc:
                 # An unknown build (a save from a newer workbench) or a build
                 # the recording engine cannot run: no attempt can succeed.

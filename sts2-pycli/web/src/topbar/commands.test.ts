@@ -76,6 +76,19 @@ describe("buildCommands", () => {
     expect(ids).toContain("end-run");
   });
 
+  // GH #1347: in a Blitz fight only the fight's own AI answers. The run
+  // reviews ask run-level routes the server refuses there.
+  it("keeps the fight's commands and drops the run reviews when the AI is fight-only", () => {
+    const ids = buildCommands(ctx({ fightOnly: true })).map((c) => c.id);
+    expect(ids).toContain("search-tree");
+    expect(ids).toContain("coach-review");
+    expect(ids).not.toContain("regret-review");
+    expect(ids).not.toContain("run-review");
+    expect(ids).not.toContain("simlab-from-here");
+    const all = buildCommands(ctx()).map((c) => c.id);
+    expect(all).toEqual(expect.arrayContaining(["regret-review", "run-review", "simlab-from-here"]));
+  });
+
   it("hides SimLab-from-here in the static build (no /api/live/position)", () => {
     expect(byId(ctx({ staticMode: true }))["simlab-from-here"]).toBeUndefined();
   });

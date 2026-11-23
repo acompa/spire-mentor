@@ -5,7 +5,7 @@
 #   * python/champions.py            <- the loader
 #   * python/workbench/ppo_policy.py <- both inference backends
 #   * python/synergy/embed_geometry.py
-#   * packaging/SimAdvisor.spec      <- the shipped advisor exe
+#   * scripts/stage_advisor.py       <- the shipped SimAdvisor binary
 #   * sts2-rs/crates/sts2-runai/src/ppo/net.rs   (GENERATED region)
 #   * ./Dockerfile                               (GENERATED region)
 #

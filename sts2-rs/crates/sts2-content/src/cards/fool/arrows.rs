@@ -28,7 +28,10 @@ pub(crate) fn play_shot(state: &mut CombatState, t: Option<CreatureUid>) -> Effe
 pub(crate) fn play_rapid_shot(state: &mut CombatState, t: Option<CreatureUid>) -> EffectResult {
     let t = target(t, "RapidShot");
     let dmg = current_damage(state);
-    let hits = u32::try_from(var(state, 3, 4)).unwrap_or(0);
+    let hits = card_effects::resolving_card_attack_hits_u32(
+        state,
+        u32::try_from(var(state, 3, 4)).unwrap_or(0),
+    );
     let _ = fool::shoot_arrow_at_target(state, t, dmg, hits);
     EffectResult::Resolved
 }
@@ -39,7 +42,8 @@ pub(crate) fn play_repeat_shot(state: &mut CombatState, t: Option<CreatureUid>) 
     let x = card_effects::resolving_card_x_value(state);
     if x > 0 {
         let dmg = current_damage(state);
-        let _ = fool::shoot_arrow_at_target(state, t, dmg, u32::try_from(x).unwrap_or(0));
+        let hits = card_effects::resolving_card_attack_hits(state, x);
+        let _ = fool::shoot_arrow_at_target(state, t, dmg, u32::try_from(hits).unwrap_or(0));
     } else {
         // No AttackCommand at X == 0: the latched Vigor/Gigantification stay.
         fool::attack_skipped(state);
@@ -64,7 +68,10 @@ pub(crate) fn play_hobbling_shot(state: &mut CombatState, t: Option<CreatureUid>
 pub(crate) fn play_melodic_shot(state: &mut CombatState, t: Option<CreatureUid>) -> EffectResult {
     let t = target(t, "MelodicShot");
     let dmg = current_damage(state);
-    let hits = 1 + u32::try_from(fool::melodies_this_turn(state)).unwrap_or(0);
+    let hits = card_effects::resolving_card_attack_hits_u32(
+        state,
+        1 + u32::try_from(fool::melodies_this_turn(state)).unwrap_or(0),
+    );
     let _ = fool::shoot_arrow_at_target(state, t, dmg, hits);
     EffectResult::Resolved
 }

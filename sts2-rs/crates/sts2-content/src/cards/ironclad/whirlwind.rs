@@ -8,7 +8,7 @@ pub(crate) fn play_whirlwind(state: &mut CombatState, _t: Option<CreatureUid>) -
     // Bead `sts2-rs-eiqfp`: pull X off `card.energy_spent` (engine
     // stamps this on play). Reading `state.player.energy` here returns
     // 0 — the engine drained it before dispatch.
-    let x = current_energy_spent(state);
+    let x = sts2_core::card_effects::resolving_card_attack_hits(state, current_energy_spent(state));
     let dmg = current_damage(state);
     for _ in 0..x {
         deal_damage_all_enemies(state, dmg);

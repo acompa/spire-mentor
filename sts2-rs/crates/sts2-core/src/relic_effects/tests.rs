@@ -1915,15 +1915,14 @@ fn multiple_listeners_all_invoked() {
 /// that lets `BingBong`-style listeners self-filter on
 /// `BingBongDuplicate` to break recursion. The bus does NOT
 /// enforce re-entry on the [`CombatState`] body — the guard lives
-/// on the future `BingBong` relic body in the umbrella retrofit
-/// `sts2-rs-01o`. This test pins the convention: an
-/// `add_to_master_deck(.., Reward)` followed by
+/// on the `BingBong` listener itself. This test pins the
+/// convention: an `add_to_master_deck(.., Reward)` followed by
 /// `duplicate_last_added_card()` produces exactly 2 dispatches,
 /// the second carrying `AddSource::BingBongDuplicate`, with the
 /// deck growing by exactly 2 (no implicit recursion).
 ///
-/// TODO `sts2-rs-01o`: replace with a real `BingBong`
-/// duplicate-then-skip integration test once the relic body lands.
+/// The real `BingBong` listener is covered by the
+/// `listener_bing_bong_*` tests in `sts2-content` `relics/event_reward.rs`.
 #[test]
 #[serial_test::serial(global_registry)]
 fn re_entry_guard_stable() {
@@ -9279,6 +9278,7 @@ fn push_card_of_type(
         card_type,
         target_type: TargetType::None,
         upgraded: false,
+        extra_upgrades: 0,
         base_damage: 0,
         base_block: 0,
         combat_vars: crate::cards::CombatVars::new(),
@@ -9425,6 +9425,28 @@ macro_rules! relic_listener_resolves {
             );
         }
     };
+}
+
+/// C# `Hook.AfterCombatVictory` (Hook.cs:496-508, v0.111.0) walks every
+/// listener's `AfterCombatVictoryEarly` before any `AfterCombatVictory`.
+/// Meat on the Bone is the one Early listener (MeatOnTheBone.cs:47), so it
+/// reads the HP the fight ended on, before Burning Blood's 6: at 33/74 the
+/// game heals 12 then 6. The single walk healed 6 first, which lifted the
+/// player over the half and skipped the 12 (Spire Bench seed 170000078).
+#[test]
+fn meat_on_the_bone_reads_hp_before_burning_blood_heals() {
+    ensure_installed();
+    let mut state = fresh_state_with_player(74, 33);
+    give_player_relic(&mut state, RelicKind::BurningBlood);
+    give_player_relic(&mut state, RelicKind::MeatOnTheBone);
+    let _ = dispatch_after_combat_victory(&mut state);
+    let uid = state.player.creature_uid.expect("player creature");
+    let hp = state
+        .creatures
+        .iter()
+        .find(|c| c.id == uid.0)
+        .map(|c| c.current_hp);
+    assert_eq!(hp, Some(51));
 }
 
 relic_listener_resolves!(

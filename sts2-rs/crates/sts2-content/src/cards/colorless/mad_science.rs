@@ -55,11 +55,14 @@ pub(crate) fn play_mad_science(
         }
         // Attack (default) — and any non-Skill/Power fallback.
         _ => {
-            let hits = if rider == TinkerTimeRider::Violence {
-                3
-            } else {
-                1
-            };
+            let hits = sts2_core::card_effects::resolving_card_attack_hits(
+                state,
+                if rider == TinkerTimeRider::Violence {
+                    3
+                } else {
+                    1
+                },
+            );
             // v0.107.1 issues one `DamageCmd.Attack` PER hit
             // (`MadScience.cs:216-225`), so each hit is its own command:
             // Vigor/Gigantification boost the first and are spent by its

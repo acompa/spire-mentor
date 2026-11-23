@@ -84,14 +84,50 @@ class TestTrainedSurfacesPlayOn:
         assert "hand_back" not in advice
 
 
+class TestCrystalSphere:
+    """The sphere is played by `crystal_sphere_policy` (the digger), not a
+    net, so it needs no run-policy head and does not hand back."""
+
+    def test_the_capability_is_advertised(self) -> None:
+        assert ra.ADVISOR_CAPABILITIES["crystal_sphere"] == 1
+        assert "crystal_sphere" in ra.SCREEN_ADVICE_FOR
+
+    def test_crystal_sphere_screen_advice_names_a_cell(self) -> None:
+        cells = [(x, y) for x in range(2, 9) for y in range(2, 9)]
+        options: list[dict[str, Any]] = [
+            {"index": i, "action": "divine_cell", "x": x, "y": y, "enabled": True}
+            for i, (x, y) in enumerate(cells)
+        ]
+        state = {
+            "type": "crystal_sphere",
+            "options": options,
+            "divinations_left": 3,
+            "divinations_total": 3,
+            "revealed": [],
+            "run_state": _RUN_STATE,
+        }
+        advice = ra.compute_screen_advice(state, "crystal_sphere", _StubPolicies(None, "none"))
+        assert "hand_back" not in advice
+        best = advice["best"]
+        assert best["action"] == "choose"
+        assert options[best["index"]]["action"] == "divine_cell"
+        x, y = options[best["index"]]["x"], options[best["index"]]["y"]
+        assert best["label"] == f"reveal cell ({x},{y})"
+        assert advice["policy"] == "crystal_sphere_digger"
+
+    def test_nothing_to_choose_hands_back(self) -> None:
+        state = {"type": "crystal_sphere", "options": [{"label": "Cell (0,0)"}]}
+        advice = ra.compute_screen_advice(state, "crystal_sphere", _StubPolicies(None, "none"))
+        assert advice["hand_back"] == "the crystal sphere has nothing to choose"
+        assert "best" not in advice
+
+
 class TestUncoveredSurfacesHandBack:
     def test_a_surface_with_no_head_hands_back(self) -> None:
-        # The crystal sphere has no builder (GH #872): the unranked answer
-        # still names a pick for unattended runs, and says it is not one.
-        state = {"type": "crystal_sphere", "options": [{"label": "Cell (0,0)"}]}
-        advice = ra.compute_screen_advice(
-            state, "crystal_sphere", _StubPolicies(_StubPolicy([1.0]))
-        )
+        # A surface with no builder: the unranked answer still names a pick
+        # for unattended runs, and says it is not one.
+        state = {"type": "widget", "options": [{"label": "Knob"}]}
+        advice = ra.compute_screen_advice(state, "widget", _StubPolicies(_StubPolicy([1.0])))
         assert advice["hand_back"]
         assert advice["best"]["index"] == 0, "unattended runs still need something to play"
 
@@ -160,8 +196,8 @@ class TestUnrankedIsCountedPerRun:
     def test_each_trigger_is_logged_and_counted(self, caplog: pytest.LogCaptureFixture) -> None:
         caplog.set_level("WARNING", logger=ra.logger.name)
         ra.compute_screen_advice(
-            {"type": "crystal_sphere", "options": [{"label": "Cell (0,0)"}]},
-            "crystal_sphere",
+            {"type": "widget", "options": [{"label": "Knob"}]},
+            "widget",
             _StubPolicies(_StubPolicy([1.0])),
         )
         failing = _StubPolicy([], raises=RuntimeError("budget exceeded"))
@@ -169,7 +205,7 @@ class TestUnrankedIsCountedPerRun:
         ra.compute_screen_advice(_rest_site(), "rest_site", _StubPolicies(failing))
 
         assert _climb_counter()(caplog.text) == {
-            "no_head:crystal_sphere": 1,
+            "no_head:widget": 1,
             "inference_failed": 2,
         }
 

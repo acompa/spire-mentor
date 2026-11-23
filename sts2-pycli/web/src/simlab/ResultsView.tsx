@@ -7,6 +7,7 @@ import { BoxChart, type BoxSeries } from "./BoxChart";
 import { seriesLabels, oneIn } from "./chartData";
 import { card, td, th } from "./styles";
 import { ProgressBar, ThroughputSummary } from "./widgets";
+import { t } from "../i18n";
 
 // ---------------------------------------------------------------------------
 // ResultsView
@@ -21,7 +22,7 @@ interface ParsedKey {
 
 /** Cell label: a sweep from a position has no encounter — say what it is. */
 function cellLabel(enc: string, asc: string): string {
-  return enc === "imported" ? `position @ A${asc}` : `${enc} @ A${asc}`;
+  return enc === "imported" ? `${t("position")} @ A${asc}` : `${enc} @ A${asc}`;
 }
 
 function parseKey(key: string): ParsedKey | null {
@@ -232,7 +233,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
                 x: bucket.mean_dmg,
                 yref: "paper" as const,
                 y: 1,
-                text: "mean",
+                text: t("mean"),
                 showarrow: false,
                 font: { size: 9, color },
                 yanchor: "bottom" as const,
@@ -241,7 +242,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
                 x: bucket.mode_dmg,
                 yref: "paper" as const,
                 y: 0.94,
-                text: "mode",
+                text: t("mode"),
                 showarrow: false,
                 font: { size: 9, color },
                 yanchor: "bottom" as const,
@@ -257,7 +258,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
           strategy,
           // When the sweep has a single deck, deck part is "" — fall back to a
           // generic x-category so the boxes still render.
-          deck: deck || "deck",
+          deck: deck || t("deck"),
           color,
           q1: bucket.box.q1,
           median: bucket.box.median,
@@ -307,12 +308,12 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
   }, [decksInResults]);
 
   const title = name ?? id;
-  if (err) return <div style={{ ...card, color: "var(--bad, #d66)" }}>Error: {err}</div>;
-  if (!status) return <div style={card}>Loading…</div>;
+  if (err) return <div style={{ ...card, color: "var(--bad, #d66)" }}>{t("Error: {err}", { err })}</div>;
+  if (!status) return <div style={card}>{t("Loading…")}</div>;
   if (status.status === "error")
     return (
       <div style={{ ...card, color: "var(--bad, #d66)" }}>
-        <strong>{title}</strong> — sweep failed: {status.error}
+        <strong>{title}</strong> — {t("sweep failed: {err}", { err: status.error ?? "" })}
       </div>
     );
   // "cancelled" carries partial results, so it falls through to the results
@@ -332,12 +333,12 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
         <strong style={{ whiteSpace: "nowrap" }}>{title}</strong>
         <ProgressBar done={status.done} total={status.total} width={200} />
         <span style={{ color: "var(--muted)", fontSize: 13, whiteSpace: "nowrap" }}>
-          {status.total ? `${status.done ?? 0}/${status.total}` : "running…"}
+          {status.total ? `${status.done ?? 0}/${status.total}` : t("running…")}
         </span>
         {status.combats_per_s !== undefined && (
           <span style={{ color: "var(--accent)", fontSize: 13, whiteSpace: "nowrap" }}>
-            {status.combats_per_s.toFixed(1)} combat/s
-            {status.jobs ? ` · ${status.jobs} workers` : ""}
+            {t("{n} combat/s", { n: status.combats_per_s.toFixed(1) })}
+            {status.jobs ? ` · ${t("{n} workers", { n: status.jobs })}` : ""}
           </span>
         )}
         {status.status === "running" && (
@@ -357,7 +358,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
               whiteSpace: "nowrap",
             }}
           >
-            {stopping ? "stopping…" : "Stop"}
+            {stopping ? t("stopping…") : t("Stop")}
           </button>
         )}
       </div>
@@ -377,13 +378,13 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
           }}
         >
           <span>⊘</span>
-          cancelled — partial results
-          {status.total ? ` (${status.done ?? 0}/${status.total} combats)` : ""}
+          {t("cancelled — partial results")}
+          {status.total ? ` ${t("({done}/{total} combats)", { done: status.done ?? 0, total: status.total })}` : ""}
         </div>
       )}
       <div style={{ ...card, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <label>
-          Baseline strategy:{" "}
+          {t("Baseline strategy:")}{" "}
           <select
             value={baselineDeck ? "" : baseline ?? ""}
             onChange={(e) => {
@@ -392,7 +393,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
               setBaseline(e.target.value || null);
             }}
           >
-            <option value="">(none)</option>
+            <option value="">{t("(none)")}</option>
             {strategiesInResults.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -402,7 +403,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
         </label>
         {multiDeck && (
           <label>
-            Baseline deck:{" "}
+            {t("Baseline deck:")}{" "}
             <select
               value={baselineDeck ?? ""}
               onChange={(e) => {
@@ -412,7 +413,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
                 if (v) setBaseline(null);
               }}
             >
-              <option value="">(none)</option>
+              <option value="">{t("(none)")}</option>
               {decksInResults.map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -423,7 +424,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
         )}
         {results && results.errors_total > 0 && (
           <span style={{ color: "var(--bad, #d66)" }}>
-            {results.errors_total} run error(s)
+            {t("{n} run error(s)", { n: results.errors_total })}
           </span>
         )}
         {results && <ThroughputSummary results={results} status={status} />}
@@ -434,13 +435,13 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
       {cells.length > 0 && (
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", marginBottom: 12 }}>
           <button type="button" style={tabButton(tab === "dist")} onClick={() => setTab("dist")}>
-            Distribution
+            {t("Distribution")}
           </button>
           <button type="button" style={tabButton(tab === "cdf")} onClick={() => setTab("cdf")}>
             CDF
           </button>
           <button type="button" style={tabButton(tab === "box")} onClick={() => setTab("box")}>
-            Box plot
+            {t("Box plot")}
           </button>
         </div>
       )}
@@ -461,18 +462,18 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
             <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ ...th, textAlign: "left" }}>strategy</th>
+                  <th style={{ ...th, textAlign: "left" }}>{t("strategy")}</th>
                   <th style={th}>n</th>
-                  <th style={th}>mean</th>
-                  <th style={th}>median</th>
-                  <th style={th}>mode</th>
+                  <th style={th}>{t("mean")}</th>
+                  <th style={th}>{t("median")}</th>
+                  <th style={th}>{t("mode")}</th>
                   <th style={th}>p95</th>
-                  <th style={th}>max</th>
-                  <th style={th}>worst</th>
-                  <th style={th}>win%</th>
-                  <th style={th}>turns</th>
-                  <th style={th}>errors</th>
-                  <th style={th}>Δ vs base</th>
+                  <th style={th}>{t("max")}</th>
+                  <th style={th}>{t("worst")}</th>
+                  <th style={th}>{t("win%")}</th>
+                  <th style={th}>{t("turns")}</th>
+                  <th style={th}>{t("errors")}</th>
+                  <th style={th}>{t("Δ vs base")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -484,7 +485,7 @@ export default function ResultsView({ id, name }: { id: string; name?: string })
                     <tr key={key}>
                       <td style={{ ...td, textAlign: "left" }}>
                         {label}
-                        {isBase ? " (base)" : ""}
+                        {isBase ? ` ${t("(base)")}` : ""}
                       </td>
                       <td style={td}>{bucket.n}</td>
                       <td style={td}>{fmt(bucket.mean_dmg)}</td>

@@ -40,7 +40,7 @@ import realgame_ppo
 import sts2_rs
 
 #: Surfaces the Rust port covers, i.e. `_PPO_NONCOMBAT_BUILDERS`' keys.
-SURFACES = tuple(realgame_ppo._PPO_NONCOMBAT_BUILDERS)
+SURFACES = (*realgame_ppo._PPO_NONCOMBAT_BUILDERS, "card_select")
 
 #: Obs keys the two sides are allowed to differ on, with the reason. Keep this
 #: EMPTY unless a difference is provably unobservable to the encoder -- an
@@ -186,6 +186,11 @@ def _diff(py_obj: Any, rs_obj: Any, path: str = "$") -> list[str]:
 def compare_row(state: dict[str, Any], surface: str) -> list[str]:
     """Diff one recorded decision through both builders."""
     builder = realgame_ppo._PPO_NONCOMBAT_BUILDERS.get(surface)
+    if surface == "card_select":
+        # The advisor's call: the screen's own prompt names the surface.
+        def builder(st: dict[str, Any]) -> Any:
+            return realgame_ppo._build_card_select(st, None)
+
     if builder is None:
         return []
     try:
@@ -193,7 +198,11 @@ def compare_row(state: dict[str, Any], surface: str) -> list[str]:
     except Exception as exc:  # the Python side is the reference; a throw is a finding
         return [f"python builder raised: {type(exc).__name__}: {exc}"]
     rs_decision = sts2_rs.ppo_wire_obs(state, surface)
+    return compare_decisions(py_decision, rs_decision)
 
+
+def compare_decisions(py_decision: Any, rs_decision: dict[str, Any] | None) -> list[str]:
+    """Diff a Python builder's decision against ``sts2_rs.ppo_wire_obs``'s."""
     if py_decision is None or rs_decision is None:
         if (py_decision is None) != (rs_decision is None):
             return [
@@ -208,11 +217,17 @@ def compare_row(state: dict[str, Any], surface: str) -> list[str]:
             "obs": normalize_shop(merged_python_obs(py_decision)),
             "responses": py_decision.responses,
             "labels": py_decision.labels,
+            "source_note": py_decision.source_note,
+            "pick_count": py_decision.pick_count,
+            "optional_room": py_decision.optional_room,
         },
         {
             "obs": normalize_shop(rs_decision["obs"]),
             "responses": rs_decision["responses"],
             "labels": rs_decision["labels"],
+            "source_note": rs_decision["source_note"],
+            "pick_count": rs_decision["pick_count"],
+            "optional_room": rs_decision["optional_room"],
         },
     )
 

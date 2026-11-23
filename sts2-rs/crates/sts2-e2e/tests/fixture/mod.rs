@@ -25,18 +25,24 @@ fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default())
 }
 
-/// `E2E_WEIGHTS`, default `~/runs/e2e-wb/export/ironclad_e2e_d5250_ema0999.e2ew`.
+/// `E2E_WEIGHTS`, default the shipped net (`sts2-pycli/data/e2e/`; the
+/// default fixtures are recorded with it).
 pub fn weights_path() -> PathBuf {
     std::env::var_os("E2E_WEIGHTS").map_or_else(
-        || home().join("runs/e2e-wb/export/ironclad_e2e_d5250_ema0999.e2ew"),
+        || {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../sts2-pycli/data/e2e/allchar_e2e_d2500_ema0999.e2ew")
+        },
         PathBuf::from,
     )
 }
 
-/// `E2E_FIXTURES`, default `~/runs/e2e-wb/fixtures`.
+/// `E2E_FIXTURES`, default `~/runs/e2e-wb/fixtures-allchar-d2500`.
 pub fn fixtures_dir() -> PathBuf {
-    std::env::var_os("E2E_FIXTURES")
-        .map_or_else(|| home().join("runs/e2e-wb/fixtures"), PathBuf::from)
+    std::env::var_os("E2E_FIXTURES").map_or_else(
+        || home().join("runs/e2e-wb/fixtures-allchar-d2500"),
+        PathBuf::from,
+    )
 }
 
 /// Every `*.jsonl.gz` under `dir`, sorted.

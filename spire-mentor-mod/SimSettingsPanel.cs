@@ -118,10 +118,10 @@ internal sealed class SimSettingsPanel
 
             var title = new HBoxContainer();
             title.AddThemeConstantOverride("separation", 8);
-            Label titleLabel = SimUiKit.SmallLabel("Spire Mentor settings", Colors.White, 16);
+            Label titleLabel = SimUiKit.SmallLabel(L10n.T("Spire Mentor settings"), Colors.White, 16);
             titleLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             title.AddChild(titleLabel);
-            title.AddChild(SimUiKit.MakeButton("✕", "Close", Toggle));
+            title.AddChild(SimUiKit.MakeButton("✕", L10n.T("Close"), Toggle));
             outer.AddChild(title);
 
             var scroll = new ScrollContainer
@@ -148,7 +148,7 @@ internal sealed class SimSettingsPanel
             };
             advanced.AddThemeConstantOverride("separation", 4);
             Button advancedToggle = SimUiKit.MakeButton(AdvancedLabel(false),
-                "Advisor command, workbench URL and other backend settings", ToggleAdvanced);
+                L10n.T("Advisor command, workbench URL and other backend settings"), ToggleAdvanced);
             advancedToggle.Alignment = HorizontalAlignment.Left;
 
             if (SpireMentorModConfig.BuildLiveRowsInto(rows, advanced))
@@ -162,8 +162,7 @@ internal sealed class SimSettingsPanel
                 // that ever breaks, say where the working page is instead of
                 // rendering an empty dialog.
                 rows.AddChild(SimUiKit.SmallLabel(
-                    "Settings UI unavailable (see godot.log).\n" +
-                    "Use Options → Mod Configuration at the main menu instead.",
+                    L10n.T("Settings UI unavailable (see godot.log).\nUse Options → Mod Configuration at the main menu instead."),
                     new Color(1f, 0.75f, 0.6f)));
             }
 
@@ -192,7 +191,7 @@ internal sealed class SimSettingsPanel
         }
     }
 
-    private static string AdvancedLabel(bool open) => open ? "▾ Advanced" : "▸ Advanced";
+    private static string AdvancedLabel(bool open) => open ? L10n.T("▾ Advanced") : L10n.T("▸ Advanced");
 
     private void ToggleAdvanced()
     {

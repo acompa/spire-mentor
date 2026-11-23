@@ -202,8 +202,8 @@ internal static class SimAiPartnerLobby
             Logger.Log("[SimAiPartnerLobby] The lobby has no Invite tile to copy; no AI-partner tiles.");
             return null;
         }
-        Control add = CopyTile(list, inviteTile, AddName, AddText, () => OnAdd(container));
-        Control remove = CopyTile(list, inviteTile, RemoveName, RemoveText, () => OnRemove(container));
+        Control add = CopyTile(list, inviteTile, AddName, L10n.T(AddText), () => OnAdd(container));
+        Control remove = CopyTile(list, inviteTile, RemoveName, L10n.T(RemoveText), () => OnRemove(container));
         Logger.Log("[SimAiPartnerLobby] Added the AI-partner tiles to the lobby.");
         return (add, remove);
     }

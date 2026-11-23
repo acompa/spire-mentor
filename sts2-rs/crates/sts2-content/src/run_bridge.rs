@@ -63,7 +63,7 @@ use sts2_core::monsters::MonsterKind;
 use sts2_core::runstate::RunState;
 use sts2_core::{CombatState, Creature, CreatureUid, IntentHistory, MonsterId};
 
-use crate::monster_dispatch::{build_ai_for_version, MonsterSpawnArgs, SpawnPosition};
+use crate::monster_dispatch::{build_ai_for_mode, MonsterSpawnArgs, SpawnPosition};
 
 /// Build a fresh combat from `rs` + `encounter`.
 ///
@@ -140,6 +140,7 @@ pub fn build_event_combat(
         EventEncounter::FakeMerchant => {
             vec![(MonsterKind::FakeMerchantMonster, MonsterSpawnArgs::None)]
         }
+        EventEncounter::PunchOff => punch_off_roster(rs),
         EventEncounter::DenseVegetation => [Slot::First, Slot::Second, Slot::Third, Slot::Fourth]
             .into_iter()
             .map(|slot| {
@@ -155,17 +156,22 @@ pub fn build_event_combat(
     // these creatures' HP when its room was entered
     // (`EventId::combat_layout_monsters`) and the fight reuses them, so roll
     // on a copy and leave the run's niche cursor where entry left it.
+    let combat_ascension = rs.combat_ascension();
     let mut prerolled = rs.rng.niche.clone();
-    let niche = if matches!(req.encounter, EventEncounter::MysteriousKnight) {
+    let niche = if matches!(
+        req.encounter,
+        EventEncounter::MysteriousKnight | EventEncounter::PunchOff
+    ) {
         &mut prerolled
     } else {
         &mut rs.rng.niche
     };
-    let hps = sts2_core::monsters::roll_unique_max_hps_for(
+    let hps = sts2_core::monsters::roll_unique_max_hps_in(
         &kinds,
         niche,
-        rs.ascension_level,
+        combat_ascension,
         rs.game_version,
+        rs.game_mode,
     );
     let roster: Vec<(MonsterKind, MonsterSpawnArgs, i32)> = members
         .into_iter()
@@ -173,6 +179,36 @@ pub fn build_event_combat(
         .map(|((kind, args), hp)| (kind, args, hp))
         .collect();
     enter_combat_from_roster(rs, &roster, RoomType::Monster)
+}
+
+/// `PunchOffEventEncounter.GenerateMonsters`: two `PunchConstruct`s, the
+/// first opening on FAST_PUNCH, each `StartingHpReduction =
+/// Rng.NextInt(2, 10)` (2..=9) off the encounter's own `Rng`, first construct
+/// first. The event builds them when its Combat-layout room is entered
+/// (`EventCombatSynchronizer.GenerateInternalCombatState`), so the stream is
+/// seeded like a map fight's at this room's floor
+/// (`run_callbacks::build_combat_for_room`: `named_at(total_floor +
+/// act_index, id)`), and the Fight that reuses them replays the same draws.
+fn punch_off_roster(rs: &RunState) -> Vec<(MonsterKind, MonsterSpawnArgs)> {
+    let mut rng = rs.rng.named_at(
+        i64::from(rs.total_floor + i32::from(rs.act_index)),
+        "PUNCH_OFF_EVENT_ENCOUNTER",
+    );
+    let mut reduction = || u8::try_from(rng.next_int_exclusive(2, 10)).unwrap_or(2);
+    let first = reduction();
+    let second = reduction();
+    [(true, first), (false, second)]
+        .into_iter()
+        .map(|(starts_with_fast_punch, starting_hp_reduction)| {
+            (
+                MonsterKind::PunchConstruct,
+                MonsterSpawnArgs::PunchConstruct {
+                    starts_with_fast_punch,
+                    starting_hp_reduction,
+                },
+            )
+        })
+        .collect()
 }
 
 #[must_use]
@@ -213,7 +249,8 @@ pub fn spawn_position(index: usize, len: usize) -> SpawnPosition {
 
 /// Spawn a resolved `roster` of `(kind, spawn_args, max_hp)` triples into
 /// `state` as its enemies, in roster order: each monster's AI is built from
-/// its spawn args and [`spawn_position`] at `state.ascension`, then every
+/// its spawn args and [`spawn_position`] at `state.ascension`,
+/// `state.game_version` and `state.game_mode`, then every
 /// monster's on-spawn powers are applied
 /// ([`CombatState::apply_creature_spawn_buffs`]). Returns the new enemies'
 /// uids in roster order.
@@ -258,12 +295,13 @@ pub fn spawn_roster(
             monster_id: MonsterId(python_name(kind)),
             intent: None,
             intent_history: IntentHistory::default(),
-            ai: Some(build_ai_for_version(
+            ai: Some(build_ai_for_mode(
                 kind,
                 args,
                 spawn_position(i, n),
                 state.ascension,
                 state.game_version,
+                state.game_mode,
             )),
         });
         let uid = CreatureUid(id);
@@ -275,6 +313,20 @@ pub fn spawn_roster(
     }
     for &uid in &uids {
         state.apply_creature_spawn_buffs(uid);
+    }
+    // C# `PunchConstruct.AfterAddedToRoom` (PunchConstruct.cs:71-79): after
+    // its Artifact, a PunchOff construct drops `StartingHpReduction` current
+    // HP, never below 1; max HP stays.
+    for (&uid, &(_, args, _)) in uids.iter().zip(roster) {
+        if let MonsterSpawnArgs::PunchConstruct {
+            starting_hp_reduction,
+            ..
+        } = args
+        {
+            if let Some(c) = state.creatures.iter_mut().find(|c| c.id == uid.0) {
+                c.current_hp = (c.current_hp - i32::from(starting_hp_reduction)).max(1);
+            }
+        }
     }
     uids
 }
@@ -318,6 +370,22 @@ pub fn enter_combat_from_roster_in_slots(
     member_slots: &[u8],
     room_type: sts2_core::runstate::RoomType,
 ) -> CombatState {
+    enter_combat_from_roster_for_encounter(rs, roster, member_slots, room_type, false)
+}
+
+/// [`enter_combat_from_roster_in_slots`] for a known encounter:
+/// `encounter_is_weak` is its C# `EncounterModel.IsWeak`
+/// ([`sts2_core::run_room_gen::encounter_is_weak`]), which a Dread combat
+/// under `WaterfallGiantDominion` reads for its Explosive amount
+/// (`WaterfallGiantDominion.cs:44-59`, GH #1346). It changes nothing else.
+#[must_use]
+pub fn enter_combat_from_roster_for_encounter(
+    rs: &RunState,
+    roster: &[(MonsterKind, MonsterSpawnArgs, i32)],
+    member_slots: &[u8],
+    room_type: sts2_core::runstate::RoomType,
+    encounter_is_weak: bool,
+) -> CombatState {
     use sts2_core::runstate::RoomType;
     // Carry the run's ascension level into combat so monster HP
     // (ToughEnemies, >= A8) and attack damage (DeadlyEnemies, >= A9)
@@ -340,13 +408,19 @@ pub fn enter_combat_from_roster_in_slots(
     // RNG, no C# analog) is seeded deterministically from the run's master
     // seed to match the combat-parity builder (`sts2-py` lib.rs).
     let mut state = CombatState {
-        ascension: rs.ascension_level,
+        // What the fight thresholds: the run's level, or in Blitz the
+        // ToughEnemies / DeadlyEnemies part of its level set (GH #1347).
+        ascension: rs.combat_ascension(),
         // The run's game build rides into combat beside ascension (GH #787).
         game_version: rs.game_version,
+        // So does its game mode (GH #1346).
+        game_mode: rs.game_mode,
         // No C# analog; seeded from the master seed as-is (a `uint` in
         // v0.107.1, so `from_seed` == the old `Rng::new(seed as i32)`).
         rng: sts2_core::dotnet_rng::Rng::from_seed(rs.rng.seed),
         run_rng: rs.rng.clone(),
+        // Agent mode plays the game's real turn-start screens (GH #1642).
+        interactive_turn_start_picks: rs.has_agent_decisions(),
         ..CombatState::default()
     };
 
@@ -520,14 +594,48 @@ pub fn enter_combat_from_roster_in_slots(
     // StoneCracker boss draw-pile-upgrade.
     state.is_elite = room_type == RoomType::Elite;
     state.is_boss = room_type == RoomType::Boss;
+    // GH #1346: the Dread dominion acts on every combat of the act but the
+    // act's boss fights (`DreadRunModel.BeforeRoomEntered` clears it there).
+    state.dominion = if room_type == RoomType::Boss {
+        None
+    } else {
+        rs.act_dominion()
+    };
+    // `start_combat` keeps this note across its log reset; only a dominion
+    // reads it.
+    state.combat_log.dread_weak_encounter = encounter_is_weak && state.dominion.is_some();
 
     let _ = sts2_core::combat_loop::start_combat(&mut state);
+    // v0.113.0 Wuppy: its `BeforeCombatStart` summon (inside `start_combat`)
+    // gives the pet a placeholder max HP, because the relic's saved `MaxHp`
+    // is run state the combat does not carry; set the real one here
+    // (`Wuppy.SummonPet` → `CreatureCmd.SetMaxHp(pet, MaxHp)`, which clamps
+    // the current HP).
+    set_wuppy_max_hp(&mut state, rs);
     // `start_combat` resets the combat log, so the summon clamp
     // (`FurCoat.AfterCreatureAddedToCombat`) is armed after it.
     state.combat_log.fur_coat_one_hp = fur_coat_room;
     let _ = sts2_core::combat_loop::start_player_turn(&mut state);
 
     state
+}
+
+/// Give a summoned Wuppy pet the run's saved `MaxHp`
+/// ([`RunState::wuppy_max_hp`]), clamping its current HP to it. No-op without
+/// a Wuppy in the fight.
+fn set_wuppy_max_hp(state: &mut CombatState, rs: &RunState) {
+    let max_hp = rs.wuppy_max_hp();
+    let Some(pet) = state
+        .creatures
+        .iter_mut()
+        .find(|c| c.species == Some(MonsterKind::Wuppy))
+    else {
+        return;
+    };
+    pet.max_hp = max_hp;
+    pet.current_hp = pet.current_hp.min(max_hp);
+    let hp = pet.current_hp;
+    sts2_core::combat_loop::sync_wuppy_relic_counter(state, hp);
 }
 
 /// `true` when the room being entered is one of Fur Coat's marked map points
@@ -726,7 +834,9 @@ pub fn exit_combat(rs: &mut RunState, combat: &CombatState) {
     // and GH #604 wired its `HeistPower` gold-back below).
     // Follow-up; the base formula below is what actually runs.
     let total_monsters = combat.enemy_uids.len();
-    rs.last_combat_gold_proportion = if total_monsters == 0 {
+    rs.last_combat_gold_proportion = if let Some(p) = gremlin_merc_proportion(combat) {
+        p
+    } else if total_monsters == 0 {
         1.0
     } else {
         1.0 - f64::from(combat.escaped_creatures) / total_monsters as f64
@@ -1196,6 +1306,32 @@ fn python_name(kind: MonsterKind) -> &'static str {
     kind.python_name()
 }
 
+/// The Gremlin Merc fight's gold proportion (C#
+/// `GremlinMercNormal.CalculateGoldProportion`), `None` for any other fight.
+/// The merc appears in that encounter only. Its Thievery counters are the
+/// gold `SurprisePower.AfterDeath` sums for `MarkGoldStolen`; a fled
+/// creature's last move is its escape (GH #1766).
+fn gremlin_merc_proportion(combat: &CombatState) -> Option<f64> {
+    use sts2_core::MonsterKind;
+    if !combat
+        .creatures
+        .iter()
+        .any(|c| c.species == Some(MonsterKind::GremlinMerc))
+    {
+        return None;
+    }
+    let fat_fled = combat.creatures.iter().any(|c| {
+        c.species == Some(MonsterKind::FatGremlin)
+            && c.current_hp <= 0
+            && c.intent_history.last_kind == Some(sts2_core::monsters::IntentKindTag::Escape)
+    });
+    let stolen = combat
+        .powers
+        .iter()
+        .any(|p| p.kind == sts2_core::PowerKind::Thievery && p.counter > 0);
+    Some(gremlin_merc_gold_proportion(fat_fled, stolen))
+}
+
 /// v0.107.1 `GremlinMercNormal.CalculateGoldProportion`
 /// (`GremlinMercNormal.cs:50-68`): the per-encounter override of the base
 /// `1 - escaped/total` gold-reward proportion.
@@ -1205,13 +1341,7 @@ fn python_name(kind: MonsterKind) -> &'static str {
 ///   formula previously gave 0% here).
 /// - FatGremlin escaped WITH stolen gold ⇒ `0.0`.
 ///
-/// Captured as a pure helper so the v0.107.1 value is documented and tested.
-/// It is NOT yet wired into [`after_combat`]'s proportion calc. The death-spawn
-/// half of the trigger IS now modeled (`SurprisePower.AfterDeath` →
-/// `monsters::act1_underdocks::surprise_after_death_spawn`, bead
-/// `sts2-rs-surprise-death-spawn`), so a FatGremlin can spawn and flee; what is
-/// still missing is a per-creature escape record and the `ThieveryPower.Steal`
-/// accumulation that `MarkGoldStolen` keys off. Bead `…wb8lk.12`.
+/// Read at `exit_combat` through [`gremlin_merc_proportion`] (GH #1766).
 #[must_use]
 pub fn gremlin_merc_gold_proportion(fat_gremlin_escaped: bool, gold_was_stolen: bool) -> f64 {
     if !fat_gremlin_escaped {
@@ -1285,6 +1415,17 @@ mod tests {
         let state = enter_combat(&rs, encounter);
         assert_eq!(state.phase, sts2_core::CombatPhase::PlayerPlayPhase);
         assert!(state.round >= 1, "start_combat sets round=1");
+    }
+
+    /// GH #1642: agent mode's combats play the real turn-start screens;
+    /// parity mode's do not.
+    #[test]
+    fn enter_combat_carries_agent_mode_turn_start_picks() {
+        let mut rs = fresh_run();
+        let encounter = select_first(act1_normal_pool());
+        assert!(!enter_combat(&rs, encounter).interactive_turn_start_picks);
+        rs.set_agent_decisions();
+        assert!(enter_combat(&rs, encounter).interactive_turn_start_picks);
     }
 
     /// GitHub issue #215 regression: against TheInsatiable, with the Sandpit
@@ -1626,6 +1767,106 @@ mod tests {
         let normal = enter_combat_from_roster(&fresh_run(), &roster, RoomType::Monster);
         assert!(!normal.is_elite, "Monster room leaves is_elite false");
         assert!(!normal.is_boss, "Monster room leaves is_boss false");
+    }
+
+    /// GH #1346: `WaterfallGiantDominion.GetExplosiveAmount`
+    /// (`WaterfallGiantDominion.cs:44-59`) reads `encounter.IsWeak`, which
+    /// the run layer hands the combat: Explosive 4 in a weak solo encounter,
+    /// 5 in a normal one, on top of the monster's own start powers
+    /// (`AfterRoomEntered` precedes `AfterAddedToRoom`), and nothing in the
+    /// act's boss fight.
+    #[test]
+    fn a_dread_combat_knows_a_weak_encounter() {
+        use sts2_core::run_room_gen::{encounter_is_weak, GeneratedActRooms};
+        use sts2_core::runstate::RoomType;
+        use sts2_core::{GameMode, PowerKind};
+
+        assert!(encounter_is_weak("SEAPUNK_WEAK"));
+        assert!(!encounter_is_weak("CULTISTS_NORMAL"));
+        assert!(!encounter_is_weak("WATERFALL_GIANT_BOSS"));
+
+        let roster = [(MonsterKind::Seapunk, MonsterSpawnArgs::None, 44)];
+        let mut rs = fresh_run();
+        rs.game_mode = GameMode::Dread;
+        rs.game_version = sts2_core::GameVersion::V0_113_0;
+        rs.act_index = 1;
+        rs.generated_rooms = vec![GeneratedActRooms {
+            boss_id: "WATERFALL_GIANT_BOSS",
+            ..GeneratedActRooms::default()
+        }];
+        let explosive = |room, weak| {
+            let c = enter_combat_from_roster_for_encounter(&rs, &roster, &[], room, weak);
+            let enemy = &c.creatures[1];
+            enemy
+                .powers
+                .iter()
+                .filter_map(|p| c.powers.get_by_id(p.0))
+                .map(|p| (p.kind, p.amount))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            explosive(RoomType::Monster, true),
+            [(PowerKind::Explosive, 4)]
+        );
+        assert_eq!(
+            explosive(RoomType::Monster, false),
+            [(PowerKind::Explosive, 5)]
+        );
+        assert_eq!(
+            explosive(RoomType::Elite, false),
+            [(PowerKind::Explosive, 7)]
+        );
+        assert_eq!(explosive(RoomType::Boss, false), []);
+    }
+
+    /// GH #1346: a Dread run's combats carry the mode and the act's dominion
+    /// (C# `new CombatState(..., runState.Dominion)`, `Rooms/CombatRoom.cs:
+    /// 83-87`), taken from the act's boss, or its second boss when it has one
+    /// (`DreadRunModel.ApplyCurrentDominion`). `DreadRunModel.
+    /// BeforeRoomEntered` removes it for the act's boss fights, which stay
+    /// Dread fights (`AscensionHelper.IsDread()`).
+    #[test]
+    fn a_dread_combat_carries_the_acts_dominion_except_at_the_boss() {
+        use sts2_core::run_room_gen::GeneratedActRooms;
+        use sts2_core::runstate::RoomType;
+        use sts2_core::{Dominion, GameMode};
+
+        let roster = [(MonsterKind::FuzzyWurmCrawler, MonsterSpawnArgs::None, 57)];
+        let act = |boss_id, second_boss_id| GeneratedActRooms {
+            boss_id,
+            second_boss_id,
+            ..GeneratedActRooms::default()
+        };
+        let mut rs = fresh_run();
+        rs.game_mode = GameMode::Dread;
+        rs.generated_rooms = vec![
+            act("VANTOM_BOSS", None),
+            act("KAISER_CRAB_BOSS", None),
+            act("QUEEN_BOSS", Some("TEST_SUBJECT_BOSS")),
+        ];
+
+        rs.act_index = 1;
+        for room in [RoomType::Monster, RoomType::Elite] {
+            let c = enter_combat_from_roster(&rs, &roster, room);
+            assert_eq!(c.game_mode, GameMode::Dread);
+            assert_eq!(c.dominion, Some(Dominion::Vantom), "{room:?}");
+        }
+        let boss = enter_combat_from_roster(&rs, &roster, RoomType::Boss);
+        assert_eq!(boss.game_mode, GameMode::Dread, "still a Dread fight");
+        assert_eq!(boss.dominion, None, "removed on entering the act's boss");
+
+        rs.act_index = 3;
+        let c = enter_combat_from_roster(&rs, &roster, RoomType::Monster);
+        assert_eq!(
+            c.dominion,
+            Some(Dominion::TestSubject),
+            "the second boss's dominion"
+        );
+
+        // A standard run has neither.
+        rs.game_mode = GameMode::Standard;
+        let c = enter_combat_from_roster(&rs, &roster, RoomType::Monster);
+        assert_eq!((c.game_mode, c.dominion), (GameMode::Standard, None));
     }
 
     #[test]
@@ -2837,6 +3078,44 @@ mod tests {
         assert_eq!(after, before[1..].to_vec());
         let stashed: Vec<_> = rs.pending_swipe_returns.iter().map(|c| c.card_id).collect();
         assert_eq!(stashed, vec![victim]);
+    }
+
+    /// GH #1766: a FatGremlin that fled with the merc's stolen gold leaves
+    /// the fight no gold reward.
+    #[test]
+    fn a_fat_gremlin_fled_with_stolen_gold_leaves_no_gold() {
+        use sts2_core::MonsterKind;
+        let mut rs = fresh_run();
+        let mut combat = enter_combat(&rs, select_first(act1_normal_pool()));
+        let merc = combat.spawn_enemy(MonsterKind::GremlinMerc);
+        sts2_core::card_effects::apply_power_to_creature(
+            &mut combat,
+            merc,
+            sts2_core::PowerKind::Thievery,
+            20,
+        );
+        for p in &mut combat.powers {
+            if p.kind == sts2_core::PowerKind::Thievery {
+                p.counter = 15;
+            }
+        }
+        let fat = combat.spawn_enemy(MonsterKind::FatGremlin);
+        for c in &mut combat.creatures {
+            if c.id == merc.0 {
+                c.current_hp = 0;
+            }
+            if c.id == fat.0 {
+                c.intent_history.record(sts2_core::Intent::Escape);
+                c.current_hp = 0;
+            }
+        }
+        combat.escaped_creatures = 1;
+        exit_combat(&mut rs, &combat);
+        assert!(
+            rs.last_combat_gold_proportion.abs() < 1e-9,
+            "got {}",
+            rs.last_combat_gold_proportion
+        );
     }
 
     #[test]

@@ -1,0 +1,157 @@
+{
+ "available": true,
+ "caveats": [
+  "The outlook score is the AI's shaped-return estimate of the run — a relative signal, not a win percentage.",
+  "A swing mixes your choice with the luck revealed after it (what the shop stocked, what the reward offered, how the fight rolled) — use “verify” to check whether the choice itself mattered.",
+  "Judgments are relative to the AI's own play style; a line that is weak for the AI may still be fine for a human plan."
+ ],
+ "points": [
+  {
+   "act": 1,
+   "decision": "event_choice",
+   "delta_prev": 0.0,
+   "floor": 1,
+   "idx": 0,
+   "node_id": null,
+   "taken_label": "Choose: Booming Conch",
+   "value": 0.9999
+  },
+  {
+   "act": 1,
+   "decision": "map_select",
+   "delta_prev": -0.0014,
+   "floor": 1,
+   "idx": 1,
+   "node_id": null,
+   "taken_label": "Map → (2,1)",
+   "value": 0.9985
+  },
+  {
+   "act": 1,
+   "decision": "card_reward",
+   "delta_prev": -0.0378,
+   "floor": 2,
+   "idx": 20,
+   "node_id": null,
+   "taken_label": "Take Snakebite",
+   "value": 0.9607
+  },
+  {
+   "act": 1,
+   "decision": "shop",
+   "delta_prev": -0.0004,
+   "floor": 3,
+   "idx": 22,
+   "node_id": null,
+   "taken_label": "Buy Finisher",
+   "value": 0.9603
+  },
+  {
+   "act": 1,
+   "decision": "event_choice",
+   "delta_prev": -0.073,
+   "floor": 4,
+   "idx": 25,
+   "node_id": null,
+   "taken_label": "Choose: Grab the Sword",
+   "value": 0.8873
+  },
+  {
+   "act": 1,
+   "decision": "card_reward",
+   "delta_prev": -0.0873,
+   "floor": 5,
+   "idx": 47,
+   "node_id": null,
+   "taken_label": "Take Reflex",
+   "value": 0.8001
+  },
+  {
+   "act": 1,
+   "decision": "map_select",
+   "delta_prev": -0.0284,
+   "floor": 5,
+   "idx": 48,
+   "node_id": null,
+   "taken_label": "Map → (2,5)",
+   "value": 0.7717
+  },
+  {
+   "act": 1,
+   "decision": "card_reward",
+   "delta_prev": -0.1008,
+   "floor": 6,
+   "idx": 69,
+   "node_id": null,
+   "taken_label": "Take Deadly Poison",
+   "value": 0.6709
+  },
+  {
+   "act": 1,
+   "decision": "rest_site",
+   "delta_prev": 0.026,
+   "floor": 7,
+   "idx": 71,
+   "node_id": null,
+   "taken_label": "Choose: Smith",
+   "value": 0.6969
+  },
+  {
+   "act": 1,
+   "decision": "card_select",
+   "delta_prev": 0.0015,
+   "floor": 7,
+   "idx": 72,
+   "node_id": null,
+   "taken_label": "Upgrade Strike",
+   "value": 0.6985
+  }
+ ],
+ "summary": {
+  "biggest_drop": -0.1008,
+  "biggest_gain": 0.026,
+  "final_value": 0.6985,
+  "first_value": 0.9999,
+  "n_points": 10,
+  "n_turning_points": 3,
+  "won": false
+ },
+ "turning_points": [
+  {
+   "act": 1,
+   "decision": "map_select",
+   "floor": 5,
+   "idx": 48,
+   "message": "floor 5 (map_select): after “Map → (2,5)” your outlook dropped -0.101 (0.772 → 0.671) (spans the fight that followed)",
+   "node_id": null,
+   "swing": -0.1008,
+   "taken_label": "Map → (2,5)",
+   "value_after": 0.6709,
+   "value_before": 0.7717
+  },
+  {
+   "act": 1,
+   "decision": "event_choice",
+   "floor": 4,
+   "idx": 25,
+   "message": "floor 4 (event_choice): after “Choose: Grab the Sword” your outlook dropped -0.087 (0.887 → 0.800) (spans the fight that followed)",
+   "node_id": null,
+   "swing": -0.0873,
+   "taken_label": "Choose: Grab the Sword",
+   "value_after": 0.8001,
+   "value_before": 0.8873
+  },
+  {
+   "act": 1,
+   "decision": "shop",
+   "floor": 3,
+   "idx": 22,
+   "message": "floor 3 (shop): after “Buy Finisher” your outlook dropped -0.073 (0.960 → 0.887) (spans the fight that followed)",
+   "node_id": null,
+   "swing": -0.073,
+   "taken_label": "Buy Finisher",
+   "value_after": 0.8873,
+   "value_before": 0.9603
+  }
+ ]
+}

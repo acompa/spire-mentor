@@ -8,7 +8,8 @@ import ResultsView from "./ResultsView";
 import StudiesForm from "./StudiesForm";
 import { decodeHash, emptyPosition, encodeHash, formatPosition, sweepFromSearch, type Position } from "./position";
 import { usePanelChoice } from "../panelPrefs";
-import { LEGACY_GAME_VERSION, NO_VERSION_PICK, effectiveGameVersion, gameVersionBody, gameVersionLabel } from "../gameVersion";
+import { LEGACY_GAME_VERSION, NO_VERSION_PICK, effectiveGameVersion, gameVersionBody, gameVersionLabel, pickerVersions } from "../gameVersion";
+import { t } from "../i18n";
 
 // The distribution sweeps run on both hosts since GH #707 (the wasm steps
 // them between requests); the flag stays so a host could switch them off
@@ -155,7 +156,7 @@ export default function App() {
         setPosition(b.position);
         if (b.notes.length) say(b.notes.join(" "));
       } catch (e) {
-        say(`could not build that fight: ${(e as Error).message ?? e}`);
+        say(t("could not build that fight: {err}", { err: String((e as Error).message ?? e) }));
       } finally {
         setBusy(false);
       }
@@ -182,9 +183,9 @@ export default function App() {
       try {
         const r = await api.importPosition(text);
         setPosition(r.position);
-        say(`loaded a ${r.source} paste${r.notes.length ? ": " + r.notes.join(" ") : ""}`);
+        say(t("loaded a {source} paste", { source: r.source }) + (r.notes.length ? ": " + r.notes.join(" ") : ""));
       } catch (e) {
-        say(`could not read that paste: ${(e as Error).message ?? e}`);
+        say(t("could not read that paste: {err}", { err: String((e as Error).message ?? e) }));
       } finally {
         setBusy(false);
       }
@@ -198,9 +199,9 @@ export default function App() {
       const text = what === "link" ? `${window.location.origin}${window.location.pathname}#${encodeHash(position)}` : formatPosition(position);
       try {
         await navigator.clipboard.writeText(text);
-        say(what === "link" ? "link copied" : "position JSON copied");
+        say(what === "link" ? t("link copied") : t("position JSON copied"));
       } catch {
-        say("clipboard is not available here — copy from the Position JSON box");
+        say(t("clipboard is not available here — copy from the Position JSON box"));
       }
     },
     [position, say],
@@ -212,36 +213,36 @@ export default function App() {
     <div className="sl-app">
       <div className="sl-header">
         <h1>SimLab</h1>
-        <a href="/" title="Back to the STS2 Workbench">
-          ← Workbench
+        <a href="/" title={t("Back to the STS2 Workbench")}>
+          ← {t("Workbench")}
         </a>
         <div className="sl-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === "sandbox"} onClick={() => setTab("sandbox")}>
-            Sandbox
+            {t("Sandbox")}
           </button>
           {SWEEPS_ENABLED && (
             <button type="button" role="tab" aria-selected={tab === "studies"} onClick={() => setTab("studies")}>
-              Studies
+              {t("Studies")}
             </button>
           )}
         </div>
         <div className="sl-header-right">
           {flash && <span className="sl-muted">{flash}</span>}
-          {gameVersions && gameVersions.length > 1 && (
-            <select aria-label="game version" value={shownVersion} onChange={(e) => onGameVersion(e.target.value)}
-              title="the game build this fight plays (the workbench run launcher's pick)">
-              {gameVersions.map((v) => (
+          {gameVersions && pickerVersions(gameVersions, shownVersion).length > 1 && (
+            <select aria-label={t("game version")} value={shownVersion} onChange={(e) => onGameVersion(e.target.value)}
+              title={t("the game build this fight plays (the workbench run launcher's pick)")}>
+              {pickerVersions(gameVersions, shownVersion).map((v) => (
                 <option key={v} value={v}>{gameVersionLabel(v)}</option>
               ))}
             </select>
           )}
           {tab === "sandbox" && position && (
             <>
-              <button type="button" onClick={() => copy("link")} title="a link that opens SimLab on this exact position">
-                Copy link
+              <button type="button" onClick={() => copy("link")} title={t("a link that opens SimLab on this exact position")}>
+                {t("Copy link")}
               </button>
-              <button type="button" onClick={() => copy("json")} title="the position as JSON">
-                Copy JSON
+              <button type="button" onClick={() => copy("json")} title={t("the position as JSON")}>
+                {t("Copy JSON")}
               </button>
             </>
           )}
@@ -257,7 +258,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="sl-panel sl-muted">Dealing a fight…</div>
+          <div className="sl-panel sl-muted">{t("Dealing a fight…")}</div>
         ))}
       {tab === "studies" && SWEEPS_ENABLED && <StudiesForm onSubmitted={onSubmitted} />}
 

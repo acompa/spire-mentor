@@ -13,6 +13,7 @@ Tests that read the vendored localization tables (real names such as
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -70,8 +71,8 @@ def test_ids_become_words(raw: str, shown: str) -> None:
         "run-policy net · V=+0.25",
         "Shrug It Off",
         "Strike → Jaw Worm #2",
-        r"no Instinct net at C:\data\e2e\ironclad_e2e_d5250_ema0999.e2ew",
-        "data/e2e/ironclad_e2e_d5250_ema0999.e2ew",
+        r"no Instinct net at C:\data\e2e\allchar_e2e_d2500_ema0999.e2ew",
+        "data/e2e/allchar_e2e_d2500_ema0999.e2ew",
     ],
 )
 def test_display_text_is_left_alone(prose: str) -> None:
@@ -317,3 +318,51 @@ def test_coach_records_are_guarded_recursively() -> None:
     assert out["items"][1]["record"]["played"]["label"] == "Some New Relic"
     # Machine fields are not display text.
     assert out["id"] == "autopsy:RUN_1"
+
+
+_GOLDENS = sorted((Path(__file__).parent / "fixtures" / "advisor_replay").glob("*.jsonl.gz"))
+
+
+def _leaky_advice() -> list[tuple[dict[str, Any], str | None, dict[str, Any] | None]]:
+    state = {"options": [{"label": "SHRUG_IT_OFF"}, {"name": "remove:BASH"}]}
+    advice = {
+        "note": "remove:STRIKE_IRONCLAD via leave_shop, NOT MCTS",
+        "hand_back": "SOME_NEW_RELIC",
+        "instinct_unavailable": "CARD.BASH.title missing",
+        "pv": ["BASH → JAW_WORM", 3, None],
+        "options": [{"label": "SHRUG_IT_OFF"}, {"label": 7}, "x"],
+        "plan": [{"label": "card_select of DEMON_FORM+"}],
+        "best": {"label": "SHRUG_IT_OFF"},
+    }
+    return [
+        (advice, surface, s) for surface in (None, "card_reward", "shop") for s in (None, state)
+    ]
+
+
+def test_the_native_guard_matches_this_one() -> None:
+    """``sts2_rs.DisplayNames.sanitize_advice`` / ``sanitize_coach`` (the
+    native advisor's guard) rewrite exactly what this module's walk does, on
+    every reply the golden corpus holds and on advice leaking ids everywhere."""
+    import copy
+    import gzip
+    import json
+
+    rust = dn._names()
+    cases = _leaky_advice()
+    coach: list[Any] = []
+    for golden in _GOLDENS:
+        with gzip.open(golden, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                row = json.loads(line)
+                if isinstance(row.get("advice"), dict):
+                    cases.append((row["advice"], None, None))
+                if "coach" in row:
+                    coach.append(row["coach"])
+    for advice, surface, state in cases:
+        expected = dn.sanitize_advice(copy.deepcopy(advice), surface, state)
+        assert rust.sanitize_advice(advice, surface, state) == expected
+    coach.append(
+        {"you": ["SOME_NEW_CARD → JAW_WORM", 1], "context": {"hand": ["leave_shop"]}, "id": "X_Y"}
+    )
+    for record in coach:
+        assert rust.sanitize_coach(record) == dn.sanitize_coach(copy.deepcopy(record))

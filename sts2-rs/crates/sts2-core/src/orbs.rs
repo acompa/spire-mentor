@@ -134,7 +134,7 @@ pub const MAX_ORB_SLOTS: usize = 10;
 
 /// Per-player orb slot collection. Inline-sized to [`ORB_SLOTS_INLINE`]
 /// so the common 3..6 slot range avoids the heap.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct OrbSlots {
     /// Active orbs in channel order (front = oldest). `Empty` entries
     /// represent exposed-but-unfilled slots; the FIFO `channel` path
@@ -152,6 +152,24 @@ pub struct OrbSlots {
     /// emptied: C# `OrbQueue.TryEnqueue` fails at `Capacity == 0`, so a
     /// channel there loses the orb, and `OrbCmd.AddSlots` stacks on 0.
     pub sized: bool,
+}
+
+/// Hand-written so the `Copy` orb slots clone in one bulk copy
+/// ([`crate::clone_copy_sv`]) rather than smallvec's element-wise `Extend`.
+impl Clone for OrbSlots {
+    #[inline]
+    fn clone(&self) -> Self {
+        let Self {
+            slots,
+            capacity,
+            sized,
+        } = self;
+        Self {
+            slots: crate::clone_copy_sv(slots),
+            capacity: *capacity,
+            sized: *sized,
+        }
+    }
 }
 
 impl Default for OrbSlots {
@@ -953,6 +971,12 @@ pub fn trigger_first_orb_passive_n(state: &mut CombatState, times: u32) {
 /// fire; Dark accumulates damage; Plasma is inert; Focus enters
 /// additively for the damage / block / stored amounts.
 pub fn passive_tick(state: &mut CombatState) {
+    // No orb, no passive: an `Empty` slot does nothing below and is never the
+    // GoldPlatedCables front, and everything read before the walk (Focus, the
+    // relic) is a pure read. Skips the snapshot on every orb-less turn end.
+    if state.player.orbs.slots.iter().all(Orb::is_empty) {
+        return;
+    }
     let focus = focus_bonus(state);
     // Take a snapshot of orb kinds so we can mutate `state.player.orbs`
     // (Dark stored amount) without borrow-checker pain mid-iter.

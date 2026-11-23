@@ -7,6 +7,7 @@ import { assetUrl } from "../api";
 import SpineSprite from "./SpineSprite";
 import { characterArt, characterKey } from "../characters";
 import "../skins/rest.css";
+import { t } from "../i18n";
 
 /** Per-region campfire scene layers under `rooms/rest_sites/<region>/`.
  *  File names are NOT uniform across regions (bg vs 00, l_log vs llog vs
@@ -137,7 +138,7 @@ export default function RestSite({ step, onChoose }: { step: Step; onChoose?: Ch
       ref={sceneRef}
       className="gs-rest gs-scene"
       role="group"
-      aria-label="Rest site"
+      aria-label={t("Rest site")}
       style={
         {
           "--gs-scene-bg": `url(${layer(scene.bg)})`,
@@ -176,13 +177,13 @@ export default function RestSite({ step, onChoose }: { step: Step; onChoose?: Ch
       </div>
 
       <div className="gs-rest-content">
-        <h2 className="gs-rest-prompt">What shall I do?</h2>
+        <h2 className="gs-rest-prompt">{t("What shall I do?")}</h2>
         <div className="gs-rest-options">
           {options.map((o) => {
             const locked = o.is_enabled === false;
             const disabled = locked || !onChoose;
             const taken = o.index === chosenIdx;
-            const name = o.name ?? o.option_id ?? `Option ${o.index}`;
+            const name = o.name ?? o.option_id ?? t("Option {n}", { n: o.index });
             const rawId = (o.option_id ?? "").toLowerCase();
             const id = OPTION_ART_ALIAS[rawId] ?? rawId;
             const art = id && !artFailed[id]
@@ -203,7 +204,7 @@ export default function RestSite({ step, onChoose }: { step: Step; onChoose?: Ch
                 className={cls}
                 disabled={disabled}
                 aria-label={name}
-                title={taken ? `${name} — chosen in this run` : name}
+                title={taken ? t("{name} — chosen in this run", { name }) : name}
                 onClick={() => onChoose?.("choose_option", { option_index: o.index })}
               >
                 <MarkBadge mark={mark} />
@@ -237,7 +238,7 @@ export default function RestSite({ step, onChoose }: { step: Step; onChoose?: Ch
               </button>
             );
           })}
-          {options.length === 0 && <span className="gs-rest-empty">no rest options</span>}
+          {options.length === 0 && <span className="gs-rest-empty">{t("no rest options")}</span>}
         </div>
       </div>
     </div>

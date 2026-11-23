@@ -169,6 +169,40 @@ impl Reader<'_> {
     }
 }
 
+/// The display-only head of an encoded `$.fool_state`, for consumers that
+/// hold the wire JSON but no `CombatState` (the workbench combat view).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ArrowView {
+    /// Every arrow slot in gain order: 0 = Retrieved, 1 = Away, 2 = Destroyed.
+    pub arrows: Vec<i64>,
+    /// `(encounter index, arrows stuck in it)` per impaled enemy.
+    pub impaled: Vec<(i64, i64)>,
+}
+
+/// Read the arrow slots and the impaled roster off `words`. `None` on an
+/// unknown format or a truncated head.
+#[must_use]
+pub fn arrow_view(words: &[i64]) -> Option<ArrowView> {
+    let mut r = Reader { words, at: 0 };
+    if r.next().ok()? != FORMAT {
+        return None;
+    }
+    let mut v = ArrowView::default();
+    for _ in 0..r.int::<usize>().ok()? {
+        v.arrows.push(r.next().ok()?);
+        r.next().ok()?;
+    }
+    for _ in 0..r.int::<usize>().ok()? {
+        let i = r.next().ok()?;
+        let n = r.int::<usize>().ok()?;
+        for _ in 0..n {
+            r.next().ok()?;
+        }
+        v.impaled.push((i, i64::try_from(n).ok()?));
+    }
+    Some(v)
+}
+
 /// Decode `words` against the rebuilt `state`'s piles and roster.
 ///
 /// # Errors

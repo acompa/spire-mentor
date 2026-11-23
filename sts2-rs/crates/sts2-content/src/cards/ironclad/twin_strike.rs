@@ -8,8 +8,9 @@ pub(crate) fn play_twin_strike(
 ) -> EffectResult {
     let t = target.expect("TwinStrike: Enemy-targeted");
     let dmg = current_damage(state);
-    let _ = deal_damage_player_to_enemy(state, t, dmg);
-    let _ = deal_damage_player_to_enemy(state, t, dmg);
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
+        let _ = deal_damage_player_to_enemy(state, t, dmg);
+    }
     EffectResult::Resolved
 }
 

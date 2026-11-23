@@ -1,0 +1,3694 @@
+{
+ "enchantments": {
+  "ADROIT": {
+   "description": "Gain [blue]{Block:diff()}[/blue] [gold]Block[/gold].",
+   "extra": "Gain {Block:diff()} [gold]Block[/gold].",
+   "image": "enchantments/adroit.png",
+   "show_amount": true,
+   "title": "Adroit"
+  },
+  "CLONE": {
+   "description": "This card can be duplicated at [gold]Rest Sites[/gold].",
+   "extra": null,
+   "image": "enchantments/clone.png",
+   "show_amount": false,
+   "title": "Clone"
+  },
+  "CORRUPTED": {
+   "description": "Deal [blue]50%[/blue] more damage, but lose [blue]2[/blue] HP.",
+   "extra": "Lose 2 HP.",
+   "image": "enchantments/corrupted.png",
+   "show_amount": false,
+   "title": "Corrupted"
+  },
+  "GLAM": {
+   "description": "This card has [gold]Replay[/gold] once per combat.",
+   "extra": null,
+   "image": "enchantments/glam.png",
+   "show_amount": false,
+   "title": "Glam"
+  },
+  "GOOPY": {
+   "description": "This card gains [gold]Exhaust[/gold]. When played, permanently increase this card's [gold]Block[/gold] by [blue]1[/blue].",
+   "extra": "Permanently increase this card's [gold]Block[/gold] by [blue]1[/blue].",
+   "image": "enchantments/goopy.png",
+   "show_amount": false,
+   "title": "Goopy"
+  },
+  "IMBUED": {
+   "description": "This card is played automatically at the start of each combat.",
+   "extra": "Imbued.",
+   "image": "enchantments/imbued.png",
+   "show_amount": false,
+   "title": "Imbued"
+  },
+  "INKY": {
+   "description": "This card deals [blue]{Damage}[/blue] additional damage and applies [blue]{WeakPower}[/blue] [gold]Weak[/gold].",
+   "extra": "Apply [blue]{WeakPower}[/blue] [gold]Weak[/gold]{TargetType:choose(AllEnemies): to ALL enemies|}.",
+   "image": "enchantments/inky.png",
+   "show_amount": false,
+   "title": "Inky"
+  },
+  "INSTINCT": {
+   "description": "This card's attack damage is doubled.",
+   "extra": null,
+   "image": "enchantments/instinct.png",
+   "show_amount": false,
+   "title": "Instinct"
+  },
+  "MOMENTUM": {
+   "description": "Increase this card's attack damage by [blue]{Amount}[/blue] this combat when played.",
+   "extra": "Increase this card's damage by {Amount} this combat.",
+   "image": "enchantments/momentum.png",
+   "show_amount": true,
+   "title": "Momentum"
+  },
+  "NIMBLE": {
+   "description": "Increases [gold]Block[/gold] gained from this card by [blue]{Amount}[/blue].",
+   "extra": null,
+   "image": "enchantments/nimble.png",
+   "show_amount": true,
+   "title": "Nimble"
+  },
+  "PERFECT_FIT": {
+   "description": "Whenever this would be shuffled into your [gold]Draw Pile[/gold], place it on the top instead.",
+   "extra": "Perfect Fit.",
+   "image": "enchantments/perfect_fit.png",
+   "show_amount": false,
+   "title": "Perfect Fit"
+  },
+  "ROYALLY_APPROVED": {
+   "description": "This card has [gold]Innate[/gold] and [gold]Retain[/gold].",
+   "extra": null,
+   "image": "enchantments/royally_approved.png",
+   "show_amount": false,
+   "title": "Royally Approved"
+  },
+  "SHARP": {
+   "description": "Increases damage on this card by [blue]{Amount}[/blue].",
+   "extra": null,
+   "image": "enchantments/sharp.png",
+   "show_amount": true,
+   "title": "Sharp"
+  },
+  "SLITHER": {
+   "description": "When you draw this card, randomize its cost from [blue]0[/blue] to [blue]3[/blue].",
+   "extra": null,
+   "image": "enchantments/slither.png",
+   "show_amount": false,
+   "title": "Slither"
+  },
+  "SLUMBERING_ESSENCE": {
+   "description": "If this card is in your hand at the end of turn, reduce its cost by [blue]1[/blue] until it is played.",
+   "extra": null,
+   "image": "enchantments/slumbering_essence.png",
+   "show_amount": false,
+   "title": "Slumbering Essence"
+  },
+  "SOULS_POWER": {
+   "description": "This card loses [gold]Exhaust[/gold].",
+   "extra": null,
+   "image": "enchantments/souls_power.png",
+   "show_amount": false,
+   "title": "Soul's Power"
+  },
+  "SOWN": {
+   "description": "The first time you play this card each combat, gain {Amount:energyIcons()}.",
+   "extra": "Gain {Amount:energyIcons()}.",
+   "image": "enchantments/sown.png",
+   "show_amount": false,
+   "title": "Sown"
+  },
+  "SPIRAL": {
+   "description": "This card gains [gold]Replay[/gold] [blue]1[/blue].",
+   "extra": null,
+   "image": "enchantments/spiral.png",
+   "show_amount": false,
+   "title": "Spiral"
+  },
+  "STEADY": {
+   "description": "This card gains [gold]Retain[/gold].",
+   "extra": null,
+   "image": "enchantments/steady.png",
+   "show_amount": false,
+   "title": "Steady"
+  },
+  "SWIFT": {
+   "description": "The first time you play this card, draw [blue]{Amount}[/blue] {Amount:plural:card|cards}.",
+   "extra": "Draw {Amount} {Amount:plural:card|cards} the first time this is played.",
+   "image": "enchantments/swift.png",
+   "show_amount": true,
+   "title": "Swift"
+  },
+  "TEZCATARAS_EMBER": {
+   "description": "Costs [blue]0[/blue], deals [blue]{Damage}[/blue] additional damage, and gains [gold]Eternal[/gold].",
+   "extra": null,
+   "image": "enchantments/tezcataras_ember.png",
+   "show_amount": false,
+   "title": "Tezcatara's Ember"
+  },
+  "VIGOROUS": {
+   "description": "The first time this card is played, it deals [blue]{Amount}[/blue] additional damage.",
+   "extra": null,
+   "image": "enchantments/vigorous.png",
+   "show_amount": true,
+   "title": "Vigorous"
+  }
+ },
+ "keywords": {
+  "ETERNAL": {
+   "description": "Cannot be removed or transformed from your [gold]Deck[/gold].",
+   "title": "Eternal"
+  },
+  "ETHEREAL": {
+   "description": "If this card is in your [gold]Hand[/gold] at the end of this turn, it is [gold]Exhausted[/gold].",
+   "title": "Ethereal"
+  },
+  "EXHAUST": {
+   "description": "Removed until the end of combat.",
+   "title": "Exhaust"
+  },
+  "INNATE": {
+   "description": "Start each combat with this card in your [gold]Hand[/gold].",
+   "title": "Innate"
+  },
+  "RETAIN": {
+   "description": "Retained cards are not discarded at the end of turn.",
+   "title": "Retain"
+  },
+  "SLY": {
+   "description": "If this card is discarded from your [gold]Hand[/gold] before the end of your turn, play it for free.",
+   "title": "Sly"
+  },
+  "UNPLAYABLE": {
+   "description": "Unplayable cards cannot be played.",
+   "title": "Unplayable"
+  }
+ },
+ "potions": {
+  "ASHWATER": {
+   "description": "[gold]Exhaust[/gold] any number of cards in your [gold]Hand[/gold].",
+   "image": "potion_atlas/ashwater.png",
+   "title": "Ashwater"
+  },
+  "ATTACK_POTION": {
+   "description": "Choose [blue]1[/blue] of [blue]3[/blue] random Attack cards to add into your [gold]Hand[/gold]. It's free to play this turn.",
+   "image": "potion_atlas/attack_potion.png",
+   "title": "Attack Potion"
+  },
+  "BEETLE_JUICE": {
+   "description": "Enemy's attacks deal [blue]30%[/blue] less damage for the next [blue]4[/blue] turns.",
+   "image": "potion_atlas/beetle_juice.png",
+   "title": "Beetle Juice"
+  },
+  "BLESSING_OF_THE_FORGE": {
+   "description": "[gold]Upgrade[/gold] all cards in your [gold]Hand[/gold] for the rest of combat.",
+   "image": "potion_atlas/blessing_of_the_forge.png",
+   "title": "Blessing of the Forge"
+  },
+  "BLOCK_POTION": {
+   "description": "Gain [blue]12[/blue] [gold]Block[/gold].",
+   "image": "potion_atlas/block_potion.png",
+   "title": "Block Potion"
+  },
+  "BLOOD_POTION": {
+   "description": "Heal for [green]20%[/green] of your Max HP.",
+   "image": "potion_atlas/blood_potion.png",
+   "title": "Blood Potion"
+  },
+  "BONE_BREW": {
+   "description": "[gold]Summon[/gold] [blue]15[/blue].",
+   "image": "potion_atlas/bone_brew.png",
+   "title": "Bone Brew"
+  },
+  "BOTTLED_POTENTIAL": {
+   "description": "Shuffle ALL your cards into your [gold]Draw Pile[/gold]. Draw [blue]5[/blue] cards.",
+   "image": "potion_atlas/bottled_potential.png",
+   "title": "Bottled Potential"
+  },
+  "CLARITY": {
+   "description": "Draw [blue]1[/blue] card. At the start of your next [blue]3[/blue] turns, draw [blue]1[/blue] additional card.",
+   "image": "potion_atlas/clarity.png",
+   "title": "Clarity Extract"
+  },
+  "COLORLESS_POTION": {
+   "description": "Choose [blue]1[/blue] of [blue]3[/blue] random Colorless cards to add into your [gold]Hand[/gold]. It's free to play this turn.",
+   "image": "potion_atlas/colorless_potion.png",
+   "title": "Colorless Potion"
+  },
+  "COSMIC_CONCOCTION": {
+   "description": "Add [blue]3[/blue] [gold]Upgraded[/gold] Colorless cards into your [gold]Hand[/gold].",
+   "image": "potion_atlas/cosmic_concoction.png",
+   "title": "Cosmic Concoction"
+  },
+  "CUNNING_POTION": {
+   "description": "Add [blue]3[/blue] [gold]Upgraded Shivs[/gold] into your [gold]Hand[/gold].",
+   "image": "potion_atlas/cunning_potion.png",
+   "title": "Cunning Potion"
+  },
+  "CURE_ALL": {
+   "description": "Gain 1 Energy. Draw [blue]2[/blue] cards.",
+   "image": "potion_atlas/cure_all.png",
+   "title": "Cure All"
+  },
+  "DEXTERITY_POTION": {
+   "description": "Gain [blue]2[/blue] [gold]Dexterity[/gold].",
+   "image": "potion_atlas/dexterity_potion.png",
+   "title": "Dexterity Potion"
+  },
+  "DISTILLED_CHAOS": {
+   "description": "Play the top [blue]3[/blue] cards of your [gold]Draw Pile[/gold].",
+   "image": "potion_atlas/distilled_chaos.png",
+   "title": "Distilled Chaos"
+  },
+  "DROPLET_OF_PRECOGNITION": {
+   "description": "Choose a card in your [gold]Draw Pile[/gold] and add it into your [gold]Hand[/gold].",
+   "image": "potion_atlas/droplet_of_precognition.png",
+   "title": "Droplet of Precognition"
+  },
+  "DUPLICATOR": {
+   "description": "This turn, your next card is played an extra time.",
+   "image": "potion_atlas/duplicator.png",
+   "title": "Duplicator"
+  },
+  "ENERGY_POTION": {
+   "description": "Gain 2 Energy.",
+   "image": "potion_atlas/energy_potion.png",
+   "title": "Energy Potion"
+  },
+  "ENTROPIC_BREW": {
+   "description": "Fill all your empty potion slots with random potions.",
+   "image": "potion_atlas/entropic_brew.png",
+   "title": "Entropic Brew"
+  },
+  "ESSENCE_OF_DARKNESS": {
+   "description": "[gold]Channel[/gold] a [gold]Dark[/gold] for each of your [gold]Orb Slots[/gold].",
+   "image": "potion_atlas/essence_of_darkness.png",
+   "title": "Essence of Darkness"
+  },
+  "EXPLOSIVE_AMPOULE": {
+   "description": "Deal [blue]10[/blue] damage to ALL enemies.",
+   "image": "potion_atlas/explosive_ampoule.png",
+   "title": "Explosive Ampoule"
+  },
+  "FAIRY_IN_A_BOTTLE": {
+   "description": "When your HP would be reduced to [blue]0[/blue], instead this potion is discarded and you heal to [blue]30%[/blue] of your Max HP.",
+   "image": "potion_atlas/fairy_in_a_bottle.png",
+   "title": "Fairy in a Bottle"
+  },
+  "FIRE_POTION": {
+   "description": "Deal [blue]20[/blue] damage.",
+   "image": "potion_atlas/fire_potion.png",
+   "title": "Fire Potion"
+  },
+  "FLEX_POTION": {
+   "description": "Gain [blue]5[/blue] [gold]Strength[/gold]. At the end of your turn, lose [blue]5[/blue] [gold]Strength[/gold].",
+   "image": "potion_atlas/flex_potion.png",
+   "title": "Flex Potion"
+  },
+  "FOCUS_POTION": {
+   "description": "Gain [blue]2[/blue] [gold]Focus[/gold].",
+   "image": "potion_atlas/focus_potion.png",
+   "title": "Focus Potion"
+  },
+  "FORTIFIER": {
+   "description": "Triple your [gold]Block[/gold].",
+   "image": "potion_atlas/fortifier.png",
+   "title": "Fortifier"
+  },
+  "FOUL_POTION": {
+   "description": "Deal [blue]12[/blue] damage to ALL players and enemies.\nCan be thrown at the [gold]Merchant[/gold] for [blue]100[/blue] [gold]Gold[/gold] instead.",
+   "image": "potion_atlas/foul_potion.png",
+   "title": "Foul Potion"
+  },
+  "FRUIT_JUICE": {
+   "description": "Gain [blue]5[/blue] Max HP.",
+   "image": "potion_atlas/fruit_juice.png",
+   "title": "Fruit Juice"
+  },
+  "FYSH_OIL": {
+   "description": "Gain [blue]1[/blue] [gold]Strength[/gold] and [blue]1[/blue] [gold]Dexterity[/gold].",
+   "image": "potion_atlas/fysh_oil.png",
+   "title": "Fysh Oil"
+  },
+  "GAMBLERS_BREW": {
+   "description": "Discard any number of cards, then draw that many.",
+   "image": "potion_atlas/gamblers_brew.png",
+   "title": "Gambler's Brew"
+  },
+  "GHOST_IN_A_JAR": {
+   "description": "Gain [blue]1[/blue] [gold]Intangible[/gold].",
+   "image": "potion_atlas/ghost_in_a_jar.png",
+   "title": "Ghost in a Jar"
+  },
+  "GIGANTIFICATION_POTION": {
+   "description": "The next Attack you play deals triple damage.",
+   "image": "potion_atlas/gigantification_potion.png",
+   "title": "Gigantification Potion"
+  },
+  "GLOWWATER_POTION": {
+   "description": "[gold]Exhaust[/gold] your [gold]Hand[/gold]. Draw [blue]10[/blue] cards.",
+   "image": "potion_atlas/glowwater_potion.png",
+   "title": "Glowwater Potion"
+  },
+  "HEART_OF_IRON": {
+   "description": "Gain [blue]7[/blue] [gold]Plating[/gold].",
+   "image": "potion_atlas/heart_of_iron.png",
+   "title": "Heart of Iron"
+  },
+  "KINGS_COURAGE": {
+   "description": "[gold]Forge[/gold] [blue]15[/blue].",
+   "image": "potion_atlas/kings_courage.png",
+   "title": "King's Courage"
+  },
+  "LIQUID_BRONZE": {
+   "description": "Gain [blue]3[/blue] [gold]Thorns[/gold].",
+   "image": "potion_atlas/liquid_bronze.png",
+   "title": "Liquid Bronze"
+  },
+  "LIQUID_MEMORIES": {
+   "description": "Put a card from your [gold]Discard Pile[/gold] into your [gold]Hand[/gold]. It's free to play this turn.",
+   "image": "potion_atlas/liquid_memories.png",
+   "title": "Liquid Memories"
+  },
+  "LUCKY_TONIC": {
+   "description": "Gain [blue]1[/blue] [gold]Buffer[/gold].",
+   "image": "potion_atlas/lucky_tonic.png",
+   "title": "Lucky Tonic"
+  },
+  "MAZALETHS_GIFT": {
+   "description": "Gain [blue]1[/blue] [gold]Ritual[/gold].",
+   "image": "potion_atlas/mazaleths_gift.png",
+   "title": "Mazaleth's Gift"
+  },
+  "OROBIC_ACID": {
+   "description": "Add a random Attack, Skill, and Power into your [gold]Hand[/gold]. They're free to play this turn.",
+   "image": "potion_atlas/orobic_acid.png",
+   "title": "Orobic Acid"
+  },
+  "POISON_POTION": {
+   "description": "Apply [blue]6[/blue] [gold]Poison[/gold].",
+   "image": "potion_atlas/poison_potion.png",
+   "title": "Poison Potion"
+  },
+  "POTION_OF_BINDING": {
+   "description": "Apply [blue]1[/blue] [gold]Weak[/gold] and [blue]1[/blue] [gold]Vulnerable[/gold] to ALL enemies.",
+   "image": "potion_atlas/potion_of_binding.png",
+   "title": "Potion of Binding"
+  },
+  "POTION_OF_CAPACITY": {
+   "description": "Gain [blue]2[/blue] [gold]Orb Slots[/gold].",
+   "image": "potion_atlas/potion_of_capacity.png",
+   "title": "Potion of Capacity"
+  },
+  "POTION_OF_DOOM": {
+   "description": "Apply [blue]33[/blue] [gold]Doom[/gold].",
+   "image": "potion_atlas/potion_of_doom.png",
+   "title": "Potion of Doom"
+  },
+  "POTION_SHAPED_ROCK": {
+   "description": "Deal [blue]15[/blue] damage.",
+   "image": "potion_atlas/potion_shaped_rock.png",
+   "title": "Potion-Shaped Rock"
+  },
+  "POT_OF_GHOULS": {
+   "description": "Add [blue]2[/blue] [gold]Souls[/gold] into your [gold]Hand[/gold].",
+   "image": "potion_atlas/pot_of_ghouls.png",
+   "title": "Pot of Ghouls"
+  },
+  "POWDERED_DEMISE": {
+   "description": "Enemy loses [blue]9[/blue] HP at the end of each of its turns.",
+   "image": "potion_atlas/powdered_demise.png",
+   "title": "Powdered Demise"
+  },
+  "POWER_POTION": {
+   "description": "Choose [blue]1[/blue] of [blue]3[/blue] random Power cards to add into your [gold]Hand[/gold]. It's free to play this turn.",
+   "image": "potion_atlas/power_potion.png",
+   "title": "Power Potion"
+  },
+  "RADIANT_TINCTURE": {
+   "description": "Gain 1 Energy. Gain an additional  Energy at the start of your next [blue]3[/blue] turns.",
+   "image": "potion_atlas/radiant_tincture.png",
+   "title": "Radiant Tincture"
+  },
+  "REGEN_POTION": {
+   "description": "Gain [green]5[/green] [gold]Regen[/gold].",
+   "image": "potion_atlas/regen_potion.png",
+   "title": "Regen Potion"
+  },
+  "SHACKLING_POTION": {
+   "description": "ALL enemies lose [blue]7[/blue] [gold]Strength[/gold] this turn.",
+   "image": "potion_atlas/shackling_potion.png",
+   "title": "Shackling Potion"
+  },
+  "SHIP_IN_A_BOTTLE": {
+   "description": "Gain [blue]10[/blue] [gold]Block[/gold]. Next turn, gain [blue]10[/blue] [gold]Block[/gold].",
+   "image": "potion_atlas/ship_in_a_bottle.png",
+   "title": "Ship in a Bottle"
+  },
+  "SKILL_POTION": {
+   "description": "Choose [blue]1[/blue] of [blue]3[/blue] random Skill cards to add into your [gold]Hand[/gold]. It's free to play this turn.",
+   "image": "potion_atlas/skill_potion.png",
+   "title": "Skill Potion"
+  },
+  "SNECKO_OIL": {
+   "description": "Draw [blue]7[/blue] cards. Randomize the cost of cards in your [gold]Hand[/gold] this turn.",
+   "image": "potion_atlas/snecko_oil.png",
+   "title": "Snecko Oil"
+  },
+  "SOLDIERS_STEW": {
+   "description": "All cards containing [gold]Strike[/gold] gain [blue]1[/blue] [gold]Replay[/gold] this combat.",
+   "image": "potion_atlas/soldiers_stew.png",
+   "title": "Soldier's Stew"
+  },
+  "SPEED_POTION": {
+   "description": "Gain [blue]5[/blue] [gold]Dexterity[/gold]. At the end of your turn, lose [blue]5[/blue] [gold]Dexterity[/gold].",
+   "image": "potion_atlas/speed_potion.png",
+   "title": "Speed Potion"
+  },
+  "STABLE_SERUM": {
+   "description": "[gold]Retain[/gold] your [gold]Hand[/gold] for [blue]2[/blue] turns.",
+   "image": "potion_atlas/stable_serum.png",
+   "title": "Stable Serum"
+  },
+  "STAR_POTION": {
+   "description": "Gain 3 Stars.",
+   "image": "potion_atlas/star_potion.png",
+   "title": "Star Potion"
+  },
+  "STRENGTH_POTION": {
+   "description": "Gain [blue]2[/blue] [gold]Strength[/gold].",
+   "image": "potion_atlas/strength_potion.png",
+   "title": "Strength Potion"
+  },
+  "SWIFT_POTION": {
+   "description": "Draw [blue]3[/blue] cards.",
+   "image": "potion_atlas/swift_potion.png",
+   "title": "Swift Potion"
+  },
+  "TOUCH_OF_INSANITY": {
+   "description": "Choose a card in your [gold]Hand[/gold]. It is free to play this combat.",
+   "image": "potion_atlas/touch_of_insanity.png",
+   "title": "Touch of Insanity"
+  },
+  "VULNERABLE_POTION": {
+   "description": "Apply [blue]3[/blue] [gold]Vulnerable[/gold].",
+   "image": "potion_atlas/vulnerable_potion.png",
+   "title": "Vulnerable Potion"
+  },
+  "WEAK_POTION": {
+   "description": "Apply [blue]3[/blue] [gold]Weak[/gold].",
+   "image": "potion_atlas/weak_potion.png",
+   "title": "Weak Potion"
+  }
+ },
+ "relics": {
+  "AKABEKO": {
+   "description": "At the start of each combat, gain [blue]8[/blue] [gold]Vigor[/gold].",
+   "image": "relic_atlas/akabeko.png",
+   "title": "Akabeko"
+  },
+  "ALCHEMICAL_COFFER": {
+   "description": "Upon pickup, gain [blue]4[/blue] potion slots filled with random potions.",
+   "image": "relic_atlas/alchemical_coffer.png",
+   "title": "Alchemical Coffer"
+  },
+  "AMETHYST_AUBERGINE": {
+   "description": "Enemies drop [blue]15[/blue] additional [gold]Gold[/gold].",
+   "image": "relic_atlas/amethyst_aubergine.png",
+   "title": "Amethyst Aubergine"
+  },
+  "ANCHOR": {
+   "description": "Start each combat with [blue]10[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/anchor.png",
+   "title": "Anchor"
+  },
+  "ARCANE_SCROLL": {
+   "description": "Upon pickup, obtain a random [gold]Rare Card[/gold] to add to your [gold]Deck[/gold].",
+   "image": "relic_atlas/arcane_scroll.png",
+   "title": "Arcane Scroll"
+  },
+  "ARCHAIC_TOOTH": {
+   "description": "Upon pickup, [gold]Transform[/gold] {StarterCard.StringValue:cond:[gold]{StarterCard}[/gold] into [gold]{AncientCard}[/gold]|a starter card into an ancient version}.",
+   "image": "relic_atlas/archaic_tooth.png",
+   "title": "Archaic Tooth"
+  },
+  "ART_OF_WAR": {
+   "description": "If you do not play any Attacks during your turn, gain an additional 1 Energy next turn.",
+   "image": "relic_atlas/art_of_war.png",
+   "title": "Art of War"
+  },
+  "ASTROLABE": {
+   "description": "Upon pickup, [gold]Transform[/gold] [blue]3[/blue] cards, then [gold]Upgrade[/gold] them.",
+   "image": "relic_atlas/astrolabe.png",
+   "title": "Astrolabe"
+  },
+  "BAG_OF_MARBLES": {
+   "description": "At the start of each combat, apply [blue]1[/blue] [gold]Vulnerable[/gold] to ALL enemies.",
+   "image": "relic_atlas/bag_of_marbles.png",
+   "title": "Bag of Marbles"
+  },
+  "BAG_OF_PREPARATION": {
+   "description": "At the start of each combat, draw [blue]2[/blue] additional cards.",
+   "image": "relic_atlas/bag_of_preparation.png",
+   "title": "Bag of Preparation"
+  },
+  "BEATING_REMNANT": {
+   "description": "You cannot lose more than [blue]20[/blue] HP in a single turn.",
+   "image": "relic_atlas/beating_remnant.png",
+   "title": "Beating Remnant"
+  },
+  "BEAUTIFUL_BRACELET": {
+   "description": "Upon pickup, choose [blue]3[/blue] cards in your [gold]Deck[/gold]. [gold]Enchant[/gold] them with [purple]Swift[/purple] [blue]3[/blue].",
+   "image": "relic_atlas/beautiful_bracelet.png",
+   "title": "Beautiful Bracelet"
+  },
+  "BELLOWS": {
+   "description": "The first [gold]Hand[/gold] you draw each combat is [gold]Upgraded[/gold].",
+   "image": "relic_atlas/bellows.png",
+   "title": "Bellows"
+  },
+  "BELT_BUCKLE": {
+   "description": "While you have no potions, you have [blue]2[/blue] additional [gold]Dexterity[/gold].",
+   "image": "relic_atlas/belt_buckle.png",
+   "title": "Belt Buckle"
+  },
+  "BIG_HAT": {
+   "description": "At the start of each combat, add [blue]2[/blue] random [gold]Ethereal[/gold] cards into your [gold]Hand[/gold].",
+   "image": "relic_atlas/big_hat.png",
+   "title": "Big Hat"
+  },
+  "BIG_MUSHROOM": {
+   "description": "Upon pickup, raise your Max HP by [blue]20[/blue]. At the start of each combat, draw [blue]2[/blue] fewer cards.",
+   "image": "relic_atlas/big_mushroom.png",
+   "title": "Big Mushroom"
+  },
+  "BIIIG_HUG": {
+   "description": "Upon pickup, remove [blue]4[/blue] cards from your [gold]Deck[/gold]. Whenever you shuffle your [gold]Draw Pile[/gold], add a [gold]Soot[/gold] into your [gold]Draw Pile[/gold].",
+   "image": "relic_atlas/biiig_hug.png",
+   "title": "Biiig Hug"
+  },
+  "BING_BONG": {
+   "description": "Whenever you add a card to your [gold]Deck[/gold], add one additional copy.",
+   "image": "relic_atlas/bing_bong.png",
+   "title": "Bing Bong"
+  },
+  "BLACK_BLOOD": {
+   "description": "At the end of combat, heal [green]12[/green] HP.",
+   "image": "relic_atlas/black_blood.png",
+   "title": "Black Blood"
+  },
+  "BLACK_STAR": {
+   "description": "[gold]Elites[/gold] drop an additional Relic when defeated.",
+   "image": "relic_atlas/black_star.png",
+   "title": "Black Star"
+  },
+  "BLESSED_ANTLER": {
+   "description": "Gain 1 Energy at the start of each turn. At the start of each combat, shuffle [blue]3[/blue] [gold]Dazed[/gold] into your [gold]Draw Pile[/gold].",
+   "image": "relic_atlas/blessed_antler.png",
+   "title": "Blessed Antler"
+  },
+  "BLOOD_SOAKED_ROSE": {
+   "description": "Upon pickup, add [blue]1[/blue] [red]Enthralled[/red] to your [gold]Deck[/gold]. Gain 1 Energy at the start of each turn.",
+   "image": "relic_atlas/blood_soaked_rose.png",
+   "title": "Blood-Soaked Rose"
+  },
+  "BLOOD_VIAL": {
+   "description": "At the start of each combat, heal [green]2[/green] HP.",
+   "image": "relic_atlas/blood_vial.png",
+   "title": "Blood Vial"
+  },
+  "BONE_FLUTE": {
+   "description": "Whenever [gold]Osty[/gold] attacks, gain [blue]2[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/bone_flute.png",
+   "title": "Bone Flute"
+  },
+  "BONE_TEA": {
+   "description": "At the start of the next [blue]{}[/blue] combats, [gold]Upgrade[/gold] your starting hand.",
+   "image": "relic_atlas/bone_tea.png",
+   "title": "Bone Tea"
+  },
+  "BOOKMARK": {
+   "description": "At the end of each turn, lower the cost of a random [gold]Retained[/gold] card by [blue]1[/blue] until played.",
+   "image": "relic_atlas/bookmark.png",
+   "title": "Bookmark"
+  },
+  "BOOK_OF_FIVE_RINGS": {
+   "description": "Every [blue]5[/blue] cards you add to your [gold]Deck[/gold], heal [green]20[/green] HP.",
+   "image": "relic_atlas/book_of_five_rings.png",
+   "title": "Book of Five Rings"
+  },
+  "BOOK_REPAIR_KNIFE": {
+   "description": "Whenever a non-Minion enemy dies to [gold]Doom[/gold], heal [green]3[/green] HP.",
+   "image": "relic_atlas/book_repair_knife.png",
+   "title": "Book Repair Knife"
+  },
+  "BOOMING_CONCH": {
+   "description": "At the start of [gold]Elite[/gold] combats, draw [blue]2[/blue] additional cards and gain 1 Energy.",
+   "image": "relic_atlas/booming_conch.png",
+   "title": "Booming Conch"
+  },
+  "BOUND_PHYLACTERY": {
+   "description": "At the start of your turn, [gold]Summon[/gold] [blue]1[/blue].",
+   "image": "relic_atlas/bound_phylactery.png",
+   "title": "Bound Phylactery"
+  },
+  "BOWLER_HAT": {
+   "description": "Gain [blue]{GoldIncrease:percentMore()}%[/blue] additional [gold]Gold[/gold].",
+   "image": "relic_atlas/bowler_hat.png",
+   "title": "Bowler Hat"
+  },
+  "BREAD": {
+   "description": "At the start of your first turn, lose Energy. At the start of all other turns, gain Energy.",
+   "image": "relic_atlas/bread.png",
+   "title": "Bread"
+  },
+  "BRILLIANT_SCARF": {
+   "description": "The [blue]5th[/blue] card you play from your hand each turn is free.",
+   "image": "relic_atlas/brilliant_scarf.png",
+   "title": "Brilliant Scarf"
+  },
+  "BRIMSTONE": {
+   "description": "At the start of your turn, gain [blue]{SelfStrength}[/blue] [gold]Strength[/gold] and ALL enemies gain [blue]{EnemyStrength}[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/brimstone.png",
+   "title": "Brimstone"
+  },
+  "BRONZE_SCALES": {
+   "description": "Start each combat with [blue]3[/blue] [gold]Thorns[/gold].",
+   "image": "relic_atlas/bronze_scales.png",
+   "title": "Bronze Scales"
+  },
+  "BURNING_BLOOD": {
+   "description": "At the end of combat, heal [green]6[/green] HP.",
+   "image": "relic_atlas/burning_blood.png",
+   "title": "Burning Blood"
+  },
+  "BURNING_STICKS": {
+   "description": "The first time each combat you [gold]Exhaust[/gold] a Skill, add a copy of it into your [gold]Hand[/gold].",
+   "image": "relic_atlas/burning_sticks.png",
+   "title": "Burning Sticks"
+  },
+  "BYRDPIP": {
+   "description": "Upon pickup, gain the card [gold]Byrd Swoop[/gold]. A [gold]Byrdpip[/gold] will accompany you in battles.",
+   "image": "relic_atlas/byrdpip.png",
+   "title": "Byrdpip"
+  },
+  "CALLING_BELL": {
+   "description": "Upon pickup, obtain a unique [red]Curse[/red] and [blue]3[/blue] [gold]Relics[/gold].",
+   "image": "relic_atlas/calling_bell.png",
+   "title": "Calling Bell"
+  },
+  "CANDELABRA": {
+   "description": "At the start of your [blue]2nd[/blue] turn, gain 2 Energy.",
+   "image": "relic_atlas/candelabra.png",
+   "title": "Candelabra"
+  },
+  "CAPTAINS_WHEEL": {
+   "description": "At the start of your [blue]3rd[/blue] turn, gain [blue]18[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/captains_wheel.png",
+   "title": "Captain's Wheel"
+  },
+  "CAULDRON": {
+   "description": "Upon pickup, brews [blue]5[/blue] random potions.",
+   "image": "relic_atlas/cauldron.png",
+   "title": "Cauldron"
+  },
+  "CENTENNIAL_PUZZLE": {
+   "description": "The first time you lose HP each combat, draw [blue]3[/blue] cards.",
+   "image": "relic_atlas/centennial_puzzle.png",
+   "title": "Centennial Puzzle"
+  },
+  "CHANDELIER": {
+   "description": "At the start of your [blue]3rd[/blue] turn, gain 3 Energy.",
+   "image": "relic_atlas/chandelier.png",
+   "title": "Chandelier"
+  },
+  "CHARONS_ASHES": {
+   "description": "Whenever you [gold]Exhaust[/gold] a card, deal [blue]3[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/charons_ashes.png",
+   "title": "Charon's Ashes"
+  },
+  "CHEMICAL_X": {
+   "description": "The effects of your cost [blue]X[/blue] cards are increased by [blue]2[/blue].",
+   "image": "relic_atlas/chemical_x.png",
+   "title": "Chemical X"
+  },
+  "CHOICES_PARADOX": {
+   "description": "At the start of each combat, add [blue]1[/blue] of [blue]5[/blue] random cards into your [gold]Hand[/gold]. Add [gold]Retain[/gold] to the chosen card.",
+   "image": "relic_atlas/choices_paradox.png",
+   "title": "Choices Paradox"
+  },
+  "CHOSEN_CHEESE": {
+   "description": "At the end of combat, gain [blue]1[/blue] Max HP.",
+   "image": "relic_atlas/chosen_cheese.png",
+   "title": "The Chosen Cheese"
+  },
+  "CIRCLET": {
+   "description": "It's a circlet.",
+   "image": "relic_atlas/circlet.png",
+   "title": "Circlet"
+  },
+  "CLAWS": {
+   "description": "Upon pickup, [gold]Transform[/gold] up to [blue]6[/blue] cards into [gold]Maul[/gold].",
+   "image": "relic_atlas/claws.png",
+   "title": "Claws"
+  },
+  "CLOAK_CLASP": {
+   "description": "At the end of your turn, gain [blue]1[/blue] [gold]Block[/gold] for each card in your [gold]Hand[/gold].",
+   "image": "relic_atlas/cloak_clasp.png",
+   "title": "Cloak Clasp"
+  },
+  "CRACKED_CORE": {
+   "description": "At the start of each combat, [gold]Channel[/gold] [blue]1[/blue] [gold]Lightning[/gold].",
+   "image": "relic_atlas/cracked_core.png",
+   "title": "Cracked Core"
+  },
+  "CROSSBOW": {
+   "description": "At the start of your turn, add a random [gold]Attack[/gold] into your [gold]Hand[/gold]. It's free to play this turn.",
+   "image": "relic_atlas/crossbow.png",
+   "title": "Crossbow"
+  },
+  "CURSED_PEARL": {
+   "description": "Upon pickup, receive [red]Greed[/red]. Gain [blue]333[/blue] [gold]Gold[/gold].",
+   "image": "relic_atlas/cursed_pearl.png",
+   "title": "Cursed Pearl"
+  },
+  "DARKSTONE_PERIAPT": {
+   "description": "Whenever you obtain a [red]Curse[/red], raise your Max HP by [blue]6[/blue].",
+   "image": "relic_atlas/darkstone_periapt.png",
+   "title": "Darkstone Periapt"
+  },
+  "DATA_DISK": {
+   "description": "Start each combat with [blue]1[/blue] [gold]Focus[/gold].",
+   "image": "relic_atlas/data_disk.png",
+   "title": "Data Disk"
+  },
+  "DAUGHTER_OF_THE_WIND": {
+   "description": "Whenever you play an Attack, gain [blue]1[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/daughter_of_the_wind.png",
+   "title": "Daughter of the Wind"
+  },
+  "DELICATE_FROND": {
+   "description": "At the start of each combat, fill all empty potion slots with random potions.",
+   "image": "relic_atlas/delicate_frond.png",
+   "title": "Delicate Frond"
+  },
+  "DEMON_TONGUE": {
+   "description": "The first time you lose HP on your turn, heal HP equal to the amount lost.",
+   "image": "relic_atlas/demon_tongue.png",
+   "title": "Demon Tongue"
+  },
+  "DIAMOND_DIADEM": {
+   "description": "Whenever you play [blue]2[/blue] or fewer cards in a turn, take half damage from enemies.",
+   "image": "relic_atlas/diamond_diadem.png",
+   "title": "Diamond Diadem"
+  },
+  "DINGY_RUG": {
+   "description": "Card rewards can now contain Colorless cards.",
+   "image": "relic_atlas/dingy_rug.png",
+   "title": "Dingy Rug"
+  },
+  "DISTINGUISHED_CAPE": {
+   "description": "Upon pickup, lose [blue]9[/blue] Max HP. Add [blue]3[/blue] [gold]Apparitions[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/distinguished_cape.png",
+   "title": "Distinguished Cape"
+  },
+  "DIVINE_DESTINY": {
+   "description": "At the start of each combat, gain 6 Stars.",
+   "image": "relic_atlas/divine_destiny.png",
+   "title": "Divine Destiny"
+  },
+  "DIVINE_RIGHT": {
+   "description": "At the start of each combat, gain 3 Stars.",
+   "image": "relic_atlas/divine_right.png",
+   "title": "Divine Right"
+  },
+  "DOLLYS_MIRROR": {
+   "description": "Upon pickup, obtain an additional copy of a card in your [gold]Deck[/gold].",
+   "image": "relic_atlas/dollys_mirror.png",
+   "title": "Dolly's Mirror"
+  },
+  "DRAGON_FRUIT": {
+   "description": "Whenever you gain [gold]Gold[/gold], raise your Max HP by [blue]1[/blue].",
+   "image": "relic_atlas/dragon_fruit.png",
+   "title": "Dragon Fruit"
+  },
+  "DREAM_CATCHER": {
+   "description": "Whenever you [gold]Rest[/gold], you may add a card to your [gold]Deck[/gold].",
+   "image": "relic_atlas/dream_catcher.png",
+   "title": "Dream Catcher"
+  },
+  "DRIFTWOOD": {
+   "description": "You may reroll each card reward once.",
+   "image": "relic_atlas/driftwood.png",
+   "title": "Driftwood"
+  },
+  "DUSTY_TOME": {
+   "description": "Upon pickup, obtain {AncientCard.StringValue:cond:[gold]{}[/gold]|an [gold]Ancient Card[/gold]}.",
+   "image": "relic_atlas/dusty_tome.png",
+   "title": "Dusty Tome"
+  },
+  "ECTOPLASM": {
+   "description": "You can no longer gain [gold]Gold[/gold]. Gain 1 Energy at the start of each turn.",
+   "image": "relic_atlas/ectoplasm.png",
+   "title": "Ectoplasm"
+  },
+  "ELECTRIC_SHRYMP": {
+   "description": "Upon pickup, [gold]Enchant[/gold] a Skill with [purple]Imbued[/purple].",
+   "image": "relic_atlas/electric_shrymp.png",
+   "title": "Electric Shrymp"
+  },
+  "EMBER_TEA": {
+   "description": "At the start of the next [blue]{}[/blue] combats, gain [blue]2[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/ember_tea.png",
+   "title": "Ember Tea"
+  },
+  "EMOTION_CHIP": {
+   "description": "If you lost HP during the previous turn, trigger the passive ability of all Orbs at the start of your turn.",
+   "image": "relic_atlas/emotion_chip.png",
+   "title": "Emotion Chip"
+  },
+  "EMPTY_CAGE": {
+   "description": "Upon pickup, remove [blue]2[/blue] cards from your [gold]Deck[/gold].",
+   "image": "relic_atlas/empty_cage.png",
+   "title": "Empty Cage"
+  },
+  "ETERNAL_FEATHER": {
+   "description": "For every [blue]5[/blue] cards in your [gold]Deck[/gold], heal [green]3[/green] HP whenever you enter a [gold]Rest Site[/gold].",
+   "image": "relic_atlas/eternal_feather.png",
+   "title": "Eternal Feather"
+  },
+  "FAKE_ANCHOR": {
+   "description": "Start each combat with [blue]4[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/fake_anchor.png",
+   "title": "Anchor???"
+  },
+  "FAKE_BLOOD_VIAL": {
+   "description": "At the start of each combat, heal [green]1[/green] HP.",
+   "image": "relic_atlas/fake_blood_vial.png",
+   "title": "Blood Vial???"
+  },
+  "FAKE_HAPPY_FLOWER": {
+   "description": "Every [blue]5[/blue] turns, gain 1 Energy.",
+   "image": "relic_atlas/fake_happy_flower.png",
+   "title": "Happy Flower???"
+  },
+  "FAKE_LEES_WAFFLE": {
+   "description": "Upon pickup, heal [green]10%[/green] of your HP.",
+   "image": "relic_atlas/fake_lees_waffle.png",
+   "title": "Lee's Waffle???"
+  },
+  "FAKE_MANGO": {
+   "description": "Upon pickup, raise your Max HP by [blue]3[/blue].",
+   "image": "relic_atlas/fake_mango.png",
+   "title": "Mango???"
+  },
+  "FAKE_MERCHANTS_RUG": {
+   "description": "Poor imitation. Does nothing.",
+   "image": "relic_atlas/fake_merchants_rug.png",
+   "title": "The Merchant's Rug???"
+  },
+  "FAKE_ORICHALCUM": {
+   "description": "If you end your turn without [gold]Block[/gold], gain [blue]3[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/fake_orichalcum.png",
+   "title": "Orichalcum???"
+  },
+  "FAKE_SNECKO_EYE": {
+   "description": "Start each combat [red]Confused[/red].",
+   "image": "relic_atlas/fake_snecko_eye.png",
+   "title": "Snecko Eye???"
+  },
+  "FAKE_STRIKE_DUMMY": {
+   "description": "Cards containing “Strike” deal [blue]1[/blue] additional damage.",
+   "image": "relic_atlas/fake_strike_dummy.png",
+   "title": "Strike Dummy???"
+  },
+  "FAKE_VENERABLE_TEA_SET": {
+   "description": "Whenever you enter a [gold]Rest Site[/gold], start the next combat with an additional 1 Energy.",
+   "image": "relic_atlas/fake_venerable_tea_set.png",
+   "title": "Venerable Tea Set???"
+  },
+  "FENCING_MANUAL": {
+   "description": "At the start of each combat, [gold]Forge[/gold] [blue]10[/blue].",
+   "image": "relic_atlas/fencing_manual.png",
+   "title": "Fencing Manual"
+  },
+  "FESTIVE_POPPER": {
+   "description": "At the start of each combat, deal [blue]9[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/festive_popper.png",
+   "title": "Festive Popper"
+  },
+  "FIDDLE": {
+   "description": "At the start of each turn, draw [blue]2[/blue] additional cards. You may not draw cards during your turn.",
+   "image": "relic_atlas/fiddle.png",
+   "title": "Fiddle"
+  },
+  "FISHING_ROD": {
+   "description": "Every [blue]3[/blue] normal combats, [gold]Upgrade[/gold] a random card in your [gold]Deck[/gold].",
+   "image": "relic_atlas/fishing_rod.png",
+   "title": "Fishing Rod"
+  },
+  "FORGOTTEN_SOUL": {
+   "description": "Whenever you [gold]Exhaust[/gold] a card, deal [blue]1[/blue] damage to a random enemy.",
+   "image": "relic_atlas/forgotten_soul.png",
+   "title": "Forgotten Soul"
+  },
+  "FRAGRANT_MUSHROOM": {
+   "description": "Upon pickup, lose [blue]15[/blue] HP and [gold]Upgrade[/gold] [blue]2[/blue] random cards.",
+   "image": "relic_atlas/fragrant_mushroom.png",
+   "title": "Fragrant Mushroom"
+  },
+  "FRESNEL_LENS": {
+   "description": "Whenever you add a card that gains [gold]Block[/gold] to your [gold]Deck[/gold], [gold]Enchant[/gold] it with [purple]Nimble[/purple] [blue]2[/blue].",
+   "image": "relic_atlas/fresnel_lens.png",
+   "title": "Fresnel Lens"
+  },
+  "FROZEN_EGG": {
+   "description": "Whenever you add a Power into your [gold]Deck[/gold], [gold]Upgrade[/gold] it.",
+   "image": "relic_atlas/frozen_egg.png",
+   "title": "Frozen Egg"
+  },
+  "FUNERARY_MASK": {
+   "description": "At the start of each combat, add [blue]3[/blue] [gold]Souls[/gold] into your [gold]Draw Pile[/gold].",
+   "image": "relic_atlas/funerary_mask.png",
+   "title": "Funerary Mask"
+  },
+  "FUR_COAT": {
+   "description": "Upon pickup, mark [blue]7[/blue] random combats. Enemies in those rooms have [blue]1[/blue] HP.",
+   "image": "relic_atlas/fur_coat.png",
+   "title": "Fur Coat"
+  },
+  "GALACTIC_DUST": {
+   "description": "For every [blue]10[/blue] [star] spent, gain [blue]10[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/galactic_dust.png",
+   "title": "Galactic Dust"
+  },
+  "GAMBLING_CHIP": {
+   "description": "At the start of each combat, discard any number of cards then draw that many.",
+   "image": "relic_atlas/gambling_chip.png",
+   "title": "Gambling Chip"
+  },
+  "GAME_PIECE": {
+   "description": "Whenever you play a Power, draw [blue]1[/blue] card.",
+   "image": "relic_atlas/game_piece.png",
+   "title": "Game Piece"
+  },
+  "GHOST_SEED": {
+   "description": "[gold]Strikes[/gold] and [gold]Defends[/gold] gain [gold]Ethereal[/gold].",
+   "image": "relic_atlas/ghost_seed.png",
+   "title": "Ghost Seed"
+  },
+  "GIRYA": {
+   "description": "You can now gain [gold]Strength[/gold] at [gold]Rest Sites[/gold]. ([blue]3[/blue] times max)",
+   "image": "relic_atlas/girya.png",
+   "title": "Girya"
+  },
+  "GLASS_EYE": {
+   "description": "Upon pickup, obtain [blue]2[/blue] [gold]Common[/gold] cards, [blue]2[/blue] [gold]Uncommon[/gold] cards, and [blue]1[/blue] [gold]Rare[/gold] card.",
+   "image": "relic_atlas/glass_eye.png",
+   "title": "Glass Eye"
+  },
+  "GLITTER": {
+   "description": "[gold]Enchant[/gold] all card rewards with [purple]Glam[/purple].",
+   "image": "relic_atlas/glitter.png",
+   "title": "Glitter"
+  },
+  "GNARLED_HAMMER": {
+   "description": "Upon pickup, [gold]Enchant[/gold] up to [blue]3[/blue] Attacks with [purple]Sharp[/purple] [blue]3[/blue].",
+   "image": "relic_atlas/gnarled_hammer.png",
+   "title": "Gnarled Hammer"
+  },
+  "GOLDEN_COMPASS": {
+   "description": "Upon pickup, replace the [gold]Act[/gold] [blue]2[/blue] Map with a single special path.",
+   "image": "relic_atlas/golden_compass.png",
+   "title": "Golden Compass"
+  },
+  "GOLDEN_PEARL": {
+   "description": "Upon pickup, gain [blue]150[/blue] [gold]Gold[/gold].",
+   "image": "relic_atlas/golden_pearl.png",
+   "title": "Golden Pearl"
+  },
+  "GOLD_PLATED_CABLES": {
+   "description": "Your rightmost Orb triggers its passive an additional time.",
+   "image": "relic_atlas/gold_plated_cables.png",
+   "title": "Gold-Plated Cables"
+  },
+  "GORGET": {
+   "description": "At the start of each combat, gain [blue]4[/blue] [gold]Plating[/gold].",
+   "image": "relic_atlas/gorget.png",
+   "title": "Gorget"
+  },
+  "GREMLIN_HORN": {
+   "description": "Whenever an enemy dies, gain 1 Energy and draw [blue]1[/blue] card.",
+   "image": "relic_atlas/gremlin_horn.png",
+   "title": "Gremlin Horn"
+  },
+  "HAND_DRILL": {
+   "description": "Whenever you break an enemy's [gold]Block[/gold], apply [blue]2[/blue] [gold]Vulnerable[/gold].",
+   "image": "relic_atlas/hand_drill.png",
+   "title": "Hand Drill"
+  },
+  "HAPPY_FLOWER": {
+   "description": "Every [blue]3[/blue] turns, gain 1 Energy.",
+   "image": "relic_atlas/happy_flower.png",
+   "title": "Happy Flower"
+  },
+  "HEFTY_TABLET": {
+   "description": "Upon pickup, choose [blue]1[/blue] of [blue]3[/blue] Rare cards to add to your [gold]Deck[/gold], and add [blue]1[/blue] [red]Injury[/red] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/hefty_tablet.png",
+   "title": "Hefty Tablet"
+  },
+  "HELICAL_DART": {
+   "description": "Whenever you play a [gold]Shiv[/gold], gain [blue]1[/blue] [gold]Dexterity[/gold] this turn.",
+   "image": "relic_atlas/helical_dart.png",
+   "title": "Helical Dart"
+  },
+  "HISTORY_COURSE": {
+   "description": "At the start of your turn, play a copy of your last played Attack or Skill.",
+   "image": "relic_atlas/history_course.png",
+   "title": "History Course"
+  },
+  "HORN_CLEAT": {
+   "description": "At the start of your [blue]2nd[/blue] turn, gain [blue]14[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/horn_cleat.png",
+   "title": "Horn Cleat"
+  },
+  "ICE_CREAM": {
+   "description": "Energy is now conserved between turns.",
+   "image": "relic_atlas/ice_cream.png",
+   "title": "Ice Cream"
+  },
+  "INFUSED_CORE": {
+   "description": "At the start of each combat, [gold]Channel[/gold] [blue]3[/blue] [gold]Lightning[/gold]. [gold]Lightning[/gold] deals [blue]1[/blue] additional damage.",
+   "image": "relic_atlas/infused_core.png",
+   "title": "Infused Core"
+  },
+  "INTIMIDATING_HELMET": {
+   "description": "Whenever you play a card that costs 2 Energy or more, gain [blue]4[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/intimidating_helmet.png",
+   "title": "Intimidating Helmet"
+  },
+  "IRON_CLUB": {
+   "description": "Every [blue]4[/blue] cards you play, draw [blue]1[/blue] card.",
+   "image": "relic_atlas/iron_club.png",
+   "title": "Iron Club"
+  },
+  "IVORY_TILE": {
+   "description": "Whenever you play a card that costs Energy or more, gain 1 Energy.",
+   "image": "relic_atlas/ivory_tile.png",
+   "title": "Ivory Tile"
+  },
+  "JEWELED_MASK": {
+   "description": "At the start of each combat, put a random Power from your [gold]Draw Pile[/gold] into your [gold]Hand[/gold]. It's free to play this combat.",
+   "image": "relic_atlas/jeweled_mask.png",
+   "title": "Jeweled Mask"
+  },
+  "JEWELRY_BOX": {
+   "description": "Upon pickup, add [blue]1[/blue] [gold]Apotheosis[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/jewelry_box.png",
+   "title": "Jewelry Box"
+  },
+  "JOSS_PAPER": {
+   "description": "Every [blue]5[/blue] times you [gold]Exhaust[/gold] a card, draw [blue]1[/blue] card.",
+   "image": "relic_atlas/joss_paper.png",
+   "title": "Joss Paper"
+  },
+  "JUZU_BRACELET": {
+   "description": "Regular enemy combats are no longer encountered in [gold]?[/gold] rooms.",
+   "image": "relic_atlas/juzu_bracelet.png",
+   "title": "Juzu Bracelet"
+  },
+  "KALEIDOSCOPE": {
+   "description": "Upon pickup, obtain [blue]2[/blue] card rewards from other characters.",
+   "image": "relic_atlas/kaleidoscope.png",
+   "title": "Kaleidoscope"
+  },
+  "KIFUDA": {
+   "description": "Upon pickup, [gold]Enchant[/gold] up to [blue]3[/blue] cards with [purple]Adroit[/purple].",
+   "image": "relic_atlas/kifuda.png",
+   "title": "Kifuda"
+  },
+  "KUNAI": {
+   "description": "Every time you play [blue]3[/blue] Attacks in a single turn, gain [blue]1[/blue] [gold]Dexterity[/gold].",
+   "image": "relic_atlas/kunai.png",
+   "title": "Kunai"
+  },
+  "KUSARIGAMA": {
+   "description": "Every time you play [blue]3[/blue] Attacks in a single turn, deal [blue]6[/blue] damage to a random enemy.",
+   "image": "relic_atlas/kusarigama.png",
+   "title": "Kusarigama"
+  },
+  "LANTERN": {
+   "description": "Start each combat with an additional 1 Energy.",
+   "image": "relic_atlas/lantern.png",
+   "title": "Lantern"
+  },
+  "LARGE_CAPSULE": {
+   "description": "Upon pickup, obtain [blue]2[/blue] random [gold]Relics[/gold]. Add an additional [gold]Strike[/gold] and [gold]Defend[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/large_capsule.png",
+   "title": "Large Capsule"
+  },
+  "LASTING_CANDY": {
+   "description": "Every other combat, your card rewards gain an additional Power.",
+   "image": "relic_atlas/lasting_candy.png",
+   "title": "Lasting Candy"
+  },
+  "LAVA_LAMP": {
+   "description": "At the end of combat, [gold]Upgrade[/gold] all card rewards if you took no damage.",
+   "image": "relic_atlas/lava_lamp.png",
+   "title": "Lava Lamp"
+  },
+  "LAVA_ROCK": {
+   "description": "The Act 1 Boss drops [blue]2[/blue] [gold]Relics[/gold].",
+   "image": "relic_atlas/lava_rock.png",
+   "title": "Lava Rock"
+  },
+  "LEAD_PAPERWEIGHT": {
+   "description": "Upon pickup, choose [blue]1[/blue] of [blue]2[/blue] Colorless cards to add to your [gold]Deck[/gold].",
+   "image": "relic_atlas/lead_paperweight.png",
+   "title": "Lead Paperweight"
+  },
+  "LEAFY_POULTICE": {
+   "description": "Upon pickup, [gold]Transform[/gold] [blue]1[/blue] of your [gold]Strikes[/gold] and [blue]1[/blue] of your [gold]Defends[/gold] and lose [blue]12[/blue] Max HP.",
+   "image": "relic_atlas/leafy_poultice.png",
+   "title": "Leafy Poultice"
+  },
+  "LEES_WAFFLE": {
+   "description": "Upon pickup, raise your Max HP by [blue]7[/blue] and heal all of your HP.",
+   "image": "relic_atlas/lees_waffle.png",
+   "title": "Lee's Waffle"
+  },
+  "LETTER_OPENER": {
+   "description": "Every time you play [blue]3[/blue] Skills in a single turn, deal [blue]5[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/letter_opener.png",
+   "title": "Letter Opener"
+  },
+  "LIZARD_TAIL": {
+   "description": "When your HP would be reduced to [blue]0[/blue], heal to [green]50%[/green] of your Max HP instead (works once).",
+   "image": "relic_atlas/lizard_tail.png",
+   "title": "Lizard Tail"
+  },
+  "LOOMING_FRUIT": {
+   "description": "Upon pickup, raise your Max HP by [blue]31[/blue].",
+   "image": "relic_atlas/looming_fruit.png",
+   "title": "Looming Fruit"
+  },
+  "LORDS_PARASOL": {
+   "description": "When you encounter the [gold]Merchant[/gold], immediately obtain EVERYTHING he sells.",
+   "image": "relic_atlas/lords_parasol.png",
+   "title": "Lord's Parasol"
+  },
+  "LOST_COFFER": {
+   "description": "Upon pickup, gain [blue]1[/blue] card reward and procure [blue]1[/blue] random potion.",
+   "image": "relic_atlas/lost_coffer.png",
+   "title": "Lost Coffer"
+  },
+  "LOST_WISP": {
+   "description": "Whenever you play a Power, deal [blue]8[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/lost_wisp.png",
+   "title": "Lost Wisp"
+  },
+  "LUCKY_FYSH": {
+   "description": "Whenever you add a card to your [gold]Deck[/gold], gain [blue]15[/blue] [gold]Gold[/gold].",
+   "image": "relic_atlas/lucky_fysh.png",
+   "title": "Lucky Fysh"
+  },
+  "LUNAR_PASTRY": {
+   "description": "At the end of your turn, gain 1 Stars.",
+   "image": "relic_atlas/lunar_pastry.png",
+   "title": "Lunar Pastry"
+  },
+  "MANGO": {
+   "description": "Upon pickup, raise your Max HP by [blue]14[/blue].",
+   "image": "relic_atlas/mango.png",
+   "title": "Mango"
+  },
+  "MASSIVE_SCROLL": {
+   "description": "Upon pickup, choose [blue]1[/blue] of [blue]3[/blue] [gold]Multiplayer Cards[/gold] to add to your [gold]Deck[/gold].",
+   "image": "relic_atlas/massive_scroll.png",
+   "title": "Massive Scroll"
+  },
+  "MAW_BANK": {
+   "description": "Whenever you climb a floor, gain [blue]12[/blue] [gold]Gold[/gold]. No longer works when you spend any [gold]Gold[/gold] at the shop.",
+   "image": "relic_atlas/maw_bank.png",
+   "title": "Maw Bank"
+  },
+  "MEAL_TICKET": {
+   "description": "Whenever you enter a shop room, heal [green]15[/green] HP.",
+   "image": "relic_atlas/meal_ticket.png",
+   "title": "Meal Ticket"
+  },
+  "MEAT_CLEAVER": {
+   "description": "You may [gold]Cook[/gold] at Rest Sites.",
+   "image": "relic_atlas/meat_cleaver.png",
+   "title": "Meat Cleaver"
+  },
+  "MEAT_ON_THE_BONE": {
+   "description": "If your HP is at or below [blue]50%[/blue] at the end of combat, heal [green]12[/green] HP.",
+   "image": "relic_atlas/meat_on_the_bone.png",
+   "title": "Meat on the Bone"
+  },
+  "MEMBERSHIP_CARD": {
+   "description": "[blue]50%[/blue] discount on all products!",
+   "image": "relic_atlas/membership_card.png",
+   "title": "Membership Card"
+  },
+  "MERCURY_HOURGLASS": {
+   "description": "At the start of your turn, deal [blue]3[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/mercury_hourglass.png",
+   "title": "Mercury Hourglass"
+  },
+  "METRONOME": {
+   "description": "The first time you [gold]Channel[/gold] [blue]7[/blue] [gold]Orbs[/gold] each combat, deal [blue]30[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/metronome.png",
+   "title": "Metronome"
+  },
+  "MINIATURE_CANNON": {
+   "description": "[gold]Upgraded[/gold] Attacks deal [blue]3[/blue] additional damage.",
+   "image": "relic_atlas/miniature_cannon.png",
+   "title": "Miniature Cannon"
+  },
+  "MINIATURE_TENT": {
+   "description": "You may choose any number of options at [gold]Rest Sites[/gold].",
+   "image": "relic_atlas/miniature_tent.png",
+   "title": "Miniature Tent"
+  },
+  "MINI_REGENT": {
+   "description": "The first time you spend [star] each turn, gain [blue]1[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/mini_regent.png",
+   "title": "Mini Regent"
+  },
+  "MOLTEN_EGG": {
+   "description": "Whenever you add an Attack card to your [gold]Deck[/gold], [gold]Upgrade[/gold] it.",
+   "image": "relic_atlas/molten_egg.png",
+   "title": "Molten Egg"
+  },
+  "MR_STRUGGLES": {
+   "description": "At the start of your turn, deal damage equal to the turn number to ALL enemies.",
+   "image": "relic_atlas/mr_struggles.png",
+   "title": "Mr. Struggles"
+  },
+  "MUMMIFIED_HAND": {
+   "description": "Whenever you play a Power, a random card in your [gold]Hand[/gold] is free to play that turn.",
+   "image": "relic_atlas/mummified_hand.png",
+   "title": "Mummified Hand"
+  },
+  "MUSIC_BOX": {
+   "description": "Create an [gold]Ethereal[/gold] copy of the first Attack you play each turn.",
+   "image": "relic_atlas/music_box.png",
+   "title": "Music Box"
+  },
+  "MYSTIC_LIGHTER": {
+   "description": "[gold]Enchanted[/gold] Attacks deal [blue]9[/blue] additional damage.",
+   "image": "relic_atlas/mystic_lighter.png",
+   "title": "Mystic Lighter"
+  },
+  "NEOWS_BONES": {
+   "description": "Upon pickup, gain [blue]2[/blue] random [gold]Neow Relics[/gold]. Add [blue]1[/blue] random [red]Curse[/red] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/neows_bones.png",
+   "title": "Neow's Bones"
+  },
+  "NEOWS_TALISMAN": {
+   "description": "Upon pickup, [gold]Upgrade[/gold] [blue]1[/blue] of your [gold]Strikes[/gold] and [blue]1[/blue] of your [gold]Defends[/gold].",
+   "image": "relic_atlas/neows_talisman.png",
+   "title": "Neow's Talisman"
+  },
+  "NEOWS_TORMENT": {
+   "description": "Upon pickup, add [blue]1[/blue] [gold]Neow's Fury[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/neows_torment.png",
+   "title": "Neow's Torment"
+  },
+  "NEW_LEAF": {
+   "description": "Upon pickup, [gold]Transform[/gold] [blue]1[/blue] card.",
+   "image": "relic_atlas/new_leaf.png",
+   "title": "New Leaf"
+  },
+  "NINJA_SCROLL": {
+   "description": "At the start of each combat, add [blue]3[/blue] [gold]Shivs[/gold] into your [gold]Hand[/gold].",
+   "image": "relic_atlas/ninja_scroll.png",
+   "title": "Ninja Scroll"
+  },
+  "NUNCHAKU": {
+   "description": "Every time you play [blue]10[/blue] Attacks, gain 1 Energy.",
+   "image": "relic_atlas/nunchaku.png",
+   "title": "Nunchaku"
+  },
+  "NUTRITIOUS_OYSTER": {
+   "description": "Upon pickup, raise your Max HP by [blue]11[/blue].",
+   "image": "relic_atlas/nutritious_oyster.png",
+   "title": "Nutritious Oyster"
+  },
+  "NUTRITIOUS_SOUP": {
+   "description": "Upon pickup, [gold]Enchant[/gold] all [gold]Strikes[/gold] in your [gold]Deck[/gold] with [purple]Tezcatara's Ember[/purple].",
+   "image": "relic_atlas/nutritious_soup.png",
+   "title": "Nutritious Soup"
+  },
+  "ODDLY_SMOOTH_STONE": {
+   "description": "Start each combat with [blue]1[/blue] [gold]Dexterity[/gold].",
+   "image": "relic_atlas/oddly_smooth_stone.png",
+   "title": "Oddly Smooth Stone"
+  },
+  "OLD_COIN": {
+   "description": "Upon pickup, gain [blue]300[/blue] [gold]Gold[/gold].",
+   "image": "relic_atlas/old_coin.png",
+   "title": "Old Coin"
+  },
+  "ORANGE_DOUGH": {
+   "description": "At the start of each combat, add [blue]2[/blue] random Colorless cards into your [gold]Hand[/gold].",
+   "image": "relic_atlas/orange_dough.png",
+   "title": "Orange Dough"
+  },
+  "ORICHALCUM": {
+   "description": "If you end your turn without [gold]Block[/gold], gain [blue]6[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/orichalcum.png",
+   "title": "Orichalcum"
+  },
+  "ORNAMENTAL_FAN": {
+   "description": "Every time you play [blue]3[/blue] Attacks in a single turn, gain [blue]4[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/ornamental_fan.png",
+   "title": "Ornamental Fan"
+  },
+  "ORRERY": {
+   "description": "Upon pickup, gain [blue]5[/blue] card rewards.",
+   "image": "relic_atlas/orrery.png",
+   "title": "Orrery"
+  },
+  "PAELS_BLOOD": {
+   "description": "At the start of your turn, draw [blue]1[/blue] additional card.",
+   "image": "relic_atlas/paels_blood.png",
+   "title": "Pael's Blood"
+  },
+  "PAELS_CLAW": {
+   "description": "Upon pickup, [gold]Enchant[/gold] all [gold]Defends[/gold] with [purple]{EnchantmentName}[/purple].",
+   "image": "relic_atlas/paels_claw.png",
+   "title": "Pael's Claw"
+  },
+  "PAELS_EYE": {
+   "description": "The first time each combat you end your turn without playing cards, [gold]Exhaust[/gold] your [gold]Hand[/gold], and take an extra turn.",
+   "image": "relic_atlas/paels_eye.png",
+   "title": "Pael's Eye"
+  },
+  "PAELS_FLESH": {
+   "description": "Gain an additional 1 Energy at the start of your [blue]3rd[/blue] turn, and every turn after that.",
+   "image": "relic_atlas/paels_flesh.png",
+   "title": "Pael's Flesh"
+  },
+  "PAELS_GROWTH": {
+   "description": "Upon pickup, [gold]Enchant[/gold] a card with [purple]{EnchantmentName}[/purple].",
+   "image": "relic_atlas/paels_growth.png",
+   "title": "Pael's Growth"
+  },
+  "PAELS_HORN": {
+   "description": "Upon pickup, add [blue]2[/blue] [gold]Relax[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/paels_horn.png",
+   "title": "Pael's Horn"
+  },
+  "PAELS_LEGION": {
+   "description": "Doubles [gold]Block[/gold] gained from a card, then goes to sleep for [blue]2[/blue] turns.",
+   "image": "relic_atlas/paels_legion.png",
+   "title": "Pael's Legion"
+  },
+  "PAELS_TEARS": {
+   "description": "If you end your turn with unspent  Energy, gain an additional 2 Energy next turn.",
+   "image": "relic_atlas/paels_tears.png",
+   "title": "Pael's Tears"
+  },
+  "PAELS_TOOTH": {
+   "description": "Upon pickup, remove [blue]5[/blue] cards from your [gold]Deck[/gold]. After each combat, randomly add [blue]1[/blue] back [gold]Upgraded[/gold].{CardTitles.StringValue:cond:\n\nCards devoured:\n{}|}",
+   "image": "relic_atlas/paels_tooth.png",
+   "title": "Pael's Tooth"
+  },
+  "PAELS_WING": {
+   "description": "You may sacrifice card rewards to Pael. Every [blue]2[/blue] sacrifices, obtain a [gold]Relic[/gold].",
+   "image": "relic_atlas/paels_wing.png",
+   "title": "Pael's Wing"
+  },
+  "PANDORAS_BOX": {
+   "description": "[gold]Transform[/gold] ALL [gold]Strikes[/gold] and [gold]Defends[/gold].",
+   "image": "relic_atlas/pandoras_box.png",
+   "title": "Pandora's Box"
+  },
+  "PANTOGRAPH": {
+   "description": "At the start of each [gold]Boss[/gold] combat, heal [green]25[/green] HP.",
+   "image": "relic_atlas/pantograph.png",
+   "title": "Pantograph"
+  },
+  "PAPER_KRANE": {
+   "description": "Enemies with [gold]Weak[/gold] deal [blue]40%[/blue] less damage to you rather than [blue]25%[/blue].",
+   "image": "relic_atlas/paper_krane.png",
+   "title": "Paper Krane"
+  },
+  "PAPER_PHROG": {
+   "description": "Enemies with [gold]Vulnerable[/gold] take [blue]75%[/blue] more damage rather than [blue]50%[/blue].",
+   "image": "relic_atlas/paper_phrog.png",
+   "title": "Paper Phrog"
+  },
+  "PARRYING_SHIELD": {
+   "description": "If you end a turn with at least [blue]10[/blue] [gold]Block[/gold], deal [blue]6[/blue] damage to a random enemy.",
+   "image": "relic_atlas/parrying_shield.png",
+   "title": "Parrying Shield"
+  },
+  "PEAR": {
+   "description": "Upon pickup, raise your Max HP by [blue]10[/blue].",
+   "image": "relic_atlas/pear.png",
+   "title": "Pear"
+  },
+  "PENDULUM": {
+   "description": "Every [blue]3[/blue] turns, draw [blue]1[/blue] card.",
+   "image": "relic_atlas/pendulum.png",
+   "title": "Pendulum"
+  },
+  "PEN_NIB": {
+   "description": "Every [blue]10th[/blue] Attack you play deals double damage.",
+   "image": "relic_atlas/pen_nib.png",
+   "title": "Pen Nib"
+  },
+  "PERMAFROST": {
+   "description": "The first time you play a Power each combat, gain [blue]7[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/permafrost.png",
+   "title": "Permafrost"
+  },
+  "PETRIFIED_TOAD": {
+   "description": "At the start of each combat, procure a [gold]Potion-Shaped Rock[/gold].",
+   "image": "relic_atlas/petrified_toad.png",
+   "title": "Petrified Toad"
+  },
+  "PHIAL_HOLSTER": {
+   "description": "Upon pickup, gain [blue]1[/blue] potion slot and procure [blue]2[/blue] random potions.",
+   "image": "relic_atlas/phial_holster.png",
+   "title": "Phial Holster"
+  },
+  "PHILOSOPHERS_STONE": {
+   "description": "Gain 1 Energy at the start of each turn. ALL enemies start combat with [blue]1[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/philosophers_stone.png",
+   "title": "Philosopher's Stone"
+  },
+  "PHYLACTERY_UNBOUND": {
+   "description": "At the start of each combat, [gold]Summon[/gold] [blue]{StartOfCombat}[/blue]. At the start of your turn, [gold]Summon[/gold] [blue]{StartOfTurn}[/blue].",
+   "image": "relic_atlas/phylactery_unbound.png",
+   "title": "Phylactery Unbound"
+  },
+  "PLANISPHERE": {
+   "description": "Whenever you enter a [gold]?[/gold] room, heal [green]5[/green] HP.",
+   "image": "relic_atlas/planisphere.png",
+   "title": "Planisphere"
+  },
+  "POCKETWATCH": {
+   "description": "Whenever you play [blue]3[/blue] or fewer cards during your turn, draw [blue]3[/blue] additional cards at the start of your next turn.",
+   "image": "relic_atlas/pocketwatch.png",
+   "title": "Pocketwatch"
+  },
+  "POLLINOUS_CORE": {
+   "description": "Every [blue]4[/blue] turns, draw [blue]2[/blue] additional cards.",
+   "image": "relic_atlas/pollinous_core.png",
+   "title": "Pollinous Core"
+  },
+  "POMANDER": {
+   "description": "Upon pickup, [gold]Upgrade[/gold] a card.",
+   "image": "relic_atlas/pomander.png",
+   "title": "Pomander"
+  },
+  "POTION_BELT": {
+   "description": "Upon pickup, gain [blue]2[/blue] potion slots.",
+   "image": "relic_atlas/potion_belt.png",
+   "title": "Potion Belt"
+  },
+  "POWER_CELL": {
+   "description": "At the start of each combat, add [blue]2[/blue] zero-cost cards from your [gold]Draw Pile[/gold] into your [gold]Hand[/gold].",
+   "image": "relic_atlas/power_cell.png",
+   "title": "Power Cell"
+  },
+  "PRAYER_WHEEL": {
+   "description": "Normal enemies drop an additional card reward.",
+   "image": "relic_atlas/prayer_wheel.png",
+   "title": "Prayer Wheel"
+  },
+  "PRECARIOUS_SHEARS": {
+   "description": "Upon pickup, remove [blue]2[/blue] cards from your [gold]Deck[/gold] and lose [blue]16[/blue] HP.",
+   "image": "relic_atlas/precarious_shears.png",
+   "title": "Precarious Shears"
+  },
+  "PRECISE_SCISSORS": {
+   "description": "Upon pickup, remove [blue]1[/blue] card from your [gold]Deck[/gold].",
+   "image": "relic_atlas/precise_scissors.png",
+   "title": "Precise Scissors"
+  },
+  "PRESERVED_FOG": {
+   "description": "Upon pickup, remove [blue]3[/blue] cards from your [gold]Deck[/gold]. Add [red]Folly[/red] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/preserved_fog.png",
+   "title": "Preserved Fog"
+  },
+  "PRISMATIC_GEM": {
+   "description": "Gain 1 Energy at the start of each turn. Card rewards now contain cards from other colors.",
+   "image": "relic_atlas/prismatic_gem.png",
+   "title": "Prismatic Gem"
+  },
+  "PUMPKIN_CANDLE": {
+   "description": "Gain 1 Energy at the start of each turn. Extinguishes after [blue]5[/blue] combats. Can be [gold]Kindled[/gold] at [gold]Rest Sites[/gold].",
+   "image": "relic_atlas/pumpkin_candle.png",
+   "title": "Pumpkin Candle"
+  },
+  "PUNCH_DAGGER": {
+   "description": "Upon pickup, [gold]Enchant[/gold] an Attack with [purple]Momentum[/purple] [blue]5[/blue].",
+   "image": "relic_atlas/punch_dagger.png",
+   "title": "Punch Dagger"
+  },
+  "RADIANT_PEARL": {
+   "description": "At the start of each combat, add [blue]1[/blue] [gold]Luminesce[/gold] into your [gold]Hand[/gold].",
+   "image": "relic_atlas/radiant_pearl.png",
+   "title": "Radiant Pearl"
+  },
+  "RAINBOW_RING": {
+   "description": "The first time you play an Attack, Skill, and Power each turn, gain [blue]1[/blue] [gold]Strength[/gold] and [blue]1[/blue] [gold]Dexterity[/gold].",
+   "image": "relic_atlas/rainbow_ring.png",
+   "title": "Rainbow Ring"
+  },
+  "RAZOR_TOOTH": {
+   "description": "Every time you play an Attack or Skill, [gold]Upgrade[/gold] it for the remainder of combat.",
+   "image": "relic_atlas/razor_tooth.png",
+   "title": "Razor Tooth"
+  },
+  "RED_MASK": {
+   "description": "At the start of each combat, apply [blue]1[/blue] [gold]Weak[/gold] to ALL enemies.",
+   "image": "relic_atlas/red_mask.png",
+   "title": "Red Mask"
+  },
+  "RED_SKULL": {
+   "description": "While your HP is at or below [blue]50%[/blue], you have [blue]3[/blue] additional [gold]Strength[/gold].",
+   "image": "relic_atlas/red_skull.png",
+   "title": "Red Skull"
+  },
+  "REGALITE": {
+   "description": "Whenever you create a card, gain [blue]2[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/regalite.png",
+   "title": "Regalite"
+  },
+  "REGAL_PILLOW": {
+   "description": "Whenever you [gold]Rest[/gold], heal an additional [blue]15[/blue] HP.",
+   "image": "relic_atlas/regal_pillow.png",
+   "title": "Regal Pillow"
+  },
+  "REPTILE_TRINKET": {
+   "description": "Whenever you use a potion, gain [blue]3[/blue] [gold]Strength[/gold] this turn.",
+   "image": "relic_atlas/reptile_trinket.png",
+   "title": "Reptile Trinket"
+  },
+  "RINGING_TRIANGLE": {
+   "description": "[gold]Retain[/gold] your [gold]Hand[/gold] on the first turn of combat.",
+   "image": "relic_atlas/ringing_triangle.png",
+   "title": "Ringing Triangle"
+  },
+  "RING_OF_THE_DRAKE": {
+   "description": "At the start of your first [blue]3[/blue] turns, draw [blue]2[/blue] additional cards.",
+   "image": "relic_atlas/ring_of_the_drake.png",
+   "title": "Ring of the Drake"
+  },
+  "RING_OF_THE_SNAKE": {
+   "description": "At the start of each combat, draw [blue]2[/blue] additional cards.",
+   "image": "relic_atlas/ring_of_the_snake.png",
+   "title": "Ring of the Snake"
+  },
+  "RIPPLE_BASIN": {
+   "description": "If you did not play any Attacks during your turn, gain [blue]4[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/ripple_basin.png",
+   "title": "Ripple Basin"
+  },
+  "ROYAL_POISON": {
+   "description": "At the start of each combat, lose [blue]4[/blue] HP.",
+   "image": "relic_atlas/royal_poison.png",
+   "title": "Royal Poison"
+  },
+  "ROYAL_STAMP": {
+   "description": "Upon pickup, choose an Attack or Skill in your [gold]Deck[/gold] to [gold]Enchant[/gold] with [purple]{Enchantment}[/purple].",
+   "image": "relic_atlas/royal_stamp.png",
+   "title": "Royal Stamp"
+  },
+  "RUINED_HELMET": {
+   "description": "The first time you gain [gold]Strength[/gold] each combat, double the amount gained.",
+   "image": "relic_atlas/ruined_helmet.png",
+   "title": "Ruined Helmet"
+  },
+  "RUNIC_CAPACITOR": {
+   "description": "Start each combat with [blue]3[/blue] additional [gold]Orb Slots[/gold].",
+   "image": "relic_atlas/runic_capacitor.png",
+   "title": "Runic Capacitor"
+  },
+  "RUNIC_PYRAMID": {
+   "description": "At the end of your turn, you no longer discard your [gold]Hand[/gold].",
+   "image": "relic_atlas/runic_pyramid.png",
+   "title": "Runic Pyramid"
+  },
+  "SAI": {
+   "description": "At the start of your turn, gain [blue]7[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/sai.png",
+   "title": "Sai"
+  },
+  "SAND_CASTLE": {
+   "description": "Upon pickup, [gold]Upgrade[/gold] [blue]6[/blue] random cards.",
+   "image": "relic_atlas/sand_castle.png",
+   "title": "Sand Castle"
+  },
+  "SCREAMING_FLAGON": {
+   "description": "If you end your turn with no cards in your [gold]Hand[/gold], deal [blue]20[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/screaming_flagon.png",
+   "title": "Screaming Flagon"
+  },
+  "SCROLL_BOXES": {
+   "description": "Upon pickup, choose [blue]1[/blue] of [blue]2[/blue] packs of cards to add to your [gold]Deck[/gold].",
+   "image": "relic_atlas/scroll_boxes.png",
+   "title": "Scroll Boxes"
+  },
+  "SEAL_OF_GOLD": {
+   "description": "At the start of your turn, spend [blue]5[/blue] [gold]Gold[/gold] to gain 1 Energy.",
+   "image": "relic_atlas/seal_of_gold.png",
+   "title": "Seal of Gold"
+  },
+  "SEA_GLASS": {
+   "description": "See [blue]15[/blue] cards from {Character.StringValue:cond:[gold]{}[/gold]|another character}. Choose any number of them to add to your [gold]Deck[/gold].",
+   "image": "relic_atlas/sea_glass.png",
+   "title": "Sea Glass"
+  },
+  "SELF_FORMING_CLAY": {
+   "description": "Whenever you lose HP in combat, gain [blue]3[/blue] [gold]Block[/gold] next turn.",
+   "image": "relic_atlas/self_forming_clay.png",
+   "title": "Self-Forming Clay"
+  },
+  "SERE_TALON": {
+   "description": "Upon pickup, add [blue]2[/blue] random [red]Curses[/red] and [blue]3[/blue] [purple]Wishes[/purple] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/sere_talon.png",
+   "title": "Sere Talon"
+  },
+  "SHOVEL": {
+   "description": "You can now dig at [gold]Rest Sites[/gold] to obtain a random [gold]Relic[/gold].",
+   "image": "relic_atlas/shovel.png",
+   "title": "Shovel"
+  },
+  "SHURIKEN": {
+   "description": "Every time you play [blue]3[/blue] Attacks in a single turn, gain [blue]1[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/shuriken.png",
+   "title": "Shuriken"
+  },
+  "SIGNET_RING": {
+   "description": "Upon pickup, gain [blue]999[/blue] [gold]Gold[/gold].",
+   "image": "relic_atlas/signet_ring.png",
+   "title": "Signet Ring"
+  },
+  "SILKEN_TRESS": {
+   "description": "Upon pickup, lose all [gold]Gold[/gold]. [gold]Enchant[/gold] all cards in the first card reward with [purple]Glam[/purple].",
+   "image": "relic_atlas/silken_tress.png",
+   "title": "Silken Tress"
+  },
+  "SILVER_CRUCIBLE": {
+   "description": "The first [blue]3[/blue] card rewards you see are [gold]Upgraded[/gold]. The first Treasure Chest you open is [red]empty[/red].",
+   "image": "relic_atlas/silver_crucible.png",
+   "title": "Silver Crucible"
+  },
+  "SLING_OF_COURAGE": {
+   "description": "Start each [gold]Elite[/gold] combat with [blue]2[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/sling_of_courage.png",
+   "title": "Sling of Courage"
+  },
+  "SMALL_CAPSULE": {
+   "description": "Upon pickup, obtain a random [gold]Relic[/gold].",
+   "image": "relic_atlas/small_capsule.png",
+   "title": "Small Capsule"
+  },
+  "SNECKO_EYE": {
+   "description": "At the start of your turn, draw [blue]2[/blue] additional cards. Start each combat [red]Confused[/red].",
+   "image": "relic_atlas/snecko_eye.png",
+   "title": "Snecko Eye"
+  },
+  "SNECKO_SKULL": {
+   "description": "Whenever you apply [gold]Poison[/gold], apply an additional [blue]1[/blue] [gold]Poison[/gold].",
+   "image": "relic_atlas/snecko_skull.png",
+   "title": "Snecko Skull"
+  },
+  "SOZU": {
+   "description": "Gain 1 Energy at the start of each turn. You can no longer obtain potions.",
+   "image": "relic_atlas/sozu.png",
+   "title": "Sozu"
+  },
+  "SPARKLING_ROUGE": {
+   "description": "At the start of your [blue]3rd[/blue] turn, gain [blue]1[/blue] [gold]Strength[/gold] and [blue]1[/blue] [gold]Dexterity[/gold].",
+   "image": "relic_atlas/sparkling_rouge.png",
+   "title": "Sparkling Rouge"
+  },
+  "SPIKED_GAUNTLETS": {
+   "description": "Gain 1 Energy at the start of each turn. Powers cost [blue]1[/blue] more  Energy.",
+   "image": "relic_atlas/spiked_gauntlets.png",
+   "title": "Spiked Gauntlets"
+  },
+  "STONE_CALENDAR": {
+   "description": "At the end of turn [blue]7[/blue], deal [blue]52[/blue] damage to ALL enemies.",
+   "image": "relic_atlas/stone_calendar.png",
+   "title": "Stone Calendar"
+  },
+  "STONE_CRACKER": {
+   "description": "At the start of each combat, [gold]Upgrade[/gold] [blue]2[/blue] random cards in your [gold]Draw Pile[/gold] for the rest of combat.",
+   "image": "relic_atlas/stone_cracker.png",
+   "title": "Stone Cracker"
+  },
+  "STONE_HUMIDIFIER": {
+   "description": "Whenever you [gold]Rest[/gold] at a [gold]Rest Site[/gold], raise your Max HP by [blue]5[/blue].",
+   "image": "relic_atlas/stone_humidifier.png",
+   "title": "Stone Humidifier"
+  },
+  "STORYBOOK": {
+   "description": "Upon pickup, add [blue]1[/blue] [gold]Brightest Flame[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/storybook.png",
+   "title": "Storybook"
+  },
+  "STRAWBERRY": {
+   "description": "Upon pickup, raise your Max HP by [blue]7[/blue].",
+   "image": "relic_atlas/strawberry.png",
+   "title": "Strawberry"
+  },
+  "STRIKE_DUMMY": {
+   "description": "Cards containing “Strike” deal [blue]3[/blue] additional damage.",
+   "image": "relic_atlas/strike_dummy.png",
+   "title": "Strike Dummy"
+  },
+  "STURDY_CLAMP": {
+   "description": "Up to [blue]10[/blue] [gold]Block[/gold] persists across turns.",
+   "image": "relic_atlas/sturdy_clamp.png",
+   "title": "Sturdy Clamp"
+  },
+  "SWORD_OF_JADE": {
+   "description": "Start each combat with [blue]3[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/sword_of_jade.png",
+   "title": "Sword of Jade"
+  },
+  "SWORD_OF_STONE": {
+   "description": "Transforms into a powerful [gold]Relic[/gold] after defeating [blue]5[/blue] [gold]Elites[/gold].",
+   "image": "relic_atlas/sword_of_stone.png",
+   "title": "Sword of Stone"
+  },
+  "SYMBIOTIC_VIRUS": {
+   "description": "At the start of each combat, [gold]Channel[/gold] [blue]1[/blue] [gold]Dark[/gold].",
+   "image": "relic_atlas/symbiotic_virus.png",
+   "title": "Symbiotic Virus"
+  },
+  "TANXS_WHISTLE": {
+   "description": "Upon pickup, add [blue]1[/blue] [gold]Whistle[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/tanxs_whistle.png",
+   "title": "Tanx's Whistle"
+  },
+  "TEA_OF_DISCOURTESY": {
+   "description": "At the start of the next combat, shuffle [blue]2[/blue] [gold]Dazed[/gold] into your [gold]Draw Pile[/gold].",
+   "image": "relic_atlas/tea_of_discourtesy.png",
+   "title": "Tea of Discourtesy"
+  },
+  "THE_ABACUS": {
+   "description": "Whenever you shuffle your [gold]Draw Pile[/gold], gain [blue]6[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/the_abacus.png",
+   "title": "The Abacus"
+  },
+  "THE_BOOT": {
+   "description": "Whenever you would deal [blue]4[/blue] or less unblocked attack damage, increase it to [blue]5[/blue].",
+   "image": "relic_atlas/the_boot.png",
+   "title": "The Boot"
+  },
+  "THE_COURIER": {
+   "description": "The merchant no longer runs out of cards, relics, or potions and his prices are reduced by [blue]20%[/blue].",
+   "image": "relic_atlas/the_courier.png",
+   "title": "The Courier"
+  },
+  "THROWING_AXE": {
+   "description": "The first card you play each combat is played an extra time.",
+   "image": "relic_atlas/throwing_axe.png",
+   "title": "Throwing Axe"
+  },
+  "TINGSHA": {
+   "description": "Whenever you discard a card during your turn, deal [blue]3[/blue] damage to a random enemy for each card discarded.",
+   "image": "relic_atlas/tingsha.png",
+   "title": "Tingsha"
+  },
+  "TINY_MAILBOX": {
+   "description": "Whenever you [gold]Rest[/gold], procure [blue]2[/blue] random potions.",
+   "image": "relic_atlas/tiny_mailbox.png",
+   "title": "Tiny Mailbox"
+  },
+  "TOASTY_MITTENS": {
+   "description": "At the start of your turn, [gold]Exhaust[/gold] the top card of your [gold]Draw Pile[/gold] and gain [blue]1[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/toasty_mittens.png",
+   "title": "Toasty Mittens"
+  },
+  "TOOLBOX": {
+   "description": "At the start of each combat, choose [blue]1[/blue] of [blue]3[/blue] random Colorless cards and add the chosen card into your [gold]Hand[/gold].",
+   "image": "relic_atlas/toolbox.png",
+   "title": "Toolbox"
+  },
+  "TOUCH_OF_OROBAS": {
+   "description": "Upon pickup, replace {StarterRelic.StringValue:cond:[gold]{StarterRelic}[/gold] with [gold]{UpgradedRelic}[/gold]|your starter [gold]Relic[/gold] with an [gold]Ancient[/gold] version}.",
+   "image": "relic_atlas/touch_of_orobas.png",
+   "title": "Touch of Orobas"
+  },
+  "TOUGH_BANDAGES": {
+   "description": "Whenever you discard a card during your turn, gain [blue]3[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/tough_bandages.png",
+   "title": "Tough Bandages"
+  },
+  "TOXIC_EGG": {
+   "description": "Whenever you add a Skill into your [gold]Deck[/gold], [gold]Upgrade[/gold] it.",
+   "image": "relic_atlas/toxic_egg.png",
+   "title": "Toxic Egg"
+  },
+  "TOY_BOX": {
+   "description": "Upon pickup, obtain [blue]4[/blue] [gold]Wax Relics[/gold]. Every [blue]3[/blue] combats, your left-most [gold]Wax Relic[/gold] will melt away.",
+   "image": "relic_atlas/toy_box.png",
+   "title": "Toy Box"
+  },
+  "TRI_BOOMERANG": {
+   "description": "Choose [blue]3[/blue] Attacks in your [gold]Deck[/gold]. [gold]Enchant[/gold] them with [purple]Instinct[/purple].",
+   "image": "relic_atlas/tri_boomerang.png",
+   "title": "Tri-Boomerang"
+  },
+  "TUNGSTEN_ROD": {
+   "description": "Whenever you would lose HP, lose [blue]1[/blue] less.",
+   "image": "relic_atlas/tungsten_rod.png",
+   "title": "Tungsten Rod"
+  },
+  "TUNING_FORK": {
+   "description": "Every time you play [blue]10[/blue] Skills, gain [blue]7[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/tuning_fork.png",
+   "title": "Tuning Fork"
+  },
+  "TWISTED_FUNNEL": {
+   "description": "At the start of each combat, apply [blue]4[/blue] [gold]Poison[/gold] to ALL enemies.",
+   "image": "relic_atlas/twisted_funnel.png",
+   "title": "Twisted Funnel"
+  },
+  "UNCEASING_TOP": {
+   "description": "Whenever you have no cards in [gold]Hand[/gold] during your turn, draw a card.",
+   "image": "relic_atlas/unceasing_top.png",
+   "title": "Unceasing Top"
+  },
+  "UNDYING_SIGIL": {
+   "description": "Enemies with at least as much [gold]Doom[/gold] as HP deal [blue]50%[/blue] less damage.",
+   "image": "relic_atlas/undying_sigil.png",
+   "title": "Undying Sigil"
+  },
+  "UNSETTLING_LAMP": {
+   "description": "Each combat, the first time you play a card that [gold]Debuffs[/gold] an enemy, double its effect.",
+   "image": "relic_atlas/unsettling_lamp.png",
+   "title": "Unsettling Lamp"
+  },
+  "VAJRA": {
+   "description": "Start each combat with [blue]1[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/vajra.png",
+   "title": "Vajra"
+  },
+  "VAMBRACE": {
+   "description": "The first time you gain [gold]Block[/gold] from a card each combat, double the amount gained.",
+   "image": "relic_atlas/vambrace.png",
+   "title": "Vambrace"
+  },
+  "VELVET_CHOKER": {
+   "description": "Gain 1 Energy at the start of each turn. You cannot play more than [blue]6[/blue] cards per turn.",
+   "image": "relic_atlas/velvet_choker.png",
+   "title": "Velvet Choker"
+  },
+  "VENERABLE_TEA_SET": {
+   "description": "Whenever you enter a [gold]Rest Site[/gold], start the next combat with an additional 2 Energy.",
+   "image": "relic_atlas/venerable_tea_set.png",
+   "title": "Venerable Tea Set"
+  },
+  "VERY_HOT_COCOA": {
+   "description": "Start each combat with an additional [blue]4 Energy[/blue].",
+   "image": "relic_atlas/very_hot_cocoa.png",
+   "title": "Very Hot Cocoa"
+  },
+  "VEXING_PUZZLEBOX": {
+   "description": "At the start of each combat, add a random card into your [gold]Hand[/gold]. It's free to play this turn.",
+   "image": "relic_atlas/vexing_puzzlebox.png",
+   "title": "Vexing Puzzlebox"
+  },
+  "VITRUVIAN_MINION": {
+   "description": "Cards containing “Minion” deal double damage and gain double [gold]Block[/gold].",
+   "image": "relic_atlas/vitruvian_minion.png",
+   "title": "Vitruvian Minion"
+  },
+  "WAR_HAMMER": {
+   "description": "Whenever you kill an [gold]Elite[/gold], [gold]Upgrade[/gold] [blue]4[/blue] random cards.",
+   "image": "relic_atlas/war_hammer.png",
+   "title": "War Hammer"
+  },
+  "WAR_PAINT": {
+   "description": "Upon pickup, [gold]Upgrade[/gold] [blue]2[/blue] random Skills.",
+   "image": "relic_atlas/war_paint.png",
+   "title": "War Paint"
+  },
+  "WHETSTONE": {
+   "description": "Upon pickup, [gold]Upgrade[/gold] [blue]2[/blue] random Attacks.",
+   "image": "relic_atlas/whetstone.png",
+   "title": "Whetstone"
+  },
+  "WHISPERING_EARRING": {
+   "description": "Gain 1 Energy at the start of each turn. [red]Vakuu plays your first turn for you.[/red]",
+   "image": "relic_atlas/whispering_earring.png",
+   "title": "Whispering Earring"
+  },
+  "WHITE_BEAST_STATUE": {
+   "description": "Potions always appear in combat rewards.",
+   "image": "relic_atlas/white_beast_statue.png",
+   "title": "White Beast Statue"
+  },
+  "WHITE_STAR": {
+   "description": "[gold]Elites[/gold] drop an additional [gold]Rare[/gold] card reward.",
+   "image": "relic_atlas/white_star.png",
+   "title": "White Star"
+  },
+  "WINGED_BOOTS": {
+   "description": "You may ignore paths when choosing the next rooms to travel to [blue]3[/blue] times.",
+   "image": "relic_atlas/winged_boots.png",
+   "title": "Winged Boots"
+  },
+  "WING_CHARM": {
+   "description": "A random card in each card reward is [gold]Enchanted[/gold] with [purple]Swift[/purple] [blue]1[/blue].",
+   "image": "relic_atlas/wing_charm.png",
+   "title": "Wing Charm"
+  },
+  "WONGOS_MYSTERY_TICKET": {
+   "description": "Receive [blue]3[/blue] random [gold]Relics[/gold] after [blue]5[/blue] combats.",
+   "image": "relic_atlas/wongos_mystery_ticket.png",
+   "title": "Wongo's Mystery Ticket"
+  },
+  "WONGO_CUSTOMER_APPRECIATION_BADGE": {
+   "description": "Does nothing.",
+   "image": "relic_atlas/wongo_customer_appreciation_badge.png",
+   "title": "Wongo Customer Appreciation Badge"
+  },
+  "YUMMY_COOKIE": {
+   "description": "Upon pickup, [gold]Upgrade[/gold] [blue]4[/blue] cards.",
+   "image": "relic_atlas/yummy_cookie.png",
+   "title": "Yummy Cookie"
+  }
+ },
+ "tips": {
+  "BLOCK": {
+   "description": "Until next turn, prevents damage.",
+   "title": "Block"
+  },
+  "CARD_REWARD": {
+   "description": "A pack of [blue]3[/blue] random cards. You may choose [blue]1[/blue] to add to your [gold]Deck[/gold].",
+   "title": "Card Reward"
+  },
+  "CHANNELING": {
+   "description": "Channeling an Orb puts it into your first empty slot. If you have no empty slots, your first Orb is automatically [gold]Evoked[/gold] to make room.",
+   "title": "Channel"
+  },
+  "COMPENDIUM": {
+   "description": "View all of the cards, potions, and relics you have encountered throughout the Spire.",
+   "title": "Compendium"
+  },
+  "COOK": {
+   "description": "[gold]Remove[/gold] [blue]2[/blue] cards from your [gold]Deck[/gold] and gain [green]9[/green] Max HP at a [gold]Rest Site[/gold].",
+   "title": "Cook"
+  },
+  "DECK": {
+   "description": "View all of the cards in your deck.",
+   "title": "Deck {Hotkey:choose(None):| ({})}"
+  },
+  "DISCARD_PILE": {
+   "description": "If your draw pile is empty, the discard pile is shuffled into the draw pile.\n\nClick to view the cards in your discard pile.",
+   "title": "Discard Pile {Hotkey:choose(None):| ({})}"
+  },
+  "DOUBLE_BOSS": {
+   "description": "At the end of the act, you will fight [gold]{BossName1}[/gold] and [gold]{BossName2}[/gold].",
+   "title": "{BossName1} & {BossName2}"
+  },
+  "DRAW_PILE": {
+   "description": "At the start of each turn,\n[blue]5[/blue] cards are drawn from here.\n\nClick to view the cards in your draw pile (shuffled).",
+   "title": "Draw Pile {Hotkey:choose(None):| ({})}"
+  },
+  "END_TURN": {
+   "description": "Pressing this button will end your turn.\n\nYou will discard your hand, enemies will take their turn, you will draw [blue]5[/blue] cards, then it will be your turn again.",
+   "title": "End Turn {Hotkey:choose(None):| ({})}"
+  },
+  "ENERGY": {
+   "description": "Energy is used to play cards from your [gold]Hand[/gold].",
+   "title": "Energy"
+  },
+  "EVOKE": {
+   "description": "Consume your rightmost Orb and use its Evoke effect.",
+   "title": "Evoke"
+  },
+  "EXHAUST_PILE": {
+   "description": "Click to view cards Exhausted this combat.",
+   "title": "Exhausted Cards {Hotkey:choose(None):| ({})}"
+  },
+  "FATAL": {
+   "description": "Triggers whenever this card kills a non-minion enemy.",
+   "title": "Fatal"
+  },
+  "FLOOR": {
+   "description": "How far up you have climbed.",
+   "title": "Floor"
+  },
+  "FORGE": {
+   "description": "The first time you [gold]Forge[/gold] each combat, add [gold]Sovereign Blade[/gold] into your [gold]Hand[/gold]. Adds additional damage to [gold]Sovereign Blade[/gold].",
+   "title": "Forge"
+  },
+  "HIT_POINTS": {
+   "description": "If you run out of HP, you die.",
+   "title": "Hit Points (HP)"
+  },
+  "LINKED_REWARDS": {
+   "description": "You can only select [blue]1[/blue] reward from this set.",
+   "title": "Linked Rewards"
+  },
+  "MAP": {
+   "description": "View this current Act's map.",
+   "title": "Map {Hotkey:choose(None):| ({})}"
+  },
+  "MONEY_POUCH": {
+   "description": "How much Gold you have. Gold is the currency within the Spire.",
+   "title": "Gold"
+  },
+  "POTION_SLOT": {
+   "description": "Use potions during combat to gain [green]bonuses[/green] or [red]hinder[/red] enemies.",
+   "title": "Potion Slot"
+  },
+  "REPLAY_DYNAMIC": {
+   "description": "Plays this card an additional {Times:plural:time|[blue]{}[/blue] times}.",
+   "title": "Replay"
+  },
+  "REPLAY_STATIC": {
+   "description": "Plays this card an additional time.",
+   "title": "Replay"
+  },
+  "ROOM_ANCIENT": {
+   "description": "Ancients reside in these rooms.\n\nThey grant incredible bonuses, treasures, and knowledge.",
+   "title": "Ancient"
+  },
+  "ROOM_BOSS": {
+   "description": "The deadliest foe in the area.\n\nDefeating them will let you proceed to the next Act.",
+   "title": "Boss"
+  },
+  "ROOM_ELITE": {
+   "description": "Powerful foes are in these rooms.\n\nDefeating them will reward you a [gold]Relic[/gold].",
+   "title": "Elite"
+  },
+  "ROOM_ENEMY": {
+   "description": "Hostile enemies reside in these rooms.",
+   "title": "Enemy"
+  },
+  "ROOM_EVENT": {
+   "description": "Something unusual occurs in these rooms...",
+   "title": "Event"
+  },
+  "ROOM_MAP": {
+   "description": "A place where you can plan your next move.",
+   "title": "Antechamber"
+  },
+  "ROOM_MERCHANT": {
+   "description": "The mysterious Merchant sells his wares in these rooms.\n\nSpend your well-earned [gold]Gold[/gold] here!",
+   "title": "Shop"
+  },
+  "ROOM_REST": {
+   "description": "Stop by these rooms to [green]Heal[/green] some HP or [gold]Upgrade[/gold] a card.",
+   "title": "Rest Site"
+  },
+  "ROOM_TREASURE": {
+   "description": "[gold]Relics[/gold] and [gold]Gold[/gold] can be found in these coveted rooms.",
+   "title": "Treasure Room"
+  },
+  "ROOM_UNKNOWN_ELITE": {
+   "description": "A previously unknown room containing powerful foes.",
+   "title": "Unknown - Elite"
+  },
+  "ROOM_UNKNOWN_ENEMY": {
+   "description": "A previously unknown room containing hostile enemies.",
+   "title": "Unknown - Enemy"
+  },
+  "ROOM_UNKNOWN_EVENT": {
+   "description": "A previously unknown room containing an event.\n\nSomething unusual occurs in these rooms...",
+   "title": "Unknown - Event"
+  },
+  "ROOM_UNKNOWN_MERCHANT": {
+   "description": "A previously unknown room containing the mysterious merchant.\n\nSpend your well-earned [gold]Gold[/gold] here!",
+   "title": "Unknown - Merchant"
+  },
+  "ROOM_UNKNOWN_TREASURE": {
+   "description": "A previously unknown room containing highly coveted treasure.",
+   "title": "Unknown - Treasure"
+  },
+  "SETTINGS": {
+   "description": "Opens the game menu.\n\nChange or update your graphics, audio, and gameplay preferences here.",
+   "title": "Settings (ESC)"
+  },
+  "STUN": {
+   "description": "Prevent the enemy from acting on its next turn.",
+   "title": "Stun"
+  },
+  "SUMMON_STATIC": {
+   "description": "Summon [gold]Osty[/gold].\nIf already summoned, raise his Max HP for this combat.",
+   "title": "Summon"
+  },
+  "TRANSFORM": {
+   "description": "Transformed cards become a random card of any rarity.",
+   "title": "Transform"
+  }
+ },
+ "upgrades": {
+  "ABRASIVE": {
+   "description": "[gold]Sly[/gold].\nGain 1 [gold]Dexterity[/gold].\nGain 6 [gold]Thorns[/gold]."
+  },
+  "ACCELERANT": {
+   "description": "[gold]Poison[/gold] is triggered 2 additional times."
+  },
+  "ACCURACY": {
+   "description": "[gold]Shivs[/gold] deal 6 additional damage."
+  },
+  "ACROBATICS": {
+   "description": "Draw 4 cards.\nDiscard 1 card."
+  },
+  "ADAPTIVE_STRIKE": {
+   "description": "Deal 23 damage.\nAdd a 0 Energy copy of this card into your Discard Pile."
+  },
+  "ADRENALINE": {
+   "description": "Gain 2 Energy.\nDraw 2 cards.\n[gold]Exhaust[/gold]."
+  },
+  "AFTERLIFE": {
+   "description": "[gold]Summon[/gold] 9.\n[gold]Exhaust[/gold]."
+  },
+  "ALCHEMIZE": {
+   "cost": 0,
+   "description": "Procure a random potion.\n[gold]Exhaust[/gold]."
+  },
+  "ALIGNMENT": {
+   "description": "Gain 3 Energy."
+  },
+  "ALL_FOR_ONE": {
+   "description": "Deal 14 damage.\nPut ALL 0 Energy cards from your Discard Pile into your Hand."
+  },
+  "ANGER": {
+   "description": "Deal 8 damage.\nAdd a copy of this card into your [gold]Discard Pile[/gold]."
+  },
+  "ANTICIPATE": {
+   "description": "Gain 3 [gold]Dexterity[/gold] this turn."
+  },
+  "APOTHEOSIS": {
+   "cost": 1,
+   "description": "[gold]Innate[/gold].\n[gold]Upgrade[/gold] ALL your cards.\n[gold]Exhaust[/gold]."
+  },
+  "ARMAMENTS": {
+   "description": "Gain 5 [gold]Block[/gold].\n[gold]Upgrade[/gold] ALL cards in your [gold]Hand[/gold]."
+  },
+  "ASHEN_STRIKE": {
+   "description": "Deal 6 damage.\nDeals 4 additional damage for each card in your Exhaust Pile."
+  },
+  "ASSASSINATE": {
+   "description": "[gold]Innate[/gold].\nDeal 13 damage.\nApply 2 [gold]Vulnerable[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "ASTRAL_PULSE": {
+   "description": "Deal 8 damage to ALL enemies twice."
+  },
+  "AUTOMATION": {
+   "cost": 0,
+   "description": "Every 10 cards you draw, gain 1 Energy."
+  },
+  "BACKFLIP": {
+   "description": "Gain 8 [gold]Block[/gold].\nDraw 2 cards."
+  },
+  "BACKSTAB": {
+   "description": "[gold]Innate[/gold].\nDeal 15 damage.\n[gold]Exhaust[/gold]."
+  },
+  "BALL_LIGHTNING": {
+   "description": "Deal 10 damage.\n[gold]Channel[/gold] 1 [gold]Lightning[/gold]."
+  },
+  "BANSHEES_CRY": {
+   "cost": 7,
+   "description": "Deal 33 damage to ALL enemies.\nCosts 2 Energy less for each Ethereal card played this combat."
+  },
+  "BARRAGE": {
+   "description": "Deal 7 damage for each [gold]Channeled[/gold] Orb."
+  },
+  "BARRICADE": {
+   "cost": 2,
+   "description": "[gold]Block[/gold] is not removed at the start of your turn."
+  },
+  "BASH": {
+   "description": "Deal 10 damage.\nApply 3 [gold]Vulnerable[/gold]."
+  },
+  "BATTLE_TRANCE": {
+   "description": "Draw 4 cards.\nYou cannot draw additional cards this turn."
+  },
+  "BEAM_CELL": {
+   "description": "Deal 4 damage.\nApply 2 [gold]Vulnerable[/gold]."
+  },
+  "BEAT_DOWN": {
+   "description": "Play 4 random Attacks from your [gold]Discard Pile[/gold]."
+  },
+  "BEAT_INTO_SHAPE": {
+   "description": "Deal 7 damage.\nForge 7.\nForges an additional 7 for every other time you've hit the enemy this turn."
+  },
+  "BEGONE": {
+   "description": "Choose a card in your [gold]Hand[/gold] to [gold]Transform[/gold] into [gold]Minion Strike+[/gold]."
+  },
+  "BELIEVE_IN_YOU": {
+   "description": "Another player gains 3 Energy."
+  },
+  "BIASED_COGNITION": {
+   "description": "Gain 5 [gold]Focus[/gold].\nAt the start of your turn, lose 1 [gold]Focus[/gold]."
+  },
+  "BLACK_HOLE": {
+   "description": "Whenever you spend or gain ★, deal 4 damage to ALL enemies."
+  },
+  "BLADE_DANCE": {
+   "description": "Add 4 [gold]Shivs[/gold] into your [gold]Hand[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "BLADE_OF_INK": {
+   "description": "Add 3 [purple]Inky[/purple] [gold]Shivs[/gold] into your [gold]Hand[/gold]."
+  },
+  "BLIGHT_STRIKE": {
+   "description": "Deal 10 damage.\nApply [gold]Doom[/gold] equal to damage dealt."
+  },
+  "BLOODLETTING": {
+   "description": "Lose 3 HP.\nGain 3 Energy."
+  },
+  "BLOOD_WALL": {
+   "description": "Lose 2 HP.\nGain 20 [gold]Block[/gold]."
+  },
+  "BLUDGEON": {
+   "description": "Deal 42 damage."
+  },
+  "BLUR": {
+   "description": "Gain 8 [gold]Block[/gold].\n[gold]Block[/gold] is not removed at the start of your next turn."
+  },
+  "BODYGUARD": {
+   "description": "[gold]Summon[/gold] 7."
+  },
+  "BODY_SLAM": {
+   "cost": 0,
+   "description": "Deal damage equal to your [gold]Block[/gold]."
+  },
+  "BOLAS": {
+   "description": "Deal 4 damage.\nAt the start of your next turn, return this to your [gold]Hand[/gold]."
+  },
+  "BOMBARDMENT": {
+   "description": "Deal 24 damage.\nAt the start of your turn, if this is in your [gold]Exhaust Pile[/gold], play it.\n[gold]Exhaust[/gold]."
+  },
+  "BONE_SHARDS": {
+   "description": "If [gold]Osty[/gold] is alive, he deals 12 damage to ALL enemies and you gain 12 [gold]Block[/gold].\n[gold]Osty[/gold] dies."
+  },
+  "BOOST_AWAY": {
+   "description": "Gain 9 [gold]Block[/gold].\nAdd a [gold]Dazed[/gold] into your [gold]Discard Pile[/gold]."
+  },
+  "BOOT_SEQUENCE": {
+   "description": "[gold]Innate[/gold].\nGain 13 [gold]Block[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "BORROWED_TIME": {
+   "description": "Gain 6 Energy.\nCards cost an additional Energy this turn."
+  },
+  "BOUNCING_FLASK": {
+   "description": "Apply 3 [gold]Poison[/gold] to a random enemy 4 times."
+  },
+  "BRAND": {
+   "description": "Lose 1 HP.\n[gold]Exhaust[/gold] 1 card.\nGain 2 [gold]Strength[/gold]."
+  },
+  "BREAK": {
+   "description": "Deal 30 damage.\nApply 7 [gold]Vulnerable[/gold]."
+  },
+  "BREAKTHROUGH": {
+   "description": "Lose 1 HP.\nDeal 13 damage to ALL enemies."
+  },
+  "BRIGHTEST_FLAME": {
+   "description": "Gain 3 Energy.\nDraw 3 cards.\nLose 1 Max HP."
+  },
+  "BUBBLE_BUBBLE": {
+   "description": "If the enemy has [gold]Poison[/gold], apply 12 [gold]Poison[/gold]."
+  },
+  "BUFFER": {
+   "description": "Prevent the next 2 times you would lose HP."
+  },
+  "BULK_UP": {
+   "description": "Lose 1 Orb Slot.\nGain 3 [gold]Strength[/gold].\nGain 3 [gold]Dexterity[/gold]."
+  },
+  "BULLET_TIME": {
+   "cost": 2,
+   "description": "You cannot draw additional cards this turn. ALL cards in your [gold]Hand[/gold] are free to play this turn."
+  },
+  "BULLY": {
+   "description": "Deal 4 damage.\nDeals 3 additional damage for each Vulnerable on the enemy."
+  },
+  "BULWARK": {
+   "description": "Gain 15 [gold]Block[/gold].\n[gold]Forge[/gold] 13."
+  },
+  "BUNDLE_OF_JOY": {
+   "description": "Add 4 random Colorless cards into your [gold]Hand[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "BURNING_PACT": {
+   "description": "[gold]Exhaust[/gold] 1 card.\nDraw 3 cards."
+  },
+  "BURST": {
+   "description": "This turn, your next 2 Skills are played an extra time."
+  },
+  "BURY": {
+   "description": "Deal 63 damage."
+  },
+  "BYRD_SWOOP": {
+   "description": "Deal 18 damage."
+  },
+  "CALAMITY": {
+   "cost": 2,
+   "description": "Whenever you play an Attack, add a random Attack into your [gold]Hand[/gold]."
+  },
+  "CALCIFY": {
+   "description": "[gold]Osty's[/gold] attacks deal 6 additional damage."
+  },
+  "CALTROPS": {
+   "description": "Whenever you are attacked, deal 5 damage back."
+  },
+  "CAPACITOR": {
+   "description": "Gain 3 Orb Slots."
+  },
+  "CAPTURE_SPIRIT": {
+   "description": "Enemy loses 4 HP.\nAdd 4 [gold]Souls[/gold] into your [gold]Draw Pile[/gold]."
+  },
+  "CASCADE": {
+   "description": "Play the top X+1 cards of your [gold]Draw Pile[/gold]."
+  },
+  "CATASTROPHE": {
+   "description": "Play 3 random cards from your [gold]Draw Pile[/gold]."
+  },
+  "CELESTIAL_MIGHT": {
+   "description": "Deal 6 damage 4 times."
+  },
+  "CHAOS": {
+   "description": "[gold]Channel[/gold] 2 random Orbs."
+  },
+  "CHARGE": {
+   "description": "Choose 2 cards in your [gold]Draw Pile[/gold] to [gold]Transform[/gold] into\n[gold]Minion Dive Bombs+[/gold]."
+  },
+  "CHARGE_BATTERY": {
+   "description": "Gain 10 Block.\nNext turn, gain 1 Energy."
+  },
+  "CHILD_OF_THE_STARS": {
+   "description": "Whenever you spend ★, gain 3 Block for each ★ spent."
+  },
+  "CINDER": {
+   "description": "Deal 24 damage.\n[gold]Exhaust[/gold] 1 card at random."
+  },
+  "CLASH": {
+   "description": "Can only be played if every card in your [gold]Hand[/gold] is an Attack.\nDeal 18 damage."
+  },
+  "CLAW": {
+   "description": "Deal 4 damage.\nIncrease the damage of ALL Claw cards by 3 this combat."
+  },
+  "CLEANSE": {
+   "description": "[gold]Summon[/gold] 5.\n[gold]Exhaust[/gold] 1 card from your [gold]Draw Pile[/gold]."
+  },
+  "CLOAK_AND_DAGGER": {
+   "description": "Gain 6 [gold]Block[/gold].\nAdd 2 [gold]Shivs[/gold] into your [gold]Hand[/gold]."
+  },
+  "CLOAK_OF_STARS": {
+   "description": "Gain 10 [gold]Block[/gold]."
+  },
+  "COLD_SNAP": {
+   "description": "Deal 9 damage.\n[gold]Channel[/gold] 1 [gold]Frost[/gold]."
+  },
+  "COLLISION_COURSE": {
+   "description": "Deal 15 damage.\nAdd a [gold]Debris[/gold] into your [gold]Hand[/gold]."
+  },
+  "COLOSSUS": {
+   "description": "Gain 8 [gold]Block[/gold].\nYou receive 50% less damage from [gold]Vulnerable[/gold] enemies this turn."
+  },
+  "COMET": {
+   "description": "Deal 44 damage.\nApply 3 [gold]Weak[/gold].\nApply 3 [gold]Vulnerable[/gold]."
+  },
+  "COMPACT": {
+   "description": "Gain 7 [gold]Block[/gold].\n[gold]Transform[/gold] all Status cards in your [gold]Hand[/gold] into [gold]Fuel+[/gold]."
+  },
+  "COMPILE_DRIVER": {
+   "description": "Deal 10 damage.\nDraw 1 card for each unique Orb you have."
+  },
+  "CONFLAGRATION": {
+   "description": "Deal 2 damage to ALL enemies 5 times."
+  },
+  "CONQUEROR": {
+   "description": "[gold]Forge[/gold] 5.\n[gold]Sovereign Blade[/gold] deals double damage to the enemy this turn."
+  },
+  "CONSUMING_SHADOW": {
+   "description": "[gold]Channel[/gold] 3 [gold]Dark[/gold].\nAt the end of your turn, [gold]Evoke[/gold] your leftmost Orb."
+  },
+  "CONVERGENCE": {
+   "description": "Next turn,\ngain 1 Energy and 2 Stars.\nRetain your Hand this turn."
+  },
+  "COOLANT": {
+   "description": "At the start of your turn, gain 3 [gold]Block[/gold] for each unique Orb you have."
+  },
+  "COOLHEADED": {
+   "description": "[gold]Channel[/gold] 1 [gold]Frost[/gold].\nDraw 2 cards."
+  },
+  "COORDINATE": {
+   "description": "Give another player 8 [gold]Strength[/gold] this turn."
+  },
+  "CORROSIVE_WAVE": {
+   "description": "Whenever you draw a card this turn, apply 3 [gold]Poison[/gold] to ALL enemies."
+  },
+  "CORRUPTION": {
+   "cost": 2,
+   "description": "Skills cost 0 Energy.\nWhenever you play a Skill, Exhaust it."
+  },
+  "COSMIC_INDIFFERENCE": {
+   "description": "Gain 9 [gold]Block[/gold].\nPut a card from your [gold]Discard Pile[/gold] on top of your [gold]Draw Pile[/gold]."
+  },
+  "COUNTDOWN": {
+   "description": "At the start of your turn, apply 9 [gold]Doom[/gold] to a random enemy."
+  },
+  "CRASH_LANDING": {
+   "description": "Deal 26 damage to ALL enemies.\nFill your [gold]Hand[/gold] with [gold]Debris[/gold]."
+  },
+  "CREATIVE_AI": {
+   "cost": 2,
+   "description": "At the start of your turn, add a random Power into your [gold]Hand[/gold]."
+  },
+  "CRESCENT_SPEAR": {
+   "description": "Deal 8 damage.\nDeals 3 additional damage for ALL your cards that have a ★ cost."
+  },
+  "CRIMSON_MANTLE": {
+   "description": "At the start of your turn, lose 1 HP and gain 10 [gold]Block[/gold]."
+  },
+  "CRUELTY": {
+   "description": "[gold]Vulnerable[/gold] enemies take an additional 50% damage."
+  },
+  "CRUSH_UNDER": {
+   "description": "Deal 8 damage to ALL enemies. All enemies lose 2 [gold]Strength[/gold] this turn."
+  },
+  "DAGGER_SPRAY": {
+   "description": "Deal 6 damage to ALL enemies twice."
+  },
+  "DAGGER_THROW": {
+   "description": "Deal 12 damage.\nDraw 1 card.\nDiscard 1 card."
+  },
+  "DANSE_MACABRE": {
+   "description": "Whenever you play a card that costs 2 Energy or more, gain 6 Block."
+  },
+  "DARKNESS": {
+   "description": "[gold]Channel[/gold] 1 [gold]Dark[/gold].\nTrigger the passive ability of all [gold]Dark[/gold] Orbs twice."
+  },
+  "DARK_EMBRACE": {
+   "cost": 1,
+   "description": "Whenever a card is [gold]Exhausted[/gold],\ndraw 1 card."
+  },
+  "DARK_SHACKLES": {
+   "description": "Enemy loses 15 [gold]Strength[/gold] this turn.\n[gold]Exhaust[/gold]."
+  },
+  "DASH": {
+   "description": "Gain 13 [gold]Block[/gold].\nDeal 13 damage."
+  },
+  "DEADLY_POISON": {
+   "description": "Apply 7 [gold]Poison[/gold]."
+  },
+  "DEATHBRINGER": {
+   "description": "Apply 26 [gold]Doom[/gold] and 1 [gold]Weak[/gold] to ALL enemies."
+  },
+  "DEATHS_DOOR": {
+   "description": "Gain 7 [gold]Block[/gold].\nIf you applied [gold]Doom[/gold] this turn, gain [gold]Block[/gold] 2 additional times."
+  },
+  "DEATH_MARCH": {
+   "description": "Deal 9 damage.\nDeals 6 additional damage for each card drawn during your turn."
+  },
+  "DEBILITATE": {
+   "description": "Deal 12 damage.\n[gold]Vulnerable[/gold] and [gold]Weak[/gold] are twice as effective against the enemy for the next 3 turns."
+  },
+  "DECISIONS_DECISIONS": {
+   "description": "Draw 5 cards.\nChoose a Skill in your [gold]Hand[/gold] and play it 3 times.\n[gold]Exhaust[/gold]."
+  },
+  "DEFEND_DEFECT": {
+   "description": "Gain 8 [gold]Block[/gold]."
+  },
+  "DEFEND_IRONCLAD": {
+   "description": "Gain 8 [gold]Block[/gold]."
+  },
+  "DEFEND_NECROBINDER": {
+   "description": "Gain 8 [gold]Block[/gold]."
+  },
+  "DEFEND_REGENT": {
+   "description": "Gain 8 [gold]Block[/gold]."
+  },
+  "DEFEND_SILENT": {
+   "description": "Gain 8 [gold]Block[/gold]."
+  },
+  "DEFILE": {
+   "description": "[gold]Ethereal[/gold].\nDeal 17 damage."
+  },
+  "DEFLECT": {
+   "description": "Gain 7 [gold]Block[/gold]."
+  },
+  "DEFRAGMENT": {
+   "description": "Gain 2 [gold]Focus[/gold]."
+  },
+  "DEFY": {
+   "description": "[gold]Ethereal[/gold].\nGain 9 [gold]Block[/gold].\nApply 1 [gold]Weak[/gold]."
+  },
+  "DELAY": {
+   "description": "Gain 13 Block.\nNext turn,\ngain 2 Energy."
+  },
+  "DEMESNE": {
+   "cost": 2,
+   "description": "[gold]Ethereal[/gold].\nAt the start of your turn, gain 1 Energy and draw 1 additional card."
+  },
+  "DEMON_FORM": {
+   "description": "At the start of your turn, gain 3 [gold]Strength[/gold]."
+  },
+  "DEVASTATE": {
+   "description": "Deal 40 damage."
+  },
+  "DEVOUR_LIFE": {
+   "description": "Whenever you play a [gold]Soul[/gold], [gold]Summon[/gold] 2."
+  },
+  "DIRGE": {
+   "description": "[gold]Summon[/gold] 4 X times.\nAdd X [gold]Souls+[/gold] into your [gold]Draw Pile[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "DISMANTLE": {
+   "description": "Deal 10 damage.\nIf the enemy is [gold]Vulnerable[/gold], hits twice."
+  },
+  "DISTRACTION": {
+   "cost": 0,
+   "description": "Add a random Skill into your [gold]Hand[/gold]. It's free to play this turn.\n[gold]Exhaust[/gold]."
+  },
+  "DODGE_AND_ROLL": {
+   "description": "Gain 6 [gold]Block[/gold].\nNext turn, gain 6 [gold]Block[/gold]."
+  },
+  "DOMINATE": {
+   "description": "Apply 2 [gold]Vulnerable[/gold].\nGain 1 [gold]Strength[/gold] for each [gold]Vulnerable[/gold] on the enemy.\n[gold]Exhaust[/gold]."
+  },
+  "DOUBLE_ENERGY": {
+   "cost": 0,
+   "description": "Double your Energy.\n[gold]Exhaust[/gold]."
+  },
+  "DRAIN_POWER": {
+   "description": "Deal 12 damage.\n[gold]Upgrade[/gold] 3 random cards in your [gold]Discard Pile[/gold]."
+  },
+  "DRAMATIC_ENTRANCE": {
+   "description": "[gold]Innate[/gold].\nDeal 15 damage to ALL enemies.\n[gold]Exhaust[/gold]."
+  },
+  "DRUM_OF_BATTLE": {
+   "description": "Draw 2 cards.\nWhen this card is Exhausted, gain 3 Energy."
+  },
+  "DUALCAST": {
+   "cost": 0,
+   "description": "[gold]Evoke[/gold] your rightmost Orb twice."
+  },
+  "DUAL_WIELD": {
+   "description": "Choose an Attack or Power card. Add 2 copies of that card into your [gold]Hand[/gold]."
+  },
+  "DYING_STAR": {
+   "description": "[gold]Ethereal[/gold].\nDeal 11 damage to ALL enemies. ALL enemies lose 11 [gold]Strength[/gold] this turn."
+  },
+  "ECHOING_SLASH": {
+   "description": "Deal 13 damage to ALL enemies.\nRepeat this effect for each enemy killed."
+  },
+  "EIDOLON": {
+   "cost": 1,
+   "description": "[gold]Exhaust[/gold] your [gold]Hand[/gold].\nIf 9 cards were [gold]Exhausted[/gold] this way, gain 1 [gold]Intangible[/gold]."
+  },
+  "END_OF_DAYS": {
+   "description": "Apply 37 [gold]Doom[/gold] to ALL enemies.\nKill enemies with at least as much [gold]Doom[/gold] as HP."
+  },
+  "ENERGY_SURGE": {
+   "description": "ALL players gain 3 Energy.\n[gold]Exhaust[/gold]."
+  },
+  "ENFEEBLING_TOUCH": {
+   "description": "[gold]Ethereal[/gold].\nEnemy loses 11 [gold]Strength[/gold] this turn."
+  },
+  "ENLIGHTENMENT": {
+   "description": "Reduce the cost of ALL cards in your [gold]Hand[/gold] to 1 this combat.\n[gold]Exhaust[/gold]."
+  },
+  "ENTRENCH": {
+   "cost": 1,
+   "description": "Double your [gold]Block[/gold]."
+  },
+  "ENVENOM": {
+   "description": "Whenever an Attack deals unblocked damage, apply 2 [gold]Poison[/gold]."
+  },
+  "EQUILIBRIUM": {
+   "description": "Gain 16 [gold]Block[/gold].\n[gold]Retain[/gold] your [gold]Hand[/gold] this turn."
+  },
+  "ERADICATE": {
+   "description": "[gold]Retain[/gold].\nDeal 14 damage X times."
+  },
+  "ESCAPE_PLAN": {
+   "description": "Draw 1 card.\nIf you draw a Skill, gain 5 [gold]Block[/gold]."
+  },
+  "ETERNAL_ARMOR": {
+   "description": "Gain 12 [gold]Plating[/gold]."
+  },
+  "EVIL_EYE": {
+   "description": "Gain 11 [gold]Block[/gold].\nGain another 11 [gold]Block[/gold] if you have [gold]Exhausted[/gold] a card this turn."
+  },
+  "EXPECT_A_FIGHT": {
+   "cost": 1,
+   "description": "Gain Energy for each Attack in your Hand.\nYou cannot gain\nadditional Energy this turn."
+  },
+  "EXPERTISE": {
+   "description": "Draw cards until you have 7 in your [gold]Hand[/gold]."
+  },
+  "EXPOSE": {
+   "description": "Remove all [gold]Artifact[/gold] and [gold]Block[/gold] from the enemy.\nApply 3 [gold]Vulnerable[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "EXTERMINATE": {
+   "description": "Deal 4 damage to ALL enemies 4 times."
+  },
+  "FALLING_STAR": {
+   "description": "Deal 12 damage.\nApply 1 [gold]Weak[/gold].\nApply 1 [gold]Vulnerable[/gold]."
+  },
+  "FAN_OF_KNIVES": {
+   "description": "[gold]Shivs[/gold] now hit ALL enemies.\nAdd 5 [gold]Shivs[/gold] into your [gold]Hand[/gold]."
+  },
+  "FASTEN": {
+   "description": "Gain an additional 6 [gold]Block[/gold] from Defend cards."
+  },
+  "FEAR": {
+   "description": "[gold]Ethereal[/gold].\nDeal 8 damage.\nApply 2 [gold]Vulnerable[/gold]."
+  },
+  "FEED": {
+   "description": "Deal 12 damage.\nIf [gold]Fatal[/gold], raise your Max HP by 4.\n[gold]Exhaust[/gold]."
+  },
+  "FEEDING_FRENZY": {
+   "description": "Gain 7 [gold]Strength[/gold] this turn."
+  },
+  "FEEL_NO_PAIN": {
+   "description": "Whenever a card is [gold]Exhausted[/gold], gain 4 [gold]Block[/gold]."
+  },
+  "FERAL": {
+   "cost": 1,
+   "description": "The first time you play a\n0 Energy Attack each turn,\nreturn it to your Hand."
+  },
+  "FETCH": {
+   "description": "[gold]Osty[/gold] deals 6 damage.\nIf this is the first time this card has been played this turn, draw 1 card."
+  },
+  "FIEND_FIRE": {
+   "description": "[gold]Exhaust[/gold] your [gold]Hand[/gold].\nDeal 10 damage for each card [gold]Exhausted[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "FIGHT_ME": {
+   "description": "Deal 6 damage twice.\nGain 4 [gold]Strength[/gold].\nThe enemy gains 1 [gold]Strength[/gold]."
+  },
+  "FIGHT_THROUGH": {
+   "description": "Gain 17 [gold]Block[/gold].\nAdd 2 [gold]Wounds[/gold] into your [gold]Discard Pile[/gold]."
+  },
+  "FINESSE": {
+   "description": "Gain 7 [gold]Block[/gold].\nDraw 1 card."
+  },
+  "FINISHER": {
+   "description": "Deal 8 damage for each Attack already played this turn."
+  },
+  "FISTICUFFS": {
+   "description": "Deal 9 damage.\nGain [gold]Block[/gold] equal to damage dealt."
+  },
+  "FLAK_CANNON": {
+   "description": "[gold]Exhaust[/gold] ALL your Status cards.\nDeal 11 damage to a random enemy for each card [gold]Exhausted[/gold]."
+  },
+  "FLAME_BARRIER": {
+   "description": "Gain 16 [gold]Block[/gold].\nWhenever you are attacked this turn, deal 6 damage back."
+  },
+  "FLANKING": {
+   "cost": 1,
+   "description": "The enemy takes double attack damage from other players this turn."
+  },
+  "FLASH_OF_STEEL": {
+   "description": "Deal 8 damage.\nDraw 1 card."
+  },
+  "FLATTEN": {
+   "description": "Osty deals 16 damage.\nThis card costs 0 Energy if Osty has attacked this turn."
+  },
+  "FLECHETTES": {
+   "description": "Deal 7 damage for each Skill in your [gold]Hand[/gold]."
+  },
+  "FLICK_FLACK": {
+   "description": "[gold]Sly[/gold].\nDeal 8 damage to ALL enemies."
+  },
+  "FOCUSED_STRIKE": {
+   "description": "Deal 11 damage.\nGain 2 [gold]Focus[/gold] this turn."
+  },
+  "FOOTWORK": {
+   "description": "Gain 3 [gold]Dexterity[/gold]."
+  },
+  "FORBIDDEN_GRIMOIRE": {
+   "cost": 1,
+   "description": "At the end of combat, you may remove a card from your [gold]Deck[/gold].\n[gold]Eternal[/gold]."
+  },
+  "FOREGONE_CONCLUSION": {
+   "description": "Next turn, put 3 cards from your [gold]Draw Pile[/gold] into your [gold]Hand[/gold]."
+  },
+  "FORGOTTEN_RITUAL": {
+   "description": "If you Exhausted a card this turn, gain 4 Energy.\n[gold]Exhaust[/gold]."
+  },
+  "FRIENDSHIP": {
+   "description": "Lose 1 Strength.\nGain 1 Energy at the start of each turn."
+  },
+  "FTL": {
+   "description": "Deal 6 damage.\nIf you have played fewer than 4 cards this turn, draw 1 card."
+  },
+  "FUEL": {
+   "description": "Gain 1 Energy.\nDraw 2 cards.\n[gold]Exhaust[/gold]."
+  },
+  "FURNACE": {
+   "description": "At the start of your turn, [gold]Forge[/gold] 7."
+  },
+  "GAMMA_BLAST": {
+   "description": "Deal 18 damage.\nApply 2 [gold]Weak[/gold].\nApply 2 [gold]Vulnerable[/gold]."
+  },
+  "GANG_UP": {
+   "description": "Deal 5 damage.\nDeals 7 additional damage for each time another player has attacked the enemy this turn."
+  },
+  "GATHER_LIGHT": {
+   "description": "Gain 11 Block.\nGain 1 Stars."
+  },
+  "GENESIS": {
+   "description": "At the start of your turn, gain 3 Stars."
+  },
+  "GENETIC_ALGORITHM": {
+   "description": "Gain 1 [gold]Block[/gold].\nPermanently increase this card's [gold]Block[/gold] by 4.\n[gold]Exhaust[/gold]."
+  },
+  "GIANT_ROCK": {
+   "description": "Deal 20 damage."
+  },
+  "GLACIER": {
+   "description": "Gain 9 [gold]Block[/gold].\n[gold]Channel[/gold] 2 [gold]Frost[/gold]."
+  },
+  "GLASSWORK": {
+   "description": "Gain 8 [gold]Block[/gold].\n[gold]Channel[/gold] 1 [gold]Glass[/gold]."
+  },
+  "GLIMMER": {
+   "description": "Draw 4 cards.\nPut 1 card from your [gold]Hand[/gold] on top of your [gold]Draw Pile[/gold]."
+  },
+  "GLIMPSE_BEYOND": {
+   "description": "ALL players add 4 [gold]Souls[/gold] into their [gold]Draw Pile[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "GLITTERSTREAM": {
+   "description": "Gain 13 [gold]Block[/gold].\nNext turn, gain 7 [gold]Block[/gold]."
+  },
+  "GLOW": {
+   "description": "Gain 2 Stars.\nDraw 1 card.\nNext turn, draw 1 card."
+  },
+  "GO_FOR_THE_EYES": {
+   "description": "Deal 4 damage.\nIf the enemy intends to attack, apply 2 [gold]Weak[/gold]."
+  },
+  "GRAND_FINALE": {
+   "description": "Can only be played if there are no cards in your [gold]Draw Pile[/gold]. Deal 75 damage to ALL enemies."
+  },
+  "GRAVEBLAST": {
+   "description": "Deal 6 damage.\nPut a card from your [gold]Discard Pile[/gold] into your [gold]Hand[/gold]."
+  },
+  "GRAVE_WARDEN": {
+   "description": "Gain 11 [gold]Block[/gold].\nAdd a [gold]Soul[/gold] into your [gold]Draw Pile[/gold]."
+  },
+  "GUARDS": {
+   "description": "[gold]Transform[/gold] any number of cards in your [gold]Hand[/gold] into [gold]Minion Sacrifice+[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "GUIDING_STAR": {
+   "description": "Deal 13 damage.\nDraw 3 cards."
+  },
+  "GUNK_UP": {
+   "description": "Deal 5 damage 3 times.\nAdd a [gold]Slimed[/gold] into your [gold]Discard Pile[/gold]."
+  },
+  "HAILSTORM": {
+   "description": "At the end of your turn, if you have [gold]Frost[/gold], deal 8 damage to ALL enemies."
+  },
+  "HAMMER_TIME": {
+   "cost": 1,
+   "description": "Whenever you [gold]Forge[/gold], all allies [gold]Forge[/gold] as well."
+  },
+  "HAND_OF_GREED": {
+   "description": "Deal 25 damage.\nIf [gold]Fatal[/gold], gain 25 [gold]Gold[/gold]."
+  },
+  "HAND_TRICK": {
+   "description": "Gain 10 [gold]Block[/gold].\nAdd [gold]Sly[/gold] to a Skill in your [gold]Hand[/gold] this turn."
+  },
+  "HANG": {
+   "description": "Deal 13 damage.\nDouble the damage ALL Hang cards deal to this enemy."
+  },
+  "HAUNT": {
+   "description": "Whenever you play a [gold]Soul[/gold], a random enemy loses 8 HP."
+  },
+  "HAVOC": {
+   "cost": 0,
+   "description": "Play the top card of your [gold]Draw Pile[/gold] and [gold]Exhaust[/gold] it."
+  },
+  "HAZE": {
+   "description": "[gold]Sly[/gold].\nApply 6 [gold]Poison[/gold] to ALL enemies."
+  },
+  "HEADBUTT": {
+   "description": "Deal 12 damage.\nPut a card from your [gold]Discard Pile[/gold] on top of your [gold]Draw Pile[/gold]."
+  },
+  "HEAVENLY_DRILL": {
+   "description": "Deal 10 damage X times.\nDouble X if it's 4 or more."
+  },
+  "HEGEMONY": {
+   "description": "Deal 18 damage.\nNext turn, gain 3 Energy."
+  },
+  "HEIRLOOM_HAMMER": {
+   "description": "Deal 25 damage.\nChoose a Colorless card in your [gold]Hand[/gold]. Add a copy of that card into your [gold]Hand[/gold]."
+  },
+  "HELIX_DRILL": {
+   "description": "Deal 5 damage for each Energy previously spent this turn."
+  },
+  "HELLRAISER": {
+   "cost": 1,
+   "description": "Whenever you draw a card containing “Strike”, it is played against a random enemy."
+  },
+  "HEMOKINESIS": {
+   "description": "Lose 2 HP.\nDeal 20 damage."
+  },
+  "HIDDEN_CACHE": {
+   "description": "Gain 1 Stars.\nNext turn, gain 4 Stars."
+  },
+  "HIDDEN_DAGGERS": {
+   "description": "Discard 2 cards.\nAdd 2 [gold]Shivs+[/gold] into your [gold]Hand[/gold]."
+  },
+  "HIDDEN_GEM": {
+   "description": "A random card without [gold]Replay[/gold] in your [gold]Draw Pile[/gold] gains [gold]Replay[/gold] 3."
+  },
+  "HIGH_FIVE": {
+   "description": "[gold]Osty[/gold] deals 13 damage\nand applies 3 [gold]Vulnerable[/gold]\nto ALL enemies."
+  },
+  "HOLOGRAM": {
+   "description": "Gain 5 [gold]Block[/gold].\nPut a card from your [gold]Discard Pile[/gold] into your [gold]Hand[/gold]."
+  },
+  "HOWL_FROM_BEYOND": {
+   "description": "Deal 21 damage to ALL enemies.\nAt the end of your turn, if this is in your [gold]Exhaust Pile[/gold], play it."
+  },
+  "HUDDLE_UP": {
+   "description": "ALL players draw 3 cards.\n[gold]Exhaust[/gold]."
+  },
+  "HYPERBEAM": {
+   "description": "Deal 36 damage to ALL enemies.\nLose 3 [gold]Focus[/gold]."
+  },
+  "ICE_LANCE": {
+   "description": "Deal 24 damage.\n[gold]Channel[/gold] 3 [gold]Frost[/gold]."
+  },
+  "IMPATIENCE": {
+   "description": "If you have no Attacks in your [gold]Hand[/gold], draw 3 cards."
+  },
+  "IMPERVIOUS": {
+   "description": "Gain 40 [gold]Block[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "INFERNAL_BLADE": {
+   "cost": 0,
+   "description": "Add a random Attack into your [gold]Hand[/gold]. It's free to play this turn.\n[gold]Exhaust[/gold]."
+  },
+  "INFERNO": {
+   "description": "At the start of your turn, lose 1 HP.\nWhenever you lose HP on your turn, deal 9 damage to ALL enemies."
+  },
+  "INFLAME": {
+   "description": "Gain 3 [gold]Strength[/gold]."
+  },
+  "INTERCEPT": {
+   "description": "Gain 13 [gold]Block[/gold].\nRedirect all incoming attacks that would be dealt to another player this turn to you."
+  },
+  "INVOKE": {
+   "description": "Next turn, Summon 3 and gain 3 Energy."
+  },
+  "IRON_WAVE": {
+   "description": "Gain 7 [gold]Block[/gold].\nDeal 7 damage."
+  },
+  "ITERATION": {
+   "description": "The first time you draw a Status each turn, draw 3 cards."
+  },
+  "I_AM_INVINCIBLE": {
+   "description": "Gain 13 [gold]Block[/gold].\nAt the end of your turn, if this is on top of your [gold]Draw Pile[/gold], play it."
+  },
+  "JACKPOT": {
+   "description": "Deal 30 damage.\nAdd 3 random Upgraded 0 Energy cards into your Hand."
+  },
+  "JACK_OF_ALL_TRADES": {
+   "description": "Add 2 random Colorless cards into your [gold]Hand[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "JUGGERNAUT": {
+   "description": "Whenever you gain [gold]Block[/gold], deal 8 damage to a random enemy."
+  },
+  "KINGLY_KICK": {
+   "description": "Deal 35 damage.\nWhenever you draw this card, reduce its cost by 1."
+  },
+  "KINGLY_PUNCH": {
+   "description": "Deal 10 damage.\nWhenever you draw this card, increase its damage by 6 this combat."
+  },
+  "KNIFE_TRAP": {
+   "description": "[gold]Upgrade[/gold] and play every [gold]Shiv[/gold] in your [gold]Exhaust Pile[/gold] on the enemy."
+  },
+  "KNOCKDOWN": {
+   "description": "Deal 14 damage.\nThe enemy takes triple damage from other players this turn."
+  },
+  "KNOCKOUT_BLOW": {
+   "description": "Deal 38 damage.\nIf this kills an enemy, gain 5 Stars."
+  },
+  "LARGESSE": {
+   "description": "Another player adds 1 random [gold]Upgraded[/gold] Colorless card to their [gold]Hand[/gold]."
+  },
+  "LEADING_STRIKE": {
+   "description": "Deal 6 damage.\nAdd 2 [gold]Shivs[/gold] into your [gold]Hand[/gold]."
+  },
+  "LEAP": {
+   "description": "Gain 12 [gold]Block[/gold]."
+  },
+  "LEGION_OF_BONE": {
+   "description": "ALL players [gold]Summon[/gold] 8.\n[gold]Exhaust[/gold]."
+  },
+  "LEG_SWEEP": {
+   "description": "Apply 3 [gold]Weak[/gold].\nGain 14 [gold]Block[/gold]."
+  },
+  "LETHALITY": {
+   "description": "[gold]Ethereal[/gold].\nThe first Attack each turn deals 75% additional damage."
+  },
+  "LIFT": {
+   "description": "Give another player 16 [gold]Block[/gold]."
+  },
+  "LIGHTNING_ROD": {
+   "description": "Gain 7 Block.\nAt the start of the next 2 turns, Channel 1 Lightning."
+  },
+  "LOOP": {
+   "description": "At the start of your turn, trigger the passive ability of your rightmost Orb 2 times."
+  },
+  "LUMINESCE": {
+   "description": "[gold]Retain[/gold].\nGain 3 Energy.\n[gold]Exhaust[/gold]."
+  },
+  "LUNAR_BLAST": {
+   "description": "Deal 5 damage for each Skill already played this turn."
+  },
+  "MAKE_IT_SO": {
+   "description": "Deal 9 damage.\nEvery 3 Skills you play in a turn, put this into your [gold]Hand[/gold]."
+  },
+  "MALAISE": {
+   "description": "Enemy loses X+1 [gold]Strength[/gold]. Apply X+1 [gold]Weak[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "MANGLE": {
+   "description": "Deal 20 damage.\nEnemy loses 15 [gold]Strength[/gold] this turn."
+  },
+  "MANIFEST_AUTHORITY": {
+   "description": "Gain 8 [gold]Block[/gold].\nAdd 1 random [gold]Upgraded[/gold] Colorless card into your [gold]Hand[/gold]."
+  },
+  "MASTER_OF_STRATEGY": {
+   "description": "Draw 4 cards.\n[gold]Exhaust[/gold]."
+  },
+  "MASTER_PLANNER": {
+   "cost": 1,
+   "description": "When you play a Skill, it gains [gold]Sly[/gold]."
+  },
+  "MAUL": {
+   "description": "Deal 6 damage twice.\nIncrease the damage of ALL Maul cards by 2 this combat."
+  },
+  "MAYHEM": {
+   "cost": 1,
+   "description": "At the start of your turn, play the top card of your [gold]Draw Pile[/gold]."
+  },
+  "MELANCHOLY": {
+   "description": "Gain 17 Block.\nReduce this card's cost by 1 Energy whenever ANYONE dies."
+  },
+  "MEMENTO_MORI": {
+   "description": "Deal 11 damage.\nDeals 5 additional damage for each card discarded this turn."
+  },
+  "METAMORPHOSIS": {
+   "description": "Add 5 random Attacks into your [gold]Draw Pile[/gold]. They're free to play this combat.\n[gold]Exhaust[/gold]."
+  },
+  "METEOR_SHOWER": {
+   "description": "Deal 21 damage to ALL enemies.\nApply 2 [gold]Weak[/gold] and [gold]Vulnerable[/gold] to ALL enemies."
+  },
+  "METEOR_STRIKE": {
+   "description": "Deal 30 damage.\n[gold]Channel[/gold] 3 [gold]Plasma[/gold]."
+  },
+  "MIND_BLAST": {
+   "cost": 0,
+   "description": "[gold]Innate[/gold].\nDeal damage equal to the number of cards in your [gold]Draw Pile[/gold]."
+  },
+  "MINION_DIVE_BOMB": {
+   "description": "Deal 16 damage.\n[gold]Exhaust[/gold]."
+  },
+  "MINION_SACRIFICE": {
+   "description": "Gain 11 [gold]Block[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "MINION_STRIKE": {
+   "description": "Deal 9 damage.\nDraw 1 card.\n[gold]Exhaust[/gold]."
+  },
+  "MIRAGE": {
+   "cost": 0,
+   "description": "Gain [gold]Block[/gold] equal to [gold]Poison[/gold] on ALL enemies.\n[gold]Exhaust[/gold]."
+  },
+  "MISERY": {
+   "description": "[gold]Retain[/gold].\nDeal 9 damage.\nApply any debuffs on the enemy to ALL other enemies."
+  },
+  "MODDED": {
+   "description": "Gain 1 Orb Slot.\nDraw 2 cards. Increase this card's cost by 1."
+  },
+  "MOLTEN_FIST": {
+   "description": "Deal 14 damage.\nDouble the enemy's [gold]Vulnerable[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "MOMENTUM_STRIKE": {
+   "description": "Deal 13 damage.\nReduce this card's cost to 0 Energy."
+  },
+  "MONARCHS_GAZE": {
+   "cost": 1,
+   "description": "Whenever you attack an enemy, it loses 1 [gold]Strength[/gold] this turn."
+  },
+  "MULTI_CAST": {
+   "description": "[gold]Evoke[/gold] your rightmost Orb X+1 times."
+  },
+  "MURDER": {
+   "cost": 2,
+   "description": "Deal 1 damage.\nDeals 1 additional damage for each card drawn this combat."
+  },
+  "NECRO_MASTERY": {
+   "description": "[gold]Summon[/gold] 8.\nWhenever [gold]Osty[/gold] loses HP,\nALL enemies lose that much HP as well."
+  },
+  "NEGATIVE_PULSE": {
+   "description": "Gain 6 [gold]Block[/gold].\nApply 11 [gold]Doom[/gold] to ALL enemies."
+  },
+  "NEOWS_FURY": {
+   "description": "Deal 14 damage.\nPut up to 3 cards from your [gold]Discard Pile[/gold] into your [gold]Hand[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "NEUROSURGE": {
+   "description": "Gain 4 Energy.\nDraw 2 cards.\nAt the start of your turn, apply 3 Doom to yourself."
+  },
+  "NEUTRALIZE": {
+   "description": "Deal 4 damage.\nApply 2 [gold]Weak[/gold]."
+  },
+  "NEUTRON_AEGIS": {
+   "description": "Gain 11 [gold]Plating[/gold]."
+  },
+  "NIGHTMARE": {
+   "cost": 2,
+   "description": "Choose a card.\nNext turn, add 3 copies of that card into your [gold]Hand[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "NOSTALGIA": {
+   "cost": 0,
+   "description": "The first Attack or Skill you play each turn is placed on top of your [gold]Draw Pile[/gold]."
+  },
+  "NOT_YET": {
+   "description": "Heal 13 HP.\n[gold]Exhaust[/gold]."
+  },
+  "NOXIOUS_FUMES": {
+   "description": "At the start of your turn, apply 3 [gold]Poison[/gold] to ALL enemies."
+  },
+  "NO_ESCAPE": {
+   "description": "Apply 15 Doom, plus an additional 5 Doom for every 10 Doom already on this enemy."
+  },
+  "NULL": {
+   "description": "Deal 13 damage.\nApply 3 [gold]Weak[/gold].\n[gold]Channel[/gold] 1 [gold]Dark[/gold]."
+  },
+  "OBLIVION": {
+   "description": "Whenever you play a card this turn, apply 4 [gold]Doom[/gold] to the enemy."
+  },
+  "OFFERING": {
+   "description": "Lose 6 HP.\nGain 2 Energy.\nDraw 5 cards.\n[gold]Exhaust[/gold]."
+  },
+  "OMNISLICE": {
+   "description": "Deal 11 damage.\nDamage ALL other enemies equal to the damage dealt."
+  },
+  "ONE_TWO_PUNCH": {
+   "description": "This turn, your next 2 Attacks are played an extra time."
+  },
+  "ORBIT": {
+   "cost": 1,
+   "description": "Every Energy you spend,\ngain 1 Energy."
+  },
+  "OUTBREAK": {
+   "description": "Every 3 times you apply [gold]Poison[/gold], deal 15 damage to ALL enemies."
+  },
+  "OUTMANEUVER": {
+   "description": "Next turn, gain 3 Energy."
+  },
+  "OVERCLOCK": {
+   "description": "Draw 3 cards.\nAdd a [gold]Burn[/gold] into your [gold]Discard Pile[/gold]."
+  },
+  "PACTS_END": {
+   "description": "If you have 3 or more cards in your [gold]Exhaust Pile[/gold],\ndeal 23 damage to ALL enemies."
+  },
+  "PAGESTORM": {
+   "cost": 0,
+   "description": "Whenever you draw an [gold]Ethereal[/gold] card, draw 1 card."
+  },
+  "PALE_BLUE_DOT": {
+   "description": "If you play 5 or more cards in a turn, draw 2 cards at the start of your next turn."
+  },
+  "PANACHE": {
+   "description": "Every time you play 5 cards in a single turn, deal 14 damage to ALL enemies."
+  },
+  "PANIC_BUTTON": {
+   "description": "Gain 40 [gold]Block[/gold].\nYou cannot gain [gold]Block[/gold] from cards for 2 turns.\n[gold]Exhaust[/gold]."
+  },
+  "PARRY": {
+   "description": "[gold]Sovereign Blade[/gold] now gains 14 [gold]Block[/gold]."
+  },
+  "PARSE": {
+   "description": "[gold]Ethereal[/gold].\nDraw 4 cards."
+  },
+  "PARTICLE_WALL": {
+   "description": "Gain 12 [gold]Block[/gold].\nReturn this card to your [gold]Hand[/gold]."
+  },
+  "PATTER": {
+   "description": "Gain 10 [gold]Block[/gold].\nGain 3 [gold]Vigor[/gold]."
+  },
+  "PECK": {
+   "description": "Deal 2 damage 4 times."
+  },
+  "PERFECTED_STRIKE": {
+   "description": "Deal 6 damage.\nDeals 3 additional damage for ALL your cards containing “Strike”."
+  },
+  "PHANTOM_BLADES": {
+   "description": "[gold]Shivs[/gold] gain [gold]Retain[/gold].\nThe first [gold]Shiv[/gold] you play each turn deals 12 additional damage."
+  },
+  "PHOTON_CUT": {
+   "description": "Deal 13 damage.\nDraw 2 cards.\nPut 1 card from your [gold]Hand[/gold] on top of your [gold]Draw Pile[/gold]."
+  },
+  "PIERCING_WAIL": {
+   "description": "ALL enemies lose 8 [gold]Strength[/gold] this turn.\n[gold]Exhaust[/gold]."
+  },
+  "PILLAGE": {
+   "description": "Deal 9 damage.\nDraw cards until you draw a non-Attack card."
+  },
+  "PILLAR_OF_CREATION": {
+   "description": "Whenever you create a card, gain 4 [gold]Block[/gold]."
+  },
+  "PINPOINT": {
+   "description": "Deal 19 damage.\nCosts 1 less Energy for each Skill played this turn."
+  },
+  "POISONED_STAB": {
+   "description": "Deal 8 damage.\nApply 4 [gold]Poison[/gold]."
+  },
+  "POKE": {
+   "description": "[gold]Osty[/gold] deals 9 damage."
+  },
+  "POMMEL_STRIKE": {
+   "description": "Deal 10 damage.\nDraw 2 cards."
+  },
+  "POUNCE": {
+   "description": "Deal 20 damage.\nThe next Skill you play costs 0 Energy."
+  },
+  "PRECISE_CUT": {
+   "description": "Deal 16 damage.\nDeals 2 less damage for each other card in your Hand."
+  },
+  "PREDATOR": {
+   "description": "Deal 20 damage.\nNext turn, draw 2 cards."
+  },
+  "PREPARED": {
+   "description": "Draw 2 cards.\nDiscard 2 cards."
+  },
+  "PREP_TIME": {
+   "description": "At the start of your turn, gain 6 [gold]Vigor[/gold]."
+  },
+  "PRIMAL_FORCE": {
+   "description": "Transform all Attacks in your [gold]Hand[/gold] into [gold]Giant Rock+[/gold]."
+  },
+  "PRODUCTION": {
+   "description": "Gain 3 Energy.\n[gold]Exhaust[/gold]."
+  },
+  "PROPHESIZE": {
+   "description": "Draw 9 cards."
+  },
+  "PROTECTOR": {
+   "cost": 0,
+   "description": "Osty deals 15 damage.\nDeals additional damage equal to Osty's Max HP."
+  },
+  "PROWESS": {
+   "description": "Gain 2 [gold]Strength[/gold].\nGain 2 [gold]Dexterity[/gold]."
+  },
+  "PULL_AGGRO": {
+   "description": "[gold]Summon[/gold] 5.\nGain 9 [gold]Block[/gold]."
+  },
+  "PULL_FROM_BELOW": {
+   "description": "Deal 7 damage for each [gold]Ethereal[/gold] card played this combat."
+  },
+  "PURITY": {
+   "description": "[gold]Retain[/gold].\nExhaust up to 5 cards in your [gold]Hand[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "PUTREFY": {
+   "description": "Apply 3 [gold]Weak[/gold].\nApply 3 [gold]Vulnerable[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "PYRE": {
+   "description": "Gain 2 Energy at the start of each turn."
+  },
+  "QUADCAST": {
+   "cost": 0,
+   "description": "[gold]Evoke[/gold] your rightmost Orb 4 times."
+  },
+  "QUASAR": {
+   "description": "Choose 1 of 3 random [gold]Upgraded[/gold] Colorless cards to add into your [gold]Hand[/gold]."
+  },
+  "RADIATE": {
+   "description": "Deal 4 damage to ALL enemies for each 1 Stars gained this turn."
+  },
+  "RAGE": {
+   "description": "Whenever you play an Attack this turn, gain 5 [gold]Block[/gold]."
+  },
+  "RALLY": {
+   "description": "ALL players gain 17 [gold]Block[/gold]."
+  },
+  "RAMPAGE": {
+   "description": "Deal 9 damage.\nIncrease this card's damage by 9 this combat."
+  },
+  "RATTLE": {
+   "description": "[gold]Osty[/gold] deals 9 damage.\nHits an additional time for each other time he has attacked this turn."
+  },
+  "REANIMATE": {
+   "description": "[gold]Summon[/gold] 25.\n[gold]Exhaust[/gold]."
+  },
+  "REAP": {
+   "description": "[gold]Retain[/gold].\nDeal 33 damage."
+  },
+  "REAVE": {
+   "description": "Deal 11 damage.\nAdd a [gold]Soul+[/gold] into your [gold]Draw Pile[/gold]."
+  },
+  "REBOOT": {
+   "description": "Shuffle ALL your cards into your [gold]Draw Pile[/gold].\nDraw 6 cards.\n[gold]Exhaust[/gold]."
+  },
+  "REBOUND": {
+   "description": "Deal 12 damage.\nPut the next card you play this turn on top of your [gold]Draw Pile[/gold]."
+  },
+  "REFINE_BLADE": {
+   "description": "Forge 13.\nNext turn, gain 1 Energy."
+  },
+  "REFLECT": {
+   "description": "Gain 20 [gold]Block[/gold].\nBlocked attack damage is reflected to your attacker this turn."
+  },
+  "REFLEX": {
+   "description": "[gold]Sly[/gold].\nDraw 3 cards."
+  },
+  "REFRACT": {
+   "description": "Deal 12 damage twice.\n[gold]Channel[/gold] 2 [gold]Glass[/gold]."
+  },
+  "RELAX": {
+   "description": "Gain 17 Block.\nNext turn, draw 3 cards and gain 3 Energy.\n[gold]Exhaust[/gold]."
+  },
+  "REND": {
+   "description": "Deal 18 damage.\nDeals 8 additional damage for each unique debuff on the enemy."
+  },
+  "RESONANCE": {
+   "description": "Gain 2 [gold]Strength[/gold]. ALL enemies lose 1 [gold]Strength[/gold]."
+  },
+  "RESTLESSNESS": {
+   "description": "[gold]Retain[/gold].\nIf your Hand is empty, draw 3 cards and gain 3 Energy."
+  },
+  "RICOCHET": {
+   "description": "[gold]Sly[/gold].\nDeal 3 damage to a random enemy 5 times."
+  },
+  "RIGHT_HAND_HAND": {
+   "description": "Osty deals 6 damage.\nWhenever you play a card that costs 2 Energy or more, return this to your Hand from the Discard Pile."
+  },
+  "RIP_AND_TEAR": {
+   "description": "Deal 9 damage to a random enemy twice."
+  },
+  "ROCKET_PUNCH": {
+   "description": "Deal 14 damage.\nDraw 2 cards.\nWhenever you create a Status, reduce this card's cost to 0 Energy until played."
+  },
+  "ROLLING_BOULDER": {
+   "description": "At the start of your turn, deal 10 damage to ALL enemies and increase this damage by 5."
+  },
+  "ROYALTIES": {
+   "description": "At the end of combat, gain 40 [gold]Gold[/gold]."
+  },
+  "RUPTURE": {
+   "description": "Whenever you lose HP on your turn, gain 2 [gold]Strength[/gold]."
+  },
+  "SACRIFICE": {
+   "cost": 0,
+   "description": "[gold]Retain[/gold].\nIf [gold]Osty[/gold] is alive, he dies and you gain [gold]Block[/gold] equal to double his Max HP."
+  },
+  "SALVO": {
+   "description": "Deal 16 damage.\n[gold]Retain[/gold] your [gold]Hand[/gold] this turn."
+  },
+  "SCAVENGE": {
+   "description": "Exhaust a card.\nNext turn, gain 3 Energy."
+  },
+  "SCOURGE": {
+   "description": "Apply 16 [gold]Doom[/gold].\nDraw 2 cards."
+  },
+  "SCRAPE": {
+   "description": "Deal 10 damage.\nDraw 5 cards.\nDiscard all cards drawn this way that do not cost 0 Energy."
+  },
+  "SCULPTING_STRIKE": {
+   "description": "Deal 12 damage.\nAdd [gold]Ethereal[/gold] to a card in your [gold]Hand[/gold]."
+  },
+  "SEANCE": {
+   "cost": 0,
+   "description": "[gold]Ethereal[/gold].\nTransform a card in your [gold]Draw Pile[/gold] into [gold]Soul[/gold]."
+  },
+  "SECOND_WIND": {
+   "description": "[gold]Exhaust[/gold] all non-Attack cards in your [gold]Hand[/gold]. Gain 7 [gold]Block[/gold] for each card [gold]Exhausted[/gold]."
+  },
+  "SEEKER_STRIKE": {
+   "description": "Deal 12 damage.\nChoose 1 of 3 cards in your [gold]Draw Pile[/gold] to add into your [gold]Hand[/gold]."
+  },
+  "SEEKING_EDGE": {
+   "description": "[gold]Forge[/gold] 11.\n[gold]Sovereign Blade[/gold] now deals damage to ALL enemies."
+  },
+  "SENTRY_MODE": {
+   "cost": 1,
+   "description": "At the start of your turn, add 1 [gold]Sweeping Gaze[/gold] into your [gold]Hand[/gold]."
+  },
+  "SERPENT_FORM": {
+   "description": "Whenever you play a card, deal 6 damage to a random enemy."
+  },
+  "SETUP_STRIKE": {
+   "description": "Deal 9 damage.\nGain 3 [gold]Strength[/gold] this turn."
+  },
+  "SEVEN_STARS": {
+   "cost": 1,
+   "description": "Deal 7 damage to ALL enemies 7 times."
+  },
+  "SEVERANCE": {
+   "description": "Deal 18 damage.\nAdd a [gold]Soul[/gold] into your [gold]Draw Pile[/gold], [gold]Hand[/gold], and [gold]Discard Pile[/gold]."
+  },
+  "SHADOWMELD": {
+   "cost": 0,
+   "description": "Double your [gold]Block[/gold] gain this turn."
+  },
+  "SHADOW_SHIELD": {
+   "description": "Gain 15 [gold]Block[/gold].\n[gold]Channel[/gold] 1 [gold]Dark[/gold]."
+  },
+  "SHADOW_STEP": {
+   "cost": 0,
+   "description": "Discard your [gold]Hand[/gold].\nNext turn, Attacks deal double damage."
+  },
+  "SHARED_FATE": {
+   "description": "Lose 2 [gold]Strength[/gold].\nEnemy loses 3 [gold]Strength[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "SHATTER": {
+   "description": "Deal 11 damage to ALL enemies.\n[gold]Evoke[/gold] all of your Orbs twice."
+  },
+  "SHINING_STRIKE": {
+   "description": "Deal 11 damage.\nGain 2 Stars.\nPut this card on top of your Draw Pile."
+  },
+  "SHIV": {
+   "description": "Deal 6 damage.\n[gold]Exhaust[/gold]."
+  },
+  "SHOCKWAVE": {
+   "description": "Apply 5 [gold]Weak[/gold] and [gold]Vulnerable[/gold] to ALL enemies.\n[gold]Exhaust[/gold]."
+  },
+  "SHROUD": {
+   "description": "Whenever you apply [gold]Doom[/gold], gain 3 [gold]Block[/gold]."
+  },
+  "SHRUG_IT_OFF": {
+   "description": "Gain 11 [gold]Block[/gold].\nDraw 1 card."
+  },
+  "SIC_EM": {
+   "description": "[gold]Osty[/gold] deals 6 damage.\nWhenever [gold]Osty[/gold] hits this enemy this turn, [gold]Summon[/gold] 4."
+  },
+  "SIGNAL_BOOST": {
+   "cost": 0,
+   "description": "The next Power you play is played an additional time.\n[gold]Exhaust[/gold]."
+  },
+  "SKEWER": {
+   "description": "Deal 11 damage X times."
+  },
+  "SKIM": {
+   "description": "Draw 4 cards."
+  },
+  "SLEIGHT_OF_FLESH": {
+   "description": "Whenever you apply a debuff to an enemy, they take 13 damage."
+  },
+  "SLICE": {
+   "description": "Deal 9 damage."
+  },
+  "SMOKESTACK": {
+   "description": "Whenever you create a Status, deal 7 damage to ALL enemies."
+  },
+  "SNAKEBITE": {
+   "description": "[gold]Retain[/gold].\nApply 10 [gold]Poison[/gold]."
+  },
+  "SNAP": {
+   "description": "[gold]Osty[/gold] deals 10 damage.\nAdd [gold]Retain[/gold] to a card in your [gold]Hand[/gold]."
+  },
+  "SNEAKY": {
+   "description": "[gold]Sly[/gold].\nWhenever another player attacks an enemy, gain 2 [gold]Block[/gold]."
+  },
+  "SOLAR_STRIKE": {
+   "description": "Deal 10 damage.\nGain 2 Stars."
+  },
+  "SOUL": {
+   "description": "Draw 3 cards.\n[gold]Exhaust[/gold]."
+  },
+  "SOUL_STORM": {
+   "description": "Deal 9 damage.\nDeals 3 additional damage for each Soul in your Exhaust Pile."
+  },
+  "SOVEREIGN_BLADE": {
+   "cost": 1,
+   "description": "[gold]Retain[/gold].\nDeal 10 damage."
+  },
+  "SOW": {
+   "description": "[gold]Retain[/gold].\nDeal 11 damage to ALL enemies."
+  },
+  "SPECTRUM_SHIFT": {
+   "cost": 1,
+   "description": "At the start of your turn, add 1 random Colorless card into your [gold]Hand[/gold]."
+  },
+  "SPINNER": {
+   "description": "[gold]Channel[/gold] 1 [gold]Glass[/gold].\nAt the start of your turn, [gold]Channel[/gold] 1 [gold]Glass[/gold]."
+  },
+  "SPIRIT_OF_ASH": {
+   "description": "Whenever you play an [gold]Ethereal[/gold] card, gain 5 [gold]Block[/gold]."
+  },
+  "SPITE": {
+   "description": "Deal 5 damage.\nIf you lost HP this turn,\nhits 3 times."
+  },
+  "SPLASH": {
+   "description": "Choose 1 of 3 random [gold]Upgraded[/gold] Attacks from another character to add into your [gold]Hand[/gold]. It's free to play this turn."
+  },
+  "SPOILS_OF_BATTLE": {
+   "description": "[gold]Forge[/gold] 8.\nDraw 2 cards."
+  },
+  "SPUR": {
+   "description": "[gold]Retain[/gold].\n[gold]Summon[/gold] 5.\n[gold]Osty[/gold] heals 7 HP."
+  },
+  "SQUASH": {
+   "description": "Deal 12 damage.\nApply 3 [gold]Vulnerable[/gold]."
+  },
+  "SQUEEZE": {
+   "description": "Osty deals 30 damage.\nDeals 6 additional damage for ALL your other Osty Attacks."
+  },
+  "STACK": {
+   "description": "Gain [gold]Block[/gold] equal to the number of cards in your [gold]Discard Pile[/gold] +3."
+  },
+  "STAMPEDE": {
+   "cost": 1,
+   "description": "At the end of your turn, 1 random Attack in your [gold]Hand[/gold] is played against a random enemy."
+  },
+  "STARDUST": {
+   "description": "Deal 7 damage to a random enemy X times."
+  },
+  "STOKE": {
+   "description": "[gold]Exhaust[/gold] your [gold]Hand[/gold].\nAdd 1 random [gold]Upgraded[/gold] card into your [gold]Hand[/gold] for each card [gold]Exhausted[/gold]."
+  },
+  "STOMP": {
+   "description": "Deal 15 damage to ALL enemies.\nCosts 1 less Energy for each Attack played this turn."
+  },
+  "STONE_ARMOR": {
+   "description": "Gain 6 [gold]Plating[/gold]."
+  },
+  "STORM": {
+   "description": "Whenever you play a Power, [gold]Channel[/gold] 2 [gold]Lightning[/gold]."
+  },
+  "STORM_OF_STEEL": {
+   "description": "Discard your [gold]Hand[/gold].\nAdd 1 [gold]Shiv+[/gold] into your [gold]Hand[/gold] for each card discarded."
+  },
+  "STRANGLE": {
+   "description": "Deal 10 damage.\nWhenever you play a card this turn, the enemy loses 3 HP."
+  },
+  "STRATAGEM": {
+   "cost": 0,
+   "description": "Whenever you shuffle your [gold]Draw Pile[/gold], choose a card from it to put into your [gold]Hand[/gold]."
+  },
+  "STRIKE_DEFECT": {
+   "description": "Deal 9 damage."
+  },
+  "STRIKE_IRONCLAD": {
+   "description": "Deal 9 damage."
+  },
+  "STRIKE_NECROBINDER": {
+   "description": "Deal 9 damage."
+  },
+  "STRIKE_REGENT": {
+   "description": "Deal 9 damage."
+  },
+  "STRIKE_SILENT": {
+   "description": "Deal 9 damage."
+  },
+  "SUBROUTINE": {
+   "cost": 0,
+   "description": "Whenever you play a Power, gain Energy."
+  },
+  "SUCKER_PUNCH": {
+   "description": "Deal 10 damage.\nApply 2 [gold]Weak[/gold]."
+  },
+  "SUMMON_FORTH": {
+   "description": "Put [gold]Sovereign Blade[/gold] into your [gold]Hand[/gold] from anywhere.\n[gold]Forge[/gold] 11."
+  },
+  "SUNDER": {
+   "description": "Deal 32 damage.\nIf this kills an enemy, gain 3 Energy."
+  },
+  "SUPERCRITICAL": {
+   "description": "Gain 6 Energy.\n[gold]Exhaust[/gold]."
+  },
+  "SUPERMASSIVE": {
+   "description": "Deal 5 damage.\nDeals 4 additional damage for each card you created this combat."
+  },
+  "SUPPRESS": {
+   "description": "[gold]Innate[/gold].\nDeal 17 damage.\nApply 5 [gold]Weak[/gold]."
+  },
+  "SURVIVOR": {
+   "description": "Gain 11 [gold]Block[/gold].\nDiscard 1 card."
+  },
+  "SWEEPING_BEAM": {
+   "description": "Deal 9 damage to ALL enemies.\nDraw 1 card."
+  },
+  "SWEEPING_GAZE": {
+   "description": "[gold]Ethereal[/gold].\n[gold]Osty[/gold] deals 15 damage to a random enemy.\n[gold]Exhaust[/gold]."
+  },
+  "SWORD_BOOMERANG": {
+   "description": "Deal 3 damage to a random enemy 4 times."
+  },
+  "SWORD_SAGE": {
+   "cost": 1,
+   "description": "[gold]Sovereign Blade[/gold] gains [gold]Replay[/gold] 1."
+  },
+  "SYNTHESIS": {
+   "description": "Deal 20 damage.\nThe next Power you play costs 0 Energy."
+  },
+  "TACTICIAN": {
+   "description": "[gold]Sly[/gold].\nGain 2 Energy."
+  },
+  "TAG_TEAM": {
+   "description": "Deal 15 damage.\nThe next Attack another player plays on the enemy is played an extra time."
+  },
+  "TANK": {
+   "cost": 0,
+   "description": "Take double damage from enemies.\nAllies take half damage from enemies."
+  },
+  "TAUNT": {
+   "description": "Gain 8 [gold]Block[/gold].\nApply 2 [gold]Vulnerable[/gold]."
+  },
+  "TEAR_ASUNDER": {
+   "description": "Deal 7 damage.\nHits an additional time for each time you lost HP this combat."
+  },
+  "TEMPEST": {
+   "description": "[gold]Channel[/gold] X+1 [gold]Lightning[/gold]."
+  },
+  "TERRAFORMING": {
+   "description": "Gain 8 [gold]Vigor[/gold]."
+  },
+  "TESLA_COIL": {
+   "description": "Deal 4 damage.\nTrigger all [gold]Lightning[/gold] against the enemy twice."
+  },
+  "THE_BOMB": {
+   "description": "At the end of 3 turns, deal 50 damage to ALL enemies."
+  },
+  "THE_GAMBIT": {
+   "description": "Gain 75 [gold]Block[/gold].\nIf you take unblocked attack damage this combat, die."
+  },
+  "THE_HUNT": {
+   "description": "Deal 15 damage.\nIf [gold]Fatal[/gold], gain an additional card reward.\n[gold]Exhaust[/gold]."
+  },
+  "THE_SCYTHE": {
+   "description": "Deal 13 damage.\nPermanently increase this card's damage by 5.\n[gold]Exhaust[/gold]."
+  },
+  "THE_SEALED_THRONE": {
+   "cost": 0,
+   "description": "Whenever you play a card, gain ★."
+  },
+  "THE_SMITH": {
+   "description": "[gold]Forge[/gold] 40."
+  },
+  "THRASH": {
+   "description": "Deal 6 damage twice.\n[gold]Exhaust[/gold] a random Attack in your [gold]Hand[/gold] and add its damage to this card."
+  },
+  "THRUMMING_HATCHET": {
+   "description": "Deal 14 damage.\nAt the start of your next turn, return this to your [gold]Hand[/gold]."
+  },
+  "THUNDER": {
+   "description": "Whenever you [gold]Evoke Lightning[/gold], deal 8 damage to each enemy hit."
+  },
+  "THUNDERCLAP": {
+   "description": "Deal 7 damage and apply 1 [gold]Vulnerable[/gold] to ALL enemies."
+  },
+  "TOOLS_OF_THE_TRADE": {
+   "cost": 0,
+   "description": "At the start of your turn, draw 1 card and discard 1 card."
+  },
+  "TORIC_TOUGHNESS": {
+   "description": "Gain 7 [gold]Block[/gold].\nGain 7 [gold]Block[/gold] at the start of the next 2 turns."
+  },
+  "TRACKING": {
+   "cost": 1,
+   "description": "[gold]Weak[/gold] enemies take double damage from Attacks."
+  },
+  "TREMBLE": {
+   "description": "Apply 4 [gold]Vulnerable[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "TRUE_GRIT": {
+   "description": "Gain 9 [gold]Block[/gold].\n[gold]Exhaust[/gold] 1 card."
+  },
+  "TURBO": {
+   "description": "Gain 3 Energy.\nAdd a Void into your Discard Pile."
+  },
+  "TWIN_STRIKE": {
+   "description": "Deal 7 damage twice."
+  },
+  "ULTIMATE_DEFEND": {
+   "description": "Gain 15 [gold]Block[/gold]."
+  },
+  "ULTIMATE_STRIKE": {
+   "description": "Deal 20 damage."
+  },
+  "UNDEATH": {
+   "description": "Gain 9 [gold]Block[/gold].\nAdd a copy of this card into your [gold]Discard Pile[/gold]."
+  },
+  "UNLEASH": {
+   "description": "Osty deals 9 damage.\nDeals additional damage equal to Osty's current HP."
+  },
+  "UNMOVABLE": {
+   "cost": 1,
+   "description": "The first time you gain [gold]Block[/gold] from a card each turn, double the amount gained."
+  },
+  "UNRELENTING": {
+   "description": "Deal 20 damage.\nThe next Attack you play costs 0 Energy."
+  },
+  "UNTOUCHABLE": {
+   "description": "[gold]Sly[/gold].\nGain 9 [gold]Block[/gold]."
+  },
+  "UPPERCUT": {
+   "description": "Deal 13 damage.\nApply 2 [gold]Weak[/gold].\nApply 2 [gold]Vulnerable[/gold]."
+  },
+  "UPROAR": {
+   "description": "Deal 8 damage twice.\nPlay a random Attack from your [gold]Draw Pile[/gold]."
+  },
+  "UP_MY_SLEEVE": {
+   "description": "Add 4 [gold]Shivs[/gold] into your [gold]Hand[/gold].\nReduce this card's cost by 1."
+  },
+  "VEILPIERCER": {
+   "description": "Deal 13 damage.\nThe next Ethereal card you play costs 0 Energy."
+  },
+  "VENERATE": {
+   "description": "Gain 3 Stars."
+  },
+  "VICIOUS": {
+   "description": "Whenever you apply [gold]Vulnerable[/gold], draw 2 cards."
+  },
+  "VOLLEY": {
+   "description": "Deal 14 damage to a random enemy X times."
+  },
+  "WELL_LAID_PLANS": {
+   "description": "At the end of your turn, [gold]Retain[/gold] up to 2 cards."
+  },
+  "WHIRLWIND": {
+   "description": "Deal 8 damage to ALL enemies X times."
+  },
+  "WHISTLE": {
+   "description": "Deal 44 damage.\n[gold]Stun[/gold] the enemy.\n[gold]Exhaust[/gold]."
+  },
+  "WHITE_NOISE": {
+   "cost": 0,
+   "description": "Add a random Power into your [gold]Hand[/gold]. It's free to play this turn.\n[gold]Exhaust[/gold]."
+  },
+  "WRAITH_FORM": {
+   "description": "Gain 3 [gold]Intangible[/gold].\nAt the start of your turn, lose 1 [gold]Dexterity[/gold]."
+  },
+  "WROUGHT_IN_WAR": {
+   "description": "Deal 9 damage.\n[gold]Forge[/gold] 9."
+  },
+  "ZAP": {
+   "cost": 0,
+   "description": "[gold]Channel[/gold] 1 [gold]Lightning[/gold]."
+  }
+ }
+}

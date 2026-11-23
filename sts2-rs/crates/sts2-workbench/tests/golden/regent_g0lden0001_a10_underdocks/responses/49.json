@@ -88,7 +88,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Ultimate Strike"
+   ],
    "error": false,
    "floor": 1,
    "id": 2,
@@ -729,7 +731,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Cloak of Stars"
+   ],
    "error": false,
    "floor": 2,
    "id": 16,
@@ -1461,7 +1465,9 @@
    ],
    "combat_log": [],
    "decision": "map_select",
-   "details": [],
+   "details": [
+    "+Card Spoils of Battle"
+   ],
    "error": false,
    "floor": 3,
    "id": 31,

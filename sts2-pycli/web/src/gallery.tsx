@@ -18,6 +18,8 @@ import "./phone.css";
 import type { Step } from "./api";
 import Board from "./components/Board";
 import Shop from "./components/Shop";
+import BlitzShop from "./components/BlitzShop";
+import ChestRewards from "./components/ChestRewards";
 import EventScreen from "./components/EventScreen";
 import TreasureReveal from "./components/TreasureReveal";
 import RestSite from "./components/RestSite";
@@ -29,6 +31,7 @@ import MapView from "./components/MapView";
 import type { FullMapNode } from "./api";
 import GameOver from "./components/GameOver";
 import combatFixture from "./components/__tests__/fixture-step.json";
+import { t } from "./i18n";
 
 function mkStep(decision: string, state: Record<string, unknown>): Step {
   return {
@@ -101,7 +104,7 @@ function actMap(): { rows: FullMapNode[][] } {
   return { rows };
 }
 
-const screens: { label: string; node: React.ReactNode; height?: number; wide?: boolean }[] = [
+const screens: { label: string; node: React.ReactNode; height?: number; width?: number; wide?: boolean }[] = [
   // A Board is a full-height scene (parallax stack, arena, hand strip); without
   // an explicit height it collapses into the section box's 120px minimum and
   // renders as a sliver — the same trap the .gs-scene screens fell into.
@@ -261,6 +264,37 @@ const screens: { label: string; node: React.ReactNode; height?: number; wide?: b
     })} />,
   },
   {
+    // A full merchant (five class cards, two colorless, three relics, three
+    // potions) in the stage an 11" Android tablet leaves in landscape: 1024x640
+    // CSS px less the workbench chrome. It used to need a scroll there.
+    label: "Shop (full stock, tablet landscape stage)",
+    height: 466,
+    width: 1024,
+    node: <Shop onChoose={() => {}} step={mkStep("shop", {
+      player: { name: "Ironclad", gold: 142 },
+      cards: [
+        { ...card(0, "Sword Boomerang", "Attack"), color: "red", cost: 48, card_cost: 1, is_stocked: true },
+        { ...card(1, "Twin Strike", "Attack"), color: "red", cost: 48, card_cost: 1, is_stocked: true },
+        { ...card(2, "Battle Trance", "Skill", 0), color: "red", cost: 999, card_cost: 0, is_stocked: true },
+        { ...card(3, "Tremble", "Skill"), color: "red", cost: 24, card_cost: 1, is_stocked: true, on_sale: true },
+        { ...card(4, "Cruelty", "Power"), color: "red", cost: 78, card_cost: 1, is_stocked: true },
+        { ...card(5, "Seeker Strike", "Attack"), color: "colorless", cost: 90, card_cost: 1, is_stocked: true },
+        { ...card(6, "Scrawl", "Skill"), color: "colorless", cost: 160, card_cost: 1, is_stocked: true },
+      ],
+      relics: [
+        { index: 0, name: "Akabeko", cost: 75, is_stocked: true, image: "/assets/relic_atlas/akabeko.png" },
+        { index: 1, name: "Bag of Marbles", cost: 130, is_stocked: true, image: "/assets/relic_atlas/bag_of_marbles.png" },
+        { index: 2, name: "Anchor", cost: 160, is_stocked: true, image: "/assets/relic_atlas/anchor.png" },
+      ],
+      potions: [
+        { index: 0, name: "Fire Potion", cost: 48, is_stocked: true, image: "/assets/potion_atlas/attack_potion.png" },
+        { index: 1, name: "Block Potion", cost: 52, is_stocked: true, image: "/assets/potion_atlas/block_potion.png" },
+        { index: 2, name: "Blood Potion", cost: 50, is_stocked: true, image: "/assets/potion_atlas/blood_potion.png" },
+      ],
+      card_removal_cost: 75,
+    })} />,
+  },
+  {
     // Disabled wares: too expensive (gold 10) and sold out. A disabled price
     // tag still has to hold its size so the shelf does not shift.
     label: "Shop (unaffordable and sold out)",
@@ -274,6 +308,39 @@ const screens: { label: string; node: React.ReactNode; height?: number; wide?: b
       relics: [{ index: 0, name: "Akabeko", cost: 75, is_stocked: true, image: "/assets/relic_atlas/akabeko.png" }],
       potions: [{ index: 0, name: "Fire Potion", cost: 48, is_stocked: false, image: "/assets/potion_atlas/attack_potion.png" }],
       card_removal_cost: 75,
+    })} />,
+  },
+  {
+    // GH #1347, the Blitz merchant: six free wares, three picks. One taken,
+    // one rare, the cursed one last.
+    label: "Blitz merchant (one ware taken)",
+    height: 720,
+    node: <BlitzShop onChoose={() => {}} step={mkStep("shop", {
+      game_mode: "blitz",
+      player: { name: "Ironclad", gold: 99 },
+      cards: [], relics: [], potions: [],
+      blitz_choices_remaining: 2,
+      blitz_wares: [
+        { index: 1, kind: "CardUpgrade", title: "Card Upgrade Service", description: "[gold]Upgrade[/gold] a card in your [gold]Deck[/gold].", cursed: false, rare: false, status: "Available", enabled: true },
+        { index: 2, kind: "RareCardReward", title: "Rare Card Reward", description: "Receive [blue]1[/blue] rare card reward.", cursed: false, rare: true, status: "Available", enabled: true },
+        { index: 3, kind: "Potions", title: "Potions", description: "Gain [blue]1[/blue] potion slot and procure [blue]2[/blue] random potions.", cursed: false, rare: false, status: "Used", enabled: false },
+        { index: 4, kind: "CardEnchant", title: "Sharp", description: "[gold]Enchant[/gold] a card with [purple]Sharp 2[/purple].", cursed: false, rare: false, status: "Available", enabled: true },
+        { index: 5, kind: "CardRemoval", title: "Card Removal Service", description: "Remove a card from your [gold]Deck[/gold].", cursed: false, rare: false, status: "Available", enabled: true },
+        { index: 6, kind: "TwoRelics", title: "Cursed Relics", description: "Receive [red]1[/red] random [red]Curse[/red].\nObtain [blue]2[/blue] random [gold]Relics[/gold].", cursed: true, rare: false, status: "Available", enabled: true },
+      ],
+    })} />,
+  },
+  {
+    // GH #1347, the Blitz chest: two relics, taken one per round.
+    label: "Blitz chest (round one)",
+    height: 640,
+    node: <ChestRewards onChoose={() => {}} step={mkStep("rewards", {
+      game_mode: "blitz", act: 1, chest_picks_left: 2,
+      player: { name: "Ironclad", gold: 99 },
+      rewards: [
+        { index: 0, type: "relic", name: "Bronze Scales", description: "Whenever you take damage, deal [blue]3[/blue] damage back.", image: "/assets/relic_atlas/bronze_scales.png" },
+        { index: 1, type: "relic", name: "Venerable Tea Set", description: "At the start of your first turn each combat, gain [blue]2[/blue] Energy.", image: "/assets/relic_atlas/venerable_tea_set.png" },
+      ],
     })} />,
   },
   {
@@ -431,7 +498,7 @@ const screens: { label: string; node: React.ReactNode; height?: number; wide?: b
 function Gallery() {
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-      <h1 style={{ fontWeight: 700 }}>Workbench Screen Gallery</h1>
+      <h1 style={{ fontWeight: 700 }}>{t("Workbench Screen Gallery")}</h1>
       {screens.map((s) => (
         <section key={s.label} style={{
           margin: "32px 0",
@@ -439,15 +506,20 @@ function Gallery() {
           // viewport width the app actually runs at, for the few screens whose
           // defect only appears when there is room for the full cast.
           ...(s.wide ? { width: "min(1700px, calc(100vw - 48px))", marginLeft: "calc(50% - min(850px, 50vw - 24px))" } : null),
+          // A screen framed at a fixed width (the tablet shop) scrolls inside
+          // its section on a narrower viewport instead of widening the page:
+          // on a phone the page grew to 1048 px, and the phone audits read
+          // that as every screen overflowing (GH #1613).
+          ...(s.width ? { overflowX: "auto" } : null),
         }}>
-          <h2 style={{ fontSize: 14, color: "var(--muted)", borderBottom: "1px solid var(--border)", paddingBottom: 6 }}>{s.label}</h2>
+          <h2 style={{ fontSize: 14, color: "var(--muted)", borderBottom: "1px solid var(--border)", paddingBottom: 6 }}>{/* s.label: the fixed captions above, listed in zh/simlab.ts */}{t(s.label)}</h2>
           {/* `height` frames a screen at a real viewport height. Screens whose
               layout only misbehaves when the frame is SHORTER than their
               content (the event column) cannot show that in an auto-height
               box, which is what let Neow's options run off the bottom
               unnoticed. */}
           <div className="surface"
-            style={{ marginTop: 12, overflow: "hidden", minHeight: 120, height: s.height }}>
+            style={{ marginTop: 12, overflow: "hidden", minHeight: 120, height: s.height, width: s.width }}>
             {s.node}
           </div>
         </section>

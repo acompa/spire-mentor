@@ -332,14 +332,18 @@ def _rust_legal(state) -> list[dict]:
             out.append({"action": "end_turn"})
         elif act == "drink_potion":
             # Rust combat surfaces held potions as
-            # {"action":"drink_potion","slot":i,"target_index":None};
+            # {"action":"drink_potion","slot":i,"target_index":j|None};
             # canonicalize to the C# headless shape
-            # {"action":"use_potion","potion_index":i,"target_index":None}.
+            # {"action":"use_potion","potion_index":i,"target_index":rank|None}.
+            # An AnyEnemy potion fans out per living enemy (GH #1604), its
+            # target a raw slot like a card's, so it gets the same rank map.
+            slot = a.get("target_index")
+            rank = alive_slots.index(slot) if slot in alive_slots else slot
             out.append(
                 {
                     "action": "use_potion",
                     "potion_index": a["slot"],
-                    "target_index": a.get("target_index"),
+                    "target_index": rank,
                 }
             )
         else:
@@ -441,12 +445,19 @@ def _apply_rust(state, action: dict) -> None:
         state.apply({"action": "end_turn"})
     elif action["action"] == "use_potion":
         # canonical use_potion -> Rust apply shape
-        # {"action":"drink_potion","slot":i} (Action::DrinkPotion).
+        # {"action":"drink_potion","slot":i} (Action::DrinkPotion). The
+        # target is C#'s alive rank, mapped back to the core slot as for
+        # play_card (GH #1604).
+        target = action.get("target_index")
+        if target is not None:
+            alive_slots = _rust_alive_slots(state)
+            if 0 <= target < len(alive_slots):
+                target = alive_slots[target]
         state.apply(
             {
                 "action": "drink_potion",
                 "slot": action["potion_index"],
-                "target_index": action.get("target_index"),
+                "target_index": target,
             }
         )
     else:

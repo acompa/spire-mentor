@@ -21,7 +21,10 @@ pub(crate) fn play_sword_boomerang(
     let dmg = current_damage(state);
     // Bead `sts2-rs-xezn8`: C# `SwordBoomerang.cs` `RepeatVar(3)` with
     // `OnUpgrade UpgradeValueBy(1m)` → 3 base / 4 upgraded.
-    let hits = if current_upgraded(state) { 4 } else { 3 };
+    let hits = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        if current_upgraded(state) { 4 } else { 3 },
+    );
     for _ in 0..hits {
         let Some(t) = state.get_random_enemy() else {
             break;

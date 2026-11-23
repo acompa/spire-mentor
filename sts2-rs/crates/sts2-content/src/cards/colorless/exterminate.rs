@@ -6,7 +6,7 @@ use super::prelude::*;
 /// OnUpgrade Damage +1 (3→4). Bead `sts2-rs-7kziu`.
 pub(crate) fn play_exterminate(state: &mut CombatState, _t: Option<CreatureUid>) -> EffectResult {
     let dmg = current_damage(state);
-    for _ in 0..4 {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 4) {
         deal_damage_all_enemies(state, dmg);
     }
     EffectResult::Resolved

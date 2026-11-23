@@ -1,5 +1,5 @@
 //! v0.113.0 event relics with a combat hook: ObsidianVice, TormentousCollar,
-//! MightyWings, BathTowel and BathRobes (`Models.Relics/<Name>.cs` in the
+//! MightyWings, BathTowel, BathRobes and Thumbscrew (`Models.Relics/<Name>.cs` in the
 //! v0.113.0 decomp). They come from the v0.113.0-only events
 //! (`sts2_content::events::v0113`), so owning one is the version gate; the
 //! explicit `game_version` check keeps a hand-built scenario honest too.
@@ -142,6 +142,30 @@ pub(crate) fn on_before_combat_start_bath_robes(state: &mut CombatState) -> Effe
     EffectResult::Resolved
 }
 
+/// `Thumbscrew.ModifyAttackHitCount`: an attack already hitting more than
+/// once gets one more hit when its `ModelSource` is an Attack-type card of
+/// the owner. Single-hit attacks, Skill cards that attack and non-card
+/// attacks (monsters, relics, potions) keep their count. Each owned copy is
+/// its own hook listener in C#, so each adds one.
+pub(crate) fn on_modify_attack_hit_count_thumbscrew(
+    state: &CombatState,
+    source_card_type: Option<crate::cards::CardType>,
+    hits: i32,
+) -> i32 {
+    if hits <= 1
+        || source_card_type != Some(crate::cards::CardType::Attack)
+        || state.game_version < crate::GameVersion::V0_113_0
+    {
+        return hits;
+    }
+    let copies = state
+        .relics
+        .iter()
+        .filter(|r| !r.is_melted && r.kind == crate::RelicKind::Thumbscrew)
+        .count();
+    hits.saturating_add(i32::try_from(copies).unwrap_or(i32::MAX))
+}
+
 pub(crate) fn install() {
     register_before_turn_end(
         RelicId::ObsidianVice,
@@ -154,6 +178,10 @@ pub(crate) fn install() {
     register_after_damage_given(
         RelicId::MightyWings,
         on_after_damage_given_mighty_wings as AfterDamageGivenFn,
+    );
+    register_modify_attack_hit_count(
+        RelicId::Thumbscrew,
+        on_modify_attack_hit_count_thumbscrew as ModifyAttackHitCountFn,
     );
     register_before_combat_start(
         RelicId::BathRobes,

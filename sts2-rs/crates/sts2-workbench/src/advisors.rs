@@ -40,6 +40,8 @@ use sts2_wire::emit::run_action::combat_action_to_run_action_value;
 
 use crate::combat_view::build_combat_view;
 use crate::display_maps::loc_id;
+use crate::i18n::{tr, tr_dyn, trf};
+use crate::localization::display_zh;
 use crate::localization::{resolve_state_names, Loc};
 use crate::options::normalize_options;
 use crate::rmx;
@@ -106,14 +108,17 @@ fn potion_name(state: &Value, slot: usize) -> Option<String> {
     };
     match name {
         Some(Value::Object(m)) => Some(
-            m.get("en")
-                .or_else(|| m.get("zh"))
-                .and_then(Value::as_str)
-                .unwrap_or("?")
-                .to_string(),
+            (if display_zh() {
+                m.get("zh").or_else(|| m.get("en"))
+            } else {
+                m.get("en").or_else(|| m.get("zh"))
+            })
+            .and_then(Value::as_str)
+            .unwrap_or("?")
+            .to_string(),
         ),
         Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
-        _ => Some(format!("slot {slot}")),
+        _ => Some(trf("slot {slot}", &[("slot", &slot)])),
     }
 }
 
@@ -121,14 +126,14 @@ fn potion_name(state: &Value, slot: usize) -> Option<String> {
 #[must_use]
 pub fn action_label(stable_idx: i64, state: &Value) -> String {
     if stable_idx == END_TURN {
-        return "end turn".to_string();
+        return tr("end turn").to_string();
     }
     if POTION_MIN < stable_idx && stable_idx <= POTION_BASE {
         #[allow(clippy::cast_sign_loss)]
         let slot = (POTION_BASE - stable_idx) as usize;
         return match potion_name(state, slot) {
-            Some(name) => format!("drink {name}"),
-            None => format!("drink potion slot {slot}"),
+            Some(name) => trf("drink {name}", &[("name", &name)]),
+            None => trf("drink potion slot {slot}", &[("slot", &slot)]),
         };
     }
     if let Some(hand) = state.get("hand").and_then(Value::as_array) {
@@ -137,11 +142,26 @@ pub fn action_label(stable_idx: i64, state: &Value) -> String {
                 return card
                     .get("name")
                     .and_then(Value::as_str)
-                    .map_or_else(|| format!("card {stable_idx}"), str::to_string);
+                    .map_or_else(|| trf("card {n}", &[("n", &stable_idx)]), str::to_string);
             }
         }
     }
-    format!("action {stable_idx}")
+    trf("action {n}", &[("n", &stable_idx)])
+}
+
+/// A card id's display name: the game's Chinese title in Chinese mode, else
+/// the id itself (the page humanizes a raw id; English output is unchanged).
+fn card_label(id: &str) -> String {
+    if display_zh() {
+        let bare = id.strip_prefix("CARD.").unwrap_or(id);
+        let zh = &crate::data::zh_tables().cards;
+        for key in [bare, bare.strip_suffix("_CARD").unwrap_or(bare)] {
+            if let Some(t) = zh.get(&format!("{key}.title")).filter(|t| !t.is_empty()) {
+                return t.clone();
+            }
+        }
+    }
+    id.to_string()
 }
 
 /// `action_stable_key`: a native action dict → `(stable_idx, target_index)`.
@@ -230,11 +250,21 @@ pub fn rows_from_mcts(result: &Value, state: &Value) -> Vec<Value> {
             // Why the engine took this move (`mcts_recommend()["pick"]`), on
             // the engine's own pick only — an heir crowned below has none.
             "pick_reason": if entry["is_best"] == json!(true) {
-                result["pick"]["reason"].clone()
+                match result["pick"]["reason"].as_str() {
+                    Some(r) => json!(tr_dyn(r)),
+                    None => result["pick"]["reason"].clone(),
+                }
             } else {
                 Value::Null
             },
         }));
+        // Co-op `PlayCardAtAlly` (GH #1017): which teammate. Absent otherwise,
+        // so every other row keeps its shape.
+        if let Some(ally) = a.get("ally_index").and_then(Value::as_i64) {
+            if let Some(row) = rows.last_mut() {
+                row["ally_index"] = json!(ally);
+            }
+        }
     }
     // The engine's pick was a row this boundary does not surface: the star
     // goes to the engine's own next choice, the lowest surviving
@@ -377,14 +407,15 @@ fn choose_screen_candidates(rm: &RunManager) -> Vec<Candidate> {
         match idx {
             None => out.push(Candidate {
                 key: "choice:skip".into(),
-                label: "skip".into(),
+                label: tr("skip").into(),
                 action,
             }),
             Some(i) => out.push(Candidate {
                 key: format!("choice:{i}"),
-                label: ids
-                    .get(i)
-                    .map_or_else(|| format!("card {i}"), |id| loc_id(id)),
+                label: ids.get(i).map_or_else(
+                    || trf("card {n}", &[("n", &i)]),
+                    |id| card_label(&loc_id(id)),
+                ),
                 action,
             }),
         }
@@ -394,16 +425,49 @@ fn choose_screen_candidates(rm: &RunManager) -> Vec<Candidate> {
 
 fn candidate_key_label(action: RunAction) -> Option<(String, String)> {
     Some(match action {
-        RunAction::CombatResolveChoice { option: None } => ("choice:skip".into(), "skip".into()),
-        RunAction::CombatResolveChoice { option: Some(o) } => {
-            (format!("choice:{o}"), format!("option {o}"))
+        RunAction::CombatResolveChoice { option: None } => {
+            ("choice:skip".into(), tr("skip").into())
         }
-        RunAction::ShopBuyCard { idx } => (format!("card:{idx}"), format!("buy card {idx}")),
-        RunAction::ShopBuyRelic { idx } => (format!("relic:{idx}"), format!("buy relic {idx}")),
-        RunAction::ShopBuyPotion { idx } => (format!("potion:{idx}"), format!("buy potion {idx}")),
-        RunAction::LeaveShop => ("leave".into(), "leave".into()),
-        RunAction::EventChoice { idx } => (format!("option:{idx}"), format!("option {idx}")),
-        RunAction::PickBossRelic { idx } => (format!("boss_relic:{idx}"), format!("relic {idx}")),
+        RunAction::CombatResolveChoice { option: Some(o) } => {
+            (format!("choice:{o}"), trf("option {n}", &[("n", &o)]))
+        }
+        RunAction::ShopBuyCard { idx } => {
+            (format!("card:{idx}"), trf("buy card {n}", &[("n", &idx)]))
+        }
+        RunAction::ShopBuyRelic { idx } => {
+            (format!("relic:{idx}"), trf("buy relic {n}", &[("n", &idx)]))
+        }
+        RunAction::ShopBuyPotion { idx } => (
+            format!("potion:{idx}"),
+            trf("buy potion {n}", &[("n", &idx)]),
+        ),
+        RunAction::LeaveShop => ("leave".into(), tr("leave").into()),
+        RunAction::EventChoice { idx } => {
+            (format!("option:{idx}"), trf("option {n}", &[("n", &idx)]))
+        }
+        RunAction::PickBossRelic { idx } => (
+            format!("boss_relic:{idx}"),
+            trf("relic {n}", &[("n", &idx)]),
+        ),
+        // The potion popup (GH #1606), on a run with `ooc_potion_actions`.
+        RunAction::UsePotionOutOfCombat { potion_slot } => (
+            format!("use_potion:{potion_slot}"),
+            trf("drink potion {n}", &[("n", &potion_slot)]),
+        ),
+        RunAction::DiscardPotion { potion_slot } => (
+            format!("discard_potion:{potion_slot}"),
+            trf("discard potion {n}", &[("n", &potion_slot)]),
+        ),
+        // The reward screen (GH #1620), on a run with `reward_screen`.
+        RunAction::TakeReward { idx } => (
+            format!("take_reward:{idx}"),
+            trf("take reward {n}", &[("n", &idx)]),
+        ),
+        RunAction::SkipReward { idx } => (
+            format!("skip_reward:{idx}"),
+            trf("skip reward {n}", &[("n", &idx)]),
+        ),
+        RunAction::ProceedRewards => ("proceed".into(), tr("proceed").into()),
         _ => return None,
     })
 }
@@ -430,7 +494,7 @@ pub fn candidates(rm: &RunManager) -> Vec<Candidate> {
         if let RunAction::CombatResolveChoice { option: Some(o) } = action {
             if let Some(cid) = choice_cards.get(o).and_then(|c| c["id"].as_str()) {
                 if !cid.is_empty() {
-                    label = loc_id(cid);
+                    label = card_label(&loc_id(cid));
                 }
             }
         }
@@ -455,14 +519,14 @@ pub fn rank(rm: &RunManager, config: &Value) -> Value {
     let echo = config_obj(config);
     if !is_rankable(rm) {
         return json!({
-            "error": "the choice ranker only runs on an in-combat card-select choice with at least two legal options",
+            "error": tr("the choice ranker only runs on an in-combat card-select choice with at least two legal options"),
             "candidates": [],
             "config": echo,
         });
     }
     let Some(cs) = rm.combat.as_ref() else {
         return json!({
-            "error": "no native combat state (the choice ranker requires the Rust engine backend)",
+            "error": tr("no native combat state (the choice ranker requires the Rust engine backend)"),
             "candidates": [],
             "config": echo,
         });
@@ -820,31 +884,40 @@ fn why_text(
 ) -> Option<String> {
     let phrase = |&(kind, i): &(&str, i64)| {
         if kind == "wins" {
-            return "wins the fight".to_string();
+            return tr("wins the fight").to_string();
         }
         let name = usize::try_from(i)
             .ok()
             .and_then(|i| names.get(i).cloned())
-            .unwrap_or_else(|| format!("enemy {}", i + 1));
-        format!("{kind} {name}")
+            .unwrap_or_else(|| trf("enemy {n}", &[("n", &(i + 1))]));
+        if kind == "kills" {
+            trf("kills {name}", &[("name", &name)])
+        } else {
+            trf("wakes {name}", &[("name", &name)])
+        }
+    };
+    let join = |items: Vec<String>, sep: &'static str| {
+        items
+            .into_iter()
+            .reduce(|a, b| crate::i18n::fill(sep, &[("a", &a), ("b", &b)]))
     };
     let mut parts = Vec::new();
-    for (subject, mine, theirs) in [("your line", you, ai), ("the AI's line", ai, you)] {
+    for (subject, mine, theirs) in [
+        (tr("your line {what}"), you, ai),
+        (tr("the AI's line {what}"), ai, you),
+    ] {
         let only: Vec<String> = mine
             .iter()
             .filter(|e| !theirs.contains(e))
             .map(phrase)
             .collect();
-        if !only.is_empty() {
-            parts.push(format!("{subject} {}", only.join(" and ")));
+        if let Some(what) = join(only, tr("{a} and {b}")) {
+            parts.push(crate::i18n::fill(subject, &[("what", &what)]));
         }
     }
-    if parts.is_empty() {
-        return None;
-    }
-    let mut text = parts.join("; ");
+    let mut text = join(parts, tr("{a}; {b}"))?;
     if let Some(t) = turn.as_i64() {
-        text.push_str(&format!(" on turn {t}"));
+        text = trf("{text} on turn {turn}", &[("text", &text), ("turn", &t)]);
     }
     let mut chars = text.chars();
     chars
@@ -1016,20 +1089,34 @@ pub fn assess_decision(step: &DecisionStep, scores: &[Value], blunder_pct: f64) 
         other => other.to_string(),
     };
     let message = if matched_best {
-        format!(
-            "Turn {turn_s}: {played_label} matched the MCTS line (P(win) {}%)",
-            pct(played_wp)
+        trf(
+            "Turn {turn}: {played} matched the MCTS line (P(win) {pct}%)",
+            &[
+                ("turn", &turn_s),
+                ("played", &played_label),
+                ("pct", &pct(played_wp)),
+            ],
         )
     } else {
-        let mut m = format!(
-            "Turn {turn_s}: {played_label} instead of {best_label} dropped P(win) {}%→{}% (−{drop_pct} pts)",
-            pct(best_wp),
-            pct(played_wp)
-        );
-        if let Some(d) = hp_drop.map(round_half_up).filter(|&d| d >= 1) {
-            m.push_str(&format!(", ≈{d} HP"));
+        let (from, to) = (pct(best_wp), pct(played_wp));
+        let vars: [(&str, &dyn std::fmt::Display); 5] = [
+            ("turn", &turn_s),
+            ("played", &played_label),
+            ("best", &best_label),
+            ("from", &from),
+            ("to", &to),
+        ];
+        let drop = ("drop", &drop_pct as &dyn std::fmt::Display);
+        match hp_drop.map(round_half_up).filter(|&d| d >= 1) {
+            Some(d) => trf(
+                "Turn {turn}: {played} instead of {best} dropped P(win) {from}%→{to}% (−{drop} pts), ≈{hp} HP",
+                &[vars[0], vars[1], vars[2], vars[3], vars[4], drop, ("hp", &d)],
+            ),
+            None => trf(
+                "Turn {turn}: {played} instead of {best} dropped P(win) {from}%→{to}% (−{drop} pts)",
+                &[vars[0], vars[1], vars[2], vars[3], vars[4], drop],
+            ),
         }
-        m
     };
     Some(json!({
         "idx": step.idx,
@@ -1172,7 +1259,7 @@ pub fn hint(sess: &Session, config: &Value) -> Result<Option<Value>, SessionErro
     let cs = sess
         .game()
         .and_then(|g| g.combat_state())
-        .ok_or_else(|| SessionError::new(400, "no native combat state"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no native combat state")))?;
     Ok(Some(score(cs, &named, config)))
 }
 
@@ -1188,7 +1275,7 @@ pub fn hint_remembered(sess: &mut Session, config: &Value) -> Result<Option<Valu
     let cs = sess
         .game()
         .and_then(|g| g.combat_state())
-        .ok_or_else(|| SessionError::new(400, "no native combat state"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no native combat state")))?;
     let (out, pv) = score_with_pv(cs, &named, config);
     let sims = params_for(config, "mcts_recommend").map_or(0, |p| p.sims);
     if let Some(rows) = out["scores"].as_array().filter(|r| !r.is_empty()) {
@@ -1206,7 +1293,7 @@ pub fn live_search_tree(sess: &Session, config: &Value) -> Result<Option<Value>,
     let cs = sess
         .game()
         .and_then(|g| g.combat_state())
-        .ok_or_else(|| SessionError::new(400, "no native combat state"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no native combat state")))?;
     Ok(Some(search_tree(cs, config)))
 }
 
@@ -1220,7 +1307,7 @@ pub fn rank_choice(sess: &Session, config: &Value) -> Result<Option<Value>, Sess
     let rm = sess
         .game()
         .and_then(|g| g.native_run())
-        .ok_or_else(|| SessionError::new(400, "no live run"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no live run")))?;
     Ok(Some(rank(rm, config)))
 }
 
@@ -1234,17 +1321,18 @@ pub fn recommended_action(sess: &Session) -> Result<Option<Value>, SessionError>
     let node = sess.active_node()?;
     let game = sess
         .game()
-        .ok_or_else(|| SessionError::new(400, "no live run"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no live run")))?;
     let rm = game
         .native_run()
-        .ok_or_else(|| SessionError::new(400, "no live run"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no live run")))?;
     let options = normalize_options(&node.state);
     if let Some(action) = best_action(rm, &json!({})) {
         return Ok(game
             .verb_for(action, &options)
             .map(|(verb, args)| json!({"action": verb, "args": args, "policy": "combat_mcts"})));
     }
-    if rmx::phase_str(rm) == "combat" || rm.is_over() {
+    // GH #1347: no run-level policy knows a Blitz run.
+    if rmx::phase_str(rm) == "combat" || rm.is_over() || sess.game_mode.is_blitz() {
         return Ok(None);
     }
     let actions = rmx::available_actions(rm);
@@ -1307,9 +1395,12 @@ pub fn intent_text(intents: &[Value]) -> String {
         let text = if let Some(damage) = intent["damage"].as_i64() {
             let hits = intent["hits"].as_i64().unwrap_or(1);
             if hits > 1 {
-                format!("attack {damage}×{hits}")
+                trf(
+                    "attack {damage}×{hits}",
+                    &[("damage", &damage), ("hits", &hits)],
+                )
             } else {
-                format!("attack {damage}")
+                trf("attack {damage}", &[("damage", &damage)])
             }
         } else {
             let kind = intent["intent_type"]
@@ -1320,14 +1411,20 @@ pub fn intent_text(intents: &[Value]) -> String {
             if kind.is_empty() {
                 continue;
             }
-            kind.to_lowercase()
+            let lower = kind.to_lowercase();
+            if display_zh() {
+                let key = crate::simlab::camel_to_upper_snake(kind).to_ascii_uppercase();
+                crate::i18n::game_name("intents", &format!("{key}.title"), &lower)
+            } else {
+                lower
+            }
         };
         if !parts.contains(&text) {
             parts.push(text);
         }
     }
     if parts.is_empty() {
-        "unknown".to_string()
+        crate::i18n::game_name("intents", "UNKNOWN.title", "unknown")
     } else {
         parts.join(" + ")
     }
@@ -1448,7 +1545,7 @@ pub fn last_turn_grade(sess: &Session, config: &Value) -> Result<Option<Value>, 
     }
     let Ok(params) = params_for(&cfg, "mcts_recommend") else {
         return Ok(Some(
-            json!({"error": "no MCTS scores available", "turn": Value::Null}),
+            json!({"error": tr("no MCTS scores available"), "turn": Value::Null}),
         ));
     };
     let top_up = RecommendParams {
@@ -1946,7 +2043,7 @@ pub fn card_advisable(rm: &RunManager) -> bool {
 pub fn card_advise(rm: &RunManager, config: &Value, mut progress: Option<Progress<'_>>) -> Value {
     if !card_advisable(rm) {
         return json!({
-            "error": "card advisor only runs on a plain card-reward decision",
+            "error": tr("card advisor only runs on a plain card-reward decision"),
             "candidates": [],
             "config": config_obj(config),
         });
@@ -1962,8 +2059,8 @@ pub fn card_advise(rm: &RunManager, config: &Value, mut progress: Option<Progres
             RunAction::PickCardReward { idx: Some(i) } => Some((
                 Some(*i),
                 ids.get(*i).map_or_else(
-                    || format!("card {i}"),
-                    |id| id.strip_prefix("CARD.").unwrap_or(id).to_string(),
+                    || trf("card {n}", &[("n", i)]),
+                    |id| card_label(id.strip_prefix("CARD.").unwrap_or(id)),
                 ),
             )),
             _ => None,
@@ -1973,7 +2070,7 @@ pub fn card_advise(rm: &RunManager, config: &Value, mut progress: Option<Progres
         .iter()
         .any(|a| matches!(a, RunAction::PickCardReward { idx: None }))
     {
-        cands.push((None, "skip".to_string()));
+        cands.push((None, tr("skip").to_string()));
     }
     let total = u32::try_from(cands.len()).unwrap_or(u32::MAX) * cfg.rollouts;
     if let Some(p) = progress.as_mut() {
@@ -2046,7 +2143,7 @@ pub fn decision_advise(
 ) -> Value {
     if !decision_advisable(rm) {
         return json!({
-            "error": "the decision advisor only runs on a shop, event, or card-select decision with at least two options",
+            "error": tr("the decision advisor only runs on a shop, event, or card-select decision with at least two options"),
             "candidates": [],
             "config": config_obj(config),
         });
@@ -2157,7 +2254,7 @@ pub fn advise_card_reward(
     let rm = sess
         .game()
         .and_then(|g| g.native_run())
-        .ok_or_else(|| SessionError::new(400, "no live run"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no live run")))?;
     Ok(Some(card_advise(rm, config, progress)))
 }
 
@@ -2178,7 +2275,7 @@ pub fn advise_decision(
     let rm = sess
         .game()
         .and_then(|g| g.native_run())
-        .ok_or_else(|| SessionError::new(400, "no live run"))?;
+        .ok_or_else(|| SessionError::new(400, tr("no live run")))?;
     Ok(Some(decision_advise(rm, config, progress)))
 }
 
@@ -2188,14 +2285,14 @@ pub fn advise_decision(
 pub fn wpa_review_unavailable() -> Value {
     json!({
         "available": false,
-        "reason": "no run-level value data — value recording needs the rust backend and a loadable PPO checkpoint",
+        "reason": tr("no run-level value data — value recording needs the rust backend and a loadable PPO checkpoint"),
         "points": [],
         "turning_points": [],
         "summary": {},
         "caveats": [
-            "The outlook score is the AI's shaped-return estimate of the run — a relative signal, not a win percentage.",
-            "A swing mixes your choice with the luck revealed after it (what the shop stocked, what the reward offered, how the fight rolled) — use “verify” to check whether the choice itself mattered.",
-            "Judgments are relative to the AI's own play style; a line that is weak for the AI may still be fine for a human plan.",
+            tr("The outlook score is the AI's shaped-return estimate of the run — a relative signal, not a win percentage."),
+            tr("A swing mixes your choice with the luck revealed after it (what the shop stocked, what the reward offered, how the fight rolled) — use “verify” to check whether the choice itself mattered."),
+            tr("Judgments are relative to the AI's own play style; a line that is weak for the AI may still be fine for a human plan."),
         ],
     })
 }
@@ -3041,5 +3138,122 @@ mod tests {
         let before = scores.clone();
         top_up_played(&cs, &mut scores, &json!({"action": "end_turn"}), &params);
         assert_eq!(scores, before);
+    }
+
+    /// English words left in a Chinese string (the brand / acronym tokens
+    /// the glossary keeps aside).
+    pub(crate) fn english_words(s: &str) -> Vec<String> {
+        const KEEP: [&str; 4] = ["AI", "MCTS", "PPO", "Rust"];
+        s.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter(|w| w.len() >= 2 && w.chars().any(|c| c.is_ascii_alphabetic()))
+            .filter(|w| !w.contains('_') && !KEEP.contains(w))
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn chinese_mode_advisor_and_regret_text_has_no_english() {
+        if !crate::data::zh_tables().is_present() {
+            return;
+        }
+        assert!(crate::localization::set_display_language("zh"));
+        let mut texts: Vec<String> = Vec::new();
+
+        // Regret review: a blunder, a blunder with an HP cost, a match.
+        let scores = vec![
+            row(1, Some(0), 0.71, true, "防御"),
+            row(0, Some(0), 0.58, false, "打击"),
+        ];
+        let st = step(
+            json!({"action": "play", "card_index": 0, "target_index": 0}),
+            json!([]),
+        );
+        let d = assess_decision(&st, &scores, DEFAULT_BLUNDER_DROP_PCT).unwrap();
+        assert_eq!(
+            d["verdict"],
+            json!("blunder"),
+            "verdicts stay English values"
+        );
+        texts.push(d["message"].as_str().unwrap().to_string());
+        let mut best = score_row(1, "防御", 1.0, true, 900);
+        best["mean_final_hp"] = json!(70.0);
+        best["hp_n"] = json!(400);
+        let mut played = score_row(
+            END_TURN,
+            &action_label(END_TURN, &json!({})),
+            1.0,
+            false,
+            120,
+        );
+        played["mean_final_hp"] = json!(58.0);
+        played["hp_n"] = json!(120);
+        let hp_step = step(json!({"action": "end_turn"}), json!([]));
+        let d = assess_decision(&hp_step, &[played, best], DEFAULT_BLUNDER_DROP_PCT).unwrap();
+        texts.push(d["message"].as_str().unwrap().to_string());
+        let matched = [
+            row(0, Some(0), 0.6, true, "打击"),
+            row(1, Some(0), 0.5, false, "防御"),
+        ];
+        let ok = assess_decision(&st, &matched, 10.0).unwrap();
+        assert_eq!(ok["matched_best"], json!(true));
+        texts.push(ok["message"].as_str().unwrap().to_string());
+
+        // The recap's reason line and the turn context's intents.
+        let names = ["邪教徒".to_string()];
+        texts.push(
+            why_text(
+                &[("wakes", 0), ("kills", 1)],
+                &[("wins", -1)],
+                &names,
+                &json!(2),
+            )
+            .unwrap(),
+        );
+        texts.push(intent_text(&[
+            json!({"damage": 6, "hits": 2}),
+            json!({"type": "Buff"}),
+        ]));
+        texts.push(intent_text(&[]));
+
+        // Action labels the score rows carry.
+        let state = json!({"player": {"potions": [{"en": "Fire Potion", "zh": "火焰药水"}]}});
+        texts.push(action_label(END_TURN, &state));
+        texts.push(action_label(POTION_BASE - 3, &state));
+        texts.push(action_label(42, &state));
+
+        // The card advisor: its refusal off a card reward, then its labels on one.
+        let mut game = crate::game::Game::new();
+        game.start("Ironclad", "ZHADVISOR", 0, "overgrowth")
+            .expect("start");
+        let off = card_advise(game.native_run().expect("run"), &json!({}), None);
+        texts.push(off["error"].as_str().unwrap().to_string());
+        let rm = game.native_run_mut().expect("run");
+        sts2_wire::graft::open_card_offer(rm, &json!(["BASH", "HAVOC"]), true, false, None)
+            .expect("graft");
+        let cfg = json!({"rollouts": 1, "sims": 0, "max_steps": 4, "seed": 3});
+        let adv = card_advise(game.native_run().expect("run"), &cfg, None);
+        let cands = adv["candidates"].as_array().expect("candidates");
+        assert!(cands.len() >= 2, "{adv}");
+        for c in cands {
+            texts.push(c["label"].as_str().unwrap().to_string());
+        }
+        texts.push(
+            wpa_review_unavailable()["reason"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+
+        crate::localization::set_display_language("en");
+        for t in &texts {
+            assert!(english_words(t).is_empty(), "English left in {t:?}");
+            assert!(!t.is_empty());
+        }
+        assert!(
+            texts.iter().any(|t| t.contains("痛击")),
+            "card names are the game's: {texts:?}"
+        );
+        // Back in English the text is the English again.
+        assert_eq!(action_label(END_TURN, &state), "end turn");
     }
 }

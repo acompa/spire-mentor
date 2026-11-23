@@ -180,13 +180,13 @@ impl HeuristicPolicy {
         if options.is_empty() {
             return Some(0);
         }
-        // Map each option to a distinct non-upgraded deck copy of its id.
+        // Map each option to a distinct upgradable deck copy of its id.
         let mut used: Vec<usize> = Vec::new();
         let scores: Vec<f64> = options
             .iter()
             .map(|opt| {
                 let deck_idx = view.deck.iter().enumerate().position(|(i, c)| {
-                    c.card_id == opt.card_id && !c.upgraded && !used.contains(&i)
+                    c.card_id == opt.card_id && c.takes_another_upgrade() && !used.contains(&i)
                 });
                 deck_idx.map_or(0.0, |i| {
                     used.push(i);
@@ -346,7 +346,10 @@ impl RunPolicy for HeuristicPolicy {
             // greedily; normal play (no open choice) stays first-option.
             Phase::Combat => self.choose_combat(rm, actions),
             // Treasure/RunOver/unknown: first option.
-            Phase::Treasure | Phase::RunOver => 0,
+            // The reward screen (GH #1620) lists every take first, in the
+            // set's order: taking the first each time takes everything, as
+            // auto-collect does.
+            Phase::Treasure | Phase::Rewards | Phase::RunOver => 0,
         };
         Some(idx.min(actions.len() - 1))
     }
@@ -705,6 +708,7 @@ mod tests {
                 CharacterId::Ironclad,
                 0,
                 crate::arena::Act1Choice::Roll,
+                sts2_core::GameVersion::default(),
             );
             let mut spy = ChooseOnly {
                 inner: HeuristicPolicy::new(),

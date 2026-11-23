@@ -9,6 +9,8 @@
  *  in the game; the description is what tells them apart. `Hidden` has no tip
  *  in the game (`HasIntentTip => false`), so its text is ours. */
 
+import { t } from "./i18n";
+
 /** `MegaCrit.Sts2.Core.MonsterMoves.Intents.IntentType`, v0.107.1. */
 export const INTENT_TYPES = [
   "Attack", "Buff", "Debuff", "DebuffStrong", "Defend", "Escape", "Heal", "Hidden",
@@ -17,11 +19,15 @@ export const INTENT_TYPES = [
 
 type Entry = { name: string; description: string | ((d?: number, hits?: number) => string) };
 
-const forDamage = (d?: number, hits?: number) =>
-  d == null ? "" : ` for ${d} damage${hits != null && hits > 1 ? ` ${hits} times` : ""}`;
+/** The names and texts below are English keys of the game's Chinese
+ *  (`i18n/zh/game.ts`); `intentName` / `intentInfo` translate them. */
+const attack = (d?: number, hits?: number) =>
+  d == null ? t("This enemy intends to Attack.")
+    : hits != null && hits > 1 ? t("This enemy intends to Attack for {d} damage {hits} times.", { d, hits })
+      : t("This enemy intends to Attack for {d} damage.", { d });
 
 const TABLE: Record<(typeof INTENT_TYPES)[number], Entry> = {
-  Attack: { name: "Aggressive", description: (d, h) => `This enemy intends to Attack${forDamage(d, h)}.` },
+  Attack: { name: "Aggressive", description: attack },
   Buff: { name: "Empower", description: "This enemy intends to use a Buff." },
   Debuff: { name: "Strategic", description: "This enemy intends to apply a Debuff to you." },
   DebuffStrong: { name: "Strategic", description: "This enemy intends to apply a powerful Debuff to you." },
@@ -36,8 +42,8 @@ const TABLE: Record<(typeof INTENT_TYPES)[number], Entry> = {
   StatusCard: { name: "Strategic", description: "This enemy intends to give you Status cards." },
   CardDebuff: { name: "Malicious", description: "This enemy intends to apply Afflictions on your cards." },
   DeathBlow: { name: "Death Blow", description: (d) => d == null
-    ? "This creature is trying to take you down with it before being destroyed."
-    : `This creature is trying to take you down with it. It will attack you for ${d} damage before being destroyed.` },
+    ? t("This creature is trying to take you down with it before being destroyed.")
+    : t("This creature is trying to take you down with it. It will attack you for {d} damage before being destroyed.", { d }) },
   Unknown: { name: "Unknown", description: "This enemy's intentions are Unknown." },
 };
 
@@ -49,7 +55,7 @@ function spaced(id: string): string {
 }
 
 export function intentName(type: string): string {
-  return known(type) ? TABLE[type].name : spaced(type);
+  return known(type) ? t(TABLE[type].name) : spaced(type);
 }
 
 /** Name and one-sentence description of an intent; `description` is absent
@@ -58,6 +64,6 @@ export function intentInfo(intent: { type: string; damage?: number; hits?: numbe
   { name: string; description: string | undefined } {
   if (!known(intent.type)) return { name: spaced(intent.type), description: undefined };
   const e = TABLE[intent.type];
-  return { name: e.name,
-    description: typeof e.description === "string" ? e.description : e.description(intent.damage, intent.hits) };
+  return { name: t(e.name),
+    description: typeof e.description === "string" ? t(e.description) : e.description(intent.damage, intent.hits) };
 }

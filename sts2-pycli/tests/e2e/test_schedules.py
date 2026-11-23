@@ -8,6 +8,7 @@ and the watchdog's closed-form lr check.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from datetime import UTC, datetime
 
@@ -391,3 +392,208 @@ def test_schedule_state_round_trips() -> None:
     col2 = S.EntropyCollapse.from_dict(col.to_dict())
     assert np.array_equal(col2.low, col.low) and np.array_equal(col2.boosts, col.boosts)
     assert np.array_equal(col2.lifted, col.lifted)
+
+
+# ── lr hold (surgery restarts) ───────────────────────────────────────────
+
+_LANE = S.ScheduleCfg(
+    lr_trunk=5e-5,
+    lr_value=1.5e-4,
+    lr_hold_decisions=5_000_000,
+    u0_end=1,
+    ks_end=2,
+    ent_combat=(0.002, 0.002),
+    ent_ooc=(0.006, 0.006),
+    anneal_start=1798779600,
+    kl_freeze_at=1798779600,
+    budget_decisions=1_500_000_000,
+)
+
+
+def test_lr_hold_zero_then_normal() -> None:
+    t = S.ANNEAL_START - 48 * H
+    for d in (0, 1, 5 * M - 1):
+        assert _exact(S.lr_frac(t, 50, 1.0, _LANE, d), 0.0)
+        s = S.schedule_for(S.Clocks(it=50, decisions=d), t, 1.0, S.EntropyCollapse(), _LANE)
+        assert s.lr_hold
+        assert _exact(s.lr_frac, 0.0)
+        assert _exact(s.lr_trunk, 0.0)
+        assert _exact(s.lr_value, 0.0)
+    assert S.lr_frac(t, 50, 1.0, _LANE, 5 * M) == S.anneal(t, _LANE) * S.warmup(50, _LANE) > 0.0
+    s = S.schedule_for(S.Clocks(it=50, decisions=5 * M), t, 1.0, S.EntropyCollapse(), _LANE)
+    assert _exact(s.lr_frac, 1.0)
+    assert not s.lr_hold
+    # warmup still counts the iteration index, not the hold
+    assert _exact(S.lr_frac(t, 4, 1.0, _LANE, 5 * M), S.warmup(4, _LANE))
+
+
+def test_lr_hold_default_off() -> None:
+    assert CFG.lr_hold_decisions == 0
+    t = S.ANNEAL_START + 7.5 * H
+    for d in (0, 1, 10**9):
+        assert _exact(S.lr_frac(t, 20, 1.5, CFG, d), S.lr_frac(t, 20, 1.5, CFG))
+        assert _exact(S.lr_frac(t, 20, 1.5, CFG, d), 1.5 * S.anneal(t, CFG) * S.warmup(20, CFG))
+        assert not _sched(decisions=d).lr_hold
+    # old sched JSON (no lr_hold_decisions key) round-trips
+    d = CFG.to_dict()
+    d.pop("lr_hold_decisions")
+    assert S.ScheduleCfg.from_dict(d) == CFG
+    assert S.ScheduleCfg.from_dict(_LANE.to_dict()) == _LANE
+
+
+def test_lr_hold_freezes_the_kl_factor_and_the_watchdog_knows() -> None:
+    t = S.ANNEAL_START - 48 * H
+    held = S.schedule_for(S.Clocks(it=50, decisions=0), t, 1.0, S.EntropyCollapse(), _LANE)
+    kl = S.KLControl(1.0)
+    assert _exact(kl.update(0.0, held, _LANE), 1.0)
+    net = torch.nn.ModuleDict({"trunk": torch.nn.Linear(2, 2), "value": torch.nn.Linear(2, 1)})
+    opt = algo.make_optimizer(net, ("value.",), cfg=_LANE)
+    row = held.log_fields(applied=algo.set_lr(opt, held.lr_frac))
+    assert S.check_lr_row(row, _LANE) == []
+
+
+def test_lane_sched_entropy_constant() -> None:
+    for d in (0, 100 * M, 1000 * M):
+        s = S.schedule_for(S.Clocks(it=50, decisions=d), 0.0, 1.0, S.EntropyCollapse(), _LANE)
+        assert _close(s.beta_combat, 0.002) and _close(s.beta_ooc, 0.006), d
+
+
+def test_held_update_moves_no_weight_but_adam_state_advances() -> None:
+    torch.manual_seed(0)
+    net = torch.nn.ModuleDict({"trunk": torch.nn.Linear(3, 3), "value": torch.nn.Linear(3, 1)})
+    opt = algo.make_optimizer(net, ("value.",), cfg=_LANE)
+    before = {k: v.clone() for k, v in net.state_dict().items()}
+    held = S.schedule_for(S.Clocks(it=50, decisions=0), 0.0, 1.0, S.EntropyCollapse(), _LANE)
+    algo.set_lr(opt, held.lr_frac)
+    (net["value"](net["trunk"](torch.randn(4, 3))).sum()).backward()
+    algo.clip_and_step(opt)
+    assert all(torch.equal(before[k], v) for k, v in net.state_dict().items())
+    st = [opt.state[p] for p in net.parameters()]
+    assert all(int(s["step"]) == 1 and float(s["exp_avg_sq"].abs().sum()) > 0 for s in st)
+
+
+# ── lr_input: the input-layer group (GH #1197 adapt phase) ──────────────
+
+_ADAPT = S.ScheduleCfg(lr_trunk=0.0, lr_value=1.5e-4, lr_input=5e-5)
+
+
+def _stem_net() -> torch.nn.Module:
+    return torch.nn.ModuleDict(
+        {
+            "stem": torch.nn.Linear(3, 3),
+            "trunk": torch.nn.Linear(3, 3),
+            "value": torch.nn.Linear(3, 1),
+        }
+    )
+
+
+def test_lr_input_defaults_to_following_the_trunk() -> None:
+    assert CFG.lr_input is None
+    assert CFG.base_lrs() == {"trunk": CFG.lr_trunk, "value": CFG.lr_value}
+    assert _ADAPT.base_lrs() == {"input": 5e-5, "trunk": 0.0, "value": 1.5e-4}
+    # An old sched JSON (no lr_input key) and a new one round-trip.
+    d = CFG.to_dict()
+    d.pop("lr_input")
+    assert S.ScheduleCfg.from_dict(d) == CFG
+    assert S.ScheduleCfg.from_dict(_ADAPT.to_dict()) == _ADAPT
+    s = _sched(it=20, m=1.5)
+    assert _exact(s.lr_input, s.lr_trunk)
+    row = _logged_row()
+    assert _exact(row["lr_input"], row["lr_trunk"])
+    assert _exact(row["lr_base_input"], row["lr_base_trunk"])
+
+
+def test_lr_input_scales_with_m_anneal_warmup_and_the_hold() -> None:
+    t = S.ANNEAL_START + 7.5 * H
+    s = S.schedule_for(S.Clocks(it=4, decisions=0), t, 1.5, S.EntropyCollapse(), _ADAPT)
+    assert _exact(s.lr_input, 5e-5 * s.lr_frac) and s.lr_frac > 0
+    assert _exact(s.lr_trunk, 0.0)
+    held = dataclasses.replace(_ADAPT, lr_hold_decisions=10)
+    s = S.schedule_for(S.Clocks(it=4, decisions=0), t, 1.5, S.EntropyCollapse(), held)
+    assert _exact(s.lr_input, 0.0)
+
+
+def _adapt_row(it: int = 20, dt_hours: float = 7.5, m: float = 1.5) -> dict:
+    opt = algo.make_optimizer(_stem_net(), ("value.",), cfg=_ADAPT, input_roots=("stem",))
+    c = S.Clocks(it=it, decisions=300 * M)
+    s = S.schedule_for(c, S.ANNEAL_START + dt_hours * H, m, S.EntropyCollapse(), _ADAPT)
+    return s.log_fields(applied=algo.set_lr(opt, s.lr_frac))
+
+
+def test_check_lr_row_checks_the_input_group_when_it_is_on() -> None:
+    row = _adapt_row()
+    assert _exact(row["lr_trunk"], 0.0) and row["lr_input"] > 0
+    assert S.check_lr_row(row, _ADAPT) == []
+    bad = dict(row, lr_input=row["lr_input"] * (1 + 2e-6))
+    assert any("lr_input" in e for e in S.check_lr_row(bad, _ADAPT))
+    bad = dict(row, lr_base_input=1e-4)
+    assert any("lr_base_input" in e for e in S.check_lr_row(bad, _ADAPT))
+    # With lr_input on, a row without the input keys is a problem, not a pass.
+    old = {k: v for k, v in row.items() if k not in ("lr_input", "lr_base_input")}
+    assert "missing" in S.check_lr_row(old, _ADAPT)[0]
+    # A trunk that moves while lr_trunk is 0 is caught.
+    assert S.check_lr_row(dict(row, lr_trunk=1e-9), _ADAPT)
+    # lr_input off: rows from before the field (no input keys) still pass.
+    old = {k: v for k, v in _logged_row().items() if k not in ("lr_input", "lr_base_input")}
+    assert S.check_lr_row(old) == []
+
+
+# ── GH #1541: the probability floor ──────────────────────────────────────────
+
+
+def _floor_sched(decisions: int = 0, **kw) -> S.IterSchedule:
+    cfg = S.ScheduleCfg(**kw)
+    c = S.Clocks(decisions=decisions)
+    return S.schedule_for(c, S.ANNEAL_START - 1e6, 1.0, S.EntropyCollapse(), cfg)
+
+
+def test_floor_rows_are_off_by_default() -> None:
+    s = _floor_sched()
+    assert not s.floor_coef
+    assert not s.floor_rows(np.arange(20), np.full(20, 4)).any()
+    assert not s.log_fields()["floor_coef"]
+    assert S.ScheduleCfg().floor_types == ("CARD_REWARD", "CARD_BUNDLE")  # no SHOP
+
+
+def test_floor_rows_floor_the_named_types_at_most_floor_share() -> None:
+    from ppo.e2e.contracts import DT
+
+    s = _floor_sched(floor_coef=0.1, floor_p=0.05, floor_ramp=0, floor_types=(
+        "CARD_REWARD", "CARD_BUNDLE", "SHOP"))  # fmt: skip
+    dt = np.array([DT["CARD_REWARD"], DT["CARD_BUNDLE"], DT["SHOP"], DT["COMBAT_TURN"],
+                   DT["CARD_REWARD"]])  # fmt: skip
+    nc = np.array([4, 3, 20, 4, 2])
+    got = s.floor_rows(dt, nc)
+    np.testing.assert_allclose(got, [0.025, 0.1 / 3, 0.005, 0.0, 0.05], rtol=1e-6)
+    assert got.dtype == np.float32
+    assert (got * nc).max() <= S.FLOOR_SHARE + 1e-6
+    wide = _floor_sched(floor_coef=0.1, floor_p=0.05, floor_ramp=0, floor_share=0.5)
+    np.testing.assert_allclose(wide.floor_rows(dt[:1], nc[:1]), [0.05], rtol=1e-6)
+    only_shop = _floor_sched(floor_coef=0.1, floor_ramp=0, floor_types=("SHOP",))
+    assert only_shop.floor_rows(dt, nc).nonzero()[0].tolist() == [2]
+    with pytest.raises(ValueError, match="unknown decision type"):
+        _floor_sched(floor_coef=0.1, floor_ramp=0, floor_types=("CARD_REWARDS",))
+
+
+def test_floor_coefficient_ramps_in_from_floor_start() -> None:
+    kw = {"floor_coef": 0.01, "floor_start": 900_000_000, "floor_ramp": 20_000_000}
+    cfg = S.ScheduleCfg(**kw)
+    assert not S.floor_coef_at(899_999_999, cfg)
+    assert S.floor_coef_at(910_000_000, cfg) == pytest.approx(0.005)
+    assert S.floor_coef_at(920_000_000, cfg) == pytest.approx(0.01)
+    assert S.floor_coef_at(10**10, cfg) == pytest.approx(0.01)
+    s = _floor_sched(910_000_000, **kw)
+    assert s.floor_coef == pytest.approx(0.005)
+    log = s.log_fields()
+    assert (log["floor_start"], log["floor_ramp"]) == (900_000_000, 20_000_000)
+    assert S.floor_coef_at(5, S.ScheduleCfg(floor_coef=0.01, floor_ramp=0)) == pytest.approx(0.01)
+    # A ramp without a start would be a step on a resumed lane: refused.
+    with pytest.raises(ValueError, match="floor_start"):
+        S.floor_coef_at(900_000_000, S.ScheduleCfg(floor_coef=0.01))
+
+
+def test_floor_settings_round_trip_through_the_schedule_dict() -> None:
+    cfg = S.ScheduleCfg(floor_coef=0.2, floor_types=("SHOP", "CARD_REWARD"), floor_start=7)
+    d = cfg.to_dict()
+    assert d["floor_types"] == ["SHOP", "CARD_REWARD"]
+    assert S.ScheduleCfg.from_dict(d) == cfg

@@ -1,5 +1,11 @@
 """Decision → token arrays for the run-level policy net (M-P2).
 
+``featurize_row`` runs the Rust encoder (``sts2_runai::ppo::encoder``,
+through ``sts2_rs.ppo_featurize``): training, the arena and the shipped
+advisor share that one implementation (GH #1426 step 2). The Python body
+below is ``featurize_row_py``, kept as the differential reference the
+parity tests and ``dump_parity_fixtures`` hold the Rust one to.
+
 ``featurize(decision)`` consumes a ``ppo.env.Decision`` (or its dict form
 from a recorded JSONL episode — ``featurize_row``) and emits the
 ``model.Featurized`` token arrays:
@@ -31,6 +37,7 @@ import re
 from typing import Any
 
 import numpy as np
+import sts2_rs
 
 from . import mapfeat, schema, vocab
 from .schema import (
@@ -644,7 +651,41 @@ def featurize_row(
     metrics: dict[str, Any],
     features: frozenset[str] = schema.ACTIVE_FEATURES,
 ) -> Featurized:
-    """Featurize from raw (obs, actions, metrics) — the JSONL episode shape."""
+    """Featurize from raw (obs, actions, metrics) — the JSONL episode shape.
+
+    Runs the Rust encoder; bit-identical to ``featurize_row_py``
+    (``tests/test_ppo_encoder_rust.py``). The arrays are writable views of
+    the bytes Rust returns, not copies.
+    """
+    d = sts2_rs.ppo_featurize(obs, actions, metrics, ",".join(sorted(features)))
+    n_obs, n_act = d["n_obs"], d["n_actions"]
+
+    def ints(key: str, *shape: int) -> np.ndarray:
+        return np.frombuffer(d[key], dtype="<i8").reshape(shape)
+
+    def floats(key: str, n: int) -> np.ndarray:
+        return np.frombuffer(d[key], dtype="<f4").reshape(n, N_CONT)
+
+    return Featurized(
+        obs_cat=ints("obs_cat", n_obs, schema.N_CAT),
+        obs_cont=floats("obs_cont", n_obs),
+        obs_sec=ints("obs_sec", n_obs),
+        act_cat=ints("act_cat", n_act, schema.N_CAT),
+        act_cont=floats("act_cont", n_act),
+        act_sec=ints("act_sec", n_act),
+        aux_room=ints("aux_room", n_act),
+        n_actions=n_act,
+    )
+
+
+def featurize_row_py(
+    obs: dict[str, Any],
+    actions: list[dict[str, Any]],
+    metrics: dict[str, Any],
+    features: frozenset[str] = schema.ACTIVE_FEATURES,
+) -> Featurized:
+    """The Python reference ``featurize_row`` is held to. Not on any
+    training or advisor path: the parity tests and the fixture dump use it."""
     ctx = _Ctx(obs, actions, features)
 
     obs_cat: list[list[int]] = []

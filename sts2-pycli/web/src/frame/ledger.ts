@@ -6,6 +6,7 @@
 
 import type { CombatLogRow, TimelineEntry } from "../api";
 import type { LogEntry } from "./store";
+import { t } from "../i18n";
 
 const FLOOR = /^════ floor (\d+)/;
 const TURN = /^— turn (\d+) —/;
@@ -54,9 +55,9 @@ export function toTimeline(entries: LogEntry[]): TimelineEntry[] {
       enemyTurn = false;
       continue;
     }
-    const t = e.actor === "game" ? TURN.exec(e.action) : null;
-    if (t) {
-      turn = Number(t[1]);
+    const tm = e.actor === "game" ? TURN.exec(e.action) : null;
+    if (tm) {
+      turn = Number(tm[1]);
       step = null;
       enemyTurn = false;
       continue;
@@ -73,9 +74,9 @@ export function toTimeline(entries: LogEntry[]): TimelineEntry[] {
       const enemySide = r ? (r.side != null ? r.side === "enemy" : r.kind === "monster_move") : false;
       if (r && !enemyTurn && enemySide) {
         enemyTurn = true;
-        open(e, "End turn");
+        open(e, t("End turn"));
       }
-      const target: TimelineEntry = step ?? open(e, "Start of turn");
+      const target: TimelineEntry = step ?? open(e, t("Start of turn"));
       if (r) {
         const row: CombatLogRow = {
           kind: r.kind,
@@ -94,7 +95,7 @@ export function toTimeline(entries: LogEntry[]): TimelineEntry[] {
         // Every entry here was made by this call, so append in place (a copy
         // per row is quadratic over a long turn).
         (target.combat_log ??= []).push(row);
-        if (r.killed && r.target) target.details.push(`${r.target} ☠ defeated`);
+        if (r.killed && r.target) target.details.push(`${r.target} ☠ ${t("defeated")}`);
       } else {
         // An older mod: no row, just the sentence.
         target.details.push(e.action);
@@ -104,7 +105,8 @@ export function toTimeline(entries: LogEntry[]): TimelineEntry[] {
 
     // A decision: yours or the AI's.
     enemyTurn = false;
-    const prefix = decisionLabel(e.decision);
+    // decisionLabel: the decision kinds' labels ("Card reward"…), listed in zh/simlab.ts.
+    const prefix = t(decisionLabel(e.decision));
     let label = prefix ? `${prefix}: ${e.action}` : e.action;
     if (e.actor === "AI") label = `🤖 ${label}`;
     else if (e.advice && !sameMove(e.advice, e.action)) label += `  ·  ${e.advice}`;

@@ -5,7 +5,7 @@ export type Seq = "check" | "rate";
 
 export type ToWorker =
   | { type: "init" }
-  | { type: "attempt"; id: number; seed: string; ascension: number; seq: Seq; k: number };
+  | { type: "attempt"; id: number; seed: string; character?: string; ascension: number; seq: Seq; k: number };
 
 export type FromWorker =
   | { type: "ready" }

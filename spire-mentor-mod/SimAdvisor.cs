@@ -176,9 +176,9 @@ internal sealed class SimAdvisor
     /// The advisor's <c>capabilities.instinct</c> from its latest reply: the
     /// characters + game builds its Instinct can play (PROTOCOL.md section 5,
     /// v5.2). Empty until a reply arrives, whenever no advisor is connected,
-    /// and on an advisor without an Instinct net. Only decides whether the
-    /// brain switch is shown; the advisor itself decides per request who
-    /// answers.
+    /// and on an advisor without an Instinct net. Decides whether the
+    /// player's request asks for Instinct (<see cref="RequestedBrain"/>); the
+    /// advisor itself decides per request who answers.
     /// </summary>
     private static IReadOnlyList<InstinctTarget> _advisorInstinct = Array.Empty<InstinctTarget>();
     public static IReadOnlyList<InstinctTarget> AdvisorInstinctCapability => Volatile.Read(ref _advisorInstinct);
@@ -193,24 +193,42 @@ internal sealed class SimAdvisor
     private static int _advisorPotionSwapCapability;
     public static int AdvisorPotionSwapCapability => Volatile.Read(ref _advisorPotionSwapCapability);
 
-    /// <summary>The brain the player chose, in wire form ("search" /
-    /// "instinct"): sent as <c>brain</c> on every advice_request.</summary>
-    public static string CurrentBrain =>
-        AdvisorBrainRules.Effective(Volatile.Read(ref _brainOverride), SpireMentorModConfig.AdvisorBrain);
+    /// <summary>
+    /// The advisor's <c>capabilities.crystal_sphere</c> from its latest reply;
+    /// 0 until one arrives and whenever no advisor is connected. At &gt;= 1 F7
+    /// asks the advisor's digger which Crystal Sphere cell to divine
+    /// (SimScreenAdvice.DescribeCrystalSphere); at 0 it plays
+    /// CrystalSpherePick without asking.
+    /// </summary>
+    private static int _advisorCrystalSphereCapability;
+    public static int AdvisorCrystalSphereCapability => Volatile.Read(ref _advisorCrystalSphereCapability);
 
-    /// <summary>The brain an advice request asks for: <see cref="CurrentBrain"/>,
-    /// but Instinct only in a run it plays (AdvisorBrainRules.Requested). Every
-    /// request and the stale check use this. Main thread (reads the run).</summary>
+    /// <summary>The test tooling's brain for this session, null for a player
+    /// (SimConfig.AdvisorBrain: <c>--spire-mentor-brain</c>, else
+    /// SpireMentor.conf's <c>advisor_brain</c>). Fixed at startup; nothing in
+    /// game changes it.</summary>
+    private static string? ToolingBrain => SimConfig.Instance.AdvisorBrain;
+
+    /// <summary>The player's brain in wire form: Instinct, unless test tooling
+    /// forces one (AdvisorBrainRules.Player). Any thread.</summary>
+    public static string PlayerBrain => AdvisorBrainRules.Player(ToolingBrain);
+
+    /// <summary>The brain every AI partner's advice_request asks for:
+    /// AdvisorBrainRules.PartnerDefault (Instinct), unless test tooling forces
+    /// one. Sent as it is: the partners' advisor falls back to the search for
+    /// a seat Instinct does not play. Any thread.</summary>
+    public static string PartnerBrain => AdvisorBrainRules.Partner(ToolingBrain);
+
+    /// <summary>The brain the player's advice request asks for:
+    /// <see cref="PlayerBrain"/>, but Instinct only in a run it plays
+    /// (AdvisorBrainRules.Requested). Every player request and the stale
+    /// check use this. Main thread (reads the run).</summary>
     public static string RequestedBrain =>
-        AdvisorBrainRules.Requested(CurrentBrain, AdvisorInstinctCapability.Count > 0, InstinctPlaysThisRun());
-
-    /// <summary>SpireMentor.conf's <c>advisor_brain</c> (SimConfig.AdvisorBrain):
-    /// overrides the persisted preference for this session, never saved over
-    /// it, and dropped the moment the player switches brain in game.</summary>
-    private static string? _brainOverride = SimConfig.Instance.AdvisorBrain;
+        AdvisorBrainRules.Requested(PlayerBrain, AdvisorInstinctCapability.Count > 0, InstinctPlaysThisRun());
 
     /// <summary>The brain the in-flight request was stamped with: a reply to
-    /// it is dropped once the player has switched (AdvisorBrainRules.IsStale).</summary>
+    /// it is dropped once a request would ask another brain
+    /// (AdvisorBrainRules.IsStale).</summary>
     private string _inflightBrain = AdvisorBrainRules.Search;
 
     /// <summary>The human pressed End turn (PlayerCmd.EndTurn prefix, see
@@ -433,6 +451,11 @@ internal sealed class SimAdvisor
     /// SimRuntime.Changed subscription) exists before the first mode flip.</summary>
     public void Prime() { }
 
+    /// <summary>Install the game hooks now, whatever the mode (MainFile, once
+    /// the game node exists): in Off they only write the action log. Main
+    /// thread; idempotent.</summary>
+    public void InstallHooks() => EnsureSubscribed();
+
     /// <summary>
     /// Called after an in-process run restore (SimRestore): the whole run
     /// scene was torn down and rebuilt, so any advice on screen and any
@@ -486,6 +509,7 @@ internal sealed class SimAdvisor
                 // The advisor goes with the mode: so does what it could play.
                 Volatile.Write(ref _advisorInstinct, Array.Empty<InstinctTarget>());
                 Volatile.Write(ref _advisorPotionSwapCapability, 0);
+                Volatile.Write(ref _advisorCrystalSphereCapability, 0);
                 SimChoiceCapture.Reset();
                 ForgetShownAdvice();
                 HumanEndTurnPending = false;
@@ -634,6 +658,11 @@ internal sealed class SimAdvisor
     /// player's HP/block, then the usual advice refresh.</summary>
     private void OnTurnStarted()
     {
+        if (SimRuntime.Mode == SimMode.Off)
+        {
+            LogTurnStarted();
+            return;
+        }
         if (SimRuntime.Mode != SimMode.Advisor)
         {
             return;
@@ -670,6 +699,14 @@ internal sealed class SimAdvisor
         _noMoveInARow = 0;
         _turnStartHistoryMark = CombatHistoryMark();
         _unsettledRetries = 0;
+        LogTurnStarted();
+        ScheduleAdvice();
+    }
+
+    /// <summary>The turn marker in the action log: round, HP, block. The
+    /// enemy side's start logs one too, as it always has.</summary>
+    private static void LogTurnStarted()
+    {
         try
         {
             RunState? runState = RunManager.Instance.DebugOnlyGetState();
@@ -689,11 +726,16 @@ internal sealed class SimAdvisor
         {
             Logger.Log($"[SimAdvisor] OnTurnStarted log failed: {ex.Message}");
         }
-        ScheduleAdvice();
     }
 
     private void OnCombatEnded(int round, string roomType)
     {
+        if (SimRuntime.Mode == SimMode.Off)
+        {
+            _historySeen = 0;
+            LogCombatEnded();
+            return;
+        }
         if (SimRuntime.Mode != SimMode.Advisor)
         {
             return;
@@ -705,6 +747,12 @@ internal sealed class SimAdvisor
         ForgetShownAdvice();
         SimCoachChip.Instance.ClearUnpinned();
         _historySeen = 0;
+        LogCombatEnded();
+    }
+
+    /// <summary>The combat-ended marker in the action log, with the HP.</summary>
+    private static void LogCombatEnded()
+    {
         try
         {
             RunState? runState = RunManager.Instance.DebugOnlyGetState();
@@ -715,8 +763,8 @@ internal sealed class SimAdvisor
                 Act = (runState?.CurrentActIndex ?? -1) + 1,
                 Floor = runState?.TotalFloor ?? 0,
                 Action = creature != null
-                    ? $"— combat ended —  HP {creature.CurrentHp}/{creature.MaxHp}"
-                    : "— combat ended —",
+                    ? L10n.F("— combat ended —  HP {0}/{1}", creature.CurrentHp, creature.MaxHp)
+                    : L10n.T("— combat ended —"),
             });
         }
         catch (Exception ex)
@@ -786,6 +834,18 @@ internal sealed class SimAdvisor
 
     private void OnScreenUpdated()
     {
+        if (SimRuntime.Mode == SimMode.Off)
+        {
+            try
+            {
+                LogFloorChange();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[SimAdvisor] OnScreenUpdated: {ex.Message}");
+            }
+            return;
+        }
         if (SimRuntime.Mode != SimMode.Advisor)
         {
             return;
@@ -844,13 +904,28 @@ internal sealed class SimAdvisor
 
     private void OnHistoryChanged()
     {
+        // Off: the action log still records the fight (bug report
+        // wb-c99acd6bfabfef7d: "when we say Off we still want to see the
+        // log"); nothing goes to the advisor.
+        if (SimRuntime.Mode == SimMode.Off)
+        {
+            try
+            {
+                ReportNewHumanActions(advisorOn: false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[SimAdvisor] OnHistoryChanged: {ex.Message}");
+            }
+            return;
+        }
         if (SimRuntime.Mode != SimMode.Advisor)
         {
             return;
         }
         try
         {
-            ReportNewHumanActions();
+            ReportNewHumanActions(advisorOn: true);
         }
         catch (Exception ex)
         {
@@ -860,14 +935,14 @@ internal sealed class SimAdvisor
     }
 
     // ------------------------------------------------------------------
-    // Advisor brain: Search / Instinct (AdvisorBrainRules)
+    // Advisor brain: Instinct, Search as its fallback (AdvisorBrainRules)
     // ------------------------------------------------------------------
 
     /// <summary>
     /// The advisor's Instinct can play the run on screen: its
     /// <c>capabilities.instinct</c> names this character and game build. What
-    /// shows the brain switch and lets a request ask for Instinct
-    /// (<see cref="RequestedBrain"/>). Main thread
+    /// lets a request ask for Instinct (<see cref="RequestedBrain"/>). Main
+    /// thread
     /// (reads the run).
     /// </summary>
     public static bool InstinctPlaysThisRun()
@@ -887,55 +962,6 @@ internal sealed class SimAdvisor
         {
             return false;
         }
-    }
-
-    /// <summary>The brain switch (toolbar button, Shift+F8, the frame):
-    /// Search &lt;-&gt; Instinct.</summary>
-    public void ToggleBrain(string surface) => SetBrain(AdvisorBrainRules.Toggle(CurrentBrain), surface);
-
-    /// <summary>
-    /// Switch the brain the advice comes from, persist it, and re-ask for the
-    /// position on screen at once: the request in flight was asked of the
-    /// other brain, so it is cancelled (its late reply then fails the request
-    /// id check, and <see cref="AdvisorBrainRules.IsStale"/> backs that up)
-    /// and the HUD drops the old brain's advice instead of leaving it up
-    /// under the new name. Everything that reads the advice -- HUD, F6, F7,
-    /// Autobattle, the coach -- follows from there. Any thread.
-    /// </summary>
-    public void SetBrain(string brain, string surface)
-    {
-        string next = AdvisorBrainRules.Normalize(brain);
-        if (next == CurrentBrain)
-        {
-            return;
-        }
-        // An explicit switch in game outranks the conf's session override.
-        Volatile.Write(ref _brainOverride, null);
-        SpireMentorModConfig.AdvisorBrain = next;
-        SpireMentorModConfig.SaveSoon();
-        string label = AdvisorBrainRules.Label(next);
-        Logger.Log($"[SimAdvisor] {surface}: advisor brain -> {label}.");
-        RunOnMainThread(() =>
-        {
-            if (AdvisorBrainRules.IsInstinct(next))
-            {
-                SimActionLog.Note(InstinctPlaysThisRun()
-                    ? "Advisor brain: Instinct -- the end-to-end net plays every decision, no search."
-                    : "Advisor brain: Instinct -- it plays Ironclad on v0.111.0 and the v0.113.0 beta for now; in other runs the search answers.");
-            }
-            else
-            {
-                SimActionLog.Note("Advisor brain: Search -- the fights are searched again.");
-            }
-            if (SimRuntime.Mode == SimMode.Advisor)
-            {
-                DropInflight();
-                SimHud.Instance.ClearAdvice();
-                ScheduleAdvice();
-            }
-            // The settings tickbox and the toolbar re-read the preference.
-            SimRuntime.NotifyChanged();
-        });
     }
 
     // ------------------------------------------------------------------
@@ -1052,7 +1078,11 @@ internal sealed class SimAdvisor
         // `GetReadyAction`, so it is the only probe safe to make from here.
         try
         {
-            if (RunManager.Instance.ActionQueueSet.IsEmpty)
+            // No run (the main menu): there is no queue yet. Checked, not
+            // left to the catch below: on the Linux game a null dereference
+            // is a SIGSEGV that kills the process, never an exception.
+            ActionQueueSet? queue = RunManager.Instance.ActionQueueSet;
+            if (queue == null || queue.IsEmpty)
             {
                 then(false);
                 return;
@@ -1236,6 +1266,7 @@ internal sealed class SimAdvisor
                 Volatile.Write(ref _advisorCoachCapability, 0);
                 Volatile.Write(ref _advisorInstinct, Array.Empty<InstinctTarget>());
                 Volatile.Write(ref _advisorPotionSwapCapability, 0);
+                Volatile.Write(ref _advisorCrystalSphereCapability, 0);
                 return;
             }
 
@@ -1380,6 +1411,7 @@ internal sealed class SimAdvisor
             {
                 state["combat_log"] = combatLog;
                 state["capabilities"] = ModCapabilities();
+                AddLanguage(state);
                 string brain = RequestedBrain;
                 state["brain"] = brain;
 
@@ -1458,7 +1490,7 @@ internal sealed class SimAdvisor
             // through the summary is the player's call, not ours.
             SetAutoPlay(false);
             Logger.Log("[SimAdvisor] Auto-play off: the run has ended.");
-            SimActionLog.Note("Auto-play off — run over");
+            SimActionLog.Note(L10n.T("Auto-play off — run over"));
         }
 
         if (screen.Local)
@@ -1488,6 +1520,7 @@ internal sealed class SimAdvisor
             Volatile.Write(ref _advisorCoachCapability, 0);
             Volatile.Write(ref _advisorInstinct, Array.Empty<InstinctTarget>());
             Volatile.Write(ref _advisorPotionSwapCapability, 0);
+            Volatile.Write(ref _advisorCrystalSphereCapability, 0);
             return;
         }
 
@@ -1509,6 +1542,7 @@ internal sealed class SimAdvisor
                 ["capabilities"] = ModCapabilities(),
                 ["brain"] = brain,
             };
+            AddLanguage(payload);
 
             DropInflight();
 
@@ -1545,6 +1579,55 @@ internal sealed class SimAdvisor
         finally
         {
             SimCombatLog.Requeue(screenLog);
+        }
+    }
+
+    /// <summary>Bumped on every SetAutoPlay (arm, disarm, autobattle):
+    /// a delayed mod-side click compares it to drop itself once the player
+    /// has taken over (CrystalSphereWire.MayStillClick). Main thread.</summary>
+    private int _autoPlayGeneration;
+
+    /// <summary>Advisor mode, autoplay and its generation, now. Main thread.</summary>
+    internal CrystalSphereWire.Takeover TakeoverNow() =>
+        new(SimRuntime.Mode == SimMode.Advisor, _autoPlay, _autoPlayGeneration);
+
+    /// <summary>
+    /// An advice_request outside the screen lane's in-flight bookkeeping:
+    /// the same payload RequestScreenAdvice sends (minus the combat log), for
+    /// a mod-side decision that consults the advisor before acting (the
+    /// Crystal Sphere's reveal). <paramref name="onReply"/> runs on the
+    /// socket thread with the whole reply. Of the reply's capabilities only
+    /// <c>crystal_sphere</c> is recorded (the screen lane records the rest
+    /// from its own replies). Returns the request id (for
+    /// BridgeServer.CancelAdviceRequest), or null when nothing was sent.
+    /// </summary>
+    internal static string? SendSideAdviceRequest(
+        Dictionary<string, object> state, string adviceFor, Action<JsonElement> onReply)
+    {
+        if (!BridgeServer.Instance.IsClientConnected)
+        {
+            return null;
+        }
+        try
+        {
+            var payload = new Dictionary<string, object>(state)
+            {
+                ["type"] = "advice_request",
+                ["advice_for"] = adviceFor,
+                ["capabilities"] = ModCapabilities(),
+                ["brain"] = RequestedBrain,
+            };
+            AddLanguage(payload);
+            return BridgeServer.Instance.SendAdviceRequest(JsonSerializer.Serialize(payload), root =>
+            {
+                Volatile.Write(ref _advisorCrystalSphereCapability, CrystalSphereWire.Capability(root));
+                onReply(root);
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[SimAdvisor] Could not send the {adviceFor} advice_request: {ex.Message}");
+            return null;
         }
     }
 
@@ -1612,6 +1695,7 @@ internal sealed class SimAdvisor
             Volatile.Write(ref _advisorCoachCapability, CoachCapabilityOf(root));
             Volatile.Write(ref _advisorInstinct, AdvisorBrainRules.ParseCapability(root));
             Volatile.Write(ref _advisorPotionSwapCapability, PotionSwapAdvice.CapabilityOf(root));
+            Volatile.Write(ref _advisorCrystalSphereCapability, CrystalSphereWire.Capability(root));
 
             RunOnMainThread(() =>
             {
@@ -1624,10 +1708,10 @@ internal sealed class SimAdvisor
                     Logger.Log($"[SimAdvisor] Dropping stale advice (request {requestId}, state {stateId}).");
                     return;
                 }
-                // Asked of the other brain: the player switched while it was
-                // in flight. SetBrain already cancels the request, so this is
-                // the backstop for a reply that raced the switch; ask again,
-                // stamped with the brain the player wants now.
+                // Asked of the other brain: the advisor's capability arrived
+                // with this reply (or another one) and says Instinct does not
+                // play this run; ask again, stamped with the brain a request
+                // asks for now.
                 if (AdvisorBrainRules.IsStale(_inflightBrain, RequestedBrain))
                 {
                     Logger.Log($"[SimAdvisor] Dropping {_inflightBrain} advice (request {requestId}): the brain is {RequestedBrain} now.");
@@ -1963,7 +2047,7 @@ internal sealed class SimAdvisor
         Logger.Log(
             $"[SimAdvisor] {_refusedInARow} refused recommendations in a row; ending the turn to break the loop. " +
             "This is a legality disagreement between the search and the live game -- see the reasons above.");
-        SimActionLog.Note($"AI move refused {_refusedInARow}x — ending turn");
+        SimActionLog.Note(L10n.F("AI move refused {0}x — ending turn", _refusedInARow));
         _refusedInARow = 0;
         try
         {
@@ -1997,7 +2081,7 @@ internal sealed class SimAdvisor
         Logger.Log(
             $"[SimAdvisor] {_noMoveInARow} combat replies without a move ({note ?? "no note"}); " +
             "ending the turn so the co-op partners are not blocked.");
-        SimActionLog.Note($"AI has no move {_noMoveInARow}x — ending turn (co-op)");
+        SimActionLog.Note(L10n.F("AI has no move {0}x — ending turn (co-op)", _noMoveInARow));
         _noMoveInARow = 0;
         try
         {
@@ -2231,24 +2315,7 @@ internal sealed class SimAdvisor
         if (_autoPlay && key == _lastChoiceKey &&
             Time.GetTicksMsec() - _lastChoiceAtMs < (ulong)(ScreenPressCooldownSeconds * 1000))
         {
-            try
-            {
-                if (Engine.GetMainLoop() is SceneTree retryTree)
-                {
-                    SceneTreeTimer retry = retryTree.CreateTimer(ScreenPressCooldownSeconds + 0.5);
-                    retry.Connect(SceneTreeTimer.SignalName.Timeout, Callable.From(() =>
-                    {
-                        if (_autoPlay && SimRuntime.Mode == SimMode.Advisor)
-                        {
-                            ScheduleAdvice();
-                        }
-                    }));
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"[SimAdvisor] Press-dedupe retry timer: {ex.Message}");
-            }
+            ScheduleReaskAfterCooldown("Press-dedupe");
             return;
         }
         _lastChoiceKey = key;
@@ -2290,7 +2357,7 @@ internal sealed class SimAdvisor
                     $"{seen}x in the last {ChoiceWindow}; forcing option {alternative} to finish " +
                     "the loop (GH #316 semantics).");
                 SimActionLog.Note(
-                    $"looping event — forced option {alternative} instead of option {index}");
+                    L10n.F("looping event — forced option {0} instead of option {1}", alternative, index));
                 _recentScreenChoices.Clear();
                 _lastChoiceKey = "";
                 SimChoiceCapture.MarkAiChoice(current.Screen, current.SignatureOrDefault);
@@ -2304,9 +2371,9 @@ internal sealed class SimAdvisor
             }
             Logger.Log($"[SimAdvisor] Takeover: {current.ScreenName} came round {seen} times in the " +
                        $"last {ChoiceWindow} choices; stopping instead of looping.");
-            SimActionLog.Note(
-                $"stuck in a loop on {current.ScreenName} — the same choice came round {seen} times; " +
-                "finish this screen by hand (F7 again to resume)");
+            SimActionLog.Note(L10n.F(
+                "stuck in a loop on {0} — the same choice came round {1} times; finish this screen by hand (F7 again to resume)",
+                current.ScreenName, seen));
             SetAutoPlay(false);
             _recentScreenChoices.Clear();
             return;
@@ -2316,7 +2383,16 @@ internal sealed class SimAdvisor
         SimChoiceCapture.MarkAiChoice(current.Screen, current.SignatureOrDefault);
         if (!current.Choose(index))
         {
-            Logger.Log($"[SimAdvisor] Takeover: could not pick option {index} on {current.ScreenName}.");
+            // The screen is still up and unchanged, so no game event will ask
+            // again: without a re-ask, a press the game dropped wedges the run
+            // for good (GH #1413: a Burning Pact exhaust pick that did not
+            // land sat for 5 hours). Re-ask after the press cooldown: a
+            // transient refusal is pressed again, and one that keeps failing
+            // repeats this key until the runaway guard above stops autoplay
+            // with a note.
+            Logger.Log($"[SimAdvisor] Takeover: could not pick option {index} on {current.ScreenName}; " +
+                       "asking again.");
+            ScheduleReaskAfterCooldown("Refused pick");
             return;
         }
 
@@ -2337,6 +2413,34 @@ internal sealed class SimAdvisor
         // reward at a time); either way re-describe so autoplay keeps going.
         _lastScreen = null;
         ScheduleAdvice();
+    }
+
+    /// <summary>
+    /// Ask for fresh advice once the press cooldown has run out, so the same
+    /// choice can be pressed again (autoplay only; a human presses their own).
+    /// The retry path for a press the game did not take: one the dedupe held
+    /// back, or one the screen refused.
+    /// </summary>
+    private void ScheduleReaskAfterCooldown(string why)
+    {
+        try
+        {
+            if (Engine.GetMainLoop() is SceneTree retryTree)
+            {
+                SceneTreeTimer retry = retryTree.CreateTimer(ScreenPressCooldownSeconds + 0.5);
+                retry.Connect(SceneTreeTimer.SignalName.Timeout, Callable.From(() =>
+                {
+                    if (_autoPlay && SimRuntime.Mode == SimMode.Advisor)
+                    {
+                        ScheduleAdvice();
+                    }
+                }));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[SimAdvisor] {why} retry timer: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -2374,7 +2478,7 @@ internal sealed class SimAdvisor
             {
                 Logger.Log($"[SimAdvisor] Takeover: '{want}' moved {index} -> {i} since the advice; " +
                            "clicking the named option.");
-                SimActionLog.Note($"advice re-anchored: '{want}' is now option {i} (was {index})");
+                SimActionLog.Note(L10n.F("advice re-anchored: '{0}' is now option {1} (was {2})", want, i, index));
                 return i;
             }
         }
@@ -2392,7 +2496,7 @@ internal sealed class SimAdvisor
     {
         SetAutoPlay(!_autoPlay);
         Logger.Log($"[SimAdvisor] Auto-play {(_autoPlay ? "ON (F7 to stop)" : "off")}");
-        SimActionLog.Note($"Auto-play {(_autoPlay ? "ON (F7 to stop)" : "off")}");
+        SimActionLog.Note(_autoPlay ? L10n.T("Auto-play ON (F7 to stop)") : L10n.T("Auto-play off"));
         if (!_autoPlay)
         {
             return;
@@ -2421,6 +2525,7 @@ internal sealed class SimAdvisor
     private void SetAutoPlay(bool value)
     {
         _autoPlay = value;
+        _autoPlayGeneration++;
         SimRuntime.AdvisorAutoplayArmed = value;
         if (!value)
         {
@@ -2456,7 +2561,7 @@ internal sealed class SimAdvisor
         {
             SetAutoPlay(false);
             Logger.Log("[SimAdvisor] Autobattle off");
-            SimActionLog.Note("Autobattle off");
+            SimActionLog.Note(L10n.T("Autobattle off"));
             return;
         }
         SetAutoPlay(true);
@@ -2467,6 +2572,7 @@ internal sealed class SimAdvisor
         _recentScreenChoices.Clear();
         _resumedKey = "";
         string on = "Autobattle ON: the AI fights, you make every run-level decision (Shift+F7 to stop)";
+        string onNote = L10n.T(on);
         // 1x is watching every fight at normal speed: raise it to 2x. Any
         // other speed is the player's choice and stays (SpeedSteps).
         if (SpeedSteps.AutobattleOn(SimSpeed.Desired) is { } fast)
@@ -2474,9 +2580,10 @@ internal sealed class SimAdvisor
             SimSpeed.Apply(fast);
             _autobattleRaisedSpeed = true;
             on += $"; speed {SpeedSteps.Label(fast)}";
+            onNote = L10n.F("{0}; speed {1}", onNote, SpeedSteps.Label(fast));
         }
         Logger.Log($"[SimAdvisor] {on}");
-        SimActionLog.Note(on);
+        SimActionLog.Note(onNote);
         // Never execute the standing recommendation here: it may be the very
         // card reward the player is meant to pick. Fresh advice goes through
         // the hold below like every other decision.
@@ -2528,7 +2635,7 @@ internal sealed class SimAdvisor
             _autobattleLastStop = now;
             _autobattleAutoplayed = 0;
         }
-        string note = $"Autobattle: {AutoplayPause.Pretty(screen.AdviceFor)} — your call";
+        string note = L10n.F("Autobattle: {0} — your call", AutoplayPause.Pretty(screen.AdviceFor));
         SimActionLog.Note(note);
         SimToolbar.Instance.SetNote(note);
         return true;
@@ -2603,8 +2710,8 @@ internal sealed class SimAdvisor
             if (key != _autobattleStopKey)
             {
                 _autobattleStopKey = key;
-                string held = $"{AutoplayPause.Pretty(eventId ?? adviceFor)}: {reason} — your call; " +
-                              "the AI carries on after your move.";
+                string held = L10n.F("{0}: {1} — your call; the AI carries on after your move.",
+                    AutoplayPause.Pretty(eventId ?? adviceFor), reason);
                 Logger.Log($"[SimAdvisor] Autobattle held {screen?.ScreenName ?? "combat"}: {reason}");
                 SimActionLog.Note(held);
                 SimToolbar.Instance.SetNote(held);
@@ -2746,7 +2853,9 @@ internal sealed class SimAdvisor
         }
     }
 
-    private void ReportNewHumanActions()
+    /// <param name="advisorOn">False in Off: write the action log only (no
+    /// wire reports, no verdicts, no advice labels).</param>
+    private void ReportNewHumanActions(bool advisorOn)
     {
         CombatManager cm = CombatManager.Instance;
         RunState? runState = RunManager.Instance.DebugOnlyGetState();
@@ -2796,7 +2905,7 @@ internal sealed class SimAdvisor
                 if (byPlayer && !play.IsAutoPlay && play.PlayIndex == 0)
                 {
                     // _aiActionsPending is consumed at the finish, below.
-                    bool ai = _aiActionsPending > 0;
+                    bool ai = advisorOn && _aiActionsPending > 0;
                     SimActionLog.Record(new SimActionLogEntry
                     {
                         Actor = ai ? "AI" : "You",
@@ -2805,7 +2914,7 @@ internal sealed class SimAdvisor
                         DecisionType = "combat",
                         Action = ev.Text,
                         Event = ev,
-                        Advice = !ai && _lastBestLabel != null ? $"AI: {_lastBestLabel}" : null,
+                        Advice = advisorOn && !ai && _lastBestLabel != null ? $"AI: {_lastBestLabel}" : null,
                     });
                     continue;
                 }
@@ -2840,7 +2949,7 @@ internal sealed class SimAdvisor
             // history feed; attribute them to the AI. Still reported on the
             // wire (the workbench event log was full of unlabeled combat
             // steps because AI plays sent nothing), just marked as the AI's.
-            if (_aiActionsPending > 0)
+            if (advisorOn && _aiActionsPending > 0)
             {
                 _aiActionsPending--;
                 if (logIt)
@@ -2869,8 +2978,12 @@ internal sealed class SimAdvisor
                     DecisionType = "combat",
                     Action = ev.Text,
                     Event = ev,
-                    Advice = _lastBestLabel != null ? $"AI: {_lastBestLabel}" : null,
+                    Advice = advisorOn && _lastBestLabel != null ? $"AI: {_lastBestLabel}" : null,
                 });
+            }
+            if (!advisorOn)
+            {
+                continue;
             }
 
             // The verdict word over the hand and the fight score (SimMoveFeedback).
@@ -2973,6 +3086,19 @@ internal sealed class SimAdvisor
     /// advice_request (PROTOCOL.md section 5): coach 2 = chips plus the v5.1
     /// recap / autopsy records.</summary>
     private static Dictionary<string, object> ModCapabilities() => new() { ["coach"] = 2 };
+
+    /// <summary>`language` on the player's advice_request (PROTOCOL.md
+    /// v5.4): "zh" while the mod shows Chinese (<see cref="L10n.IsZh"/>), so
+    /// the advisor's notes, labels and coach records come back in Chinese;
+    /// absent (English) otherwise, so an English game sends exactly what it
+    /// did before.</summary>
+    private static void AddLanguage(Dictionary<string, object> payload)
+    {
+        if (L10n.IsZh)
+        {
+            payload["language"] = "zh";
+        }
+    }
 
     /// <summary>The run's choice synchronizer <see cref="WatchPlayerChoices"/>
     /// listens to; a new run brings a new one.</summary>
@@ -3484,6 +3610,12 @@ internal sealed class SimAdvisor
 
     private static string SafeDescription(CombatHistoryEntry entry)
     {
+        // The getter itself dereferences null for a potion drunk on yourself;
+        // on Linux no catch survives that (SimCombatLog.DescriptionIsSafe).
+        if (!SimCombatLog.DescriptionIsSafe(entry))
+        {
+            return entry.GetType().Name;
+        }
         try
         {
             return entry.Description;
@@ -3648,6 +3780,7 @@ internal static class CombatEventText
                 BlockGainedEntry e => Block(e),
                 PowerReceivedEntry e => Power(e),
                 MonsterPerformedMoveEntry e => Move(e),
+                _ when !SimCombatLog.DescriptionIsSafe(entry) => new CombatEvent { Text = entry.GetType().Name },
                 _ => new CombatEvent { Text = Pretty(entry.Description) },
             };
         }
@@ -3675,7 +3808,7 @@ internal static class CombatEventText
                 Target = target == null ? null : Name(target),
                 TargetSide = target == null ? null : SideOf(target),
                 Noun = card,
-                Text = $"{Name(actor)} auto-played {card}{onTarget}.",
+                Text = L10n.F("{0} auto-played {1}{2}.", Name(actor), card, onTarget),
             };
         }
         if (play.PlayIndex > 0)
@@ -3689,7 +3822,7 @@ internal static class CombatEventText
                 Actor = Name(actor),
                 ActorSide = SideOf(actor),
                 Noun = card,
-                Text = $"{Name(actor)} played {card} again{onTarget}.",
+                Text = L10n.F("{0} played {1} again{2}.", Name(actor), card, onTarget),
             };
         }
         bool mine = me != null && actor == me;
@@ -3703,7 +3836,7 @@ internal static class CombatEventText
             TargetSide = target == null ? null : SideOf(target),
             Noun = card,
             // Yours is a decision row: its label, in the advice's own shape.
-            Text = mine ? card + onTarget : $"{Name(actor)} played {card}{onTarget}",
+            Text = mine ? card + onTarget : L10n.F("{0} played {1}{2}", Name(actor), card, onTarget),
         };
     }
 
@@ -3720,7 +3853,13 @@ internal static class CombatEventText
             Actor = Name(actor),
             ActorSide = SideOf(actor),
             Noun = name,
-            Text = $"{Name(actor)} {verb} {name}.",
+            Text = verb switch
+            {
+                "exhausted" => L10n.F("{0} exhausted {1}.", Name(actor), name),
+                "discarded" => L10n.F("{0} discarded {1}.", Name(actor), name),
+                "gained" => L10n.F("{0} gained {1}.", Name(actor), name),
+                _ => $"{Name(actor)} {verb} {name}.",
+            },
         };
     }
 
@@ -3736,7 +3875,7 @@ internal static class CombatEventText
             Actor = Name(e.Actor),
             ActorSide = SideOf(e.Actor),
             Noun = potion,
-            Text = mine ? potion + onTarget : $"{Name(e.Actor)} drank {potion}.",
+            Text = mine ? potion + onTarget : L10n.F("{0} drank {1}.", Name(e.Actor), potion),
         };
     }
 
@@ -3755,7 +3894,9 @@ internal static class CombatEventText
             TargetSide = SideOf(e.Receiver),
             Amount = dmg,
             Killed = e.Result.WasTargetKilled,
-            Text = dealer == null ? $"{target} took {dmg} damage." : $"{dealer} dealt {dmg} damage to {target}.",
+            Text = dealer == null
+                ? L10n.F("{0} took {1} damage.", target, dmg)
+                : L10n.F("{0} dealt {1} damage to {2}.", dealer, dmg, target),
         };
     }
 
@@ -3770,7 +3911,7 @@ internal static class CombatEventText
             ActorSide = SideOf(e.Receiver),
             Amount = e.Amount,
             Noun = "Block",
-            Text = $"{actor} gained {e.Amount} Block.",
+            Text = L10n.F("{0} gained {1} Block.", actor, e.Amount),
         };
     }
 
@@ -3791,8 +3932,8 @@ internal static class CombatEventText
             Amount = amount,
             Noun = power,
             Text = applier == null
-                ? $"{target} gained {amount} {power}."
-                : $"{applier} applied {amount} {power} to {target}.",
+                ? L10n.F("{0} gained {1} {2}.", target, amount, power)
+                : L10n.F("{0} applied {1} {2} to {3}.", applier, amount, power, target),
         };
     }
 
@@ -3807,7 +3948,7 @@ internal static class CombatEventText
             Actor = monster,
             ActorSide = "enemy",
             Noun = move,
-            Text = $"{monster} used {move}.",
+            Text = L10n.F("{0} used {1}.", monster, move),
         };
     }
 

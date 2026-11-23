@@ -8,6 +8,7 @@ import {
   type OfflineProgress,
   type OfflineStatus,
 } from "../offline";
+import { t } from "../i18n";
 
 /** Topbar button of the browser-only build: fill the art + PPO caches so
  *  every fight renders with the network off. Idle → running (progress) →
@@ -43,7 +44,7 @@ export default function OfflineButton() {
     setProgress({ done: 0, total, failed: 0, bytes: 0 });
     try {
       const final = await downloadForOffline(status!.targets, { signal: ctrl.signal, onProgress: setProgress });
-      if (final.failed > 0) setError(`${final.failed} files could not be fetched — try again later`);
+      if (final.failed > 0) setError(t("{n} files could not be fetched — try again later", { n: final.failed }));
     } catch (e) {
       if (!ctrl.signal.aborted) setError(String(e));
     } finally {
@@ -70,7 +71,7 @@ export default function OfflineButton() {
     return (
       <>
         <button onClick={stop} className="mono" aria-live="polite" data-testid="offline-progress"
-          title="downloading the art and the PPO nets into this device's cache; click to pause (resumes where it stopped)">
+          title={t("downloading the art and the PPO nets into this device's cache; click to pause (resumes where it stopped)")}>
           ⬇ {pct}% · {progress.done}/{progress.total} · {formatMb(progress.bytes)}
         </button>
       </>
@@ -80,8 +81,8 @@ export default function OfflineButton() {
     return (
       <>
         <button disabled className="mono" data-testid="offline-ready"
-          title={`every art file and PPO net is cached on this device (${formatMb(status.targets.artBytes)} of art) — the app works with the network off`}>
-          ✓ Offline ready
+          title={t("every art file and PPO net is cached on this device ({size} of art) — the app works with the network off", { size: formatMb(status.targets.artBytes) })}>
+          ✓ {t("Offline ready")}
         </button>
       </>
     );
@@ -89,15 +90,16 @@ export default function OfflineButton() {
   return (
     <>
       <button onClick={start} className="mono" data-testid="offline-download"
-        title={`fetch every art file and the five PPO nets into this device's cache (~${formatMb(status.targets.artBytes)} of art + ~42 MB of nets, once), so any fight renders offline${error ? ` — last attempt: ${error}` : ""}`}
+        title={t("fetch every art file and the five PPO nets into this device's cache (~{size} of art + ~42 MB of nets, once), so any fight renders offline", { size: formatMb(status.targets.artBytes) })
+          + (error ? ` — ${t("last attempt: {error}", { error })}` : "")}
         style={error ? { color: "var(--hp)" } : undefined}>
-        ⬇ Download for offline
+        ⬇ {t("Download for offline")}
       </button>
       {cached > 0 && (
         <span className="mono" data-testid="offline-partial"
           style={{ color: "var(--muted)", fontSize: 11, whiteSpace: "nowrap" }}
-          title="already in this device's cache; the download resumes from here">
-          {cached}/{total} cached
+          title={t("already in this device's cache; the download resumes from here")}>
+          {t("{cached}/{total} cached", { cached, total })}
         </span>
       )}
     </>

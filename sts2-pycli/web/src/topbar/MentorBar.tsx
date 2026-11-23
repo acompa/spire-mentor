@@ -14,6 +14,7 @@
 import type { InstinctEstimate } from "../api";
 import { estimateChip, estimateText } from "../advice/estimate";
 import type { Brain, MentorMode, MentorState } from "./mentorStatus";
+import { t } from "../i18n";
 
 export type { Brain, MentorMode, MentorState };
 
@@ -42,22 +43,22 @@ export interface MentorBarProps {
 }
 
 export const MODES: { key: MentorMode; label: string; title: string }[] = [
-  { key: "off", label: "Off", title: "The AI stays quiet: no hints, no grades. H, P and the reviews still answer when asked." },
+  { key: "off", label: t("Off"), title: t("The AI stays quiet: no hints, no grades. H, P and the reviews still answer when asked.") },
   {
     key: "coach",
-    label: "Coach",
-    title: "Nothing before you act; Peek (P) shows the AI's pick, and the coach says afterwards where you differed",
+    label: t("Coach"),
+    title: t("Nothing before you act; Peek (P) shows the AI's pick, and the coach says afterwards where you differed"),
   },
-  { key: "hints", label: "Hints", title: "The AI's picks are ringed and numbered while you decide" },
-  { key: "aiplays", label: "AI plays", title: "The AI plays the run until you stop it (F starts it, Esc stops it)" },
+  { key: "hints", label: t("Hints"), title: t("The AI's picks are ringed and numbered while you decide") },
+  { key: "aiplays", label: t("AI plays"), title: t("The AI plays the run until you stop it (F starts it, Esc stops it)") },
 ];
 
 const BRAINS: { key: Brain; label: string; title: string }[] = [
-  { key: "search", label: "Search", title: "Thinks ahead: a search over the fight, the run net for the screens" },
+  { key: "search", label: t("Search"), title: t("Thinks ahead: a search over the fight, the run net for the screens") },
   {
     key: "instinct",
-    label: "Instinct",
-    title: "The end-to-end net, no search: fast, every decision. Its percentages are a policy's, not win chances.",
+    label: t("Instinct"),
+    title: t("The end-to-end net, no search: fast, every decision. Its percentages are a policy's, not win chances."),
   },
 ];
 
@@ -68,12 +69,12 @@ export default function MentorBar(p: MentorBarProps) {
   return (
     <span className={`wb-mentor wb-mentor--${p.mode}${p.aiPlaying ? " wb-mentor--ai" : ""}${parts === "mode" ? " wb-mentor--phonebar" : ""}`}>
       {p.aiPlaying && parts !== "rest" && (
-        <button type="button" className="wb-mentor-stop" onClick={p.onStop} title="Stop the AI (Esc)">
-          ■ Stop AI <kbd>Esc</kbd>
+        <button type="button" className="wb-mentor-stop" onClick={p.onStop} title={t("Stop the AI (Esc)")}>
+          {t("■ Stop AI")} <kbd>Esc</kbd>
         </button>
       )}
       {(parts === "all" || (parts === "mode" && !p.aiPlaying)) && (
-      <span className="wb-seg" role="radiogroup" aria-label="Mode">
+      <span className="wb-seg" role="radiogroup" aria-label={t("Mode")}>
         {MODES.map((m) => {
           const disabled = m.key === "aiplays" && !!p.aiPlaysDisabled && p.mode !== "aiplays";
           return (
@@ -88,7 +89,7 @@ export default function MentorBar(p: MentorBarProps) {
       </span>
       )}
       {rest && p.brain && (
-        <span className="wb-seg" role="radiogroup" aria-label="Brain">
+        <span className="wb-seg" role="radiogroup" aria-label={t("Brain")}>
           {BRAINS.map((b) => (
             <button key={b.key} type="button" role="radio" aria-checked={p.brain!.value === b.key}
               className={`wb-seg-btn${p.brain!.value === b.key ? " wb-seg-on" : ""}`} title={b.title}
@@ -99,23 +100,23 @@ export default function MentorBar(p: MentorBarProps) {
         </span>
       )}
       {rest && (p.onPeek || p.letAiPick || p.autobattle) && (
-        <span className="wb-mentor-verbs" role="group" aria-label="This decision">
+        <span className="wb-mentor-verbs" role="group" aria-label={t("This decision")}>
           {p.onPeek && (
-            <button type="button" onClick={p.onPeek} title="Peek at the AI's pick for this decision (P)">
-              Peek <kbd>P</kbd>
+            <button type="button" onClick={p.onPeek} title={t("Peek at the AI's pick for this decision (P)")}>
+              {t("Peek")} <kbd>P</kbd>
             </button>
           )}
           {p.letAiPick && (
             <button type="button" onClick={p.letAiPick.run} disabled={!!p.letAiPick.disabledReason}
-              title={p.letAiPick.disabledReason ?? "The AI takes just this decision (G)"}>
-              Let AI pick <kbd>G</kbd>
+              title={p.letAiPick.disabledReason ?? t("The AI takes just this decision (G)")}>
+              {t("Let AI pick")} <kbd>G</kbd>
             </button>
           )}
           {p.autobattle && (
             <button type="button" onClick={p.autobattle.toggle} aria-pressed={p.autobattle.on}
               className={p.autobattle.on ? "wb-mentor-on" : undefined}
-              title="The AI plays the fights, you make the run-level decisions — with a change-diff at each stop and the AI's pick revealed after you commit">
-              {p.autobattle.on ? "Stop autobattle" : "Autobattle"}
+              title={t("The AI plays the fights, you make the run-level decisions — with a change-diff at each stop and the AI's pick revealed after you commit")}>
+              {p.autobattle.on ? t("Stop autobattle") : t("Autobattle")}
             </button>
           )}
         </span>
@@ -136,8 +137,10 @@ export default function MentorBar(p: MentorBarProps) {
 function EstimateChip({ estimate }: { estimate?: InstinctEstimate | null }) {
   const parts = estimateChip(estimate);
   if (parts.length === 0) return null;
-  const title = `${estimateText(estimate)}. A small net reading Instinct's view of the position (GH #1222); `
-    + "each number assumes Instinct plays every move from here. It is not the search's win chance.";
+  const title = t(
+    "{estimate}. A small net reading Instinct's view of the position (GH #1222); each number assumes Instinct plays every move from here. It is not the search's win chance.",
+    { estimate: estimateText(estimate) },
+  );
   return (
     <span className="wb-estimate" title={title} data-testid="estimate-chip">
       {parts.map((x, i) => (

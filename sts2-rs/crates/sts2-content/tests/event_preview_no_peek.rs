@@ -147,3 +147,46 @@ fn crystal_sphere_previews_cost_not_haul() {
         "no Payment Plan paid out beyond its preview — test is vacuous"
     );
 }
+
+/// The War Historian's chest rolls two potions and two relics on pick. With a
+/// full belt, whether the potions fit read the rolled relics (a Potion Belt
+/// among them makes room), so the preview told the student the hidden relic
+/// roll (Spire Bench seed 170000032: no potions lost natively, two in the
+/// advisor's rebuild of the same screen).
+#[test]
+fn war_historians_chest_previews_the_same_whatever_relics_it_rolls() {
+    sts2_content::cards::dispatch::ensure_installed();
+    sts2_content::relics::dispatch::install_default_registry();
+    let preview = |front: RelicId| {
+        let mut rm = run_state(1, 2);
+        let rs = &mut rm.run_state;
+        rs.max_potion_slots = 2;
+        rs.interactive_potion_swap = true;
+        for rarity in [
+            sts2_core::runstate::RelicRarity::Common,
+            sts2_core::runstate::RelicRarity::Uncommon,
+            sts2_core::runstate::RelicRarity::Rare,
+        ] {
+            rs.relic_grab_bag_by_rarity
+                .insert(rarity, vec![front, RelicId::Vajra, RelicId::Pocketwatch]);
+        }
+        rs.master_deck.push(
+            sts2_content::cards::spec_index::card_pod_from_id(
+                sts2_core::cards::CardId::LanternKey,
+                false,
+            )
+            .expect("LanternKey card POD"),
+        );
+        rs.enter_event_room(EventId::WarHistorianRepy);
+        let opts = present(rs).expect("options");
+        let chest = opts
+            .iter()
+            .position(|o| o.loc_key.contains("UNLOCK_CHEST"))
+            .expect("the chest option");
+        preview_option_effect(rs, chest).expect("a preview")
+    };
+    assert_eq!(
+        format!("{:?}", preview(RelicId::PotionBelt)),
+        format!("{:?}", preview(RelicId::Anchor))
+    );
+}

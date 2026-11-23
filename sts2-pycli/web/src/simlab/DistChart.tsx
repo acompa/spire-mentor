@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import Plotly from "plotly.js-dist-min";
+import { t } from "../i18n";
 
 export interface Trace {
   label: string;
@@ -78,10 +79,10 @@ export function DistChart({
     Plotly.react(node, data, {
       title: { text: title },
       barmode: "overlay",
-      xaxis: { title: { text: "damage taken" } },
+      xaxis: { title: { text: t("damage taken") } },
       // unit bins -> bar height = probability of that damage value; the KDE
       // curve is rescaled to the same peak (see above).
-      yaxis: { title: { text: "probability" } },
+      yaxis: { title: { text: t("probability") } },
       // legend goes ABOVE the plot area (anchored to its top edge) — the
       // default horizontal-legend position is below the plot, where it
       // collides with the x-axis title once 4-5 strategies are shown.

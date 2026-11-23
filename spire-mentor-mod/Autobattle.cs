@@ -71,12 +71,14 @@ internal static class Autobattle
     /// "Added").</summary>
     public static ChipText Chip(string id, AutobattleSnapshot? prev, AutobattleSnapshot cur, int autoplayed)
     {
-        string floor = cur.Floor is int f ? $" — floor {f}" : "";
+        string title = cur.Floor is int f
+            ? prev == null ? L10n.F("Autobattle — your call — floor {0}", f) : L10n.F("Since your last stop — floor {0}", f)
+            : prev == null ? L10n.T("Autobattle — your call") : L10n.T("Since your last stop");
         return new ChipText
         {
             Id = id,
             Kind = ChipKind,
-            Title = prev == null ? $"Autobattle — your call{floor}" : $"Since your last stop{floor}",
+            Title = title,
             Lines = Lines(prev, cur, autoplayed),
             Tone = ChipTone.Info,
         };
@@ -95,35 +97,58 @@ internal static class Autobattle
             (List<string> added, List<string> removed, List<string> upgraded) = DeckDelta(prev.Deck, cur.Deck);
             (List<string> relicsGained, List<string> relicsLost) = GainedLost(prev.Relics, cur.Relics);
             (List<string> potionsGained, List<string> potionsLost) = GainedLost(prev.Potions, cur.Potions);
-            Add(lines, "Upgraded ", upgraded);
-            Add(lines, "Added ", added);
-            Add(lines, "Removed ", removed);
-            Add(lines, "Relic ", relicsGained);
-            Add(lines, "Lost relic ", relicsLost);
-            Add(lines, "Potion ", potionsGained);
-            Add(lines, "Used potion ", potionsLost);
+            if (upgraded.Count > 0)
+            {
+                lines.Add(L10n.F("Upgraded {0}", string.Join(", ", upgraded)));
+            }
+            if (added.Count > 0)
+            {
+                lines.Add(L10n.F("Added {0}", string.Join(", ", added)));
+            }
+            if (removed.Count > 0)
+            {
+                lines.Add(L10n.F("Removed {0}", string.Join(", ", removed)));
+            }
+            if (relicsGained.Count > 0)
+            {
+                lines.Add(L10n.F("Relic {0}", string.Join(", ", relicsGained)));
+            }
+            if (relicsLost.Count > 0)
+            {
+                lines.Add(L10n.F("Lost relic {0}", string.Join(", ", relicsLost)));
+            }
+            if (potionsGained.Count > 0)
+            {
+                lines.Add(L10n.F("Potion {0}", string.Join(", ", potionsGained)));
+            }
+            if (potionsLost.Count > 0)
+            {
+                lines.Add(L10n.F("Used potion {0}", string.Join(", ", potionsLost)));
+            }
             if (!Moved(prev, cur))
             {
-                lines.Add("Nothing changed.");
+                lines.Add(L10n.T("Nothing changed."));
             }
         }
 
         var resources = new List<string>();
         if (cur.Hp is int hp)
         {
-            string text = $"HP {hp}" + (cur.MaxHp is int max ? $"/{max}" : "");
+            string text = cur.MaxHp is int max ? L10n.F("HP {0}/{1}", hp, max) : L10n.F("HP {0}", hp);
             resources.Add(text + Signed(Delta(prev?.Hp, cur.Hp)));
         }
         if (cur.Gold is int gold)
         {
-            resources.Add($"Gold {gold}" + Signed(Delta(prev?.Gold, cur.Gold)));
+            resources.Add(L10n.F("Gold {0}", gold) + Signed(Delta(prev?.Gold, cur.Gold)));
         }
-        resources.Add($"Deck {cur.Deck.Count}");
+        resources.Add(L10n.F("Deck {0}", cur.Deck.Count));
         lines.Add(string.Join(" · ", resources));
 
         if (autoplayed > 0)
         {
-            lines.Add($"{autoplayed} decision{(autoplayed == 1 ? "" : "s")} auto-played");
+            lines.Add(autoplayed == 1
+                ? L10n.F("{0} decision auto-played", autoplayed)
+                : L10n.F("{0} decisions auto-played", autoplayed));
         }
         return lines;
     }
@@ -205,14 +230,6 @@ internal static class Autobattle
         a.Select(kv => (kv.Key, Count: kv.Value - b.GetValueOrDefault(kv.Key)))
             .Where(x => x.Count > 0)
             .ToDictionary(x => x.Key, x => x.Count);
-
-    private static void Add(List<string> lines, string label, List<string> names)
-    {
-        if (names.Count > 0)
-        {
-            lines.Add(label + string.Join(", ", names));
-        }
-    }
 
     private static int? Delta(int? before, int? after) =>
         before is int b && after is int a ? a - b : null;

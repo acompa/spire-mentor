@@ -555,10 +555,10 @@ internal static class SimCombatLog
         {
             ["round"] = null,
             ["side"] = null,
-            ["text"] = Safe(() => entry.Description),
+            ["text"] = DescriptionIsSafe(entry) ? Safe(() => entry.Description) : null,
             ["source"] = null,
         };
-        string? human = Safe(() => entry.HumanReadableString);
+        string? human = DescriptionIsSafe(entry) ? Safe(() => entry.HumanReadableString) : null;
         if (human != null)
         {
             Match m = HeaderRe.Match(human);
@@ -658,6 +658,43 @@ internal static class SimCombatLog
     }
 
     /// <summary>Run <paramref name="f"/>, swallowing anything it throws.</summary>
+    // Entry types whose Description reads Actor.Player.Character with no null
+    // check. By name: ArrowShotEntry exists on v0.113 only, and one DLL binds
+    // against every build.
+    private static readonly HashSet<string> PlayerActorDescriptions = new()
+    {
+        "CardGeneratedEntry", "CardExhaustedEntry", "CardAfflictedEntry", "SummonedEntry",
+        "EnergySpentEntry", "OrbChanneledEntry", "CardDiscardedEntry", "CardDrawnEntry",
+        "StarsModifiedEntry", "ArrowShotEntry", "PotionUsedEntry", "CardPlayStartedEntry",
+        "CardPlayFinishedEntry",
+    };
+
+    /// <summary>
+    /// False when the game's own <c>Description</c> getter (and
+    /// <c>HumanReadableString</c>, which embeds it) would dereference null for
+    /// this entry. The getters name a target as <c>Target.Monster.Id</c>, and a
+    /// player creature has no Monster: every potion drunk on yourself, and a
+    /// card played at a teammate. A try/catch is not enough. On Linux the
+    /// modded game runs without the runtime's SIGSEGV handler (the Sentry
+    /// shutdown removes it), so that null dereference kills the process
+    /// instead of throwing (GH #1425).
+    /// </summary>
+    internal static bool DescriptionIsSafe(CombatHistoryEntry entry)
+    {
+        if (PlayerActorDescriptions.Contains(entry.GetType().Name) && entry.Actor?.Player?.Character == null)
+        {
+            return false;
+        }
+        Creature? target = entry switch
+        {
+            PotionUsedEntry potion => potion.Target,
+            CardPlayStartedEntry started => started.CardPlay?.Target,
+            CardPlayFinishedEntry finished => finished.CardPlay?.Target,
+            _ => null,
+        };
+        return target == null || target.Monster != null;
+    }
+
     private static T? Safe<T>(Func<T> f) where T : class
     {
         try

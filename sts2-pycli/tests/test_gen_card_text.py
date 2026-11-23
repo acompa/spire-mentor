@@ -197,3 +197,71 @@ def test_shipped_v0111_card_text_matches_a_fresh_regeneration(tmp_path: Path):
     gen_card_text.generate(_WIKI_DATA, fresh, "v0.111.0")
     assert fresh.read_bytes() == _SHIPPED_V111.read_bytes()
     assert "CACOPHONY" in json.loads(_SHIPPED_V111.read_text(encoding="utf-8"))
+
+
+# --- Simplified Chinese (``--lang zhs``) ---------------------------------------
+
+
+def test_zh_out_path_sits_under_public_zh():
+    assert gen_card_text.out_path_for(None, "zhs") == _SHIPPED.parent / "zh" / "card_text.json"
+    assert gen_card_text.out_path_for("v0.111.0", "zhs") == (
+        _SHIPPED.parent / "zh" / "v0.111.0" / "card_text.json"
+    )
+
+
+def test_zh_text_is_the_games_chinese_with_english_fallback(tmp_path: Path):
+    """The game's Chinese title and template, filled with the build's values;
+    keyword lines in Chinese; a card the Chinese table lacks stays English."""
+    _write(
+        tmp_path / _ENGINE_WIKI_VERSION / "cards.json",
+        [
+            {
+                "loc_key": "BASH",
+                "title": "Bash",
+                "description_template": "Deal {Damage:diff()} damage.\nApply {VulnerablePower:diff()} Vulnerable.",
+                "description_plain": "Deal 8 damage.\nApply 2 Vulnerable.",
+                "vars": [
+                    {"type": "Damage", "base_value": 8},
+                    {"type": "Vulnerable", "base_value": 2},
+                ],
+                "keywords": ["Exhaust"],
+            },
+            {"loc_key": "NOT_A_GAME_CARD", "title": "Nope", "description_plain": "Plain."},
+        ],
+    )
+    out = tmp_path / "zh.json"
+    gen_card_text.generate(tmp_path, out, lang="zhs")
+    text = json.loads(out.read_text(encoding="utf-8"))
+    assert text["BASH"]["title"] == "痛击"
+    assert text["BASH"]["description"] == "造成8点伤害。\n给予2层易伤。\n消耗。"
+    assert text["NOT_A_GAME_CARD"] == {"title": "Nope", "description": "Plain."}
+
+
+_ZH_VERSIONS = [(v, gen_card_text.out_path_for(v, "zhs")) for v in (None, "v0.111.0", "v0.113.0")]
+
+
+@pytest.mark.parametrize(
+    ("version", "shipped"), _ZH_VERSIONS, ids=[str(v or "default") for v, _ in _ZH_VERSIONS]
+)
+def test_shipped_zh_card_text_matches_a_fresh_regeneration(
+    tmp_path: Path, version: str | None, shipped: Path
+):
+    wiki = _WIKI_DATA / (version or _ENGINE_WIKI_VERSION)
+    if not wiki.is_dir() or not shipped.is_file():
+        pytest.skip("no wiki data / zh card text for this build (public)")
+    fresh = tmp_path / "card_text.json"
+    gen_card_text.generate(_WIKI_DATA, fresh, version, "zhs")
+    regenerate = (
+        f"{shipped} is stale. Regenerate: PYTHONPATH=python uv run python "
+        f"python/synergy/gen_card_text.py --version {version or _ENGINE_WIKI_VERSION} --lang zhs"
+    )
+    expected = json.loads(fresh.read_text(encoding="utf-8"))
+    have = json.loads(shipped.read_text(encoding="utf-8"))
+    stale = sorted(k for k in expected if have.get(k) != expected[k])
+    assert not stale, f"{len(stale)} entries (e.g. {stale[:5]}): {regenerate}"
+    # The public export ships one build's manifest, so the cards only older
+    # builds describe (Grapple, Prepare, Follow Through) are missing from a
+    # regeneration there. With every manifest on disk the file must match
+    # byte for byte.
+    if len(list(_WIKI_DATA.glob("*/cards.json"))) > 1:
+        assert fresh.read_bytes() == shipped.read_bytes(), regenerate

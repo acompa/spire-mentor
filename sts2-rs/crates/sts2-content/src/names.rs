@@ -810,6 +810,23 @@ pub fn relic_id_from_str(input: &str) -> Option<RelicId> {
     None
 }
 
+/// [`relic_id_from_str`], or a relic only a later build has (v0.111.0's
+/// Dowsing Rod, v0.113.0's Wuppy): [`RelicId::all`] is the v0.107.1
+/// universe, so those miss it. A relic id names one relic whatever the
+/// build, so this is safe wherever the input comes from a live run (the
+/// state import, the advisor's graft); it is not the lenient-fixture path
+/// (GH #1646).
+#[must_use]
+pub fn relic_id_from_str_any_build(input: &str) -> Option<RelicId> {
+    relic_id_from_str(input).or_else(|| {
+        let want = normalize(input);
+        sts2_core::GameVersion::ALL
+            .into_iter()
+            .flat_map(RelicId::all_for)
+            .find(|r| normalize(r.to_python_name()) == want)
+    })
+}
+
 /// Top-3 did-you-mean suggestions for an unresolved [`RelicId`] input.
 #[must_use]
 pub fn suggest_relic_id(input: &str) -> Vec<String> {
@@ -819,7 +836,15 @@ pub fn suggest_relic_id(input: &str) -> Vec<String> {
 
 /// Build a `(values, python_names)` pair for [`PotionKind`].
 fn potion_kind_tables() -> (Vec<PotionKind>, Vec<&'static str>) {
-    let values: Vec<PotionKind> = PotionKind::ALL.to_vec();
+    // The later builds' potions too (v0.111.0's Ambergris, the Fool's), as
+    // `state_dict::potion_kind_from_python_name` resolves them: a name only
+    // one build has can only come from that build's state.
+    let values: Vec<PotionKind> = PotionKind::ALL
+        .iter()
+        .chain(PotionKind::V0111_ONLY.iter())
+        .chain(PotionKind::V0113_ONLY.iter())
+        .copied()
+        .collect();
     let names: Vec<&'static str> = values.iter().map(|v| v.python_name()).collect();
     (values, names)
 }

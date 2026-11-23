@@ -48,7 +48,9 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use sts2_core::GameVersion;
 
-/// The DEFAULT game build's wiki version — what [`data`] describes.
+/// The LEGACY game build's wiki version — what [`data`] describes: its
+/// tables are the unprefixed ones on disk. (Not the default build a new run
+/// simulates, which is `GameVersion::NEW_RUN_DEFAULT`.)
 /// Mirrors `workbench.localization._ENGINE_WIKI_VERSION`; every build's is
 /// [`engine_wiki_version`].
 pub const ENGINE_WIKI_VERSION: &str = "v0.107.1";
@@ -400,6 +402,250 @@ impl Data {
 /// thereafter. Same as `data_for(GameVersion::default())`.
 pub fn data() -> &'static Data {
     data_for(GameVersion::default())
+}
+
+/// The game's Simplified Chinese display tables (`data/game/localization_zhs/`,
+/// one set for every build). Empty maps when the bundle has none.
+#[derive(Clone, Debug, Default)]
+pub struct ZhTables {
+    /// First line of `localization_zhs/BUILD.txt` (empty: no zh bundle).
+    pub build: String,
+    pub cards: LocMap,
+    pub card_keywords: LocMap,
+    pub afflictions: LocMap,
+    pub rest_site_ui: LocMap,
+    pub relics: LocMap,
+    pub potions: LocMap,
+    pub characters: LocMap,
+    pub encounters: LocMap,
+    pub events: LocMap,
+    /// `{LOC_KEY: {var_type_lower: base_value}}` per relic / potion, to
+    /// render their Chinese description templates (the wiki's pre-resolved
+    /// plain text is English).
+    pub owned_vars: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+    /// The other Chinese tables, by table name (`"monsters"`, `"powers"`,
+    /// `"intents"`, `"acts"`, `"game_modes"`, `"gameplay_ui"`, ...; the list
+    /// is `_ZH_EXTRA_TABLES` in `bundle_workbench_data.py`).
+    pub extra: BTreeMap<String, LocMap>,
+}
+
+impl ZhTables {
+    /// True when the bundle carries Chinese tables at all.
+    #[must_use]
+    pub fn is_present(&self) -> bool {
+        !self.cards.is_empty()
+    }
+
+    /// `extra[table][key]`, when present and non-empty.
+    #[must_use]
+    pub fn get(&self, table: &str, key: &str) -> Option<&str> {
+        self.extra
+            .get(table)
+            .and_then(|t| t.get(key))
+            .map(String::as_str)
+            .filter(|s| !s.is_empty())
+    }
+}
+
+macro_rules! zh_bundled {
+    ($name:literal) => {
+        include_str!(concat!(env!("OUT_DIR"), "/game/localization_zhs/", $name))
+    };
+}
+
+/// The Chinese display tables, parsed once.
+pub fn zh_tables() -> &'static ZhTables {
+    static CELL: OnceLock<ZhTables> = OnceLock::new();
+    CELL.get_or_init(|| ZhTables {
+        build: zh_bundled!("BUILD.txt")
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
+        cards: parse("localization_zhs/cards.json", zh_bundled!("cards.json")),
+        card_keywords: parse(
+            "localization_zhs/card_keywords.json",
+            zh_bundled!("card_keywords.json"),
+        ),
+        afflictions: parse(
+            "localization_zhs/afflictions.json",
+            zh_bundled!("afflictions.json"),
+        ),
+        rest_site_ui: parse(
+            "localization_zhs/rest_site_ui.json",
+            zh_bundled!("rest_site_ui.json"),
+        ),
+        relics: parse("localization_zhs/relics.json", zh_bundled!("relics.json")),
+        potions: parse("localization_zhs/potions.json", zh_bundled!("potions.json")),
+        characters: parse(
+            "localization_zhs/characters.json",
+            zh_bundled!("characters.json"),
+        ),
+        encounters: parse(
+            "localization_zhs/encounters.json",
+            zh_bundled!("encounters.json"),
+        ),
+        events: parse("localization_zhs/events.json", zh_bundled!("events.json")),
+        owned_vars: parse(
+            "localization_zhs/owned_vars.json",
+            zh_bundled!("owned_vars.json"),
+        ),
+        extra: parse("localization_zhs/extra.json", zh_bundled!("extra.json")),
+    })
+}
+
+/// The game build the shared Chinese set was vendored from (its
+/// `BUILD.txt`), when it names a supported one.
+#[must_use]
+pub fn zh_source_version() -> Option<GameVersion> {
+    zh_tables().build.parse().ok()
+}
+
+macro_rules! zh_versioned {
+    ($version:expr, $name:literal) => {
+        match $version {
+            GameVersion::V0_107_1 => "",
+            GameVersion::V0_111_0 => {
+                include_str!(concat!(
+                    env!("OUT_DIR"),
+                    "/game/v0.111.0/localization_zhs/",
+                    $name
+                ))
+            }
+            GameVersion::V0_113_0 => {
+                include_str!(concat!(
+                    env!("OUT_DIR"),
+                    "/game/v0.113.0/localization_zhs/",
+                    $name
+                ))
+            }
+        }
+    };
+}
+
+/// A build's OWN Chinese tables (`data/game/<ver>/localization_zhs/`,
+/// vendored from that build's pck), empty when it has none.
+fn zh_own_tables(version: GameVersion) -> ZhTables {
+    let p = |name: &str, text: &str| -> LocMap {
+        if text.trim().is_empty() {
+            LocMap::new()
+        } else {
+            parse(name, text)
+        }
+    };
+    ZhTables {
+        build: zh_versioned!(version, "BUILD.txt")
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
+        cards: p("cards.json", zh_versioned!(version, "cards.json")),
+        card_keywords: p(
+            "card_keywords.json",
+            zh_versioned!(version, "card_keywords.json"),
+        ),
+        afflictions: p(
+            "afflictions.json",
+            zh_versioned!(version, "afflictions.json"),
+        ),
+        rest_site_ui: p(
+            "rest_site_ui.json",
+            zh_versioned!(version, "rest_site_ui.json"),
+        ),
+        relics: p("relics.json", zh_versioned!(version, "relics.json")),
+        potions: p("potions.json", zh_versioned!(version, "potions.json")),
+        characters: p("characters.json", zh_versioned!(version, "characters.json")),
+        encounters: p("encounters.json", zh_versioned!(version, "encounters.json")),
+        events: p("events.json", zh_versioned!(version, "events.json")),
+        owned_vars: BTreeMap::new(),
+        extra: {
+            let text = zh_versioned!(version, "extra.json");
+            if text.trim().is_empty() {
+                BTreeMap::new()
+            } else {
+                parse("extra.json", text)
+            }
+        },
+    }
+}
+
+/// True when build `version` carries its own vendored Chinese set.
+#[must_use]
+pub fn zh_has_own(version: GameVersion) -> bool {
+    !zh_versioned!(version, "cards.json").trim().is_empty()
+}
+
+/// The Chinese tables for build `version`, built once per build.
+///
+/// The shared set comes from one build (the newest, [`zh_source_version`]);
+/// a key whose ENGLISH text differs between `version` and that build
+/// describes a different effect there (a card reworked between builds), so
+/// its Chinese is dropped and the English kept — wrong Chinese is worse than
+/// English. A build's own vendored Chinese set (`zh_own_tables`) then wins
+/// key by key, which restores those texts exactly.
+pub fn zh_tables_for(version: GameVersion) -> &'static ZhTables {
+    static CELLS: PerVersion<ZhTables> = PerVersion::new();
+    CELLS.get_or_init(version, || {
+        let base = zh_tables();
+        let mut out = base.clone();
+        let src = zh_source_version();
+        if src.is_some_and(|s| s != version) {
+            let (dv, ds) = (data_for(version), data_for(src.expect("checked")));
+            fn guard(zh: &mut LocMap, mine: &LocMap, theirs: &LocMap) {
+                zh.retain(|k, _| match (mine.get(k), theirs.get(k)) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => true,
+                });
+            }
+            guard(&mut out.cards, &dv.loc_cards, &ds.loc_cards);
+            guard(
+                &mut out.card_keywords,
+                &dv.loc_card_keywords,
+                &ds.loc_card_keywords,
+            );
+            guard(
+                &mut out.afflictions,
+                &dv.loc_afflictions,
+                &ds.loc_afflictions,
+            );
+            guard(
+                &mut out.rest_site_ui,
+                &dv.loc_rest_site_ui,
+                &ds.loc_rest_site_ui,
+            );
+            guard(&mut out.relics, &dv.loc_relics, &ds.loc_relics);
+            guard(&mut out.potions, &dv.loc_potions, &ds.loc_potions);
+            guard(&mut out.characters, &dv.loc_characters, &ds.loc_characters);
+            guard(&mut out.encounters, &dv.loc_encounters, &ds.loc_encounters);
+            guard(&mut out.events, &dv.loc_events, &ds.loc_events);
+            let powers_v: LocMap = dv.loc_powers.0.iter().cloned().collect();
+            let powers_s: LocMap = ds.loc_powers.0.iter().cloned().collect();
+            if let Some(p) = out.extra.get_mut("powers") {
+                guard(p, &powers_v, &powers_s);
+            }
+        }
+        let own = zh_own_tables(version);
+        let merge = |dst: &mut LocMap, src: &LocMap| {
+            for (k, v) in src {
+                dst.insert(k.clone(), v.clone());
+            }
+        };
+        merge(&mut out.cards, &own.cards);
+        merge(&mut out.card_keywords, &own.card_keywords);
+        merge(&mut out.afflictions, &own.afflictions);
+        merge(&mut out.rest_site_ui, &own.rest_site_ui);
+        merge(&mut out.relics, &own.relics);
+        merge(&mut out.potions, &own.potions);
+        merge(&mut out.characters, &own.characters);
+        merge(&mut out.encounters, &own.encounters);
+        merge(&mut out.events, &own.events);
+        for (table, rows) in &own.extra {
+            merge(out.extra.entry(table.clone()).or_default(), rows);
+        }
+        out
+    })
 }
 
 /// Build `version`'s parsed bundle, built on first use and shared

@@ -21,6 +21,8 @@
 //! which has no Python server to answer `/api/simlab/*`.
 
 use serde_json::{json, Map, Value};
+
+use crate::i18n::{tr, trf};
 use sts2_core::{legal_actions as core_legal_actions, terminal_value, CombatState};
 use sts2_wire::emit::combat::combat_action_to_value;
 use sts2_wire::emit::{combat_state_to_value, pending_choice};
@@ -190,10 +192,18 @@ fn int_field(v: Option<&Value>, what: &str, minimum: Option<i64>) -> PResult<i64
 
 /// The engine wire dict → `CombatState` (`state_from_dict`).
 fn state_from_wire(wire: &Value) -> PResult<CombatState> {
-    let parsed = parse_state_dict(&wire)
-        .map_err(|e| PositionError::new(format!("the engine rejected this position: {e}")))?;
-    state_from_dict_impl(&parsed)
-        .map_err(|e| PositionError::new(format!("the engine rejected this position: {e}")))
+    let parsed = parse_state_dict(&wire).map_err(|e| {
+        PositionError::new(trf(
+            "the engine rejected this position: {error}",
+            &[("error", &e)],
+        ))
+    })?;
+    state_from_dict_impl(&parsed).map_err(|e| {
+        PositionError::new(trf(
+            "the engine rejected this position: {error}",
+            &[("error", &e)],
+        ))
+    })
 }
 
 /// `CombatState` → the engine wire dict (`state_to_dict`).
@@ -247,9 +257,13 @@ fn card_row(wire_card: &Value, notes: &mut Vec<String>, where_: &str) -> Value {
     .filter(|k| truthy(wire_card.get(*k)))
     .collect();
     if !dropped.is_empty() {
-        notes.push(format!(
-            "{where_}: {id} loses {} (not carried by the position).",
-            dropped.join(", ")
+        notes.push(trf(
+            "{where}: {id} loses {what} (not carried by the position).",
+            &[
+                ("where", &where_),
+                ("id", &id),
+                ("what", &dropped.join(", ")),
+            ],
         ));
     }
     json!({"card": id, "upgrade": upgrade, "cost": cost})
@@ -288,15 +302,20 @@ pub fn position_from_wire(
         .as_object()
         .filter(|o| o.contains_key("player") && o.contains_key("deck"));
     let Some(_) = obj else {
-        return Err(PositionError::new(
+        return Err(PositionError::new(tr(
             "not an engine combat wire (no player / deck block)",
-        ));
+        )));
     };
     let phase = as_str(wire.get("phase"), "PlayerPlayPhase");
     if TERMINAL_PHASES.contains(&phase) {
-        return Err(PositionError::new(format!(
-            "that fight is already over ({}); nothing to play from",
-            phase.to_ascii_lowercase()
+        let how = if phase == "Victory" {
+            tr("victory")
+        } else {
+            tr("defeat")
+        };
+        return Err(PositionError::new(trf(
+            "that fight is already over ({phase}); nothing to play from",
+            &[("phase", &how)],
         )));
     }
     let mut notes: Vec<String> = Vec::new();
@@ -305,20 +324,26 @@ pub fn position_from_wire(
     let rng = wire.get("rng").filter(|v| v.is_object());
 
     if truthy(deck.get("play_pile")) {
-        return Err(PositionError::new(
+        return Err(PositionError::new(tr(
             "a card is mid-resolution (play pile is not empty); copy the state at a decision point",
-        ));
+        )));
     }
-    for key in ["pinned_top", "pinned_bottom"] {
+    for (key, note) in [
+        (
+            "pinned_top",
+            tr("Draw-pile pinned top pins are not carried; the order is."),
+        ),
+        (
+            "pinned_bottom",
+            tr("Draw-pile pinned bottom pins are not carried; the order is."),
+        ),
+    ] {
         if truthy(deck.get(key)) {
-            notes.push(format!(
-                "Draw-pile {} pins are not carried; the order is.",
-                key.replace('_', " ")
-            ));
+            notes.push(note.to_string());
         }
     }
     if truthy(deck.get("deferred_draw_order")) {
-        notes.push("The deferred draw-order flag is not carried.".to_string());
+        notes.push(tr("The deferred draw-order flag is not carried.").to_string());
     }
 
     let class = as_str(player.get("class"), "ironclad");
@@ -446,8 +471,9 @@ pub fn position_from_wire(
             let kind = as_str(m.get("kind"), "").to_string();
             let intent = m.get("move_state").cloned().unwrap_or(Value::Null);
             if intent.is_null() && truthy(m.get("intents")) {
-                notes.push(format!(
-                    "{kind}: the wire telegraphs a move without naming it; the intent will be re-rolled unless you pick one."
+                notes.push(trf(
+                    "{kind}: the wire telegraphs a move without naming it; the intent will be re-rolled unless you pick one.",
+                    &[("kind", &kind)],
                 ));
             }
             for key in [
@@ -456,7 +482,10 @@ pub fn position_from_wire(
                 "curse_of_knowledge_counter",
             ] {
                 if truthy(m.get(key)) {
-                    notes.push(format!("{kind}: {key} is not carried by the position."));
+                    notes.push(trf(
+                        "{kind}: {key} is not carried by the position.",
+                        &[("kind", &kind), ("key", &key)],
+                    ));
                 }
             }
             monsters.push(json!({
@@ -579,7 +608,12 @@ fn roll_intents(
         Some(&kinds),
         Some(forced),
     )
-    .map_err(|e| PositionError::new(format!("the engine rejected this position: {e}")))?;
+    .map_err(|e| {
+        PositionError::new(trf(
+            "the engine rejected this position: {error}",
+            &[("error", &e)],
+        ))
+    })?;
     let wire = state_to_wire(&cs)?;
     Ok(wire
         .get("encounter")
@@ -616,8 +650,9 @@ pub fn wire_from_position(pos: &Value) -> PResult<Value> {
     let max_hp = int_field(player.get("maxHp").or(Some(&json!(80))), "max HP", Some(1))?;
     let hp = int_field(player.get("hp").or(Some(&json!(max_hp))), "HP", Some(0))?;
     if hp > max_hp {
-        return Err(PositionError::new(format!(
-            "HP ({hp}) is above max HP ({max_hp})"
+        return Err(PositionError::new(trf(
+            "HP ({hp}) is above max HP ({max_hp})",
+            &[("hp", &hp), ("max_hp", &max_hp)],
         )));
     }
     let max_energy = int_field(
@@ -761,7 +796,9 @@ pub fn wire_from_position(pos: &Value) -> PResult<Value> {
         wire_deck.insert(key.into(), Value::Array(cards));
     }
     if idx == 0 {
-        return Err(PositionError::new("the position has no cards in any pile"));
+        return Err(PositionError::new(tr(
+            "the position has no cards in any pile",
+        )));
     }
 
     let monsters = pos
@@ -770,7 +807,7 @@ pub fn wire_from_position(pos: &Value) -> PResult<Value> {
         .cloned()
         .unwrap_or_default();
     if monsters.is_empty() {
-        return Err(PositionError::new("the position has no enemies"));
+        return Err(PositionError::new(tr("the position has no enemies")));
     }
     let forced: Vec<Option<String>> = monsters
         .iter()
@@ -988,9 +1025,9 @@ pub fn new_position(
         .map(|ms| ms.iter().filter(|m| !m.is_empty()).cloned().collect())
         .unwrap_or_default();
     if encounter.is_none() && lineup.is_empty() {
-        return Err(PositionError::new(
+        return Err(PositionError::new(tr(
             "pick an encounter or name at least one monster",
-        ));
+        )));
     }
     let cs = sts2_wire::scenario::build_scenario_state_for_version(
         // The selector's build (`game_version` on the request, GH #877).
@@ -1011,7 +1048,12 @@ pub fn new_position(
         },
         None,
     )
-    .map_err(|e| PositionError::new(format!("the engine rejected this position: {e}")))?;
+    .map_err(|e| {
+        PositionError::new(trf(
+            "the engine rejected this position: {error}",
+            &[("error", &e)],
+        ))
+    })?;
     let wire = state_to_wire(&cs)?;
     let label = encounter.map_or_else(|| format!("monsters:{}", lineup.join(",")), str::to_string);
     let (pos, notes) = position_from_wire(&wire, Some(&label), Some(seed))?;
@@ -1053,7 +1095,7 @@ fn normalized_wire(wire: &Value) -> Value {
 pub fn position_from_paste(text: &str) -> PResult<(Value, Vec<String>, String)> {
     let stripped = text.trim();
     if stripped.is_empty() {
-        return Err(PositionError::new("nothing pasted"));
+        return Err(PositionError::new(tr("nothing pasted")));
     }
     if let Ok(parsed) = serde_json::from_str::<Value>(stripped) {
         if looks_like_position(&parsed) {
@@ -1082,7 +1124,13 @@ pub fn position_from_paste(text: &str) -> PResult<(Value, Vec<String>, String)> 
             imported
                 .warnings
                 .iter()
-                .filter(|w| w.contains("dropped") || w.contains("left out"))
+                .filter(|w| {
+                    w.contains("dropped")
+                        || w.contains("left out")
+                        || crate::state_import::LEFT_OUT
+                            .iter()
+                            .any(|t| fits_template(w, tr(t)))
+                })
                 .cloned(),
         );
         return Ok((pos, notes, "SpireMentor Copy-state".to_string()));
@@ -1091,17 +1139,39 @@ pub fn position_from_paste(text: &str) -> PResult<(Value, Vec<String>, String)> 
         let why = imported
             .warnings
             .iter()
-            .find(|w| w.contains("could not be rebuilt"))
+            .find(|w| fits_template(w, tr(crate::state_import::FIGHT_NOT_REBUILT)))
             .cloned()
             .unwrap_or_default();
-        return Err(PositionError::new(format!(
-            "That is a live-game fight paste the engine could not rebuild. {why}"
+        return Err(PositionError::new(trf(
+            "That is a live-game fight paste the engine could not rebuild. {why}",
+            &[("why", &why)],
         )));
     }
-    Err(PositionError::new(
-        "That state has no fight in it. Paste an engine combat state (or start a New fight) to \
-         load it here.",
-    ))
+    Err(PositionError::new(tr(
+        "That state has no fight in it. Paste an engine combat state (or start a New fight) to load it here.",
+    )))
+}
+
+/// Whether `text` is `template` filled in: every literal run between the
+/// `{placeholders}` appears in order (so a warning is recognized in either
+/// display language by its own template).
+fn fits_template(text: &str, template: &str) -> bool {
+    let mut rest = text;
+    for (i, piece) in template.split('{').enumerate() {
+        let lit = if i == 0 {
+            piece
+        } else {
+            piece.split_once('}').map_or(piece, |(_, l)| l)
+        };
+        if lit.is_empty() {
+            continue;
+        }
+        match rest.find(lit) {
+            Some(at) => rest = &rest[at + lit.len()..],
+            None => return false,
+        }
+    }
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -1164,20 +1234,22 @@ pub fn action_label(action: &Value, wire: &Value, name_of: &NameOf<'_>) -> Strin
     let target = || -> String {
         // `int(t)` in the Python twin: a numeric string resolves too.
         let t = action.get("target_index").filter(|v| !v.is_null());
-        match t.map(|v| {
+        let enemy = |n: &dyn std::fmt::Display| trf("enemy {n}", &[("n", n)]);
+        let name = match t.map(|v| {
             v.as_i64()
                 .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
         }) {
-            None => String::new(),
-            Some(None) => format!(" → enemy {}", crate::render::py::opt_str(t)),
+            None => return String::new(),
+            Some(None) => enemy(&crate::render::py::opt_str(t)),
             Some(Some(t)) => match alive
                 .iter()
                 .position(|(slot, _)| usize::try_from(t).is_ok_and(|t| t == *slot))
             {
-                Some(i) => format!(" → {}", labels[i]),
-                None => format!(" → enemy {t}"),
+                Some(i) => labels[i].clone(),
+                None => enemy(&t),
             },
-        }
+        };
+        trf(" → {target}", &[("target", &name)])
     };
     match kind {
         "play" => {
@@ -1196,11 +1268,17 @@ pub fn action_label(action: &Value, wire: &Value, name_of: &NameOf<'_>) -> Strin
                         base
                     }
                 }
-                _ => format!("card {}", ci.map_or("?".to_string(), |i| i.to_string())),
+                _ => trf(
+                    "card {n}",
+                    &[("n", &ci.map_or("?".to_string(), |i| i.to_string()))],
+                ),
             };
-            format!("Play {name}{}", target())
+            trf(
+                "Play {name}{target}",
+                &[("name", &name), ("target", &target())],
+            )
         }
-        "end_turn" => "End turn".to_string(),
+        "end_turn" => tr("End turn").to_string(),
         "potion" | "drink_potion" => {
             let potions = wire
                 .get("player")
@@ -1211,13 +1289,30 @@ pub fn action_label(action: &Value, wire: &Value, name_of: &NameOf<'_>) -> Strin
                 (Some(ps), Some(s)) if (s as usize) < ps.len() => {
                     name_of("potion", as_str(Some(&ps[s as usize]), ""))
                 }
-                _ => format!("potion {}", slot.map_or("?".to_string(), |s| s.to_string())),
+                _ => trf(
+                    "potion {n}",
+                    &[("n", &slot.map_or("?".to_string(), |s| s.to_string()))],
+                ),
             };
-            format!("Drink {name}{}", target())
+            trf(
+                "Drink {name}{target}",
+                &[("name", &name), ("target", &target())],
+            )
         }
-        "channel" => format!("Channel {}{}", as_str(action.get("orb"), ""), target()),
-        "evoke" => format!("Evoke ×{}", as_i64_or(action.get("times"), 1)),
-        "choose" => format!("Choose #{}", as_i64_or(action.get("index"), 0)),
+        "channel" => {
+            let orb = as_str(action.get("orb"), "");
+            let orb = crate::i18n::game_name(
+                "orbs",
+                &format!("{}_ORB.title", orb.to_ascii_uppercase()),
+                orb,
+            );
+            trf(
+                "Channel {orb}{target}",
+                &[("orb", &orb), ("target", &target())],
+            )
+        }
+        "evoke" => trf("Evoke ×{n}", &[("n", &as_i64_or(action.get("times"), 1))]),
+        "choose" => trf("Choose #{n}", &[("n", &as_i64_or(action.get("index"), 0))]),
         other => other.to_string(),
     }
 }
@@ -1243,7 +1338,7 @@ pub fn first_moves(wire: &Value, name_of: &NameOf<'_>) -> PResult<Vec<Value>> {
         let _ = sts2_core::apply(&mut clone, action);
         let mut note: Option<String> = None;
         if pending_choice(&clone).is_some() || clone.pending_play.is_some() {
-            note = Some("opens a choice; cannot sweep from mid-resolution".to_string());
+            note = Some(tr("opens a choice; cannot sweep from mid-resolution").to_string());
         }
         let (terminal, _) = terminal_value(&clone);
         let mut row = Map::new();
@@ -1274,8 +1369,12 @@ pub fn first_moves(wire: &Value, name_of: &NameOf<'_>) -> PResult<Vec<Value>> {
 pub fn mcts_eval(wire: &Value, config: &Value, name_of: &NameOf<'_>) -> PResult<Value> {
     use sts2_wire::emit::mcts::{recommend_value, RecommendParams};
     let cs = state_from_wire(wire)?;
-    let params = RecommendParams::from_config(config, "mcts_recommend")
-        .map_err(|e| PositionError::new(format!("the engine rejected this position: {e}")))?;
+    let params = RecommendParams::from_config(config, "mcts_recommend").map_err(|e| {
+        PositionError::new(trf(
+            "the engine rejected this position: {error}",
+            &[("error", &e)],
+        ))
+    })?;
     let sims = config.get("sims").and_then(Value::as_i64).unwrap_or(1000);
     let seed = config.get("seed").and_then(Value::as_i64).unwrap_or(0);
     let result = recommend_value(&cs, &params, true);
@@ -1534,5 +1633,34 @@ mod tests {
         pos["piles"]["hand"] = json!([{"card": "STRIKE_IRONCLAD"}]);
         // Cards but still no enemies.
         assert!(wire_from_position(&pos).is_err());
+    }
+
+    /// The import warnings SimLab picks out by template are found in either
+    /// display language, and every template key reached through a constant
+    /// has its Chinese entry.
+    #[test]
+    fn import_warnings_match_their_template_in_chinese_too() {
+        use crate::state_import::{FIGHT_NOT_REBUILT, LEFT_OUT};
+        let w = trf(FIGHT_NOT_REBUILT, &[("error", &"boom")]);
+        assert!(fits_template(&w, tr(FIGHT_NOT_REBUILT)));
+        assert!(!fits_template("something else", tr(FIGHT_NOT_REBUILT)));
+        if !crate::data::zh_tables().is_present() {
+            return;
+        }
+        assert!(crate::localization::set_display_language("zh"));
+        let w = trf(FIGHT_NOT_REBUILT, &[("error", &"boom")]);
+        let fits = fits_template(&w, tr(FIGHT_NOT_REBUILT));
+        let keys: Vec<&str> = [FIGHT_NOT_REBUILT]
+            .into_iter()
+            .chain(LEFT_OUT)
+            .chain(crate::api::BLITZ_MESSAGES)
+            .collect();
+        let untranslated: Vec<&str> = keys.into_iter().filter(|k| tr(k) == *k).collect();
+        let left = trf(LEFT_OUT[1], &[("n", &2), ("list", &"A, B")]);
+        let left_fits = LEFT_OUT.iter().any(|t| fits_template(&left, tr(t)));
+        crate::localization::set_display_language("en");
+        assert!(fits, "{w}");
+        assert!(left_fits, "{left}");
+        assert!(untranslated.is_empty(), "{untranslated:?}");
     }
 }

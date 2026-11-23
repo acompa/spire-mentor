@@ -13,7 +13,10 @@ pub(crate) fn play_conflagration(state: &mut CombatState, _t: Option<CreatureUid
     // C# `RepeatVar(4)` with `OnUpgrade Repeat.UpgradeValueBy(1m)` → 4 hits,
     // 5 upgraded. Repeat is a secondary var (not damage/block), so it routes
     // through `current_upgraded` rather than `CardUpgradeDelta`.
-    let repeat = if current_upgraded(state) { 5 } else { 4 };
+    let repeat = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        if current_upgraded(state) { 5 } else { 4 },
+    );
     for _ in 0..repeat {
         deal_damage_all_enemies(state, dmg);
     }

@@ -147,33 +147,37 @@ def test_end_turn_alone_is_a_plan() -> None:
     assert plan == [{"action": "end_turn", "label": "End turn"}]
 
 
-def test_compute_combat_advice_sends_a_plan(monkeypatch: pytest.MonkeyPatch) -> None:
-    """End to end with a canned search: step 1 is ``best``; the rest comes
-    from the re-search the advisor wires in."""
+def test_compute_combat_advice_sends_a_plan() -> None:
+    """The advice step over a canned search: step 1 is ``best``; the rest
+    comes from the re-search the advisor wires in (in the live advisor, the
+    same search at an eighth of the budget, ``advise_combat::plan_cfg``)."""
+    import dataclasses
+
+    from display_names import _names
+
     state = _board()
-    calls: list[int] = []
+    result = {
+        "actions": [
+            _row(_play(3, 1), 0.9, 500, best=True),
+            _row(_play(0), 0.8, 300),
+            _row(END, 0.5, 100),
+        ],
+        "pv": [_play(3, 1)],
+    }
+    fights: list[Any] = []
 
-    def fake(cs: Any, **kw: Any) -> dict[str, Any]:
-        calls.append(kw["sims"])
-        if len(calls) == 1:
-            return {
-                "actions": [
-                    _row(_play(3, 1), 0.9, 500, best=True),
-                    _row(_play(0), 0.8, 300),
-                    _row(END, 0.5, 100),
-                ],
-                "pv": [_play(3, 1)],
-            }
-        return {"actions": [_row(END, 0.5, 10, best=True)], "pv": [END]}
+    def research(fight: Any) -> list[Any]:
+        fights.append(fight)
+        return [END]
 
-    monkeypatch.setattr(sts2_rs, "mcts_recommend", fake)
-    advice, *_ = ra.compute_combat_advice(state, ra.RecommendConfig(threads=1), 4000)
+    cfg = dataclasses.asdict(ra.RecommendConfig(threads=1))
+    advice, _rows = sts2_rs.advice_from_result(state, result, cfg, 4000, _names(), research)
     assert advice["best"]["card_index"] == 3
     assert [(s["action"], s.get("card_index")) for s in advice["plan"]] == [
         ("play", 3),
         ("end_turn", None),
     ]
-    assert calls == [4000, ra.PLAN_MIN_SIMS]
+    assert len(fights) == 1
     by_kind = {o["action"] for o in advice["options"]}
     assert by_kind == {"play", "end_turn"}
     best = next(o for o in advice["options"] if o["is_best"])

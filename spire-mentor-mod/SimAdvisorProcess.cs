@@ -38,6 +38,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace SpireMentor;
@@ -96,17 +97,6 @@ internal static class SimAdvisorProcess
                     "game is holding the slot -- kill it.");
                 return;
             }
-            if (!OperatingSystem.IsWindows())
-            {
-                // Every launcher below goes through cmd.exe or a win64 exe. The
-                // Workshop delivers the mod to Mac/Linux too, where a failed
-                // launch would otherwise just read "advisor: crashed".
-                Logger.Log(
-                    "[SimAdvisorProcess] The bundled advisor is Windows-only; not launching it. " +
-                    "Start an advisor yourself and point it at the configured port.");
-                SimHud.Instance.SetAdvisorStatus(SimAdvisorStatus.Crashed);
-                return;
-            }
 
             // --port in EVERY branch: the advisor otherwise defaults to 9002
             // and silently diverges from a non-default SpireMentor.conf port
@@ -153,7 +143,7 @@ internal static class SimAdvisorProcess
                 return;
             }
             TextWriter? logWriter = null;
-            WindowsChildProcess? child = null;
+            IAdvisorChild? child = null;
             try
             {
                 string logPath = StdoutLogPath(BridgeServer.Instance.Port);
@@ -167,8 +157,7 @@ internal static class SimAdvisorProcess
                 logWriter = TextWriter.Synchronized(new StreamWriter(new FileStream(
                     logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)));
                 logWriter.WriteLine($"--- advisor launched {DateTime.Now:yyyy-MM-dd HH:mm:ss} ---");
-                child = WindowsChildProcess.Start(psi.FileName, psi.Arguments, psi.WorkingDirectory,
-                    process => SimJobObject.Adopt(process));
+                child = AdvisorChild.Start(psi, process => SimJobObject.Adopt(process));
                 Process process = child.Process;
                 _stopFlag = stopFlag;
                 // The advisor's MCTS competes with the game's render loop
@@ -230,6 +219,10 @@ internal static class SimAdvisorProcess
         string? modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
         string explicitLogDir = logDir != null ? $" --log-dir \"{logDir}\"" : "";
         string command = SpireMentorModConfig.AdvisorCommand;
+        if (!OperatingSystem.IsWindows())
+        {
+            return ResolveUnixLaunch(modDir, command, advisorArgs, logDir);
+        }
         if (!string.IsNullOrWhiteSpace(command))
         {
             // Settings-page override. Our args append after the command's
@@ -295,7 +288,75 @@ internal static class SimAdvisorProcess
         return null;
     }
 
-    private static async Task MonitorAsync(WindowsChildProcess child, TextWriter logWriter, StopFlag stopFlag)
+    /// <summary>Whether an advisor can start on this machine without the
+    /// player doing anything (<see cref="AdvisorChild.CanStartAtLaunch"/>).</summary>
+    internal static bool CanStartAtLaunch()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+        string? modDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        string name = AdvisorChild.BinaryName(
+            windows: false, OperatingSystem.IsMacOS(), RuntimeInformation.OSArchitecture);
+        return AdvisorChild.CanStartAtLaunch(
+            windows: false,
+            commandConfigured: !string.IsNullOrWhiteSpace(SpireMentorModConfig.AdvisorCommand),
+            bundledBinaryExists: modDir != null && File.Exists(Path.Combine(modDir, "SimAdvisor", name)));
+    }
+
+    /// <summary>
+    /// Linux and macOS (GH #1424/#1425): the settings-page command through
+    /// <c>/bin/sh -c</c>, else the packaged binary for this platform. Both get
+    /// <c>--exit-with-parent</c>, the stand-in for the Windows job object: the
+    /// advisor exits once the game is gone, even when the game is killed.
+    /// </summary>
+    private static ProcessStartInfo? ResolveUnixLaunch(
+        string? modDir, string command, string advisorArgs, string? logDir)
+    {
+        string logArg = $" --log-dir \"{logDir ?? Path.Combine(AppDataDir(), "logs", "realgame_advisor")}\"";
+        if (!string.IsNullOrWhiteSpace(command))
+        {
+            var shell = new ProcessStartInfo { FileName = "/bin/sh" };
+            shell.ArgumentList.Add("-c");
+            shell.ArgumentList.Add($"exec {command} {advisorArgs} --exit-with-parent{(logDir != null ? logArg : "")}");
+            return shell;
+        }
+        string name = AdvisorChild.BinaryName(
+            windows: false, OperatingSystem.IsMacOS(), RuntimeInformation.OSArchitecture);
+        string exe = modDir != null ? Path.Combine(modDir, "SimAdvisor", name) : name;
+        if (!File.Exists(exe))
+        {
+            Logger.Log(
+                $"[SimAdvisorProcess] No advisor for this platform at {exe} (the mod ships " +
+                "SimAdvisor.exe plus whichever SimAdvisor-<os>-<arch> builds it was packaged " +
+                "with). Set the advisor command on the settings page, or start one yourself.");
+            SimHud.Instance.SetAdvisorStatus(SimAdvisorStatus.Crashed);
+            return null;
+        }
+        // A zip or Workshop copy may drop the exec bit.
+        try
+        {
+            UnixFileMode mode = File.GetUnixFileMode(exe);
+            const UnixFileMode exec = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            if ((mode & UnixFileMode.UserExecute) == 0)
+            {
+                File.SetUnixFileMode(exe, mode | exec);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[SimAdvisorProcess] Could not mark {exe} executable: {ex.Message}");
+        }
+        return new ProcessStartInfo
+        {
+            FileName = exe,
+            Arguments = advisorArgs + " --exit-with-parent" + logArg,
+            WorkingDirectory = Path.GetDirectoryName(exe),
+        };
+    }
+
+    private static async Task MonitorAsync(IAdvisorChild child, TextWriter logWriter, StopFlag stopFlag)
     {
         int code = -1;
         try
@@ -330,7 +391,7 @@ internal static class SimAdvisorProcess
         }
     }
 
-    private static void CloseOutput(WindowsChildProcess? child, TextWriter? logWriter)
+    private static void CloseOutput(IAdvisorChild? child, TextWriter? logWriter)
     {
         try
         {
@@ -484,16 +545,13 @@ internal static class SimAdvisorProcess
                 // Checked first: "Built" also contains no "Building", but keep
                 // the order explicit so a future "Rebuilding…" cannot invert it.
                 SimHud.Instance.SetAdvisorStatus(SimAdvisorStatus.Launching);
-                SimActionLog.Note("Engine build finished — starting the advisor.");
+                SimActionLog.Note(L10n.T("Engine build finished — starting the advisor."));
                 Logger.Log("[SimAdvisorProcess] sts2_rs build finished.");
                 return;
             }
             SimHud.Instance.SetAdvisorStatus(SimAdvisorStatus.Building);
-            SimActionLog.Note(
-                "Building the Rust engine — first advisor launch after an engine change. " +
-                "This takes MINUTES (~14 on a cold build); leave the game running or the " +
-                "build is killed and starts over. Pre-build it with `just advisor-warm` " +
-                "in sts2-pycli to skip this wait.");
+            SimActionLog.Note(L10n.T(
+                "Building the Rust engine — first advisor launch after an engine change. This takes MINUTES (~14 on a cold build); leave the game running or the build is killed and starts over. Pre-build it with `just advisor-warm` in sts2-pycli to skip this wait."));
             Logger.Log("[SimAdvisorProcess] sts2_rs build started; advisor cannot connect until it finishes.");
         }
         catch (Exception ex)

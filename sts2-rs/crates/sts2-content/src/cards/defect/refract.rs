@@ -12,7 +12,7 @@ pub(crate) fn play_refract(state: &mut CombatState, target: Option<CreatureUid>)
     // C# Refract.cs: WithHitCount(2) attack (damage upgrades 9→12), then
     // channel `RepeatVar`(2) Glass orbs. The Python-pin port dropped the
     // orb channels (same omission fixed for Null's Dark orb, sts2-rs-mgjik).
-    for _ in 0..2 {
+    for _ in 0..sts2_core::card_effects::resolving_card_attack_hits(state, 2) {
         let _ = deal_damage_player_to_enemy(state, t, base);
     }
     for _ in 0..2 {

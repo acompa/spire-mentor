@@ -1,4 +1,7 @@
+import type { ReactNode } from "react";
 import type { AutobattleBand, AutobattleDiff, AutobattleVerdict } from "../api";
+import { CollapseButton } from "./panelChrome";
+import { t, tn } from "../i18n";
 
 /**
  * Autobattle mode dock — the run-level drill.
@@ -66,36 +69,40 @@ export function AutobattleDiffCard({ diff }: { diff: AutobattleDiff }) {
   return (
     <div className="autobattle-diff">
       <div className="autobattle-diff-head">
-        {first ? "Run start" : `Since your last stop${diff.to_floor != null ? ` — floor ${diff.to_floor}` : ""}`}
+        {first
+          ? t("Run start")
+          : diff.to_floor != null
+            ? t("Since your last stop — floor {floor}", { floor: diff.to_floor })
+            : t("Since your last stop")}
         {diff.autoplayed > 0 && (
           <span className="autobattle-muted">
             {" "}
-            · {diff.autoplayed} decision{diff.autoplayed === 1 ? "" : "s"} auto-played
+            · {tn(diff.autoplayed, "{n} decision auto-played", "{n} decisions auto-played")}
           </span>
         )}
       </div>
-      <Chips label="Upgraded" items={diff.deck.upgraded} tone="var(--accent-strong)" />
-      <Chips label="Added" items={diff.deck.added} tone="var(--accent-strong)" />
-      <Chips label="Removed" items={diff.deck.removed} tone="var(--hp)" />
-      <Chips label="Relic" items={diff.relics_gained} tone="var(--accent-strong)" />
-      <Chips label="Potion" items={diff.potions_gained} tone="var(--accent-strong)" />
-      <Chips label="Used" items={diff.potions_lost} tone="var(--hp)" />
-      {nothingMoved && <div className="autobattle-muted">Nothing changed.</div>}
+      <Chips label={t("Upgraded")} items={diff.deck.upgraded} tone="var(--accent-strong)" />
+      <Chips label={t("Added")} items={diff.deck.added} tone="var(--accent-strong)" />
+      <Chips label={t("Removed")} items={diff.deck.removed} tone="var(--hp)" />
+      <Chips label={t("Relic")} items={diff.relics_gained} tone="var(--accent-strong)" />
+      <Chips label={t("Potion")} items={diff.potions_gained} tone="var(--accent-strong)" />
+      <Chips label={t("Used")} items={diff.potions_lost} tone="var(--hp)" />
+      {nothingMoved && <div className="autobattle-muted">{t("Nothing changed.")}</div>}
       <div className="autobattle-diff-row autobattle-resources">
         {diff.hp != null && (
           <span>
-            HP {diff.hp}
+            {t("HP")} {diff.hp}
             {diff.max_hp != null ? `/${diff.max_hp}` : ""}
             {delta(diff.hp_delta)}
           </span>
         )}
         {diff.gold != null && (
           <span>
-            Gold {diff.gold}
+            {t("Gold")} {diff.gold}
             {delta(diff.gold_delta)}
           </span>
         )}
-        <span>Deck {diff.deck_size}</span>
+        <span>{t("Deck")} {diff.deck_size}</span>
       </div>
     </div>
   );
@@ -106,6 +113,9 @@ const BAND_STYLE: Record<AutobattleBand, { cls: string; head: string }> = {
   near_tie: { cls: "autobattle-neartie", head: "≈ Near-tie — the policy barely preferred its own pick" },
   differed: { cls: "autobattle-differed", head: "✗ Differed from the champion" },
 };
+// The heads above are translated where they render (t(style.head)):
+// t("✓ Matched the champion"), t("≈ Near-tie — the policy barely preferred its own pick"),
+// t("✗ Differed from the champion").
 
 /** Policy probability as a compact percentage. Labelled as POLICY preference at
  *  the call site — it is not a win rate and must never be read as one. */
@@ -115,15 +125,15 @@ function pct(p: number | null | undefined): string | null {
 
 /** The brain that graded the pick, as the verdict names it. */
 function brainName(brain: string): string {
-  if (brain === "e2e") return "Instinct (one net, no search)";
-  if (brain === "ppo") return "PPO champion";
-  if (brain === "heuristic") return "heuristic";
+  if (brain === "e2e") return t("Instinct (one net, no search)");
+  if (brain === "ppo") return t("PPO champion");
+  if (brain === "heuristic") return t("heuristic");
   return brain;
 }
 
 export function AutobattleVerdictCard({ verdict }: { verdict: AutobattleVerdict }) {
   if (!verdict.available) {
-    return <div className="autobattle-verdict autobattle-muted">{verdict.reason ?? "Not graded."}</div>;
+    return <div className="autobattle-verdict autobattle-muted">{verdict.reason ?? t("Not graded.")}</div>;
   }
   const band: AutobattleBand = verdict.band ?? (verdict.agreed ? "matched" : "differed");
   const style = BAND_STYLE[band];
@@ -132,17 +142,17 @@ export function AutobattleVerdictCard({ verdict }: { verdict: AutobattleVerdict 
   return (
     <div className={`autobattle-verdict ${style.cls}`}>
       <div className="autobattle-verdict-head">
-        {style.head}
+        {t(style.head)}
         {verdict.brain && <span className="autobattle-muted"> · {brainName(verdict.brain)}</span>}
       </div>
       {band !== "matched" && (
         <div className="autobattle-verdict-body">
           <div>
-            Champion: <b>{verdict.champion_label}</b>
+            {t("Champion:")} <b>{verdict.champion_label}</b>
             {champs && <span className="autobattle-muted"> · {champs}</span>}
           </div>
           <div>
-            You: <b>{verdict.your_label}</b>
+            {t("You:")} <b>{verdict.your_label}</b>
             {yours && <span className="autobattle-muted"> · {yours}</span>}
           </div>
         </div>
@@ -152,11 +162,23 @@ export function AutobattleVerdictCard({ verdict }: { verdict: AutobattleVerdict 
           ? // Deliberate wording: a flat policy means the net was nearly
             // indifferent, which is NOT evidence the options are equally good —
             // an uncertain or undertrained surface looks identical here.
-            "Percentages are how much the policy preferred each option, not win rates. A close call means it was nearly indifferent — not that the picks are equally good."
-          : `Agreement with the ${verdict.brain === "e2e" ? "Instinct" : (verdict.brain ?? "run")} policy — not a win-rate judgement.`}
+            t("Percentages are how much the policy preferred each option, not win rates. A close call means it was nearly indifferent — not that the picks are equally good.")
+          : t("Agreement with the {brain} policy — not a win-rate judgement.", {
+              brain: verdict.brain === "e2e" ? t("Instinct") : (verdict.brain ?? t("run")),
+            })}
       </div>
     </div>
   );
+}
+
+/** The verdict folded to one line, for the compact (floating, folded) panel:
+ *  the band's mark plus, when it differed, the champion's pick. */
+function verdictSummary(verdict: AutobattleVerdict | null): { cls: string; text: string } | null {
+  if (!verdict?.available) return null;
+  const band: AutobattleBand = verdict.band ?? (verdict.agreed ? "matched" : "differed");
+  if (band === "matched") return { cls: BAND_STYLE.matched.cls, text: t("✓ matched") };
+  const mark = band === "near_tie" ? "≈" : "✗";
+  return { cls: BAND_STYLE[band].cls, text: t("{mark} champion: {label}", { mark, label: verdict.champion_label ?? "?" }) };
 }
 
 export default function AutobattlePanel({
@@ -170,6 +192,9 @@ export default function AutobattlePanel({
   onAdvance,
   onStop,
   timing,
+  grip,
+  compact = false,
+  onToggleCompact,
 }: {
   diff: AutobattleDiff | null;
   verdict: AutobattleVerdict | null;
@@ -182,53 +207,86 @@ export default function AutobattlePanel({
   onStop: () => void;
   /** The e2e student's per-decision timing while it plays the fights. */
   timing?: string | null;
+  /** A drag handle at the head of the header (the floating card passes one). */
+  grip?: ReactNode;
+  /** Folded to one row: the grip, the caret, the action button and a
+   *  one-line verdict. */
+  compact?: boolean;
+  /** Shows the fold caret when given. */
+  onToggleCompact?: () => void;
 }) {
+  const caret = onToggleCompact && (
+    <CollapseButton collapsed={compact} onToggle={onToggleCompact} label={t("autobattle panel")} />
+  );
+  const actions = (
+    <>
+      <button type="button" onClick={onAdvance} disabled={busy || over}>
+        {busy
+          ? watch
+            ? t("Fighting…")
+            : t("Playing…")
+          : diff
+            ? watch
+              ? t("Play to next decision")
+              : t("Skip to next decision")
+            : t("Start autobattle")}
+      </button>
+      {/* Stop leaves the run mid-fight rather than unwinding it: pressing the
+          button again resumes the same leg, and the change-diff still spans
+          from the last stop. */}
+      {busy && watch && (
+        <button type="button" onClick={onStop} title={t("stop watching (Esc)")}>
+          {t("⏹ stop")}
+        </button>
+      )}
+    </>
+  );
+  if (compact) {
+    // One row: everything else is a tap on the caret away.
+    const summary = over ? { cls: "", text: won ? t("Run won.") : t("Run over.") } : verdictSummary(verdict);
+    return (
+      <div className="autobattle-panel autobattle-compact">
+        <div className="autobattle-actions">
+          {grip}
+          {caret}
+          {actions}
+          {summary && (
+            <span className={`autobattle-summary ${summary.cls}`} data-testid="autobattle-summary">
+              {summary.text}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="autobattle-panel">
       <div className="autobattle-head">
-        <b>Autobattle</b>
-        <span className="autobattle-muted">run-level decisions only</span>
+        {grip}
+        {caret}
+        <b>{t("Autobattle")}</b>
+        <span className="autobattle-muted">{t("run-level decisions only")}</span>
         <label
           className="autobattle-watch"
-          title="watch the auto-played fights play out move by move, instead of skipping straight to the next run-level decision">
+          title={t("watch the auto-played fights play out move by move, instead of skipping straight to the next run-level decision")}>
           <input
             type="checkbox"
             checked={watch}
             onChange={(e) => onWatchChange(e.target.checked)}
           />
-          watch fights
+          {t("watch fights")}
         </label>
       </div>
       {over ? (
-        <div className="autobattle-diff-head">{won ? "Run won." : "Run over."}</div>
+        <div className="autobattle-diff-head">{won ? t("Run won.") : t("Run over.")}</div>
       ) : (
         <>
           {verdict && <AutobattleVerdictCard verdict={verdict} />}
-          {diff ? <AutobattleDiffCard diff={diff} /> : <div className="autobattle-muted">Not started.</div>}
+          {diff ? <AutobattleDiffCard diff={diff} /> : <div className="autobattle-muted">{t("Not started.")}</div>}
         </>
       )}
       {timing && <div className="autobattle-muted mono" data-testid="e2e-timing">{timing}</div>}
-      <div className="autobattle-actions">
-        <button type="button" onClick={onAdvance} disabled={busy || over}>
-          {busy
-            ? watch
-              ? "Fighting…"
-              : "Playing…"
-            : diff
-              ? watch
-                ? "Play to next decision"
-                : "Skip to next decision"
-              : "Start autobattle"}
-        </button>
-        {/* Stop leaves the run mid-fight rather than unwinding it: pressing the
-            button again resumes the same leg, and the change-diff still spans
-            from the last stop. */}
-        {busy && watch && (
-          <button type="button" onClick={onStop} title="stop watching (Esc)">
-            ⏹ stop
-          </button>
-        )}
-      </div>
+      <div className="autobattle-actions">{actions}</div>
     </div>
   );
 }

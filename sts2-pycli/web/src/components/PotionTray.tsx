@@ -1,6 +1,7 @@
 import type { Potion, Score } from "../api";
 import { useAdviceMarks } from "../advice/useAdviceMarks";
 import { potionKey } from "../advice/marks";
+import { t } from "../i18n";
 
 /**
  * The potion belt, as the game's top bar carries it: a recessed pod of
@@ -43,7 +44,7 @@ export default function PotionTray({
         if (!pt) {
           return (
             <span key={slot} className="gs-hud-socket gs-potion-empty" role="img"
-              aria-label="empty potion slot" />
+              aria-label={t("empty potion slot")} />
           );
         }
         // The recommender scores a potion as stable_idx -100 - slot.
@@ -59,7 +60,7 @@ export default function PotionTray({
                 : <span className="gs-potion-glyph" aria-hidden="true">◉</span>}
               {sc && <span className="gs-potion-win">{sc.win_prob.toFixed(2)}</span>}
               {mark?.order != null && (
-                <span className={`gs-badge gs-step-tag gs-step-${mark.tier}`} aria-label={`step ${mark.order}`}>
+                <span className={`gs-badge gs-step-tag gs-step-${mark.tier}`} aria-label={t("step {n}", { n: mark.order })}>
                   {mark.order}
                 </span>
               )}
@@ -72,13 +73,13 @@ export default function PotionTray({
                   <span className="gs-potion-actions">
                     {onUse && (
                       <button type="button" className="gs-potion-btn" onClick={() => onUse(slot)}>
-                        use
+                        {t("use")}
                       </button>
                     )}
                     {onDiscard && (
                       <button type="button" className="gs-potion-btn gs-potion-btn-dim"
-                        aria-label={`discard ${pt.name}`} onClick={() => onDiscard(slot)}>
-                        discard
+                        aria-label={t("discard {name}", { name: pt.name })} onClick={() => onDiscard(slot)}>
+                        {t("discard")}
                       </button>
                     )}
                   </span>

@@ -614,6 +614,17 @@ pub fn sync_shoot_slot(state: &mut CombatState) {
 /// `Hook.AfterArrowShot`: player powers (Quietus), then cards
 /// (WhistlingArrows in the discard pile returns to hand).
 fn after_arrow_shot(state: &mut CombatState, slot: Option<usize>, from_card: bool) {
+    // `CoveringFirePower.AfterArrowShot`: a shot of the owner's with a card
+    // source gives every OTHER living player Amount block, Unpowered. It
+    // never reads `arrow`, so a shot with no arrow left still gives it.
+    if from_card {
+        let block = player_power_amount(state, PowerKind::CoveringFire);
+        if block > 0 {
+            crate::coop::each_other_player(state, |state| {
+                let _ = crate::card_effects::gain_block_player_unpowered(state, block);
+            });
+        }
+    }
     let Some(slot) = slot else {
         return;
     };
@@ -722,7 +733,17 @@ pub(crate) fn card_id_of(state: &CombatState, uid: CardUid) -> Option<CardId> {
 }
 
 /// `History.CardPlayStarted` for one play iteration of `card`.
+#[inline]
 pub fn note_play_started(state: &mut CombatState, card: CardUid) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if enabled(state) {
+        note_play_started_body(state, card);
+    }
+}
+
+#[inline(never)]
+fn note_play_started_body(state: &mut CombatState, card: CardUid) {
     if !enabled(state) {
         return;
     }
@@ -761,7 +782,17 @@ pub fn note_play_started(state: &mut CombatState, card: CardUid) {
 }
 
 /// `History.CardPlayFinished` for one play iteration of `card`.
+#[inline]
 pub fn note_play_finished(state: &mut CombatState, card: CardUid) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if enabled(state) && state.player.fool.is_some() {
+        note_play_finished_body(state, card);
+    }
+}
+
+#[inline(never)]
+fn note_play_finished_body(state: &mut CombatState, card: CardUid) {
     if !enabled(state) || state.player.fool.is_none() {
         return;
     }
@@ -791,6 +822,16 @@ pub fn played_this_turn(state: &CombatState, tag: CardTag) -> bool {
         return false;
     };
     melody_now(state).is_some_and(|m| m.finished[i] > 0)
+}
+
+/// Finished plays this turn carrying `tag` (`History.CardPlaysFinished`
+/// count); 0 for a tag that is not a note. The e2e tokenizer's MELODY token.
+#[must_use]
+pub fn finished_this_turn(state: &CombatState, tag: CardTag) -> i32 {
+    let Some(i) = note_index(tag) else {
+        return 0;
+    };
+    melody_now(state).map_or(0, |m| i32::from(m.finished[i]))
 }
 
 /// `MelodyCmd.MelodiesThisTurn`: distinct notes finished this turn.
@@ -1156,9 +1197,35 @@ pub fn encore_blocks(state: &CombatState) -> bool {
 
 // ── StretchPower ───────────────────────────────────────────────────────
 
-/// `StretchPower.BeforeCardPlayed`: an owned card that `GainsBlock` latches
-/// the play and the Stretch amount when it started (first latch wins).
+/// `StretchPower.GainsBlock` (v0.113.1): the card gains Block, or its
+/// enchantment does. Adroit is the one enchantment that does
+/// (`Adroit.GainsBlock => true`; `EnchantmentModel.GainsBlock` is false), so
+/// Adroit on Ki Hop now takes the Stretch bonus. v0.113.0 checked
+/// `card.GainsBlock` alone; the engine's `V0_113_0` follows the v0.113.1
+/// hotfix, which replaced v0.113.0 on Steam.
+///
+/// [decompiled C# omitted — see the cited path]
+fn stretch_counts_block(state: &CombatState, card: CardUid) -> bool {
+    let version = state.game_version;
+    state.cards.get(card.0.get() as usize - 1).is_some_and(|c| {
+        c.gains_block_for(version) || c.has_enchantment(crate::cards::EnchantmentId::Adroit)
+    })
+}
+
+/// `StretchPower.BeforeCardPlayed`: an owned card that gains Block
+/// ([`stretch_counts_block`]) latches the play and the Stretch amount when
+/// it started (first latch wins).
+#[inline]
 pub fn latch_stretch_at_play_start(state: &mut CombatState, card: CardUid) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if enabled(state) {
+        latch_stretch_at_play_start_body(state, card);
+    }
+}
+
+#[inline(never)]
+fn latch_stretch_at_play_start_body(state: &mut CombatState, card: CardUid) {
     if !enabled(state) || fool(state).is_some_and(|f| f.stretch_latch.is_some()) {
         return;
     }
@@ -1166,12 +1233,7 @@ pub fn latch_stretch_at_play_start(state: &mut CombatState, card: CardUid) {
     if amount <= 0 {
         return;
     }
-    let version = state.game_version;
-    let gains_block = state
-        .cards
-        .get(card.0.get() as usize - 1)
-        .is_some_and(|c| c.gains_block_for(version));
-    if gains_block {
+    if stretch_counts_block(state, card) {
         fool_mut(state).stretch_latch = Some((card, amount, false));
     }
 }
@@ -1201,7 +1263,8 @@ pub fn stretch_block_bonus(
 /// `StretchPower.ModifyBlockAdditive` with `cardPlay == null`: a card-face
 /// preview (`BlockVar` / `CalculatedBlockVar` run `Hook.ModifyBlock(...,
 /// card, null)`) gets the Stretch `Amount`, unspent, whenever no play is
-/// latched, and 0 while one is. Gameplay block always carries its play
+/// latched and the card gains Block ([`stretch_counts_block`], v0.113.1:
+/// `return GainsBlock(cardSource) ? base.Amount : 0;`), and 0 otherwise. Gameplay block always carries its play
 /// (`GainBlock` passes `cardPlay?.Card` as the source), so this arm is
 /// preview-only and [`stretch_block_bonus`] keeps the play semantics.
 ///
@@ -1212,7 +1275,10 @@ pub fn stretch_block_bonus(
 #[must_use]
 pub fn stretch_preview_state(state: &CombatState, card: CardUid) -> Option<CombatState> {
     let amount = state.player_power_amount(PowerKind::Stretch);
-    if amount <= 0 || fool(state).is_some_and(|f| f.stretch_latch.is_some()) {
+    if amount <= 0
+        || fool(state).is_some_and(|f| f.stretch_latch.is_some())
+        || !stretch_counts_block(state, card)
+    {
         return None;
     }
     let mut staged = state.clone();

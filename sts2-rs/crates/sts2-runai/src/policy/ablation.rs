@@ -104,7 +104,7 @@ pub fn classify(rm: &RunManager, actions: &[RunAction]) -> Option<AblationSurfac
         Phase::Event => Some(AblationSurface::Event),
         Phase::Shop => Some(AblationSurface::Shop),
         Phase::RestSite => Some(AblationSurface::Rest),
-        Phase::Combat | Phase::Treasure | Phase::RunOver => None,
+        Phase::Combat | Phase::Treasure | Phase::Rewards | Phase::RunOver => None,
     }
 }
 

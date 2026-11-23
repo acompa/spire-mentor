@@ -10,11 +10,16 @@
 
 use serde_json::Value;
 
+use crate::i18n::{tr, tr_dyn, trf};
 use crate::render::py::{self, Num};
 
 /// Real minus glyph, for aligned signs.
 pub const MINUS: &str = "−";
-const DEAD: &str = "☠ defeated";
+/// The kill marker a HP line ends with, in the display language (the page
+/// keys on its `☠`).
+fn dead() -> &'static str {
+    tr("☠ defeated")
+}
 
 /// A Python `dict` keyed by JSON values under Python `==` (so `1`, `1.0` and
 /// `True` share a slot): insertion-ordered, an update keeps the key's
@@ -118,7 +123,11 @@ fn enemy_name_at(
 /// `enemy_name_at` with `e.get("name", f"enemy {idx}")`'s fallback.
 fn enemy_name(enemies: &[Value], labels: &[String], pos: usize) -> String {
     enemy_name_at(enemies, labels, pos, || {
-        format!("enemy {}", py::to_str(index_of(&enemies[pos])))
+        format!(
+            "{} {}",
+            tr_dyn("enemy"),
+            py::to_str(index_of(&enemies[pos]))
+        )
     })
 }
 
@@ -135,11 +144,13 @@ fn player_hp_block(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
         if let (Some(i0), Some(i1)) = (py::as_int(h0), py::as_int(h1)) {
             if i0 != i1 {
                 let delta = Num::Int(i1).sub(Num::Int(i0));
-                out.push(format!(
-                    "You HP {}→{} {}",
-                    py::to_str(h0),
-                    py::to_str(h1),
-                    signed(delta)
+                out.push(trf(
+                    "You HP {from}→{to} {delta}",
+                    &[
+                        ("from", &py::to_str(h0)),
+                        ("to", &py::to_str(h1)),
+                        ("delta", &signed(delta)),
+                    ],
                 ));
             }
         }
@@ -150,7 +161,10 @@ fn player_hp_block(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
         get_or_zero(p1, "block", &zero),
     );
     if !py::eq(b0, b1) {
-        out.push(format!("You Block {}→{}", py::to_str(b0), py::to_str(b1)));
+        out.push(trf(
+            "You Block {from}→{to}",
+            &[("from", &py::to_str(b0)), ("to", &py::to_str(b1))],
+        ));
     }
 }
 
@@ -169,24 +183,41 @@ fn enemy_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
             // A live enemy vanishing = defeated; an already-0 corpse being
             // cleaned up is silent.
             if py::num(h0).is_some_and(Num::is_positive) {
-                out.push(format!("{name} HP {}→0  {DEAD}", py::to_str(h0)));
+                out.push(trf(
+                    "{name} HP {from}→0  {dead}",
+                    &[
+                        ("name", &name),
+                        ("from", &py::to_str(h0)),
+                        ("dead", &dead()),
+                    ],
+                ));
             }
             continue;
         };
         let h1 = get_or_zero(e1, "hp", &zero);
         if !py::eq(h0, h1) {
             let mut line = match (py::num(h0), py::num(h1)) {
-                (Some(n0), Some(n1)) => format!(
-                    "{name} HP {}→{} {}",
-                    py::to_str(h0),
-                    py::to_str(h1),
-                    signed(n1.sub(n0))
+                (Some(n0), Some(n1)) => trf(
+                    "{name} HP {from}→{to} {delta}",
+                    &[
+                        ("name", &name),
+                        ("from", &py::to_str(h0)),
+                        ("to", &py::to_str(h1)),
+                        ("delta", &signed(n1.sub(n0))),
+                    ],
                 ),
                 // Python would raise on non-numeric HP; keep the line readable.
-                _ => format!("{name} HP {}→{}", py::to_str(h0), py::to_str(h1)),
+                _ => trf(
+                    "{name} HP {from}→{to}",
+                    &[
+                        ("name", &name),
+                        ("from", &py::to_str(h0)),
+                        ("to", &py::to_str(h1)),
+                    ],
+                ),
             };
             if py::num(h1).is_some_and(|n| !n.is_positive()) {
-                line.push_str(&format!("  {DEAD}"));
+                line.push_str(&format!("  {}", dead()));
             }
             out.push(line);
         }
@@ -195,10 +226,13 @@ fn enemy_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
             get_or_zero(e1, "block", &zero),
         );
         if !py::eq(b0, b1) {
-            out.push(format!(
-                "{name} Block {}→{}",
-                py::to_str(b0),
-                py::to_str(b1)
+            out.push(trf(
+                "{name} Block {from}→{to}",
+                &[
+                    ("name", &name),
+                    ("from", &py::to_str(b0)),
+                    ("to", &py::to_str(b1)),
+                ],
             ));
         }
     }
@@ -215,6 +249,19 @@ fn power_map<'a>(powers: Option<&'a Value>, zero: &'a Value) -> PyDict<'a, &'a V
     out
 }
 
+/// A state power's `name` (the engine's `Vulnerable`) in the display
+/// language: the game's Chinese power title in Chinese.
+fn power_name(name: &Value) -> String {
+    let english = py::to_str(name);
+    if !crate::localization::display_zh() {
+        return english;
+    }
+    match name.as_str() {
+        Some(id) if !id.is_empty() => crate::display_maps::power_display_name(id),
+        _ => english,
+    }
+}
+
 fn diff_powers(
     who: &str,
     prev_powers: Option<&Value>,
@@ -225,7 +272,7 @@ fn diff_powers(
     let p0 = power_map(prev_powers, &zero);
     let p1 = power_map(nxt_powers, &zero);
     for (name, amt) in p1.iter() {
-        let name_s = py::to_str(name);
+        let name_s = power_name(name);
         match p0.get(name) {
             None => {
                 if py::truthy(amt) {
@@ -256,14 +303,14 @@ fn diff_powers(
     }
     for (name, _) in p0.iter() {
         if !p1.contains(name) {
-            out.push(format!("{who} {MINUS}{}", py::to_str(name)));
+            out.push(format!("{who} {MINUS}{}", power_name(name)));
         }
     }
 }
 
 fn power_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
     diff_powers(
-        "You",
+        tr("You"),
         py::get(prev, "player_powers"),
         py::get(nxt, "player_powers"),
         out,
@@ -293,8 +340,8 @@ fn spawn_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
     let nxt_labels = crate::enemy_labels::enemy_labels(nxt_es);
     for (pos, e) in nxt_es.iter().enumerate() {
         if !prev_idx.contains(index_of(e)) {
-            let name = enemy_name_at(nxt_es, &nxt_labels, pos, || "enemy".to_string());
-            out.push(format!("Spawned: {name}"));
+            let name = enemy_name_at(nxt_es, &nxt_labels, pos, || tr_dyn("enemy"));
+            out.push(trf("Spawned: {name}", &[("name", &name)]));
         }
     }
 }
@@ -314,7 +361,10 @@ fn resource_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
     if let (Some(g0), Some(g1)) = (py::get(p0, "gold"), py::get(p1, "gold")) {
         if let (Some(i0), Some(i1)) = (py::as_int(g0), py::as_int(g1)) {
             if i0 != i1 {
-                out.push(format!("Gold {}→{}", py::to_str(g0), py::to_str(g1)));
+                out.push(trf(
+                    "Gold {from}→{to}",
+                    &[("from", &py::to_str(g0)), ("to", &py::to_str(g1))],
+                ));
             }
         }
     }
@@ -325,19 +375,161 @@ fn resource_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
     for r in py::get_list(p1, "relics") {
         let name = py::get_raw(r, "name").unwrap_or(&NULL);
         if !r0.contains(name) {
-            out.push(format!("+Relic {}", py::to_str(name)));
+            out.push(trf("+Relic {name}", &[("name", &py::to_str(name))]));
         }
     }
     let pot0 = PyDict::counter(potion_names(p0));
     let pot1 = PyDict::counter(potion_names(p1));
     for (name, n) in pot1.sub(&pot0) {
         for _ in 0..n {
-            out.push(format!("+Potion {}", py::to_str(name)));
+            out.push(trf("+Potion {name}", &[("name", &py::to_str(name))]));
         }
     }
     for (name, n) in pot0.sub(&pot1) {
         for _ in 0..n {
-            out.push(format!("Used {}", py::to_str(name)));
+            out.push(trf("Used {name}", &[("name", &py::to_str(name))]));
+        }
+    }
+}
+
+/// `_card_label`: `Strike`, `Strike+`, `Dingy Dagger+2`.
+fn card_label(card: &Value) -> String {
+    let name = match card.get("name").filter(|v| py::truthy(v)) {
+        Some(v) => py::to_str(v),
+        None => card
+            .get("id")
+            .filter(|v| py::truthy(v))
+            .map_or_else(|| "?".to_string(), py::to_str),
+    };
+    match card_level(card) {
+        0 => name,
+        1 => format!("{name}+"),
+        n => format!("{name}+{n}"),
+    }
+}
+
+/// `upgrade_level or (1 if upgraded else 0)`.
+fn card_level(card: &Value) -> i64 {
+    match card.get("upgrade_level").and_then(Value::as_i64) {
+        Some(n) if n != 0 => n,
+        _ => i64::from(card.get("upgraded").is_some_and(py::truthy)),
+    }
+}
+
+/// `_enchant_label`: `Adroit 3` from `ADROIT` / 3 (the id title-cased;
+/// in Chinese the game's `enchantments` title).
+fn enchant_label(card: &Value) -> String {
+    let raw = card
+        .get("enchantment")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let english = raw
+        .split('_')
+        .map(|w| {
+            let mut cs = w.chars();
+            cs.next().map_or_else(String::new, |f| {
+                f.to_uppercase().collect::<String>() + &cs.as_str().to_lowercase()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let name = crate::i18n::game_name("enchantments", &format!("{raw}.title"), &english);
+    match card.get("enchantment_amount").filter(|v| py::truthy(v)) {
+        Some(a) => format!("{name} {}", py::to_str(a)),
+        None => name,
+    }
+}
+
+/// `_deck_key`: `(id, level, enchantment, enchantment_amount)`.
+fn deck_key(card: &Value) -> (Value, i64, Value, Value) {
+    (
+        card.get("id").cloned().unwrap_or(Value::Null),
+        card_level(card),
+        card.get("enchantment").cloned().unwrap_or(Value::Null),
+        card.get("enchantment_amount")
+            .cloned()
+            .unwrap_or(Value::Null),
+    )
+}
+
+/// `Counter(a) - Counter(b)` over deck keys, in `a`'s first-seen order,
+/// each surplus copy as one of `a`'s cards.
+fn deck_surplus<'a>(a: &[&'a Value], b: &[&'a Value]) -> Vec<&'a Value> {
+    let mut keys: Vec<(Value, i64, Value, Value)> = Vec::new();
+    for c in a {
+        let k = deck_key(c);
+        if !keys.contains(&k) {
+            keys.push(k);
+        }
+    }
+    let mut out = Vec::new();
+    for k in keys {
+        let mine: Vec<&Value> = a.iter().copied().filter(|c| deck_key(c) == k).collect();
+        let theirs = b.iter().filter(|c| deck_key(c) == k).count();
+        let last = *mine.last().expect("key came from a");
+        out.extend(std::iter::repeat_n(last, mine.len().saturating_sub(theirs)));
+    }
+    out
+}
+
+/// `_deck_lines` (GH #1596): what a step did to the deck. Off-combat steps
+/// only: a fight's state carries the deck it started with.
+fn deck_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
+    let fighting = |s: &Value| s.get("enemies").is_some_and(py::truthy);
+    if fighting(prev) || fighting(nxt) {
+        return;
+    }
+    let p0 = py::get_obj(prev, "player");
+    let p1 = py::get_obj(nxt, "player");
+    let (Some(Value::Array(d0)), Some(Value::Array(d1))) =
+        (py::get(p0, "deck"), py::get(p1, "deck"))
+    else {
+        return;
+    };
+    let d0: Vec<&Value> = d0.iter().filter(|c| c.is_object()).collect();
+    let d1: Vec<&Value> = d1.iter().filter(|c| c.is_object()).collect();
+    let mut added = deck_surplus(&d1, &d0);
+    let mut removed = deck_surplus(&d0, &d1);
+    for a in added.clone() {
+        let Some(pos) = removed.iter().position(|r| r.get("id") == a.get("id")) else {
+            continue;
+        };
+        let m = removed.remove(pos);
+        if let Some(i) = added.iter().position(|x| std::ptr::eq(*x, a)) {
+            added.remove(i);
+        }
+        let ench = a.get("enchantment");
+        if ench.is_some_and(py::truthy) && ench != m.get("enchantment") {
+            out.push(trf(
+                "Enchanted {card} with {enchantment}",
+                &[("card", &card_label(a)), ("enchantment", &enchant_label(a))],
+            ));
+        } else if card_level(a) != card_level(m) {
+            out.push(trf(
+                "Upgraded {from} → {to}",
+                &[("from", &card_label(m)), ("to", &card_label(a))],
+            ));
+        } else {
+            out.push(trf(
+                "Changed {from} → {to}",
+                &[("from", &card_label(m)), ("to", &card_label(a))],
+            ));
+        }
+    }
+    out.extend(
+        added
+            .iter()
+            .map(|c| trf("+Card {name}", &[("name", &card_label(c))])),
+    );
+    out.extend(
+        removed
+            .iter()
+            .map(|c| trf("−Card {name}", &[("name", &card_label(c))])),
+    );
+    let max_hp = |p: &Value| py::get(p, "max_hp").and_then(Value::as_i64);
+    if let (Some(m0), Some(m1)) = (max_hp(p0), max_hp(p1)) {
+        if m0 != m1 {
+            out.push(trf("Max HP {from}→{to}", &[("from", &m0), ("to", &m1)]));
         }
     }
 }
@@ -372,14 +564,23 @@ fn orb_passive_lines(prev: &Value, nxt: &Value, out: &mut Vec<String>) {
             .map_or_else(String::new, |t| py::to_str(t).to_lowercase());
         let passive = py::to_str(get_or_zero(o, "passive", &zero));
         descs.push(match kind.as_str() {
-            "lightning" => format!("Lightning orb passive: {passive} damage to a random enemy"),
-            "frost" => format!("Frost orb passive: +{passive} block"),
-            "dark" => format!("Dark orb passive: +{passive} stored damage"),
-            "plasma" => format!("Plasma orb passive: +{passive} energy"),
-            "glass" => format!("Glass orb passive: {passive} damage to all enemies"),
-            _ => format!(
-                "{} orb passive",
-                py::get_raw(o, "type").map_or_else(|| "Orb".to_string(), py::to_str)
+            "lightning" => trf(
+                "Lightning orb passive: {n} damage to a random enemy",
+                &[("n", &passive)],
+            ),
+            "frost" => trf("Frost orb passive: +{n} block", &[("n", &passive)]),
+            "dark" => trf("Dark orb passive: +{n} stored damage", &[("n", &passive)]),
+            "plasma" => trf("Plasma orb passive: +{n} energy", &[("n", &passive)]),
+            "glass" => trf(
+                "Glass orb passive: {n} damage to all enemies",
+                &[("n", &passive)],
+            ),
+            _ => trf(
+                "{orb} orb passive",
+                &[(
+                    "orb",
+                    &py::get_raw(o, "type").map_or_else(|| tr("Orb").to_string(), py::to_str),
+                )],
             ),
         });
     }
@@ -416,6 +617,7 @@ pub fn diff_states(prev: &Value, nxt: &Value) -> Vec<String> {
     power_lines(prev, nxt, &mut out);
     spawn_lines(prev, nxt, &mut out);
     resource_lines(prev, nxt, &mut out);
+    deck_lines(prev, nxt, &mut out);
     out
 }
 
@@ -762,5 +964,58 @@ mod tests {
             diff_states(&a, &b),
             lines(&["+Potion A", "+Potion A", "+Potion B"])
         );
+    }
+
+    fn shop(deck: Vec<Value>, max_hp: i64) -> Value {
+        json!({"decision": "shop", "player": {"hp": 70, "max_hp": max_hp, "deck": deck}})
+    }
+
+    fn card(cid: &str, name: &str, upgraded: bool) -> Value {
+        json!({"id": cid, "name": name, "upgraded": upgraded})
+    }
+
+    #[test]
+    fn test_deck_lines_name_upgrades_gains_removals_and_enchants() {
+        // GH #1596: Blitz's Random Upgrades changed two cards and said nothing.
+        let pre = shop(
+            vec![
+                card("STRIKE", "Strike", false),
+                card("DEFEND", "Defend", false),
+                card("BASH", "Bash", false),
+                card("BODY_SLAM", "Body Slam", false),
+            ],
+            80,
+        );
+        let mut slam = card("BODY_SLAM", "Body Slam", false);
+        slam["enchantment"] = json!("VIGOROUS");
+        slam["enchantment_amount"] = json!(5);
+        let post = shop(
+            vec![
+                card("STRIKE", "Strike", true),
+                slam,
+                card("BASH", "Bash", false),
+                card("IRON_WAVE", "Iron Wave", false),
+            ],
+            84,
+        );
+        assert_eq!(
+            diff_states(&pre, &post),
+            vec![
+                "Upgraded Strike → Strike+".to_string(),
+                "Enchanted Body Slam with Vigorous 5".to_string(),
+                "+Card Iron Wave".to_string(),
+                format!("{MINUS}Card Defend"),
+                "Max HP 80→84".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_deck_lines_skip_fight_states() {
+        let mut pre = shop(vec![card("STRIKE", "Strike", false)], 80);
+        pre["enemies"] = json!([enemy(0, "Beetle", 38)]);
+        let mut post = shop(vec![], 80);
+        post["enemies"] = json!([enemy(0, "Beetle", 38)]);
+        assert!(diff_states(&pre, &post).iter().all(|l| !l.contains("Card")));
     }
 }

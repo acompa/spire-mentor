@@ -191,6 +191,10 @@ internal sealed class SimHighlights
                 {
                     r.Frame.QueueFreeSafely();
                 }
+                if (r.Badge != null && GodotObject.IsInstanceValid(r.Badge))
+                {
+                    r.Badge.QueueFreeSafely();
+                }
             }
             _rings.Clear();
             _pinnedTarget = null;
@@ -264,8 +268,12 @@ internal sealed class SimHighlights
 
         if (m.Order is int order)
         {
+            // A sibling of the frame, in screen space -- not its child under an
+            // inverse scale: over the card-reward Skip button the child badge
+            // came out as a frame-wide pill with the "1" mid-button (live,
+            // 2026-11-13). Place sizes it every frame.
             ring.Badge = MakeBadge(order, m.Tier);
-            frame.AddChildSafely(ring.Badge);
+            _layer!.AddChildSafely(ring.Badge);
         }
         if (m.Tier == MarkTier.Best && !SpireMentorModConfig.ReduceEffects)
         {
@@ -306,6 +314,8 @@ internal sealed class SimHighlights
             Name = "Badge",
             Size = new Vector2(BadgeSize, BadgeSize),
             MouseFilter = Control.MouseFilterEnum.Ignore,
+            FocusMode = Control.FocusModeEnum.None,
+            Visible = false,
         };
         badge.AddThemeStyleboxOverride("panel", style);
         var text = new Label
@@ -383,6 +393,10 @@ internal sealed class SimHighlights
             {
                 // A node of the screen went away mid-frame: hide this one.
                 r.Frame.Visible = false;
+            }
+            if (r.Badge != null && GodotObject.IsInstanceValid(r.Badge))
+            {
+                r.Badge.Visible = r.Frame.Visible;
             }
         }
         FlushUnlifts();
@@ -539,14 +553,26 @@ internal sealed class SimHighlights
         r.Frame.Size = size + pad * 2f;
         if (r.Badge != null && GodotObject.IsInstanceValid(r.Badge))
         {
-            // The same size on screen whatever the node's scale.
-            var inv = new Vector2(1f / Math.Abs(scale.X), 1f / Math.Abs(scale.Y));
-            r.Badge.Scale = inv;
+            // Screen space, the same size whatever the node's scale; the
+            // size re-asserted every frame so nothing can stretch it.
+            var badgeSize = new Vector2(BadgeSize, BadgeSize);
+            r.Badge.Scale = Vector2.One;
+            r.Badge.Rotation = 0f;
+            r.Badge.Size = badgeSize;
+            if (r.Badge.GetChildCount() > 0 && r.Badge.GetChild(0) is Label text)
+            {
+                text.Position = Vector2.Zero;
+                text.Size = badgeSize;
+            }
             // A card's top-left corner is its energy cost: a "1" badge on a
-            // "1" orb read as noise (live, 2026-11-07).
+            // "1" orb read as noise (live, 2026-11-07). So a card's badge
+            // sits above its top edge's middle; anything else's on its corner.
+            Vector2 anchor = cardBadge
+                ? xf * (local + new Vector2(size.X / 2f, -pad.Y))
+                : xf * (local - pad);
             r.Badge.Position = cardBadge
-                ? new Vector2(r.Frame.Size.X / 2f - BadgeSize * inv.X / 2f, -BadgeSize * inv.Y * 0.85f)
-                : new Vector2(-BadgeSize * inv.X * 0.4f, -BadgeSize * inv.Y * 0.4f);
+                ? anchor - new Vector2(BadgeSize / 2f, BadgeSize * 0.85f)
+                : anchor - new Vector2(BadgeSize * 0.4f, BadgeSize * 0.4f);
         }
         return true;
     }

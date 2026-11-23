@@ -212,6 +212,8 @@
     "name": "Mawler",
     "powers": [],
     "rig": "https://assets.test/monster_rigs/mawler/mawler",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -166.0,
     "rig_bounds_h": 327.0,
     "rig_bounds_w": 510.0,
     "rig_scale": 0.5,
@@ -584,6 +586,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/defect/defect",
+   "rig_arrow_x": 4.0,
+   "rig_arrow_y": -179.0,
    "rig_bounds_h": 260.0,
    "rig_bounds_w": 250.0,
    "rig_scale": 0.125

@@ -112,6 +112,26 @@ def test_a_checkpoint_passes_through_ckpt(tmp_path: Path) -> None:
     assert len(v["net"]["ckpt_sha256"]) == 64
 
 
+def test_a_chars_net_is_refused_where_the_rows_are_undeclared(tmp_path: Path, monkeypatch) -> None:
+    """`--ckpt` serves the net as the eval would (`net.check_serving`): a net that read
+    the "chars" columns is not scored on Ironclad rows without `STS2_E2E_CHARS=1`."""
+    from ppo.e2e import net as N
+
+    path = tmp_path / "chars.pt"
+    tiny = {"dim": 32, "n_layers": 1, "n_heads": 2, "ffn": 64, "head_hidden": 32, "num_hidden": 64}
+    stamps = N.default_stamps(filled=["chars"])
+    N.save_checkpoint(path, N.E2ENet(N.NetConfig.from_dict(tiny), seed=3).eval(), stamps=stamps)
+    monkeypatch.setattr(factory, "CHARACTER", "Ironclad")
+    monkeypatch.delenv(factory.CHARS_ENV, raising=False)
+    with pytest.raises(F.UsageError, match="chars"):
+        F.load_net(path)
+    out = tmp_path / "f7.json"
+    assert F.main(["--out", str(out), "--ckpt", str(path)]) == 2 and not out.exists()
+    monkeypatch.setenv(factory.CHARS_ENV, "1")
+    net, cfg = F.load_net(path)
+    assert "chars" in cfg["stamps"]["filled"] and net.cfg.dim == 32
+
+
 def test_a_leak_into_the_policy_arrays_fails(tmp_path: Path, monkeypatch) -> None:
     """A row encoder that lets the hidden room queues reach a policy array."""
     real = F._enc

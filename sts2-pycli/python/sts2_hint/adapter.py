@@ -79,6 +79,7 @@ from sts2_hint.canonical_maps import (
     RELIC_TITLE_TO_ID,
     STATUS_CARD_TITLES,
 )
+from sts2_hint.canonical_maps import id_key as _id_key
 from sts2_hint.errors import UnsupportedStateError
 from sts2_hint.schema import WIRE_VERSION
 
@@ -353,6 +354,75 @@ def _relic_id_from_wire(raw: dict[str, Any]) -> str | None:
     return candidate if candidate in _registry_names("relic") else None
 
 
+#: ``_KNOWN_MONSTER_KINDS`` keyed by :func:`_id_key`: the monster table when
+#: ``sts2_rs`` (and so the registry) is unavailable.
+_KNOWN_MONSTER_KINDS_BY_ID_KEY: dict[str, str] = {_id_key(k): k for k in _KNOWN_MONSTER_KINDS}
+
+_REGISTRY_BY_ID_KEY: dict[str, dict[str, str]] = {}
+
+
+def _registry_by_id_key(kind: str) -> dict[str, str]:
+    """``{_id_key(registry id) -> registry id}`` for one ``sts2_rs`` kind.
+
+    Empty (and not cached) when ``sts2_rs`` is unavailable.
+    """
+    table = _REGISTRY_BY_ID_KEY.get(kind)
+    if table is None:
+        table = {_id_key(n): n for n in _registry_names(kind)}
+        if table:
+            _REGISTRY_BY_ID_KEY[kind] = table
+    return table
+
+
+#: ``_id_key`` of a status/curse card's id -> its ``STATUS_CARD_TITLES`` title
+#: (``"CURSEOFTHEBELL"`` -> ``"Curse of the Bell"``).
+_STATUS_TITLE_BY_ID_KEY: dict[str, str] = {
+    _id_key(t.replace(" ", "")): t for t in STATUS_CARD_TITLES
+}
+
+
+def _monster_kind_from_wire(raw: dict[str, Any]) -> str | None:
+    """The engine monster kind for the wire's ``id`` (``MonsterModel.Id.Entry``).
+
+    The live mod sends every enemy's ``id`` next to its ``name``. The name is
+    the game's localized title, so on a Chinese (or any non-English) game it
+    misses ``MONSTER_TITLE_TO_ID`` and the board was refused (GH #1423). The id
+    is the same in every language. It also tells apart monsters that share one
+    title: the three Decimillipede segments (``DECIMILLIPEDE_SEGMENT_FRONT`` ...)
+    resolve to the positional kinds the engine's own encounter spawns, where the
+    shared title gave the generic ``DecimillipedeSegment``.
+
+    Accepted only when it names a registry monster (or, without ``sts2_rs``, a
+    kind the title map knows), so the title chain stays the fallback. Sts2Headless
+    sends the same ``id`` (``RunSimulator.cs``), so both producers resolve here.
+    """
+    raw_id = raw.get("id")
+    if not isinstance(raw_id, str) or not raw_id.strip():
+        return None
+    key = _id_key(raw_id.strip())
+    table = _registry_by_id_key("monster") or _KNOWN_MONSTER_KINDS_BY_ID_KEY
+    return table.get(key)
+
+
+def _potion_id_from_wire(raw: dict[str, Any]) -> str | None:
+    """A registry potion id straight off the wire's ``id`` (``PotionModel.Id.Entry``).
+
+    Same reason as :func:`_monster_kind_from_wire`: the ``name`` is localized,
+    and a Chinese potion title soft-dropped the potion to an empty slot
+    (GH #1423). Registry-checked, so an unknown id falls back to the title.
+    The headless host sends the same id as ``entry`` (its ``id``-less potions),
+    and a title the v0.107.1 title map lacks (Ambergris) dropped them.
+    """
+    table = _registry_by_id_key("potion")
+    for key in ("id", "entry"):
+        raw_id = raw.get(key)
+        if isinstance(raw_id, str) and raw_id.strip():
+            pid = table.get(_id_key(raw_id.strip()))
+            if pid is not None:
+                return pid
+    return None
+
+
 def _translate_relic(raw: dict[str, Any], path: str) -> dict[str, Any]:
     relic_id = _relic_id_from_wire(raw)
     if relic_id is None:
@@ -385,10 +455,13 @@ def _translate_relic(raw: dict[str, Any], path: str) -> dict[str, Any]:
     # fire on the same play. Checked against the decomp for Nunchaku,
     # Kusarigama and HappyFlower.
     #
-    # A producer that sends no counter leaves it unset rather than guessed.
+    # A producer that sends no counter leaves it unset rather than guessed,
+    # except for a relic whose hidden counter means its end (GH #1829).
     counter = raw.get("counter")
     if isinstance(counter, bool) or not isinstance(counter, int):
-        counter = None
+        counter = _ENGINE_COUNTER_UNSHOWN.get(relic_id)
+    elif relic_id in _ENGINE_COUNTER:
+        counter = _ENGINE_COUNTER[relic_id](counter)
     out: dict[str, Any] = {"id": relic_id, "counter": counter}
     # ToyBox wax/melt. A melted relic stays in the inventory but is filtered
     # from every hook dispatch (CombatState.cs:130-137), and both producers
@@ -404,9 +477,43 @@ def _translate_relic(raw: dict[str, Any], path: str) -> dict[str, Any]:
     return out
 
 
-def _translate_potion(name: str | None, path: str) -> str | None:
-    if name is None:
+#: `cards_played_this_turn` bucket per card type (Rust `CardType` order).
+_PLAYED_BUCKET: dict[str, int] = {"Attack": 0, "Skill": 1, "Power": 2, "Curse": 3, "Status": 4}
+
+
+#: The engine counter behind the number C# shows, where the two count
+#: differently (`sts2_e2e::snapshot::engine_counter`, the inverse of
+#: `display_counter`). Sword of Stone: C# counts the elites defeated up, the
+#: engine the ones to go down, so a game-side 0 read as is showed 5 (GH #1684).
+#: Wongo's ticket and Silver Crucible show what is left, the engine counts what is done.
+_ENGINE_COUNTER: dict[str, Any] = {
+    "SWORD_OF_STONE": lambda shown: 5 - shown,
+    "WONGOS_MYSTERY_TICKET": lambda shown: 5 - shown,
+    "SILVER_CRUCIBLE": lambda shown: 3 - shown,
+}
+#: The engine counter of one of those relics shown without a counter: Wongo's
+#: ticket hides it past its payout (the engine's paid-out mark), Silver
+#: Crucible once its uses are spent. Twin of snapshot.rs `engine_counter_unshown`
+#: (GH #1829).
+_ENGINE_COUNTER_UNSHOWN: dict[str, int] = {"WONGOS_MYSTERY_TICKET": -1, "SILVER_CRUCIBLE": 3}
+
+
+def _translate_potion(raw: dict[str, Any] | str | None, path: str) -> str | None:
+    """A wire potion (``{"id", "name"}`` dict, or a bare title) -> registry id.
+
+    The id wins when the registry knows it; the English title is the fallback.
+    """
+    if raw is None:
         return None
+    if isinstance(raw, dict):
+        pid = _potion_id_from_wire(raw)
+        if pid is not None:
+            return pid
+        name = raw.get("name")
+        if name is None:
+            return None
+    else:
+        name = raw
     pid = POTION_TITLE_TO_ID.get(name)
     if pid is None:
         # Soft-drop: unported potion → empty slot. The MCTS rollouts
@@ -502,6 +609,11 @@ _POWER_VAR_TO_ENGINE_FIELD = {
     # block: 303 of the 311 positive `$.player.block` end_turn divergences on
     # the 2026-08-01 v27wr sweep.
     ("TORIC_TOUGHNESS", "Block"): "counter",
+    # Possess Strength / Speed's stolen total, kept in private data and given
+    # back on death; the host and the mod send it as `Stolen` (GH #1836). The
+    # engine counts it on `Power.counter` (`record_possess_steal`).
+    ("POSSESS_STRENGTH", "Stolen"): "counter",
+    ("POSSESS_SPEED", "Stolen"): "counter",
 }
 
 
@@ -591,7 +703,10 @@ def _translate_power(raw: dict[str, Any], path: str) -> dict[str, Any]:
     # `PlayerTarget`, the mod's `player_target`, GH #992). Its `applier` is
     # its own holder, so without `player_target` (an older mod) the seat is
     # left to the engine's default: the holder's first teammate (exact with
-    # two players; three or more is #1017).
+    # two players; three or more is #1017). A monster's per-player instance
+    # (The Insatiable's Sandpit, Aeonglass's Withering Presence) has no player
+    # applier; its seat is the player it targets (C# `PowerModel.Target`, the
+    # mod's `target`, GH #1813).
     seat = raw.get("applier_seat")
     if isinstance(seat, int) and not isinstance(seat, bool):
         out["applier_seat"] = seat
@@ -600,6 +715,8 @@ def _translate_power(raw: dict[str, Any], path: str) -> dict[str, Any]:
             out["applier"] = str(raw["player_target"])
     elif raw.get("applier") is not None:
         out["applier"] = str(raw["applier"])
+    elif raw.get("target") is not None:
+        out["applier"] = str(raw["target"])
     return out
 
 
@@ -637,6 +754,9 @@ def _translate_intent(raw: dict[str, Any], path: str) -> dict[str, Any]:
         out["amount"] = int(raw["damage"])
     if "hits" in raw and raw["hits"] is not None:
         out["times"] = int(raw["hits"])
+    if raw.get("base_damage") is not None:
+        # The attack's move-table number, before modifiers (GH #1708).
+        out["base_amount"] = int(raw["base_damage"])
     return out
 
 
@@ -706,10 +826,21 @@ def registry_card_id(c_id: str, path: str = "$") -> str:
     option list, and re-deriving the ``_CARD``-suffix and STRIKE/DEFEND
     disambiguation rules there would be a second copy that could drift.
 
+    Resolved in Rust (``sts2_rs.registry_card_id``, the live board import's
+    own rule, GH #1426) when the extension is there, so the advisor and the
+    import cannot disagree on a name.
+
     Raises:
         UnsupportedStateError: When no candidate exists in the registry.
     """
-    return _resolve_card_id(c_id, path)[1]
+    try:
+        import sts2_rs
+    except ImportError:
+        return _resolve_card_id(c_id, path)[1]
+    try:
+        return sts2_rs.registry_card_id(c_id, path)
+    except sts2_rs.UnsupportedStateError as exc:
+        raise UnsupportedStateError(str(exc)) from None
 
 
 def _select_card_candidate(candidates: list[str], c_id: str, path: str) -> str:
@@ -775,9 +906,13 @@ def _translate_card(raw: dict[str, Any], path: str, *, hand: bool = False) -> di
 
     # Status / Curse synthesis
     if type_str in ("status", "curse"):
-        title = raw.get("affliction") or raw.get("name") or ""
-        # Strip bilingual suffix if present (English half before " / ").
-        eng_title = title.split(" / ", 1)[0].strip() if isinstance(title, str) else ""
+        # The id first: the name is localized (a Chinese Decay is not "Decay",
+        # GH #1423). ``CARD.DECAY`` / ``DECAY`` / ``CURSE_OF_THE_BELL``.
+        eng_title = _STATUS_TITLE_BY_ID_KEY.get(_id_key(str(c_id).rsplit(".", 1)[-1]))
+        if eng_title is None:
+            title = raw.get("affliction") or raw.get("name") or ""
+            # Strip bilingual suffix if present (English half before " / ").
+            eng_title = title.split(" / ", 1)[0].strip() if isinstance(title, str) else ""
         if eng_title in STATUS_CARD_TITLES:
             kind_label = "status" if type_str == "status" else "curse"
             wire_id = f"{kind_label}:{eng_title}"
@@ -882,7 +1017,10 @@ def _translate_card(raw: dict[str, Any], path: str, *, hand: bool = False) -> di
         if isinstance(blk, int):
             spec["base_block"] = blk
 
-    flags = _flags_for_card(raw) if hand else []
+    # Off the hand only Ethereal: a keyword a card gains for the fight
+    # (Ghost Seed's basic Strikes and Defends) that the engine keeps per card
+    # in every pile, emits there and parses back (GH #1737).
+    flags = _flags_for_card(raw) if hand else [f for f in _flags_for_card(raw) if f == "ethereal"]
     if flags:
         spec["flags"] = flags
 
@@ -1049,10 +1187,10 @@ def _translate_osty(raw: dict[str, Any] | None, path: str) -> dict[str, Any] | N
     }
 
 
-def _translate_enemy(
-    raw: dict[str, Any], path: str, idx: int, *, is_dead: bool = False
-) -> dict[str, Any]:
-    name = _require(raw, "name", path)
+def _monster_kind_from_title(name: str, path: str) -> str:
+    """The engine monster kind for an English display title: the fallback
+    behind :func:`_monster_kind_from_wire`, for a producer that sends no ``id``
+    or an id the registry does not know."""
     monster_id = MONSTER_TITLE_TO_ID.get(name)
     if monster_id is None:
         # Some titles embed a live-resolved localization variable — e.g. the
@@ -1069,8 +1207,8 @@ def _translate_enemy(
         # Raw loc-key leak: Sts2Headless emits the entry key verbatim when
         # its loc lookup misses (e.g. "DECIMILLIPEDE_SEGMENT_FRONT.name").
         # PascalCase the entry and strip trailing segments until a known
-        # engine kind matches (FRONT/MIDDLE/BACK variants all collapse to
-        # the one DecimillipedeSegment kind, like their shared title does).
+        # engine kind matches. The longest match wins, so the FRONT/MIDDLE/
+        # BACK segments keep their positional kinds (``_KNOWN_MONSTER_KINDS``).
         m = re.fullmatch(r"([A-Z0-9_]+)\.name", str(name))
         if m:
             parts = m.group(1).split("_")
@@ -1082,6 +1220,66 @@ def _translate_enemy(
                     break
     if monster_id is None:
         raise UnsupportedStateError(f"{path}: unknown monster name {name!r}")
+    return monster_id
+
+
+def _removed_roster(
+    state: dict[str, Any],
+    enemies_raw: list[dict[str, Any]],
+    dead_raw: list[dict[str, Any]],
+    encounter: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
+    """The board with the corpses the game removed put back (GH #1716).
+
+    The host lists them in ``removed_enemies``. The engine keeps a corpse in
+    its place. Where every enemy names its encounter ``slot``, the roster is
+    slot order, the order the game sorts its board in, with a corpse ahead
+    of the summon that took its slot over (GH #1838). Without slots, each
+    corpse goes right after the latest-created enemy (``combat_id``) created
+    before it, else first, and the board's own entries keep their order; a
+    summon the game puts in front (Two-Tailed Rat) is created after a corpse
+    that stays behind it (GH #1837). ``$.encounter`` stays the board: the
+    fight mirror uses this roster only where it carries no fight of its own.
+    None without removed enemies, or where an id is missing.
+    """
+    removed_raw = state.get("removed_enemies") or []
+    board_ids = [e.get("combat_id") for e in [*enemies_raw, *dead_raw]]
+    if not removed_raw or any(not isinstance(i, int) for i in board_ids):
+        return None
+    if any(not isinstance(e.get("combat_id"), int) for e in removed_raw):
+        return None
+    slots = [e.get("slot") for e in [*enemies_raw, *dead_raw, *removed_raw]]
+    if all(isinstance(s, int) for s in slots):
+        # The board is in encounter slot order; a corpse keeps its slot and
+        # goes ahead of a summon that took the slot over (GH #1838).
+        ids = [*board_ids, *(e["combat_id"] for e in removed_raw)]
+        corpses = []
+        for i, raw in enumerate(removed_raw):
+            corpse = _translate_enemy(raw, f"$.removed_enemies[{i}]", 0, is_dead=True)
+            corpse["hp"] = 0
+            corpse["removed_after_death"] = True
+            corpses.append(corpse)
+        order = sorted(range(len(ids)), key=lambda k: (slots[k], ids[k]))
+        everyone = [*encounter, *corpses]
+        return [dict(everyone[k]) for k in order]
+    roster: list[tuple[int, dict[str, Any]]] = list(zip(board_ids, encounter, strict=True))
+    for i, raw in enumerate(removed_raw):
+        corpse = _translate_enemy(raw, f"$.removed_enemies[{i}]", len(roster), is_dead=True)
+        corpse["hp"] = 0
+        corpse["removed_after_death"] = True
+        cid = raw["combat_id"]
+        before = [(other, k) for k, (other, _) in enumerate(roster) if other < cid]
+        at = max(before)[1] + 1 if before else 0
+        roster.insert(at, (cid, corpse))
+    return [dict(e) for _, e in roster]
+
+
+def _translate_enemy(
+    raw: dict[str, Any], path: str, idx: int, *, is_dead: bool = False
+) -> dict[str, Any]:
+    monster_id = _monster_kind_from_wire(raw)
+    if monster_id is None:
+        monster_id = _monster_kind_from_title(_require(raw, "name", path), path)
     intents_raw = raw.get("intents") or []
     powers_raw = raw.get("powers") or []
     intents = [_translate_intent(it, f"{path}.intents[{i}]") for i, it in enumerate(intents_raw)]
@@ -1126,6 +1324,14 @@ def _translate_enemy(
     ai = raw.get("ai")
     if isinstance(ai, dict):
         out["ai"] = ai
+    # The cards a thief holds (SwipePower.StolenCard, GH #1693).
+    stolen = raw.get("stolen_cards")
+    if isinstance(stolen, list) and stolen:
+        out["stolen_cards"] = [
+            {"id": str(c.get("id", "")).upper(), "upgraded": bool(c.get("upgraded"))}
+            for c in stolen
+            if isinstance(c, dict) and c.get("id")
+        ]
     return out
 
 
@@ -1187,6 +1393,7 @@ def translate(
             "Defect": "defect",
             "Necrobinder": "necrobinder",
             "Regent": "regent",
+            "Fool": "fool",
         }.get(character)
     if cls is None:
         cls = _infer_class_from_cards(state)
@@ -1209,7 +1416,7 @@ def translate(
         if not isinstance(p, dict):
             potions.append(None)
             continue
-        potions.append(_translate_potion(p.get("name"), f"$.player.potions[{i}]"))
+        potions.append(_translate_potion(p, f"$.player.potions[{i}]"))
 
     player_powers_raw = state.get("player_powers") or []
     p_powers = _soft_translate_list(player_powers_raw, _translate_power, "$.player_powers")
@@ -1265,6 +1472,8 @@ def translate(
         for i, e in enumerate(dead_raw)
     ]
 
+    removed_roster = _removed_roster(state, enemies_raw, dead_raw, encounter)
+
     # Character-specific
     orbs_raw = state.get("orbs")
     orbs: list[dict[str, Any]] | None = None
@@ -1273,6 +1482,9 @@ def translate(
     orb_slots = state.get("orb_slots")
     stars = state.get("stars")
     osty = _translate_osty(state.get("osty"), "$.osty")
+    # v0.113.0 Wuppy pet: same shape and dead-pet rule as the Osty (a dead
+    # Wuppy stays in the fight, WuppysLoyaltyPower.cs).
+    wuppy = _translate_osty(state.get("wuppy"), "$.wuppy")
 
     ctx = state.get("context") or {}
     is_elite = ctx.get("room_type") == "Elite"
@@ -1322,6 +1534,8 @@ def translate(
         player["stars"] = int(stars)
     if osty is not None:
         player["osty"] = osty
+    if wuppy is not None:
+        player["wuppy"] = wuppy
     # Per-turn play counters (5 buckets, Rust CardType order:
     # Attack/Skill/Power/Curse/Status). Optional wire field: mid-turn
     # ShouldPlay gates (Ringing one-card-per-turn, Normality, Sloth) read
@@ -1329,7 +1543,16 @@ def translate(
     # of all-zeros.
     cppt = player_raw.get("cards_played_this_turn")
     if isinstance(cppt, list) and len(cppt) == 5:
-        player["cards_played_this_turn"] = [max(0, int(n)) for n in cppt]
+        buckets = [max(0, int(n)) for n in cppt]
+        # The game counts a play when it starts (`CardPlaysStarted`), the
+        # engine when it finishes, as most C# mechanics read it
+        # (`CardPlaysFinished`): a card still resolving at a mid-play choice
+        # (in the play pile) is not counted yet.
+        for c in play_raw:
+            k = _PLAYED_BUCKET.get(str((c or {}).get("type")) if isinstance(c, dict) else "")
+            if k is not None:
+                buckets[k] = max(0, buckets[k] - 1)
+        player["cards_played_this_turn"] = buckets
     # ChainsOfBinding's once-per-turn Bound gate (Queen fight): optional
     # bool the bridge computes from combat history; absent (older mod /
     # headless builds) => engine default false.
@@ -1351,6 +1574,14 @@ def translate(
     # which is what every producer that predates the field also means.
     if play:
         deck["play_pile"] = play
+    # The positions a player knows (GH #1710), as the engine's pins: indices
+    # into the draw pile, top first / bottom first. Only while every draw
+    # card translated, or the indices would point at the wrong cards.
+    if len(draw) == len(draw_raw):
+        for src, dst in (("draw_pile_top", "pinned_top"), ("draw_pile_bottom", "pinned_bottom")):
+            known = [c.get("index") for c in state.get(src) or []]
+            if known and all(isinstance(i, int) and 0 <= i < len(draw) for i in known):
+                deck[dst] = known
 
     out: dict[str, Any] = {
         "wire_version": WIRE_VERSION,
@@ -1363,11 +1594,13 @@ def translate(
         "encounter": encounter,
         "turn": rnd,
         "combat_id": int(combat_id),
-        "rng": _rng_block(state, seed, ascension),
+        "rng": _rng_block(state, seed, _fight_ascension(state, ascension)),
         "active_attack": None,
         "pending_choice": None,
         "pending_play": None,
     }
+    if removed_roster is not None:
+        out["removed_roster"] = removed_roster
     # The game build the board belongs to (GH #800; the live adapter
     # `realgame_adapter.to_headless_combat_play` sets it from the mod's
     # envelope). `state_from_dict` builds the engine for `$.game_version` and
@@ -1391,6 +1624,19 @@ def translate(
     total_floor = ctx.get("total_floor")
     if isinstance(total_floor, int) and not isinstance(total_floor, bool) and total_floor > 0:
         out["total_floor"] = total_floor
+    # A Dread fight (GH #1346): the game mode picks the bosses' Dread moves,
+    # the dominion is the act-wide effect on the fight. Omitted on a standard
+    # run, like `state_to_dict`.
+    if ctx.get("game_mode") == "dread":
+        out["game_mode"] = "dread"
+        dominion = ctx.get("dominion")
+        if isinstance(dominion, str) and dominion:
+            out["dominion"] = dominion
+    # A Blitz fight (GH #1347): the mode bans four cards from in-combat
+    # generation and stops GremlinMerc stealing. Its ascension was converted
+    # for the `rng` block above (`_fight_ascension`).
+    elif ctx.get("game_mode") == "blitz":
+        out["game_mode"] = "blitz"
     # Co-op teammates (``$.allies``): omitted when solo, so a single-player
     # board yields the wire it always did.
     allies = state.get("allies")
@@ -1417,6 +1663,7 @@ _CLASS_OF_CHARACTER = {
     "Defect": "defect",
     "Necrobinder": "necrobinder",
     "Regent": "regent",
+    "Fool": "fool",
 }
 
 
@@ -1473,9 +1720,7 @@ def _translate_ally(ally: dict[str, Any], index: int) -> dict[str, Any]:
         out["osty"] = osty
     if isinstance(ally.get("potions"), list):
         out["potions"] = [
-            _translate_potion(p.get("name"), f"{path}.potions[{i}]")
-            if isinstance(p, dict)
-            else None
+            _translate_potion(p, f"{path}.potions[{i}]") if isinstance(p, dict) else None
             for i, p in enumerate(ally["potions"])
         ]
     return out
@@ -1541,6 +1786,26 @@ def _wire_game_version(state: dict[str, Any]) -> str | None:
     except ValueError as exc:
         raise UnsupportedStateError(f"$.game_version: {exc}") from None
     return None if ver == LEGACY_GAME_VERSION else ver
+
+
+# Blitz level -> the number a fight thresholds (GH #1347). Blitz levels are a
+# set, not a threshold: C# `AscensionHelper.GetLevelForBlitz` maps 1..5 to
+# WearyTraveler, TightBelt, ToughEnemies (standard 8), DeadlyEnemies (9) and
+# AscendersBane, and only the two enemy levels act inside a fight. Mirrors
+# Rust `sts2_core::ascension::combat_ascension`, which the wire's
+# `$.rng.ascension` is defined by on a Blitz fight.
+_BLITZ_FIGHT_ASCENSION = (0, 0, 0, 8, 9, 9)
+
+
+def _fight_ascension(state: dict[str, Any], ascension: int) -> int:
+    """The wire's ``rng.ascension`` for *state*: *ascension* as given, except
+    on a Blitz run, where it is a Blitz level and is converted (a level above
+    the ladder's top reads as the top)."""
+    ctx = state.get("context")
+    if not isinstance(ctx, dict) or ctx.get("game_mode") != "blitz":
+        return ascension
+    level = min(max(int(ascension), 0), len(_BLITZ_FIGHT_ASCENSION) - 1)
+    return _BLITZ_FIGHT_ASCENSION[level]
 
 
 def _rng_block(state: dict[str, Any], seed: int, ascension: int) -> dict[str, Any]:

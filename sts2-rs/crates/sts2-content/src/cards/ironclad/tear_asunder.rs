@@ -24,7 +24,10 @@ pub(crate) fn play_tear_asunder(
 ) -> EffectResult {
     let t = target.expect("TearAsunder: Enemy-targeted");
     let dmg = current_damage(state);
-    let hit_count = resolving_preview(state, preview_tear_asunder, target);
+    let hit_count = sts2_core::card_effects::resolving_card_attack_hits(
+        state,
+        resolving_preview(state, preview_tear_asunder, target),
+    );
     for _ in 0..hit_count {
         let _ = deal_damage_player_to_enemy(state, t, dmg);
     }

@@ -65,6 +65,59 @@ pub struct AncientConditions {
     /// Tezcatara: `Deck.Cards.Any(c => c.Tags.Contains(Strike) && c.Rarity ==
     /// Basic)` appends `NutritiousSoup` to `OptionPool1` (`Tezcatara.cs:191`).
     pub tezcatara_basic_strike: bool,
+    /// The run is a Blitz run (GH #1347): v0.113.0 `AncientEventModel.
+    /// AllowedOptions` (`AncientEventModel.cs:277-280`) drops every option
+    /// whose relic `RelicModel.IsAllowed` refuses, which in single player
+    /// only ever happens for `RelicLists.notAllowedInBlitz`
+    /// ([`crate::blitz::RELICS_NOT_ALLOWED`]; the late-act-3 list cannot
+    /// apply at an Ancient). `false` leaves every roll as it was.
+    pub blitz: bool,
+}
+
+/// `AncientEventModel.AllowedOptions` for one relic option.
+fn allowed(cond: &AncientConditions, id: RelicId) -> bool {
+    !(cond.blitz && crate::blitz::relic_not_allowed(id))
+}
+
+/// v0.113.0 `AncientEventModel.GetOptionsFromThreePools`
+/// (`AncientEventModel.cs:302-360`) with options that can be disallowed:
+/// one `TryChooseRandomAllowedOption` per pool (`Rng.NextItem` over the
+/// pool's allowed options; a pool with none draws nothing and yields
+/// nothing), then, if fewer than three came out, further picks from the
+/// three pools' union minus what was chosen (`List.Remove`: one occurrence
+/// each) until three are held or nothing allowed is left.
+///
+/// With every option allowed this is three `NextItem`s, the code each
+/// three-pool Ancient ran before Blitz; only a Blitz run takes this path.
+fn options_from_three_pools(
+    rng: &mut Rng,
+    cond: &AncientConditions,
+    pools: [&[RelicId]; 3],
+) -> Vec<RelicId> {
+    let choose = |rng: &mut Rng, pool: &[RelicId]| -> Option<RelicId> {
+        let list: Vec<RelicId> = pool.iter().copied().filter(|&r| allowed(cond, r)).collect();
+        (!list.is_empty()).then(|| next_item(rng, &list))
+    };
+    let mut out: Vec<RelicId> = pools.iter().filter_map(|pool| choose(rng, pool)).collect();
+    if out.len() < 3 {
+        let mut rest: Vec<RelicId> = pools.iter().flat_map(|p| p.iter().copied()).collect();
+        let remove_one = |rest: &mut Vec<RelicId>, id: RelicId| {
+            if let Some(pos) = rest.iter().position(|&r| r == id) {
+                rest.remove(pos);
+            }
+        };
+        for &id in &out {
+            remove_one(&mut rest, id);
+        }
+        while out.len() < 3 {
+            let Some(id) = choose(rng, &rest) else {
+                break;
+            };
+            out.push(id);
+            remove_one(&mut rest, id);
+        }
+    }
+    out
 }
 
 /// `Rng.NextItem(IList)` — `NextInt(0, count)` (max-exclusive), then index.
@@ -124,7 +177,7 @@ pub fn roll_offers_for(
         AncientId::Tezcatara => roll_tezcatara(rng, cond),
         AncientId::Nonupeipe => roll_nonupeipe(version, rng, cond),
         AncientId::Tanx => roll_tanx(version, rng, cond),
-        AncientId::Vakuu => roll_vakuu(version, rng),
+        AncientId::Vakuu => roll_vakuu(version, rng, cond),
         AncientId::Darv => roll_darv(version, rng, cond),
         // Neow's offers are rolled via `neow_offers::roll_neow_offers`
         // (2 positives + 1 curse), not this 3-relic boss-relic surface.
@@ -151,6 +204,11 @@ fn roll_tezcatara(rng: &mut Rng, cond: &AncientConditions) -> Vec<RelicId> {
     }
     let pool2 = [BiiigHug, Storybook, ToastyMittens];
     let pool3 = [GoldenCompass, PumpkinCandle, ToyBox, SealOfGold];
+    if cond.blitz {
+        // All of `OptionPool3` is banned in Blitz, so the third option comes
+        // from the other two pools.
+        return options_from_three_pools(rng, cond, [&pool1, &pool2, &pool3]);
+    }
     vec![
         next_item(rng, &pool1),
         next_item(rng, &pool2),
@@ -203,6 +261,12 @@ fn roll_orobas(
             &[AlchemicalCoffer, Driftwood, RadiantPearl, SandCastle],
         ),
     };
+    let pool2: Vec<RelicId> = pool2
+        .iter()
+        .copied()
+        .filter(|&r| allowed(cond, r))
+        .collect();
+    let pool2: &[RelicId] = &pool2;
     let mut offers = vec![next_item(rng, list), next_item(rng, pool2)];
     if cond.orobas_pool3.is_empty() {
         // `OPTION_POOL_3_LOCKED` (`Orobas.cs:88-91`): `NextItem` over the
@@ -226,6 +290,23 @@ fn roll_pael(rng: &mut Rng, cond: &AncientConditions) -> Vec<RelicId> {
         PaelsTears, PaelsTooth, PaelsWing,
     };
     let pool1 = [PaelsFlesh, PaelsHorn, PaelsTears];
+    if cond.blitz {
+        let mut list = vec![PaelsWing];
+        if cond.goopy_eligible_count >= 3 {
+            list.push(PaelsClaw);
+        }
+        if cond.removable_count >= 5 {
+            list.push(PaelsTooth);
+        }
+        let doubled = list.clone();
+        list.extend(doubled);
+        list.push(PaelsGrowth);
+        let mut pool3 = vec![PaelsEye, PaelsBlood];
+        if !cond.has_event_pet {
+            pool3.push(PaelsLegion);
+        }
+        return options_from_three_pools(rng, cond, [&pool1, &list, &pool3]);
+    }
     let o1 = next_item(rng, &pool1);
 
     let mut list = vec![PaelsWing];
@@ -260,7 +341,11 @@ fn roll_pael(rng: &mut Rng, cond: &AncientConditions) -> Vec<RelicId> {
 /// (`AncientEventModel.cs:302-360`): one `Rng.NextItem` per pool over its
 /// allowed options. Every Vakuu relic is allowed in a standard run, so the
 /// refill-from-the-union branch never runs.
-fn roll_vakuu(version: crate::GameVersion, rng: &mut Rng) -> Vec<RelicId> {
+fn roll_vakuu(
+    version: crate::GameVersion,
+    rng: &mut Rng,
+    cond: &AncientConditions,
+) -> Vec<RelicId> {
     use RelicId::{
         BloodSoakedRose, ChoicesParadox, DistinguishedCape, Fiddle, JeweledMask, LordsParasol,
         MusicBox, PreservedFog, SereTalon, WhisperingEarring,
@@ -268,6 +353,9 @@ fn roll_vakuu(version: crate::GameVersion, rng: &mut Rng) -> Vec<RelicId> {
     let mut pool1 = vec![BloodSoakedRose, WhisperingEarring, Fiddle];
     let mut pool2 = vec![PreservedFog, SereTalon, DistinguishedCape];
     let mut pool3 = vec![ChoicesParadox, MusicBox, LordsParasol, JeweledMask];
+    if cond.blitz {
+        return options_from_three_pools(rng, cond, [&pool1, &pool2, &pool3]);
+    }
     if version >= crate::GameVersion::V0_113_0 {
         return [pool1, pool2, pool3]
             .iter()
@@ -302,6 +390,8 @@ fn roll_tanx(version: crate::GameVersion, rng: &mut Rng, cond: &AncientCondition
     if cond.instinct_eligible_count >= 3 {
         list.push(TriBoomerang);
     }
+    // `list = AllowedOptions(list)` (`Tanx.cs:144`): a no-op outside Blitz.
+    list.retain(|&r| allowed(cond, r));
     // v0.113.0 UnstableShuffle: one parent draw seeds a child Rng.
     rng.shuffle_for(version, &mut list);
     list.into_iter().take(3).collect()
@@ -332,6 +422,9 @@ fn roll_nonupeipe(
     if cond.swift_eligible_count >= 4 {
         list.push(BeautifulBracelet);
     }
+    // `list = AllowedOptions(list)` (`Nonupeipe.cs:150`): a no-op outside
+    // Blitz.
+    list.retain(|&r| allowed(cond, r));
     // v0.113.0 UnstableShuffle: one parent draw seeds a child Rng.
     rng.shuffle_for(version, &mut list);
     list.into_iter().take(3).collect()
@@ -381,6 +474,10 @@ fn roll_darv(version: crate::GameVersion, rng: &mut Rng, cond: &AncientCondition
     }
 
     let mut source: Vec<RelicId> = sets.iter().map(|s| next_item(rng, s)).collect();
+    // `AllowedOptions(..)` wraps the per-set picks (`Darv.cs:152-154`): every
+    // set still draws, then a disallowed pick is dropped. A no-op outside
+    // Blitz.
+    source.retain(|&r| allowed(cond, r));
     // v0.113.0 UnstableShuffle: one parent draw seeds a child Rng.
     rng.shuffle_for(version, &mut source);
 
@@ -409,6 +506,7 @@ mod tests {
             orobas_pool3: vec![RelicId::TouchOfOrobas, RelicId::ArchaicTooth],
             pandoras_allowed: true,
             tezcatara_basic_strike: false,
+            blitz: false,
         }
     }
 

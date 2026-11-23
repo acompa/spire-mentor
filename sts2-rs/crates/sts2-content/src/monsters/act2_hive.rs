@@ -361,8 +361,16 @@ fn the_insatiable_liquify_ground_effect(state: &mut CombatState, owner: Creature
     // C# `TheInsatiable.cs:121` applies SandpitPower(4) to `base.Creature`
     // (the boss itself), not the player. Bead `sts2-rs-ybtmu`.
     // Co-op: one Sandpit per player, each targeting them (`foreach target`).
+    // `SandpitAmount`: 4, and 3 in Dread (v0.113.0 `TheInsatiable.cs:68-78`,
+    // `:137`, GH #1346).
+    let sandpit = 4 + crate::dread_bosses::power_bonus(
+        state,
+        sts2_core::MonsterKind::TheInsatiable,
+        "LIQUIFY_GROUND",
+        PowerKind::Sandpit,
+    );
     sts2_core::coop::each_player(state, |state| {
-        apply_power_to_creature(state, owner, PowerKind::Sandpit, 4);
+        apply_power_to_creature(state, owner, PowerKind::Sandpit, sandpit);
     });
     // C# `LiquifyMove` adds all 6 FranticEscape via
     // `CardPileCmd.AddGeneratedCardToCombat(card, pile, addedByPlayer:false,
@@ -938,7 +946,7 @@ fn entomancer_pheromone_spit_effect(state: &mut CombatState, uid: CreatureUid) {
 /// 3`); in v0.107.1 `First()` had no null case and Rust reads the absent
 /// hive as 0 and grows it (decomp Entomancer.cs:59-63). A power at 0 is
 /// removed, so amount 0 here means absent.
-fn entomancer_spit_strength(state: &CombatState, uid: CreatureUid) -> i32 {
+pub(crate) fn entomancer_spit_strength(state: &CombatState, uid: CreatureUid) -> i32 {
     entomancer_spit_strength_for_hive(
         state.game_version,
         entomancer_personal_hive_amount(state, uid),
@@ -2952,7 +2960,9 @@ pub fn create_rocket_ai() -> MonsterAi {
 /// (`Rocket.cs:81-94` v0.113.0): TARGETING_RETICLE -> CALCULATING,
 /// PRECISION_BEAM -> PRECISE_SMASH, LASER -> ROCKET_CLAW. The extra
 /// `PRECISE_SMASH_MOVE_2` state is listed but never linked, so the cycle and
-/// damages are unchanged (Dread plating/+5 is `mode`, not ported).
+/// damages are unchanged. Dread's Plating 14 and ROCKET_CLAW + 5
+/// (`Rocket.cs:62-76`) are [`sts2_core::MonsterKind::
+/// dread_on_spawn_self_buffs`] and [`crate::dread_bosses::DREAD_MOVE_DELTAS`].
 pub fn create_rocket_v0113_ai() -> MonsterAi {
     let mut s = BTreeMap::new();
     s.insert(

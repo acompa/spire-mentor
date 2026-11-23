@@ -263,6 +263,8 @@
       }
      ],
      "rig": "https://assets.test/monster_rigs/shrinker_beetle/shrinker_beetle",
+     "rig_arrow_x": 0.0,
+     "rig_arrow_y": -68.0,
      "rig_bounds_h": 161.0,
      "rig_bounds_w": 240.0,
      "rig_scale": 0.25,
@@ -346,6 +348,8 @@
     "max_hp": 8,
     "name": "Osty",
     "rig": "https://assets.test/monster_rigs/osty/osty",
+    "rig_arrow_x": -15.0,
+    "rig_arrow_y": -109.0,
     "rig_bounds_h": 204.0,
     "rig_bounds_w": 232.0,
     "rig_scale": 0.26
@@ -545,6 +549,8 @@
      }
     ],
     "rig": "https://assets.test/character_rigs/necrobinder/necrobinder",
+    "rig_arrow_x": 3.0,
+    "rig_arrow_y": -191.0,
     "rig_bounds_h": 270.0,
     "rig_bounds_w": 210.0,
     "rig_scale": 0.27

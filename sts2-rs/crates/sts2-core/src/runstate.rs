@@ -134,14 +134,25 @@ pub enum RelicRarity {
 /// its deque.
 #[must_use]
 pub const fn relic_is_allowed_at(id: RelicId, csharp_total_floor: i32) -> bool {
+    /// `IsBeforeAct3TreasureChest`'s single-player threshold.
+    const ACT3_TREASURE_TOTAL_FLOOR_SP: i32 = 41;
+    if relic_not_allowed_late_in_act3(id) {
+        csharp_total_floor < ACT3_TREASURE_TOTAL_FLOOR_SP
+    } else {
+        true
+    }
+}
+
+/// C# `RelicLists.notAllowedLateInAct3` (`Helpers/RelicLists.cs:63-82`,
+/// v0.113.0; the same 17 relics carried the `IsBeforeAct3TreasureChest`
+/// override before).
+const fn relic_not_allowed_late_in_act3(id: RelicId) -> bool {
     use RelicId::{
         AmethystAubergine, BookOfFiveRings, BowlerHat, DragonFruit, FrozenEgg, Girya, JuzuBracelet,
         LastingCandy, LuckyFysh, MealTicket, MoltenEgg, OldCoin, Planisphere, Shovel, ToxicEgg,
         WhiteBeastStatue, WhiteStar,
     };
-    /// `IsBeforeAct3TreasureChest`'s single-player threshold.
-    const ACT3_TREASURE_TOTAL_FLOOR_SP: i32 = 41;
-    if matches!(
+    matches!(
         id,
         AmethystAubergine
             | BookOfFiveRings
@@ -160,11 +171,25 @@ pub const fn relic_is_allowed_at(id: RelicId, csharp_total_floor: i32) -> bool {
             | ToxicEgg
             | WhiteBeastStatue
             | WhiteStar
-    ) {
-        csharp_total_floor < ACT3_TREASURE_TOTAL_FLOOR_SP
-    } else {
-        true
+    )
+}
+
+/// C# `RelicModel.IsAllowed(runState)` (`RelicModel.cs:442-453`, v0.113.0)
+/// in a run of `mode`. Outside Blitz this is [`relic_is_allowed_at`]. In
+/// Blitz: not on `RelicLists.notAllowedInBlitz`
+/// ([`crate::blitz::RELICS_NOT_ALLOWED`]); "late in act 3" starts at the
+/// act-3 Elite, floor 21 (`IsLateInAct3`, `:478-487`); and Potion Belt is
+/// refused from then on (`PotionBelt.IsAllowedInternal`, `PotionBelt.cs:20-27`).
+#[must_use]
+pub fn relic_is_allowed_in(id: RelicId, csharp_total_floor: i32, mode: crate::GameMode) -> bool {
+    if !mode.is_blitz() {
+        return relic_is_allowed_at(id, csharp_total_floor);
     }
+    if crate::blitz::relic_not_allowed(id) {
+        return false;
+    }
+    let late = csharp_total_floor >= crate::blitz::LATE_IN_ACT3_TOTAL_FLOOR;
+    !(late && (relic_not_allowed_late_in_act3(id) || matches!(id, RelicId::PotionBelt)))
 }
 
 /// Roll a relic-reward rarity bucket off `rng` — 50% Common, 33% Uncommon,
@@ -928,6 +953,54 @@ pub enum Reward {
     },
 }
 
+/// One reward on the game's reward screen (`NRewardsScreen`, GH #1620), as a
+/// [`RunState::reward_screen`] run lists it: what the reward grants once the
+/// player takes it (C# `Reward.OnSelect`). Every entry is optional; leaving
+/// the screen skips the rest (`RewardsSetSynchronizer.SkipRewardsSet`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScreenReward {
+    /// `GoldReward`: `PlayerCmd.GainGold(amount)`.
+    Gold(i32),
+    /// `PotionReward`: `PotionCmd.TryToProcure`. On a full belt the take
+    /// parks a potion swap (or drops it), as the auto-collect claim does.
+    Potion(crate::potions::PotionKind),
+    /// `RelicReward`: `RelicCmd.Obtain`. `is_wax` rides the offer
+    /// ([`RelicReward::is_wax`]).
+    Relic {
+        /// The relic on offer.
+        relic: RelicId,
+        /// Toy Box's wax stamp.
+        is_wax: bool,
+    },
+    /// `SpecialCardReward`: this very card goes into the deck (a returned
+    /// stolen card, The Lantern Key's card).
+    SpecialCard(crate::cards::Card),
+    /// `CardReward`: taking it opens the card pick over these options.
+    Card(CardReward),
+    /// `CardRemovalReward`: taking it opens `count` deck removals.
+    CardRemoval(u32),
+    /// The treasure chest's relic (`NTreasureRoom`; its skip is
+    /// `TreasureRoomRelicSynchronizer.SkipRelicLocally`).
+    ChestRelic(RelicId),
+}
+
+impl ScreenReward {
+    /// C# `Reward.RewardsSetIndex`, the screen's sort key
+    /// (`RewardsSet.cs:148`): gold 1, potion 2, relic 3, special card 4,
+    /// card 5, card removal 7. The chest relic has its own screen.
+    #[must_use]
+    pub const fn rewards_set_index(&self) -> u8 {
+        match self {
+            Self::Gold(_) => 1,
+            Self::Potion(_) => 2,
+            Self::Relic { .. } | Self::ChestRelic(_) => 3,
+            Self::SpecialCard(_) => 4,
+            Self::Card(_) => 5,
+            Self::CardRemoval(_) => 7,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // RestSiteOption
 // ---------------------------------------------------------------------------
@@ -998,6 +1071,14 @@ pub enum RestSiteOption {
     /// Heal another player in multiplayer. Multiplayer is single-player
     /// at the pin, so this variant currently never appears.
     Mend,
+    /// v0.113.0: heal the Wuppy pet to full (`RestoreRestSiteOption`),
+    /// offered once by `Wuppy.TryModifyRestSiteOptions`. `enabled` is C#
+    /// `IsEnabled`: the relic's `CurrentHp < MaxHp`
+    /// (`RestoreRestSiteOption.cs`). Appended last so no discriminant moves.
+    Restore {
+        /// Whether Wuppy is below its max HP.
+        enabled: bool,
+    },
 }
 
 /// `CookRestSiteOption._cardsToRemove` (`CookRestSiteOption.cs:15`).
@@ -1028,6 +1109,9 @@ pub enum RestSiteActionOutcome {
     /// `Byrdpip`'s `after_obtained` listener transforms every
     /// `ByrdonisEgg` in the deck into `ByrdSwoop`.
     Hatched,
+    /// `Restore` selected (v0.113.0): the Wuppy relic's `CurrentHp` was set
+    /// to its `MaxHp` (C# `RestoreRestSiteOption.OnSelect`).
+    Restored,
     /// `Evolve` selected (v0.113.0): Byrdpip was replaced by Byrdine in the
     /// same relic slot (C# `EvolveRestSiteOption.OnSelect` →
     /// `RelicCmd.Replace`), whose `AfterObtained` turned every Byrd Swoop
@@ -1094,7 +1178,9 @@ impl RestSiteOption {
             | Self::Evolve
             | Self::Kindle
             | Self::Mend => true,
-            Self::Smith { enabled } | Self::Cook { enabled } => *enabled,
+            Self::Smith { enabled } | Self::Cook { enabled } | Self::Restore { enabled } => {
+                *enabled
+            }
             Self::Lift { lifts_done } => *lifts_done < 3,
         }
     }
@@ -1116,6 +1202,7 @@ impl RestSiteOption {
             Self::Evolve => "EVOLVE",
             Self::Kindle => "KINDLE",
             Self::Mend => "MEND",
+            Self::Restore { .. } => "RESTORE",
         }
     }
 }
@@ -1402,6 +1489,14 @@ pub struct RunState {
     /// must consult [`Self::owns_active_relic`] while everything that
     /// *counts* or serializes relics keeps reading [`Self::relics`].
     pub melted_relics: std::collections::BTreeSet<RelicId>,
+
+    /// The v0.113.0 Wuppy relic's saved `MaxHp` (C# `[SavedProperty]
+    /// Wuppy.MaxHp`, `Relics/Wuppy.cs`); `0` = unset (read it through
+    /// [`Self::wuppy_max_hp`], which applies `AfterObtained`'s default 60).
+    /// Its other saved property, `CurrentHp`, is `relic_counters[Wuppy]`, so
+    /// the relic's counter is C#'s `DisplayAmount`. WuppyInTrouble sets 60 or
+    /// 30; nothing else changes it.
+    pub wuppy_max_hp: i32,
 
     /// Currently-active event in the [`RoomType::Event`] room the
     /// player is inside, or `None` outside any event room. Set by
@@ -1720,6 +1815,16 @@ pub struct RunState {
     /// [`crate::run_manager::RunManager::do_upgrade_deck_card_at`].
     pub pending_post_upgrade_hp_loss: i32,
 
+    /// The queued interactive deck picks come from a select with
+    /// `CardSelectorPrefs.RequireManualConfirmation` (Cook, the merchant /
+    /// Lord's Parasol removal, a reward's card removal, the Blitz upgrade
+    /// and removal wares). Every other deck select takes its eligible cards
+    /// without a screen when there are no more of them than it requires
+    /// (`list.Count <= MinSelect && !RequireManualConfirmation`, v0.111.0
+    /// `CardSelectCmd.cs:546/598/776`); this flag keeps those few asking.
+    /// Cleared once no deck pick is pending (GH #1624).
+    pub deck_pick_manual_confirm: bool,
+
     /// Cards to append to [`Self::master_deck`] only AFTER every interactive
     /// deck pick a relic-grant batch queued (upgrades, removals, transforms,
     /// enchants) AND any card/relic-reward offering it opened have fully
@@ -1869,6 +1974,110 @@ pub struct RunState {
     /// pin; the workbench opts in at construction.
     pub direct_event_relic_grant: bool,
 
+    /// When `true`, the Crystal Sphere minigame is played with the digger
+    /// (`sts2_content::events::crystal_sphere_digger::pick`, Big tool, one
+    /// click per divination) instead of the C# oracle's fixed sweep. Default
+    /// `false` is the parity mode: the headless C# runner has no screen to
+    /// click, so it plays the sweep, and the parity suite pins that.
+    pub crystal_sphere_digger: bool,
+
+    /// When `true`, an event option whose only effect is to end the run is
+    /// not offered (GH #1605). The one such option is Trial's Double Down
+    /// (`Trial.cs:121`): it opens the abandon-run confirm and is flagged
+    /// `ThatWillKillPlayerIf(_ => true)`. Every live chooser withholds a
+    /// `will_kill_player` option while another survives (the game's own
+    /// `AutoSlay.EventRoomHandler`, the PPO wire `option_is_lethal`,
+    /// `realgame_ppo`, `realgame_random`), so the agent never gets it live;
+    /// before this flag the engine finished the event with no effect, a free
+    /// exit from the Trial that the e2e net took in 3.1% of its TEST runs.
+    /// Default `false` is the parity mode: the headless C# oracle still
+    /// shows the option (and no-ops the popup).
+    pub withhold_abandon_run_options: bool,
+
+    /// When `true`, the run loop offers the potion belt the way the game's
+    /// potion popup does (GH #1606, `NPotionPopup.cs`): out of combat, Use
+    /// on every `PotionUsage.AnyTime` potion
+    /// ([`crate::potions::PotionKind::is_usable_any_time`]; Foul Potion only
+    /// at a merchant, for +100 gold) and Discard on every potion, at every
+    /// out-of-combat decision; in combat, Discard on every potion (Use stays
+    /// the combat layer's `DrinkPotion`). Default `false` is the parity mode:
+    /// the headless C# oracle never opens the popup. Like
+    /// [`Self::interactive_potion_swap`] it is a per-host flag, outside
+    /// [`Self::set_agent_decisions`]: a host turns it on only when its policy
+    /// can score these actions (the e2e env with the `ooc-potion` fill event
+    /// declared, the workbench's human play); every other trained policy has
+    /// no row for them.
+    pub ooc_potion_actions: bool,
+
+    /// When `true`, the interactive deck selects behave as the game's select
+    /// screens (GH #1619, #1621):
+    ///
+    /// - A pick-N deck select (removal, upgrade, transform or enchant with
+    ///   N >= 2: Yummy Cookie's upgrade 4, Trial's upgrade 2, the transform-2
+    ///   picks of Morphic Grove and Trial, Cook's removal 2, ...) is ONE
+    ///   select over the deck as it stands when it opens. Each pick takes a
+    ///   card off the offer without touching the deck; the N-th pick applies
+    ///   all of them, as C# acts on the selected list once the screen returns.
+    ///   A transform's second pick therefore cannot take the first one's
+    ///   replacement. See [`Self::deck_select_picked`].
+    /// - Smith and Cook are cancelable (C# `SmithRestSiteOption` /
+    ///   `CookRestSiteOption.OnSelect`: `Cancelable = true`, and an empty
+    ///   selection returns `false`, which leaves the option unused):
+    ///   [`crate::run_manager::RunAction::ConfirmDeckSelection`] with nothing
+    ///   picked goes back to the campfire with every option open. (Smith with
+    ///   one upgradable card still upgrades it at once: cancelling the game's
+    ///   one-card screen ends where not choosing Smith does.)
+    ///
+    /// Default `false` is the parity mode (the headless C# oracle is driven
+    /// one whole selection per verb, and never cancels). Like
+    /// [`Self::ooc_potion_actions`] it is a per-host flag, outside
+    /// [`Self::set_agent_decisions`]: the trained run policies have no row for
+    /// the cancel and see each pick's effect before the next one.
+    pub deck_select_screens: bool,
+
+    /// The picks made so far in the open pick-N deck select of a
+    /// [`Self::deck_select_screens`] run: positions in the select's offer as
+    /// it was when it opened (the deck does not change until the last pick).
+    /// Always empty otherwise.
+    pub deck_select_picked: Vec<usize>,
+
+    /// A [`Self::deck_select_screens`] run's Cook select is open: its two
+    /// queued [`Self::pending_deck_removals`] belong to the rest-site option,
+    /// which is used only once they resolve and can still be cancelled.
+    pub cook_select_open: bool,
+
+    /// When `true`, a won combat room's rewards and the treasure chest's relic
+    /// are offered on the game's reward screen (`NRewardsScreen`, GH #1620):
+    /// [`crate::run_manager::Phase::Rewards`] lists every reward of the set
+    /// (gold, potions, relics, special cards, card rewards, card removals) and
+    /// the player takes or skips each one, in any order, then proceeds,
+    /// leaving whatever is left (`RewardsSetSynchronizer.SkipRewardsSet`); the
+    /// chest relic has its own skip (`NTreasureRoom.cs:248-262`,
+    /// `SkipRelicLocally`). The rewards are generated exactly as before (the
+    /// same `Rewards` draws in the same order); only what auto-collect did
+    /// at once now waits for the take.
+    ///
+    /// Default `false` is the parity mode: the headless C# oracle auto-collects
+    /// every reward but the card pick (`RewardsSet.Offer` under `TestMode`).
+    /// Like [`Self::deck_select_screens`] it is a per-host flag, outside
+    /// [`Self::set_agent_decisions`]: no trained run policy has a row for the
+    /// screen. The C# host plays the same screen with
+    /// `STS2_INTERACTIVE_REWARDS=1` (GH #1282).
+    pub reward_screen: bool,
+
+    /// While a [`Self::reward_screen`] run generates a reward set: the rewards
+    /// that auto-collect would have granted on the spot, in grant order
+    /// ([`Self::gain_reward_gold`], [`Self::claim_potion_reward`],
+    /// [`Self::drain_relic_rewards_directly`]). `None` otherwise; never
+    /// survives a run-manager action.
+    pub reward_capture: Option<Vec<ScreenReward>>,
+
+    /// Set by a listener whose queued relic rewards form a set that
+    /// disallows skipping (`RewardsSet.WithSkippingDisallowed`: Neow's
+    /// Bones). The [`Self::reward_screen`] run's next custom reward screen
+    /// offers only takes, and consumes the flag (GH #1641).
+    pub reward_set_must_take: bool,
+
     /// Set on first map-generation, used by Python to guard re-rolling
     /// the layout. Mirrors Python `RunState._rooms_generated: bool`
     /// (`run_state.py:1397`). Currently a flag holder — the actual
@@ -1891,6 +2100,12 @@ pub struct RunState {
     /// [`crate::CombatState`] built from this run. Defaults to
     /// [`crate::GameVersion::V0_107_1`].
     pub game_version: crate::GameVersion,
+
+    /// The run's game mode (GH #1346). Threaded from
+    /// `RunManager::with_game_mode` and copied onto every
+    /// [`crate::CombatState`] built from this run. Defaults to
+    /// [`crate::GameMode::Standard`].
+    pub game_mode: crate::GameMode,
 
     /// Storage for the current act's map. Populated by
     /// [`Self::generate_map`] (the immediate-regen primitive) and
@@ -2174,6 +2389,122 @@ pub struct RunState {
     pub current_encounter_idx: Option<usize>,
 }
 
+/// The card / relic / potion / gold counts the run state's `pending_*` queues
+/// will add or remove once their screens resolve
+/// ([`RunState::pending_effect_counts`]). The event preview
+/// (`sts2_content::events::dispatch::preview_option_effect`) diffs two of
+/// these to count what an option leaves queued behind a later screen
+/// (GH #1540).
+///
+/// The post-removal / post-upgrade / post-transform HP, max-HP and gold
+/// amounts are not counted here: they go through `lose_hp` / `gain_max_hp`
+/// when they drain, so the preview applies them rather than adding them up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PendingEffectCounts {
+    pub cards_gained: i32,
+    pub cards_lost: i32,
+    pub relics_gained: i32,
+    pub potions_gained: i32,
+    pub potions_lost: i32,
+    pub gold_gain: i32,
+}
+
+impl PendingEffectCounts {
+    /// Per-slot `self - before`, floored at 0: what was queued since
+    /// `before`. A queue that drained in between (an option that consumes an
+    /// entry already pending) counts as nothing, never as a negative.
+    #[must_use]
+    pub fn added_since(self, before: Self) -> Self {
+        let d = |a: i32, b: i32| a.saturating_sub(b).max(0);
+        Self {
+            cards_gained: d(self.cards_gained, before.cards_gained),
+            cards_lost: d(self.cards_lost, before.cards_lost),
+            relics_gained: d(self.relics_gained, before.relics_gained),
+            potions_gained: d(self.potions_gained, before.potions_gained),
+            potions_lost: d(self.potions_lost, before.potions_lost),
+            gold_gain: d(self.gold_gain, before.gold_gain),
+        }
+    }
+}
+
+impl RunState {
+    /// Tally every `pending_*` queue that changes a card, relic, potion or
+    /// gold count once its screen resolves. Kept next to the fields: a new
+    /// queue belongs here or in the "no count" list below.
+    ///
+    /// Every count is fixed when the screen opens (which cards, not how
+    /// many, depends on the pick), so it reveals no hidden roll (GH #1035).
+    /// A choose-1-of-N counts as the one card it becomes.
+    ///
+    /// - counted: card selects and their post-adds, card grants, the front
+    ///   bundle, interactive removals and transforms (one lost + one gained
+    ///   each), post-removal / post-pick cards, Neow's Bones curses, Swipe
+    ///   returns, post-pick relics, full-belt potion swaps (one gained + one
+    ///   lost: taking the swap discards a held potion), extra reward gold,
+    ///   and the gold / card-removal entries of `pending_rewards` (its card
+    ///   and potion entries are read as deck / belt entries by the preview's
+    ///   own diff).
+    /// - drained through HP / gold calls, not counted:
+    ///   `pending_post_removal_hp_loss`, `pending_post_removal_max_hp_gain`,
+    ///   `pending_post_removal_gold_loss`, `pending_post_upgrade_hp_loss`,
+    ///   and each queued transform's `post_hp_loss`.
+    /// - never granted: `Reward::Relic` entries of `pending_rewards`.
+    ///   `RunManager::drain_pending_rewards` leaves them where they are (a
+    ///   relic is granted through `grant_event_relic` / `relic_rewards`); the
+    ///   Ancient option shims (Orobas, Pael, Nonupeipe) push them, but the
+    ///   engine plays an Ancient as the boss-relic screen.
+    /// - no count to change: upgrades and enchants
+    ///   (`pending_deck_upgrades`, `pending_deck_enchants`, `UpgradeCards` /
+    ///   `EnchantCards` rewards).
+    /// - not fixed when the screen opens: Claws' optional 0..N transform pick
+    ///   (`pending_claws_selection`).
+    /// - bookkeeping that only qualifies the removals counted above:
+    ///   `pending_removal_basic_tag`, `pending_removal_paels_tooth`,
+    ///   `pending_paels_tooth_picks`.
+    /// - `pending_choice`: combat, potion and rest-site prompts. With
+    ///   `interactive_card_transform` off, `offer_transform_cards_reward`
+    ///   also opens one, but only the rest site's Smith resolves it, so at an
+    ///   event the transform never happens and there is nothing to count.
+    #[must_use]
+    pub fn pending_effect_counts(&self) -> PendingEffectCounts {
+        let n = |x: usize| i32::try_from(x).unwrap_or(i32::MAX);
+        let u = |x: u32| i32::try_from(x).unwrap_or(i32::MAX);
+        let transforms = n(self.pending_deck_transforms.len());
+        let swaps = n(self.pending_potion_swaps.len());
+        let (mut reward_gold, mut reward_removals) = (0i32, 0i32);
+        for r in &self.pending_rewards {
+            match r {
+                Reward::Gold { amount } => reward_gold = reward_gold.saturating_add(*amount),
+                Reward::RemoveCard { count } => {
+                    reward_removals =
+                        reward_removals.saturating_add(i32::try_from(*count).unwrap_or(i32::MAX));
+                }
+                _ => {}
+            }
+        }
+        let selects = &self.pending_card_selects;
+        PendingEffectCounts {
+            cards_gained: n(selects.len())
+                .saturating_add(n(selects.iter().map(|p| p.post_add.len()).sum()))
+                .saturating_add(n(self.pending_card_grants.iter().map(|g| g.pick).sum()))
+                .saturating_add(n(self.pending_bundles.first().map_or(0, Vec::len)))
+                .saturating_add(n(self.pending_post_removal_cards.len()))
+                .saturating_add(n(self.pending_post_pick_cards.len()))
+                .saturating_add(n(self.pending_swipe_returns.len()))
+                .saturating_add(u(self.pending_neows_bones_curses))
+                .saturating_add(transforms),
+            cards_lost: u(self.pending_deck_removals)
+                .saturating_add(reward_removals)
+                .saturating_add(transforms),
+            relics_gained: n(self.pending_post_pick_relic_grants.len()),
+            potions_gained: swaps,
+            potions_lost: swaps,
+            gold_gain: reward_gold
+                .saturating_add(self.pending_extra_reward_gold.iter().sum::<i32>()),
+        }
+    }
+}
+
 impl Default for RunState {
     fn default() -> Self {
         Self {
@@ -2200,6 +2531,7 @@ impl Default for RunState {
             relic_counters: BTreeMap::new(),
             wax_relics: std::collections::BTreeSet::new(),
             melted_relics: std::collections::BTreeSet::new(),
+            wuppy_max_hp: 0,
             current_event: None,
             event_state: crate::events::MultiPageEventState::default(),
             event_combat: None,
@@ -2241,6 +2573,7 @@ impl Default for RunState {
             pending_post_removal_max_hp_gain: 0,
             pending_post_removal_gold_loss: 0,
             pending_post_upgrade_hp_loss: 0,
+            deck_pick_manual_confirm: false,
             pending_post_pick_cards: Vec::new(),
             pending_swipe_returns: Vec::new(),
             pending_neows_bones_curses: 0,
@@ -2255,6 +2588,15 @@ impl Default for RunState {
             pending_potion_swaps: Vec::new(),
             potions_overflow_dropped: 0,
             direct_event_relic_grant: false,
+            crystal_sphere_digger: false,
+            withhold_abandon_run_options: false,
+            ooc_potion_actions: false,
+            deck_select_screens: false,
+            deck_select_picked: Vec::new(),
+            cook_select_open: false,
+            reward_screen: false,
+            reward_capture: None,
+            reward_set_must_take: false,
             rooms_generated: false,
             visited_event_ids: std::collections::BTreeSet::new(),
             // Bead `sts2-rs-4aunm`: identity ascension + no map
@@ -2262,6 +2604,7 @@ impl Default for RunState {
             // and Self::generate_map populate these.
             ascension_level: 0,
             game_version: crate::GameVersion::V0_107_1,
+            game_mode: crate::GameMode::Standard,
             current_act_map: None,
             spoils_quest_coord: None,
             pinned_act_boss: None,
@@ -2355,23 +2698,30 @@ impl RunState {
     /// player about is surfaced as a decision instead of auto-resolved —
     /// `interactive_card_removal`, `interactive_card_upgrade`,
     /// `interactive_card_transform` (which also gates the enchant queue) and
-    /// `direct_event_relic_grant`.
+    /// `direct_event_relic_grant` — plus `crystal_sphere_digger`, which plays
+    /// the Crystal Sphere minigame with a click policy instead of the oracle's
+    /// fixed sweep (the real game lets the player pick every cell) — and
+    /// `withhold_abandon_run_options`, which hides Trial's Double Down the way
+    /// every live chooser does.
     ///
     /// The ONE definition of "agent mode": the arena, the PPO env, and both
     /// workbenches construct through it (the PyO3 `RunManager(mode="agent")`
-    /// calls this too), so a host cannot turn on three flags and forget the
-    /// fourth. The defaults (all off) are the parity mode, which matches the
+    /// calls this too), so a host cannot turn on some flags and forget the
+    /// rest. The defaults (all off) are the parity mode, which matches the
     /// headless C# runner: front-of-deck removal, `master_deck[0]` transform,
-    /// rewards-stream auto-upgrade.
+    /// rewards-stream auto-upgrade, the Crystal Sphere sweep.
     ///
     /// `interactive_potion_swap` is deliberately NOT part of the bundle: the
     /// hosts disagree on it on purpose (env-gated in the arena / PPO env, off
-    /// in the workbench).
+    /// in the workbench). Neither is `ooc_potion_actions` (GH #1606): a host
+    /// turns the potion popup on only when its policy has rows for it.
     pub fn set_agent_decisions(&mut self) {
         self.interactive_card_removal = true;
         self.interactive_card_upgrade = true;
         self.interactive_card_transform = true;
         self.direct_event_relic_grant = true;
+        self.crystal_sphere_digger = true;
+        self.withhold_abandon_run_options = true;
     }
 
     /// Whether every flag [`Self::set_agent_decisions`] sets is on.
@@ -2381,6 +2731,8 @@ impl RunState {
             && self.interactive_card_upgrade
             && self.interactive_card_transform
             && self.direct_event_relic_grant
+            && self.crystal_sphere_digger
+            && self.withhold_abandon_run_options
     }
 
     /// Whether every flag [`Self::set_agent_decisions`] sets is off (the
@@ -2390,7 +2742,9 @@ impl RunState {
         !(self.interactive_card_removal
             || self.interactive_card_upgrade
             || self.interactive_card_transform
-            || self.direct_event_relic_grant)
+            || self.direct_event_relic_grant
+            || self.crystal_sphere_digger
+            || self.withhold_abandon_run_options)
     }
 
     /// Returns the current act index (1, 2, or 3). Mirrors Python
@@ -2454,6 +2808,25 @@ impl RunState {
     pub fn pael_record_feed(&mut self) -> u32 {
         self.pael_state.fed_count = self.pael_state.fed_count.saturating_add(1);
         self.pael_state.fed_count
+    }
+
+    /// The Dread dominion of the current act: C# `DreadRunModel.
+    /// ApplyCurrentDominion` (`Models.Dread/DreadRunModel.cs:71-82`) takes
+    /// `(act.SecondBossEncounter ?? act.BossEncounter).GetDominion()`, so the
+    /// last act of a Dread run (always ascension 10, DoubleBoss) uses its
+    /// SECOND boss's. `None` outside Dread and before the rooms are
+    /// generated. The act's boss fights drop it; that is the combat
+    /// builder's rule, since the run's value only matters for combats.
+    /// GH #1346.
+    #[must_use]
+    pub fn act_dominion(&self) -> Option<crate::Dominion> {
+        if !self.game_mode.is_dread() {
+            return None;
+        }
+        let rooms = self
+            .generated_rooms
+            .get(usize::from(self.act_index).checked_sub(1)?)?;
+        crate::Dominion::for_boss(rooms.second_boss_id.unwrap_or(rooms.boss_id))
     }
 
     /// Advance the run to the next act (1 → 2 → 3, clamped at 3).
@@ -2620,6 +2993,9 @@ impl RunState {
         // copy is gone (stackable relics can be held more than once).
         if !self.relics.contains(&relic_id) {
             self.relic_counters.remove(&relic_id);
+            if relic_id == RelicId::Wuppy {
+                self.wuppy_max_hp = 0;
+            }
         }
         true
     }
@@ -2723,6 +3099,21 @@ impl RunState {
         self.max_potion_slots = self.max_potion_slots.saturating_add(amount).max(0);
     }
 
+    /// Put the potion rewards waiting on a full belt for a swap decision
+    /// ([`Self::pending_potion_swaps`]) into whatever slots are free now.
+    /// A relic that grows the belt calls this once its own effect is done
+    /// (a Potion Belt among the same rewards): the game's reward screen asks
+    /// for no discard when the potion fits. A relic that fills the slots it
+    /// adds (Alchemical Coffer) leaves none, and the swap stays.
+    pub fn settle_waiting_potions(&mut self) {
+        while let Some(&kind) = self.pending_potion_swaps.first() {
+            if !self.add_potion_to_belt(kind) {
+                break;
+            }
+            self.pending_potion_swaps.remove(0);
+        }
+    }
+
     /// Add `kind` to the run-level potion belt ([`Self::potions`]) if a
     /// free slot is available, returning `true` when the potion was
     /// added and `false` when the belt is already full (the potion is
@@ -2821,6 +3212,11 @@ impl RunState {
     /// potion beforehand (`PotionReward.Populate` rolls under Sozu too),
     /// so the Rewards stream stays aligned.
     pub fn claim_potion_reward(&mut self, kind: crate::potions::PotionKind) -> bool {
+        // A reward screen (GH #1620): the potion waits on it; the take claims it.
+        if let Some(capture) = self.reward_capture.as_mut() {
+            capture.push(ScreenReward::Potion(kind));
+            return false;
+        }
         if !crate::run_effects::dispatch_should_procure_potion(self) {
             return false;
         }
@@ -2946,10 +3342,11 @@ impl RunState {
         // behind, so the next fight's unique-HP rolls differed.
         let layout = event_id.combat_layout_monsters();
         if !layout.is_empty() {
+            let combat_ascension = self.combat_ascension();
             let _ = crate::monsters::roll_unique_max_hps_for(
                 layout,
                 &mut self.rng.niche,
-                self.ascension_level,
+                combat_ascension,
                 self.game_version,
             );
         }
@@ -3100,6 +3497,21 @@ impl RunState {
     /// follow-up rewards an after-obtain listener queued. Returns the
     /// number of rewards drained.
     pub fn drain_relic_rewards_directly(&mut self) -> usize {
+        // A reward screen (GH #1620): the relics wait on it, each obtained
+        // only when taken.
+        if let Some(capture) = self.reward_capture.as_mut() {
+            let drained = self.relic_rewards.len();
+            capture.extend(self.relic_rewards.drain(..).map(|r| ScreenReward::Relic {
+                relic: r.relic_id,
+                is_wax: r.is_wax,
+            }));
+            return drained;
+        }
+        // An event's or relic's own relic rewards wait on their reward screen
+        // too (GH #1641): the run manager opens it over what is queued.
+        if self.reward_screen {
+            return 0;
+        }
         let mut drained = 0;
         // FIFO drain: pop from the front so chain order matches the C#
         // List<Reward> iteration in RewardsSet.Offer(). Looping handles
@@ -3347,12 +3759,48 @@ impl RunState {
     /// the A2 heal floors `0.8 * missing`. Returns the HP actually added.
     /// Neow (act 1) is handled at run construction in
     /// [`crate::run_manager::RunManager::with_ascension`].
+    /// C# `AscensionManager.HasLevel(level)` for this run: a threshold on
+    /// [`Self::ascension_level`], or in Blitz membership in the Blitz
+    /// level set ([`crate::ascension::has_level`], GH #1347). Every
+    /// run-side ascension check goes through this.
+    #[must_use]
+    pub fn has_ascension(&self, level: crate::AscensionLevel) -> bool {
+        crate::ascension::has_level(self.game_mode, self.ascension_level, level)
+    }
+
+    /// The plain ascension number to hand a consumer that thresholds it
+    /// and only asks about `reads` ([`crate::ascension::threshold_view`]):
+    /// [`Self::ascension_level`] itself outside Blitz.
+    #[must_use]
+    pub fn ascension_view(&self, reads: &[crate::AscensionLevel]) -> u8 {
+        crate::ascension::threshold_view(self.game_mode, self.ascension_level, reads)
+    }
+
+    /// The ascension a combat built from this run thresholds
+    /// (`ToughEnemies` / `DeadlyEnemies`): [`crate::ascension::combat_ascension`].
+    #[must_use]
+    pub fn combat_ascension(&self) -> u8 {
+        crate::ascension::combat_ascension(self.game_mode, self.ascension_level)
+    }
+
+    /// The ascension map generation thresholds (`SwarmingElites`).
+    #[must_use]
+    pub fn map_ascension(&self) -> i32 {
+        i32::from(self.ascension_view(&[crate::AscensionLevel::SwarmingElites]))
+    }
+
+    /// The ascension the card-removal price thresholds (`Inflation`).
+    #[must_use]
+    pub fn shop_ascension(&self) -> u8 {
+        self.ascension_view(&[crate::AscensionLevel::Inflation])
+    }
+
     pub fn apply_ancient_event_heal(&mut self) -> i32 {
         let missing = self.max_hp - self.current_hp;
         if missing <= 0 {
             return 0;
         }
-        let amount = if self.ascension_level >= WEARY_TRAVELER_ASCENSION_LEVEL {
+        let amount = if self.has_ascension(crate::AscensionLevel::WearyTraveler) {
             (f64::from(missing) * WEARY_TRAVELER_HEAL_MULTIPLIER).floor() as i32
         } else {
             missing
@@ -3775,6 +4223,11 @@ impl RunState {
                     // disabled.
                     return RestSiteActionOutcome::Disabled;
                 }
+                // The game shows its cancelable screen for one card too
+                // (`RequireManualConfirmation`), but cancelling it ends where
+                // not choosing Smith does, and the headless host auto-picks a
+                // single option (`HeadlessCardSelector.GetSelectedCards`), so
+                // every mode keeps the auto-pick.
                 if upgradable.len() == 1 {
                     // Auto-resolve single-card case. Mirrors Python
                     // `_can_auto_resolve_deck_choice` when
@@ -3782,7 +4235,7 @@ impl RunState {
                     let target_id = upgradable[0];
                     let version = self.game_version;
                     for c in &mut self.master_deck {
-                        if c.card_id == target_id && !c.upgraded && c.upgrade_for(version) {
+                        if c.card_id == target_id && c.is_upgradable() && c.upgrade_for(version) {
                             return RestSiteActionOutcome::SmithUpgraded { card_id: target_id };
                         }
                     }
@@ -3900,7 +4353,40 @@ impl RunState {
                 RestSiteActionOutcome::Cloned
             }
             RestSiteOption::Mend => RestSiteActionOutcome::Unsupported,
+            RestSiteOption::Restore { .. } => {
+                // C# `RestoreRestSiteOption.OnSelect`: every owned Wuppy gets
+                // `CurrentHp = MaxHp`. The relic's `CurrentHp` is
+                // `relic_counters[Wuppy]`.
+                if !self.relics.contains(&RelicId::Wuppy) {
+                    return RestSiteActionOutcome::Disabled;
+                }
+                let max_hp = self.wuppy_max_hp();
+                self.relic_counters.insert(RelicId::Wuppy, max_hp);
+                RestSiteActionOutcome::Restored
+            }
         }
+    }
+
+    /// The Wuppy relic's saved `MaxHp` (C# `Wuppy.MaxHp`): the field
+    /// WuppyInTrouble sets, or `AfterObtained`'s default 60 when unset.
+    #[must_use]
+    pub fn wuppy_max_hp(&self) -> i32 {
+        if self.wuppy_max_hp > 0 {
+            self.wuppy_max_hp
+        } else {
+            crate::relics::WUPPY_DEFAULT_MAX_HP
+        }
+    }
+
+    /// The Wuppy relic's saved `CurrentHp` (C# `Wuppy.CurrentHp`, its
+    /// `DisplayAmount`): `relic_counters[Wuppy]`, or `MaxHp` when unset (an
+    /// unset `CurrentHp` is set to `MaxHp` by `AfterObtained`).
+    #[must_use]
+    pub fn wuppy_current_hp(&self) -> i32 {
+        self.relic_counters
+            .get(&RelicId::Wuppy)
+            .copied()
+            .unwrap_or_else(|| self.wuppy_max_hp())
     }
 
     /// v0.113.0 `EvolveRestSiteOption.OnSelect`
@@ -3935,13 +4421,15 @@ impl RunState {
     /// drain (the PrecariousShears pattern); the auto path removes from the
     /// deck front and gains now. v0.107.1 Cook used to be `Unsupported` — no
     /// removal and no max HP (act23 probe: Silent 1012, Meat Cleaver Cook).
-    fn cook(&mut self) {
+    pub(crate) fn cook(&mut self) {
         let gain = if self.game_version >= crate::GameVersion::V0_111_0 {
             COOK_MAX_HP_GAIN_V0111
         } else {
             COOK_MAX_HP_GAIN_V0107
         };
         if self.interactive_card_removal {
+            // `RequireManualConfirmation = true` (`CookRestSiteOption.cs:47`).
+            self.deck_pick_manual_confirm = true;
             self.pending_deck_removals += COOK_CARDS_TO_REMOVE;
             self.pending_post_removal_max_hp_gain += gain;
         } else {
@@ -4346,7 +4834,7 @@ impl RunState {
     /// applies before every front/back pull. See [`relic_is_allowed_at`].
     #[must_use]
     pub fn is_relic_allowed(&self, id: RelicId) -> bool {
-        relic_is_allowed_at(id, self.csharp_total_floor())
+        relic_is_allowed_in(id, self.csharp_total_floor(), self.game_mode)
     }
 
     /// Pop the first non-owned relic from the per-rarity grab-bag,
@@ -4511,6 +4999,7 @@ impl RunState {
     pub fn pop_relic_from_shared_grab_bag(&mut self, rarity: RelicRarity) -> Option<RelicId> {
         let owned: std::collections::BTreeSet<RelicId> = self.relics.iter().copied().collect();
         let floor = self.csharp_total_floor();
+        let mode = self.game_mode;
         for &candidate_rarity in rarity.fallback_order() {
             let Some(bucket) = self
                 .shared_relic_grab_bag_by_rarity
@@ -4520,7 +5009,7 @@ impl RunState {
             };
             if let Some(idx) = bucket
                 .iter()
-                .position(|id| !owned.contains(id) && relic_is_allowed_at(*id, floor))
+                .position(|id| !owned.contains(id) && relic_is_allowed_in(*id, floor, mode))
             {
                 return Some(bucket.remove(idx));
             }
@@ -4555,12 +5044,13 @@ impl RunState {
     ) -> Option<(RelicId, RelicRarity)> {
         let owned: std::collections::BTreeSet<RelicId> = self.relics.iter().copied().collect();
         let floor = self.csharp_total_floor();
+        let mode = self.game_mode;
         for &candidate_rarity in rarity.fallback_order() {
             let Some(bucket) = self.relic_grab_bag_by_rarity.get_mut(&candidate_rarity) else {
                 continue;
             };
             if let Some(idx) = bucket.iter().rposition(|id| {
-                !owned.contains(id) && relic_is_allowed_at(*id, floor) && filter(*id)
+                !owned.contains(id) && relic_is_allowed_in(*id, floor, mode) && filter(*id)
             }) {
                 let picked = bucket.remove(idx);
                 self.relic_grab_bag.retain(|&r| r != picked);
@@ -4568,11 +5058,9 @@ impl RunState {
                 return Some((picked, candidate_rarity));
             }
         }
-        if let Some(idx) = self
-            .relic_grab_bag_fallback
-            .iter()
-            .rposition(|id| !owned.contains(id) && relic_is_allowed_at(*id, floor) && filter(*id))
-        {
+        if let Some(idx) = self.relic_grab_bag_fallback.iter().rposition(|id| {
+            !owned.contains(id) && relic_is_allowed_in(*id, floor, mode) && filter(*id)
+        }) {
             let picked = self.relic_grab_bag_fallback.remove(idx);
             self.relic_grab_bag.retain(|&r| r != picked);
             self.remove_relic_from_shared_grab_bag(picked);
@@ -4806,6 +5294,7 @@ impl RunState {
             // Standard runs carry no deck-clearing modifier.
             pandoras_allowed: true,
             tezcatara_basic_strike,
+            blitz: self.game_mode.is_blitz(),
         }
     }
 
@@ -4895,6 +5384,20 @@ impl RunState {
     /// channel can swap the entire layout (GoldenCompass), the late
     /// channel picks coords off the post-swap layout (FurCoat). Beads
     /// `sts2-rs-fchti` (early channel) + `sts2-rs-eboqq` (late channel).
+    /// A Blitz run's map for act `act_index` (1-based), `None` in any other
+    /// mode. C# `RunManager.GenerateMap` (`RunManager.cs:891-896`) builds
+    /// `new BlitzActMap(State)` and runs `Hook.ModifyGeneratedMap` on it; it
+    /// never calls `Act.CreateMap`, so the `act_N_map` stream is never
+    /// created or read.
+    pub fn blitz_act_map(&mut self, act_index: u8) -> Option<crate::map::ActMap> {
+        if !self.game_mode.is_blitz() {
+            return None;
+        }
+        let mut act_map = crate::blitz::act_map();
+        self.modify_generated_map(&mut act_map, act_index);
+        Some(act_map)
+    }
+
     pub fn modify_generated_map(&mut self, act_map: &mut crate::map::ActMap, act_index: u8) {
         self.apply_spoils_map(act_map, act_index);
         let _ = crate::run_effects::dispatch_modify_generated_map(self, act_map, act_index);
@@ -4924,7 +5427,7 @@ impl RunState {
             self.game_version,
             act_map.map_length - 1,
             &mut rng,
-            i32::from(self.ascension_level),
+            self.map_ascension(),
             i32::from(act_index),
         );
         self.spoils_quest_coord = act_map
@@ -4992,6 +5495,10 @@ impl RunState {
     /// call. Bead `sts2-rs-4aunm`.
     pub fn generate_map(&mut self) {
         let act_idx_1_based = self.act_index;
+        if let Some(act_map) = self.blitz_act_map(act_idx_1_based) {
+            self.current_act_map = Some(act_map);
+            return;
+        }
         let act_idx_0_based = i32::from(act_idx_1_based).saturating_sub(1);
         let num_rooms = self
             .acts
@@ -4999,7 +5506,7 @@ impl RunState {
             .map_or(crate::acts::DEFAULT_ACT_NUM_ROOMS, |a| {
                 i32::from(a.num_rooms)
             });
-        let ascension_level = i32::from(self.ascension_level);
+        let ascension_level = self.map_ascension();
         let mut act_map = {
             let rng = self.rng.map_rng(act_idx_0_based);
             crate::map_generator::generate_act_map_for(
@@ -5285,8 +5792,18 @@ impl RunState {
     /// own `PlayerCmd.GainGold`. A no-op once drained.
     pub fn grant_extra_reward_gold(&mut self) {
         for amount in std::mem::take(&mut self.pending_extra_reward_gold) {
-            self.gain_gold(amount);
+            self.gain_reward_gold(amount);
         }
+    }
+
+    /// A reward set's `GoldReward` taken: [`Self::gain_gold`], or, while a
+    /// [`Self::reward_screen`] set is generated, a gold entry on the screen.
+    pub fn gain_reward_gold(&mut self, amount: i32) {
+        if let Some(capture) = self.reward_capture.as_mut() {
+            capture.push(ScreenReward::Gold(amount));
+            return;
+        }
+        self.gain_gold(amount);
     }
 
     pub fn gain_gold(&mut self, delta: i32) {
@@ -5468,7 +5985,7 @@ impl RunState {
         // banker's-round here; the C# decomp wins (2026-06-12 ascension
         // audit, bead sts2-rs-40ikw.2).
         let (mut low_f, mut high_f) = (f64::from(low), f64::from(high));
-        if overridden.is_none() && self.ascension_level >= POVERTY_ASCENSION_LEVEL {
+        if overridden.is_none() && self.has_ascension(crate::AscensionLevel::Poverty) {
             low_f = (low_f * POVERTY_ASCENSION_GOLD_MULTIPLIER).trunc();
             high_f = (high_f * POVERTY_ASCENSION_GOLD_MULTIPLIER).trunc();
         }
@@ -6271,6 +6788,55 @@ pub const GUILTY_MAX_COMBATS: i32 = 5;
 #[cfg(test)]
 mod tests {
 
+    /// Queues no event fills today still land in their slot, so an event
+    /// that starts using one previews it (GH #1540).
+    #[test]
+    fn pending_effect_counts_reads_rewards_curses_and_swaps() {
+        use super::{PendingEffectCounts, Reward, RunState};
+        use crate::potions::PotionKind;
+        let mut rs = RunState::new();
+        rs.pending_rewards = vec![Reward::Gold { amount: 40 }, Reward::RemoveCard { count: 2 }];
+        rs.pending_extra_reward_gold = vec![15];
+        rs.pending_neows_bones_curses = 1;
+        rs.pending_potion_swaps = vec![PotionKind::FirePotion];
+        let d = rs
+            .pending_effect_counts()
+            .added_since(RunState::new().pending_effect_counts());
+        assert_eq!(
+            d,
+            PendingEffectCounts {
+                cards_gained: 1,
+                cards_lost: 2,
+                relics_gained: 0,
+                potions_gained: 1,
+                potions_lost: 1,
+                gold_gain: 55,
+            }
+        );
+    }
+
+    /// A queue that drained between the two tallies counts as nothing, not
+    /// as a negative gain or loss.
+    #[test]
+    fn pending_effect_counts_added_since_floors_at_zero() {
+        use super::{PendingEffectCounts, Reward, RunState};
+        let mut before = RunState::new();
+        before.pending_deck_removals = 2;
+        before.pending_rewards = vec![Reward::Gold { amount: 30 }];
+        let mut after = RunState::new();
+        after.pending_neows_bones_curses = 1;
+        let d = after
+            .pending_effect_counts()
+            .added_since(before.pending_effect_counts());
+        assert_eq!(
+            d,
+            PendingEffectCounts {
+                cards_gained: 1,
+                ..PendingEffectCounts::default()
+            }
+        );
+    }
+
     /// `RelicFactory.cs:92-93` rolls `float num = rng.NextFloat()` against
     /// 0.5f / 0.83f. Seed 17972581's first draw 0.4999999857 is the float
     /// 0.5 (Uncommon, f64 said Common); seed 19414603's 0.8299999859 is the
@@ -6318,7 +6884,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_decisions_bundle_is_the_four_deck_flags() {
+    fn agent_decisions_bundle_is_the_deck_flags_and_the_digger() {
         // GH #981: the one definition of agent mode. Parity is the default.
         let mut rs = RunState::new();
         assert!(rs.has_parity_decisions() && !rs.has_agent_decisions());
@@ -6328,6 +6894,10 @@ mod tests {
         assert!(rs.interactive_card_upgrade);
         assert!(rs.interactive_card_transform);
         assert!(rs.direct_event_relic_grant);
+        assert!(rs.crystal_sphere_digger);
+        assert!(rs.withhold_abandon_run_options);
+        // Potion swap and the potion popup are separate, per-host decisions.
+        assert!(!rs.ooc_potion_actions);
         // Potion swap is a separate, per-host decision.
         assert!(!rs.interactive_potion_swap);
         rs.interactive_card_upgrade = false;
@@ -8726,6 +9296,43 @@ mod tests {
         // No-op deltas are safe.
         rs.gain_potion_slots(0);
         assert_eq!(rs.max_potion_slots, 0);
+    }
+
+    /// A potion reward that found the belt full waits for a swap decision.
+    /// The same reward screen's Potion Belt then makes room, and the game
+    /// shows no swap for a potion that fits: it goes on the belt. The engine
+    /// still asked which potion to discard (Spire Bench seed 170000185).
+    #[test]
+    fn a_waiting_potion_takes_a_slot_the_belt_gains() {
+        use crate::potions::PotionKind;
+        let mut rs = RunState::new();
+        rs.interactive_potion_swap = true;
+        rs.max_potion_slots = 2;
+        rs.potions = vec![PotionKind::BloodPotion, PotionKind::HeartOfIron];
+        assert!(!rs.claim_potion_reward(PotionKind::SpeedPotion));
+        assert_eq!(rs.pending_potion_swaps, [PotionKind::SpeedPotion]);
+        rs.gain_potion_slots(2);
+        assert_eq!(
+            rs.pending_potion_swaps.len(),
+            1,
+            "the relic's own effect comes first"
+        );
+        rs.settle_waiting_potions();
+        assert!(rs.pending_potion_swaps.is_empty());
+        assert_eq!(
+            rs.potions,
+            [
+                PotionKind::BloodPotion,
+                PotionKind::HeartOfIron,
+                PotionKind::SpeedPotion
+            ]
+        );
+        // A belt that is full again (Alchemical Coffer filled its own
+        // slots) keeps the swap decision.
+        rs.potions.push(PotionKind::BlockPotion);
+        assert!(!rs.claim_potion_reward(PotionKind::FirePotion));
+        rs.settle_waiting_potions();
+        assert_eq!(rs.pending_potion_swaps, [PotionKind::FirePotion]);
     }
 
     /// Bead `sts2-rs-flfyp`: apply_pending_combat_gold_loss with a

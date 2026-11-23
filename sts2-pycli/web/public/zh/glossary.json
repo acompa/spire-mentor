@@ -1,0 +1,3694 @@
+{
+ "enchantments": {
+  "ADROIT": {
+   "description": "获得[blue]{Block:diff()}[/blue]点[gold]格挡[/gold]。",
+   "extra": "获得{Block:diff()}点[gold]格挡[/gold]。",
+   "image": "enchantments/adroit.png",
+   "show_amount": true,
+   "title": "伶俐"
+  },
+  "CLONE": {
+   "description": "这张牌能在[gold]休息处[/gold]被复制。",
+   "extra": null,
+   "image": "enchantments/clone.png",
+   "show_amount": false,
+   "title": "克隆"
+  },
+  "CORRUPTED": {
+   "description": "造成的伤害增加[blue]50%[/blue]，但会失去[blue]2[/blue]生命。",
+   "extra": "失去2点生命。",
+   "image": "enchantments/corrupted.png",
+   "show_amount": false,
+   "title": "腐化"
+  },
+  "GLAM": {
+   "description": "这张牌每场战斗能够[gold]重放[/gold]一次。",
+   "extra": null,
+   "image": "enchantments/glam.png",
+   "show_amount": false,
+   "title": "华彩"
+  },
+  "GOOPY": {
+   "description": "这张牌获得[gold]消耗[/gold]。当被打出时，这张牌的[gold]格挡[/gold]值永久增加[blue]1[/blue]点。",
+   "extra": "这张牌的[gold]格挡[/gold]值永久增加[blue]1[/blue]点。",
+   "image": "enchantments/goopy.png",
+   "show_amount": false,
+   "title": "黏糊"
+  },
+  "IMBUED": {
+   "description": "这张牌在每场战斗开始时自动打出。",
+   "extra": "注能。",
+   "image": "enchantments/imbued.png",
+   "show_amount": false,
+   "title": "注能"
+  },
+  "INKY": {
+   "description": "This card deals [blue]{Damage}[/blue] additional damage and applies [blue]{WeakPower}[/blue] [gold]Weak[/gold].",
+   "extra": "{TargetType:choose(AllEnemies):对所有敌人|}造成[blue]{WeakPower}[/blue]层[gold]虚弱[/gold]。",
+   "image": "enchantments/inky.png",
+   "show_amount": false,
+   "title": "墨影"
+  },
+  "INSTINCT": {
+   "description": "这张牌的攻击伤害翻倍。",
+   "extra": null,
+   "image": "enchantments/instinct.png",
+   "show_amount": false,
+   "title": "本能"
+  },
+  "MOMENTUM": {
+   "description": "在本场战斗中，每次打出就增加这张牌的攻击伤害[blue]{Amount}[/blue]点。",
+   "extra": "在本场战斗中这张牌的伤害增加{Amount}点。",
+   "image": "enchantments/momentum.png",
+   "show_amount": true,
+   "title": "动量"
+  },
+  "NIMBLE": {
+   "description": "这张牌获得的[gold]格挡[/gold]值增加[blue]{Amount}[/blue]点。",
+   "extra": null,
+   "image": "enchantments/nimble.png",
+   "show_amount": true,
+   "title": "灵巧"
+  },
+  "PERFECT_FIT": {
+   "description": "每当这张牌要被洗入[gold]抽牌堆[/gold]时，将其放在抽牌堆顶。",
+   "extra": "完美契合。",
+   "image": "enchantments/perfect_fit.png",
+   "show_amount": false,
+   "title": "完美契合"
+  },
+  "ROYALLY_APPROVED": {
+   "description": "这张牌拥有[gold]固有[/gold]和[gold]保留[/gold]。",
+   "extra": null,
+   "image": "enchantments/royally_approved.png",
+   "show_amount": false,
+   "title": "王室认证"
+  },
+  "SHARP": {
+   "description": "这张牌上的伤害值增加[blue]{Amount}[/blue]点。",
+   "extra": null,
+   "image": "enchantments/sharp.png",
+   "show_amount": true,
+   "title": "锋利"
+  },
+  "SLITHER": {
+   "description": "当你抽到这张牌时，使其耗能在[blue]0[/blue]到[blue]3[/blue]之间随机变化。",
+   "extra": null,
+   "image": "enchantments/slither.png",
+   "show_amount": false,
+   "title": "蛇行"
+  },
+  "SLUMBERING_ESSENCE": {
+   "description": "回合结束时，如果这张牌在你的手牌中，则将其耗能降低[blue]1[/blue]点，直到其被打出。",
+   "extra": null,
+   "image": "enchantments/slumbering_essence.png",
+   "show_amount": false,
+   "title": "沉眠精华"
+  },
+  "SOULS_POWER": {
+   "description": "这张牌失去[gold]消耗[/gold]。",
+   "extra": null,
+   "image": "enchantments/souls_power.png",
+   "show_amount": false,
+   "title": "灵魂之力"
+  },
+  "SOWN": {
+   "description": "你在每场战斗中第一次打出这张牌时，获得{Amount:energyIcons()}。",
+   "extra": "获得{Amount:energyIcons()}。",
+   "image": "enchantments/sown.png",
+   "show_amount": false,
+   "title": "播种"
+  },
+  "SPIRAL": {
+   "description": "这张牌获得[gold]重放[/gold][blue]1[/blue]。",
+   "extra": null,
+   "image": "enchantments/spiral.png",
+   "show_amount": false,
+   "title": "涡旋"
+  },
+  "STEADY": {
+   "description": "这张牌获得[gold]保留[/gold]。",
+   "extra": null,
+   "image": "enchantments/steady.png",
+   "show_amount": false,
+   "title": "稳定"
+  },
+  "SWIFT": {
+   "description": "你第一次打出这张牌时，抽[blue]{Amount}[/blue]张牌。",
+   "extra": "第一次打出时抽{Amount}张牌。",
+   "image": "enchantments/swift.png",
+   "show_amount": true,
+   "title": "迅速"
+  },
+  "TEZCATARAS_EMBER": {
+   "description": "耗能为[blue]0[/blue]，造成[blue]{Damage}[/blue]点额外伤害，且获得[gold]永恒[/gold]。",
+   "extra": null,
+   "image": "enchantments/tezcataras_ember.png",
+   "show_amount": false,
+   "title": "特兹卡塔拉的余烬"
+  },
+  "VIGOROUS": {
+   "description": "第一次打出这张牌时，造成[blue]{Amount}[/blue]点额外伤害。",
+   "extra": null,
+   "image": "enchantments/vigorous.png",
+   "show_amount": true,
+   "title": "活力"
+  }
+ },
+ "keywords": {
+  "ETERNAL": {
+   "description": "无法从你的[gold]牌组[/gold]中移除或变化。",
+   "title": "永恒"
+  },
+  "ETHEREAL": {
+   "description": "如果这张牌在这个回合结束时留在你的[gold]手牌[/gold]中，则将其[gold]消耗[/gold]。",
+   "title": "虚无"
+  },
+  "EXHAUST": {
+   "description": "在战斗结束前移除。",
+   "title": "消耗"
+  },
+  "INNATE": {
+   "description": "每场战斗开始时这张牌会出现在你的[gold]手牌[/gold]。",
+   "title": "固有"
+  },
+  "RETAIN": {
+   "description": "保留的牌不会在回合结束时被弃掉。",
+   "title": "保留"
+  },
+  "SLY": {
+   "description": "如果这张牌在你的回合结束前从你的[gold]手牌[/gold]中被丢弃，则免费将其打出。",
+   "title": "奇巧"
+  },
+  "UNPLAYABLE": {
+   "description": "不能被打出的牌无法被打出。",
+   "title": "不能被打出"
+  }
+ },
+ "potions": {
+  "ASHWATER": {
+   "description": "[gold]消耗[/gold]你[gold]手牌[/gold]中的任意张牌。",
+   "image": "potion_atlas/ashwater.png",
+   "title": "灰水"
+  },
+  "ATTACK_POTION": {
+   "description": "从[blue]3[/blue]张随机攻击牌中选择[blue]1[/blue]张加入你的[gold]手牌[/gold]。这张牌在本回合可以免费打出。",
+   "image": "potion_atlas/attack_potion.png",
+   "title": "攻击药水"
+  },
+  "BEETLE_JUICE": {
+   "description": "敌人的攻击在下[blue]4[/blue]个回合中造成的伤害减少[blue]30%[/blue]。",
+   "image": "potion_atlas/beetle_juice.png",
+   "title": "甲虫汁"
+  },
+  "BLESSING_OF_THE_FORGE": {
+   "description": "在本场战斗中[gold]升级[/gold]你[gold]手牌[/gold]中的所有牌。",
+   "image": "potion_atlas/blessing_of_the_forge.png",
+   "title": "熔炉的祝福"
+  },
+  "BLOCK_POTION": {
+   "description": "获得[blue]12[/blue]点[gold]格挡[/gold]。",
+   "image": "potion_atlas/block_potion.png",
+   "title": "格挡药水"
+  },
+  "BLOOD_POTION": {
+   "description": "回复你最大生命值的[green]20%[/green]。",
+   "image": "potion_atlas/blood_potion.png",
+   "title": "鲜血药水"
+  },
+  "BONE_BREW": {
+   "description": "[gold]召唤[/gold][blue]15[/blue]。",
+   "image": "potion_atlas/bone_brew.png",
+   "title": "骨头酿"
+  },
+  "BOTTLED_POTENTIAL": {
+   "description": "将你的所有牌洗入你的[gold]抽牌堆[/gold]。抽[blue]5[/blue]张牌。",
+   "image": "potion_atlas/bottled_potential.png",
+   "title": "瓶装潜能"
+  },
+  "CLARITY": {
+   "description": "抽[blue]1[/blue]张牌。在你的下[blue]3[/blue]个回合开始时，额外抽[blue]1[/blue]张牌。",
+   "image": "potion_atlas/clarity.png",
+   "title": "明晰提取物"
+  },
+  "COLORLESS_POTION": {
+   "description": "从[blue]3[/blue]张随机无色牌中选择[blue]1[/blue]张加入你的[gold]手牌[/gold]。这张牌在本回合可以免费打出。",
+   "image": "potion_atlas/colorless_potion.png",
+   "title": "无色药水"
+  },
+  "COSMIC_CONCOCTION": {
+   "description": "将[blue]3[/blue]张[gold]升级[/gold]的无色牌加入你的[gold]手牌[/gold]。",
+   "image": "potion_atlas/cosmic_concoction.png",
+   "title": "宇宙药剂"
+  },
+  "CUNNING_POTION": {
+   "description": "将[blue]3[/blue]张[gold]小刀+[/gold]加入你的[gold]手牌[/gold]。",
+   "image": "potion_atlas/cunning_potion.png",
+   "title": "狡诈药水"
+  },
+  "CURE_ALL": {
+   "description": "获得1点能量。抽[blue]2[/blue]张牌。",
+   "image": "potion_atlas/cure_all.png",
+   "title": "痊愈药水"
+  },
+  "DEXTERITY_POTION": {
+   "description": "获得[blue]2[/blue]点[gold]敏捷[/gold]。",
+   "image": "potion_atlas/dexterity_potion.png",
+   "title": "敏捷药水"
+  },
+  "DISTILLED_CHAOS": {
+   "description": "打出你[gold]抽牌堆[/gold]顶部的[blue]3[/blue]张牌。",
+   "image": "potion_atlas/distilled_chaos.png",
+   "title": "精炼混沌"
+  },
+  "DROPLET_OF_PRECOGNITION": {
+   "description": "选择你[gold]抽牌堆[/gold]中的一张牌加入你的[gold]手牌[/gold]。",
+   "image": "potion_atlas/droplet_of_precognition.png",
+   "title": "预知之滴"
+  },
+  "DUPLICATOR": {
+   "description": "本回合，你打出的下一张牌会额外打出一次。",
+   "image": "potion_atlas/duplicator.png",
+   "title": "复制药水"
+  },
+  "ENERGY_POTION": {
+   "description": "获得2点能量。",
+   "image": "potion_atlas/energy_potion.png",
+   "title": "能量药水"
+  },
+  "ENTROPIC_BREW": {
+   "description": "在所有空药水栏位中获得随机药水。",
+   "image": "potion_atlas/entropic_brew.png",
+   "title": "混沌药水"
+  },
+  "ESSENCE_OF_DARKNESS": {
+   "description": "[gold]生成[/gold]你[gold]充能球栏位[/gold]数量个[gold]黑暗[/gold]充能球。",
+   "image": "potion_atlas/essence_of_darkness.png",
+   "title": "黑暗精华"
+  },
+  "EXPLOSIVE_AMPOULE": {
+   "description": "对所有敌人造成[blue]10[/blue]点伤害。",
+   "image": "potion_atlas/explosive_ampoule.png",
+   "title": "爆炸安瓿"
+  },
+  "FAIRY_IN_A_BOTTLE": {
+   "description": "当你的生命值将被减少至[blue]0[/blue]或以下时，改为丢弃这瓶药水，然后将你回复到你最大生命值的[blue]30%[/blue]。",
+   "image": "potion_atlas/fairy_in_a_bottle.png",
+   "title": "瓶中精灵"
+  },
+  "FIRE_POTION": {
+   "description": "造成[blue]20[/blue]点伤害。",
+   "image": "potion_atlas/fire_potion.png",
+   "title": "火焰药水"
+  },
+  "FLEX_POTION": {
+   "description": "获得[blue]5[/blue]点[gold]力量[/gold]。在你的这个回合结束时，失去[blue]5[/blue]点[gold]力量[/gold]。",
+   "image": "potion_atlas/flex_potion.png",
+   "title": "肌肉药水"
+  },
+  "FOCUS_POTION": {
+   "description": "获得[blue]2[/blue]点[gold]集中[/gold]。",
+   "image": "potion_atlas/focus_potion.png",
+   "title": "集中药水"
+  },
+  "FORTIFIER": {
+   "description": "将你的[gold]格挡[/gold]变为三倍。",
+   "image": "potion_atlas/fortifier.png",
+   "title": "固化药水"
+  },
+  "FOUL_POTION": {
+   "description": "对所有玩家和敌人造成[blue]12[/blue]点伤害。\n也可以投掷给[gold]商人[/gold]换取[blue]100[/blue][gold]金币[/gold]。",
+   "image": "potion_atlas/foul_potion.png",
+   "title": "污浊药水"
+  },
+  "FRUIT_JUICE": {
+   "description": "获得[blue]5[/blue]点最大生命值。",
+   "image": "potion_atlas/fruit_juice.png",
+   "title": "果汁"
+  },
+  "FYSH_OIL": {
+   "description": "获得[blue]1[/blue]点[gold]力量[/gold]和[blue]1[/blue]点[gold]敏捷[/gold]。",
+   "image": "potion_atlas/fysh_oil.png",
+   "title": "异鱼之油"
+  },
+  "GAMBLERS_BREW": {
+   "description": "丢弃任意张牌，然后抽相同数量的牌。",
+   "image": "potion_atlas/gamblers_brew.png",
+   "title": "赌徒特酿"
+  },
+  "GHOST_IN_A_JAR": {
+   "description": "获得[blue]1[/blue]层[gold]无实体[/gold]。",
+   "image": "potion_atlas/ghost_in_a_jar.png",
+   "title": "罐装幽灵"
+  },
+  "GIGANTIFICATION_POTION": {
+   "description": "你打出的下一张攻击牌将会造成三倍伤害。",
+   "image": "potion_atlas/gigantification_potion.png",
+   "title": "超巨化药水"
+  },
+  "GLOWWATER_POTION": {
+   "description": "[gold]消耗[/gold]你的[gold]手牌[/gold]。抽[blue]10[/blue]张牌。",
+   "image": "potion_atlas/glowwater_potion.png",
+   "title": "发光水"
+  },
+  "HEART_OF_IRON": {
+   "description": "获得[blue]7[/blue]层[gold]覆甲[/gold]。",
+   "image": "potion_atlas/heart_of_iron.png",
+   "title": "铁心药水"
+  },
+  "KINGS_COURAGE": {
+   "description": "[gold]铸造[/gold][blue]15[/blue]。",
+   "image": "potion_atlas/kings_courage.png",
+   "title": "王之勇气"
+  },
+  "LIQUID_BRONZE": {
+   "description": "获得[blue]3[/blue]点[gold]荆棘[/gold]。",
+   "image": "potion_atlas/liquid_bronze.png",
+   "title": "流动铜液"
+  },
+  "LIQUID_MEMORIES": {
+   "description": "将你[gold]弃牌堆[/gold]中的一张牌放入你的[gold]手牌[/gold]。这张牌在本回合可以免费打出。",
+   "image": "potion_atlas/liquid_memories.png",
+   "title": "液态记忆"
+  },
+  "LUCKY_TONIC": {
+   "description": "获得[blue]1[/blue]层[gold]缓冲[/gold]。",
+   "image": "potion_atlas/lucky_tonic.png",
+   "title": "幸运补剂"
+  },
+  "MAZALETHS_GIFT": {
+   "description": "获得[blue]1[/blue]层[gold]仪式[/gold]。",
+   "image": "potion_atlas/mazaleths_gift.png",
+   "title": "马萨雷斯的赠礼"
+  },
+  "OROBIC_ACID": {
+   "description": "往你的[gold]手牌[/gold]中加入一张随机攻击牌、一张随机技能牌和一张随机能力牌。这些牌在本回合免费。",
+   "image": "potion_atlas/orobic_acid.png",
+   "title": "欧洛巴斯之酸"
+  },
+  "POISON_POTION": {
+   "description": "给予[blue]6[/blue]层[gold]中毒[/gold]。",
+   "image": "potion_atlas/poison_potion.png",
+   "title": "毒药水"
+  },
+  "POTION_OF_BINDING": {
+   "description": "给予所有敌人[blue]1[/blue]层[gold]虚弱[/gold]和[blue]1[/blue]层[gold]易伤[/gold]。",
+   "image": "potion_atlas/potion_of_binding.png",
+   "title": "缚魂药水"
+  },
+  "POTION_OF_CAPACITY": {
+   "description": "获得[blue]2[/blue]个[gold]充能球栏位[/gold]。",
+   "image": "potion_atlas/potion_of_capacity.png",
+   "title": "扩容药水"
+  },
+  "POTION_OF_DOOM": {
+   "description": "给予[blue]33[/blue]层[gold]灾厄[/gold]。",
+   "image": "potion_atlas/potion_of_doom.png",
+   "title": "灾厄药水"
+  },
+  "POTION_SHAPED_ROCK": {
+   "description": "造成[blue]15[/blue]点伤害。",
+   "image": "potion_atlas/potion_shaped_rock.png",
+   "title": "药水形状的石头"
+  },
+  "POT_OF_GHOULS": {
+   "description": "将[blue]2[/blue]张[gold]灵魂[/gold]加入你的[gold]手牌[/gold]。",
+   "image": "potion_atlas/pot_of_ghouls.png",
+   "title": "尸鬼瓮"
+  },
+  "POWDERED_DEMISE": {
+   "description": "敌人在自身的每个回合结束时，失去[blue]9[/blue]点生命。",
+   "image": "potion_atlas/powdered_demise.png",
+   "title": "消亡粉末"
+  },
+  "POWER_POTION": {
+   "description": "从[blue]3[/blue]张随机能力牌中选择[blue]1[/blue]张加入你的[gold]手牌[/gold]。这张牌在本回合可以免费打出。",
+   "image": "potion_atlas/power_potion.png",
+   "title": "能力药水"
+  },
+  "RADIANT_TINCTURE": {
+   "description": "获得1点能量。在你的下[blue]3[/blue]个回合开始时，额外获得能量。",
+   "image": "potion_atlas/radiant_tincture.png",
+   "title": "明耀酊剂"
+  },
+  "REGEN_POTION": {
+   "description": "获得[green]5[/green]层[gold]再生[/gold]。",
+   "image": "potion_atlas/regen_potion.png",
+   "title": "再生药水"
+  },
+  "SHACKLING_POTION": {
+   "description": "所有敌人在这个回合失去[blue]7[/blue]点[gold]力量[/gold]。",
+   "image": "potion_atlas/shackling_potion.png",
+   "title": "镣铐药水"
+  },
+  "SHIP_IN_A_BOTTLE": {
+   "description": "获得[blue]10[/blue]点[gold]格挡[/gold]。在下个回合开始时获得[blue]10[/blue]点[gold]格挡[/gold]。",
+   "image": "potion_atlas/ship_in_a_bottle.png",
+   "title": "瓶中船"
+  },
+  "SKILL_POTION": {
+   "description": "从[blue]3[/blue]张随机技能牌中选择[blue]1[/blue]张加入你的[gold]手牌[/gold]。这张牌在本回合可以免费打出。",
+   "image": "potion_atlas/skill_potion.png",
+   "title": "技能药水"
+  },
+  "SNECKO_OIL": {
+   "description": "抽[blue]7[/blue]张牌。在本回合随机化你[gold]手牌[/gold]中所有牌的耗能。",
+   "image": "potion_atlas/snecko_oil.png",
+   "title": "异蛇之油"
+  },
+  "SOLDIERS_STEW": {
+   "description": "在本场战斗中，所有名字中有“[gold]打击[/gold]”的牌获得[gold]重放[/gold]：[blue]1[/blue]。",
+   "image": "potion_atlas/soldiers_stew.png",
+   "title": "士兵炖汤"
+  },
+  "SPEED_POTION": {
+   "description": "获得[blue]5[/blue]点[gold]敏捷[/gold]。在你的这个回合结束时，失去[blue]5[/blue]点[gold]敏捷[/gold]。",
+   "image": "potion_atlas/speed_potion.png",
+   "title": "速度药水"
+  },
+  "STABLE_SERUM": {
+   "description": "[gold]保留[/gold]你的[gold]手牌[/gold][blue]2[/blue]回合。",
+   "image": "potion_atlas/stable_serum.png",
+   "title": "稳定血清"
+  },
+  "STAR_POTION": {
+   "description": "获得3点辉星。",
+   "image": "potion_atlas/star_potion.png",
+   "title": "星星药水"
+  },
+  "STRENGTH_POTION": {
+   "description": "获得[blue]2[/blue]点[gold]力量[/gold]。",
+   "image": "potion_atlas/strength_potion.png",
+   "title": "力量药水"
+  },
+  "SWIFT_POTION": {
+   "description": "抽[blue]3[/blue]张牌。",
+   "image": "potion_atlas/swift_potion.png",
+   "title": "迅捷药水"
+  },
+  "TOUCH_OF_INSANITY": {
+   "description": "选择你[gold]手牌[/gold]中的一张牌，使其在本场战斗可以免费打出。",
+   "image": "potion_atlas/touch_of_insanity.png",
+   "title": "癫狂之触"
+  },
+  "VULNERABLE_POTION": {
+   "description": "给予[blue]3[/blue]层[gold]易伤[/gold]。",
+   "image": "potion_atlas/vulnerable_potion.png",
+   "title": "易伤药水"
+  },
+  "WEAK_POTION": {
+   "description": "给予[blue]3[/blue]层[gold]虚弱[/gold]。",
+   "image": "potion_atlas/weak_potion.png",
+   "title": "虚弱药水"
+  }
+ },
+ "relics": {
+  "AKABEKO": {
+   "description": "在每场战斗开始时，获得[blue]8[/blue]点[gold]活力[/gold]。",
+   "image": "relic_atlas/akabeko.png",
+   "title": "赤牛"
+  },
+  "ALCHEMICAL_COFFER": {
+   "description": "Upon pickup, gain [blue]4[/blue] potion slots filled with random potions.",
+   "image": "relic_atlas/alchemical_coffer.png",
+   "title": "炼金箱"
+  },
+  "AMETHYST_AUBERGINE": {
+   "description": "敌人额外掉落[blue]15[/blue][gold]金币[/gold]。",
+   "image": "relic_atlas/amethyst_aubergine.png",
+   "title": "紫水晶茄子"
+  },
+  "ANCHOR": {
+   "description": "每场战斗开始时获得[blue]10[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/anchor.png",
+   "title": "锚"
+  },
+  "ARCANE_SCROLL": {
+   "description": "拾起时，将一张随机[gold]稀有牌[/gold]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/arcane_scroll.png",
+   "title": "奥术卷轴"
+  },
+  "ARCHAIC_TOOTH": {
+   "description": "拾起时，将[gold]X[/gold][gold]变化[/gold]为[gold]X[/gold]。",
+   "image": "relic_atlas/archaic_tooth.png",
+   "title": "古老牙齿"
+  },
+  "ART_OF_WAR": {
+   "description": "如果你在本回合中没有打出过攻击牌，则在下一回合额外获得1点能量。",
+   "image": "relic_atlas/art_of_war.png",
+   "title": "孙子兵法"
+  },
+  "ASTROLABE": {
+   "description": "拾起时，选择[blue]3[/blue]张牌进行[gold]变化[/gold]，然后将这些牌[gold]升级[/gold]。",
+   "image": "relic_atlas/astrolabe.png",
+   "title": "星盘"
+  },
+  "BAG_OF_MARBLES": {
+   "description": "在每场战斗开始时，给予所有敌人[blue]1[/blue]层[gold]易伤[/gold]。",
+   "image": "relic_atlas/bag_of_marbles.png",
+   "title": "弹珠袋"
+  },
+  "BAG_OF_PREPARATION": {
+   "description": "在每场战斗开始时，额外抽[blue]2[/blue]张牌。",
+   "image": "relic_atlas/bag_of_preparation.png",
+   "title": "准备背包"
+  },
+  "BEATING_REMNANT": {
+   "description": "你在一回合内失去的生命值不会超过[blue]20[/blue]点。",
+   "image": "relic_atlas/beating_remnant.png",
+   "title": "律动残余"
+  },
+  "BEAUTIFUL_BRACELET": {
+   "description": "Upon pickup, choose [blue]3[/blue] cards in your [gold]Deck[/gold]. [gold]Enchant[/gold] them with [purple]Swift[/purple] [blue]3[/blue].",
+   "image": "relic_atlas/beautiful_bracelet.png",
+   "title": "华美手镯"
+  },
+  "BELLOWS": {
+   "description": "你在每场战斗开始时的[gold]手牌[/gold]，将被[gold]升级[/gold]。",
+   "image": "relic_atlas/bellows.png",
+   "title": "风箱"
+  },
+  "BELT_BUCKLE": {
+   "description": "While you have no potions, you have [blue]2[/blue] additional [gold]Dexterity[/gold].",
+   "image": "relic_atlas/belt_buckle.png",
+   "title": "腰带扣"
+  },
+  "BIG_HAT": {
+   "description": "在每场战斗开始时，将[blue]2[/blue]张随机[gold]虚无[/gold]牌加入你的[gold]手牌[/gold]。",
+   "image": "relic_atlas/big_hat.png",
+   "title": "大帽子"
+  },
+  "BIG_MUSHROOM": {
+   "description": "拾起时，将你的最大生命值提升[blue]20[/blue]。在每场战斗开始时，少抽[blue]2[/blue]张牌。",
+   "image": "relic_atlas/big_mushroom.png",
+   "title": "大蘑菇"
+  },
+  "BIIIG_HUG": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中移除[blue]4[/blue]张牌。每当你的[gold]抽牌堆[/gold]打乱洗牌时，将一张[gold]煤灰[/gold]加入你的[gold]抽牌堆[/gold]。",
+   "image": "relic_atlas/biiig_hug.png",
+   "title": "大～抱抱"
+  },
+  "BING_BONG": {
+   "description": "每当你往[gold]牌组[/gold]中增添卡牌时，都将额外添加一张相同的牌。",
+   "image": "relic_atlas/bing_bong.png",
+   "title": "宾邦"
+  },
+  "BLACK_BLOOD": {
+   "description": "在战斗结束时，回复[green]12[/green]点生命。",
+   "image": "relic_atlas/black_blood.png",
+   "title": "黑暗之血"
+  },
+  "BLACK_STAR": {
+   "description": "[gold]精英[/gold]敌人在被打败时多掉落一件遗物。",
+   "image": "relic_atlas/black_star.png",
+   "title": "黑星"
+  },
+  "BLESSED_ANTLER": {
+   "description": "在每回合开始时获得1点能量。在战斗开始时，将[blue]3[/blue]张[gold]晕眩[/gold]放入你的[gold]抽牌堆[/gold]。",
+   "image": "relic_atlas/blessed_antler.png",
+   "title": "赐福鹿角"
+  },
+  "BLOOD_SOAKED_ROSE": {
+   "description": "拾起时，将[blue]1[/blue]张[red]执迷[/red]加入你的[gold]牌组[/gold]。在回合开始时获得1点能量。",
+   "image": "relic_atlas/blood_soaked_rose.png",
+   "title": "血染玫瑰"
+  },
+  "BLOOD_VIAL": {
+   "description": "在每场战斗开始时，回复[green]2[/green]点生命。",
+   "image": "relic_atlas/blood_vial.png",
+   "title": "小血瓶"
+  },
+  "BONE_FLUTE": {
+   "description": "每当[gold]奥斯提[/gold]攻击时，获得[blue]2[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/bone_flute.png",
+   "title": "骨笛"
+  },
+  "BONE_TEA": {
+   "description": "在你接下来的[blue]X[/blue]场战斗开始时，[gold]升级[/gold]你的初始手牌。",
+   "image": "relic_atlas/bone_tea.png",
+   "title": "骨茶"
+  },
+  "BOOKMARK": {
+   "description": "每回合结束时，随机一张被[gold]保留[/gold]的牌在被打出前的耗能减少[blue]1[/blue]。",
+   "image": "relic_atlas/bookmark.png",
+   "title": "书签"
+  },
+  "BOOK_OF_FIVE_RINGS": {
+   "description": "你每将[blue]5[/blue]张牌加入你的[gold]牌组[/gold]时，回复[green]20[/green]点生命。",
+   "image": "relic_atlas/book_of_five_rings.png",
+   "title": "五轮书"
+  },
+  "BOOK_REPAIR_KNIFE": {
+   "description": "每当有一名不是“爪牙”的敌人死于[gold]灾厄[/gold]时，回复[green]3[/green]点生命。",
+   "image": "relic_atlas/book_repair_knife.png",
+   "title": "修书小刀"
+  },
+  "BOOMING_CONCH": {
+   "description": "在[gold]精英[/gold]战的战斗开始时，额外抽[blue]2[/blue]张牌并获得1点能量。",
+   "image": "relic_atlas/booming_conch.png",
+   "title": "轰鸣海螺"
+  },
+  "BOUND_PHYLACTERY": {
+   "description": "在你的回合开始时，[gold]召唤[/gold][blue]1[/blue]",
+   "image": "relic_atlas/bound_phylactery.png",
+   "title": "缚魂命匣"
+  },
+  "BOWLER_HAT": {
+   "description": "额外获得[blue]X%[/blue]的[gold]金币[/gold]。",
+   "image": "relic_atlas/bowler_hat.png",
+   "title": "圆顶礼帽"
+  },
+  "BREAD": {
+   "description": "在你的第一个回合开始时，失去能量。在其余的回合开始时，获得能量。",
+   "image": "relic_atlas/bread.png",
+   "title": "面包"
+  },
+  "BRILLIANT_SCARF": {
+   "description": "The [blue]5th[/blue] card you play from your hand each turn is free.",
+   "image": "relic_atlas/brilliant_scarf.png",
+   "title": "艳丽围巾"
+  },
+  "BRIMSTONE": {
+   "description": "在你的每个回合开始时，你获得[blue]X[/blue]点[gold]力量[/gold]，所有敌人获得[blue]X[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/brimstone.png",
+   "title": "硫磺"
+  },
+  "BRONZE_SCALES": {
+   "description": "在每场战斗开始时，获得[blue]3[/blue]点[gold]荆棘[/gold]。",
+   "image": "relic_atlas/bronze_scales.png",
+   "title": "铜质鳞片"
+  },
+  "BURNING_BLOOD": {
+   "description": "在战斗结束时，回复[green]6[/green]点生命。",
+   "image": "relic_atlas/burning_blood.png",
+   "title": "燃烧之血"
+  },
+  "BURNING_STICKS": {
+   "description": "每场战斗中你第一次[gold]消耗[/gold]技能牌时，将那张牌的复制品加入你的[gold]手牌[/gold]",
+   "image": "relic_atlas/burning_sticks.png",
+   "title": "燃烧木棍"
+  },
+  "BYRDPIP": {
+   "description": "Upon pickup, gain the card [gold]Byrd Swoop[/gold]. A [gold]Byrdpip[/gold] will accompany you in battles.",
+   "image": "relic_atlas/byrdpip.png",
+   "title": "异鸟宝宝"
+  },
+  "CALLING_BELL": {
+   "description": "拾起时，获得一个独特的[red]诅咒[/red]和[blue]3[/blue]件[gold]遗物[/gold]。",
+   "image": "relic_atlas/calling_bell.png",
+   "title": "召唤铃铛"
+  },
+  "CANDELABRA": {
+   "description": "在你的[blue]第2[/blue]回合开始时，获得2点能量。",
+   "image": "relic_atlas/candelabra.png",
+   "title": "烛台"
+  },
+  "CAPTAINS_WHEEL": {
+   "description": "在你的[blue]第三[/blue]回合开始时，获得[blue]18[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/captains_wheel.png",
+   "title": "舵盘"
+  },
+  "CAULDRON": {
+   "description": "Upon pickup, brews [blue]5[/blue] random potions.",
+   "image": "relic_atlas/cauldron.png",
+   "title": "大锅"
+  },
+  "CENTENNIAL_PUZZLE": {
+   "description": "你在每场战斗中第一次损失生命值时，抽[blue]3[/blue]张牌。",
+   "image": "relic_atlas/centennial_puzzle.png",
+   "title": "百年积木"
+  },
+  "CHANDELIER": {
+   "description": "在你的[blue]第三[/blue]回合开始时，获得3点能量。",
+   "image": "relic_atlas/chandelier.png",
+   "title": "吊灯"
+  },
+  "CHARONS_ASHES": {
+   "description": "每当你[gold]消耗[/gold]一张牌，对所有敌人造成[blue]3[/blue]点伤害。",
+   "image": "relic_atlas/charons_ashes.png",
+   "title": "卡戎之灰"
+  },
+  "CHEMICAL_X": {
+   "description": "耗能为[blue]X[/blue]的牌的效果数值增加[blue]2[/blue]点。",
+   "image": "relic_atlas/chemical_x.png",
+   "title": "化学物X"
+  },
+  "CHOICES_PARADOX": {
+   "description": "在每场战斗开始时，从[blue]5[/blue]张随机牌中选择[blue]1[/blue]张放入你的[gold]手牌[/gold]。被选中的牌获得[gold]保留[/gold]。",
+   "image": "relic_atlas/choices_paradox.png",
+   "title": "选择悖论"
+  },
+  "CHOSEN_CHEESE": {
+   "description": "在战斗结束时，获得[blue]1[/blue]点最大生命值。",
+   "image": "relic_atlas/chosen_cheese.png",
+   "title": "天选芝士"
+  },
+  "CIRCLET": {
+   "description": "这是一个头环。",
+   "image": "relic_atlas/circlet.png",
+   "title": "头环"
+  },
+  "CLAWS": {
+   "description": "拾起时，将至多[blue]6[/blue]张牌[gold]变化[/gold]为[gold]撕咬[/gold]。",
+   "image": "relic_atlas/claws.png",
+   "title": "利爪"
+  },
+  "CLOAK_CLASP": {
+   "description": "在你的回合结束时，每有一张[gold]手牌[/gold]，就获得[blue]1[/blue]点[gold]格挡[/gold]",
+   "image": "relic_atlas/cloak_clasp.png",
+   "title": "斗篷扣"
+  },
+  "CRACKED_CORE": {
+   "description": "在每场战斗开始时，[gold]生成[/gold][blue]1[/blue]个[gold]闪电[/gold]充能球。",
+   "image": "relic_atlas/cracked_core.png",
+   "title": "破损核心"
+  },
+  "CROSSBOW": {
+   "description": "在你的回合开始时，将一张随机[gold]攻击牌[/gold]加入你的[gold]手牌[/gold]。这张牌在本回合可以免费打出。",
+   "image": "relic_atlas/crossbow.png",
+   "title": "十字弓"
+  },
+  "CURSED_PEARL": {
+   "description": "拾起时，获得一张[red]贪婪[/red]，获得[blue]333[/blue][gold]金币[/gold]。",
+   "image": "relic_atlas/cursed_pearl.png",
+   "title": "诅咒珍珠"
+  },
+  "DARKSTONE_PERIAPT": {
+   "description": "每当你获得一张[red]诅咒[/red]，就将你的最大生命值提升[blue]6[/blue]。",
+   "image": "relic_atlas/darkstone_periapt.png",
+   "title": "黑石护符"
+  },
+  "DATA_DISK": {
+   "description": "在每场战斗开始时，获得[blue]1[/blue]点[gold]集中[/gold]。",
+   "image": "relic_atlas/data_disk.png",
+   "title": "数据磁盘"
+  },
+  "DAUGHTER_OF_THE_WIND": {
+   "description": "每当你打出一张攻击牌时，获得[blue]1[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/daughter_of_the_wind.png",
+   "title": "风的女儿"
+  },
+  "DELICATE_FROND": {
+   "description": "At the start of each combat, fill all empty potion slots with random potions.",
+   "image": "relic_atlas/delicate_frond.png",
+   "title": "娇嫩蕨草"
+  },
+  "DEMON_TONGUE": {
+   "description": "每回合第一次在回合内失去生命值时，回复等量的生命值。",
+   "image": "relic_atlas/demon_tongue.png",
+   "title": "恶魔之舌"
+  },
+  "DIAMOND_DIADEM": {
+   "description": "Whenever you play [blue]2[/blue] or fewer cards in a turn, take half damage from enemies.",
+   "image": "relic_atlas/diamond_diadem.png",
+   "title": "钻石头冠"
+  },
+  "DINGY_RUG": {
+   "description": "卡牌奖励现在会包括无色牌。",
+   "image": "relic_atlas/dingy_rug.png",
+   "title": "肮脏地毯"
+  },
+  "DISTINGUISHED_CAPE": {
+   "description": "Upon pickup, lose [blue]9[/blue] Max HP. Add [blue]3[/blue] [gold]Apparitions[/gold] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/distinguished_cape.png",
+   "title": "卓越斗篷"
+  },
+  "DIVINE_DESTINY": {
+   "description": "在每场战斗开始时，获得6点辉星。",
+   "image": "relic_atlas/divine_destiny.png",
+   "title": "天命所归"
+  },
+  "DIVINE_RIGHT": {
+   "description": "在每场战斗开始时，获得3点辉星。",
+   "image": "relic_atlas/divine_right.png",
+   "title": "天赋君权"
+  },
+  "DOLLYS_MIRROR": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中选择一张牌进行复制。",
+   "image": "relic_atlas/dollys_mirror.png",
+   "title": "多利之镜"
+  },
+  "DRAGON_FRUIT": {
+   "description": "每当你获得[gold]金币[/gold]时，提升[blue]1[/blue]点你的最大生命值。",
+   "image": "relic_atlas/dragon_fruit.png",
+   "title": "火龙果"
+  },
+  "DREAM_CATCHER": {
+   "description": "每当你[gold]休息[/gold]时，可以添加一张牌到你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/dream_catcher.png",
+   "title": "捕梦网"
+  },
+  "DRIFTWOOD": {
+   "description": "你可以在每一个卡牌奖励中重掷一次。",
+   "image": "relic_atlas/driftwood.png",
+   "title": "浮木"
+  },
+  "DUSTY_TOME": {
+   "description": "拾起时，获得一张[gold]先古牌[/gold]。",
+   "image": "relic_atlas/dusty_tome.png",
+   "title": "尘封魔典"
+  },
+  "ECTOPLASM": {
+   "description": "你不能再获得任何[gold]金币[/gold]。在回合开始时获得1点能量",
+   "image": "relic_atlas/ectoplasm.png",
+   "title": "灵体外质"
+  },
+  "ELECTRIC_SHRYMP": {
+   "description": "拾起时，选择一张技能牌为它[gold]附魔[/gold]：[purple]注能[/purple]。",
+   "image": "relic_atlas/electric_shrymp.png",
+   "title": "放电异虾"
+  },
+  "EMBER_TEA": {
+   "description": "在接下来的[blue]X[/blue]场战斗开始时，获得[blue]2[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/ember_tea.png",
+   "title": "余烬茶"
+  },
+  "EMOTION_CHIP": {
+   "description": "在每回合开始时，如果你在之前回合受到过伤害，则触发所有充能球的被动效果。",
+   "image": "relic_atlas/emotion_chip.png",
+   "title": "情感芯片"
+  },
+  "EMPTY_CAGE": {
+   "description": "拾起时，选择移除[gold]牌组[/gold]中的[blue]2[/blue]张牌。",
+   "image": "relic_atlas/empty_cage.png",
+   "title": "空鸟笼"
+  },
+  "ETERNAL_FEATHER": {
+   "description": "你的[gold]牌组[/gold]中每有[blue]5[/blue]张牌，当你进入[gold]休息处[/gold]时就会回复[green]3[/green]点生命。",
+   "image": "relic_atlas/eternal_feather.png",
+   "title": "永恒羽毛"
+  },
+  "FAKE_ANCHOR": {
+   "description": "在每场战斗开始时，获得[blue]4[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/fake_anchor.png",
+   "title": "锚？？？"
+  },
+  "FAKE_BLOOD_VIAL": {
+   "description": "在每场战斗开始时，回复[green]1[/green]点生命。",
+   "image": "relic_atlas/fake_blood_vial.png",
+   "title": "小血瓶？？？"
+  },
+  "FAKE_HAPPY_FLOWER": {
+   "description": "每[blue]5[/blue]个回合，获得1点能量。",
+   "image": "relic_atlas/fake_happy_flower.png",
+   "title": "开心小花？？？"
+  },
+  "FAKE_LEES_WAFFLE": {
+   "description": "拾起时，回复你[green]10%[/green]的生命值。",
+   "image": "relic_atlas/fake_lees_waffle.png",
+   "title": "李家华夫饼？？？"
+  },
+  "FAKE_MANGO": {
+   "description": "拾起时，将你的最大生命值提升[blue]3[/blue]。",
+   "image": "relic_atlas/fake_mango.png",
+   "title": "芒果？？？"
+  },
+  "FAKE_MERCHANTS_RUG": {
+   "description": "低劣的仿制品。没有任何作用。",
+   "image": "relic_atlas/fake_merchants_rug.png",
+   "title": "商人的地毯？？？"
+  },
+  "FAKE_ORICHALCUM": {
+   "description": "如果你在回合结束时没有任何[gold]格挡[/gold]，获得[blue]3[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/fake_orichalcum.png",
+   "title": "奥利哈钢？？？"
+  },
+  "FAKE_SNECKO_EYE": {
+   "description": "每场战斗开始时获得[red]混乱[/red]效果。",
+   "image": "relic_atlas/fake_snecko_eye.png",
+   "title": "异蛇之眼？？？"
+  },
+  "FAKE_STRIKE_DUMMY": {
+   "description": "名字中有“打击”的卡牌造成[blue]1[/blue]点额外伤害。",
+   "image": "relic_atlas/fake_strike_dummy.png",
+   "title": "打击木偶？？？"
+  },
+  "FAKE_VENERABLE_TEA_SET": {
+   "description": "到达[gold]休息处[/gold]后的下一场战斗开始时额外获得1点能量。",
+   "image": "relic_atlas/fake_venerable_tea_set.png",
+   "title": "古茶具套装？？？"
+  },
+  "FENCING_MANUAL": {
+   "description": "在每场战斗开始时，[gold]铸造[/gold][blue]10[/blue]。",
+   "image": "relic_atlas/fencing_manual.png",
+   "title": "击剑指南"
+  },
+  "FESTIVE_POPPER": {
+   "description": "在每场战斗开始时，对所有敌人造成[blue]9[/blue]点伤害。",
+   "image": "relic_atlas/festive_popper.png",
+   "title": "节日拉炮"
+  },
+  "FIDDLE": {
+   "description": "在每个回合开始时，额外抽[blue]2[/blue]张牌。你在回合进行中不再能抽任何牌。",
+   "image": "relic_atlas/fiddle.png",
+   "title": "小提琴"
+  },
+  "FISHING_ROD": {
+   "description": "每[blue]3[/blue]场普通战斗，随机[gold]升级[/gold]你[gold]牌组[/gold]中的一张牌。",
+   "image": "relic_atlas/fishing_rod.png",
+   "title": "钓鱼竿"
+  },
+  "FORGOTTEN_SOUL": {
+   "description": "每当你[gold]消耗[/gold]一张牌，随机对一名敌人造成[blue]1[/blue]点伤害。",
+   "image": "relic_atlas/forgotten_soul.png",
+   "title": "遗忘之魂"
+  },
+  "FRAGRANT_MUSHROOM": {
+   "description": "拾起时，失去[blue]15[/blue]点生命，然后随机[gold]升级[/gold][blue]2[/blue]张牌。",
+   "image": "relic_atlas/fragrant_mushroom.png",
+   "title": "芳香蘑菇"
+  },
+  "FRESNEL_LENS": {
+   "description": "每当你将一张带有[gold]格挡[/gold]的牌加入你的[gold]牌组[/gold]时，为那张牌[gold]附魔[/gold]：[purple]灵巧[/purple][blue]2[/blue]",
+   "image": "relic_atlas/fresnel_lens.png",
+   "title": "菲涅耳透镜"
+  },
+  "FROZEN_EGG": {
+   "description": "每当你获得能力牌时，将其[gold]升级[/gold]。",
+   "image": "relic_atlas/frozen_egg.png",
+   "title": "冻结之蛋"
+  },
+  "FUNERARY_MASK": {
+   "description": "在每场战斗开始时，将[blue]3[/blue]张[gold]灵魂[/gold]加入你的[gold]抽牌堆[/gold]。",
+   "image": "relic_atlas/funerary_mask.png",
+   "title": "葬礼面具"
+  },
+  "FUR_COAT": {
+   "description": "拾起时，随机标记[blue]7[/blue]处战斗。这些战斗中的敌人将只有[blue]1[/blue]点生命。",
+   "image": "relic_atlas/fur_coat.png",
+   "title": "皮草大衣"
+  },
+  "GALACTIC_DUST": {
+   "description": "每消耗[blue]10[/blue]点1点辉星，就获得[blue]10[/blue][gold]格挡[/gold]。",
+   "image": "relic_atlas/galactic_dust.png",
+   "title": "星系尘埃"
+  },
+  "GAMBLING_CHIP": {
+   "description": "在每场战斗开始时，丢弃任意张牌，然后抽相同数量张牌。",
+   "image": "relic_atlas/gambling_chip.png",
+   "title": "赌博筹码"
+  },
+  "GAME_PIECE": {
+   "description": "每当你打出能力牌时，抽[blue]1[/blue]张牌。",
+   "image": "relic_atlas/game_piece.png",
+   "title": "棋子"
+  },
+  "GHOST_SEED": {
+   "description": "[gold]打击[/gold]和[gold]防御[/gold]获得[gold]虚无[/gold]。",
+   "image": "relic_atlas/ghost_seed.png",
+   "title": "幽灵种子"
+  },
+  "GIRYA": {
+   "description": "你现在能在[gold]休息处[/gold]获得[gold]力量[/gold]。（最多[blue]3[/blue]次）",
+   "image": "relic_atlas/girya.png",
+   "title": "壶铃"
+  },
+  "GLASS_EYE": {
+   "description": "拾起时，获得[blue]2[/blue]组[gold]普通[/gold]、[blue]2[/blue]组[gold]罕见[/gold]、和[blue]1[/blue]组[gold]稀有[/gold]卡牌奖励。",
+   "image": "relic_atlas/glass_eye.png",
+   "title": "玻璃眼珠"
+  },
+  "GLITTER": {
+   "description": "为之后的所有卡牌奖励[gold]附魔[/gold]：[purple]华彩[/purple]。",
+   "image": "relic_atlas/glitter.png",
+   "title": "亮片"
+  },
+  "GNARLED_HAMMER": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中选择至多[blue]3[/blue]张攻击牌，[gold]附魔[/gold]：[purple]锋利[/purple][blue]3[/blue]。",
+   "image": "relic_atlas/gnarled_hammer.png",
+   "title": "扭曲锤子"
+  },
+  "GOLDEN_COMPASS": {
+   "description": "拾起时，将第[blue]2[/blue][gold]阶段[/gold]的地图替换为一条特殊的直道。",
+   "image": "relic_atlas/golden_compass.png",
+   "title": "黄金罗盘"
+  },
+  "GOLDEN_PEARL": {
+   "description": "拾起时，获得[blue]150[/blue][gold]金币[/gold]。",
+   "image": "relic_atlas/golden_pearl.png",
+   "title": "金色珍珠"
+  },
+  "GOLD_PLATED_CABLES": {
+   "description": "你最右侧的充能球会额外触发一次被动效果。",
+   "image": "relic_atlas/gold_plated_cables.png",
+   "title": "镀金缆线"
+  },
+  "GORGET": {
+   "description": "在每场战斗开始时，获得[blue]4[/blue]层[gold]覆甲[/gold]。",
+   "image": "relic_atlas/gorget.png",
+   "title": "护喉甲"
+  },
+  "GREMLIN_HORN": {
+   "description": "每当有一名敌人死亡时，获得1点能量并抽[blue]1[/blue]张牌。",
+   "image": "relic_atlas/gremlin_horn.png",
+   "title": "地精之角"
+  },
+  "HAND_DRILL": {
+   "description": "每当你突破敌人的[gold]格挡[/gold]时，给予其[blue]2[/blue]层[gold]易伤[/gold]。",
+   "image": "relic_atlas/hand_drill.png",
+   "title": "手钻"
+  },
+  "HAPPY_FLOWER": {
+   "description": "每[blue]3[/blue]个回合，获得1点能量。",
+   "image": "relic_atlas/happy_flower.png",
+   "title": "开心小花"
+  },
+  "HEFTY_TABLET": {
+   "description": "拾起时，从[blue]3[/blue]张稀有牌中选择[blue]1[/blue]张加入你的[gold]牌组[/gold]，同时将[blue]1[/blue]张[red]受伤[/red]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/hefty_tablet.png",
+   "title": "沉重石板"
+  },
+  "HELICAL_DART": {
+   "description": "你每打出一张[gold]小刀[/gold]，就在本回合获得[blue]1[/blue]点[gold]敏捷[/gold]。",
+   "image": "relic_atlas/helical_dart.png",
+   "title": "螺线飞镖"
+  },
+  "HISTORY_COURSE": {
+   "description": "At the start of your turn, play a copy of your last played Attack or Skill.",
+   "image": "relic_atlas/history_course.png",
+   "title": "历史课"
+  },
+  "HORN_CLEAT": {
+   "description": "在你的[blue]第二[/blue]回合开始时，获得[blue]14[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/horn_cleat.png",
+   "title": "船夹板"
+  },
+  "ICE_CREAM": {
+   "description": "多余的能量可以留到下一回合。",
+   "image": "relic_atlas/ice_cream.png",
+   "title": "冰淇淋"
+  },
+  "INFUSED_CORE": {
+   "description": "在每场战斗开始时，[gold]生成[/gold][blue]3[/blue]个[gold]闪电[/gold]充能球。[gold]闪电[/gold]充能球额外造成[blue]1[/blue]点伤害。",
+   "image": "relic_atlas/infused_core.png",
+   "title": "注能核心"
+  },
+  "INTIMIDATING_HELMET": {
+   "description": "每当你打出一张耗能大于等于2点能量的牌，获得[blue]4[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/intimidating_helmet.png",
+   "title": "骇人头盔"
+  },
+  "IRON_CLUB": {
+   "description": "你每打出[blue]4[/blue]张牌，就抽[blue]1[/blue]张牌。",
+   "image": "relic_atlas/iron_club.png",
+   "title": "铁棒"
+  },
+  "IVORY_TILE": {
+   "description": "每当你打出一张耗能大于等于能量的牌时，获得1点能量。",
+   "image": "relic_atlas/ivory_tile.png",
+   "title": "象牙麻将牌"
+  },
+  "JEWELED_MASK": {
+   "description": "在每场战斗开始时，将一张随机能力牌从你的[gold]抽牌堆[/gold]放入你的[gold]手牌[/gold]，这张牌在本场战斗可以免费打出。",
+   "image": "relic_atlas/jeweled_mask.png",
+   "title": "宝石面具"
+  },
+  "JEWELRY_BOX": {
+   "description": "拾起时，将[blue]1[/blue]张[gold]神化[/gold]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/jewelry_box.png",
+   "title": "珠宝盒"
+  },
+  "JOSS_PAPER": {
+   "description": "你每[gold]消耗[/gold][blue]5[/blue]张牌，就抽[blue]1[/blue]张牌。",
+   "image": "relic_atlas/joss_paper.png",
+   "title": "金纸"
+  },
+  "JUZU_BRACELET": {
+   "description": "你在[gold]?[/gold]房间中不会再遭遇常规战斗。",
+   "image": "relic_atlas/juzu_bracelet.png",
+   "title": "佛珠手链"
+  },
+  "KALEIDOSCOPE": {
+   "description": "拾起时，获得[blue]2[/blue]次来自其他角色的卡牌奖励。",
+   "image": "relic_atlas/kaleidoscope.png",
+   "title": "万花筒"
+  },
+  "KIFUDA": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中选择至多[blue]3[/blue]张牌，[gold]附魔[/gold]：[purple]伶俐[/purple]。",
+   "image": "relic_atlas/kifuda.png",
+   "title": "木札"
+  },
+  "KUNAI": {
+   "description": "你每在同一回合内打出[blue]3[/blue]张攻击牌，就获得[blue]1[/blue]点[gold]敏捷[/gold]。",
+   "image": "relic_atlas/kunai.png",
+   "title": "苦无"
+  },
+  "KUSARIGAMA": {
+   "description": "你每在同一回合内打出[blue]3[/blue]张攻击牌，就随机对一名敌人造成[blue]6[/blue]点伤害。",
+   "image": "relic_atlas/kusarigama.png",
+   "title": "锁镰"
+  },
+  "LANTERN": {
+   "description": "在每场战斗的第一回合获得1点能量。",
+   "image": "relic_atlas/lantern.png",
+   "title": "灯笼"
+  },
+  "LARGE_CAPSULE": {
+   "description": "拾起时，获得[blue]2[/blue]件随机[gold]遗物[/gold]。额外将一对[gold]打击[/gold]和[gold]防御[/gold]，加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/large_capsule.png",
+   "title": "巨大扭蛋"
+  },
+  "LASTING_CANDY": {
+   "description": "每两场战斗，你的卡牌奖励就会额外包含一张能力牌。",
+   "image": "relic_atlas/lasting_candy.png",
+   "title": "吃不完的糖"
+  },
+  "LAVA_LAMP": {
+   "description": "在战斗结束时，如果你没有受到伤害，则[gold]升级[/gold]你的所有卡牌奖励。",
+   "image": "relic_atlas/lava_lamp.png",
+   "title": "熔岩灯"
+  },
+  "LAVA_ROCK": {
+   "description": "The Act 1 Boss drops [blue]2[/blue] [gold]Relics[/gold].",
+   "image": "relic_atlas/lava_rock.png",
+   "title": "熔岩石"
+  },
+  "LEAD_PAPERWEIGHT": {
+   "description": "拾起时，从[blue]2[/blue]张无色牌中选择[blue]1张[/blue]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/lead_paperweight.png",
+   "title": "铅制镇纸"
+  },
+  "LEAFY_POULTICE": {
+   "description": "拾起时，[gold]变化[/gold]你的[blue]1[/blue]张[gold]打击[/gold]和[blue]1[/blue]张[gold]防御[/gold]，然后失去[blue]12[/blue]点最大生命。",
+   "image": "relic_atlas/leafy_poultice.png",
+   "title": "树叶药膏"
+  },
+  "LEES_WAFFLE": {
+   "description": "拾起时，将你的最大生命值提升[blue]7[/blue]点，并回复所有生命。",
+   "image": "relic_atlas/lees_waffle.png",
+   "title": "李家华夫饼"
+  },
+  "LETTER_OPENER": {
+   "description": "你每在同一回合内打出[blue]3[/blue]张技能牌，就对所有敌人造成[blue]5[/blue]点伤害。",
+   "image": "relic_atlas/letter_opener.png",
+   "title": "开信刀"
+  },
+  "LIZARD_TAIL": {
+   "description": "当你的生命值将要降低至[blue]0[/blue]或以下时，回复到最大生命值的[green]50%[/green]（仅能起效一次）。",
+   "image": "relic_atlas/lizard_tail.png",
+   "title": "蜥蜴尾巴"
+  },
+  "LOOMING_FRUIT": {
+   "description": "拾起时，将你的最大生命值提升[blue]31[/blue]。",
+   "image": "relic_atlas/looming_fruit.png",
+   "title": "布质果实"
+  },
+  "LORDS_PARASOL": {
+   "description": "当你遇见[gold]商人[/gold]时，立刻获得他所出售的[red]所有[/red]物品。",
+   "image": "relic_atlas/lords_parasol.png",
+   "title": "领主阳伞"
+  },
+  "LOST_COFFER": {
+   "description": "拾起时，获得[blue]1[/blue]次卡牌奖励和[blue]1[/blue]瓶随机药水。",
+   "image": "relic_atlas/lost_coffer.png",
+   "title": "失物盒"
+  },
+  "LOST_WISP": {
+   "description": "你每打出一张能力牌，就对所有敌人造成[blue]8[/blue]点伤害。",
+   "image": "relic_atlas/lost_wisp.png",
+   "title": "迷失鬼火"
+  },
+  "LUCKY_FYSH": {
+   "description": "每当你将一张卡牌加入你的[gold]牌组[/gold]时，获得[blue]15[/blue][gold]金币[/gold]。",
+   "image": "relic_atlas/lucky_fysh.png",
+   "title": "招财异鱼"
+  },
+  "LUNAR_PASTRY": {
+   "description": "在你的回合结束时，获得1点辉星。",
+   "image": "relic_atlas/lunar_pastry.png",
+   "title": "月亮糕点"
+  },
+  "MANGO": {
+   "description": "拾起时，将你的最大生命值提升[blue]14[/blue]。",
+   "image": "relic_atlas/mango.png",
+   "title": "芒果"
+  },
+  "MASSIVE_SCROLL": {
+   "description": "拾起时，从[blue]3[/blue]张[gold]多人游戏牌[/gold]中选择[blue]1[/blue]张加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/massive_scroll.png",
+   "title": "巨大卷轴"
+  },
+  "MAW_BANK": {
+   "description": "每攀爬一层楼层，就获得[blue]12[/blue][gold]金币[/gold]。一旦在商店中花费[gold]金币[/gold]就会使其失效。",
+   "image": "relic_atlas/maw_bank.png",
+   "title": "巨口储蓄罐"
+  },
+  "MEAL_TICKET": {
+   "description": "每当你进入商店房间时，回复[green]15[/green]点生命。",
+   "image": "relic_atlas/meal_ticket.png",
+   "title": "餐券"
+  },
+  "MEAT_CLEAVER": {
+   "description": "你可以在休息处进行[gold]烹饪[/gold]。",
+   "image": "relic_atlas/meat_cleaver.png",
+   "title": "切肉刀"
+  },
+  "MEAT_ON_THE_BONE": {
+   "description": "如果你在战斗结束时生命值等于或低于[blue]50%[/blue]，回复[green]12[/green]点生命。",
+   "image": "relic_atlas/meat_on_the_bone.png",
+   "title": "带骨肉"
+  },
+  "MEMBERSHIP_CARD": {
+   "description": "所有商品打折[blue]50%[/blue]！",
+   "image": "relic_atlas/membership_card.png",
+   "title": "会员卡"
+  },
+  "MERCURY_HOURGLASS": {
+   "description": "在你的回合开始时，对所有敌人造成[blue]3[/blue]点伤害。",
+   "image": "relic_atlas/mercury_hourglass.png",
+   "title": "水银沙漏"
+  },
+  "METRONOME": {
+   "description": "每场战斗中你首次[gold]生成[/gold][blue]7[/blue]个[gold]充能球[/gold]时，对所有敌人造成[blue]30[/blue]点伤害。",
+   "image": "relic_atlas/metronome.png",
+   "title": "节拍器"
+  },
+  "MINIATURE_CANNON": {
+   "description": "[gold]升级[/gold]的攻击牌额外造成[blue]3[/blue]点伤害。",
+   "image": "relic_atlas/miniature_cannon.png",
+   "title": "微型大炮"
+  },
+  "MINIATURE_TENT": {
+   "description": "你可以在[gold]休息处[/gold]选择任意数量的选项。",
+   "image": "relic_atlas/miniature_tent.png",
+   "title": "微型帐篷"
+  },
+  "MINI_REGENT": {
+   "description": "每回合你第一次花费1点辉星时，获得[blue]1[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/mini_regent.png",
+   "title": "迷你储君"
+  },
+  "MOLTEN_EGG": {
+   "description": "每当你获得[gold]攻击牌[/gold]时，将其[gold]升级[/gold]。",
+   "image": "relic_atlas/molten_egg.png",
+   "title": "熔火之蛋"
+  },
+  "MR_STRUGGLES": {
+   "description": "在你的回合开始时，对所有敌人造成等量于当前回合数的伤害。",
+   "image": "relic_atlas/mr_struggles.png",
+   "title": "抱抱先生"
+  },
+  "MUMMIFIED_HAND": {
+   "description": "你每打出一张能力牌，[gold]手牌[/gold]中就有一张随机牌在这个回合可以免费打出。",
+   "image": "relic_atlas/mummified_hand.png",
+   "title": "干瘪之手"
+  },
+  "MUSIC_BOX": {
+   "description": "将你每回合打出的第一张攻击牌的一张[gold]虚无[/gold]复制品加入你的手牌。",
+   "image": "relic_atlas/music_box.png",
+   "title": "音乐盒"
+  },
+  "MYSTIC_LIGHTER": {
+   "description": "有[gold]附魔[/gold]的攻击牌额外造成[blue]9[/blue]点伤害。",
+   "image": "relic_atlas/mystic_lighter.png",
+   "title": "神秘打火机"
+  },
+  "NEOWS_BONES": {
+   "description": "拾起时，获得[blue]2[/blue]件随机[gold]涅奥遗物[/gold]。将[blue]1[/blue]张随机[red]诅咒[/red]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/neows_bones.png",
+   "title": "涅奥骨骰"
+  },
+  "NEOWS_TALISMAN": {
+   "description": "拾起时，[gold]升级[/gold]你的[blue]1[/blue]张[gold]打击[/gold]和[blue]1[/blue]张[gold]防御[/gold]。",
+   "image": "relic_atlas/neows_talisman.png",
+   "title": "涅奥的护符"
+  },
+  "NEOWS_TORMENT": {
+   "description": "拾起时，将[blue]1[/blue]张[gold]涅奥之怒[/gold]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/neows_torment.png",
+   "title": "涅奥的苦痛"
+  },
+  "NEW_LEAF": {
+   "description": "拾起时，[gold]变化[/gold][blue]1[/blue]张牌。",
+   "image": "relic_atlas/new_leaf.png",
+   "title": "新叶"
+  },
+  "NINJA_SCROLL": {
+   "description": "每场战斗开始时，将[blue]3[/blue]张[gold]小刀[/gold]加入你的[gold]手牌[/gold]。",
+   "image": "relic_atlas/ninja_scroll.png",
+   "title": "忍术卷轴"
+  },
+  "NUNCHAKU": {
+   "description": "你每打出[blue]10[/blue]张攻击牌，获得1点能量。",
+   "image": "relic_atlas/nunchaku.png",
+   "title": "双截棍"
+  },
+  "NUTRITIOUS_OYSTER": {
+   "description": "拾起时，将你的最大生命值提升[blue]11[/blue]。",
+   "image": "relic_atlas/nutritious_oyster.png",
+   "title": "营养牡蛎"
+  },
+  "NUTRITIOUS_SOUP": {
+   "description": "拾起时，为你[gold]牌组[/gold]中的所有“[gold]打击[/gold]”[gold]附魔[/gold]：[purple]特兹卡塔拉的余烬[/purple]",
+   "image": "relic_atlas/nutritious_soup.png",
+   "title": "营养汤"
+  },
+  "ODDLY_SMOOTH_STONE": {
+   "description": "在每场战斗开始时，获得[blue]1[/blue]点[gold]敏捷[/gold]。",
+   "image": "relic_atlas/oddly_smooth_stone.png",
+   "title": "意外光滑的石头"
+  },
+  "OLD_COIN": {
+   "description": "拾起时，获得[blue]300[/blue][gold]金币[/gold]。",
+   "image": "relic_atlas/old_coin.png",
+   "title": "古钱币"
+  },
+  "ORANGE_DOUGH": {
+   "description": "在每场战斗开始时，将[blue]2[/blue]张随机无色牌加入你的[gold]手牌[/gold]。",
+   "image": "relic_atlas/orange_dough.png",
+   "title": "橙色团块"
+  },
+  "ORICHALCUM": {
+   "description": "如果你在回合结束时没有任何[gold]格挡[/gold]，获得[blue]6[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/orichalcum.png",
+   "title": "奥利哈钢"
+  },
+  "ORNAMENTAL_FAN": {
+   "description": "你每在同一回合内打出[blue]3[/blue]张攻击牌，就获得[blue]4[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/ornamental_fan.png",
+   "title": "精致折扇"
+  },
+  "ORRERY": {
+   "description": "拾起时，获得[blue]5[/blue]次卡牌奖励",
+   "image": "relic_atlas/orrery.png",
+   "title": "星系仪"
+  },
+  "PAELS_BLOOD": {
+   "description": "在你的回合开始时，额外抽[blue]1[/blue]张牌",
+   "image": "relic_atlas/paels_blood.png",
+   "title": "佩尔之血"
+  },
+  "PAELS_CLAW": {
+   "description": "拾起时，为所有的“[gold]防御[/gold]”[gold]附魔[/gold]：[purple]X[/purple]。",
+   "image": "relic_atlas/paels_claw.png",
+   "title": "佩尔之爪"
+  },
+  "PAELS_EYE": {
+   "description": "你在每场战斗中第一次没有打出任何牌就结束回合时，[gold]消耗[/gold]所有[gold]手牌[/gold]然后进行一个额外回合。",
+   "image": "relic_atlas/paels_eye.png",
+   "title": "佩尔之眼"
+  },
+  "PAELS_FLESH": {
+   "description": "从你的第[blue]3[/blue]回合开始，在回合开始时额外获得1点能量。",
+   "image": "relic_atlas/paels_flesh.png",
+   "title": "佩尔之肉"
+  },
+  "PAELS_GROWTH": {
+   "description": "拾起时，从[gold]牌组[/gold]中选择一张牌，为其[gold]附魔[/gold]：[purple]X[/purple]。",
+   "image": "relic_atlas/paels_growth.png",
+   "title": "佩尔的增生组织"
+  },
+  "PAELS_HORN": {
+   "description": "拾起时，将[blue]2[/blue]张[gold]放松[/gold]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/paels_horn.png",
+   "title": "佩尔之角"
+  },
+  "PAELS_LEGION": {
+   "description": "将你从一张卡牌中获得的[gold]格挡[/gold]翻倍，然后此遗物会休眠[blue]2[/blue]回合。",
+   "image": "relic_atlas/paels_legion.png",
+   "title": "佩尔的士兵"
+  },
+  "PAELS_TEARS": {
+   "description": "如果你在拥有未花费的能量情况下结束回合，则下个回合额外获得2点能量。",
+   "image": "relic_atlas/paels_tears.png",
+   "title": "佩尔之泪"
+  },
+  "PAELS_TOOTH": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中选择[blue]5[/blue]张牌移除。在每场战斗结束时，将其中随机[blue]1[/blue]张牌[gold]升级[/gold]然后返还。",
+   "image": "relic_atlas/paels_tooth.png",
+   "title": "佩尔之牙"
+  },
+  "PAELS_WING": {
+   "description": "你可以将你的卡牌奖励献祭给佩尔。每献祭[blue]2[/blue]次，就能获得一件[gold]遗物[/gold]。",
+   "image": "relic_atlas/paels_wing.png",
+   "title": "佩尔之翼"
+  },
+  "PANDORAS_BOX": {
+   "description": "[gold]变化[/gold]所有“[gold]打击[/gold]”和“[gold]防御[/gold]”。",
+   "image": "relic_atlas/pandoras_box.png",
+   "title": "潘多拉魔盒"
+  },
+  "PANTOGRAPH": {
+   "description": "在[gold]Boss[/gold]战开始时，回复[green]25[/green]点生命。",
+   "image": "relic_atlas/pantograph.png",
+   "title": "缩放仪"
+  },
+  "PAPER_KRANE": {
+   "description": "有[gold]虚弱[/gold]状态的敌人造成的伤害降低[blue]40%[/blue]而非[blue]25%[/blue]。",
+   "image": "relic_atlas/paper_krane.png",
+   "title": "纸鹤"
+  },
+  "PAPER_PHROG": {
+   "description": "有[gold]易伤[/gold]状态的敌人受到的伤害增加[blue]75%[/blue]而非[blue]50%[/blue]。",
+   "image": "relic_atlas/paper_phrog.png",
+   "title": "纸蛙"
+  },
+  "PARRYING_SHIELD": {
+   "description": "如果你在回合结束时拥有至少[blue]10[/blue]点[gold]格挡[/gold]，则对随机敌人造成[blue]6[/blue]点伤害。",
+   "image": "relic_atlas/parrying_shield.png",
+   "title": "招架盾"
+  },
+  "PEAR": {
+   "description": "拾起时，将你的最大生命值提升[blue]10[/blue]。",
+   "image": "relic_atlas/pear.png",
+   "title": "梨子"
+  },
+  "PENDULUM": {
+   "description": "每[blue]3[/blue]个回合，抽[blue]1[/blue]张牌",
+   "image": "relic_atlas/pendulum.png",
+   "title": "摆动球"
+  },
+  "PEN_NIB": {
+   "description": "你每打出的第[blue]10[/blue]张攻击牌将会造成双倍伤害。",
+   "image": "relic_atlas/pen_nib.png",
+   "title": "钢笔尖"
+  },
+  "PERMAFROST": {
+   "description": "当你在战斗中第一次打出能力牌时，获得[blue]7[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/permafrost.png",
+   "title": "永冻冰晶"
+  },
+  "PETRIFIED_TOAD": {
+   "description": "在每场战斗开始时，获得一瓶[gold]药水形状的石头[/gold]",
+   "image": "relic_atlas/petrified_toad.png",
+   "title": "石化蟾蜍"
+  },
+  "PHIAL_HOLSTER": {
+   "description": "Upon pickup, gain [blue]1[/blue] potion slot and procure [blue]2[/blue] random potions.",
+   "image": "relic_atlas/phial_holster.png",
+   "title": "药瓶皮套"
+  },
+  "PHILOSOPHERS_STONE": {
+   "description": "在每回合开始时获得1点能量。所有敌人初始获得[blue]1[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/philosophers_stone.png",
+   "title": "贤者之石"
+  },
+  "PHYLACTERY_UNBOUND": {
+   "description": "在每场战斗开始时，[gold]召唤[/gold][blue]X[/blue]。在你的回合开始时，[gold]召唤[/gold][blue]X[/blue]。",
+   "image": "relic_atlas/phylactery_unbound.png",
+   "title": "无界命匣"
+  },
+  "PLANISPHERE": {
+   "description": "每当你进入[gold]？[/gold]房间的时候，回复[green]5[/green]点生命。",
+   "image": "relic_atlas/planisphere.png",
+   "title": "活动星图"
+  },
+  "POCKETWATCH": {
+   "description": "当你在本回合打出的牌少于等于[blue]3[/blue]张时，则在你的下个回合开始时额外抽[blue]3[/blue]张牌。",
+   "image": "relic_atlas/pocketwatch.png",
+   "title": "怀表"
+  },
+  "POLLINOUS_CORE": {
+   "description": "每[blue]4[/blue]个回合，额外抽[blue]2[/blue]张牌。",
+   "image": "relic_atlas/pollinous_core.png",
+   "title": "花粉核心"
+  },
+  "POMANDER": {
+   "description": "拾起时，[gold]升级[/gold]一张牌。",
+   "image": "relic_atlas/pomander.png",
+   "title": "橙型香盒"
+  },
+  "POTION_BELT": {
+   "description": "拾起时，获得[blue]2[/blue]个药水栏位。",
+   "image": "relic_atlas/potion_belt.png",
+   "title": "药水腰带"
+  },
+  "POWER_CELL": {
+   "description": "在每场战斗开始时，将[blue]2[/blue]张耗能为0的卡牌从你的[gold]抽牌堆[/gold]放入你的[gold]手牌[/gold]。",
+   "image": "relic_atlas/power_cell.png",
+   "title": "能量电池"
+  },
+  "PRAYER_WHEEL": {
+   "description": "普通敌人额外掉落一次卡牌奖励。",
+   "image": "relic_atlas/prayer_wheel.png",
+   "title": "转经轮"
+  },
+  "PRECARIOUS_SHEARS": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中移除[blue]2[/blue]张牌并失去[blue]16[/blue]点生命。",
+   "image": "relic_atlas/precarious_shears.png",
+   "title": "松动羊毛剪"
+  },
+  "PRECISE_SCISSORS": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中移除[blue]1[/blue]张牌。",
+   "image": "relic_atlas/precise_scissors.png",
+   "title": "精准剪刀"
+  },
+  "PRESERVED_FOG": {
+   "description": "拾起时，从你的[gold]牌组[/gold]中移除[blue]3[/blue]张牌。将一张[red]愚行[/red]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/preserved_fog.png",
+   "title": "腌制活雾"
+  },
+  "PRISMATIC_GEM": {
+   "description": "在每个回合开始时获得1点能量。卡牌奖励现在会包含其他颜色的卡牌。",
+   "image": "relic_atlas/prismatic_gem.png",
+   "title": "棱彩宝石"
+  },
+  "PUMPKIN_CANDLE": {
+   "description": "在每个回合开始时获得1点能量。这件遗物会在[blue]5[/blue]场战斗后熄灭。可以在[gold]休息处[/gold]为其[gold]添火[/gold]。",
+   "image": "relic_atlas/pumpkin_candle.png",
+   "title": "南瓜蜡烛"
+  },
+  "PUNCH_DAGGER": {
+   "description": "拾起时，选择一张攻击牌为它[gold]附魔[/gold]：[purple]动量[/purple][blue]5[/blue]。",
+   "image": "relic_atlas/punch_dagger.png",
+   "title": "拳刃"
+  },
+  "RADIANT_PEARL": {
+   "description": "在每场战斗开始时，将[blue]1[/blue]张[gold]冷光[/gold]加入你的[gold]手牌[/gold]。",
+   "image": "relic_atlas/radiant_pearl.png",
+   "title": "发光珍珠"
+  },
+  "RAINBOW_RING": {
+   "description": "每回合，你第一次打出攻击牌、技能牌和能力牌各一张时，获得[blue]1[/blue]点[gold]力量[/gold]和[blue]1[/blue]点[gold]敏捷[/gold]。",
+   "image": "relic_atlas/rainbow_ring.png",
+   "title": "彩虹戒指"
+  },
+  "RAZOR_TOOTH": {
+   "description": "你打出攻击牌和技能牌时，将其在本场战斗内[gold]升级[/gold]。",
+   "image": "relic_atlas/razor_tooth.png",
+   "title": "剃刀牙"
+  },
+  "RED_MASK": {
+   "description": "在每场战斗开始时，给于所有敌人[blue]1[/blue]层[gold]虚弱[/gold]。",
+   "image": "relic_atlas/red_mask.png",
+   "title": "红面具"
+  },
+  "RED_SKULL": {
+   "description": "当你的生命值低于或等于[blue]50%[/blue]时，你额外获得[blue]3[/blue]点[gold]力量[/gold]",
+   "image": "relic_atlas/red_skull.png",
+   "title": "红头骨"
+  },
+  "REGALITE": {
+   "description": "Whenever you create a card, gain [blue]2[/blue] [gold]Block[/gold].",
+   "image": "relic_atlas/regalite.png",
+   "title": "君王矿石"
+  },
+  "REGAL_PILLOW": {
+   "description": "Whenever you [gold]Rest[/gold], heal an additional [blue]15[/blue] HP.",
+   "image": "relic_atlas/regal_pillow.png",
+   "title": "皇家枕头"
+  },
+  "REPTILE_TRINKET": {
+   "description": "当你使用药水时，在本回合获得[blue]3[/blue][gold]力量[/gold]。",
+   "image": "relic_atlas/reptile_trinket.png",
+   "title": "爬行动物饰品"
+  },
+  "RINGING_TRIANGLE": {
+   "description": "在每场战斗的第一回合[gold]保留[/gold]你的[gold]手牌[/gold]。",
+   "image": "relic_atlas/ringing_triangle.png",
+   "title": "三角铃鼓"
+  },
+  "RING_OF_THE_DRAKE": {
+   "description": "在战斗开始时的前[blue]3[/blue]个回合，你额外抽[blue]2[/blue]张牌。",
+   "image": "relic_atlas/ring_of_the_drake.png",
+   "title": "长蛇戒指"
+  },
+  "RING_OF_THE_SNAKE": {
+   "description": "在每场战斗开始时，额外抽[blue]2[/blue]张牌。",
+   "image": "relic_atlas/ring_of_the_snake.png",
+   "title": "蛇之戒指"
+  },
+  "RIPPLE_BASIN": {
+   "description": "如果你在本回合中没有打出过攻击牌，则获得[blue]4[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/ripple_basin.png",
+   "title": "波纹水盆"
+  },
+  "ROYAL_POISON": {
+   "description": "在每场战斗开始时，失去[blue]4[/blue]点生命。",
+   "image": "relic_atlas/royal_poison.png",
+   "title": "王室猛毒"
+  },
+  "ROYAL_STAMP": {
+   "description": "拾起时，从[gold]牌组[/gold]中选择一张攻击牌或技能牌，为它[gold]附魔[/gold]：[purple]X[/purple]。",
+   "image": "relic_atlas/royal_stamp.png",
+   "title": "王室印章"
+  },
+  "RUINED_HELMET": {
+   "description": "你在每场战斗中第一次获得的[gold]力量[/gold]值翻倍。",
+   "image": "relic_atlas/ruined_helmet.png",
+   "title": "损毁头盔"
+  },
+  "RUNIC_CAPACITOR": {
+   "description": "每场战斗开始时，获得[blue]3[/blue]个额外[gold]充能球栏位[/gold]。",
+   "image": "relic_atlas/runic_capacitor.png",
+   "title": "符文电容器"
+  },
+  "RUNIC_PYRAMID": {
+   "description": "你在回合结束时不再自动丢弃所有[gold]手牌[/gold]。",
+   "image": "relic_atlas/runic_pyramid.png",
+   "title": "符文金字塔"
+  },
+  "SAI": {
+   "description": "在你的回合开始时，获得[blue]7[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/sai.png",
+   "title": "钗"
+  },
+  "SAND_CASTLE": {
+   "description": "拾起时，随机[gold]升级[/gold][blue]6[/blue]张牌。",
+   "image": "relic_atlas/sand_castle.png",
+   "title": "沙堡"
+  },
+  "SCREAMING_FLAGON": {
+   "description": "如果你在回合结束时没有任何[gold]手牌[/gold]，则对所有敌人造成[blue]20[/blue]点伤害。",
+   "image": "relic_atlas/screaming_flagon.png",
+   "title": "尖叫酒壶"
+  },
+  "SCROLL_BOXES": {
+   "description": "拾起时，从[blue]2[/blue]个卡牌包中选择[blue]1[/blue]包加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/scroll_boxes.png",
+   "title": "卷轴箱"
+  },
+  "SEAL_OF_GOLD": {
+   "description": "在你的回合开始时，花费[blue]5[/blue][gold]金币[/gold]来获得1点能量。",
+   "image": "relic_atlas/seal_of_gold.png",
+   "title": "黄金印"
+  },
+  "SEA_GLASS": {
+   "description": "查看[blue]15[/blue]张来自其他角色的牌。从中选择任意数量的卡牌加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/sea_glass.png",
+   "title": "海玻璃"
+  },
+  "SELF_FORMING_CLAY": {
+   "description": "每当你在战斗中失去生命，就在下回合获得[blue]3[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/self_forming_clay.png",
+   "title": "自成型黏土"
+  },
+  "SERE_TALON": {
+   "description": "Upon pickup, add [blue]2[/blue] random [red]Curses[/red] and [blue]3[/blue] [purple]Wishes[/purple] to your [gold]Deck[/gold].",
+   "image": "relic_atlas/sere_talon.png",
+   "title": "原初之爪"
+  },
+  "SHOVEL": {
+   "description": "现在你可以在[gold]休息处[/gold]挖掘[gold]遗物[/gold]。",
+   "image": "relic_atlas/shovel.png",
+   "title": "铲子"
+  },
+  "SHURIKEN": {
+   "description": "你每在同一回合内打出[blue]3[/blue]张攻击牌，获得[blue]1[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/shuriken.png",
+   "title": "手里剑"
+  },
+  "SIGNET_RING": {
+   "description": "拾起时，获得[blue]999[/blue][gold]金币[/gold]。",
+   "image": "relic_atlas/signet_ring.png",
+   "title": "图章戒指"
+  },
+  "SILKEN_TRESS": {
+   "description": "Upon pickup, lose all [gold]Gold[/gold]. [gold]Enchant[/gold] all cards in the first card reward with [purple]Glam[/purple].",
+   "image": "relic_atlas/silken_tress.png",
+   "title": "华美发束"
+  },
+  "SILVER_CRUCIBLE": {
+   "description": "你遇到的前[blue]3[/blue]次卡牌奖励将是被[gold]升级[/gold]过的。你打开的第一个宝箱将是[red]空的[/red]",
+   "image": "relic_atlas/silver_crucible.png",
+   "title": "白银熔炉"
+  },
+  "SLING_OF_COURAGE": {
+   "description": "在与[gold]精英[/gold]敌人战斗时，获得[blue]2[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/sling_of_courage.png",
+   "title": "勇气投石索"
+  },
+  "SMALL_CAPSULE": {
+   "description": "拾起时，获得一件随机[gold]遗物[/gold]。",
+   "image": "relic_atlas/small_capsule.png",
+   "title": "小型扭蛋"
+  },
+  "SNECKO_EYE": {
+   "description": "每回合多抽[blue]2[/blue]张牌。每场战斗开始时获得[red]混乱[/red]效果。",
+   "image": "relic_atlas/snecko_eye.png",
+   "title": "异蛇之眼"
+  },
+  "SNECKO_SKULL": {
+   "description": "每当你给予敌人[gold]中毒[/gold]时，所给予的[gold]中毒[/gold]层数增加[blue]1[/blue]层。",
+   "image": "relic_atlas/snecko_skull.png",
+   "title": "异蛇头骨"
+  },
+  "SOZU": {
+   "description": "Gain 1 Energy at the start of each turn. You can no longer obtain potions.",
+   "image": "relic_atlas/sozu.png",
+   "title": "添水"
+  },
+  "SPARKLING_ROUGE": {
+   "description": "在你的第[blue]3[/blue]回合开始时，获得[blue]1[/blue]点[gold]力量[/gold]和[blue]1[/blue]点[gold]敏捷[/gold]。",
+   "image": "relic_atlas/sparkling_rouge.png",
+   "title": "闪亮口红"
+  },
+  "SPIKED_GAUNTLETS": {
+   "description": "在每回合开始时获得1点能量。能力牌的耗能增加[blue]1[/blue]能量。",
+   "image": "relic_atlas/spiked_gauntlets.png",
+   "title": "带刺手甲"
+  },
+  "STONE_CALENDAR": {
+   "description": "在第[blue]7[/blue]回合结束时，对所有敌人造成[blue]52[/blue]点伤害。",
+   "image": "relic_atlas/stone_calendar.png",
+   "title": "历石"
+  },
+  "STONE_CRACKER": {
+   "description": "在每场战斗开始时，在本场战斗中随机[gold]升级[/gold]你[gold]抽牌堆[/gold]中的[blue]2[/blue]张牌。",
+   "image": "relic_atlas/stone_cracker.png",
+   "title": "碎石钻"
+  },
+  "STONE_HUMIDIFIER": {
+   "description": "每当你在[gold]休息处[/gold][gold]休息[/gold]时，将你的最大生命值提升[blue]5[/blue]点。",
+   "image": "relic_atlas/stone_humidifier.png",
+   "title": "石炉加湿器"
+  },
+  "STORYBOOK": {
+   "description": "拾起时，将[blue]1[/blue]张[gold]至亮之焰[/gold]添加到你的[gold]牌组[/gold]中。",
+   "image": "relic_atlas/storybook.png",
+   "title": "故事书"
+  },
+  "STRAWBERRY": {
+   "description": "拾起时，将你的最大生命值提升[blue]7[/blue]。",
+   "image": "relic_atlas/strawberry.png",
+   "title": "草莓"
+  },
+  "STRIKE_DUMMY": {
+   "description": "名字中有“打击”的卡牌造成[blue]3[/blue]点额外伤害。",
+   "image": "relic_atlas/strike_dummy.png",
+   "title": "打击木偶"
+  },
+  "STURDY_CLAMP": {
+   "description": "可以跨回合保留最多[blue]10[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/sturdy_clamp.png",
+   "title": "坚固钳子"
+  },
+  "SWORD_OF_JADE": {
+   "description": "在每场战斗开始时，获得[blue]3[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/sword_of_jade.png",
+   "title": "玉之剑"
+  },
+  "SWORD_OF_STONE": {
+   "description": "在击败[blue]5[/blue]名[gold]精英[/gold]敌人之后将变化为一件强力[gold]遗物[/gold]。",
+   "image": "relic_atlas/sword_of_stone.png",
+   "title": "石之剑"
+  },
+  "SYMBIOTIC_VIRUS": {
+   "description": "在每场战斗开始时，[gold]生成[/gold][blue]1[/blue]个[gold]黑暗[/gold]充能球。",
+   "image": "relic_atlas/symbiotic_virus.png",
+   "title": "共生病毒"
+  },
+  "TANXS_WHISTLE": {
+   "description": "拾起时，将[blue]1[/blue]张[gold]吹哨[/gold]加入你的[gold]牌组[/gold]。",
+   "image": "relic_atlas/tanxs_whistle.png",
+   "title": "坦克斯的哨子"
+  },
+  "TEA_OF_DISCOURTESY": {
+   "description": "在下一场战斗开始时，将[blue]2[/blue]张[gold]晕眩[/gold]放入你的[gold]抽牌堆[/gold]。",
+   "image": "relic_atlas/tea_of_discourtesy.png",
+   "title": "无礼之茶"
+  },
+  "THE_ABACUS": {
+   "description": "你每次将[gold]抽牌堆[/gold]洗牌时，获得[blue]6[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/the_abacus.png",
+   "title": "算盘"
+  },
+  "THE_BOOT": {
+   "description": "每当你造成小于等于[blue]4[/blue]点未被格挡的攻击伤害时，将伤害提升为[blue]5[/blue]。",
+   "image": "relic_atlas/the_boot.png",
+   "title": "发条靴"
+  },
+  "THE_COURIER": {
+   "description": "商人的卡牌、遗物和药水不再会卖光，并且所有商品打折[blue]20%[/blue]。",
+   "image": "relic_atlas/the_courier.png",
+   "title": "送货员"
+  },
+  "THROWING_AXE": {
+   "description": "你在每场战斗中打出的第一张牌会多打出一次。",
+   "image": "relic_atlas/throwing_axe.png",
+   "title": "投斧"
+  },
+  "TINGSHA": {
+   "description": "你每在你的回合丢弃一张牌，就对一名随机敌人造成[blue]3[/blue]点伤害。",
+   "image": "relic_atlas/tingsha.png",
+   "title": "铜钹"
+  },
+  "TINY_MAILBOX": {
+   "description": "Whenever you [gold]Rest[/gold], procure [blue]2[/blue] random potions.",
+   "image": "relic_atlas/tiny_mailbox.png",
+   "title": "小邮箱"
+  },
+  "TOASTY_MITTENS": {
+   "description": "At the start of your turn, [gold]Exhaust[/gold] the top card of your [gold]Draw Pile[/gold] and gain [blue]1[/blue] [gold]Strength[/gold].",
+   "image": "relic_atlas/toasty_mittens.png",
+   "title": "烘焙手套"
+  },
+  "TOOLBOX": {
+   "description": "在每场战斗开始时，从[blue]3[/blue]张随机无色牌中选择[blue]1[/blue]张加入你的[gold]手牌[/gold]。",
+   "image": "relic_atlas/toolbox.png",
+   "title": "工具箱"
+  },
+  "TOUCH_OF_OROBAS": {
+   "description": "拾起时，将[gold]X[/gold]替换为[gold]X[/gold]。",
+   "image": "relic_atlas/touch_of_orobas.png",
+   "title": "欧洛巴斯之触"
+  },
+  "TOUGH_BANDAGES": {
+   "description": "你每在你的回合丢弃一张牌，就获得[blue]3[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/tough_bandages.png",
+   "title": "结实绷带"
+  },
+  "TOXIC_EGG": {
+   "description": "每当你获得[gold]技能牌[/gold]时，将其[gold]升级[/gold]。",
+   "image": "relic_atlas/toxic_egg.png",
+   "title": "毒素之蛋"
+  },
+  "TOY_BOX": {
+   "description": "拾起时，获得[blue]4[/blue]件[gold]蜡制遗物[/gold]。每经过[blue]3[/blue]场战斗，你最左侧的[gold]蜡制遗物[/gold]将会融化。",
+   "image": "relic_atlas/toy_box.png",
+   "title": "玩具盒"
+  },
+  "TRI_BOOMERANG": {
+   "description": "从你的[gold]牌组[/gold]中选择[blue]3[/blue]张攻击牌。为这些牌[gold]附魔[/gold]：[purple]本能[/purple]。",
+   "image": "relic_atlas/tri_boomerang.png",
+   "title": "三刃回旋镖"
+  },
+  "TUNGSTEN_ROD": {
+   "description": "你每次失去生命时，减少失去的生命值[blue]1[/blue]点。",
+   "image": "relic_atlas/tungsten_rod.png",
+   "title": "钨合金棍"
+  },
+  "TUNING_FORK": {
+   "description": "你每打出[blue]10[/blue]张技能牌，获得[blue]7[/blue]点[gold]格挡[/gold]。",
+   "image": "relic_atlas/tuning_fork.png",
+   "title": "音叉"
+  },
+  "TWISTED_FUNNEL": {
+   "description": "在每场战斗开始时，给予所有敌人[blue]4[/blue]层[gold]中毒[/gold]。",
+   "image": "relic_atlas/twisted_funnel.png",
+   "title": "扭曲漏斗"
+  },
+  "UNCEASING_TOP": {
+   "description": "在你的回合，当你没有[gold]手牌[/gold]时，抽一张牌。",
+   "image": "relic_atlas/unceasing_top.png",
+   "title": "不休陀螺"
+  },
+  "UNDYING_SIGIL": {
+   "description": "当敌人的[gold]灾厄[/gold]层数大于等于其生命值时，它造成的伤害降低[blue]50%[/blue]。",
+   "image": "relic_atlas/undying_sigil.png",
+   "title": "不死符文"
+  },
+  "UNSETTLING_LAMP": {
+   "description": "你在每场战斗中第一次打出能给予敌人[gold]负面状态[/gold]的牌时，将其效果翻倍。",
+   "image": "relic_atlas/unsettling_lamp.png",
+   "title": "不安油灯"
+  },
+  "VAJRA": {
+   "description": "在每场战斗开始时，获得[blue]1[/blue]点[gold]力量[/gold]。",
+   "image": "relic_atlas/vajra.png",
+   "title": "金刚杵"
+  },
+  "VAMBRACE": {
+   "description": "每场战斗中，你第一次从卡牌中获得的[gold]格挡[/gold]值翻倍。",
+   "image": "relic_atlas/vambrace.png",
+   "title": "臂甲"
+  },
+  "VELVET_CHOKER": {
+   "description": "在每回合开始时获得1点能量。你每回合不能打出超过[blue]6[/blue]张牌。",
+   "image": "relic_atlas/velvet_choker.png",
+   "title": "天鹅绒颈圈"
+  },
+  "VENERABLE_TEA_SET": {
+   "description": "到达[gold]休息处[/gold]后的下一场战斗开始时额外获得2点能量。",
+   "image": "relic_atlas/venerable_tea_set.png",
+   "title": "古茶具套装"
+  },
+  "VERY_HOT_COCOA": {
+   "description": "在每场战斗的第一回合额外获得[blue]4点能量[/blue]。",
+   "image": "relic_atlas/very_hot_cocoa.png",
+   "title": "烫嘴可可"
+  },
+  "VEXING_PUZZLEBOX": {
+   "description": "在每场战斗开始时，将一张随机卡牌加入你的[gold]手牌[/gold]。这张牌在本回合可以免费打出。",
+   "image": "relic_atlas/vexing_puzzlebox.png",
+   "title": "烦人机关盒"
+  },
+  "VITRUVIAN_MINION": {
+   "description": "名字中有“仆从”的卡牌造成双倍的伤害与[gold]格挡[/gold]。",
+   "image": "relic_atlas/vitruvian_minion.png",
+   "title": "维特鲁威仆从"
+  },
+  "WAR_HAMMER": {
+   "description": "每当你击败一名[gold]精英[/gold]敌人的时候，随机[gold]升级[/gold][blue]4[/blue]张牌。",
+   "image": "relic_atlas/war_hammer.png",
+   "title": "战锤"
+  },
+  "WAR_PAINT": {
+   "description": "拾起时，随机[gold]升级[/gold][blue]2[/blue]张技能牌。",
+   "image": "relic_atlas/war_paint.png",
+   "title": "战纹涂料"
+  },
+  "WHETSTONE": {
+   "description": "拾起时，随机[gold]升级[/gold][blue]2[/blue]张攻击牌。",
+   "image": "relic_atlas/whetstone.png",
+   "title": "磨刀石"
+  },
+  "WHISPERING_EARRING": {
+   "description": "在每个回合开始时，获得1点能量。[red]瓦库将接管你的第一回合。[/red]",
+   "image": "relic_atlas/whispering_earring.png",
+   "title": "低语耳环"
+  },
+  "WHITE_BEAST_STATUE": {
+   "description": "Potions always appear in combat rewards.",
+   "image": "relic_atlas/white_beast_statue.png",
+   "title": "白兽雕像"
+  },
+  "WHITE_STAR": {
+   "description": "[gold]精英[/gold]敌人额外掉落一次[gold]稀有[/gold]卡牌奖励。",
+   "image": "relic_atlas/white_star.png",
+   "title": "白星"
+  },
+  "WINGED_BOOTS": {
+   "description": "你在选择下一层的房间时有[blue]3[/blue]次机会可以无视当前的路线。",
+   "image": "relic_atlas/winged_boots.png",
+   "title": "羽翼之靴"
+  },
+  "WING_CHARM": {
+   "description": "每次卡牌奖励中，都会有随机一张牌被[gold]附魔[/gold]：[purple]迅捷[/purple][blue]1[/blue]。",
+   "image": "relic_atlas/wing_charm.png",
+   "title": "羽翼护符"
+  },
+  "WONGOS_MYSTERY_TICKET": {
+   "description": "在[blue]5[/blue]场战斗后，获得随机[blue]3[/blue]件[gold]遗物[/gold]。",
+   "image": "relic_atlas/wongos_mystery_ticket.png",
+   "title": "旺购神秘券"
+  },
+  "WONGO_CUSTOMER_APPRECIATION_BADGE": {
+   "description": "没有任何作用。",
+   "image": "relic_atlas/wongo_customer_appreciation_badge.png",
+   "title": "旺购客户感恩徽章"
+  },
+  "YUMMY_COOKIE": {
+   "description": "拾起时，[gold]升级[/gold][blue]4[/blue]张牌。",
+   "image": "relic_atlas/yummy_cookie.png",
+   "title": "美味饼干"
+  }
+ },
+ "tips": {
+  "BLOCK": {
+   "description": "在下个回合前，阻挡伤害。",
+   "title": "格挡"
+  },
+  "CARD_REWARD": {
+   "description": "[blue]3[/blue]张随机牌的卡牌包，你可以从中选择[blue]1[/blue]张加入你的[gold]牌组[/gold]。",
+   "title": "卡牌奖励"
+  },
+  "CHANNELING": {
+   "description": "生成充能球会将其放入你的第一个空着的充能球栏位。如果栏位已满，则你的第一个充能球将会被自动[gold]激发[/gold]，腾出栏位。",
+   "title": "生成"
+  },
+  "COMPENDIUM": {
+   "description": "查看你在高塔中遇到过的所有卡牌、药水和遗物。",
+   "title": "百科大全"
+  },
+  "COOK": {
+   "description": "[gold]Remove[/gold] [blue]2[/blue] cards from your [gold]Deck[/gold] and gain [green]9[/green] Max HP at a [gold]Rest Site[/gold].",
+   "title": "烹饪"
+  },
+  "DECK": {
+   "description": "查看你牌组中的所有卡牌。",
+   "title": "Deck {Hotkey:choose(None):| ({})}"
+  },
+  "DISCARD_PILE": {
+   "description": "如果你的抽牌堆为空，则弃牌堆会被洗入抽牌堆。\n\n点击查看你弃牌堆中的卡牌。",
+   "title": "Discard Pile {Hotkey:choose(None):| ({})}"
+  },
+  "DOUBLE_BOSS": {
+   "description": "在这个阶段的终点，将会和[gold]{BossName1}[/gold]与[gold]{BossName2}[/gold]战斗。",
+   "title": "{BossName1} & {BossName2}"
+  },
+  "DRAW_PILE": {
+   "description": "在每回合开始时，\n你会从这里抽取[blue]5[/blue]张卡牌。\n\n点击这里查看你抽牌堆中的卡牌（顺序打乱）。",
+   "title": "Draw Pile {Hotkey:choose(None):| ({})}"
+  },
+  "END_TURN": {
+   "description": "按下这个按钮将会结束你的回合。\n\n你会丢弃你的手牌、然后敌人进行他们的回合，接着你会再次抽取[blue]5[/blue]张牌、开始你的下一个回合。",
+   "title": "End Turn {Hotkey:choose(None):| ({})}"
+  },
+  "ENERGY": {
+   "description": "能量用于打出你[gold]手牌[/gold]中的卡牌。",
+   "title": "能量"
+  },
+  "EVOKE": {
+   "description": "消耗你最右侧的充能球并使用其激发效果。",
+   "title": "激发"
+  },
+  "EXHAUST_PILE": {
+   "description": "点击查看在本场战斗中被消耗的卡牌。",
+   "title": "Exhausted Cards {Hotkey:choose(None):| ({})}"
+  },
+  "FATAL": {
+   "description": "当这张牌杀死一名非爪牙敌人时触发。",
+   "title": "斩杀"
+  },
+  "FLOOR": {
+   "description": "你攀爬了多高。",
+   "title": "楼层"
+  },
+  "FORGE": {
+   "description": "每场战斗你第一次[gold]铸造[/gold]时，将[gold]君王之剑[/gold]加入你的[gold]手牌[/gold]。为[gold]君王之剑[/gold]增加额外伤害。",
+   "title": "铸造"
+  },
+  "HIT_POINTS": {
+   "description": "当你耗尽生命时，你就会死亡。",
+   "title": "生命值（HP）"
+  },
+  "LINKED_REWARDS": {
+   "description": "同组重你只能选择[blue]1[/blue]项奖励。",
+   "title": "相连奖励"
+  },
+  "MAP": {
+   "description": "检视当前阶段的地图。",
+   "title": "Map {Hotkey:choose(None):| ({})}"
+  },
+  "MONEY_POUCH": {
+   "description": "你所拥有的金币数。它是高塔中的货币。",
+   "title": "金币"
+  },
+  "POTION_SLOT": {
+   "description": "在战斗中使用药水可以获得[green]强化[/green]或[red]阻碍[/red]敌人。",
+   "title": "药水栏位"
+  },
+  "REPLAY_DYNAMIC": {
+   "description": "将这张牌额外打出[blue]{Times}[/blue]次。",
+   "title": "重放"
+  },
+  "REPLAY_STATIC": {
+   "description": "将这张牌额外打出一次。",
+   "title": "重放"
+  },
+  "ROOM_ANCIENT": {
+   "description": "先古之民居住在这些房间中。\n\n他们会赐予你惊人的奖励、财宝与知识。",
+   "title": "先古之民"
+  },
+  "ROOM_BOSS": {
+   "description": "整个地区最强大的敌人。\n\n将其击败就可以进入下一阶段。",
+   "title": "Boss"
+  },
+  "ROOM_ELITE": {
+   "description": "这些房间中有强大的敌人。\n\n击败他们将会获得[gold]遗物[/gold]奖励。",
+   "title": "精英"
+  },
+  "ROOM_ENEMY": {
+   "description": "这些房间里有好战的敌人们。",
+   "title": "敌人"
+  },
+  "ROOM_EVENT": {
+   "description": "这些房间里会发生不同寻常的事情……",
+   "title": "事件"
+  },
+  "ROOM_MAP": {
+   "description": "你可以在这里规划你的下一步。",
+   "title": "前厅"
+  },
+  "ROOM_MERCHANT": {
+   "description": "神秘的商人会在这些房间中出售他的货物。\n\n辛苦赚到的[gold]金币[/gold]就用在这里吧！",
+   "title": "商店"
+  },
+  "ROOM_REST": {
+   "description": "在这些房间可以[green]回复[/green]一些生命或是[gold]升级[/gold]一张卡牌。",
+   "title": "休息处"
+  },
+  "ROOM_TREASURE": {
+   "description": "这些房间中有着众人觊觎的[gold]遗物[/gold]与[gold]金币[/gold]。",
+   "title": "宝箱房"
+  },
+  "ROOM_UNKNOWN_ELITE": {
+   "description": "之前未知的房间，里面有强大的敌人。",
+   "title": "未知 - 精英"
+  },
+  "ROOM_UNKNOWN_ENEMY": {
+   "description": "之前未知的房间，里面有好战的敌人。",
+   "title": "未知 - 敌人"
+  },
+  "ROOM_UNKNOWN_EVENT": {
+   "description": "之前未知的房间，里面有个事件。\n\n这些房间里会发生不同寻常的事情……",
+   "title": "未知 - 事件"
+  },
+  "ROOM_UNKNOWN_MERCHANT": {
+   "description": "之前未知的房间，里面有神秘的商人。\n\n辛苦赚来的[gold]金币[/gold]就花在这里吧！",
+   "title": "未知 - 商人"
+  },
+  "ROOM_UNKNOWN_TREASURE": {
+   "description": "之前未知的房间，里面有众人觊觎的财宝。",
+   "title": "未知 - 财宝"
+  },
+  "SETTINGS": {
+   "description": "打开游戏菜单。\n\n可以在这里调整或更新你的视频、声音、和游玩方面的偏好。",
+   "title": "设置（ESC）"
+  },
+  "STUN": {
+   "description": "这个敌人在其下一回合无法行动。",
+   "title": "击晕"
+  },
+  "SUMMON_STATIC": {
+   "description": "召唤[gold]奥斯提[/gold]。\n如果已经召唤，则在本场战斗提升其最大生命值。",
+   "title": "召唤"
+  },
+  "TRANSFORM": {
+   "description": "卡牌被变化时会变成任意稀有度的随机牌。",
+   "title": "变化"
+  }
+ },
+ "upgrades": {
+  "ABRASIVE": {
+   "description": "[gold]奇巧[/gold]。\n获得1点[gold]敏捷[/gold]。\n获得6点[gold]荆棘[/gold]。"
+  },
+  "ACCELERANT": {
+   "description": "[gold]中毒[/gold]会额外触发2次。"
+  },
+  "ACCURACY": {
+   "description": "[gold]小刀[/gold]额外造成6点伤害。"
+  },
+  "ACROBATICS": {
+   "description": "抽4张牌。\n丢弃1张牌。"
+  },
+  "ADAPTIVE_STRIKE": {
+   "description": "造成23点伤害。\n将这张牌的一张0[energy]1[/energy]复制品添加到你的[gold]弃牌堆[/gold]。"
+  },
+  "ADRENALINE": {
+   "description": "获得[energy]2[/energy]。\n抽2张牌。\n[gold]消耗[/gold]。"
+  },
+  "AFTERLIFE": {
+   "description": "[gold]召唤[/gold]9。\n[gold]消耗[/gold]。"
+  },
+  "ALCHEMIZE": {
+   "cost": 0,
+   "description": "获得一瓶随机药水。\n[gold]消耗[/gold]。"
+  },
+  "ALIGNMENT": {
+   "description": "获得[energy]3[/energy]。"
+  },
+  "ALL_FOR_ONE": {
+   "description": "造成14点伤害。\n将你[gold]弃牌堆[/gold]中的所有0[energy]1[/energy]牌放入你的[gold]手牌[/gold]。"
+  },
+  "ANGER": {
+   "description": "造成8点伤害。\n将一张此牌的复制品加入你的[gold]弃牌堆[/gold]。"
+  },
+  "ANTICIPATE": {
+   "description": "在本回合获得3点[gold]敏捷[/gold]。"
+  },
+  "APOTHEOSIS": {
+   "cost": 1,
+   "description": "[gold]固有[/gold]。\n[gold]升级[/gold]你的全部卡牌。\n[gold]消耗[/gold]。"
+  },
+  "ARMAMENTS": {
+   "description": "获得5点[gold]格挡[/gold]。\n[gold]升级[/gold]你[gold]手牌[/gold]中的所有牌。"
+  },
+  "ASHEN_STRIKE": {
+   "description": "造成6点伤害。\n你的[gold]消耗牌堆[/gold]中每有一张牌，伤害增加4。"
+  },
+  "ASSASSINATE": {
+   "description": "[gold]固有[/gold]。\n造成13点伤害。\n给予2层[gold]易伤[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "ASTRAL_PULSE": {
+   "description": "Deal 8 damage to ALL enemies twice."
+  },
+  "AUTOMATION": {
+   "cost": 0,
+   "description": "你每抽10张牌，获得[energy]1[/energy]。"
+  },
+  "BACKFLIP": {
+   "description": "获得8点[gold]格挡[/gold]。\n抽2张牌。"
+  },
+  "BACKSTAB": {
+   "description": "[gold]固有[/gold]。\n造成15点伤害。\n[gold]消耗[/gold]。"
+  },
+  "BALL_LIGHTNING": {
+   "description": "造成10点伤害。\n[gold]生成[/gold]1个[gold]闪电[/gold]充能球。"
+  },
+  "BANSHEES_CRY": {
+   "cost": 7,
+   "description": "对所有敌人造成33点伤害。\n本场战斗中每打出过一张[gold]虚无[/gold]牌，此牌的耗能就减少[energy]2[/energy]。"
+  },
+  "BARRAGE": {
+   "description": "当前每有一个[gold]充能球[/gold]，造成7点伤害。"
+  },
+  "BARRICADE": {
+   "cost": 2,
+   "description": "[gold]格挡[/gold]不再在你的回合开始时消失。"
+  },
+  "BASH": {
+   "description": "造成10点伤害。\n给予3层[gold]易伤[/gold]。"
+  },
+  "BATTLE_TRANCE": {
+   "description": "抽4张牌。\n你在本回合内不能再抽任何牌。"
+  },
+  "BEAM_CELL": {
+   "description": "造成4点伤害。\n给予2层[gold]易伤[/gold]。"
+  },
+  "BEAT_DOWN": {
+   "description": "打出你[gold]弃牌堆[/gold]中的4张随机攻击牌。"
+  },
+  "BEAT_INTO_SHAPE": {
+   "description": "造成7点伤害。\n[gold]铸造[/gold]7。\n本回合内，你此前每击中过该敌人一次，这张牌就额外[gold]铸造[/gold]7点。"
+  },
+  "BEGONE": {
+   "description": "选择你[gold]手牌[/gold]中的一张牌，将其[gold]变化[/gold]为[gold]仆从打击+[/gold]。"
+  },
+  "BELIEVE_IN_YOU": {
+   "description": "另一名玩家获得[energy]3[/energy]。"
+  },
+  "BIASED_COGNITION": {
+   "description": "获得5点[gold]集中[/gold]。\n在你的回合开始时，失去1点[gold]集中[/gold]。"
+  },
+  "BLACK_HOLE": {
+   "description": "每当你花费或获得[star]1[/star]时，对所有敌人造成4点伤害。"
+  },
+  "BLADE_DANCE": {
+   "description": "添加4张[gold]小刀[/gold]到你的[gold]手牌[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "BLADE_OF_INK": {
+   "description": "添加3张[purple]墨影[/purple][gold]小刀[/gold]到你的[gold]手牌[/gold]。"
+  },
+  "BLIGHT_STRIKE": {
+   "description": "造成10点伤害。\n给予等量于所造成伤害的[gold]灾厄[/gold]。"
+  },
+  "BLOODLETTING": {
+   "description": "失去3点生命。\n获得[energy]3[/energy]。"
+  },
+  "BLOOD_WALL": {
+   "description": "失去2点生命。\n获得20点[gold]格挡[/gold]。"
+  },
+  "BLUDGEON": {
+   "description": "造成42点伤害。"
+  },
+  "BLUR": {
+   "description": "获得8点[gold]格挡[/gold]。\n你的下一回合开始时[gold]格挡[/gold]不会消失。"
+  },
+  "BODYGUARD": {
+   "description": "[gold]召唤[/gold]7。"
+  },
+  "BODY_SLAM": {
+   "cost": 0,
+   "description": "造成你当前[gold]格挡[/gold]值的伤害。"
+  },
+  "BOLAS": {
+   "description": "造成4点伤害。\n在你的下个回合开始时，将此卡返回你的[gold]手牌[/gold]。"
+  },
+  "BOMBARDMENT": {
+   "description": "造成24点伤害。\n你的回合开始时，如果这张牌在你的[gold]消耗牌堆[/gold]中，则将其打出。\n[gold]消耗[/gold]。"
+  },
+  "BONE_SHARDS": {
+   "description": "如果[gold]奥斯提[/gold]存活，则他对所有敌人造成12点伤害并且你获得12点[gold]格挡[/gold]。\n然后[gold]奥斯提[/gold]死去。"
+  },
+  "BOOST_AWAY": {
+   "description": "获得9点[gold]格挡[/gold]。\n将一张[gold]晕眩[/gold]添加到你的[gold]弃牌堆[/gold]中。"
+  },
+  "BOOT_SEQUENCE": {
+   "description": "[gold]固有[/gold]。\n获得13点[gold]格挡[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "BORROWED_TIME": {
+   "description": "获得[energy]6[/energy]。\n所有卡牌在本回合耗能增加能量。"
+  },
+  "BOUNCING_FLASK": {
+   "description": "随机给予敌人3层[gold]中毒[/gold]4次。"
+  },
+  "BRAND": {
+   "description": "失去1点生命。\n[gold]消耗[/gold]1张牌。\n获得2点[gold]力量[/gold]。"
+  },
+  "BREAK": {
+   "description": "造成30点伤害。\n给予7层[gold]易伤[/gold]。"
+  },
+  "BREAKTHROUGH": {
+   "description": "失去1点生命。\n对所有敌人造成13点伤害。"
+  },
+  "BRIGHTEST_FLAME": {
+   "description": "获得[energy]3[/energy]。\n抽3张牌。\n失去1点最大生命。"
+  },
+  "BUBBLE_BUBBLE": {
+   "description": "如果敌方拥有[gold]中毒[/gold]，则给予12层[gold]中毒[/gold]。"
+  },
+  "BUFFER": {
+   "description": "阻止下2次你受到的生命值损伤。"
+  },
+  "BULK_UP": {
+   "description": "失去1个充能球栏位。\n获得3点[gold]力量[/gold]。\n获得3点[gold]敏捷[/gold]。"
+  },
+  "BULLET_TIME": {
+   "cost": 2,
+   "description": "你在本回合内不能再抽牌。你[gold]手牌[/gold]中的所有牌在本回合免费打出。"
+  },
+  "BULLY": {
+   "description": "造成4点伤害。\n该敌人身上每有一层[gold]易伤[/gold]就额外造成3点伤害。"
+  },
+  "BULWARK": {
+   "description": "获得15点[gold]格挡[/gold]。\n[gold]铸造[/gold]13。"
+  },
+  "BUNDLE_OF_JOY": {
+   "description": "将4张随机无色牌添加到你的[gold]手牌[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "BURNING_PACT": {
+   "description": "[gold]消耗[/gold]1张牌。\n抽3张牌。"
+  },
+  "BURST": {
+   "description": "在这个回合，你打出的下一张技能牌会被额外打出一次。"
+  },
+  "BURY": {
+   "description": "造成63点伤害。"
+  },
+  "BYRD_SWOOP": {
+   "description": "造成18点伤害。"
+  },
+  "CALAMITY": {
+   "cost": 2,
+   "description": "每当你打出一张攻击牌时，将一张随机攻击牌添加到你的[gold]手牌[/gold]。"
+  },
+  "CALCIFY": {
+   "description": "[gold]奥斯提[/gold]的攻击额外造成6点伤害。"
+  },
+  "CALTROPS": {
+   "description": "每当你被攻击时，对攻击者造成5点伤害。"
+  },
+  "CAPACITOR": {
+   "description": "获得3个充能球栏位。"
+  },
+  "CAPTURE_SPIRIT": {
+   "description": "敌人失去4点生命。\n将4张[gold]灵魂[/gold]加入你的[gold]抽牌堆[/gold]。"
+  },
+  "CASCADE": {
+   "description": "打出你[gold]抽牌堆[/gold]顶部的X+1张牌。"
+  },
+  "CATASTROPHE": {
+   "description": "从你的[gold]抽牌堆[/gold]中随机打出3张牌。"
+  },
+  "CELESTIAL_MIGHT": {
+   "description": "Deal 6 damage 4 times."
+  },
+  "CHAOS": {
+   "description": "[gold]生成[/gold]2个随机充能球。"
+  },
+  "CHARGE": {
+   "description": "选择你[gold]抽牌堆[/gold]中的2张牌，将其[gold]变化[/gold]为\n[gold]仆从俯冲+[/gold]。"
+  },
+  "CHARGE_BATTERY": {
+   "description": "获得10点[gold]格挡[/gold]。\n在下个回合获得[energy]1[/energy]。"
+  },
+  "CHILD_OF_THE_STARS": {
+   "description": "每当你花费[star]1[/star]时，每花费一点[star]1[/star]，获得3点[gold]格挡[/gold]。"
+  },
+  "CINDER": {
+   "description": "造成24点伤害。\n随机[gold]消耗[/gold]1张牌。"
+  },
+  "CLASH": {
+   "description": "只有在[gold]手牌[/gold]中每一张牌都是攻击牌时才能被打出。\n造成18点伤害。"
+  },
+  "CLAW": {
+   "description": "造成4点伤害。\n本场战斗中所有爪击卡牌的伤害增加3点。"
+  },
+  "CLEANSE": {
+   "description": "[gold]召唤[/gold]5。\n从你的[gold]抽牌堆[/gold]中选择一张牌将其[gold]消耗[/gold]。"
+  },
+  "CLOAK_AND_DAGGER": {
+   "description": "获得6点[gold]格挡[/gold]。\n将2张[gold]小刀[/gold]添加到你的[gold]手牌[/gold]。"
+  },
+  "CLOAK_OF_STARS": {
+   "description": "获得10点[gold]格挡[/gold]。"
+  },
+  "COLD_SNAP": {
+   "description": "造成9点伤害。\n[gold]生成[/gold]1个[gold]冰霜[/gold]充能球。"
+  },
+  "COLLISION_COURSE": {
+   "description": "造成15点伤害。\n将一张[gold]碎屑[/gold]添加到你的[gold]手牌[/gold]。"
+  },
+  "COLOSSUS": {
+   "description": "获得8点[gold]格挡[/gold]。\n在本回合中，有[gold]易伤[/gold]状态的敌人对你造成的伤害降低50%。"
+  },
+  "COMET": {
+   "description": "造成44点伤害。\n给予3层[gold]虚弱[/gold]。\n给予3层[gold]易伤[/gold]。"
+  },
+  "COMPACT": {
+   "description": "获得7点[gold]格挡[/gold]。\n将你[gold]手牌[/gold]中的全部状态牌[gold]变化[/gold]为[gold]燃料+[/gold]。"
+  },
+  "COMPILE_DRIVER": {
+   "description": "造成10点伤害。\n你每有一种不同的充能球，就抽一张牌。"
+  },
+  "CONFLAGRATION": {
+   "description": "Deal 2 damage to ALL enemies 5 times."
+  },
+  "CONQUEROR": {
+   "description": "[gold]铸造[/gold]5。\n[gold]君王之剑[/gold]在本回合对敌人造成双倍伤害。"
+  },
+  "CONSUMING_SHADOW": {
+   "description": "[gold]生成[/gold]3个[gold]黑暗[/gold]充能球。\n在你的回合结束时，[gold]激发[/gold]你最左侧的充能球。"
+  },
+  "CONVERGENCE": {
+   "description": "在本回合[gold]保留[/gold]你的[gold]手牌[/gold]。\n在下个回合，\n获得[energy]1[/energy]与[star]2[/star]。"
+  },
+  "COOLANT": {
+   "description": "在你的回合开始时，你每有一种不同的充能球，就获得3点[gold]格挡[/gold]。"
+  },
+  "COOLHEADED": {
+   "description": "[gold]生成[/gold]1个[gold]冰霜[/gold]充能球。\n抽2张牌。"
+  },
+  "COORDINATE": {
+   "description": "在本回合给予其他玩家8点[gold]力量[/gold]。"
+  },
+  "CORROSIVE_WAVE": {
+   "description": "打出此牌后，你在本回合每抽到一张牌，就给予所有敌人3层[gold]中毒[/gold]。"
+  },
+  "CORRUPTION": {
+   "cost": 2,
+   "description": "技能牌消耗变为0[energy]1[/energy]。\n每当你打出一张技能牌时，将其[gold]消耗[/gold]。"
+  },
+  "COSMIC_INDIFFERENCE": {
+   "description": "获得9点[gold]格挡[/gold]。\n将[gold]弃牌堆[/gold]中的一张牌放到你的[gold]抽牌堆[/gold]的顶部。"
+  },
+  "COUNTDOWN": {
+   "description": "在你的回合开始时，给予随机敌人9层[gold]灾厄[/gold]。"
+  },
+  "CRASH_LANDING": {
+   "description": "对所有敌人造成26点伤害。\n用[gold]碎屑[/gold]填满你的[gold]手牌[/gold]。"
+  },
+  "CREATIVE_AI": {
+   "cost": 2,
+   "description": "在你的回合开始时，将一张随机能力牌加入你的[gold]手牌[/gold]。"
+  },
+  "CRESCENT_SPEAR": {
+   "description": "造成8点伤害。\n你每有一张拥有[star]1[/star]耗能的卡牌，这张牌就额外造成3点伤害。"
+  },
+  "CRIMSON_MANTLE": {
+   "description": "在你的回合开始时，失去1点生命并获得10点[gold]格挡[/gold]。"
+  },
+  "CRUELTY": {
+   "description": "有[gold]易伤[/gold]状态的敌人额外受到50%的伤害。"
+  },
+  "CRUSH_UNDER": {
+   "description": "对所有敌人造成8点伤害。所有敌人在本回合失去2点[gold]力量[/gold]。"
+  },
+  "DAGGER_SPRAY": {
+   "description": "Deal 6 damage to ALL enemies twice."
+  },
+  "DAGGER_THROW": {
+   "description": "造成12点伤害。\n抽1张牌。\n丢弃1张牌。"
+  },
+  "DANSE_MACABRE": {
+   "description": "每当你打出一张耗能大于等于[energy]2[/energy]的牌时，获得6点[gold]格挡[/gold]。"
+  },
+  "DARKNESS": {
+   "description": "[gold]生成[/gold]1[gold]个黑暗[/gold]充能球。\n触发所有[gold]黑暗[/gold]充能球的被动两次。"
+  },
+  "DARK_EMBRACE": {
+   "cost": 1,
+   "description": "每当有一张牌被[gold]消耗[/gold]时，\n抽1张牌。"
+  },
+  "DARK_SHACKLES": {
+   "description": "使一名敌人在本回合失去15点[gold]力量[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "DASH": {
+   "description": "获得13点[gold]格挡[/gold]。\n造成13点伤害。"
+  },
+  "DEADLY_POISON": {
+   "description": "给予7层[gold]中毒[/gold]。"
+  },
+  "DEATHBRINGER": {
+   "description": "给予所有敌人26层[gold]灾厄[/gold]和1层[gold]虚弱[/gold]。"
+  },
+  "DEATHS_DOOR": {
+   "description": "获得7点[gold]格挡[/gold]。\n如果你在本回合中曾给予过[gold]灾厄[/gold]，则额外获得2次[gold]格挡[/gold]。"
+  },
+  "DEATH_MARCH": {
+   "description": "造成9点伤害。\n你在回合进行中每抽到一张牌，都会使其额外造成6点伤害。"
+  },
+  "DEBILITATE": {
+   "description": "造成12点伤害。\n在接下来的3回合内，该敌人身上的[gold]易伤[/gold]与[gold]虚弱[/gold]效果翻倍。"
+  },
+  "DECISIONS_DECISIONS": {
+   "description": "抽5张牌。\n选择你[gold]手牌[/gold]中的一张技能牌，并将其打出3次。\n[gold]消耗[/gold]。"
+  },
+  "DEFEND_DEFECT": {
+   "description": "获得8点[gold]格挡[/gold]。"
+  },
+  "DEFEND_IRONCLAD": {
+   "description": "获得8点[gold]格挡[/gold]。"
+  },
+  "DEFEND_NECROBINDER": {
+   "description": "获得8点[gold]格挡[/gold]。"
+  },
+  "DEFEND_REGENT": {
+   "description": "获得8点[gold]格挡[/gold]。"
+  },
+  "DEFEND_SILENT": {
+   "description": "获得8点[gold]格挡[/gold]。"
+  },
+  "DEFILE": {
+   "description": "[gold]虚无[/gold]。\n造成17点伤害。"
+  },
+  "DEFLECT": {
+   "description": "获得7点[gold]格挡[/gold]。"
+  },
+  "DEFRAGMENT": {
+   "description": "获得2点[gold]集中[/gold]。"
+  },
+  "DEFY": {
+   "description": "[gold]虚无[/gold]。\n获得9点[gold]格挡[/gold]。\n给予1层[gold]虚弱[/gold]。"
+  },
+  "DELAY": {
+   "description": "获得13点[gold]格挡[/gold]。\n在下个回合，\n获得[energy]2[/energy]。"
+  },
+  "DEMESNE": {
+   "cost": 2,
+   "description": "[gold]虚无[/gold]。\n在你的回合开始时，获得[energy]1[/energy]并额外多抽1张牌。"
+  },
+  "DEMON_FORM": {
+   "description": "在你的回合开始时，获得3点[gold]力量[/gold]。"
+  },
+  "DEVASTATE": {
+   "description": "造成40点伤害。"
+  },
+  "DEVOUR_LIFE": {
+   "description": "每当你打出一张[gold]灵魂[/gold]时，[gold]召唤[/gold]2。"
+  },
+  "DIRGE": {
+   "description": "[gold]召唤[/gold]4X次。\n将X张[gold]灵魂+[/gold]添加到你的[gold]抽牌堆[/gold]中。\n[gold]消耗[/gold]。"
+  },
+  "DISMANTLE": {
+   "description": "Deal 10 damage.\nIf the enemy is [gold]Vulnerable[/gold], hits twice."
+  },
+  "DISTRACTION": {
+   "cost": 0,
+   "description": "将一张随机技能牌添加到你的[gold]手牌[/gold]中。这张牌在本回合内可以免费打出。\n[gold]消耗[/gold]。"
+  },
+  "DODGE_AND_ROLL": {
+   "description": "获得6点[gold]格挡[/gold]。\n在下个回合，获得6点[gold]格挡[/gold]。"
+  },
+  "DOMINATE": {
+   "description": "给予2层[gold]易伤[/gold]。\n敌人身上每有一层[gold]易伤[/gold]，就获得1点[gold]力量[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "DOUBLE_ENERGY": {
+   "cost": 0,
+   "description": "将你的能量翻倍。\n[gold]消耗[/gold]。"
+  },
+  "DRAIN_POWER": {
+   "description": "造成12点伤害。\n随机[gold]升级[/gold]你[gold]弃牌堆[/gold]中的3张牌。"
+  },
+  "DRAMATIC_ENTRANCE": {
+   "description": "[gold]固有[/gold]。\n对所有敌人造成15点伤害。\n[gold]消耗[/gold]。"
+  },
+  "DRUM_OF_BATTLE": {
+   "description": "抽2张牌。\n这张牌被[gold]消耗[/gold]时，获得[energy]3[/energy]。"
+  },
+  "DUALCAST": {
+   "cost": 0,
+   "description": "[gold]激发[/gold]你最右侧的充能球两次。"
+  },
+  "DUAL_WIELD": {
+   "description": "选择一张攻击牌或能力牌。将该牌的2张复制品加入你的[gold]手牌[/gold]。"
+  },
+  "DYING_STAR": {
+   "description": "[gold]虚无[/gold]。\n对所有敌人造成11点伤害。所有敌人在本回合中失去11点[gold]力量[/gold]。"
+  },
+  "ECHOING_SLASH": {
+   "description": "对所有敌人造成13点伤害。\n每有一名敌人被击杀，就重复此效果。"
+  },
+  "EIDOLON": {
+   "cost": 1,
+   "description": "[gold]Exhaust[/gold] your [gold]Hand[/gold].\nIf 9 cards were [gold]Exhausted[/gold] this way, gain 1 [gold]Intangible[/gold]."
+  },
+  "END_OF_DAYS": {
+   "description": "给予所有敌人37层[gold]灾厄[/gold]。\n杀死所有[gold]灾厄[/gold]大于等于当前生命值的敌人。"
+  },
+  "ENERGY_SURGE": {
+   "description": "所有玩家获得[energy]3[/energy]。\n[gold]消耗[/gold]。"
+  },
+  "ENFEEBLING_TOUCH": {
+   "description": "[gold]虚无[/gold]。\n让一名敌人在本回合内失去11点[gold]力量[/gold]。"
+  },
+  "ENLIGHTENMENT": {
+   "description": "在这场战斗，你当前[gold]手牌[/gold]中所有牌的耗能降低至1。\n[gold]消耗[/gold]。"
+  },
+  "ENTRENCH": {
+   "cost": 1,
+   "description": "将你当前的[gold]格挡[/gold]翻倍。"
+  },
+  "ENVENOM": {
+   "description": "每有一次攻击造成未被格挡的伤害，就给予2层[gold]中毒[/gold]。"
+  },
+  "EQUILIBRIUM": {
+   "description": "获得16点[gold]格挡[/gold]。\n在本回合[gold]保留[/gold]你的[gold]手牌[/gold]。"
+  },
+  "ERADICATE": {
+   "description": "[gold]保留[/gold]。\n造成14点伤害X次。"
+  },
+  "ESCAPE_PLAN": {
+   "description": "抽1张牌。\n如果抽到的是技能牌，则获得5点[gold]格挡[/gold]。"
+  },
+  "ETERNAL_ARMOR": {
+   "description": "获得12层[gold]覆甲[/gold]。"
+  },
+  "EVIL_EYE": {
+   "description": "获得11点[gold]格挡[/gold]。\n如果你在本回合[gold]消耗[/gold]过卡牌，则额外获得11点[gold]格挡[/gold]。"
+  },
+  "EXPECT_A_FIGHT": {
+   "cost": 1,
+   "description": "Gain Energy for each Attack in your Hand.\nYou cannot gain\nadditional Energy this turn."
+  },
+  "EXPERTISE": {
+   "description": "Draw cards until you have 7 in your [gold]Hand[/gold]."
+  },
+  "EXPOSE": {
+   "description": "去除敌人身上的所有[gold]格挡[/gold]值和[gold]人工制品[/gold]。\n并给予3层[gold]易伤[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "EXTERMINATE": {
+   "description": "Deal 4 damage to ALL enemies 4 times."
+  },
+  "FALLING_STAR": {
+   "description": "造成12点伤害。\n给予1层[gold]虚弱[/gold]。\n给予1层[gold]易伤[/gold]。"
+  },
+  "FAN_OF_KNIVES": {
+   "description": "[gold]小刀[/gold]现在会攻击所有敌人。\n将5张[gold]小刀[/gold]添加到你的[gold]手牌[/gold]。"
+  },
+  "FASTEN": {
+   "description": "从“防御”牌中额外获得6点[gold]格挡[/gold]。"
+  },
+  "FEAR": {
+   "description": "[gold]虚无[/gold]。\n造成8点伤害。\n给予2层[gold]易伤[/gold]。"
+  },
+  "FEED": {
+   "description": "造成12点伤害。\n[gold]斩杀[/gold]时，永久获得4点最大生命值。\n[gold]消耗[/gold]。"
+  },
+  "FEEDING_FRENZY": {
+   "description": "在本回合内获得7点[gold]力量[/gold]。"
+  },
+  "FEEL_NO_PAIN": {
+   "description": "每当有一张牌被[gold]消耗[/gold]时，获得4点[gold]格挡[/gold]。"
+  },
+  "FERAL": {
+   "cost": 1,
+   "description": "你每回合打出的第一张\n耗能为0[energy]1[/energy]的攻击牌，\n会放回你的[gold]手牌[/gold]。"
+  },
+  "FETCH": {
+   "description": "[gold]奥斯提[/gold]造成6点伤害。\n如果这是这张牌第一次在本回合被打出，则抽1张牌。"
+  },
+  "FIEND_FIRE": {
+   "description": "[gold]Exhaust[/gold] your [gold]Hand[/gold].\nDeal 10 damage for each card [gold]Exhausted[/gold].\n[gold]Exhaust[/gold]."
+  },
+  "FIGHT_ME": {
+   "description": "Deal 6 damage twice.\nGain 4 [gold]Strength[/gold].\nThe enemy gains 1 [gold]Strength[/gold]."
+  },
+  "FIGHT_THROUGH": {
+   "description": "获得17点[gold]格挡[/gold]。\n将2张[gold]伤口[/gold]加入你的[gold]弃牌堆[/gold]。"
+  },
+  "FINESSE": {
+   "description": "获得7点[gold]格挡[/gold]。\n抽1张牌。"
+  },
+  "FINISHER": {
+   "description": "在这个回合内每打出过一张攻击牌，就造成8点伤害一次。"
+  },
+  "FISTICUFFS": {
+   "description": "造成9点伤害。\n获得等量于所造成伤害的[gold]格挡[/gold]。"
+  },
+  "FLAK_CANNON": {
+   "description": "[gold]消耗[/gold]你所有的状态牌。\n每有一张被[gold]消耗[/gold]的牌，就随机对敌人造成11点伤害。"
+  },
+  "FLAME_BARRIER": {
+   "description": "获得16点[gold]格挡[/gold]。\n你在这个回合每受到一次攻击，都会对攻击者造成6点伤害。"
+  },
+  "FLANKING": {
+   "cost": 1,
+   "description": "一名敌人在本回合受到的来自其他玩家的攻击伤害翻倍。"
+  },
+  "FLASH_OF_STEEL": {
+   "description": "造成8点伤害。\n抽1张牌。"
+  },
+  "FLATTEN": {
+   "description": "[gold]奥斯提[/gold]造成16点伤害。\n如果[gold]奥斯提[/gold]本回合攻击过，则这张牌的耗能变为0[energy]1[/energy]。"
+  },
+  "FLECHETTES": {
+   "description": "[gold]手牌[/gold]中每有一张技能牌，造成7点伤害。"
+  },
+  "FLICK_FLACK": {
+   "description": "[gold]奇巧[/gold]。\n对所有敌人造成8点伤害。"
+  },
+  "FOCUSED_STRIKE": {
+   "description": "造成11点伤害。\n在本回合获得2点[gold]集中[/gold]。"
+  },
+  "FOOTWORK": {
+   "description": "获得3点[gold]敏捷[/gold]。"
+  },
+  "FORBIDDEN_GRIMOIRE": {
+   "cost": 1,
+   "description": "在战斗结束时，你可以从你的[gold]牌组[/gold]中选一张牌移除。\n[gold]永恒[/gold]。"
+  },
+  "FOREGONE_CONCLUSION": {
+   "description": "在下个回合，从你的[gold]抽牌堆[/gold]中选择3张牌放入你的[gold]手牌[/gold]。"
+  },
+  "FORGOTTEN_RITUAL": {
+   "description": "如果你在本回合[gold]消耗[/gold]过牌，则获得[energy]4[/energy]。\n[gold]消耗[/gold]。"
+  },
+  "FRIENDSHIP": {
+   "description": "失去1点[gold]力量[/gold]。\n在每个回合开始时获得[energy]1[/energy]。"
+  },
+  "FTL": {
+   "description": "造成6点伤害。\n如果你在这回合打出的牌数小于4张，抽1张牌。"
+  },
+  "FUEL": {
+   "description": "Gain 1 Energy.\nDraw 2 cards.\n[gold]Exhaust[/gold]."
+  },
+  "FURNACE": {
+   "description": "在你的回合开始时，[gold]铸造[/gold]7。"
+  },
+  "GAMMA_BLAST": {
+   "description": "造成18点伤害。\n给予2层[gold]虚弱[/gold]。\n给予2层[gold]易伤[/gold]。"
+  },
+  "GANG_UP": {
+   "description": "造成5点伤害。\n本回合其他玩家每攻击过一次该敌人，该牌造成的伤害就额外增加7点。"
+  },
+  "GATHER_LIGHT": {
+   "description": "获得11点[gold]格挡[/gold]。\n获得[star]1[/star]。"
+  },
+  "GENESIS": {
+   "description": "在你的回合开始时，获得[star]3[/star]。"
+  },
+  "GENETIC_ALGORITHM": {
+   "description": "获得1点[gold]格挡[/gold]。\n每打出一次，这张牌在本局游戏中的[gold]格挡[/gold]值永久增加4点。\n[gold]消耗[/gold]。"
+  },
+  "GIANT_ROCK": {
+   "description": "造成20点伤害。"
+  },
+  "GLACIER": {
+   "description": "获得9点[gold]格挡[/gold]。\n[gold]生成[/gold]2个[gold]冰霜[/gold]充能球。"
+  },
+  "GLASSWORK": {
+   "description": "获得8点[gold]格挡[/gold]。\n[gold]生成[/gold]1个[gold]玻璃[/gold]充能球。"
+  },
+  "GLIMMER": {
+   "description": "抽4张牌。\n将你[gold]手牌[/gold]中的1张牌放到[gold]抽牌堆[/gold]顶部。"
+  },
+  "GLIMPSE_BEYOND": {
+   "description": "在所有玩家的[gold]抽牌堆[/gold]中加入4张[gold]灵魂[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "GLITTERSTREAM": {
+   "description": "获得13点[gold]格挡[/gold]。\n在下一回合获得7点[gold]格挡[/gold]。"
+  },
+  "GLOW": {
+   "description": "获得[star]2[/star]。\n抽1张牌。\n下一回合抽1张牌。"
+  },
+  "GO_FOR_THE_EYES": {
+   "description": "造成4点伤害。\n如果敌人的意图是攻击，则给予2层[gold]虚弱[/gold]。"
+  },
+  "GRAND_FINALE": {
+   "description": "只有当你的[gold]抽牌堆[/gold]中没有牌时才能打出。对所有敌人造成75点伤害。"
+  },
+  "GRAVEBLAST": {
+   "description": "造成6点伤害。\n将[gold]弃牌堆[/gold]中的一张牌放入你的[gold]手牌[/gold]。"
+  },
+  "GRAVE_WARDEN": {
+   "description": "获得11点[gold]格挡[/gold]。\n将一张[gold]灵魂[/gold]放入你的[gold]抽牌堆[/gold]中。"
+  },
+  "GUARDS": {
+   "description": "将你[gold]手牌[/gold]中的任意张牌[gold]变化[/gold]为[gold]仆从捐躯+[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "GUIDING_STAR": {
+   "description": "Deal 13 damage.\nDraw 3 cards."
+  },
+  "GUNK_UP": {
+   "description": "Deal 5 damage 3 times.\nAdd a [gold]Slimed[/gold] into your [gold]Discard Pile[/gold]."
+  },
+  "HAILSTORM": {
+   "description": "在你的回合结束时，如果你有[gold]冰霜[/gold]充能球，则对所有敌人造成8点伤害。"
+  },
+  "HAMMER_TIME": {
+   "cost": 1,
+   "description": "每当你[gold]铸造[/gold]时，所有盟友也都[gold]铸造[/gold]相同的数值。"
+  },
+  "HAND_OF_GREED": {
+   "description": "造成25点伤害。\n[gold]斩杀[/gold]时，获得25[gold]金币[/gold]。"
+  },
+  "HAND_TRICK": {
+   "description": "获得10点[gold]格挡[/gold]。\n在本回合给你[gold]手牌[/gold]中的一张技能牌添加[gold]奇巧[/gold]。"
+  },
+  "HANG": {
+   "description": "造成13点伤害。\n让所有“吊杀”牌对这名敌人造成的伤害翻倍。"
+  },
+  "HAUNT": {
+   "description": "每当你打出一张[gold]灵魂[/gold]时，随机一名敌人失去8点生命。"
+  },
+  "HAVOC": {
+   "cost": 0,
+   "description": "打出[gold]抽牌堆[/gold]顶部的牌并将其[gold]消耗[/gold]。"
+  },
+  "HAZE": {
+   "description": "[gold]Sly[/gold].\nApply 6 [gold]Poison[/gold] to ALL enemies."
+  },
+  "HEADBUTT": {
+   "description": "造成12点伤害。\n将你[gold]弃牌堆[/gold]中的一张牌放到[gold]抽牌堆[/gold]顶部。"
+  },
+  "HEAVENLY_DRILL": {
+   "description": "造成10点伤害X次。\n如果X的最终数值为4或以上，则将X的数值翻倍。"
+  },
+  "HEGEMONY": {
+   "description": "造成18点伤害。\n在下个回合获得[energy]3[/energy]。"
+  },
+  "HEIRLOOM_HAMMER": {
+   "description": "造成25点伤害。\n选择你[gold]手牌[/gold]中的一张无色牌。将这张牌的一张复制品放入你的[gold]手牌[/gold]。"
+  },
+  "HELIX_DRILL": {
+   "description": "Deal 5 damage for each Energy previously spent this turn."
+  },
+  "HELLRAISER": {
+   "cost": 1,
+   "description": "每当你抽到名字中有“打击”的牌时，对一名随机敌人打出这张牌。"
+  },
+  "HEMOKINESIS": {
+   "description": "失去2点生命。\n造成20点伤害。"
+  },
+  "HIDDEN_CACHE": {
+   "description": "获得[star]1[/star]。\n在下个回合获得[star]4[/star]。"
+  },
+  "HIDDEN_DAGGERS": {
+   "description": "丢弃2张牌。\n将2张[gold]小刀+[/gold]加入你的[gold]手牌[/gold]。"
+  },
+  "HIDDEN_GEM": {
+   "description": "你[gold]抽牌堆[/gold]中的一张没有[gold]重放[/gold]的随机牌获得3层[gold]重放[/gold]。"
+  },
+  "HIGH_FIVE": {
+   "description": "[gold]奥斯提[/gold]对所有敌人\n造成13点伤害并给予它们\n3层[gold]易伤[/gold]。"
+  },
+  "HOLOGRAM": {
+   "description": "获得5点[gold]格挡[/gold]。\n将[gold]弃牌堆[/gold]中的一张牌放入你的[gold]手牌[/gold]。"
+  },
+  "HOWL_FROM_BEYOND": {
+   "description": "对所有敌人造成21点伤害。\n在你的回合结束时，如果这张牌在你的[gold]消耗牌堆[/gold]中，则将其打出。"
+  },
+  "HUDDLE_UP": {
+   "description": "所有玩家抽3张牌。\n[gold]消耗[/gold]。"
+  },
+  "HYPERBEAM": {
+   "description": "Deal 36 damage to ALL enemies.\nLose 3 [gold]Focus[/gold]."
+  },
+  "ICE_LANCE": {
+   "description": "造成24点伤害。\n[gold]生成[/gold]3个[gold]冰霜[/gold]充能球。"
+  },
+  "IMPATIENCE": {
+   "description": "如果你的[gold]手牌[/gold]中没有攻击牌，抽3张牌。"
+  },
+  "IMPERVIOUS": {
+   "description": "获得40点[gold]格挡[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "INFERNAL_BLADE": {
+   "cost": 0,
+   "description": "将一张随机攻击牌加入你的[gold]手牌[/gold]。那张牌在本回合内可以免费打出。\n[gold]消耗[/gold]。"
+  },
+  "INFERNO": {
+   "description": "在你的回合开始时，失去1点生命。\n每当你在你的回合内失去生命时，对所有敌人造成9点伤害。"
+  },
+  "INFLAME": {
+   "description": "获得3点[gold]力量[/gold]。"
+  },
+  "INTERCEPT": {
+   "description": "获得13点[gold]格挡[/gold]。\n将本回合所有要对另一名玩家发起的攻击转移到你的身上。"
+  },
+  "INVOKE": {
+   "description": "在下个回合[gold]召唤[/gold]3并获得[energy]3[/energy]。"
+  },
+  "IRON_WAVE": {
+   "description": "获得7点[gold]格挡[/gold]。\n造成7点伤害。"
+  },
+  "ITERATION": {
+   "description": "每回合你第一次抽到状态牌时，抽3张牌。"
+  },
+  "I_AM_INVINCIBLE": {
+   "description": "获得13点[gold]格挡[/gold]。\n在你的回合结束时，如果这张牌位于[gold]抽牌堆[/gold]顶部，则将其打出。"
+  },
+  "JACKPOT": {
+   "description": "造成30点伤害。\n将3张随机[gold]升级过[/gold]的0[energy]1[/energy]的牌加入你的[gold]手牌[/gold]。"
+  },
+  "JACK_OF_ALL_TRADES": {
+   "description": "将2张随机无色牌加入你的[gold]手牌[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "JUGGERNAUT": {
+   "description": "每当你获得[gold]格挡[/gold]时，对随机敌人造成8点伤害。"
+  },
+  "KINGLY_KICK": {
+   "description": "造成35点伤害。\n每当你抽到这张牌时，这张牌的耗能减少1。"
+  },
+  "KINGLY_PUNCH": {
+   "description": "造成10点伤害。\n每当你抽到这张牌时，在这场战斗中其伤害增加6。"
+  },
+  "KNIFE_TRAP": {
+   "description": "将你[gold]消耗牌堆[/gold]中的所有[gold]小刀[/gold][gold]升级[/gold]然后对一名敌人打出。"
+  },
+  "KNOCKDOWN": {
+   "description": "造成14点伤害。\n该敌人在本回合受到的来自其他玩家的伤害变为三倍。"
+  },
+  "KNOCKOUT_BLOW": {
+   "description": "Deal 38 damage.\nIf this kills an enemy, gain 5 Stars."
+  },
+  "LARGESSE": {
+   "description": "将一张随机的[gold]升级过的[/gold]无色牌添加到一位其他玩家的[gold]手牌[/gold]中。"
+  },
+  "LEADING_STRIKE": {
+   "description": "造成6点伤害。\n将2张[gold]小刀[/gold]加入你的[gold]手牌[/gold]。"
+  },
+  "LEAP": {
+   "description": "获得12点[gold]格挡[/gold]。"
+  },
+  "LEGION_OF_BONE": {
+   "description": "所有玩家[gold]召唤[/gold]8。\n[gold]消耗[/gold]。"
+  },
+  "LEG_SWEEP": {
+   "description": "给予3层[gold]虚弱[/gold]。\n获得14点[gold]格挡[/gold]。"
+  },
+  "LETHALITY": {
+   "description": "[gold]虚无[/gold]。\n每回合的第一张攻击牌会造成75%额外伤害。"
+  },
+  "LIFT": {
+   "description": "给另一名玩家16点[gold]格挡[/gold]。"
+  },
+  "LIGHTNING_ROD": {
+   "description": "获得7点[gold]格挡[/gold]。\n在下2个回合开始时,[gold]生成[/gold]1个[gold]闪电[/gold]充能球。"
+  },
+  "LOOP": {
+   "description": "在你的回合开始时，触发你最右侧的一个充能球的被动能力2次。"
+  },
+  "LUMINESCE": {
+   "description": "[gold]保留[/gold]。\n获得[energy]3[/energy]。\n[gold]消耗[/gold]。"
+  },
+  "LUNAR_BLAST": {
+   "description": "本回合中每打出过一张技能牌，此牌额外造成5点伤害一次。"
+  },
+  "MAKE_IT_SO": {
+   "description": "造成9点伤害。\n你每在一回合内打出3张技能牌，就将这张牌放入你的[gold]手牌[/gold]。"
+  },
+  "MALAISE": {
+   "description": "敌人失去X+1点[gold]力量[/gold]。给予X+1层[gold]虚弱[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "MANGLE": {
+   "description": "造成20点伤害。\n敌人在本回合失去15点[gold]力量[/gold]。"
+  },
+  "MANIFEST_AUTHORITY": {
+   "description": "获得8点[gold]格挡[/gold]。\n将一张随机[gold]升级过的[/gold]无色牌加入你的[gold]手牌[/gold]。"
+  },
+  "MASTER_OF_STRATEGY": {
+   "description": "抽4张牌。\n[gold]消耗[/gold]。"
+  },
+  "MASTER_PLANNER": {
+   "cost": 1,
+   "description": "当你打出技能牌时，该牌获得[gold]奇巧[/gold]。"
+  },
+  "MAUL": {
+   "description": "Deal 6 damage twice.\nIncrease the damage of ALL Maul cards by 2 this combat."
+  },
+  "MAYHEM": {
+   "cost": 1,
+   "description": "在你的回合开始时，打出你[gold]抽牌堆[/gold]顶部的牌。"
+  },
+  "MELANCHOLY": {
+   "description": "获得17点[gold]格挡[/gold]。\n每当有任何生物死亡时，这张牌的耗能减少[energy]1[/energy]。"
+  },
+  "MEMENTO_MORI": {
+   "description": "Deal 11 damage.\nDeals 5 additional damage for each card discarded this turn."
+  },
+  "METAMORPHOSIS": {
+   "description": "在你的[gold]抽牌堆[/gold]中加入5张随机攻击牌。它们在本场战斗中可以被免费打出。\n[gold]消耗[/gold]。"
+  },
+  "METEOR_SHOWER": {
+   "description": "对所有敌人造成21点伤害。\n给予所有敌人2层[gold]虚弱[/gold]和[gold]易伤[/gold]。"
+  },
+  "METEOR_STRIKE": {
+   "description": "造成30点伤害。\n[gold]生成[/gold]3个[gold]等离子[/gold]充能球。"
+  },
+  "MIND_BLAST": {
+   "cost": 0,
+   "description": "[gold]固有[/gold]。\n造成你[gold]抽牌堆[/gold]中剩余牌数的伤害。"
+  },
+  "MINION_DIVE_BOMB": {
+   "description": "造成16点伤害。\n[gold]消耗[/gold]。"
+  },
+  "MINION_SACRIFICE": {
+   "description": "获得11点[gold]格挡[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "MINION_STRIKE": {
+   "description": "造成9点伤害。\n抽1张牌。\n[gold]消耗[/gold]。"
+  },
+  "MIRAGE": {
+   "cost": 0,
+   "description": "Gain [gold]Block[/gold] equal to [gold]Poison[/gold] on ALL enemies.\n[gold]Exhaust[/gold]."
+  },
+  "MISERY": {
+   "description": "[gold]保留[/gold]。\n造成9点伤害。\n给予其他敌人该名敌人身上的所有负面效果。"
+  },
+  "MODDED": {
+   "description": "获得1个充能球栏位。\n抽2张牌。这张牌的耗能加1。"
+  },
+  "MOLTEN_FIST": {
+   "description": "造成14点伤害。\n将该敌人身上的[gold]易伤[/gold]层数翻倍。\n[gold]消耗[/gold]。"
+  },
+  "MOMENTUM_STRIKE": {
+   "description": "造成13点伤害。\n这张牌的耗能降为0[energy]1[/energy]。"
+  },
+  "MONARCHS_GAZE": {
+   "cost": 1,
+   "description": "每当你攻击敌人的时候，这名敌人在本回合失去1点[gold]力量[/gold]。"
+  },
+  "MULTI_CAST": {
+   "description": "[gold]激发[/gold]你最右侧的充能球X+1次。"
+  },
+  "MURDER": {
+   "cost": 2,
+   "description": "造成1点伤害。\n你在本场战斗中每抽过一张牌，此牌就额外造成1点伤害。"
+  },
+  "NECRO_MASTERY": {
+   "description": "[gold]召唤[/gold]8。\n每当[gold]奥斯提[/gold]失去生命值时，\n所有敌人失去等量生命值。"
+  },
+  "NEGATIVE_PULSE": {
+   "description": "获得6点[gold]格挡[/gold]。\n给予所有敌人11层[gold]灾厄[/gold]。"
+  },
+  "NEOWS_FURY": {
+   "description": "造成14点伤害。\n将你[gold]弃牌堆[/gold]中的至多3张牌放入你的[gold]手牌[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "NEUROSURGE": {
+   "description": "获得[energy]4[/energy]。\n抽2张牌。\n在你的回合开始时，给予自身3层[gold]灾厄[/gold]。"
+  },
+  "NEUTRALIZE": {
+   "description": "造成4点伤害。\n给予2层[gold]虚弱[/gold]。"
+  },
+  "NEUTRON_AEGIS": {
+   "description": "获得11层[gold]覆甲[/gold]。"
+  },
+  "NIGHTMARE": {
+   "cost": 2,
+   "description": "选择一张牌。\n在下个回合将这张牌的3张复制品加入你的[gold]手牌[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "NOSTALGIA": {
+   "cost": 0,
+   "description": "每回合首次打出攻击或技能牌时，将其置于你的[gold]抽牌堆[/gold]顶端。"
+  },
+  "NOT_YET": {
+   "description": "回复13点生命。\n[gold]消耗[/gold]。"
+  },
+  "NOXIOUS_FUMES": {
+   "description": "在你的回合开始时，给予所有敌人3层[gold]中毒[/gold]。"
+  },
+  "NO_ESCAPE": {
+   "description": "给予15层[gold]灾厄[/gold]，敌人身上每有10层[gold]灾厄[/gold]，则额外给予这名敌人5层[gold]灾厄[/gold]。"
+  },
+  "NULL": {
+   "description": "造成13点伤害。\n给予3层[gold]虚弱[/gold]。\n[gold]生成[/gold]1个[gold]黑暗[/gold]充能球。"
+  },
+  "OBLIVION": {
+   "description": "打出此牌后，你在本回合内每打出一张牌，就给予该敌人4层[gold]灾厄[/gold]。"
+  },
+  "OFFERING": {
+   "description": "失去6点生命。\n获得[energy]2[/energy]。\n抽5张牌。\n[gold]消耗[/gold]。"
+  },
+  "OMNISLICE": {
+   "description": "造成11点伤害。\n对所有其他敌人造成等量的伤害。"
+  },
+  "ONE_TWO_PUNCH": {
+   "description": "在这个回合，你打出的下2张攻击牌会被额外打出一次。"
+  },
+  "ORBIT": {
+   "cost": 1,
+   "description": "你每花费[energy]4[/energy]，\n就获得[energy]1[/energy]。"
+  },
+  "OUTBREAK": {
+   "description": "Every 3 times you apply [gold]Poison[/gold], deal 15 damage to ALL enemies."
+  },
+  "OUTMANEUVER": {
+   "description": "在下个回合获得[energy]3[/energy]。"
+  },
+  "OVERCLOCK": {
+   "description": "抽3张牌。\n将一张[gold]灼伤[/gold]加入你的[gold]弃牌堆[/gold]。"
+  },
+  "PACTS_END": {
+   "description": "如果你的[gold]消耗牌堆[/gold]拥有大于等于3张牌，\n则对所有敌人造成23点伤害。"
+  },
+  "PAGESTORM": {
+   "cost": 0,
+   "description": "每当你抽到一张[gold]虚无[/gold]牌时, 抽1张牌。"
+  },
+  "PALE_BLUE_DOT": {
+   "description": "如果你在一回合内打出了大于等于5张牌，在下个回合开始时抽2张牌。"
+  },
+  "PANACHE": {
+   "description": "每当你在一回合内打出五张牌时，对所有敌人造成14点伤害。"
+  },
+  "PANIC_BUTTON": {
+   "description": "获得40点[gold]格挡[/gold]。\n你在接下来的2回合内无法再从卡牌中获得[gold]格挡[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "PARRY": {
+   "description": "[gold]君王之剑[/gold]现在能让你获得14点[gold]格挡[/gold]。"
+  },
+  "PARSE": {
+   "description": "[gold]虚无[/gold]。\n抽4张牌。"
+  },
+  "PARTICLE_WALL": {
+   "description": "获得12点[gold]格挡[/gold]。\n将此牌返回你的[gold]手牌[/gold]。"
+  },
+  "PATTER": {
+   "description": "获得10点[gold]格挡[/gold]。\n获得3点[gold]活力[/gold]。"
+  },
+  "PECK": {
+   "description": "Deal 2 damage 4 times."
+  },
+  "PERFECTED_STRIKE": {
+   "description": "造成6点伤害。\n你每有一张名字中含有“打击”的牌，伤害+3。"
+  },
+  "PHANTOM_BLADES": {
+   "description": "[gold]小刀[/gold]获得[gold]保留[/gold]。\n你在每回合打出的第一张[gold]小刀[/gold]额外造成12点伤害。"
+  },
+  "PHOTON_CUT": {
+   "description": "造成13点伤害。\n抽2张牌。\n将[gold]手牌[/gold]中的一张牌放到[gold]抽牌堆[/gold]顶部。"
+  },
+  "PIERCING_WAIL": {
+   "description": "所有敌人在本回合失去8点[gold]力量[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "PILLAGE": {
+   "description": "造成9点伤害。\n抽牌直到你抽到一张非攻击牌。"
+  },
+  "PILLAR_OF_CREATION": {
+   "description": "你每次生成卡牌时，获得4点[gold]格挡[/gold]。"
+  },
+  "PINPOINT": {
+   "description": "造成19点伤害。\n你在本回合中每打出过一张技能牌，其耗能减少1[energy]1[/energy]。"
+  },
+  "POISONED_STAB": {
+   "description": "造成8点伤害。\n给予4层[gold]中毒[/gold]。"
+  },
+  "POKE": {
+   "description": "[gold]奥斯提[/gold]造成9点伤害。"
+  },
+  "POMMEL_STRIKE": {
+   "description": "造成10点伤害。\n抽2张牌。"
+  },
+  "POUNCE": {
+   "description": "造成20点伤害。\n你的下一张技能牌耗能变为0[energy]1[/energy]。"
+  },
+  "PRECISE_CUT": {
+   "description": "造成16点伤害。\n你的[gold]手牌[/gold]中每有一张牌，此牌的伤害就降低2点。"
+  },
+  "PREDATOR": {
+   "description": "造成20点伤害。\n在下个回合抽2张牌。"
+  },
+  "PREPARED": {
+   "description": "抽2张牌。\n丢弃2张牌。"
+  },
+  "PREP_TIME": {
+   "description": "在你的回合开始时，获得6点[gold]活力[/gold]。"
+  },
+  "PRIMAL_FORCE": {
+   "description": "将[gold]手牌[/gold]中的所有攻击牌变化为[gold]巨石+[/gold]。"
+  },
+  "PRODUCTION": {
+   "description": "获得[energy]3[/energy]。\n[gold]消耗[/gold]。"
+  },
+  "PROPHESIZE": {
+   "description": "抽9张牌。"
+  },
+  "PROTECTOR": {
+   "cost": 0,
+   "description": "[gold]奥斯提[/gold]造成15点伤害。\n额外造成等量于[gold]奥斯提[/gold][gold]最大生命值[/gold]的伤害。"
+  },
+  "PROWESS": {
+   "description": "获得2点[gold]力量[/gold]。\n获得2点[gold]敏捷[/gold]。"
+  },
+  "PULL_AGGRO": {
+   "description": "[gold]召唤[/gold]5。\n获得9点[gold]格挡[/gold]。"
+  },
+  "PULL_FROM_BELOW": {
+   "description": "本场战斗中每打出过一张[gold]虚无[/gold]牌，此牌就造成7点伤害一次。"
+  },
+  "PURITY": {
+   "description": "[gold]保留[/gold]。\n从[gold]手牌[/gold]中选择最多5张牌消耗。\n[gold]消耗[/gold]。"
+  },
+  "PUTREFY": {
+   "description": "给予3层[gold]虚弱[/gold]。\n给予3层[gold]易伤[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "PYRE": {
+   "description": "在回合开始时，获得[energy]2[/energy]。"
+  },
+  "QUADCAST": {
+   "cost": 0,
+   "description": "[gold]激发[/gold]你最右侧的充能球4次。"
+  },
+  "QUASAR": {
+   "description": "从3张随机[gold]升级过[/gold]的无色牌中选择1张加入你的[gold]手牌[/gold]。"
+  },
+  "RADIATE": {
+   "description": "你在本回合每获得一点[star]1[/star]，此牌就对所有敌人造成4点伤害一次。"
+  },
+  "RAGE": {
+   "description": "打出此牌后，你在这个回合内每打出一张攻击牌，获得5点[gold]格挡[/gold]。"
+  },
+  "RALLY": {
+   "description": "所有玩家获得17点[gold]格挡[/gold]。"
+  },
+  "RAMPAGE": {
+   "description": "造成9点伤害。\n将这张牌在本场战斗中的伤害增加9。"
+  },
+  "RATTLE": {
+   "description": "[gold]奥斯提[/gold]造成9点伤害。\n本回合每使用过一次奥斯提攻击牌，此牌就额外造成一次伤害。"
+  },
+  "REANIMATE": {
+   "description": "[gold]召唤[/gold]25。\n[gold]消耗[/gold]。"
+  },
+  "REAP": {
+   "description": "[gold]保留[/gold]。\n造成33点伤害。"
+  },
+  "REAVE": {
+   "description": "造成11点伤害。\n将一张[gold]灵魂+[/gold]加入你的[gold]抽牌堆[/gold]。"
+  },
+  "REBOOT": {
+   "description": "将你的所有未消耗的卡牌重新洗牌放入[gold]抽牌堆[/gold]。\n抽6张牌。\n[gold]消耗[/gold]。"
+  },
+  "REBOUND": {
+   "description": "造成12点伤害。\n将你在本回合打出的下一张牌放置到你的[gold]抽牌堆[/gold]顶部。"
+  },
+  "REFINE_BLADE": {
+   "description": "[gold]铸造[/gold]13。\n在下个回合获得[energy]1[/energy]。"
+  },
+  "REFLECT": {
+   "description": "获得20点[gold]格挡[/gold]。\n在本回合将你格挡掉的攻击伤害反弹给攻击者。"
+  },
+  "REFLEX": {
+   "description": "[gold]奇巧[/gold]。\n抽3张牌。"
+  },
+  "REFRACT": {
+   "description": "Deal 12 damage twice.\n[gold]Channel[/gold] 2 [gold]Glass[/gold]."
+  },
+  "RELAX": {
+   "description": "获得17点[gold]格挡[/gold]。\n下个回合，抽3张牌并获得[energy]3[/energy]。\n[gold]消耗[/gold]。"
+  },
+  "REND": {
+   "description": "造成18点伤害。\n该名敌人身上每有一种负面效果，就额外造成8点伤害。"
+  },
+  "RESONANCE": {
+   "description": "获得2点[gold]力量[/gold]。所有敌人失去1点[gold]力量[/gold]。"
+  },
+  "RESTLESSNESS": {
+   "description": "[gold]保留[/gold]。\n如果你的[gold]手牌[/gold]为空，则抽3张牌并获得[energy]3[/energy]。"
+  },
+  "RICOCHET": {
+   "description": "[gold]Sly[/gold].\nDeal 3 damage to a random enemy 5 times."
+  },
+  "RIGHT_HAND_HAND": {
+   "description": "[gold]奥斯提[/gold]造成6点伤害。\n每当你打出耗能为[energy]2[/energy]或以上的牌，将此牌从[gold]弃牌堆[/gold]放回你的[gold]手牌[/gold]。"
+  },
+  "RIP_AND_TEAR": {
+   "description": "Deal 9 damage to a random enemy twice."
+  },
+  "ROCKET_PUNCH": {
+   "description": "Deal 14 damage.\nDraw 2 cards.\nWhenever you create a Status, reduce this card's cost to 0 Energy until played."
+  },
+  "ROLLING_BOULDER": {
+   "description": "在你的回合开始时，对所有敌人造成10点伤害，然后将该伤害增加5点。"
+  },
+  "ROYALTIES": {
+   "description": "在战斗结束时，获得40[gold]金币[/gold]。"
+  },
+  "RUPTURE": {
+   "description": "每当你在你的回合失去生命值时, 获得2点[gold]力量[/gold]。"
+  },
+  "SACRIFICE": {
+   "cost": 0,
+   "description": "[gold]Retain[/gold].\nIf [gold]Osty[/gold] is alive, he dies and you gain [gold]Block[/gold] equal to double his Max HP."
+  },
+  "SALVO": {
+   "description": "造成16点伤害。\n在本回合[gold]保留[/gold]你的[gold]手牌[/gold]。"
+  },
+  "SCAVENGE": {
+   "description": "[gold]消耗[/gold]一张牌。\n在下个回合获得[energy]3[/energy]。"
+  },
+  "SCOURGE": {
+   "description": "给予16层[gold]灾厄[/gold]。\n抽2张牌。"
+  },
+  "SCRAPE": {
+   "description": "造成10点伤害。\n抽5张牌。\n丢弃抽到的牌中耗能不为0[energy]1[/energy]的牌。"
+  },
+  "SCULPTING_STRIKE": {
+   "description": "造成12点伤害。\n为一张[gold]手牌[/gold]添加[gold]虚无[/gold]。"
+  },
+  "SEANCE": {
+   "cost": 0,
+   "description": "[gold]虚无[/gold]。\n将你[gold]抽牌堆[/gold]中的一张牌变化为[gold]灵魂[/gold]。"
+  },
+  "SECOND_WIND": {
+   "description": "[gold]消耗[/gold][gold]手牌[/gold]中所有非攻击牌，每张获得7点[gold]格挡[/gold]。"
+  },
+  "SEEKER_STRIKE": {
+   "description": "造成12点伤害。\n从[gold]抽牌堆[/gold]的随机3张牌中选择一张加入你的[gold]手牌[/gold]。"
+  },
+  "SEEKING_EDGE": {
+   "description": "[gold]铸造[/gold]11。\n[gold]君王之剑[/gold]现在会对所有敌人造成伤害。"
+  },
+  "SENTRY_MODE": {
+   "cost": 1,
+   "description": "在你的回合开始时，将1张[gold]扫荡凝视[/gold]加入你的[gold]手牌[/gold]。"
+  },
+  "SERPENT_FORM": {
+   "description": "你每打出一张牌，就对随机一名敌人造成6点伤害。"
+  },
+  "SETUP_STRIKE": {
+   "description": "造成9点伤害。\n在本回合内获得3点[gold]力量[/gold]。"
+  },
+  "SEVEN_STARS": {
+   "cost": 1,
+   "description": "Deal 7 damage to ALL enemies 7 times."
+  },
+  "SEVERANCE": {
+   "description": "造成18点伤害。\n将一张[gold]灵魂[/gold]分别加入你的[gold]抽牌堆[/gold]，[gold]手牌[/gold]和[gold]弃牌堆[/gold]中。"
+  },
+  "SHADOWMELD": {
+   "cost": 0,
+   "description": "本回合你获得的[gold]格挡[/gold]值翻倍。"
+  },
+  "SHADOW_SHIELD": {
+   "description": "获得15点[gold]格挡[/gold]。\n[gold]生成[/gold]1个[gold]黑暗[/gold]充能球。"
+  },
+  "SHADOW_STEP": {
+   "cost": 0,
+   "description": "丢弃所有[gold]手牌[/gold]。\n在下个回合，你所有的攻击伤害翻倍。"
+  },
+  "SHARED_FATE": {
+   "description": "失去2点[gold]力量[/gold]。\n敌人失去3点[gold]力量[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "SHATTER": {
+   "description": "对所有敌人造成11点伤害。\n[gold]激发[/gold]你的所有充能球两次。"
+  },
+  "SHINING_STRIKE": {
+   "description": "造成11点伤害。\n获得[star]2[/star]。\n将这张牌放置于你的[gold]抽牌堆[/gold]顶部。"
+  },
+  "SHIV": {
+   "description": "对所有敌人造成6点伤害。\n[gold]消耗[/gold]。"
+  },
+  "SHOCKWAVE": {
+   "description": "给予所有敌人5层[gold]虚弱[/gold]和[gold]易伤[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "SHROUD": {
+   "description": "每当你给予[gold]灾厄[/gold]时，获得3点[gold]格挡[/gold]。"
+  },
+  "SHRUG_IT_OFF": {
+   "description": "获得11点[gold]格挡[/gold]。\n抽1张牌。"
+  },
+  "SIC_EM": {
+   "description": "[gold]奥斯提[/gold]造成6点伤害。\n在本回合内，每当[gold]奥斯提[/gold]命中这名敌人时，[gold]召唤[/gold]4。"
+  },
+  "SIGNAL_BOOST": {
+   "cost": 0,
+   "description": "你的下一张能力牌会额外打出一次。\n[gold]消耗[/gold]。"
+  },
+  "SKEWER": {
+   "description": "造成11点伤害X次。"
+  },
+  "SKIM": {
+   "description": "抽4张牌。"
+  },
+  "SLEIGHT_OF_FLESH": {
+   "description": "每当你给予一个敌人负面状态时，使其受到13点伤害。"
+  },
+  "SLICE": {
+   "description": "造成9点伤害。"
+  },
+  "SMOKESTACK": {
+   "description": "每当你生成一张状态牌时，对所有敌人造成7点伤害。"
+  },
+  "SNAKEBITE": {
+   "description": "[gold]保留[/gold]。\n给予10层[gold]中毒[/gold]。"
+  },
+  "SNAP": {
+   "description": "[gold]奥斯提[/gold]造成10点伤害。\n给[gold]手牌[/gold]中的一张牌添加[gold]保留[/gold]。"
+  },
+  "SNEAKY": {
+   "description": "[gold]奇巧[/gold]。\n每当其他玩家攻击一名敌人时，获得2点[gold]格挡[/gold]。"
+  },
+  "SOLAR_STRIKE": {
+   "description": "造成10点伤害。\n获得[star]2[/star]。"
+  },
+  "SOUL": {
+   "description": "抽3张牌。\n[gold]消耗[/gold]。"
+  },
+  "SOUL_STORM": {
+   "description": "造成9点伤害。\n你的[gold]消耗牌堆[/gold]中每有一张[gold]灵魂[/gold]，伤害增加3。"
+  },
+  "SOVEREIGN_BLADE": {
+   "cost": 1,
+   "description": "[gold]Retain[/gold].\nDeal 10 damage."
+  },
+  "SOW": {
+   "description": "[gold]保留[/gold]。\n对所有敌人造成11点伤害。"
+  },
+  "SPECTRUM_SHIFT": {
+   "cost": 1,
+   "description": "在你的回合开始时，将1张随机无色牌添加到你的[gold]手牌[/gold]中。"
+  },
+  "SPINNER": {
+   "description": "[gold]生成[/gold]1个[gold]玻璃[/gold]充能球。\n在你的回合开始时，[gold]生成[/gold]1个[gold]玻璃[/gold]充能球。"
+  },
+  "SPIRIT_OF_ASH": {
+   "description": "每当你打出一张[gold]虚无[/gold]牌时，获得5点[gold]格挡[/gold]。"
+  },
+  "SPITE": {
+   "description": "Deal 5 damage.\nIf you lost HP this turn,\nhits 3 times."
+  },
+  "SPLASH": {
+   "description": "从3张其他角色的[gold]升级过的[/gold]攻击牌中选择1张加入你的[gold]手牌[/gold]。这张牌在本回合免费打出。"
+  },
+  "SPOILS_OF_BATTLE": {
+   "description": "[gold]铸造[/gold]8。\n抽2张牌。"
+  },
+  "SPUR": {
+   "description": "[gold]保留[/gold]。\n[gold]召唤[/gold]5。\n[gold]奥斯提[/gold]回复7点生命。"
+  },
+  "SQUASH": {
+   "description": "造成12点伤害。\n给予3层[gold]易伤[/gold]。"
+  },
+  "SQUEEZE": {
+   "description": "[gold]奥斯提[/gold]造成30点伤害。\n你每有一张别的[gold]奥斯提[/gold]的攻击牌，这张牌就额外造成6点伤害。"
+  },
+  "STACK": {
+   "description": "获得等量于与你当前[gold]弃牌堆[/gold]中牌数+3的[gold]格挡[/gold]值。"
+  },
+  "STAMPEDE": {
+   "cost": 1,
+   "description": "在你的回合结束时，随机打出你[gold]手牌[/gold]中的1张攻击牌攻击随机敌人。"
+  },
+  "STARDUST": {
+   "description": "随机对敌人造成7点伤害X次。"
+  },
+  "STOKE": {
+   "description": "[gold]消耗[/gold]所有[gold]手牌[/gold]。\n每[gold]消耗[/gold]一张牌，将1张随机已[gold]升级[/gold]的牌加入你的[gold]手牌[/gold]。"
+  },
+  "STOMP": {
+   "description": "对所有敌人造成15点伤害。\n你在本回合中每打出过一张攻击牌，其耗能减少1[energy]1[/energy]。"
+  },
+  "STONE_ARMOR": {
+   "description": "获得6层[gold]覆甲[/gold]。"
+  },
+  "STORM": {
+   "description": "每当你打出一张能力牌时，[gold]生成[/gold]2个[gold]闪电[/gold]充能球。"
+  },
+  "STORM_OF_STEEL": {
+   "description": "丢弃所有[gold]手牌[/gold]。\n每丢弃一张牌，就将一张[gold]小刀+[/gold]添加到你的[gold]手牌[/gold]。"
+  },
+  "STRANGLE": {
+   "description": "造成10点伤害。\n你在这个回合内每出一张牌，该名敌人都会失去3点生命。"
+  },
+  "STRATAGEM": {
+   "cost": 0,
+   "description": "每当你的[gold]抽牌堆[/gold]打乱洗牌时，选择一张牌放入你的[gold]手牌[/gold]。"
+  },
+  "STRIKE_DEFECT": {
+   "description": "造成9点伤害。"
+  },
+  "STRIKE_IRONCLAD": {
+   "description": "造成9点伤害。"
+  },
+  "STRIKE_NECROBINDER": {
+   "description": "造成9点伤害。"
+  },
+  "STRIKE_REGENT": {
+   "description": "造成9点伤害。"
+  },
+  "STRIKE_SILENT": {
+   "description": "造成9点伤害。"
+  },
+  "SUBROUTINE": {
+   "cost": 0,
+   "description": "当你打出一张能力牌时，获得[energy]1[/energy]。"
+  },
+  "SUCKER_PUNCH": {
+   "description": "造成10点伤害。\n给予2层[gold]虚弱[/gold]。"
+  },
+  "SUMMON_FORTH": {
+   "description": "不论何处，将[gold]君王之剑[/gold]放入你的[gold]手牌[/gold]。\n[gold]铸造[/gold]11。"
+  },
+  "SUNDER": {
+   "description": "造成32点伤害。\n如果这张牌击杀了敌人，则获得[energy]3[/energy]。"
+  },
+  "SUPERCRITICAL": {
+   "description": "获得[energy]6[/energy]。\n[gold]消耗[/gold]。"
+  },
+  "SUPERMASSIVE": {
+   "description": "造成5点伤害。\n你在本场战斗中每生成过一张牌，这张牌就额外造成4点伤害。"
+  },
+  "SUPPRESS": {
+   "description": "[gold]固有[/gold]。\n造成17点伤害。\n给予5层[gold]虚弱[/gold]。"
+  },
+  "SURVIVOR": {
+   "description": "获得11点[gold]格挡[/gold]。\n丢弃1张牌。"
+  },
+  "SWEEPING_BEAM": {
+   "description": "对所有敌人造成9点伤害。\n抽1张牌。"
+  },
+  "SWEEPING_GAZE": {
+   "description": "[gold]虚无[/gold]。\n[gold]奥斯提[/gold]对随机一名敌人造成15点伤害。\n[gold]消耗[/gold]。"
+  },
+  "SWORD_BOOMERANG": {
+   "description": "Deal 3 damage to a random enemy 4 times."
+  },
+  "SWORD_SAGE": {
+   "cost": 1,
+   "description": "[gold]君王之剑[/gold]获得[gold]重放[/gold]1。"
+  },
+  "SYNTHESIS": {
+   "description": "造成20点伤害。\n你打出的下一张能力牌耗能变为0[energy]1[/energy]。"
+  },
+  "TACTICIAN": {
+   "description": "[gold]奇巧[/gold]。\n获得[energy]2[/energy]。"
+  },
+  "TAG_TEAM": {
+   "description": "造成15点伤害。\n其他玩家的下一张攻击牌将在该名敌人身上额外生效一次。"
+  },
+  "TANK": {
+   "cost": 0,
+   "description": "Take double damage from enemies.\nAllies take half damage from enemies."
+  },
+  "TAUNT": {
+   "description": "获得8点[gold]格挡[/gold]。\n给予2层[gold]易伤[/gold]。"
+  },
+  "TEAR_ASUNDER": {
+   "description": "造成7点伤害。\n在本场战斗中，你每失去过一次生命值，这张牌就额外造成一次伤害。"
+  },
+  "TEMPEST": {
+   "description": "[gold]生成[/gold]X+1个[gold]闪电[/gold]充能球。"
+  },
+  "TERRAFORMING": {
+   "description": "获得8点[gold]活力[/gold]。"
+  },
+  "TESLA_COIL": {
+   "description": "造成4点伤害。\n对该敌人触发你的所有[gold]闪电[/gold]充能球的被动两次。"
+  },
+  "THE_BOMB": {
+   "description": "在3回合结束后，对所有敌人造成50点伤害。"
+  },
+  "THE_GAMBIT": {
+   "description": "获得75点[gold]格挡[/gold]。\n如果你在本场战斗中受到未被格挡的攻击伤害，则立刻死亡。"
+  },
+  "THE_HUNT": {
+   "description": "造成15点伤害。\n[gold]斩杀[/gold]时，额外获得一次卡牌奖励。\n[gold]消耗[/gold]。"
+  },
+  "THE_SCYTHE": {
+   "description": "造成13点伤害。\n这张牌在本局游戏中的伤害永久性增加5。\n[gold]消耗[/gold]。"
+  },
+  "THE_SEALED_THRONE": {
+   "cost": 0,
+   "description": "你每打出一张牌，获得[star]1[/star]。"
+  },
+  "THE_SMITH": {
+   "description": "[gold]铸造[/gold]40。"
+  },
+  "THRASH": {
+   "description": "Deal 6 damage twice.\n[gold]Exhaust[/gold] a random Attack in your [gold]Hand[/gold] and add its damage to this card."
+  },
+  "THRUMMING_HATCHET": {
+   "description": "造成14点伤害。\n在你的下个回合开始时，将此卡返回你的[gold]手牌[/gold]。"
+  },
+  "THUNDER": {
+   "description": "每当你[gold]激发闪电[/gold]充能球时，对被命中的敌人造成8点伤害。"
+  },
+  "THUNDERCLAP": {
+   "description": "对所有敌人造成7点伤害，给予1层[gold]易伤[/gold]。"
+  },
+  "TOOLS_OF_THE_TRADE": {
+   "cost": 0,
+   "description": "在你的回合开始时，抽1张牌，丢弃1张牌。"
+  },
+  "TORIC_TOUGHNESS": {
+   "description": "获得7点[gold]格挡[/gold]。\n在接下来的2个回合开始时，获得7点[gold]格挡[/gold]。"
+  },
+  "TRACKING": {
+   "cost": 1,
+   "description": "[gold]Weak[/gold] enemies take double damage from Attacks."
+  },
+  "TREMBLE": {
+   "description": "给予4层[gold]易伤[/gold]。\n[gold]消耗[/gold]。"
+  },
+  "TRUE_GRIT": {
+   "description": "获得9点[gold]格挡[/gold]。\n[gold]消耗[/gold]1张牌。"
+  },
+  "TURBO": {
+   "description": "获得[energy]3[/energy]。\n将一张[gold]虚空[/gold]加入你的[gold]弃牌堆[/gold]。"
+  },
+  "TWIN_STRIKE": {
+   "description": "Deal 7 damage twice."
+  },
+  "ULTIMATE_DEFEND": {
+   "description": "获得15点[gold]格挡[/gold]。"
+  },
+  "ULTIMATE_STRIKE": {
+   "description": "造成20点伤害。"
+  },
+  "UNDEATH": {
+   "description": "获得9点[gold]格挡[/gold]。\n在[gold]弃牌堆[/gold]放入一张此牌的复制品。"
+  },
+  "UNLEASH": {
+   "description": "[gold]奥斯提[/gold]造成9点伤害。\n这张牌额外造成等量于[gold]奥斯提[/gold]当前生命值的伤害。"
+  },
+  "UNMOVABLE": {
+   "cost": 1,
+   "description": "翻倍你每回合第一次从卡牌中获得的[gold]格挡[/gold]。"
+  },
+  "UNRELENTING": {
+   "description": "造成20点伤害。\n你打出的下一张攻击牌耗能变为0[energy]1[/energy]。"
+  },
+  "UNTOUCHABLE": {
+   "description": "[gold]奇巧[/gold]。\n获得9点[gold]格挡[/gold]。"
+  },
+  "UPPERCUT": {
+   "description": "造成13点伤害。\n给予2层[gold]虚弱[/gold]。\n给予2层[gold]易伤[/gold]。"
+  },
+  "UPROAR": {
+   "description": "Deal 8 damage twice.\nPlay a random Attack from your [gold]Draw Pile[/gold]."
+  },
+  "UP_MY_SLEEVE": {
+   "description": "将4张[gold]小刀[/gold]加入你的[gold]手牌[/gold]。\n这张牌的耗能减少1。"
+  },
+  "VEILPIERCER": {
+   "description": "造成13点伤害。\n你打出的下一张[gold]虚无[/gold]牌耗能变为0[energy]1[/energy]。"
+  },
+  "VENERATE": {
+   "description": "获得[star]3[/star]。"
+  },
+  "VICIOUS": {
+   "description": "每当你给予[gold]易伤[/gold]时，抽2张牌。"
+  },
+  "VOLLEY": {
+   "description": "随机对敌人造成14点伤害X次。"
+  },
+  "WELL_LAID_PLANS": {
+   "description": "At the end of your turn, [gold]Retain[/gold] up to 2 cards."
+  },
+  "WHIRLWIND": {
+   "description": "对所有敌人造成8点伤害X次。"
+  },
+  "WHISTLE": {
+   "description": "造成44点伤害。\n[gold]击晕[/gold]该敌人。\n[gold]消耗[/gold]。"
+  },
+  "WHITE_NOISE": {
+   "cost": 0,
+   "description": "将一张随机能力牌加入你的[gold]手牌[/gold]。这张牌在本回合内免费打出。\n[gold]消耗[/gold]。"
+  },
+  "WRAITH_FORM": {
+   "description": "获得3[gold]无实体[/gold]。\n在你的回合开始时，失去1点[gold]敏捷[/gold]。"
+  },
+  "WROUGHT_IN_WAR": {
+   "description": "造成9点伤害。\n[gold]铸造[/gold]9。"
+  },
+  "ZAP": {
+   "cost": 0,
+   "description": "[gold]生成[/gold]1个[gold]闪电[/gold]充能球。"
+  }
+ }
+}

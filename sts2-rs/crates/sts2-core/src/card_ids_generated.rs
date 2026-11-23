@@ -1485,6 +1485,10 @@ pub enum CardId {
     WheelOfFortune,
     /// v0.113.0 Fool status Status Status (`Cards/Sadness.cs`), cost unplayable.
     Sadness,
+    /// v0.113.0 Dread token Status (`Cards/Amnesia.cs`), cost unplayable: a
+    /// `KnowledgeDemon.IChoosable` only `KnowledgeDemonDominion` offers; its
+    /// `OnChosen` applies `AmnesiaPower` 1 (GH #1346).
+    Amnesia,
 }
 
 impl CardId {
@@ -2211,6 +2215,7 @@ impl CardId {
             Self::TheWorld => "THE_WORLD",
             Self::WheelOfFortune => "WHEEL_OF_FORTUNE",
             Self::Sadness => "SADNESS",
+            Self::Amnesia => "AMNESIA",
         }
     }
 
@@ -2825,7 +2830,7 @@ impl CardId {
     ];
 
     /// Cards that exist only from game build v0.113.0 on.
-    pub const V0113_ONLY: [CardId; 120] = [
+    pub const V0113_ONLY: [CardId; 121] = [
         Self::DingyDagger,
         Self::MightyWeapon,
         Self::MightyShield,
@@ -2946,6 +2951,7 @@ impl CardId {
         Self::TheWorld,
         Self::WheelOfFortune,
         Self::Sadness,
+        Self::Amnesia,
     ];
 
     /// The build a card first exists in.
@@ -3090,7 +3096,8 @@ impl CardId {
             | Self::TheTower
             | Self::TheWorld
             | Self::WheelOfFortune
-            | Self::Sadness => crate::GameVersion::V0_113_0,
+            | Self::Sadness
+            | Self::Amnesia => crate::GameVersion::V0_113_0,
             _ => crate::GameVersion::V0_107_1,
         }
     }

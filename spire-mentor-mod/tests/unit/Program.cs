@@ -1,5 +1,6 @@
 // Mod unit tests (no framework): each Check prints and counts; exit 1 on any failure.
 
+using System.Globalization;
 using SpireMentor;
 
 if (args.Length is 2 or 3 && args[0] == "--advisor-child")
@@ -22,6 +23,32 @@ void Check(string name, string? actual, string? expected)
 }
 
 // GameVersionFormat.Normalize: release_info.json "version" -> wire game_version.
+// The advisor binary per platform: the names stage_advisor.py ships (GH #1424/#1425).
+Check("advisor: windows", SpireMentor.AdvisorChild.BinaryName(true, false, System.Runtime.InteropServices.Architecture.X64), "SimAdvisor.exe");
+Check("advisor: linux x64", SpireMentor.AdvisorChild.BinaryName(false, false, System.Runtime.InteropServices.Architecture.X64), "SimAdvisor-linux-x64");
+Check("advisor: linux arm64", SpireMentor.AdvisorChild.BinaryName(false, false, System.Runtime.InteropServices.Architecture.Arm64), "SimAdvisor-linux-arm64");
+Check("advisor: macos arm64", SpireMentor.AdvisorChild.BinaryName(false, true, System.Runtime.InteropServices.Architecture.Arm64), "SimAdvisor-macos-arm64");
+
+// The coach switches itself on at launch only where an advisor can start.
+Check("coach at launch: windows", SpireMentor.AdvisorChild.CanStartAtLaunch(true, false, false).ToString(), "True");
+Check("coach at launch: linux with the packaged binary", SpireMentor.AdvisorChild.CanStartAtLaunch(false, false, true).ToString(), "True");
+Check("coach at launch: a configured command", SpireMentor.AdvisorChild.CanStartAtLaunch(false, true, false).ToString(), "True");
+Check("coach at launch: no advisor for this platform", SpireMentor.AdvisorChild.CanStartAtLaunch(false, false, false).ToString(), "False");
+
+if (!OperatingSystem.IsWindows())
+{
+    // The Unix launch keeps psi.ArgumentList (the /bin/sh -c path) and reads UTF-8.
+    var psi = new System.Diagnostics.ProcessStartInfo { FileName = "/bin/sh" };
+    psi.ArgumentList.Add("-c");
+    psi.ArgumentList.Add("printf '%s\\n' \"a \u2192 b\"; echo err >&2");
+    using var child = SpireMentor.UnixChildProcess.Start(psi);
+    string outLine = child.StandardOutput.ReadToEnd().Trim();
+    string errLine = child.StandardError.ReadToEnd().Trim();
+    child.Process.WaitForExit();
+    Check("unix child: stdout", outLine, "a \u2192 b");
+    Check("unix child: stderr", errLine, "err");
+}
+
 Check("canonical 0.111", GameVersionFormat.Normalize("v0.111.0"), "v0.111.0");
 Check("canonical 0.107", GameVersionFormat.Normalize("v0.107.1"), "v0.107.1");
 Check("no v prefix", GameVersionFormat.Normalize("0.111.0"), "v0.111.0");
@@ -36,6 +63,20 @@ Check("four parts pass through", GameVersionFormat.Normalize("0.111.0.1"), "v0.1
 Check("bare v", GameVersionFormat.Normalize("v"), "v");
 Check("non-ascii digits pass through", GameVersionFormat.Normalize("v0.१११.0"), "v0.१११.0");
 Check("default is stable", GameVersionFormat.Default, "v0.107.1");
+
+// GameVersionFormat.EngineBuild: a hotfix (same major.minor, higher patch)
+// plays on its line's newest listed build; a new minor plays on nothing.
+string[] supportedBuilds = { "v0.107.1", "v0.111.0", "v0.113.0" };
+Check("engine: exact build", GameVersionFormat.EngineBuild("v0.113.0", supportedBuilds), "v0.113.0");
+Check("engine: hotfix", GameVersionFormat.EngineBuild("v0.113.1", supportedBuilds), "v0.113.0");
+Check("engine: raw hotfix spelling", GameVersionFormat.EngineBuild(" 0.113.12 ", supportedBuilds), "v0.113.0");
+Check("engine: hotfix of an older line", GameVersionFormat.EngineBuild("v0.107.3", supportedBuilds), "v0.107.1");
+Check("engine: v0.111.1 stable", GameVersionFormat.EngineBuild("v0.111.1", supportedBuilds), "v0.111.0");
+Check("engine: newest base of the line", GameVersionFormat.EngineBuild("v0.113.5", new[] { "v0.113.0", "v0.113.4", "v0.113.6" }), "v0.113.4");
+Check("engine: new minor", GameVersionFormat.EngineBuild("v0.114.0", supportedBuilds), null);
+Check("engine: older than the line", GameVersionFormat.EngineBuild("v0.107.0", supportedBuilds), null);
+Check("engine: suffix", GameVersionFormat.EngineBuild("v0.113.1-beta", supportedBuilds), null);
+Check("engine: null", GameVersionFormat.EngineBuild(null, supportedBuilds), null);
 
 // ChoiceInference: which option the human picked, from a before/after diff.
 // null = skip, ChoiceInference.Unknown (-1) = can't tell (send nothing).
@@ -352,6 +393,16 @@ Check("url: no params unchanged", WorkbenchUrl.WithFollowParams("http://h/?follo
     "http://h/?follow=1");
 Check("url: other query keeps it", WorkbenchUrl.WithFollowParams("http://h/?x=1#top", "r", 2),
     "http://h/?x=1&follow=1&run=r&step=2#top");
+// WorkbenchUrl.WithLang: the workbench in the mod's language (?lang=zh).
+Check("url: english adds no lang", WorkbenchUrl.WithLang("http://127.0.0.1:8079/?follow=1", "en"),
+    "http://127.0.0.1:8079/?follow=1");
+Check("url: zh appends lang", WorkbenchUrl.WithLang(
+        WorkbenchUrl.WithFollowParams("http://127.0.0.1:8079/?follow=1", "a.jsonl", 3), "zh"),
+    "http://127.0.0.1:8079/?follow=1&run=a.jsonl&step=3&lang=zh");
+Check("url: zh frame page", WorkbenchUrl.WithLang("http://127.0.0.1:8079/frame.html", "zh"),
+    "http://127.0.0.1:8079/frame.html?lang=zh");
+Check("url: zh keeps a configured lang and fragment", WorkbenchUrl.WithLang("http://h/?lang=en#top", "zh") + " " +
+    WorkbenchUrl.WithLang("http://h/#top", "zh"), "http://h/?lang=en#top http://h/?lang=zh#top");
 
 // CoachPanelText.Format: recap / autopsy panels (plan 4 copy table).
 string Panel(string json)
@@ -477,6 +528,20 @@ Check("pretty advice_for", AutoplayPause.Pretty("card_bundle"), "Card Bundle");
 Check("pretty nothing", AutoplayPause.Pretty(null), "This decision");
 Check("toast", AutoplayPause.Toast("Crystal Sphere", "not covered by the AI (x)"),
     "Crystal Sphere: not covered by the AI (x) — your call. F7 to resume.");
+{
+    // The same hand-back toast in a game set to Simplified Chinese.
+    Func<string?>? savedProbe = L10n.GameLanguage;
+    try
+    {
+        L10n.GameLanguage = () => "zhs";
+        Check("toast (zh)", AutoplayPause.Toast(AutoplayPause.Pretty(null), AutoplayPause.Reason(AutoplayPause.Parse("unsupported"), "x", new[] { "shop" })!),
+            "本次决策：AI 无法处理（x） — 由你决定。按 F7 继续。");
+    }
+    finally
+    {
+        L10n.GameLanguage = savedProbe;
+    }
+}
 
 // EnemyTagText: the "#k" beside a same-named enemy, numbered as the advisor's
 // "→ Name #k" labels are (sts2-pycli/python/enemy_labels.py).
@@ -764,6 +829,97 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
     Check("sphere: nothing hidden", CrystalSpherePick.Pick(new List<(int X, int Y)>()).ToString(), "-1");
 }
 
+// CrystalSphereWire: what the crystal_sphere message shows the digger, and
+// whether (and how) F7 takes the advisor's pick.
+{
+    Check("sphere wire: relic", CrystalSphereWire.ItemClass("CrystalSphereRelic"), "relic");
+    Check("sphere wire: potion", CrystalSphereWire.ItemClass("CrystalSpherePotion"), "potion");
+    Check("sphere wire: card", CrystalSphereWire.ItemClass("CrystalSphereCardReward"), "card");
+    Check("sphere wire: curse", CrystalSphereWire.ItemClass("CrystalSphereCurse"), "curse");
+    Check("sphere wire: gold", CrystalSphereWire.ItemClass("CrystalSphereGold"), "gold");
+    Check("sphere wire: unknown item", CrystalSphereWire.ItemClass("Banana"), null);
+
+    // Cleared relic piece, cleared empty cell, hidden relic, hidden empty:
+    // only the cleared relic piece is on the wire.
+    var cells = new List<(int X, int Y, bool Hidden, string? ItemTypeName)>
+    {
+        (3, 4, false, "CrystalSphereRelic"),
+        (3, 5, false, null),
+        (6, 6, true, "CrystalSphereRelic"),
+        (7, 7, true, null),
+    };
+    Check("sphere wire: revealed shows cleared items only",
+        System.Text.Json.JsonSerializer.Serialize(CrystalSphereWire.Revealed(cells)),
+        """[{"x":3,"y":4,"item":"relic"}]""");
+
+    int Cap(string json)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return CrystalSphereWire.Capability(doc.RootElement);
+    }
+    Check("sphere cap: top level", Cap("""{"capabilities":{"coach":2,"crystal_sphere":1},"advice":{}}""").ToString(), "1");
+    Check("sphere cap: inside advice", Cap("""{"advice":{"capabilities":{"crystal_sphere":1}}}""").ToString(), "1");
+    Check("sphere cap: absent (older advisor)", Cap("""{"capabilities":{"coach":2,"potion_swap":1},"advice":{}}""").ToString(), "0");
+
+    // The advisor's pick, or -1 (play CrystalSpherePick): F7 never stalls.
+    int Advised(string json, int options)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return CrystalSphereWire.AdvisedIndex(doc.RootElement, options);
+    }
+    Check("sphere advice: in range",
+        Advised("""{"advice":{"best":{"action":"choose","index":2,"label":"reveal cell (6,5)"}}}""", 5).ToString(), "2");
+    Check("sphere advice: hand_back falls back",
+        Advised("""{"advice":{"note":"n","hand_back":"nothing to choose"}}""", 5).ToString(), "-1");
+    Check("sphere advice: out of range falls back",
+        Advised("""{"advice":{"best":{"action":"choose","index":5,"label":"proceed"}}}""", 5).ToString(), "-1");
+    Check("sphere advice: negative falls back",
+        Advised("""{"advice":{"best":{"action":"choose","index":-1}}}""", 5).ToString(), "-1");
+    Check("sphere advice: not a choose falls back",
+        Advised("""{"advice":{"best":{"action":"skip","index":0}}}""", 5).ToString(), "-1");
+    Check("sphere advice: no advice falls back", Advised("""{"action":"advice"}""", 5).ToString(), "-1");
+
+    // The policy that decided, so the action log never credits the digger
+    // for a click the advisor's #872 rule made.
+    string? Policy(string json)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return CrystalSphereWire.AdvisedPolicy(doc.RootElement);
+    }
+    Check("sphere policy: digger",
+        Policy("""{"advice":{"best":{"action":"choose","index":2},"policy":"crystal_sphere_digger"}}"""),
+        "crystal_sphere_digger");
+    Check("sphere policy: rule",
+        Policy("""{"advice":{"best":{"action":"choose","index":2},"policy":"crystal_sphere_rule"}}"""),
+        "crystal_sphere_rule");
+    Check("sphere policy: absent", Policy("""{"advice":{"best":{"action":"choose","index":2}}}"""), null);
+    Check("sphere policy: not a string", Policy("""{"advice":{"policy":7}}"""), null);
+    Check("sphere policy: no advice", Policy("""{"action":"advice"}"""), null);
+    Check("sphere source: digger", CrystalSphereWire.ClickSource(true, "crystal_sphere_digger"), "advisor's digger");
+    Check("sphere source: advisor's rule", CrystalSphereWire.ClickSource(true, "crystal_sphere_rule"), "advisor's #872 rule");
+    Check("sphere source: unnamed", CrystalSphereWire.ClickSource(true, null), "advisor, policy not named");
+    Check("sphere source: other", CrystalSphereWire.ClickSource(true, "x"), "advisor's x");
+    Check("sphere source: not advised", CrystalSphereWire.ClickSource(false, "crystal_sphere_digger"), "block order");
+
+    // The delayed click only stands while nobody took over.
+    var f7 = new CrystalSphereWire.Takeover(true, true, 4);
+    Check("sphere click: F7 still on", CrystalSphereWire.MayStillClick(f7, f7).ToString(), "True");
+    Check("sphere click: F7 pressed off",
+        CrystalSphereWire.MayStillClick(f7, new(true, false, 5)).ToString(), "False");
+    Check("sphere click: F7 off and on again",
+        CrystalSphereWire.MayStillClick(f7, new(true, true, 6)).ToString(), "False");
+    Check("sphere click: Advisor mode left",
+        CrystalSphereWire.MayStillClick(f7, new(false, false, 5)).ToString(), "False");
+    Check("sphere click: mode left, flags unchanged",
+        CrystalSphereWire.MayStillClick(f7, f7 with { AdvisorMode = false }).ToString(), "False");
+    var f6 = new CrystalSphereWire.Takeover(true, false, 2);
+    Check("sphere click: F6 one-shot", CrystalSphereWire.MayStillClick(f6, f6).ToString(), "True");
+    Check("sphere click: F6 then F7 on",
+        CrystalSphereWire.MayStillClick(f6, new(true, true, 3)).ToString(), "False");
+    Check("sphere click: never outside Advisor mode",
+        CrystalSphereWire.MayStillClick(f6 with { AdvisorMode = false }, f6 with { AdvisorMode = false }).ToString(), "False");
+}
+
 // AdviceColumn: the advice panel + coach chips follow a dragged toolbar.
 {
     string At((float X, float Y) p) => $"({p.X:0},{p.Y:0})";
@@ -888,6 +1044,31 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
     Check("speed: off keeps a speed the player changed", SpeedSteps.RestoreOnOff(3.0).ToString(), "False");
 }
 
+// A hand card's angle eases like NHandCardHolder.AnimAngle: per frame,
+// Lerp(angle, target, delta * 10), with delta = speed / fps. At 8x and 30 fps
+// the raw weight is 2.67 and the card spins off; the stable weight lands.
+{
+    string Ease(double speed, double fps, bool stable)
+    {
+        float angle = 30f, target = 0f;
+        for (int frame = 0; frame < 60; frame++)
+        {
+            float w = (float)(speed / fps) * 10f;
+            angle += (target - angle) * (stable ? LerpWeight.Stable(w) : w);
+            if (Math.Abs(angle - target) < 0.1f)
+            {
+                return $"settled at frame {frame}";
+            }
+        }
+        return Math.Abs(angle) > 1000f ? "runaway" : $"unsettled {angle:0.##}";
+    }
+    Check("lerp: 8x at 30 fps runs away without the cap", Ease(8, 30, stable: false), "runaway");
+    Check("lerp: 8x at 30 fps lands with the cap", Ease(8, 30, stable: true), "settled at frame 0");
+    Check("lerp: 1x at 60 fps is untouched by the cap", Ease(1, 60, stable: true), Ease(1, 60, stable: false));
+    Check("lerp: weight 0.5 is kept", LerpWeight.Stable(0.5f).ToString(CultureInfo.InvariantCulture), "0.5");
+    Check("lerp: weight 2.67 becomes 1", LerpWeight.Stable(2.67f).ToString(CultureInfo.InvariantCulture), "1");
+}
+
 // The action log sits under the advice column until dragged.
 {
     string Below(float bottom, float want, float view)
@@ -932,17 +1113,15 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
     Check("partner: negative setting never holds", PartnerCharacters.HoldSeconds(-3, true).ToString(), "0");
 }
 
-// Advisor brain (PROTOCOL.md section 5, v5.2): the preference's wire form, the
-// advisor's capabilities.instinct, who sees the switch, which reply is stale
-// after a toggle, and the HUD's source tag.
+// Advisor brain (PROTOCOL.md section 5, v5.2): Instinct is the only brain a
+// player gets, the search its fallback; the wire form, the advisor's
+// capabilities.instinct, the brain each seat asks for, which reply is stale,
+// and the HUD's source tag.
 {
     Check("brain: default is search", AdvisorBrainRules.Normalize(null), "search");
     Check("brain: blank is search", AdvisorBrainRules.Normalize("  "), "search");
     Check("brain: case/trim", AdvisorBrainRules.Normalize(" Instinct "), "instinct");
     Check("brain: unknown is search", AdvisorBrainRules.Normalize("e2e"), "search");
-    Check("brain: toggle to instinct", AdvisorBrainRules.Toggle("search"), "instinct");
-    Check("brain: toggle back", AdvisorBrainRules.Toggle("INSTINCT"), "search");
-    Check("brain: label", AdvisorBrainRules.Label("instinct") + "/" + AdvisorBrainRules.Label(""), "Instinct/Search");
 
     string Caps(string json)
     {
@@ -964,15 +1143,35 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
     Check("eligible: build without v", E("Ironclad", "0.111.0"), "True");
     Check("eligible: other character", E("SILENT", "v0.111.0"), "False");
     Check("eligible: other build", E("IRONCLAD", "v0.107.1"), "False");
+    Check("eligible: hotfix of the build", E("IRONCLAD", "v0.111.2"), "True");
+    Check("eligible: next minor", E("IRONCLAD", "v0.112.0"), "False");
     Check("eligible: unknown build is the stable one", E("IRONCLAD", null), "False");
     Check("eligible: no run", E(null, "v0.111.0"), "False");
     Check("eligible: no capability", AdvisorBrainRules.Eligible(new List<InstinctTarget>(), "IRONCLAD", "v0.111.0").ToString(), "False");
 
     Check("requested: Instinct where it plays", AdvisorBrainRules.Requested("instinct", known: true, eligible: true), "instinct");
     Check("requested: Search, quietly, where it does not", AdvisorBrainRules.Requested("instinct", known: true, eligible: false), "search");
-    Check("requested: the preference before the advisor said where it plays", AdvisorBrainRules.Requested("instinct", known: false, eligible: false), "instinct");
-    Check("requested: Search stays Search where Instinct plays", AdvisorBrainRules.Requested("search", known: true, eligible: true), "search");
-    Check("requested: Search before the capability too", AdvisorBrainRules.Requested(null, known: false, eligible: false), "search");
+    Check("requested: Instinct before the advisor said where it plays", AdvisorBrainRules.Requested("instinct", known: false, eligible: false), "instinct");
+    Check("requested: a tooling Search stays Search where Instinct plays", AdvisorBrainRules.Requested("search", known: true, eligible: true), "search");
+    Check("requested: a tooling Search before the capability too", AdvisorBrainRules.Requested("search", known: false, eligible: false), "search");
+
+    // The player's brain: Instinct, whatever an older version's switch saved
+    // (BaseLib's AdvisorBrain is read by nothing: Player takes no saved value).
+    Check("player: Instinct with no tooling override", AdvisorBrainRules.Player(null), "instinct");
+    Check("player: the default is Instinct", AdvisorBrainRules.PlayerDefault, "instinct");
+    Check("player: a typo in the override is still Instinct", AdvisorBrainRules.Player("serach"), "instinct");
+    Check("player: tooling can force Search", AdvisorBrainRules.Player("search"), "search");
+    Check("player: tooling Instinct", AdvisorBrainRules.Player(" Instinct "), "instinct");
+    Check("player asks Instinct where capable", AdvisorBrainRules.Requested(AdvisorBrainRules.Player(null), known: true, eligible: true), "instinct");
+    Check("player asks Search only where Instinct is not offered", AdvisorBrainRules.Requested(AdvisorBrainRules.Player(null), known: true, eligible: false), "search");
+    Check("player asks Instinct before the capability (an older advisor falls back itself)",
+        AdvisorBrainRules.Requested(AdvisorBrainRules.Player(null), known: false, eligible: false), "instinct");
+
+    // The AI partners' brain: its own named default, Instinct, sent as it is.
+    Check("partner: the default is Instinct", AdvisorBrainRules.PartnerDefault, "instinct");
+    Check("partner: Instinct with no tooling override", AdvisorBrainRules.Partner(null), "instinct");
+    Check("partner: tooling can force Search", AdvisorBrainRules.Partner("SEARCH"), "search");
+    Check("partner: a typo is no override", AdvisorBrainRules.Partner("x"), "instinct");
 
     Check("stale: asked of search, now instinct", AdvisorBrainRules.IsStale("search", "instinct").ToString(), "True");
     Check("stale: asked of instinct, now search", AdvisorBrainRules.IsStale("instinct", "search").ToString(), "True");
@@ -995,17 +1194,24 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
         AdvisorBrainRules.NoteWithSource("MCTS 3000 sims", "search", "no net"), "Search (Instinct: no net) · MCTS 3000 sims");
     Check("note: plain search untouched", AdvisorBrainRules.NoteWithSource("MCTS 3000 sims", null, null), "MCTS 3000 sims");
 
-    // SpireMentor.conf advisor_brain: a session override, never a guess.
+    // The test tooling's override (SpireMentor.conf advisor_brain, the
+    // --spire-mentor-brain launch arg): never a guess.
     Check("conf: instinct", AdvisorBrainRules.ParseConf(" INSTINCT "), "instinct");
     Check("conf: search", AdvisorBrainRules.ParseConf("Search"), "search");
     Check("conf: absent", AdvisorBrainRules.ParseConf(null), null);
     Check("conf: blank", AdvisorBrainRules.ParseConf(""), null);
     Check("conf: typo is no override", AdvisorBrainRules.ParseConf("instict"), null);
-    Check("effective: override wins", AdvisorBrainRules.Effective("instinct", "search"), "instinct");
-    Check("effective: override to search wins", AdvisorBrainRules.Effective("search", "instinct"), "search");
-    Check("effective: no override, the preference", AdvisorBrainRules.Effective(null, "instinct"), "instinct");
-    Check("effective: a bad override falls back to the preference", AdvisorBrainRules.Effective("x", "instinct"), "instinct");
-    Check("effective: nothing set is search", AdvisorBrainRules.Effective(null, null), "search");
+    Check("tooling: launch arg over the conf", AdvisorBrainRules.ToolingOverride("search", "instinct"), "search");
+    Check("tooling: launch arg Instinct over a conf Search", AdvisorBrainRules.ToolingOverride("instinct", "search"), "instinct");
+    Check("tooling: no launch arg, the conf", AdvisorBrainRules.ToolingOverride(null, "Search"), "search");
+    Check("tooling: a bad launch arg leaves the conf", AdvisorBrainRules.ToolingOverride("x", "search"), "search");
+    Check("tooling: nothing set is no override", AdvisorBrainRules.ToolingOverride(null, null), null);
+    Check("tooling: nothing set, both seats Instinct",
+        AdvisorBrainRules.Player(AdvisorBrainRules.ToolingOverride(null, null)) + "/" +
+        AdvisorBrainRules.Partner(AdvisorBrainRules.ToolingOverride(null, null)), "instinct/instinct");
+    Check("tooling: a Search override reaches both seats",
+        AdvisorBrainRules.Player(AdvisorBrainRules.ToolingOverride("search", null)) + "/" +
+        AdvisorBrainRules.Partner(AdvisorBrainRules.ToolingOverride("search", null)), "search/search");
 }
 
 // Full-belt potion swap as an advice lane (PROTOCOL.md section 5, v5.2).
@@ -1114,7 +1320,24 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
 // FrameLaunchRules: the panels' own window (SimFrameLauncher).
 {
     Check("frame: opens at startup when wanted", FrameLaunchRules.OpenAtStartup(true, false, true, false).ToString(), "True");
-    Check("frame: not off Windows (no note every start)", FrameLaunchRules.OpenAtStartup(true, false, false, false).ToString(), "False");
+    Check("frame: not where it cannot open (no note every start)", FrameLaunchRules.OpenAtStartup(true, false, false, false).ToString(), "False");
+    Check("frame: supported on Windows", FrameLaunchRules.Supported(true, false, "Windows").ToString(), "True");
+    Check("frame: supported on Linux X11 / XWayland", FrameLaunchRules.Supported(false, true, "X11").ToString(), "True");
+    Check("frame: not on native Wayland", FrameLaunchRules.Supported(false, true, "Wayland").ToString(), "False");
+    Check("frame: not on macOS", FrameLaunchRules.Supported(false, false, "macOS").ToString(), "False");
+    Check("frame: the Linux host's script",
+        FrameLaunchRules.LinuxScriptPath(System.IO.Path.Combine("m", "SpireMentor")),
+        System.IO.Path.Combine("m", "SpireMentor", "SpireMentorFrame", "spire_mentor_frame.py"));
+    {
+        var (file, fargs) = FrameLaunchRules.LinuxCommand(true, "/m/f.py", new[] { "--attach", "7" });
+        Check("frame: under Steam's runtime, beside Steam on the host",
+            file + "|" + string.Join("|", fargs), "steam-runtime-launch-client|--alongside-steam|--|python3|/m/f.py|--attach|7");
+        (file, fargs) = FrameLaunchRules.LinuxCommand(false, "/m/f.py", new[] { "--attach", "7" });
+        Check("frame: outside the runtime, python3 directly", file + "|" + string.Join("|", fargs), "python3|/m/f.py|--attach|7");
+    }
+    Check("frame: in the Steam runtime", FrameLaunchRules.InSteamRuntime("pressure-vessel", "com.steampowered.X").ToString(), "True");
+    Check("frame: a container without the launcher service", FrameLaunchRules.InSteamRuntime("pressure-vessel", "").ToString(), "False");
+    Check("frame: no container", FrameLaunchRules.InSteamRuntime(null, null).ToString(), "False");
     Check("frame: not in a test lane", FrameLaunchRules.OpenAtStartup(true, false, true, true).ToString(), "False");
     Check("frame: not when the frame launched the game", FrameLaunchRules.OpenAtStartup(true, true, true, false).ToString(), "False");
     Check("frame: not when unticked", FrameLaunchRules.OpenAtStartup(false, false, true, false).ToString(), "False");
@@ -1129,6 +1352,14 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
         @"--attach|4242|--port|50123|--url|http://127.0.0.1:8079/frame.html|--attach-hwnd|131072|--game-dir|C:\Games\Slay the Spire 2");
     Check("frame: no handle, no game dir",
         string.Join("|", FrameLaunchRules.Args(1, 0, 2, "u", null)), "--attach|1|--port|2|--url|u");
+    string Btn(bool framed, bool outside, bool windows = true, bool shipped = true, bool harness = false) =>
+        FrameLaunchRules.PanelsButtonLabel(framed, outside, windows, shipped, harness) ?? "none";
+    Check("frame button: panels around the game, none", Btn(true, true), "none");
+    Check("frame button: framed fullscreen exits it", Btn(true, false), FrameLaunchRules.ExitFullscreenLabel);
+    Check("frame button: frame closed, back beside the game", Btn(false, true), FrameLaunchRules.PanelsBesideLabel);
+    Check("frame button: frame closed, off Windows", Btn(false, true, windows: false), "none");
+    Check("frame button: frame closed, not shipped", Btn(false, true, shipped: false), "none");
+    Check("frame button: frame closed, test lane", Btn(false, true, harness: true), "none");
 }
 
 // AI partner votes to move on (#47): the last act has two rounds in the same
@@ -1153,6 +1384,101 @@ Check("screen: run snapshot", BugReportDump.ScreenOf(new Dictionary<string, obje
     Check("grid: enchant 1 of 2 confirms", CardGridRules.OffersMorePicks("NDeckEnchantSelectScreen", 1, 2, 3).ToString(), "False");
     Check("grid: deck select 1 of 2 confirms", CardGridRules.OffersMorePicks("NDeckCardSelectScreen", 1, 2, 3).ToString(), "False");
 }
+
+// card_select replies that select nothing (#1326): a skip only on a cancelable
+// screen. Toolbox / Knowledge Demon come in as (min 0, max 1) with the game's
+// canSkip false, so min_select 0 alone must not let them through. Both
+// spellings of an empty choice go through this one rule in SimCardSelector:
+// single select {"index": <count or more>}, multi select {"indices": []}.
+{
+    string E(int minSelect, bool cancelable) => CardSelectRules.ForEmptyChoice(minSelect, cancelable).ToString();
+    Check("card_select: index past the end, cancelable -> skip", E(0, true), "Skip");
+    Check("card_select: index past the end, mandatory (Toolbox) -> not_cancelable", E(0, false), "NotCancelable");
+    Check("card_select: empty indices, cancelable -> skip", E(0, true), "Skip");
+    Check("card_select: empty indices, mandatory -> not_cancelable", E(0, false), "NotCancelable");
+    Check("card_select: empty choice with min_select 1 -> invalid", E(1, false), "Invalid");
+    Check("card_select: empty choice with min_select 2, cancelable -> invalid", E(2, true), "Invalid");
+}
+
+// In-hand selects that could be confirmed (#1770): an "any number" or "up to
+// N" select keeps offering the hand, so the AI takes its whole set (Gambler's
+// Brew used to stop at one Defend); at the maximum or an empty hand, confirm.
+{
+    const int any = 999999999;
+    Check("hand: Gambler's Brew 1 taken offers the rest", CardSelectRules.HandOffersMorePicks(1, any, 5).ToString(), "True");
+    Check("hand: up to 3, 2 taken offers the rest", CardSelectRules.HandOffersMorePicks(2, 3, 4).ToString(), "True");
+    Check("hand: up to 3, 3 taken confirms", CardSelectRules.HandOffersMorePicks(3, 3, 4).ToString(), "False");
+    Check("hand: exactly 1 taken confirms", CardSelectRules.HandOffersMorePicks(1, 1, 4).ToString(), "False");
+    Check("hand: nothing left confirms", CardSelectRules.HandOffersMorePicks(6, any, 0).ToString(), "False");
+    Check("hand: unreadable bounds confirm", CardSelectRules.HandOffersMorePicks(1, 0, 4).ToString(), "False");
+}
+
+// LinuxSignalRules: finding the runtime's saved signal actions (GH #1425).
+{
+    var maps = LinuxSignalRules.ParseMaps(new[]
+    {
+        "00400000-00500000 r-xp 00000000 00:1f 100 /games/Slay the Spire 2/SlayTheSpire2",
+        "10000000-10100000 rw-p 00000000 00:00 0                                  [heap]",
+        "20000000-20010000 rw-p 00000000 00:00 0 ",
+        "30000000-50000000 rw-p 00000000 00:00 0 ",
+        "7f0000000000-7f0000100000 r-xp 00001000 00:1f 200 /games/Slay the Spire 2/data_sts2_linuxbsd_x86_64/libcoreclr.so",
+        "7f0000100000-7f0000110000 rw-p 00101000 00:1f 200 /games/Slay the Spire 2/data_sts2_linuxbsd_x86_64/libcoreclr.so",
+        "7f1000000000-7f1000200000 r-xp 00028000 00:1f 300 /run/host/usr/lib/libc.so.6",
+        "7ffc00000000-7ffc00021000 rw-p 00000000 00:00 0                          [stack]",
+        "garbage",
+    });
+    Check("signals: runtime code found (path with spaces)", maps.Runtime.Count.ToString(), "1");
+    Check("signals: libc code found", maps.Libc.Count.ToString(), "1");
+    Check("signals: heap found", maps.Heap.Count == 1 ? maps.Heap[0].Lo.ToString("x") : "none", "10000000");
+    Check("signals: anonymous rw only, huge one left out, no stack", maps.Anonymous.Count == 1 ? maps.Anonymous[0].Lo.ToString("x") : maps.Anonymous.Count.ToString(), "20000000");
+
+    const ulong clr = 0x7f0000000000, libc = 0x7f1000000000;
+    void Put(byte[] block, int slot, ulong handler, uint flags, ulong restorer)
+    {
+        int o = 16 + slot * LinuxSignalRules.ActionSize;
+        BitConverter.GetBytes(handler).CopyTo(block, o);
+        BitConverter.GetBytes(flags).CopyTo(block, o + LinuxSignalRules.FlagsOffset);
+        BitConverter.GetBytes(restorer).CopyTo(block, o + LinuxSignalRules.RestorerOffset);
+    }
+    // The reporter's array, indexed by signal number: 3..8 and 11 are the runtime's.
+    byte[] Array(ulong segvHandler = clr + 0x700)
+    {
+        var block = new byte[16 + 12 * LinuxSignalRules.ActionSize + 64];
+        for (int sig = 3; sig <= 8; sig++) Put(block, sig, clr + 0x100 * (ulong)sig, 0x14000004, libc + 0x40);
+        Put(block, 11, segvHandler, 0x1c000004, libc + 0x40);
+        Put(block, 9, 0x400100, 0x14000004, libc + 0x40);          // handler outside the runtime
+        Put(block, 10, clr + 0x900, 0x14000004, 0x400200);          // restorer outside libc
+        return block;
+    }
+    var found = new List<LinuxSignalRules.Candidate>();
+    LinuxSignalRules.FindCandidates(Array(), 0x10000000, maps, found);
+    Check("signals: seven actions recognised, two impostors not", found.Count.ToString(), "7");
+    var picked = LinuxSignalRules.Pick(found);
+    Check("signals: SIGSEGV is the SA_ONSTACK one", picked == null ? "null" : BitConverter.ToUInt64(picked.Segv, 0).ToString("x"), (clr + 0x700).ToString("x"));
+    Check("signals: SIGFPE is three slots before it", picked?.Fpe == null ? "null" : BitConverter.ToUInt64(picked.Fpe, 0).ToString("x"), (clr + 0x800).ToString("x"));
+
+    var two = new List<LinuxSignalRules.Candidate>(found);
+    LinuxSignalRules.FindCandidates(Array(), 0x10100000, maps, two);
+    Check("signals: two agreeing copies still pick", LinuxSignalRules.Pick(two) != null ? "picked" : "null", "picked");
+    var clash = new List<LinuxSignalRules.Candidate>(found);
+    LinuxSignalRules.FindCandidates(Array(clr + 0x770), 0x10100000, maps, clash);
+    Check("signals: copies that disagree on SIGSEGV pick nothing", LinuxSignalRules.Pick(clash) == null ? "null" : "picked", "null");
+
+    var lone = new List<LinuxSignalRules.Candidate>();
+    var only = new byte[16 + 12 * LinuxSignalRules.ActionSize + 64];
+    Put(only, 11, clr + 0x700, 0x1c000004, libc + 0x40);
+    Put(only, 8, clr + 0x800, 0x14000004, libc + 0x40);            // right slot, but 3..7 missing
+    LinuxSignalRules.FindCandidates(only, 0x10000000, maps, lone);
+    var lonePick = LinuxSignalRules.Pick(lone);
+    Check("signals: unknown layout keeps SIGSEGV, drops SIGFPE", lonePick == null ? "null" : (lonePick.Fpe == null ? "segv only" : "both"), "segv only");
+    Check("signals: nothing found picks nothing", LinuxSignalRules.Pick(new List<LinuxSignalRules.Candidate>()) == null ? "null" : "picked", "null");
+    var none = new List<LinuxSignalRules.Candidate>();
+    LinuxSignalRules.FindCandidates(new byte[100], 0x10000000, maps, none);
+    Check("signals: a block shorter than one action is fine", none.Count.ToString(), "0");
+}
+
+L10nTests.Run(Check);
+CoachL10nTests.Run(Check);
 
 if (OperatingSystem.IsWindows())
 {

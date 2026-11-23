@@ -29,9 +29,11 @@ const post = (m: WorkerOutbound) => self.postMessage(m);
 let engine: Promise<Engine> | null = null;
 let chain: Promise<void> = Promise.resolve();
 
-async function boot(assetsBase: string): Promise<Engine> {
+async function boot(assetsBase: string, lang?: string): Promise<Engine> {
   await init({ module_or_path: engineResponse(wasmUrl) });
-  const wb = new Workbench(JSON.stringify({ assets_base: assetsBase.replace(/\/$/, "") }));
+  const wb = new Workbench(
+    JSON.stringify({ assets_base: assetsBase.replace(/\/$/, ""), ...(lang ? { lang } : {}) }),
+  );
   return createEngine({
     wb,
     saveHeader: (payload) => Workbench.save_header(payload),
@@ -49,6 +51,8 @@ async function boot(assetsBase: string): Promise<Engine> {
     // The e2e student (~21 MB): fetched only when the e2e brain is chosen,
     // then kept cache-first by the service worker like the champions.
     e2eFile: Workbench.e2e_file(),
+    // The Fool's student (v0.113.0): fetched only for a Fool run.
+    e2eFoolFile: Workbench.e2e_fool_file(),
     fetchE2e: async (file) => {
       const res = await fetch(`/e2e/${file}`);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -105,7 +109,7 @@ function pumpSweeps(e: Engine): void {
 self.onmessage = (ev: MessageEvent<WorkerInbound>) => {
   const msg = ev.data;
   if ("init" in msg) {
-    engine ??= boot(msg.init.assets_base);
+    engine ??= boot(msg.init.assets_base, msg.init.lang);
     // Surface a failed boot on the first request rather than as an unhandled
     // rejection nobody can see.
     engine.catch(() => {});

@@ -18,6 +18,10 @@ _Avoid_: bare "oracle" — the word is overloaded across this repo; also avoid t
 The clean-room replacement for GodotSharp, supplying no-op types so game code loads without an engine or a display.
 _Avoid_: mocks, shims, fakes
 
+**Player profile**:
+What a player's progress save decides about a run: the timeline epochs revealed (card, relic, potion and event pools, the ancients, Underdocks), the bosses met, the acts entered, and whether it is the first run ever. The headless oracle has no save and starts with everything unlocked unless `start_run.profile` states one. A recorded run does not hold its profile; `host_replay_profile` searches for it.
+_Avoid_: unlock state (the game's `UnlockState` is only the epochs part), save
+
 ### Parity
 
 Bare **"parity"** is banned. It names three different harnesses that fail in
@@ -90,6 +94,10 @@ _Avoid_: best model, current net, production model
 **Promotion**:
 The act of making a candidate the champion, which regenerates every downstream serving lane from `champions.toml`.
 _Avoid_: deploy, release, ship
+
+**Human start**:
+An e2e training run that begins at a real player's mid-run state from the scraped run corpus: their deck, relics, potions, HP and gold entering some floor of act 1–3, on the engine's own map (`ppo.e2e.human`, `--human`). Every decision from there on is the policy's.
+_Avoid_: human deck run, imitation start, replay
 
 ### Surfaces
 

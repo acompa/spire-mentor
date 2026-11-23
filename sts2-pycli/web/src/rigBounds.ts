@@ -120,9 +120,17 @@ export const RIG_BOUNDS: Record<string, RigBox> = {
   treasure_act_1: { x: 541, y: -2401, w: 3767, h: 2386 },
   treasure_act_2: { x: 886, y: -2356, w: 3475, h: 2340 },
   treasure_act_3: { x: 946, y: -2341, w: 3173, h: 2326 },
-  aeonglass: { x: -808, y: 560, w: 4181, h: 1878 },
+  aeonglass: { x: -1022, y: 354, w: 2108, h: 2260 },
+  "v0.111.0/fat_gremlin": { x: -76, y: -13, w: 283, h: 568 },
+  "v0.111.0/gremlin_merc": { x: -472, y: -17, w: 743, h: 886 },
   byrdine: { x: -414, y: -27, w: 754, h: 678 },
   byrdine_monster: { x: -414, y: -27, w: 754, h: 678 },
+  "v0.113.0/fat_gremlin": { x: -76, y: -13, w: 283, h: 568 },
+  flyconid: { x: -138, y: 124, w: 353, h: 632 },
+  "v0.113.0/gremlin_merc": { x: -472, y: -17, w: 743, h: 886 },
+  "v0.113.0/infested_prism": { x: -304, y: 338, w: 568, h: 610 },
+  "v0.113.0/mawler": { x: -997, y: -61, w: 1896, h: 1269 },
+  ruby_raider_tracker: { x: -929, y: -253, w: 1439, h: 1109 },
   wuppy: { x: -371, y: 517, w: 745, h: 472 },
   fool: { x: -223, y: -26, w: 575, h: 863 },
 };
@@ -134,7 +142,16 @@ export function rigSlug(rigBase: string | null | undefined): string {
   return tail;
 }
 
-/** The rig's idle box in rig units, or null when the rig is unknown here. */
+/** The build an overlay rig URL names (`/assets/v0.113.0/monster_rigs/…` ->
+ *  `v0.113.0`), or null for a shared-tree rig. */
+function rigBuild(rigBase: string): string | null {
+  return /(?:^|\/)(v\d+\.\d+\.\d+)\//.exec(rigBase)?.[1] ?? null;
+}
+
+/** The rig's idle box in rig units, or null when the rig is unknown here. A
+ *  build's own re-export (keyed `<build>/<slug>`) wins over the shared rig. */
 export function rigBox(rigBase: string | null | undefined): RigBox | null {
-  return RIG_BOUNDS[rigSlug(rigBase)] ?? null;
+  const slug = rigSlug(rigBase);
+  const build = rigBase ? rigBuild(rigBase) : null;
+  return (build && RIG_BOUNDS[`${build}/${slug}`]) || RIG_BOUNDS[slug] || null;
 }

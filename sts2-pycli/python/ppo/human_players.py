@@ -238,7 +238,11 @@ def main(argv: list[str] | None = None) -> int:
     b = sub.add_parser("select")
     b.add_argument("--index", required=True)
     b.add_argument("--ascension", type=int, nargs="+", default=[10])
-    b.add_argument("--eval-build", default="v0.107.1")
+    b.add_argument(
+        "--eval-build",
+        default="v0.107.1",
+        help="corpus build (the human corpus's largest build slice, which past studies used; not the simulator's default build)",
+    )
     b.add_argument("--min-runs", type=int, default=20)
     b.add_argument("--top", type=int, default=30)
     b.add_argument("--out-users", default=None)

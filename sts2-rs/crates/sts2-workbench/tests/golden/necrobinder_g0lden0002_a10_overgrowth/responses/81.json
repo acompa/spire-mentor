@@ -263,6 +263,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/leaf_slime_s/leaf_slime_s",
+    "rig_arrow_x": -1.0,
+    "rig_arrow_y": -40.0,
     "rig_bounds_h": 102.0,
     "rig_bounds_w": 154.0,
     "rig_scale": 0.2734,
@@ -294,6 +296,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/leaf_slime_m/leaf_slime_m",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -52.0,
     "rig_bounds_h": 143.0,
     "rig_bounds_w": 200.0,
     "rig_scale": 0.45,
@@ -326,6 +330,8 @@
      }
     ],
     "rig": "https://assets.test/monster_rigs/twig_slime_s/twig_slime_s",
+    "rig_arrow_x": 0.0,
+    "rig_arrow_y": -45.0,
     "rig_bounds_h": 106.0,
     "rig_bounds_w": 140.0,
     "rig_scale": 0.275,
@@ -387,6 +393,8 @@
    "max_hp": 6,
    "name": "Osty",
    "rig": "https://assets.test/monster_rigs/osty/osty",
+   "rig_arrow_x": -15.0,
+   "rig_arrow_y": -109.0,
    "rig_bounds_h": 204.0,
    "rig_bounds_w": 232.0,
    "rig_scale": 0.26
@@ -586,6 +594,8 @@
     }
    ],
    "rig": "https://assets.test/character_rigs/necrobinder/necrobinder",
+   "rig_arrow_x": 3.0,
+   "rig_arrow_y": -191.0,
    "rig_bounds_h": 270.0,
    "rig_bounds_w": 210.0,
    "rig_scale": 0.27

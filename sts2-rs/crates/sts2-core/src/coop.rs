@@ -33,7 +33,7 @@ use std::num::NonZeroU32;
 use crate::{Action, CombatState, PowerKind, PowerUid, RelicStore, TurnEvents};
 
 /// Co-op bookkeeping on [`CombatState::coop`]. `Default` is solo.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct CoopState {
     /// The round whose enemy turn also hits the teammates, and whose play
     /// phase they still have ahead of them. Monster attacks target every
@@ -48,7 +48,7 @@ pub struct CoopState {
     pub to_play: u8,
     /// Per ally seat, what that player owns outside [`PlayerCombatState`].
     /// Empty when the wire carried only HP and block.
-    pub stash: SmallVec<[SeatStash; 1]>,
+    pub stash: Vec<SeatStash>,
     /// True while a [`seat_pass`] runs: the seated player is a teammate
     /// listening to an event SOMEONE ELSE caused, and the power walk yields
     /// only the seated player's listeners (the enemies' already heard it).
@@ -80,7 +80,7 @@ pub struct CoopState {
     /// id, until they are revived (C# `Player.DeactivateHooks`: a dead
     /// player's relics hear nothing). An entry also marks the seat as out of
     /// the fight ([`is_out`]).
-    pub benched: SmallVec<[(u8, RelicStore); 1]>,
+    pub benched: Vec<(u8, RelicStore)>,
     /// Our place in the run's player order (C# `CombatState.Players`), which
     /// every per-player step of a turn walks: `allies[..seat_index]` set up,
     /// auto-play, end their turn and take a monster's effect before us, the
@@ -114,8 +114,53 @@ pub struct CoopState {
     pub joint_acting: Option<u8>,
 }
 
+/// Hand-written so the two `Copy` seat vectors clone in one bulk copy
+/// ([`crate::clone_copy_sv`]) rather than smallvec's element-wise `Extend`.
+/// `CoopState` is cloned with every [`CombatState`]. The destructuring names
+/// every field, so a new one without a clone here is a compile error.
+impl Clone for CoopState {
+    #[inline]
+    fn clone(&self) -> Self {
+        let Self {
+            threat_round,
+            to_play,
+            stash,
+            seat_pass,
+            seated,
+            power_seat,
+            full,
+            seat_run,
+            fanning,
+            benched,
+            seat_index,
+            card_target,
+            result_player,
+            joint,
+            joint_acting,
+        } = self;
+        Self {
+            threat_round: *threat_round,
+            to_play: *to_play,
+            stash: crate::clone_vec_or_empty(stash),
+            seat_pass: *seat_pass,
+            seated: *seated,
+            power_seat: crate::clone_copy_sv(power_seat),
+            full: *full,
+            seat_run: *seat_run,
+            fanning: *fanning,
+            benched: crate::clone_vec_or_empty(benched),
+            seat_index: *seat_index,
+            card_target: *card_target,
+            result_player: crate::clone_copy_sv(result_player),
+            joint: *joint,
+            joint_acting: *joint_acting,
+        }
+    }
+}
+
 /// How many teammates come before us in the run's player order
 /// ([`CoopState::seat_index`]).
+#[inline]
 fn seats_ahead(state: &CombatState) -> usize {
     usize::from(state.coop.seat_index).min(state.allies.len())
 }
@@ -377,7 +422,20 @@ pub const fn tracks_applier_seat(kind: PowerKind) -> bool {
 /// its owner (AnyEnemy) or at every enemy (AllEnemies), is played `Amount`
 /// more times, and each Tag Team that added plays is removed. Returns the
 /// extra plays. A no-op solo: every Tag Team there is the player's own.
+#[inline]
 pub fn tag_team_extra_plays(state: &mut CombatState, ctx: &crate::hooks::CardPlayCountCtx) -> i32 {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if ctx.card_type != Some(crate::cards::CardType::Attack)
+        || !state.powers.present_kinds().contains(PowerKind::TagTeam)
+    {
+        return 0;
+    }
+    tag_team_extra_plays_body(state, ctx)
+}
+
+#[inline(never)]
+fn tag_team_extra_plays_body(state: &mut CombatState, ctx: &crate::hooks::CardPlayCountCtx) -> i32 {
     use crate::cards::TargetType;
     if ctx.card_type != Some(crate::cards::CardType::Attack)
         || !state.powers.present_kinds().contains(PowerKind::TagTeam)
@@ -856,7 +914,17 @@ fn ally_holding(state: &CombatState, id: u8) -> Option<usize> {
 /// before the play count and `OnPlay` (`CardModel.cs:1881`). The pick waits
 /// in [`CoopState::result_player`] until the card leaves Play
 /// ([`hand_over_played_card`]), whichever exit that is.
+#[inline]
 pub fn roll_result_player(state: &mut CombatState, uid: crate::CardUid, id: crate::cards::CardId) {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if id == crate::cards::CardId::TheBall && !state.allies.is_empty() {
+        roll_result_player_body(state, uid, id);
+    }
+}
+
+#[inline(never)]
+fn roll_result_player_body(state: &mut CombatState, uid: crate::CardUid, id: crate::cards::CardId) {
     if id != crate::cards::CardId::TheBall || state.allies.is_empty() {
         return;
     }
@@ -911,7 +979,20 @@ pub fn roll_result_player(state: &mut CombatState, uid: crate::CardUid, id: crat
 /// - The receiver died during the play: `GiveToAnotherPlayer` returns early
 ///   and the card goes to OUR result pile, the draw pile at a random place,
 ///   or the ordinary exhaust (left to the caller).
+#[inline]
 pub fn hand_over_played_card(
+    state: &mut CombatState,
+    uid: crate::CardUid,
+    home: bool,
+    exhaust: bool,
+) -> bool {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    !state.coop.result_player.is_empty() && hand_over_played_card_body(state, uid, home, exhaust)
+}
+
+#[inline(never)]
+fn hand_over_played_card_body(
     state: &mut CombatState,
     uid: crate::CardUid,
     home: bool,
@@ -1066,8 +1147,23 @@ fn imitation_learners(state: &CombatState) -> SmallVec<[(u8, NonZeroU32); 2]> {
 /// `CreateCloneForPlayer`), so nothing the play itself changes on the card
 /// reaches it. `None` unless it is a Power card and someone imitates the
 /// seated player; the gates in front keep it free for every other play.
+#[inline]
 #[must_use]
 pub fn imitation_learning_template(
+    state: &CombatState,
+    card_uid: crate::CardUid,
+    card_type: crate::cards::CardType,
+) -> Option<Box<crate::cards::Card>> {
+    // Inline guard: the body's own opening early return, tested here so the
+    // common no-op skips the out-of-line call. The body still tests it.
+    if card_type != crate::cards::CardType::Power {
+        return None;
+    }
+    imitation_learning_template_body(state, card_uid, card_type)
+}
+
+#[inline(never)]
+fn imitation_learning_template_body(
     state: &CombatState,
     card_uid: crate::CardUid,
     card_type: crate::cards::CardType,
@@ -1097,13 +1193,20 @@ pub fn imitation_learning_template(
 /// (`CardCmd.AutoPlay(clone, null)`), seated for it. The clone's own play may
 /// set off a teammate's Imitation Learning bound to its new owner in turn, as
 /// in C#. A no-op without a template.
+#[inline]
 pub fn imitation_learning_copies(
     state: &mut CombatState,
     template: Option<Box<crate::cards::Card>>,
 ) {
-    let Some(template) = template else {
-        return;
-    };
+    // Inline guard: no template means no copies, so the common no-op skips
+    // the out-of-line call.
+    if let Some(template) = template {
+        imitation_learning_copies_body(state, &template);
+    }
+}
+
+#[inline(never)]
+fn imitation_learning_copies_body(state: &mut CombatState, template: &crate::cards::Card) {
     if state.is_over {
         return;
     }
@@ -1164,6 +1267,7 @@ pub fn actor_is_seated(state: &CombatState) -> bool {
 }
 
 /// Whether the fight has teammate seats to run [`seat_pass`]es for.
+#[inline]
 #[must_use]
 pub fn has_seats(state: &CombatState) -> bool {
     !state.coop.stash.is_empty()
@@ -1189,6 +1293,52 @@ pub fn players_power_amount(state: &CombatState, kind: PowerKind) -> i32 {
     sum
 }
 
+/// v0.113.0 `EnsemblePower.TryModifyEnergyCostInCombatLate`: a card costs 0
+/// energy while ANOTHER player holds Ensemble and the card sits in its
+/// owner's Hand or Play pile (`ShouldSkip`: the holder's own cards, and
+/// cards in any other pile, keep their cost). Reads the Ensembles of the
+/// living teammates waiting in a [`SeatStash`]; the seated player's own never
+/// counts. A card in no pile is mid-play (C# Play pile).
+///
+/// Energy callers skip a negative (X-cost / unplayable) base first, as for
+/// Brilliant Scarf: `CardEnergyCost.GetWithModifiers` returns before the
+/// global hooks there.
+#[must_use]
+pub fn ensemble_makes_free(state: &CombatState, card_uid: crate::CardUid) -> bool {
+    teammate_holds_ensemble(state)
+        && matches!(
+            crate::card_effects::find_card_pile(state, card_uid),
+            None | Some(crate::card_effects::PileKind::Hand)
+        )
+}
+
+/// Whether a living teammate waiting in their seat holds a live Ensemble
+/// (the pile-independent half of [`ensemble_makes_free`]).
+#[must_use]
+pub fn teammate_holds_ensemble(state: &CombatState) -> bool {
+    has_seats(state)
+        && state.powers.present_kinds().contains(PowerKind::Ensemble)
+        && state.coop.stash.iter().enumerate().any(|(i, seat)| {
+            state.allies.get(i).is_some_and(|a| a.current_hp > 0)
+                && seat.powers.iter().any(|u| {
+                    state
+                        .powers
+                        .get_by_id(u.0)
+                        .is_some_and(|p| p.kind == PowerKind::Ensemble && p.amount > 0)
+                })
+        })
+}
+
+/// v0.113.0 `EnsemblePower.AfterCardPlayed`: the seated player played a
+/// card, so every other living player's Ensemble loses one stack
+/// (`cardPlay.Player.Creature != Owner` → `PowerCmd.Decrement`), whether or
+/// not the card had a cost to waive. A no-op solo and inside a seat pass.
+pub fn spend_teammates_ensemble(state: &mut CombatState) {
+    each_unseated_holder(state, PowerKind::Ensemble, |state, _| {
+        crate::fool::reduce_player_power(state, PowerKind::Ensemble, 1);
+    });
+}
+
 /// Give every ally an empty [`SeatStash`] with its seat id, making them
 /// whole players.
 pub fn open_seats(state: &mut CombatState) {
@@ -1209,14 +1359,27 @@ pub fn open_seats(state: &mut CombatState) {
 /// A no-op solo, and never nested: a seat pass does not open further passes
 /// for events it causes (C#'s owner-guarded arms would ignore them anyway,
 /// and the few unguarded ones are listed in the co-op plan).
+///
+/// The solo / nested test is inlined at every dispatcher; the pass itself
+/// stays out of line.
+#[inline]
 pub fn seat_pass<C: SeatRemap>(
     state: &mut CombatState,
     ctx: &C,
-    mut body: impl FnMut(&mut CombatState, &C),
+    body: impl FnMut(&mut CombatState, &C),
 ) {
     if state.coop.seat_pass || !has_seats(state) {
         return;
     }
+    seat_pass_seats(state, ctx, body);
+}
+
+#[inline(never)]
+fn seat_pass_seats<C: SeatRemap>(
+    state: &mut CombatState,
+    ctx: &C,
+    mut body: impl FnMut(&mut CombatState, &C),
+) {
     for ally in 0..state.allies.len() {
         if state.allies[ally].current_hp <= 0 || state.coop.stash.get(ally).is_none() {
             continue;
@@ -1392,22 +1555,14 @@ impl SeatRemap for crate::hooks::PowerAmountCtx {
 
 // Contexts that name no player: the actor is whoever is seated (see
 // [`actor_is_seated`]).
-impl SeatRemap for crate::hooks::AttackCtx {}
 impl SeatRemap for crate::hooks::CardCtx {}
-impl SeatRemap for crate::hooks::CardDrawnCtx {}
 impl SeatRemap for crate::hooks::HandDrawCtx {}
 impl SeatRemap for crate::hooks::MaxEnergyCtx {}
-impl SeatRemap for crate::hooks::SummonAmountCtx {}
-impl SeatRemap for crate::hooks::SummonCtx {}
-impl SeatRemap for crate::hooks::OstyRevivedCtx {}
 impl SeatRemap for crate::hooks::TurnSideCtx {}
 impl SeatRemap for crate::hooks::TurnSelfCtx {}
 impl SeatRemap for crate::hooks::CombatLifecycleCtx {}
-impl SeatRemap for crate::hooks::CreatureAddedCtx {}
 impl SeatRemap for crate::hooks::OrbChanneledCtx {}
 impl SeatRemap for crate::hooks::StarsSpentCtx {}
-impl SeatRemap for crate::hooks::TryBlockDebuffCtx {}
-impl SeatRemap for crate::hooks::DrawCtx {}
 impl SeatRemap for crate::hooks::AfterDeathCtx {}
 impl SeatRemap for crate::hooks::AfterBlockBrokenCtx {}
 
@@ -1603,6 +1758,7 @@ pub fn teammates_threatened(state: &CombatState) -> bool {
 /// [`TeammatePolicy`] (the first option without one): their stage must be
 /// over before the seats swap back. A no-op outside a [`CoopState::full`]
 /// fight, and never nested.
+#[inline]
 pub(crate) fn run_seat_stage(state: &mut CombatState, stage: SeatRun) {
     let after = seats_ahead(state)..state.allies.len();
     run_seats(state, stage, after);
@@ -1645,15 +1801,24 @@ pub(crate) fn run_seat_stage_beside_park(state: &mut CombatState, stage: SeatRun
 
 /// [`run_seat_stage`] for the teammates ahead of us in the run's player order,
 /// called where the stage begins for us.
+#[inline]
 pub(crate) fn run_seats_ahead(state: &mut CombatState, stage: SeatRun) {
     let ahead = 0..seats_ahead(state);
     run_seats(state, stage, ahead);
 }
 
+/// Inlined gate (a no-op outside a full co-op fight); the stage runs out
+/// of line.
+#[inline]
 fn run_seats(state: &mut CombatState, stage: SeatRun, allies: std::ops::Range<usize>) {
     if !state.coop.full || state.coop.seat_run.is_some() || !has_seats(state) {
         return;
     }
+    run_seats_live(state, stage, allies);
+}
+
+#[inline(never)]
+fn run_seats_live(state: &mut CombatState, stage: SeatRun, allies: std::ops::Range<usize>) {
     for ally in allies {
         if state.is_over {
             return;
@@ -1691,7 +1856,10 @@ fn run_seats(state: &mut CombatState, stage: SeatRun, allies: std::ops::Range<us
 /// teammate plays a card. Only in a [`CoopState::full`] fight (the
 /// advisor's teammates carry no relics); never inside a seat pass or a
 /// teammate's stage.
-pub(crate) fn each_teammate(state: &mut CombatState, mut body: impl FnMut(&mut CombatState)) {
+///
+/// The solo test is inlined at every caller; the walk stays out of line.
+#[inline]
+pub(crate) fn each_teammate(state: &mut CombatState, body: impl FnMut(&mut CombatState)) {
     if !state.coop.full
         || state.coop.seat_pass
         || state.coop.seat_run.is_some()
@@ -1699,6 +1867,11 @@ pub(crate) fn each_teammate(state: &mut CombatState, mut body: impl FnMut(&mut C
     {
         return;
     }
+    each_teammate_live(state, body);
+}
+
+#[inline(never)]
+fn each_teammate_live(state: &mut CombatState, mut body: impl FnMut(&mut CombatState)) {
     for ally in 0..state.allies.len() {
         if state.is_over {
             return;

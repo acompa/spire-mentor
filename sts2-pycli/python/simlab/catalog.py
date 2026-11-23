@@ -65,6 +65,8 @@ STARTERS: dict[str, dict[str, Any]] = {
     },
 }
 
+# The build whose tables and loc dir are the unprefixed ones on disk (the
+# legacy build, `sts2_client.LEGACY_GAME_VERSION`), not the default build.
 _ENGINE_WIKI_VERSION = "v0.107.1"
 
 

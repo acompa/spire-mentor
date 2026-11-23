@@ -5,6 +5,6 @@ import type { InspectItem } from "./useInspect";
  *  carries it, so the same power on two creatures is two entries (tapping the
  *  second switches the sheet instead of toggling the first closed). */
 export function powerItem(p: Power, scope = ""): InspectItem {
-  return { key: `power:${scope}:${p.name}`, icon: p.image, name: p.name,
+  return { key: `power:${scope}:${p.name}`, icon: p.image, name: p.display_name ?? p.name,
     amount: p.display_amount ?? p.amount, description: p.description };
 }

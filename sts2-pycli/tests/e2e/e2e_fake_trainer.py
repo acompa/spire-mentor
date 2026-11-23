@@ -15,7 +15,8 @@ which they fire; ``None`` is off):
 ``nan_at``        ``nan_mode`` ``exit``: write ``NAN.json``, exit 86; ``row``:
                   write a non-finite stats row and hang until killed
 ``stall_at``      stop making progress; ``stall_mode`` ``slow`` keeps writing
-                  throughput rows at ``stall_rate``, ``silent`` writes none
+                  throughput rows at ``stall_rate`` (one per ``stall_every_s``,
+                  default ``throughput_every_s``), ``silent`` writes none
 
 Behavior knobs: ``lc_recheck_fail`` (raise ``ALARM_LC_RECHECK_FAIL`` at the
 start, as the learner does when a learning check fails after one passed, and
@@ -56,6 +57,7 @@ DEFAULTS: dict = {
     "throughput_every_s": 0.05,
     "rate": 1000.0,
     "stall_rate": 10.0,
+    "stall_every_s": None,
     "crash_at": None,
     "human_at": None,
     "nan_at": None,
@@ -201,6 +203,9 @@ class Fake:
             self.log("alloc", mb=len(hog) >> 20)
         stalled = False
         hung = False
+        stall_every_s = cfg["stall_every_s"]
+        if stall_every_s is None:
+            stall_every_s = cfg["throughput_every_s"]
         last_tp = 0.0
 
         def hit(knob: str) -> bool:
@@ -224,11 +229,7 @@ class Fake:
                 self.evals()
             now = time.time()
             if stalled or hung:
-                if (
-                    stalled
-                    and cfg["stall_mode"] == "slow"
-                    and now - last_tp >= cfg["throughput_every_s"]
-                ):
+                if stalled and cfg["stall_mode"] == "slow" and now - last_tp >= stall_every_s:
                     tp = {"time": now, "pid": os.getpid(), "decisions": self.decisions,
                           "rate": float(cfg["stall_rate"])}  # fmt: skip
                     self.append(C.THROUGHPUT, tp)

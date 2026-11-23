@@ -151,7 +151,11 @@ pub fn act_map_for(rm: &mut RunManager, act: u8) -> Value {
         .map_or(sts2_core::acts::DEFAULT_ACT_NUM_ROOMS, |a| {
             i32::from(a.num_rooms)
         });
-    let ascension_level = i32::from(rm.run_state.ascension_level);
+    // A Blitz act is the fixed line, whatever the act (GH #1347).
+    if let Some(act_map) = rm.run_state.blitz_act_map(act) {
+        return serialize_act_map(&act_map);
+    }
+    let ascension_level = rm.run_state.map_ascension();
     // LOCAL per-act RNG (does not poison `map_rngs`); same salt name as
     // `RunRngSet::map_rng(act-1)` → `act_{act}_map`.
     let mut rng = rm.run_state.rng.named(&format!("act_{act}_map"));
@@ -350,6 +354,38 @@ pub fn current_room(rm: &RunManager) -> Value {
         }
         None => Value::Null,
     }
+}
+
+/// The Dread dominion in force where the run stands, as its model entry
+/// (`"KAISER_CRAB_DOMINION"`): what C# `RunState.Dominion` holds. `None`
+/// outside Dread (GH #1346).
+///
+/// `DreadRunModel` sets the act's dominion on entering the act
+/// (`AfterActEntered`, `Models.Dread/DreadRunModel.cs:17-29`) and clears it
+/// on entering one of the act's boss rooms (`RemoveDominionIfRoomIsBoss`,
+/// `:51-68`); nothing sets it again before the next act. So it is the act's
+/// ([`sts2_core::RunState::act_dominion`]) everywhere but in a boss room.
+/// The Rust run stays in the boss room (and in its act) through the next
+/// act's Ancient screen, which C# shows after entering that act: there it is
+/// the NEXT act's dominion.
+#[must_use]
+pub fn current_dominion(rm: &RunManager) -> Option<&'static str> {
+    let rs = &rm.run_state;
+    if !rs.game_mode.is_dread() {
+        return None;
+    }
+    let in_boss_room = rs
+        .current_room
+        .is_some_and(|r| r.room_type == sts2_core::RoomType::Boss);
+    if !in_boss_room {
+        return rs.act_dominion().map(sts2_core::Dominion::entry);
+    }
+    if !rs.in_ancient_room {
+        return None;
+    }
+    let next = rs.generated_rooms.get(usize::from(rs.act_index))?;
+    sts2_core::Dominion::for_boss(next.second_boss_id.unwrap_or(next.boss_id))
+        .map(sts2_core::Dominion::entry)
 }
 
 /// The C# id (`UPPER_SNAKE`, `ModelId.Entry`) of the encounter the live
@@ -710,6 +746,248 @@ pub fn boss_relic_options(rm: &RunManager) -> Vec<String> {
         .collect()
 }
 
+/// A word id in title case: `"SHARP"` -> `"Sharp"`. Every v0.113.0 title a
+/// Blitz ware names (the six `shopEnchantmentOptions`, Glam, and the
+/// characters' `shortTitle`) is its id spelled this way.
+fn title_case(id: &str) -> String {
+    id.split('_')
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut c = w.chars();
+            c.next().map_or_else(String::new, |f| {
+                f.to_uppercase()
+                    .chain(c.flat_map(char::to_lowercase))
+                    .collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A Blitz ware's title and description, as the game prints them: the
+/// English `merchant_room` rows `MERCHANT.blitz.<snake_kind>_entry.title` /
+/// `.description` of v0.113.0 (`BlitzMerchantEntry.cs:57-59`), with the
+/// rich-text tags kept and the `{Enchantment}` / `{Amount}` / `{Character}`
+/// variables filled the way `BlitzMerchantCardEnchantEntry`,
+/// `BlitzMerchantGlamEntry` and `BlitzMerchantPrismaticCardRewardEntry` fill
+/// them. The text lives here so both workbench backends print one copy;
+/// `sts2-pycli/tests/workbench/test_workbench_blitz.py` pins it to the
+/// vendored loc table.
+#[must_use]
+pub fn blitz_ware_text(entry: &sts2_core::blitz::MerchantEntry) -> (String, String) {
+    use sts2_core::blitz::MerchantEntryType as K;
+    const CURSE: &str = "Receive [red]1[/red] random [red]Curse[/red].\n";
+    let fixed = |title: &str, description: &str| (title.to_owned(), description.to_owned());
+    let cursed = |title: &str, rest: &str| (title.to_owned(), format!("{CURSE}{rest}"));
+    match entry.kind {
+        K::CardUpgrade => fixed(
+            "Card Upgrade Service",
+            "[gold]Upgrade[/gold] a card in your [gold]Deck[/gold].",
+        ),
+        K::UpgradedCardReward => fixed(
+            "Upgraded Card Reward",
+            "Receive [blue]1[/blue] [gold]Upgraded[/gold] card reward.",
+        ),
+        K::RandomUpgrades => fixed(
+            "Random Upgrades",
+            "Upgrade [blue]2[/blue] random cards in your [gold]Deck[/gold].",
+        ),
+        K::CardTransform => fixed(
+            "Card Transform Service",
+            "[gold]Transform[/gold] a card in your [gold]Deck[/gold].",
+        ),
+        K::CardRemoval => fixed(
+            "Card Removal Service",
+            "Remove a card from your [gold]Deck[/gold].",
+        ),
+        K::CardRewards => fixed("Card Rewards", "Receive [blue]2[/blue] card rewards."),
+        K::ColorlessCardReward => fixed(
+            "Colorless Card Reward",
+            "Receive [blue]1[/blue] [gold]Colorless[/gold] card reward.",
+        ),
+        K::Potions => fixed(
+            "Potions",
+            "Gain [blue]1[/blue] potion slot and procure [blue]2[/blue] random potions.",
+        ),
+        K::CardEnchant => match entry.enchantment {
+            Some((id, amount)) => {
+                let name = title_case(id.python_name());
+                // `{Amount:plural:| {}}`: nothing at 1, else the number.
+                let tail = if amount == 1 {
+                    String::new()
+                } else {
+                    format!(" {amount}")
+                };
+                (
+                    name.clone(),
+                    format!("[gold]Enchant[/gold] a card with [purple]{name}{tail}[/purple]."),
+                )
+            }
+            // No enchantment fits the deck (C# leaves a null model): the
+            // ware names no enchantment.
+            None => fixed("Card Enchant", "[gold]Enchant[/gold] a card."),
+        },
+        K::EnchantedCardReward => fixed(
+            "Enchanted Card Reward",
+            "Receive [blue]1[/blue] [gold]Enchanted[/gold] card reward.",
+        ),
+        K::PrismaticCardReward => {
+            // `BlitzMerchantPrismaticCardRewardEntry.cs:41-49`: Ironclad when
+            // no other character is unlocked.
+            let who = entry
+                .character
+                .map_or("Ironclad", super::names::character_str);
+            (
+                format!("{who} Card Reward"),
+                format!("Receive [blue]1[/blue] [gold]{who}[/gold] card reward."),
+            )
+        }
+        K::RareCardReward => fixed("Rare Card Reward", "Receive [blue]1[/blue] rare card reward."),
+        K::UpgradedRareCard => fixed(
+            "Upgraded Rare Card",
+            "Receive [blue]1[/blue] random [gold]Upgraded[/gold] rare card.",
+        ),
+        K::Relic => fixed("Relic", "Obtain [blue]1[/blue] random [gold]Relic[/gold]."),
+        K::Glam => cursed(
+            "Cursed Glam",
+            "[gold]Enchant[/gold] a card with [purple]Glam[/purple].",
+        ),
+        K::TwoMoreChoices => cursed(
+            "Cursed Choices",
+            "The Merchant allows you to purchase two more wares.",
+        ),
+        K::CardRewardOfEachRarity => cursed(
+            "Cursed Card Rewards",
+            "Receive [blue]1[/blue] [gold]Common[/gold], [gold]Uncommon[/gold] and [gold]Rare[/gold] card reward.",
+        ),
+        K::UpgradedRareCardReward => cursed(
+            "Cursed Upgraded Rare Card Reward",
+            "Receive [blue]1[/blue] [gold]Upgraded[/gold] rare card reward.",
+        ),
+        K::TwoRelics => cursed(
+            "Cursed Relics",
+            "Obtain [blue]2[/blue] random [gold]Relics[/gold].",
+        ),
+        K::FullHealAndMaxHp => cursed(
+            "Cursed Heal",
+            "Raise your Max HP by [blue]6[/blue] and heal all of your HP.",
+        ),
+    }
+}
+
+/// `RunManager.blitz_shop()` — the Blitz merchant while its room is open
+/// (GH #1347), else `Null`:
+/// `{"choices_remaining": n, "entries": [{"kind", "status", "cursed",
+/// "rare", "title", "description", "enchantment", "enchantment_amount",
+/// "character"}, ..]}`.
+/// `kind` and `status` are the C# enum member names (`"TwoRelics"`,
+/// `"Available"`); `title` and `description` are [`blitz_ware_text`];
+/// `entries[i]` is the ware `blitz_choice {idx: i}` takes.
+#[must_use]
+pub fn blitz_shop(rm: &RunManager) -> Value {
+    let Some(inv) = rm.blitz_shop() else {
+        return Value::Null;
+    };
+    let entries: Vec<Value> = inv
+        .entries
+        .iter()
+        .map(|e| {
+            let (title, description) = blitz_ware_text(e);
+            serde_json::json!({
+                "kind": e.kind.name(),
+                "status": e.status.name(),
+                "cursed": e.kind.is_cursed(),
+                "rare": e.kind.is_rare(),
+                "title": title,
+                "description": description,
+                "enchantment": e.enchantment.map(|(id, _)| id.python_name()),
+                "enchantment_amount": e.enchantment.map(|(_, n)| n),
+                "character": e.character.map(super::names::character_str),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "choices_remaining": inv.choices_remaining,
+        "entries": entries,
+    })
+}
+
+/// `RunManager.blitz_chest()` — the relics still in an open Blitz chest as
+/// `[{"index": i, "id": "RELIC.X"}, ..]` (`index` is what
+/// `take_chest_relic {idx}` names; it does not renumber between rounds), or
+/// `Null` when no Blitz chest is open.
+#[must_use]
+pub fn blitz_chest(rm: &RunManager) -> Value {
+    let Some(chest) = rm.blitz_chest() else {
+        return Value::Null;
+    };
+    Value::Array(
+        chest
+            .relics
+            .iter()
+            .map(|&(index, relic)| {
+                serde_json::json!({
+                    "index": index,
+                    "id": format!("RELIC.{}", relic.to_python_name()),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// `RunManager.reward_screen_entries()` — the open reward screen (GH #1620)
+/// as `[{"index", "type", ..}, ..]` in screen order, or `Null` when none is
+/// open. `index` is what `take_reward` / `skip_reward {"idx": index}` name; it
+/// does not renumber as rewards leave. Per `type`: `gold` (`amount`),
+/// `potion` (`id`, `PascalCase` like [`potions`]), `relic` (`id`
+/// `"RELIC.X"`, `wax`), `chest_relic` (`id`), `special_card` (`id`,
+/// `upgraded`), `card` (`options`, `upgraded`: the slate the take opens),
+/// `card_removal` (`count`).
+#[must_use]
+pub fn reward_screen(rm: &RunManager) -> Value {
+    use sts2_core::runstate::ScreenReward;
+    let Some(entries) = rm.reward_screen() else {
+        return Value::Null;
+    };
+    let relic = |r: &sts2_core::RelicId| format!("RELIC.{}", r.to_python_name());
+    Value::Array(
+        entries
+            .iter()
+            .map(|e| {
+                let index = e.index;
+                match &e.reward {
+                    ScreenReward::Gold(amount) => {
+                        serde_json::json!({"index": index, "type": "gold", "amount": amount})
+                    }
+                    ScreenReward::Potion(kind) => {
+                        serde_json::json!({"index": index, "type": "potion", "id": format!("{kind:?}")})
+                    }
+                    ScreenReward::Relic { relic: r, is_wax } => serde_json::json!({
+                        "index": index, "type": "relic", "id": relic(r), "wax": is_wax,
+                    }),
+                    ScreenReward::ChestRelic(r) => {
+                        serde_json::json!({"index": index, "type": "chest_relic", "id": relic(r)})
+                    }
+                    ScreenReward::SpecialCard(card) => serde_json::json!({
+                        "index": index, "type": "special_card",
+                        "id": format!("{:?}", card.card_id), "upgraded": card.upgraded,
+                    }),
+                    ScreenReward::Card(reward) => serde_json::json!({
+                        "index": index, "type": "card",
+                        "options": reward.options.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>(),
+                        "upgraded": (0..reward.options.len())
+                            .map(|i| reward.upgraded.get(i).copied().unwrap_or(false))
+                            .collect::<Vec<_>>(),
+                    }),
+                    ScreenReward::CardRemoval(count) => {
+                        serde_json::json!({"index": index, "type": "card_removal", "count": count})
+                    }
+                }
+            })
+            .collect(),
+    )
+}
+
 /// `RunManager.rest_site_options()` — `(option_id, enabled)` for every
 /// rest-site option the site offers, in the order a `RestOption{idx}`
 /// action indexes them. `option_id` is the game's own
@@ -872,7 +1150,8 @@ pub fn shop_inventory(rm: &RunManager) -> Value {
     // (Courier / MembershipCard) over the rolled base while in the
     // shop, so the displayed cost is discounted for the owner.
     let relics = rm.run_state.active_relics();
-    let price_of = |base: i32| sts2_core::shop::merchant_price_with_modifiers(&relics, base);
+    // The Fake Merchant's event room folds no modifier (GH #1607).
+    let price_of = |base: i32| inv.cost(&relics, base);
     let mut d = obj();
 
     let mut cards = Vec::new();
@@ -932,6 +1211,11 @@ pub fn shop_inventory(rm: &RunManager) -> Value {
 
     set(&mut d, "removal_cost", price_of(inv.removal_cost));
     set(&mut d, "removal_used", inv.removal_used);
+    // The Fake Merchant's shop (GH #1607). Additive key, present only when
+    // true.
+    if inv.fake_merchant {
+        set(&mut d, "fake_merchant", true);
+    }
     Value::Object(d)
 }
 
@@ -1071,14 +1355,68 @@ pub fn event_option_infos_with(rm: &RunManager, masked: bool) -> Value {
 
 /// `RunManager.available_actions()` — every legal [`RunAction`] as a
 /// run-action dict ([`run_action_to_value`]).
+///
+/// On the reward screen (GH #1620) each `take_reward` / `skip_reward` also
+/// names what it takes or leaves, as the game's reward button shows it:
+/// `reward` (`gold` / `potion` / `relic` / `chest_relic` / `special_card` /
+/// `card` / `card_removal`), plus `id` (`PascalCase`, as [`potions`] and
+/// [`relic_reward_ids`] name them) or `amount` (gold). A card reward's cards
+/// stay hidden until it is taken. `proceed_rewards` carries `chest`: the
+/// screen is the treasure chest's. Parsing ignores the extra keys.
 #[must_use]
 pub fn available_actions(rm: &RunManager) -> Value {
+    let screen = rm.reward_screen();
     Value::Array(
         rm.get_available_actions()
             .iter()
-            .map(run_action_to_value)
+            .map(|a| {
+                let mut v = run_action_to_value(a);
+                if let (Some(entries), Value::Object(d)) = (screen, &mut v) {
+                    annotate_reward_action(entries, a, d);
+                }
+                v
+            })
             .collect(),
     )
+}
+
+/// The reward-screen keys [`available_actions`] adds to `d` (GH #1620).
+fn annotate_reward_action(
+    entries: &[sts2_core::run_manager::RewardScreenEntry],
+    a: &RunAction,
+    d: &mut serde_json::Map<String, Value>,
+) {
+    use sts2_core::runstate::ScreenReward;
+    let idx = match a {
+        RunAction::TakeReward { idx } | RunAction::SkipReward { idx } => *idx,
+        RunAction::ProceedRewards => {
+            let chest = entries
+                .iter()
+                .any(|e| matches!(e.reward, ScreenReward::ChestRelic(_)));
+            d.insert("chest".into(), Value::Bool(chest));
+            return;
+        }
+        _ => return,
+    };
+    let Some(e) = entries.iter().find(|e| e.index == idx) else {
+        return;
+    };
+    let (kind, id, amount): (&str, Option<String>, Option<i64>) = match &e.reward {
+        ScreenReward::Gold(n) => ("gold", None, Some(i64::from(*n))),
+        ScreenReward::Potion(p) => ("potion", Some(format!("{p:?}")), None),
+        ScreenReward::Relic { relic, .. } => ("relic", Some(format!("{relic:?}")), None),
+        ScreenReward::ChestRelic(r) => ("chest_relic", Some(format!("{r:?}")), None),
+        ScreenReward::SpecialCard(c) => ("special_card", Some(format!("{:?}", c.card_id)), None),
+        ScreenReward::Card(_) => ("card", None, None),
+        ScreenReward::CardRemoval(n) => ("card_removal", None, Some(i64::from(*n))),
+    };
+    d.insert("reward".into(), Value::String(kind.into()));
+    if let Some(id) = id {
+        d.insert("id".into(), Value::String(id));
+    }
+    if let Some(n) = amount {
+        d.insert("amount".into(), Value::from(n));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1528,5 +1866,61 @@ mod tests {
         assert_ne!(rm.phase(), Phase::Combat);
         assert!(rm.combat.is_some(), "the won fight's state lingers");
         assert_eq!(combat_encounter_id(&rm), None);
+    }
+
+    #[test]
+    fn a_grafted_fight_names_the_encounter_the_game_sent() {
+        // GH #1477: the mod's `encounter_id` (the game's `Id.Entry`) names the
+        // rebuilt fight, so the e2e net's X_ID_AUX matches the native run's.
+        use crate::graft::set_combat_encounter;
+        let mut rm = ironclad_seed_0();
+        set_combat_encounter(&mut rm, "THE_KIN_BOSS").expect("a table encounter");
+        assert_eq!(combat_encounter_id(&rm), None, "named only once in combat");
+        let col = rm
+            .get_available_actions()
+            .into_iter()
+            .find_map(|a| match a {
+                RunAction::Move { col } => Some(col),
+                _ => None,
+            })
+            .expect("a first move");
+        rm.take_action(RunAction::Move { col });
+        assert_eq!(rm.phase(), Phase::Combat);
+
+        set_combat_encounter(&mut rm, "THE_KIN_BOSS").expect("a table encounter");
+        assert_eq!(combat_encounter_id(&rm), Some("THE_KIN_BOSS"));
+
+        // An event fight names the event's encounter in the run's build.
+        set_combat_encounter(&mut rm, "MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER").expect("event fight");
+        assert_eq!(
+            combat_encounter_id(&rm),
+            Some("MYSTERIOUS_KNIGHT_EVENT_ENCOUNTER")
+        );
+        set_combat_encounter(&mut rm, "BATTLEWORN_DUMMY_EVENT_ENCOUNTER").expect("v0.107.1 id");
+        assert_eq!(
+            combat_encounter_id(&rm),
+            Some("BATTLEWORN_DUMMY_EVENT_ENCOUNTER")
+        );
+        assert!(set_combat_encounter(&mut rm, "BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER").is_err());
+        rm.run_state.game_version = sts2_core::GameVersion::V0_111_0;
+        set_combat_encounter(&mut rm, "BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER").expect("v0.111 id");
+        assert_eq!(
+            combat_encounter_id(&rm),
+            Some("BATTLEWORN_DUMMY_EVENT_V2_ENCOUNTER")
+        );
+
+        // A table encounter after an event one drops the event request.
+        set_combat_encounter(&mut rm, "SLIMES_WEAK").expect("a table encounter");
+        assert_eq!(combat_encounter_id(&rm), Some("SLIMES_WEAK"));
+
+        // PunchOff's fight, played since the sim models it.
+        set_combat_encounter(&mut rm, "PUNCH_OFF_EVENT_ENCOUNTER").expect("event fight");
+        assert_eq!(combat_encounter_id(&rm), Some("PUNCH_OFF_EVENT_ENCOUNTER"));
+        set_combat_encounter(&mut rm, "SLIMES_WEAK").expect("a table encounter");
+
+        // A fight the sim does not model is an error, not a silent None.
+        let err = set_combat_encounter(&mut rm, "NOT_AN_ENCOUNTER").unwrap_err();
+        assert!(err.contains("NOT_AN_ENCOUNTER"), "{err}");
+        assert_eq!(combat_encounter_id(&rm), Some("SLIMES_WEAK"), "unchanged");
     }
 }
