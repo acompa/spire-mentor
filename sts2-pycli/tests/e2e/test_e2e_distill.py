@@ -21,6 +21,12 @@ from ppo.e2e import update as U
 from ppo.e2e.net import file_sha256
 from ppo.e2e.update import export_variant
 
+# These drive the scripted learner lane, which is Linux-only (see test_learner.py).
+pytestmark = pytest.mark.skipif(
+    'sys.platform == "win32"',
+    reason="the learner ships rows through POSIX shared memory; the lane runs on Linux only.",
+)
+
 _v111 = TL._v111  # the autouse fixture: the stamps need v0.111.0
 
 

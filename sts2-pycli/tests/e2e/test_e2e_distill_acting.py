@@ -41,6 +41,12 @@ from ppo.e2e.net import (
 from ppo.e2e.rowstore import Chunk, take
 from ppo.e2e.rsenv_lockstep import tok_diff
 
+# Four of these drive the scripted learner lane, which is Linux-only (see test_learner.py).
+pytestmark = pytest.mark.skipif(
+    'sys.platform == "win32"',
+    reason="the learner ships rows through POSIX shared memory; the lane runs on Linux only.",
+)
+
 _v111 = TL._v111  # the autouse fixture: the stamps need v0.111.0
 
 #: The 791/1000 Ironclad net (chars off), where the laptop has it.
