@@ -1,0 +1,513 @@
+<title>Spire Bench Design</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one reading column for prose; tables, diagrams and code may run wider inside their own scroll boxes. */
+:root {
+  --paper: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #18212c;
+  --ink-soft: #4b5868;
+  --rule: #d5dbe3;
+  --accent: #a3271f;
+  --accent-soft: #f6e4e1;
+  --ok: #1d6b47;
+  --ok-soft: #dff1e7;
+  --warn: #8a5a00;
+  --warn-soft: #f8ecd0;
+  --mute: #56616f;
+  --mute-soft: #e6eaef;
+  --code-bg: #eaeef3;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --measure: 68ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #12171e;
+    --surface: #1a212b;
+    --ink: #e7ecf2;
+    --ink-soft: #a9b4c2;
+    --rule: #2e3846;
+    --accent: #ef8a7f;
+    --accent-soft: #3a2220;
+    --ok: #7fd3a6;
+    --ok-soft: #173326;
+    --warn: #e9c06a;
+    --warn-soft: #3a2e12;
+    --mute: #a3aebb;
+    --mute-soft: #263040;
+    --code-bg: #212a36;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #12171e;
+  --surface: #1a212b;
+  --ink: #e7ecf2;
+  --ink-soft: #a9b4c2;
+  --rule: #2e3846;
+  --accent: #ef8a7f;
+  --accent-soft: #3a2220;
+  --ok: #7fd3a6;
+  --ok-soft: #173326;
+  --warn: #e9c06a;
+  --warn-soft: #3a2e12;
+  --mute: #a3aebb;
+  --mute-soft: #263040;
+  --code-bg: #212a36;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+}
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding-block: 40px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+}
+header.top { display: flex; flex-direction: column; gap: 14px; }
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 24px; font-weight: 600; padding-top: 18px; border-top: 2px solid var(--ink); }
+h3 { font-size: 17px; font-weight: 600; }
+p, ul, ol { margin: 0; max-width: var(--measure); }
+ul, ol { padding-left: 1.25em; display: flex; flex-direction: column; gap: 6px; }
+.lede { font-size: 18px; color: var(--ink-soft); }
+section { display: flex; flex-direction: column; gap: 16px; }
+.sub { display: flex; flex-direction: column; gap: 10px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.scroll { overflow-x: auto; max-width: 100%; }
+pre.code {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  background: var(--code-bg);
+  color: var(--ink);
+  padding: 14px 16px;
+  border-radius: 4px;
+  white-space: pre;
+}
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--ink);
+}
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+nav.toc ol {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 24px;
+  max-width: none;
+  font-size: 15px;
+}
+.chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.mute { background: var(--mute-soft); color: var(--mute); }
+.diagram {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 16px;
+}
+.questions { list-style: none; padding: 0; max-width: none; gap: 0; }
+.questions > li {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 4px 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.questions .qid {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent);
+  padding-top: 2px;
+}
+.questions .qbody { display: flex; flex-direction: column; gap: 6px; }
+.questions .qhead { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.questions p { color: var(--ink-soft); font-size: 15px; }
+.note {
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 12px 16px;
+  max-width: var(--measure);
+  font-size: 15px;
+}
+footer { color: var(--ink-soft); font-size: 14px; border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (max-width: 520px) {
+  .questions > li { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="page">
+
+<header class="top">
+  <div class="kicker">Design document · draft for discussion · 11 Nov 2026</div>
+  <h1>Spire Bench</h1>
+  <p class="lede">A shared benchmark for Slay the Spire 2 bots, built so that a reported win rate means the same thing for everyone and cannot be inflated by seed picking, peeking at hidden state, or retrying.</p>
+  <nav class="toc" aria-label="Contents">
+    <ol>
+      <li><a href="#goals">1. Goals</a></li>
+      <li><a href="#cheats">2. What counts as cheating</a></li>
+      <li><a href="#design">3. Design in one picture</a></li>
+      <li><a href="#engine">4. The engine</a></li>
+      <li><a href="#rng">5. Randomness</a></li>
+      <li><a href="#view">6. What a bot sees</a></li>
+      <li><a href="#actions">7. Actions and errors</a></li>
+      <li><a href="#scoring">8. Episodes and scoring</a></li>
+      <li><a href="#trust">9. Trusting the host</a></li>
+      <li><a href="#status">10. What exists today</a></li>
+      <li><a href="#discuss">11. Open for discussion</a></li>
+      <li><a href="#roadmap">12. Roadmap</a></li>
+    </ol>
+  </nav>
+</header>
+
+<section id="goals">
+  <h2>1. Goals</h2>
+  <p>Several people are building StS2 agents and reporting numbers that cannot be compared: different simulators, different seeds, different handling of hidden information. Spire Bench is a proposal for one referee that everyone plays against.</p>
+  <ul>
+    <li><strong>Comparable.</strong> Same game version, same rules, same observation, same scoring for every bot.</li>
+    <li><strong>Cheat proof for game integrity.</strong> No seed farming, no hidden-information leaks, no hindsight or retries, no scouting with a second account.</li>
+    <li><strong>Open to every kind of bot.</strong> Neural policies, search bots and LLM agents all play through the same interface.</li>
+    <li><strong>Faithful.</strong> The referee runs the real game, and where the headless build differs from the real game, the headless build gets fixed.</li>
+    <li><strong>Checkable.</strong> Anyone can verify afterwards that the referee played the recorded games honestly.</li>
+  </ul>
+  <p>Not a goal for the first version: proving how much compute a bot used. Compute is self-declared and shown as a label, with a time limit per decision.</p>
+</section>
+
+<section id="cheats">
+  <h2>2. What counts as cheating</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Attack</th><th>How the design stops it</th></tr></thead>
+    <tbody>
+      <tr><td>Train on, or pick, favourable seeds</td><td>There are no seeds to pick. Randomness comes from a server secret and is fresh for every episode.</td></tr>
+      <tr><td>Recover the random stream from what you observe</td><td>The game's own generator is replaced by a keyed cryptographic one (section 5).</td></tr>
+      <tr><td>Read hidden state: draw order, enemy AI state, future rooms</td><td>The bot receives an allow-listed view. Unknown fields are dropped by default (section 6).</td></tr>
+      <tr><td>Retry or rewind after a bad outcome</td><td>The game state lives on the server and only moves forward. One action stream per episode.</td></tr>
+      <tr><td>Quit losing runs</td><td>An abandoned or timed-out episode is a loss.</td></tr>
+      <tr><td>Submit many times and report the best</td><td>The score pools every episode an agent version ever started. All attempts are public.</td></tr>
+      <tr><td>Scout with a second account</td><td>Episode keys are per agent, so two accounts never see the same dice.</td></tr>
+      <tr><td>Send actions the game would not offer</td><td>Every observation lists its legal actions. Anything else is refused before it reaches the game.</td></tr>
+      <tr><td>A human plays the hard decisions</td><td>Volume under a deadline: thousands of runs with a per-decision time limit.</td></tr>
+      <tr><td>The host cheats</td><td>Commit and reveal of the season secret, public transcripts, and a second operator for the host's own bots (section 9).</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="design">
+  <h2>3. Design in one picture</h2>
+  <p>The bot never runs the game. It receives what a player would see and answers with one action. The referee holds the secret, runs the real game, and records everything.</p>
+  <div class="diagram scroll">
+<pre class="mermaid">
+flowchart LR
+  B["Bot<br>(policy, search or LLM)"] -- "action" --> G["Gateway<br>accounts, deadlines,<br>scoring, transcripts"]
+  G -- "observation +<br>legal actions" --> B
+  G -- "episode key" --> W["Worker: real game DLL<br>keyed randomness<br>player-visible view"]
+  W -- "observation" --> G
+  G --> T[("Transcripts<br>published after<br>the season")]
+</pre>
+  </div>
+  <p>One worker process plays one episode. A worker only ever holds the key for its own episode, and has no network access.</p>
+  <p>Search bots need their own simulator: they rebuild the position from the observation, search locally, and send the chosen action. The referee is far too slow to search in, and it would not let a bot look ahead anyway.</p>
+</section>
+
+<section id="engine">
+  <h2>4. The engine</h2>
+  <p>The referee wraps the real game assembly and runs it headless, without the Godot engine. This avoids arguing about whose simulator is right: the rules are whatever the shipped game does.</p>
+  <ul>
+    <li>Full runs are supported: all five characters, ascension levels, map, events, shops, rest sites, rewards and act transitions.</li>
+    <li>The game assembly never leaves the host, so nothing of the game is redistributed. Anyone who wants to operate a referee supplies their own copy.</li>
+    <li>Each season pins one game version.</li>
+  </ul>
+  <div class="sub">
+    <h3>Where the headless build differed from the game</h3>
+    <p>A headless build has no screens, so anything that is a screen in the game needs a deliberate replacement. The rule is that the referee must not depart from the real game. Fixed so far:</p>
+    <ul>
+      <li><strong>Crystal Sphere.</strong> The headless build used to dig a fixed pattern by itself. In referee mode each divination is now the bot's decision, with both tools available.</li>
+      <li><strong>Trial, "Double Down".</strong> In the game this opens the abandon-run confirmation. In referee mode taking it ends the run as a loss.</li>
+      <li><strong>Potion reward on a full belt.</strong> Always a decision (discard one or decline), never a silent drop.</li>
+      <li><strong>Act 1 variant.</strong> Rolled as the real lobby rolls it.</li>
+    </ul>
+    <p>Other departures may exist. Finding them is one reason to get more bots playing through the referee early.</p>
+  </div>
+</section>
+
+<section id="rng">
+  <h2>5. Randomness</h2>
+  <div class="sub">
+    <h3>Why the game's own generator cannot be used</h3>
+    <p>The game derives every random stream from a 32-bit number hashed from the seed string, and expands it with Xoshiro256**. A bot that sees a few outcomes (the map, an opening hand) can try all 2<sup>32</sup> seeds, find the matching one, and then predict everything. Keeping the seed secret does not help, and reseeding every floor or every turn does not help either: the draw pile order is fixed at the shuffle, so two observed hands are enough to pin it down.</p>
+  </div>
+  <div class="sub">
+    <h3>The keyed generator</h3>
+    <p>Each random stream gets its own key derived from a secret episode key, and the n-th number of a stream is computed directly from that key and n.</p>
+    <div class="scroll"><pre class="code">stream_key = HMAC-SHA256(episode_key, stream label)
+draw[n]    = HMAC-SHA256(stream_key, n)   -> mapped to a range exactly as the game maps it</pre></div>
+    <ul>
+      <li>Guessing now means guessing a 256-bit key. Seeing any number of past draws says nothing about the next.</li>
+      <li>The game's seed string becomes a public label and decides nothing.</li>
+      <li>The range mapping is copied from the game, so every distribution is the game's.</li>
+      <li>After every command the referee checks that no draw reached the game's original generator. If one did, the episode is void and the process stops.</li>
+    </ul>
+  </div>
+  <div class="sub">
+    <h3>Commit and reveal</h3>
+    <p>The same construction lets everyone check the host afterwards.</p>
+    <div class="diagram scroll">
+<pre class="mermaid">
+sequenceDiagram
+  participant H as Host
+  participant P as Public
+  H->>P: Before the season: hash of the secret K, and a future public randomness round
+  Note over H: Season key = HMAC(K, that round's value)<br>Episode key = HMAC(season key, agent, episode number)
+  H->>P: During the season: scores only
+  H->>P: After the season: K and every transcript
+  P->>P: Check the hash, replay any transcript, compare the outcome
+</pre>
+    </div>
+    <p>Mixing in a public random value that is published after the commitment stops the host from trying many secrets and keeping one that suits its own bot.</p>
+  </div>
+</section>
+
+<section id="view">
+  <h2>6. What a bot sees</h2>
+  <p>An observation holds only what the game screen shows the player. It is built by projecting the engine's internal state onto an allow-list. A field that is on neither the allow-list nor the deny-list is dropped and reported to the operator, so a field nobody thought about cannot leak.</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Hidden from the bot</th><th>What it gets instead</th></tr></thead>
+    <tbody>
+      <tr><td>Draw pile order</td><td>The pile's contents, sorted, without positions. Contents and size are public in the game too.</td></tr>
+      <tr><td>Seed, stream counters, episode key</td><td>Nothing.</td></tr>
+      <tr><td>Enemy AI state and the id of the current move</td><td>Intents as shown (type, damage, hits), HP, block, visible powers.</td></tr>
+      <tr><td>Future rooms, rewards, shop stock, event outcomes</td><td>Each appears only on the screen that shows it.</td></tr>
+      <tr><td>The second boss</td><td>Sent once it is the next node on the map. See question Q3.</td></tr>
+      <tr><td>What lies under fogged Crystal Sphere cells</td><td>For cleared cells only: the piece of the item drawn there.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Decision types: <code>map_select</code> (with the whole act map), <code>combat_play</code>, <code>card_reward</code>, <code>card_select</code>, <code>bundle_select</code>, <code>event_choice</code>, <code>rest_site</code>, <code>shop</code>, <code>potion_swap</code>, <code>crystal_sphere</code>, <code>game_over</code>.</p>
+  <p>A bot that remembers what it has seen, for example a card it put on top of its draw pile, keeps that knowledge itself. The referee does not track it.</p>
+</section>
+
+<section id="actions">
+  <h2>7. Actions and errors</h2>
+  <p>Every observation carries <code>legal_actions</code>: the complete list of actions the bot may send, in exactly the shape it sends them. The referee refuses anything not on the list before it touches the game.</p>
+  <div class="scroll"><pre class="code">{
+  "type": "decision",
+  "decision": "combat_play",
+  "energy": 3,
+  "hand": [{"index": 0, "id": "CARD.BASH", "cost": 2, "can_play": true, "target_type": "AnyEnemy"}, ...],
+  "enemies": [{"index": 0, "name": "Seapunk", "hp": 46, "intents": [{"type": "Attack", "damage": 11, "hits": 1}]}],
+  "draw_pile": [...sorted, no positions...],
+  "legal_actions": [
+    {"action": "play_card", "args": {"card_index": 0, "target_index": 0}},
+    {"action": "end_turn"}
+  ]
+}
+
+bot sends:  {"action": "play_card", "args": {"card_index": 0, "target_index": 0}}</pre></div>
+  <p>Picking several cards is listed as one entry with a rule (choose between <em>min</em> and <em>max</em> of these indices) instead of every combination.</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Error code</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>illegal_action</code></td><td>Not in <code>legal_actions</code>. The decision stands; send another.</td></tr>
+      <tr><td><code>bad_request</code></td><td>Malformed message.</td></tr>
+      <tr><td><code>not_available</code></td><td>A command the referee does not offer.</td></tr>
+      <tr><td><code>rejected</code></td><td>The game refused a listed action. This is a referee bug and should be reported.</td></tr>
+      <tr><td><code>internal</code></td><td>The referee failed.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Errors carry a code and no text, because free text from the engine can quote internal state.</p>
+</section>
+
+<section id="scoring">
+  <h2>8. Episodes and scoring</h2>
+  <ul>
+    <li>An episode is one full run for one character at one ascension level, on fresh randomness.</li>
+    <li>Episode numbers are assigned by the server in order. A bot cannot ask for a different one.</li>
+    <li>Each decision has a time limit, and so does the whole run. Timeouts, disconnects past a short resume window, and abandoned runs are losses.</li>
+    <li>The score of an agent version is its win rate over <em>every</em> episode it ever started, with a confidence interval, per character and ascension.</li>
+    <li>Dice are independent per agent. This rules out scouting, at the price of paired comparisons between agents.</li>
+  </ul>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Runs</th><th>95% interval at a 25% win rate</th></tr></thead>
+    <tbody>
+      <tr><td class="num">100</td><td class="num">± 8.5 points</td></tr>
+      <tr><td class="num">1,000</td><td class="num">± 2.7 points</td></tr>
+      <tr><td class="num">10,000</td><td class="num">± 0.85 points</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="trust">
+  <h2>9. Trusting the host</h2>
+  <p>Whoever hosts can see the season secret while games are running. Commit and reveal proves the host did not change or choose the dice, but it cannot prove the host did not feed foresight to its own bot. So:</p>
+  <ul>
+    <li>The referee software is open, and anyone with a copy of the game can run one.</li>
+    <li>A host's own bots are scored on a referee run by someone else. The board shows which referee produced each score.</li>
+    <li>All transcripts are published after the season, so any game can be replayed by anyone.</li>
+  </ul>
+</section>
+
+<section id="status">
+  <h2>10. What exists today</h2>
+  <p>The worker side is built and tested on game version 0.107.1. The gateway, accounts, scoring and the client library are not built yet.</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Piece</th><th>State</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>Keyed randomness</td><td><span class="chip ok">built</span></td><td>770 full runs: no draw escaped the keyed generator; a deliberately unpatched method is caught.</td></tr>
+      <tr><td>Exact replay</td><td><span class="chip ok">built</span></td><td>65 of 65 runs reproduced from key plus actions; the same label with another key always gave a different game.</td></tr>
+      <tr><td>Player-visible view</td><td><span class="chip ok">built</span></td><td>660 runs with no unclassified field; the view is identical when the draw pile is reversed.</td></tr>
+      <tr><td>Legal action lists, error codes</td><td><span class="chip ok">built</span></td><td>Tested; in a 60-run check every listed action was accepted. A larger run is pending.</td></tr>
+      <tr><td>Crystal Sphere and Trial fixes</td><td><span class="chip ok">built</span></td><td>Tested on the forced events. Not yet met in free play.</td></tr>
+      <tr><td>Later acts</td><td><span class="chip warn">untested</span></td><td>The test policies die in act 1. Acts 2 and 3 have not been exercised through the referee.</td></tr>
+      <tr><td>Gateway, scoring, client library</td><td><span class="chip mute">not built</span></td><td></td></tr>
+      <tr><td>Commit and reveal, verifier</td><td><span class="chip mute">not built</span></td><td>The replay it relies on works.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="sub">
+    <h3>Speed</h3>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Measure</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Wall time per action, one warm game process</td><td class="num">about 10 ms</td></tr>
+        <tr><td>CPU time per action, same process</td><td class="num">about 2.3 ms</td></tr>
+        <tr><td>One core, 16 game processes sharing it</td><td class="num">871 actions/s</td></tr>
+        <tr><td>24-core machine, 192 game processes</td><td class="num">12,700 actions/s</td></tr>
+        <tr><td>Wall time per action through the referee, busy machine</td><td class="num">16 to 18 ms</td></tr>
+        <tr><td>Start-up per game</td><td class="num">about 2 s</td></tr>
+        <tr><td>Memory per worker</td><td class="num">about 144 MB</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>The first four rows are the headless game without the referee layer, playing combats only, from an earlier careful benchmark. A game process spends most of its wall time asleep, so several can share a core. The referee rows come from short test runs on a machine that was busy with other work; the CPU cost the referee adds per action has not been measured separately.</p>
+    <p>If a full run is about 1,500 actions, which has not been measured, one 24-core machine plays on the order of eight runs per second before start-up cost, so 1,000 runs take minutes, not hours. That is fine for evaluation. It is still about 1,500 times slower per core than a purpose-built simulator, which is why search bots bring their own.</p>
+  </div>
+</section>
+
+<section id="discuss">
+  <h2>11. Open for discussion</h2>
+  <p>Numbered so they can be referred to in chat. "Current position" is what the draft does today, not a decision for the group.</p>
+  <ol class="questions">
+    <li><span class="qid">Q1</span><div class="qbody">
+      <div class="qhead"><h3>What is the headline number?</h3><span class="chip warn">open</span></div>
+      <p>Proposal: full-run win rate per character at ascension 10, plus an all-ascension average. Should there also be a cheaper combat-only track on fixed positions?</p></div></li>
+    <li><span class="qid">Q2</span><div class="qbody">
+      <div class="qhead"><h3>Which game version, and how often does it move?</h3><span class="chip warn">open</span></div>
+      <p>The game is in early access and changes quickly. Proposal: one pinned version per season, scores never compared across seasons. The referee currently runs 0.107.1 only.</p></div></li>
+    <li><span class="qid">Q3</span><div class="qbody">
+      <div class="qhead"><h3>When does a player see the second boss?</h3><span class="chip warn">needs an in-game check</span></div>
+      <p>Current position: hidden until it is the next node. A reading of the 0.107.1 map screen code suggests the second boss node is drawn with its own art from the start of the act. Someone should check in the game at ascension 10, and the referee should then match it.</p></div></li>
+    <li><span class="qid">Q4</span><div class="qbody">
+      <div class="qhead"><h3>Enemy move ids stay hidden</h3><span class="chip ok">current position</span></div>
+      <p>Bots get intents, not move ids, like a player. A bot's simulator has to infer the move from the intent and the history. Does that break anyone's state reconstruction?</p></div></li>
+    <li><span class="qid">Q5</span><div class="qbody">
+      <div class="qhead"><h3>Is the observation enough to rebuild the position?</h3><span class="chip warn">open</span></div>
+      <p>Search bots must load the observation into their own simulator. Which fields are missing or awkward for yours? Canonical ids, power internals, relic counters?</p></div></li>
+    <li><span class="qid">Q6</span><div class="qbody">
+      <div class="qhead"><h3>Compute classes and time limits</h3><span class="chip warn">open</span></div>
+      <p>Current position: one open board, compute self-declared as a label (no search, search, LLM), and a per-decision time limit. What limit works for LLM agents without letting a human sit in the loop?</p></div></li>
+    <li><span class="qid">Q7</span><div class="qbody">
+      <div class="qhead"><h3>Minimum runs for a listed score</h3><span class="chip warn">open</span></div>
+      <p>1,000 runs give about ± 2.7 points. LLM agents may only afford 100. Show everything with its interval, or require a floor?</p></div></li>
+    <li><span class="qid">Q8</span><div class="qbody">
+      <div class="qhead"><h3>Independent dice per agent</h3><span class="chip ok">current position</span></div>
+      <p>Shared dice would allow paired comparisons with far fewer runs, but a second account could scout them. Is losing paired comparison acceptable?</p></div></li>
+    <li><span class="qid">Q9</span><div class="qbody">
+      <div class="qhead"><h3>Public transcripts</h3><span class="chip warn">open</span></div>
+      <p>Verification needs every game published after the season. That also shows how each bot plays. Is everyone comfortable with that?</p></div></li>
+    <li><span class="qid">Q10</span><div class="qbody">
+      <div class="qhead"><h3>Who hosts, and who is the second operator?</h3><span class="chip warn">open</span></div>
+      <p>The host needs a copy of the game and a machine with spare cores. A second person has to run a referee for the host's own entries.</p></div></li>
+    <li><span class="qid">Q11</span><div class="qbody">
+      <div class="qhead"><h3>Identity and submission limits</h3><span class="chip warn">open</span></div>
+      <p>One account per person, tied to a chat identity? A cap on runs per day to keep hosting cost bounded?</p></div></li>
+    <li><span class="qid">Q12</span><div class="qbody">
+      <div class="qhead"><h3>Potions outside combat</h3><span class="chip warn">not built</span></div>
+      <p>The legal action list offers potions during combat only. Using or discarding one on other screens is not listed yet.</p></div></li>
+    <li><span class="qid">Q13</span><div class="qbody">
+      <div class="qhead"><h3>Other places the headless build differs from the game</h3><span class="chip warn">open</span></div>
+      <p>Two were known and are fixed. If you know of a screen, event or prompt that a headless build handles differently from the game, name it.</p></div></li>
+    <li><span class="qid">Q14</span><div class="qbody">
+      <div class="qhead"><h3>Effects that hide intents</h3><span class="chip mute">checked by reading only</span></div>
+      <p>No player-side effect that hides intents was found in 0.107.1; moves with a hidden intent are sent as intent type <code>Hidden</code>. Not verified in play.</p></div></li>
+  </ol>
+</section>
+
+<section id="roadmap">
+  <h2>12. Roadmap</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Step</th><th>Content</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td>Feasibility</td><td>Keyed randomness on the real game, replay, speed and memory</td><td><span class="chip ok">done</span></td></tr>
+      <tr><td>View and protocol</td><td>Player-visible view, legal actions, error codes, faithfulness fixes</td><td><span class="chip ok">done, later acts untested</span></td></tr>
+      <tr><td>Server and client</td><td>Gateway, worker pool, deadlines, transcripts, a small Python client and a random bot</td><td><span class="chip mute">next</span></td></tr>
+      <tr><td>Trust layer</td><td>Commit and reveal, verifier, scoring, leaderboard page</td><td><span class="chip mute">planned</span></td></tr>
+      <tr><td>Closed beta</td><td>Real bots play full runs through it; an open challenge to predict a draw</td><td><span class="chip mute">planned</span></td></tr>
+      <tr><td>Season 0</td><td>Hosting, second operator, current stable game version</td><td><span class="chip mute">planned</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">The most useful thing a bot author can do now is answer Q5: try loading the observation into your own simulator and say what is missing.</p>
+</section>
+
+<footer>Draft. Numbers come from test runs on one development machine and will be re-measured before a season starts.</footer>
+
+</div>
