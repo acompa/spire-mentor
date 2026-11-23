@@ -4,7 +4,7 @@
 [![Docs](https://img.shields.io/badge/docs-tfriedel.github.io%2Fspire--mentor-blue)](https://tfriedel.github.io/spire-mentor/)
 [![Steam Workshop](https://img.shields.io/badge/Steam_Workshop-Spire_Mentor-1b2838?logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3821016481)
 
-**A Rust simulator of Slay the Spire 2's combat and run rules, plus a strong AI trained on it: one neural network, no search, 81% wins with Ironclad at Ascension 10.  
+**A Rust simulator of Slay the Spire 2's combat and run rules, plus a strong AI trained on it: one neural network, no search, 80% wins with Ironclad at Ascension 10.  
 It's an analysis and training tool for people who own the game: replay positions in the browser, see how the AI would play them, or let it coach you.  
 You can even let the AI play the fights, so you can practise the run-level decisions.**
 
@@ -31,8 +31,8 @@ machine-reasoning panel ranks every legal move.</sub>
 ### AI
 
 - **Instinct**: one transformer that makes every decision of a run, fights included, in a single forward pass, with **no search**. It was trained end to end with PPO by self-play in the simulator (9 billion decisions for the first Ironclad net, about 13 days on one machine).
-- It wins **81% of Ironclad runs at Ascension 10** in the simulator, the best win rate of any STS2 AI I'm aware of, and plays all six characters ([numbers below](#win-rates)).
-- The agent it replaced is still included: chance-node MCTS for the fights plus a PPO-trained run policy per character. It won 21% on the same Ironclad A10 test seeds. Today it is the analysis tool (search tree, principal line, win estimates, blunder review) and Instinct's fallback.
+- It wins **80% of Ironclad runs at Ascension 10** in the simulator, the best win rate of any STS2 AI I'm aware of, and plays all six characters ([numbers below](#win-rates)).
+- The agent it replaced is still included: chance-node MCTS for the fights plus a PPO-trained run policy per character. It won 21% of the Ironclad A10 test runs on which Instinct's first Ironclad net won 81%. Today it is the analysis tool (search tree, principal line, win estimates, blunder review) and Instinct's fallback.
 - **non-clairvoyant**: neither agent cheats by exploiting the RNG or using information like which card it's about to draw. Instinct sees only what the game shows a player; the search uses chance nodes.
 
 ### UI / workbench
@@ -67,21 +67,21 @@ method and commands:
 
 **Instinct** (no search, greedy play, Ascension 10, in the simulator):
 
-| Character | Shipped net (2.5B decisions) | Same training lane at 4.5B (not shipped yet) |
+| Character | Shipped net (4.5B decisions) | Previous net (2.5B) |
 |---|---|---|
-| Ironclad | **81.2%** (812 / 1,000) | 79.9% (799 / 1,000) |
-| Defect | **63.8%** (319 / 500) | 71.8% (359 / 500) |
-| Regent | **54.2%** (271 / 500) | 65.8% (329 / 500) |
-| Silent | **53.4%** (267 / 500) | 60.8% (304 / 500) |
-| Necrobinder | **43.8%** (219 / 500) | 52.8% (264 / 500) |
-| The Fool (v0.113.0, own net, 600M decisions) | **50.0%** (250 / 500) | – |
+| Ironclad | **79.9%** (799 / 1,000) | 81.2% |
+| Defect | **71.8%** (359 / 500) | 63.8% |
+| Regent | **65.8%** (329 / 500) | 54.2% |
+| Silent | **60.8%** (304 / 500) | 53.4% |
+| Necrobinder | **52.8%** (264 / 500) | 43.8% |
+| The Fool (v0.113.0, own net, 850M decisions) | **59.4%** (297 / 500) | 50.0% |
 
 One net plays the first five characters on game build v0.111.0; The Fool,
 new in v0.113.0, has its own. Each lane measured its net on its held-out DEV
 seed panel in the engine it trained on; a cell's 95% interval is about
-±4.4 pp (±2.5 pp for Ironclad). The five-character lane is still training:
-the right-hand column is its 4.5-billion-decision milestone, read on 22
-November 2026 on the same seeds. Records:
+±4.4 pp (±2.5 pp for Ironclad); both columns use the same seeds. The
+five-character net was swapped on 23 November 2026 and its lane is still
+training. Records:
 [`sts2-pycli/data/e2e/`](sts2-pycli/data/e2e/).
 
 **Instinct against the search agent** (Ironclad, A10, the same 4,000 sealed
@@ -95,7 +95,7 @@ test seeds, read once under a pre-registered protocol):
 Write-up:
 [`docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md`](docs/experiments/2026-11-17-ironclad-e2e-campaign-report.md).
 
-**On the game's own code.** The shipped net played 300 Ironclad A10 seeds
+**On the game's own code.** The previous net (2.5B) played 300 Ironclad A10 seeds
 twice, in the Rust engine and through the game's real assembly run headless
 with the game's own RNG: 79.7% against 78.7%, within noise (p = 0.72). The
 simulator's numbers carry over
