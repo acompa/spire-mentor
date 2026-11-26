@@ -204,9 +204,12 @@ def _f(x: float) -> str:
     return f"{x:.1f}".rstrip("0").rstrip(".")
 
 
-def svg_mechanism(d: dict) -> str:
-    """Tokens -> trunk -> one head call per option -> logits -> softmax -> pick,
-    with the real numbers of the example fight decision."""
+def svg_mechanism(d: dict, stage: int = 3) -> str:
+    """The example fight decision drawn in three stages, each redrawing the last.
+
+    Stage 1: observation tokens -> trunk -> one output vector per token.
+    Stage 2: adds one head call per option, each giving a logit.
+    Stage 3: adds the softmax over the legal options and the greedy pick."""
     ex = d["example"]["fight"]
     z = np.array(ex["logits"])
     p = check.softmax(z)
@@ -214,14 +217,17 @@ def svg_mechanism(d: dict) -> str:
     n = len(z)
     rowh = 34
     top = 150
-    h = top + n * rowh + 70
     W = 760
-    o = [f'<svg viewBox="0 0 {W} {h}" role="img" aria-label="How the policy network turns one '
-         f'observation and its {n} legal options into one probability per option.">',
-         '<defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
+    h = 176 if stage == 1 else top + n * rowh + (70 if stage == 3 else 30)
+    what = ["the trunk turns one observation into one vector per token",
+            f"one head call per legal option turns the trunk's vectors into {n} logits",
+            f"the softmax turns the {n} logits into {n} probabilities"][stage - 1]
+    o = [f'<svg viewBox="0 0 {W} {h}" role="img" aria-label="Policy network, stage {stage} of 3: {what}.">',
+         f'<defs><marker id="ar{stage}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
          'markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" '
          'fill="currentColor"/></marker></defs><g color="var(--fg)">']
-    # tokens
+    arrow = f'marker-end="url(#ar{stage})"'
+    # stage 1: tokens and trunk
     o.append('<text x="10" y="18" class="muted">observation o_t as tokens</text>')
     toks = [("RUNCTX", "f1"), ("draw", "f4"), ("discard", "f4"), ("deck", "f4"), ("relics", "f4"),
             ("boss", "f4"), ("enemy", "f2"), ("hand card", "f2"), ("…", "f4")]
@@ -234,18 +240,27 @@ def svg_mechanism(d: dict) -> str:
         x += w + 4
     o.append(f'<text x="{x + 4:.0f}" y="43" class="muted" font-size="11">'
              f'{ex["n_tok"]} tokens in this decision</text>')
-    # trunk
-    o.append('<line class="ink" x1="250" y1="52" x2="250" y2="72" marker-end="url(#ar2)"/>')
+    o.append(f'<line class="ink" x1="250" y1="52" x2="250" y2="72" {arrow}/>')
     o.append('<rect class="box" x="10" y="74" width="740" height="40" rx="3"/>'
              '<text x="380" y="92" text-anchor="middle">trunk: 4 attention blocks, no positions, '
              'one 256-number vector out per token</text>'
              '<text x="380" y="107" text-anchor="middle" class="muted" font-size="11">'
              'every token can attend to every other token</text>')
+    if stage == 1:
+        o.append(f'<line class="ink" x1="250" y1="114" x2="250" y2="134" {arrow}/>')
+        o.append('<text x="10" y="152" font-size="11">out: h(RUNCTX), the state vector, '
+                 f'and one vector h(a) for each of the {n} option tokens</text>'
+                 '<text x="10" y="168" class="muted" font-size="11">Each option token was written '
+                 'by the tokenizer, one per merged class of legal actions.</text>')
+        o.append('</g></svg>')
+        return "\n".join(o)
+    # stage 2: one head call per option, giving a logit
     o.append('<text x="10" y="140" class="muted" font-size="11">option token h(a) + state token '
              'h(RUNCTX) + kind</text>'
-             '<text x="300" y="140" class="muted" font-size="11">combat head → logit z(s,a)</text>'
-             '<text x="500" y="140" class="muted" font-size="11">softmax over 𝒜(s) → π(a|s)</text>')
-    o.append('<line class="ink" x1="120" y1="114" x2="120" y2="128" marker-end="url(#ar2)"/>')
+             '<text x="300" y="140" class="muted" font-size="11">combat head → logit z(s,a)</text>')
+    if stage == 3:
+        o.append('<text x="500" y="140" class="muted" font-size="11">softmax over 𝒜(s) → π(a|s)</text>')
+    o.append(f'<line class="ink" x1="120" y1="114" x2="120" y2="128" {arrow}/>')
     zmin, zmax = float(z.min()), float(z.max())
     for r, i in enumerate(order):
         y = top + r * rowh
@@ -255,27 +270,29 @@ def svg_mechanism(d: dict) -> str:
         o.append(f'<rect x="10" y="{y}" width="250" height="{rowh - 8}" rx="3" class="f2" '
                  f'fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/>'
                  f'<text x="18" y="{y + 17}" font-size="11">{lab}</text>')
-        o.append(f'<line class="ink" x1="262" y1="{y + 13}" x2="296" y2="{y + 13}" marker-end="url(#ar2)"/>')
-        # logit bar centred at zero
+        o.append(f'<line class="ink" x1="262" y1="{y + 13}" x2="296" y2="{y + 13}" {arrow}/>')
         zx0 = 300 + 80 * (0 - zmin) / (zmax - zmin)
         zx = 300 + 80 * (z[i] - zmin) / (zmax - zmin)
         o.append(f'<line x1="{zx0:.1f}" y1="{y}" x2="{zx0:.1f}" y2="{y + rowh - 8}" class="grid"/>'
                  f'<rect x="{min(zx0, zx):.1f}" y="{y + 6}" width="{abs(zx - zx0):.1f}" height="14" class="f3"/>'
                  f'<text x="400" y="{y + 17}" font-size="11">{z[i]:+.2f}</text>')
-        o.append(f'<line class="ink" x1="448" y1="{y + 13}" x2="496" y2="{y + 13}" marker-end="url(#ar2)"/>')
-        pw = 160 * p[i]
-        o.append(f'<rect x="500" y="{y + 6}" width="160" height="14" class="grid"/>'
-                 f'<rect x="500" y="{y + 6}" width="{max(pw, 0.5):.1f}" height="14" class="f1"/>'
-                 f'<text x="668" y="{y + 17}" font-size="11">{_pfmt(p[i])}</text>')
-        if i == ex["greedy"]:
-            o.append(f'<text x="706" y="{y + 17}" font-size="11" font-weight="600">← max</text>')
+        if stage == 3:
+            o.append(f'<line class="ink" x1="448" y1="{y + 13}" x2="496" y2="{y + 13}" {arrow}/>')
+            pw = 160 * p[i]
+            o.append(f'<rect x="500" y="{y + 6}" width="160" height="14" class="grid"/>'
+                     f'<rect x="500" y="{y + 6}" width="{max(pw, 0.5):.1f}" height="14" class="f1"/>'
+                     f'<text x="668" y="{y + 17}" font-size="11">{_pfmt(p[i])}</text>')
+            if i == ex["greedy"]:
+                o.append(f'<text x="706" y="{y + 17}" font-size="11" font-weight="600">← max</text>')
     yb = top + n * rowh + 6
-    o.append(f'<text x="10" y="{yb + 14}" class="muted" font-size="11">'
-             f'Logits are unbounded scores; only their differences matter. The softmax turns them into '
-             f'probabilities that sum to 1.</text>'
-             f'<text x="10" y="{yb + 32}" class="muted" font-size="11">'
-             f'Training samples a class from the bars on the right; the shipped agent takes the longest '
-             f'bar.</text>')
+    if stage == 2:
+        o.append(f'<text x="10" y="{yb + 14}" class="muted" font-size="11">'
+                 'A logit is an unbounded score. Only the differences between logits matter.</text>')
+    else:
+        o.append(f'<text x="10" y="{yb + 14}" class="muted" font-size="11">'
+                 'The probabilities sum to 1 over the five legal options.</text>'
+                 f'<text x="10" y="{yb + 32}" class="muted" font-size="11">'
+                 'Training draws an option from these bars. The shipped agent takes the longest bar.</text>')
     o.append('</g></svg>')
     return "\n".join(o)
 
@@ -439,7 +456,8 @@ def svg_winrate(d: dict) -> str:
     return "\n".join(o)
 
 
-FIGS = {"mechanism": svg_mechanism, "temperature": svg_temperature, "cdf": svg_cdf,
+FIGS = {"mechanism1": lambda d: svg_mechanism(d, 1), "mechanism2": lambda d: svg_mechanism(d, 2),
+        "mechanism": svg_mechanism, "temperature": svg_temperature, "cdf": svg_cdf,
         "types": svg_types, "survival": svg_survival, "winrate": svg_winrate}
 
 
