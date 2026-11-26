@@ -1,0 +1,43 @@
+# Rough values for dry runs (TOUR_DEV=1). Not answers.
+
+[median_top_p_fight]
+question = "Median probability of the top class at decisions inside a fight"
+unit = "probability, 0 to 1"
+guess = 0.7
+low = 0.4
+high = 0.9
+
+[median_top_p_between]
+question = "Median probability of the top class at decisions between fights"
+unit = "probability, 0 to 1"
+guess = 0.6
+low = 0.3
+high = 0.85
+
+[share_top_over_0_9]
+question = "Share of all greedy decisions where the top class has more than 0.9"
+unit = "fraction, 0 to 1"
+guess = 0.4
+low = 0.2
+high = 0.6
+
+[share_sampled_differs]
+question = "Share of sampled decisions where the sampled class differs from the greedy one"
+unit = "fraction, 0 to 1"
+guess = 0.2
+low = 0.05
+high = 0.4
+
+[winrate_sampled_minus_greedy_pp]
+question = "Sampled win rate minus greedy win rate"
+unit = "percentage points"
+guess = -5
+low = -20
+high = 5
+
+[share_seeds_disagree]
+question = "Share of seeds where greedy and sampled play reach different results (one wins, one loses)"
+unit = "fraction of seeds, 0 to 1"
+guess = 0.3
+low = 0.1
+high = 0.5
