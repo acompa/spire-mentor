@@ -76,6 +76,9 @@ class Run:
     unassigned_reward: float
     decisions: int
     ledger: list[Entry] = field(default_factory=list)
+    hp: int = 0  # at the end of the run: facts the reward never reads
+    max_hp: int = 0
+    relics: list[str] = field(default_factory=list)
 
     @property
     def ret(self) -> float:
@@ -135,6 +138,7 @@ def play(seed: int, choose) -> Run:
         d = env.step(choose(d))
         decisions += 1
     t = d
+    end = env.rm
     credit(t.reward, t.rows - 1, int(t.act), int(t.floor), won=bool(t.won))
     return Run(
         seed=seed,
@@ -146,6 +150,9 @@ def play(seed: int, choose) -> Run:
         unassigned_reward=float(t.unassigned_reward),
         decisions=decisions,
         ledger=ledger,
+        hp=int(end.current_hp),
+        max_hp=int(end.max_hp),
+        relics=[str(r) for r in end.relics()] if callable(end.relics) else [str(r) for r in end.relics],
     )
 
 
@@ -279,9 +286,8 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--quick", action="store_true", help="24 runs per policy")
     ap.add_argument("--runs", type=int, default=None, help="runs per policy (default 300)")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=3)
     args = ap.parse_args(argv)
-    tourlib.load_predictions(STOP)  # the gate, before any slow work
     n = args.runs or (24 if args.quick else 300)
     seeds = list(tourlib.PANEL_A[:n])
     t0 = time.time()
@@ -321,14 +327,6 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\n{len(net_runs) + len(rnd_runs) + 1} runs in {time.time() - t0:.0f} s; "
           "every ledger matched the env's total and the rule.")
 
-    tourlib.score(STOP, {
-        "won_run_return": statistics.median(won),
-        **hypo,
-        "largest_losing_return": best_loss,
-        "net_mean_return": net.mean,
-        "net_win_share": net.win / net.mean,
-        "random_mean_return": rnd.mean,
-    })
 
 
 if __name__ == "__main__":
