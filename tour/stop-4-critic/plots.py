@@ -160,7 +160,7 @@ def fig_weights(d) -> str:
     p.text(21.5, 0.95**20 + 0.03, f"0.95²⁰ = {0.95**20:.3f}", "start")
     p.legend([("line", "l4", "λ = 0.5"), ("line", "l3", "λ = 0.9"), ("line", "l1", "λ = 0.95 (fights)"),
               ("dash", "l2", "λ = 0.97 (run rows)")], p.R - 170, p.T + 14)
-    return svg(640, 260, "The weight lambda to the power l that GAE gives a surprise l steps later, "
+    return svg(640, 260, "The weight lambda to the power l that GAE gives a TD residual l steps later, "
                "for four values of lambda.", [p])
 
 
