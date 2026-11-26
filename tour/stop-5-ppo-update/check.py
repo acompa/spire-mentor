@@ -6,7 +6,8 @@ by PPO on its own play. Two arms run side by side:
 
 - `clipped`: the learner's settings, scaled down to fit this Mac (see the README).
 - `unclipped`: the same, with the ratio clip set out of reach, a learning
-  rate 10 times larger and 4 epochs per batch. Nothing limits the step.
+  rate 10 times larger and 4 epochs per batch. The dual clip (c = 3) and
+  the gradient-norm clip stay on.
 
 Each arm logs one row per iteration. This script prints them as tables and
 scores your predictions.
