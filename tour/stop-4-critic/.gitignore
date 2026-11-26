@@ -1,2 +1,3 @@
 scorecard.jsonl
 __pycache__/
+.cache/

@@ -1,0 +1,906 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<meta charset="utf-8">
+<title>RL Tour 4: Value functions and advantage</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+<style>
+/* Chapter 4 only. */
+.eqnote { font-size: .95rem; color: var(--muted); }
+table.gae td, table.gae th { padding-right: .9rem; }
+figcaption mjx-container > svg, td mjx-container > svg { display: inline; margin: 0; }
+main li pre { overflow-x: auto; max-width: 100%; background: var(--surface); padding: .6rem .8rem; border-radius: 3px; font-size: .85rem; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 560px) { .two-col { grid-template-columns: 1fr; } }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 4 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Value functions and advantage</h1>
+  <p class="lede">A run of Slay the Spire 2 is about 670 decisions long, and almost all of its reward arrives at the end. This chapter builds the machinery that turns that one late number into a score for each decision: the value function, the critic that learns it by regression, and the advantage estimate that weights the policy update.</p>
+</header>
+
+<nav class="contents" aria-label="Chapter contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#opening">The credit assignment problem</a></li>
+    <li><a href="#values">V, Q and A</a></li>
+    <li><a href="#bellman">Bellman equations, without the max</a></li>
+    <li><a href="#regression">The critic as regression</a></li>
+    <li><a href="#targets">Monte Carlo, TD and everything between</a></li>
+    <li><a href="#advantage">Why the advantage weights the update</a></li>
+    <li><a href="#gae">Generalised advantage estimation</a></li>
+    <li><a href="#privileged">Privileged critics</a></li>
+    <li><a href="#engineered">Textbook against engineered</a></li>
+    <li><a href="#spire">In Spire Mentor</a></li>
+    <li><a href="#measured">Measured</a></li>
+    <li><a href="#confusions">Common confusions</a></li>
+    <li><a href="#experiments">Suggested experiments</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<main>
+  <h2 id="opening">1. The credit assignment problem</h2>
+  <p>Start with one decision. Floor 11 of act 1, and the map forks. The left path walks through an <em>elite</em> room, a harder fight that pays a relic. The right path walks around it. Our agent, Instinct, takes the left path and wins the fight after 20 card plays. Was that choice good?</p>
+  <p>The reward function in this project (Chapter 3 builds it) pays +1 for winning the run, +0.05 for each boss beaten and +0.002 for each new floor. The elite fight pays nothing beyond its floor. It costs HP. Its payoff, the relic, shows up only as a higher chance of beating bosses several hundred decisions later. If we scored the elite choice with the reward that eventually arrived, we would hand it the same +1 or 0 as every one of the next 500 decisions. Each of those decisions would share the blame for a bad card draw on floor 40. The signal for any single choice would drown in that noise.</p>
+  <p>This is the <dfn>credit assignment problem</dfn>: deciding which of many earlier actions caused a late outcome. You have met it in Q-learning, where the answer is a learned function that predicts the future from the present, so that a decision can be judged against a prediction instead of against the final outcome. The same idea solves it here, with three changes that this chapter is about.</p>
+  <ol>
+    <li>We learn a function of the state alone, \(V\), not of the state and action, \(Q\). It is used to <em>score</em> actions the policy already took, never to choose one.</li>
+    <li>It predicts the return of the <em>current</em> policy, not of the optimal one. No \(\max\) appears anywhere.</li>
+    <li>It is trained only to produce a low-variance estimate of how much better an action went than expected: the <dfn>advantage</dfn>. That estimate becomes the weight on each decision in the policy update of Chapter 5.</li>
+  </ol>
+  <p>We define the value functions, write their Bellman equations, and set up the critic as a regression problem. Then we compare the targets you can regress on, from the Monte Carlo return to the one-step TD target, and show that they trade bias against variance. We derive generalised advantage estimation (GAE) from the n-step advantages, compute it by hand on twenty real decisions, and end with critics that see information the policy cannot. Every result is then measured on Spire Mentor's Ironclad network.</p>
+
+  <h2 id="values">2. V, Q and A</h2>
+  <p>We use the tour's notation. The agent sees state \(s_t\), takes action \(a_t\) and then receives reward \(r_t\); an episode ends at step \(T\). Sutton and Barto write the reward that follows \(a_t\) as \(R_{t+1}\); we write \(r_t\) <span class="cite">[<a href="#ref-1">1</a>]</span>. The <dfn>return</dfn> from step \(t\) is \(G_t = \sum_{k=0}^{T-t} \gamma^k r_{t+k}\), with discount \(\gamma \le 1\). Spire Mentor uses \(\gamma = 1\): every reward counts the same no matter how late, which is fine because every run ends.</p>
+
+  <div class="definition"><span class="label">Definition 4.1 · State value, action value, advantage</span>
+    <p>For a policy \(\pi\), the <dfn>state value</dfn> is the expected return from state \(s\) when every action from now on is drawn from \(\pi\):</p>
+    <div class="eq">\begin{equation} V^\pi(s) = \mathbb{E}_{\tau \sim \pi}\!\left[\, G_t \mid s_t = s \,\right]. \label{eq:v} \end{equation}</div>
+    <p>The <dfn>action value</dfn> fixes the first action and follows \(\pi\) afterwards:</p>
+    <div class="eq">\begin{equation} Q^\pi(s, a) = \mathbb{E}_{\tau \sim \pi}\!\left[\, G_t \mid s_t = s,\, a_t = a \,\right]. \label{eq:q} \end{equation}</div>
+    <p>The <dfn>advantage</dfn> is their difference:</p>
+    <div class="eq">\begin{equation} A^\pi(s, a) = Q^\pi(s, a) - V^\pi(s). \label{eq:a} \end{equation}</div>
+  </div>
+  <p>The expectation in \eqref{eq:v} runs over everything random after \(s\): the policy's own action choices, the shuffle of the draw pile, the enemies' moves, which rooms the map generates. In \eqref{eq:q} the first action is no longer random, but everything after it still is. The subscript \(\tau \sim \pi\) says the trajectory \(\tau\) is generated by following \(\pi\).</p>
+  <p>Two identities follow at once. Averaging \(Q^\pi\) over the policy's own action gives back \(V^\pi\):</p>
+  <div class="eq">\begin{equation} V^\pi(s) = \sum_{a \in \mathcal{A}(s)} \pi(a \mid s)\, Q^\pi(s, a), \label{eq:v-from-q} \end{equation}</div>
+  <p>where \(\mathcal{A}(s)\) is the set of legal actions in \(s\): the cards you can afford, the map nodes you can reach. Substituting \eqref{eq:v-from-q} into \eqref{eq:a} shows that the advantage has mean zero under the policy:</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi(\cdot \mid s)}\!\left[ A^\pi(s, a) \right] = \sum_a \pi(a \mid s) Q^\pi(s, a) - V^\pi(s) = 0. \label{eq:a-mean-zero} \end{equation}</div>
+  <p>Equation \eqref{eq:a-mean-zero} is the property that matters most in this chapter. The advantage does not say whether an action is good in absolute terms. It says whether it is better or worse than what this policy does on average in this state. At the elite fork, \(A^\pi(s, \text{left}) &gt; 0\) means "taking the elite beats this policy's usual mix of left and right." In a state where every option is bad, the least bad option still has positive advantage.</p>
+
+  <h2 id="bellman">3. Bellman equations, without the max</h2>
+  <p>A return is the first reward plus the rest of the return: \(G_t = r_t + \gamma G_{t+1}\). Take expectations of both sides given \(s_t = s\). The rest of the return, given the next state, averages to the next state's value, so</p>
+  <div class="eq">\begin{equation} V^\pi(s) = \mathbb{E}_{a_t \sim \pi(\cdot \mid s),\; s_{t+1}}\!\left[\, r_t + \gamma V^\pi(s_{t+1}) \;\middle|\; s_t = s \,\right]. \label{eq:bellman-v} \end{equation}</div>
+  <p>This is the <dfn>Bellman expectation equation</dfn> for \(V^\pi\) <span class="cite">[<a href="#ref-1">1</a>, §3.5]</span>. The expectation is over two sources of randomness: the action, drawn from \(\pi\), and the environment's response, which gives \(r_t\) and \(s_{t+1}\). The same step for \(Q\) gives</p>
+  <div class="eq">\begin{equation} Q^\pi(s, a) = \mathbb{E}_{s_{t+1}}\!\left[\, r_t + \gamma V^\pi(s_{t+1}) \;\middle|\; s_t = s, a_t = a \,\right]. \label{eq:bellman-q} \end{equation}</div>
+  <p>Here only the environment is random; the action is fixed at \(a\). Compare it with the equation behind deep Q-learning <span class="cite">[<a href="#ref-7">7</a>]</span>:</p>
+  <div class="eq">\begin{equation} Q^*(s, a) = \mathbb{E}_{s_{t+1}}\!\left[\, r_t + \gamma \max_{a'} Q^*(s_{t+1}, a') \;\middle|\; s_t = s, a_t = a \,\right]. \label{eq:bellman-opt} \end{equation}</div>
+  <p>The difference is the \(\max\). Equation \eqref{eq:bellman-opt} describes the best possible policy, and a network that satisfies it can act by taking the arg max. That is <em>control</em>. Equations \eqref{eq:bellman-v} and \eqref{eq:bellman-q} describe a given policy, and solving them is <em>prediction</em>, or policy evaluation <span class="cite">[<a href="#ref-1">1</a>, §3.6]</span>. An actor-critic method splits the two jobs. The actor, \(\pi_\theta\), does control by gradient ascent (Chapter 5). The critic only evaluates the actor as it currently is. When the actor changes, the critic's target changes with it.</p>
+  <p>This removes the part of DQN that needs the most care. There is no maximisation bias, because no max is taken over noisy estimates. There is no replay of data from long-dead policies, because the critic wants the value of the current policy and old data describes a different one (Chapter 6 deals with the mild staleness that remains). And because we learn \(V(s)\) rather than \(Q(s, a)\), the network needs one output per state, not one per legal action. That matters when \(\mathcal{A}(s)\) changes size from decision to decision, as it does here.</p>
+
+  <h2 id="regression">4. The critic as regression</h2>
+  <p>We cannot compute \eqref{eq:v}: the expectation is over every possible future of a card game. We learn it instead. The <dfn>critic</dfn> is a network \(V_\phi(s)\) with parameters \(\phi\), fit by least squares to a <dfn>target</dfn> \(y_t\) computed from data:</p>
+  <div class="eq">\begin{equation} \mathcal{L}_V(\phi) = \tfrac{1}{2}\, \mathbb{E}_t\!\left[ \big( V_\phi(s_t) - y_t \big)^2 \right]. \label{eq:value-loss} \end{equation}</div>
+  <p>The expectation \(\mathbb{E}_t\) is the average over the decisions in a batch of trajectories just played by the current policy. If \(y_t\) were an unbiased sample of \(G_t\) given \(s_t\), the minimiser of \eqref{eq:value-loss} over all functions would be \(V^\pi\), for the same reason a least-squares regressor converges to the conditional mean of its label. This is plain supervised learning with two twists. First, the labels are not given: we manufacture them from the trajectories, and the choice of manufacturing is the subject of the next section. Second, some of those recipes use the critic's own predictions inside the label. Then the label moves when \(\phi\) moves, and we treat it as a constant when we take the gradient, a <dfn>semi-gradient</dfn> update <span class="cite">[<a href="#ref-1">1</a>, §9.3]</span>. You know this from DQN's target network; here the "frozen copy" is simply the critic's values computed once at the start of each update.</p>
+
+  <h2 id="targets">5. Monte Carlo, TD and everything between</h2>
+  <h3>The two extremes</h3>
+  <p>The <dfn>Monte Carlo target</dfn> is the return that actually followed:</p>
+  <div class="eq">\begin{equation} y_t^{\text{MC}} = G_t = \sum_{k=0}^{T-t} \gamma^k r_{t+k}. \label{eq:mc} \end{equation}</div>
+  <p>It is an unbiased sample of \(V^\pi(s_t)\) by definition \eqref{eq:v}. It is also noisy: it carries the luck of every draw, every enemy roll and every later decision until the end of the run.</p>
+  <p>The <dfn>temporal-difference (TD) target</dfn> looks one step ahead and trusts the critic for the rest <span class="cite">[<a href="#ref-1">1</a>, §6.1]</span>:</p>
+  <div class="eq">\begin{equation} y_t^{\text{TD}} = r_t + \gamma V_\phi(s_{t+1}). \label{eq:td} \end{equation}</div>
+  <p>Its randomness comes from one step only. But it is biased whenever \(V_\phi\) is wrong at \(s_{t+1}\), and early in training it is wrong everywhere.</p>
+  <p>The gap between the target and the critic's current prediction is the object this chapter is built on. The <dfn>TD residual</dfn>, or one-step surprise, is</p>
+  <div class="eq">\begin{equation} \delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t). \label{eq:delta} \end{equation}</div>
+  <p>A positive \(\delta_t\) says the step went better than the critic expected; negative, worse. At the end of an episode \(V_\phi(s_{T+1}) = 0\): nothing is left to collect.</p>
+
+  <h3>Where the Monte Carlo variance comes from</h3>
+  <p>Replace \(V_\phi\) by the true \(V^\pi\) in \eqref{eq:delta} and call the result \(\delta^\pi_t\). Sum the residuals from \(t\) to the end. Each \(V^\pi(s_{t+k})\) appears once with a plus sign and once with a minus sign, so the sum telescopes:</p>
+  <div class="eq">\begin{equation} G_t - V^\pi(s_t) = \sum_{l=0}^{T-t} \gamma^l\, \delta^\pi_{t+l}. \label{eq:telescope} \end{equation}</div>
+  <p>The error of the Monte Carlo target is a sum of one surprise per remaining step. Each \(\delta^\pi\) has mean zero given its own state (that is Equation \eqref{eq:bellman-v} rearranged), and surprises at different steps are uncorrelated, because each one is zero-mean given everything before it. So the variance of the Monte Carlo error is the sum of the per-step variances. Early in a 670-decision run, that is several hundred terms. The TD target keeps one term and replaces the rest by \(V_\phi(s_{t+1}) - V^\pi(s_{t+1})\): a bias that shrinks as the critic improves, instead of a variance that never does.</p>
+
+  <h3>n-step targets and the λ-return</h3>
+  <p>Between the two sits the <dfn>n-step target</dfn>: \(n\) real rewards, then the critic <span class="cite">[<a href="#ref-1">1</a>, §7.1]</span>.</p>
+  <div class="eq">\begin{equation} G_t^{(n)} = \sum_{k=0}^{n-1} \gamma^k r_{t+k} + \gamma^n V_\phi(s_{t+n}). \label{eq:nstep} \end{equation}</div>
+  <p>With \(n = 1\) this is the TD target \eqref{eq:td}; when \(t + n\) passes the end of the episode, it is the Monte Carlo return \eqref{eq:mc}. Larger \(n\) means less reliance on the critic and more on noisy rewards. Rather than pick one \(n\), the <dfn>λ-return</dfn> averages all of them with geometrically decaying weights <span class="cite">[<a href="#ref-1">1</a>, §12.1]</span>:</p>
+  <div class="eq">\begin{equation} G_t^{\lambda} = (1 - \lambda) \sum_{n=1}^{\infty} \lambda^{n-1}\, G_t^{(n)}, \qquad 0 \le \lambda \le 1. \label{eq:lambda-return} \end{equation}</div>
+  <p>The weights \((1-\lambda)\lambda^{n-1}\) sum to one. Every n-step return past the end of the episode equals \(G_t\), so all the leftover weight lands on the full return. \(\lambda = 0\) gives the TD target; \(\lambda = 1\) gives Monte Carlo. A note on symbols: in this tour \(\lambda\) is always the GAE parameter, never a risk or penalty weight, and \(\mu\) (from Chapter 6 on) is always the behaviour policy that generated the data, never a mean cost.</p>
+
+  <h2 id="advantage">6. Why the advantage weights the update</h2>
+  <p>Chapter 5 derives the policy gradient. We need one consequence of it here. The gradient of the objective \(J(\theta)\) can be estimated by a weighted log-likelihood gradient over the decisions the policy made:</p>
+  <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[ \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t)\; \Psi_t \right], \label{eq:pg} \end{equation}</div>
+  <p>where the weight \(\Psi_t\) may be the return \(G_t\), or the return minus a baseline, or the advantage \(A^\pi(s_t, a_t)\); all give the same expectation <span class="cite">[<a href="#ref-2">2</a>, §2]</span>. If you think of the policy head as a classifier over legal actions, \eqref{eq:pg} is the gradient of a log-likelihood where each observed action is a label and \(\Psi_t\) is its sample weight. A positive weight pushes up the probability of the action taken; a negative weight pushes it down.</p>
+  <p>Why may we subtract a baseline \(b(s_t)\) from the weight for free? Because the extra term has expectation zero:</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi_\theta(\cdot \mid s)}\!\left[ \nabla_\theta \log \pi_\theta(a \mid s)\, b(s) \right] = b(s) \sum_a \nabla_\theta \pi_\theta(a \mid s) = b(s)\, \nabla_\theta \sum_a \pi_\theta(a \mid s) = b(s)\, \nabla_\theta 1 = 0. \label{eq:baseline} \end{equation}</div>
+  <p>The first step uses \(\pi \nabla \log \pi = \nabla \pi\), the log-derivative identity. The baseline can depend on anything that does not depend on the action \(a\) <span class="cite">[<a href="#ref-1">1</a>, §13.4]</span>. If you have used CUPED or any control variate, this is the same move: subtract a quantity with known zero mean that is correlated with the noise, and the estimate keeps its mean while its variance falls. The best simple baseline is close to \(V^\pi(s_t)\) <span class="cite">[<a href="#ref-8">8</a>]</span>, which turns \(G_t - b(s_t)\) into an estimate of the advantage.</p>
+  <p>So the return is a legitimate weight, but a poor one. In a run Instinct wins, \(G_t \approx 1.24\) for nearly every decision, good or bad, and in a run it loses \(G_t \approx 0\) for nearly every decision. Every action in a won run would be reinforced. The advantage removes what the state already predicted and keeps only what the action changed. It is centred by \eqref{eq:a-mean-zero}, and its noise is what is left after the critic has explained what it can.</p>
+
+  <h2 id="gae">7. Generalised advantage estimation</h2>
+  <h3>The one-step advantage</h3>
+  <p>The TD residual is itself an advantage estimate. If the critic were exact, \(V_\phi = V^\pi\), then taking the expectation of \eqref{eq:delta} over the environment's response and using \eqref{eq:bellman-q},</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{s_{t+1}}\!\left[ \delta^\pi_t \mid s_t, a_t \right] = \mathbb{E}_{s_{t+1}}\!\left[ r_t + \gamma V^\pi(s_{t+1}) \mid s_t, a_t \right] - V^\pi(s_t) = Q^\pi(s_t, a_t) - V^\pi(s_t) = A^\pi(s_t, a_t). \label{eq:delta-unbiased} \end{equation}</div>
+  <p>This is Equation 10 of the GAE paper <span class="cite">[<a href="#ref-2">2</a>]</span>. With an imperfect critic, \(\delta_t\) is biased by the critic's error, but its variance is one step's worth.</p>
+
+  <h3>n-step advantages</h3>
+  <p>Subtract \(V_\phi(s_t)\) from each n-step target \eqref{eq:nstep} to get an n-step advantage. Writing it as a sum of residuals and telescoping, as in \eqref{eq:telescope}:</p>
+  <div class="eq">\begin{equation} \hat{A}_t^{(k)} = \sum_{l=0}^{k-1} \gamma^l \delta_{t+l} = -V_\phi(s_t) + r_t + \gamma r_{t+1} + \dots + \gamma^{k-1} r_{t+k-1} + \gamma^k V_\phi(s_{t+k}). \label{eq:kstep-adv} \end{equation}</div>
+  <p>As \(k\) grows, the critic's error enters only through the discounted end term \(\gamma^k V_\phi(s_{t+k})\) and the baseline \(V_\phi(s_t)\), which adds no bias to the gradient by \eqref{eq:baseline}. With \(k \to \infty\) we get \(G_t - V_\phi(s_t)\): no bias from the critic, all the variance of the return <span class="cite">[<a href="#ref-2">2</a>, eqs. 11-15]</span>.</p>
+
+  <h3>The exponentially weighted average</h3>
+  <p>GAE averages the k-step advantages with the λ-return's weights <span class="cite">[<a href="#ref-2">2</a>, eq. 16]</span>. Expand each \(\hat{A}^{(k)}\) as a sum of residuals and collect the coefficient of each \(\delta_{t+l}\):</p>
+  <div class="eq">\begin{equation}\begin{aligned}
+  \hat{A}_t^{\text{GAE}(\gamma,\lambda)} &amp;= (1-\lambda)\left( \hat{A}_t^{(1)} + \lambda \hat{A}_t^{(2)} + \lambda^2 \hat{A}_t^{(3)} + \dots \right) \\
+  &amp;= (1-\lambda)\left( \delta_t (1 + \lambda + \lambda^2 + \dots) + \gamma \delta_{t+1} (\lambda + \lambda^2 + \dots) + \gamma^2 \delta_{t+2} (\lambda^2 + \dots) + \dots \right) \\
+  &amp;= (1-\lambda)\left( \frac{\delta_t}{1-\lambda} + \frac{\gamma\lambda\, \delta_{t+1}}{1-\lambda} + \frac{(\gamma\lambda)^2 \delta_{t+2}}{1-\lambda} + \dots \right)
+  = \sum_{l=0}^{\infty} (\gamma\lambda)^l\, \delta_{t+l}.
+  \end{aligned} \label{eq:gae} \end{equation}</div>
+  <p>The residual \(\delta_{t+l}\) appears in every \(\hat{A}^{(k)}\) with \(k &gt; l\), each time multiplied by \(\gamma^l\). Its total weight is \((1-\lambda)\gamma^l(\lambda^l + \lambda^{l+1} + \dots) = (\gamma\lambda)^l\). The result is strikingly simple: an advantage is the discounted sum of the surprises that follow, with discount \(\gamma\lambda\). On a finite episode, \(\delta_{t+l} = 0\) past the end. Two special cases bracket it <span class="cite">[<a href="#ref-2">2</a>, eqs. 17-18]</span>:</p>
+  <div class="eq">\begin{equation} \lambda = 0:\;\; \hat{A}_t = \delta_t, \qquad\qquad \lambda = 1:\;\; \hat{A}_t = \sum_{l=0}^{T-t} \gamma^l r_{t+l} - V_\phi(s_t) = G_t - V_\phi(s_t). \label{eq:gae-limits} \end{equation}</div>
+  <p>Computing \eqref{eq:gae} directly costs a sum per step. Peel off the first term and the rest is the next step's advantage times \(\gamma\lambda\), which gives a backward recursion over the trajectory:</p>
+  <div class="eq">\begin{equation} \hat{A}_t = \delta_t + \gamma\lambda\, \hat{A}_{t+1}, \qquad \hat{A}_{T} = \delta_T. \label{eq:gae-rec} \end{equation}</div>
+  <p>The critic is then trained toward \(y_t = \hat{A}_t + V_\phi(s_t)\). Adding \(V_\phi(s_t)\) back to \eqref{eq:gae} and comparing with \eqref{eq:lambda-return} shows this target is exactly the λ-return \(G^\lambda_t\). One parameter sets both the policy's weights and the critic's labels.</p>
+
+  <figure id="fig-weights">
+    <div class="scroll">
+<!-- FIG:weights -->
+<svg viewBox="0 0 640 260" role="img" aria-label="The weight lambda to the power l that GAE gives a surprise l steps later, for four values of lambda.">
+<line class="grid" x1="62" x2="622" y1="214.0" y2="214.0"/>
+<text class="muted" x="56" y="218.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="622" y1="164.0" y2="164.0"/>
+<text class="muted" x="56" y="168.0" text-anchor="end">0.25</text>
+<line class="grid" x1="62" x2="622" y1="114.0" y2="114.0"/>
+<text class="muted" x="56" y="118.0" text-anchor="end">0.5</text>
+<line class="grid" x1="62" x2="622" y1="64.0" y2="64.0"/>
+<text class="muted" x="56" y="68.0" text-anchor="end">0.75</text>
+<line class="grid" x1="62" x2="622" y1="14.0" y2="14.0"/>
+<text class="muted" x="56" y="18.0" text-anchor="end">1</text>
+<line class="ink" x1="62.0" x2="62.0" y1="214" y2="218"/>
+<text class="muted" x="62.0" y="231" text-anchor="middle">0</text>
+<line class="ink" x1="132.0" x2="132.0" y1="214" y2="218"/>
+<text class="muted" x="132.0" y="231" text-anchor="middle">10</text>
+<line class="ink" x1="202.0" x2="202.0" y1="214" y2="218"/>
+<text class="muted" x="202.0" y="231" text-anchor="middle">20</text>
+<line class="ink" x1="272.0" x2="272.0" y1="214" y2="218"/>
+<text class="muted" x="272.0" y="231" text-anchor="middle">30</text>
+<line class="ink" x1="342.0" x2="342.0" y1="214" y2="218"/>
+<text class="muted" x="342.0" y="231" text-anchor="middle">40</text>
+<line class="ink" x1="412.0" x2="412.0" y1="214" y2="218"/>
+<text class="muted" x="412.0" y="231" text-anchor="middle">50</text>
+<line class="ink" x1="482.0" x2="482.0" y1="214" y2="218"/>
+<text class="muted" x="482.0" y="231" text-anchor="middle">60</text>
+<line class="ink" x1="552.0" x2="552.0" y1="214" y2="218"/>
+<text class="muted" x="552.0" y="231" text-anchor="middle">70</text>
+<line class="ink" x1="622.0" x2="622.0" y1="214" y2="218"/>
+<text class="muted" x="622.0" y="231" text-anchor="middle">80</text>
+<line class="ink" x1="62" x2="622" y1="214" y2="214"/>
+<line class="ink" x1="62" x2="62" y1="14" y2="214"/>
+<text x="342.0" y="250" text-anchor="middle">steps ahead, l (decisions)</text>
+<text x="14" y="114.0" text-anchor="middle" transform="rotate(-90 14 114.0)">weight on δ at t + l (unitless)</text>
+<polyline class="l4" stroke-width="1.8" points="62.0,14.0 69.0,114.0 76.0,164.0 83.0,189.0 90.0,201.5 97.0,207.8 104.0,210.9 111.0,212.4 118.0,213.2 125.0,213.6 132.0,213.8 139.0,213.9 146.0,214.0 153.0,214.0 160.0,214.0 167.0,214.0 174.0,214.0 181.0,214.0 188.0,214.0 195.0,214.0 202.0,214.0 209.0,214.0 216.0,214.0 223.0,214.0 230.0,214.0 237.0,214.0 244.0,214.0 251.0,214.0 258.0,214.0 265.0,214.0 272.0,214.0 279.0,214.0 286.0,214.0 293.0,214.0 300.0,214.0 307.0,214.0 314.0,214.0 321.0,214.0 328.0,214.0 335.0,214.0 342.0,214.0 349.0,214.0 356.0,214.0 363.0,214.0 370.0,214.0 377.0,214.0 384.0,214.0 391.0,214.0 398.0,214.0 405.0,214.0 412.0,214.0 419.0,214.0 426.0,214.0 433.0,214.0 440.0,214.0 447.0,214.0 454.0,214.0 461.0,214.0 468.0,214.0 475.0,214.0 482.0,214.0 489.0,214.0 496.0,214.0 503.0,214.0 510.0,214.0 517.0,214.0 524.0,214.0 531.0,214.0 538.0,214.0 545.0,214.0 552.0,214.0 559.0,214.0 566.0,214.0 573.0,214.0 580.0,214.0 587.0,214.0 594.0,214.0 601.0,214.0 608.0,214.0 615.0,214.0 622.0,214.0"/>
+<polyline class="l3" stroke-width="1.8" points="62.0,14.0 69.0,34.0 76.0,52.0 83.0,68.2 90.0,82.8 97.0,95.9 104.0,107.7 111.0,118.3 118.0,127.9 125.0,136.5 132.0,144.3 139.0,151.2 146.0,157.5 153.0,163.2 160.0,168.2 167.0,172.8 174.0,176.9 181.0,180.6 188.0,184.0 195.0,187.0 202.0,189.7 209.0,192.1 216.0,194.3 223.0,196.3 230.0,198.0 237.0,199.6 244.0,201.1 251.0,202.4 258.0,203.5 265.0,204.6 272.0,205.5 279.0,206.4 286.0,207.1 293.0,207.8 300.0,208.4 307.0,209.0 314.0,209.5 321.0,209.9 328.0,210.4 335.0,210.7 342.0,211.0 349.0,211.3 356.0,211.6 363.0,211.8 370.0,212.1 377.0,212.3 384.0,212.4 391.0,212.6 398.0,212.7 405.0,212.9 412.0,213.0 419.0,213.1 426.0,213.2 433.0,213.2 440.0,213.3 447.0,213.4 454.0,213.5 461.0,213.5 468.0,213.6 475.0,213.6 482.0,213.6 489.0,213.7 496.0,213.7 503.0,213.7 510.0,213.8 517.0,213.8 524.0,213.8 531.0,213.8 538.0,213.8 545.0,213.9 552.0,213.9 559.0,213.9 566.0,213.9 573.0,213.9 580.0,213.9 587.0,213.9 594.0,213.9 601.0,213.9 608.0,213.9 615.0,214.0 622.0,214.0"/>
+<polyline class="l1" stroke-width="1.8" points="62.0,14.0 69.0,24.0 76.0,33.5 83.0,42.5 90.0,51.1 97.0,59.2 104.0,67.0 111.0,74.3 118.0,81.3 125.0,88.0 132.0,94.3 139.0,100.2 146.0,105.9 153.0,111.3 160.0,116.5 167.0,121.3 174.0,126.0 181.0,130.4 188.0,134.6 195.0,138.5 202.0,142.3 209.0,145.9 216.0,149.3 223.0,152.5 230.0,155.6 237.0,158.5 244.0,161.3 251.0,163.9 258.0,166.4 265.0,168.8 272.0,171.1 279.0,173.2 286.0,175.3 293.0,177.2 300.0,179.0 307.0,180.8 314.0,182.4 321.0,184.0 328.0,185.5 335.0,186.9 342.0,188.3 349.0,189.6 356.0,190.8 363.0,192.0 370.0,193.1 377.0,194.1 384.0,195.1 391.0,196.1 398.0,196.9 405.0,197.8 412.0,198.6 419.0,199.4 426.0,200.1 433.0,200.8 440.0,201.5 447.0,202.1 454.0,202.7 461.0,203.3 468.0,203.8 475.0,204.3 482.0,204.8 489.0,205.2 496.0,205.7 503.0,206.1 510.0,206.5 517.0,206.9 524.0,207.2 531.0,207.6 538.0,207.9 545.0,208.2 552.0,208.5 559.0,208.8 566.0,209.0 573.0,209.3 580.0,209.5 587.0,209.7 594.0,209.9 601.0,210.1 608.0,210.3 615.0,210.5 622.0,210.7"/>
+<polyline class="l2" stroke-width="1.8" stroke-dasharray="5 3" points="62.0,14.0 69.0,20.0 76.0,25.8 83.0,31.5 90.0,36.9 97.0,42.3 104.0,47.4 111.0,52.4 118.0,57.3 125.0,62.0 132.0,66.5 139.0,70.9 146.0,75.2 153.0,79.4 160.0,83.4 167.0,87.3 174.0,91.1 181.0,94.8 188.0,98.4 195.0,101.9 202.0,105.2 209.0,108.5 216.0,111.7 223.0,114.7 230.0,117.7 237.0,120.6 244.0,123.4 251.0,126.1 258.0,128.8 265.0,131.3 272.0,133.8 279.0,136.2 286.0,138.5 293.0,140.8 300.0,143.0 307.0,145.1 314.0,147.2 321.0,149.2 328.0,151.1 335.0,153.0 342.0,154.9 349.0,156.6 356.0,158.4 363.0,160.0 370.0,161.6 377.0,163.2 384.0,164.7 391.0,166.2 398.0,167.6 405.0,169.0 412.0,170.4 419.0,171.7 426.0,173.0 433.0,174.2 440.0,175.4 447.0,176.5 454.0,177.7 461.0,178.8 468.0,179.8 475.0,180.8 482.0,181.8 489.0,182.8 496.0,183.7 503.0,184.6 510.0,185.5 517.0,186.4 524.0,187.2 531.0,188.0 538.0,188.8 545.0,189.5 552.0,190.3 559.0,191.0 566.0,191.7 573.0,192.4 580.0,193.0 587.0,193.6 594.0,194.2 601.0,194.8 608.0,195.4 615.0,196.0 622.0,196.5"/>
+<circle class="f1" cx="202.0" cy="142.3" r="4"/>
+<text x="212.5" y="136.3" text-anchor="start">0.95²⁰ = 0.358</text>
+<line class="l4" stroke-width="2" x1="452" x2="474" y1="24" y2="24"/>
+<text x="480" y="28">λ = 0.5</text>
+<line class="l3" stroke-width="2" x1="452" x2="474" y1="41" y2="41"/>
+<text x="480" y="45">λ = 0.9</text>
+<line class="l1" stroke-width="2" x1="452" x2="474" y1="58" y2="58"/>
+<text x="480" y="62">λ = 0.95 (fights)</text>
+<line class="l2" stroke-width="2" stroke-dasharray="5 3" x1="452" x2="474" y1="75" y2="75"/>
+<text x="480" y="79">λ = 0.97 (run rows)</text>
+</svg>
+<!-- /FIG:weights -->
+    </div>
+    <figcaption><b>Figure 4.1. How far ahead GAE looks.</b> With \(\gamma = 1\), the weight on a surprise \(l\) steps after the decision is \(\lambda^l\) (Equation \eqref{eq:gae}). The weight halves every \(\ln 2 / \ln(1/\lambda)\) steps: about 1 step at λ = 0.5, 7 at 0.9, 14 at 0.95 and 23 at 0.97. Notice that a typical Spire Mentor fight lasts about 25 decisions, so at λ = 0.95 a card played on turn one still feels more than a quarter of what happens on the fight's last turn.</figcaption>
+  </figure>
+
+  <details class="predict"><summary>Pause and predict: with λ = 0.95 and γ = 1, what weight does a surprise 20 decisions later get in this decision's advantage?</summary>
+    <p>\(0.95^{20} = 0.3585\). The check reads this number off the repository's own advantage function by feeding it a chain of 21 decisions with zero values and one unit of reward on the last; the first decision's advantage comes out as 0.3585. A surprise one fight away (about 25 decisions) still carries over a quarter of its size. A surprise two fights away carries about 8%.</p>
+  </details>
+
+  <h3>Bias and variance in one picture</h3>
+  <p>The GAE paper is explicit about what each parameter costs. A discount \(\gamma &lt; 1\) biases the gradient even with a perfect critic, because it changes the objective. A \(\lambda &lt; 1\) biases it only to the extent the critic is wrong <span class="cite">[<a href="#ref-2">2</a>, §3]</span>. That is why practitioners set \(\lambda\) well below \(\gamma\): the PPO paper used \(\gamma = 0.99\) with \(\lambda = 0.95\) <span class="cite">[<a href="#ref-3">3</a>]</span>. Spire Mentor sets \(\gamma = 1\) because its runs are finite and it wants the true objective, and lets \(\lambda\) do all the variance reduction.</p>
+
+  <h3>Worked by hand on a real fight</h3>
+  <p>Here is the end of an elite fight from a real run (seed 170000000, act 1, floor 11), with the critic's values exactly as the network produced them. Inside a fight the reward is zero, so each \(\delta_t\) is just the change in value. The fight's last decision is special: its next state is the map screen after the fight, so its \(V(s_{t+1})\) is the critic's value of the run after the fight.</p>
+  <p>Take the last row, decision 112. \(r = 0\), \(V(s_t) = 1.12204\) and the next state's value is 1.11865. So \(\delta = 0 + 1.11865 - 1.12204 = −0.00339\). It is the last decision of the fight, and in this project the fight's chain stops at the map (Section 10), so \(\hat{A} = \delta = −0.00339\). One row up, decision 111: \(\delta = 1.12204 - 1.12141 = 0.00063\), and \(\hat{A} = 0.00063 + 0.95 \times (−0.00339)\) \(= −0.00259\). Continue upward with \eqref{eq:gae-rec}:</p>
+  <div class="table"><table class="gae">
+    <thead><tr><th class="num">decision</th><th class="num">\(r_t\)</th><th class="num">\(V(s_t)\)</th><th class="num">\(V(s_{t+1})\)</th><th class="num">\(\delta_t\)</th><th class="num">\(\hat{A}_t\) by hand</th><th class="num">\(\hat{A}_t\) repository</th></tr></thead>
+    <tbody>
+      <tr><td class="num">107</td><td class="num">0.000</td><td class="num">1.12245</td><td class="num">1.12177</td><td class="num">−0.00068</td><td class="num">−0.00302</td><td class="num">−0.00302</td></tr>
+      <tr><td class="num">108</td><td class="num">0.000</td><td class="num">1.12177</td><td class="num">1.12347</td><td class="num">0.00170</td><td class="num">−0.00246</td><td class="num">−0.00246</td></tr>
+      <tr><td class="num">109</td><td class="num">0.000</td><td class="num">1.12347</td><td class="num">1.12168</td><td class="num">−0.00179</td><td class="num">−0.00438</td><td class="num">−0.00438</td></tr>
+      <tr><td class="num">110</td><td class="num">0.000</td><td class="num">1.12168</td><td class="num">1.12141</td><td class="num">−0.00027</td><td class="num">−0.00273</td><td class="num">−0.00273</td></tr>
+      <tr><td class="num">111</td><td class="num">0.000</td><td class="num">1.12141</td><td class="num">1.12204</td><td class="num">0.00063</td><td class="num">−0.00259</td><td class="num">−0.00259</td></tr>
+      <tr><td class="num">112</td><td class="num">0.000</td><td class="num">1.12204</td><td class="num">1.11865</td><td class="num">−0.00339</td><td class="num">−0.00339</td><td class="num">−0.00339</td></tr>
+    </tbody>
+    <caption>The last six decisions of an elite fight, \(\lambda = 0.95\), \(\gamma = 1\). The hand column is the loop in Equation \eqref{eq:gae-rec}; the repository column is Spire Mentor's vectorised advantage function on the whole run. Over all 718 decisions of this run the largest difference between them is 5.6e-17, which is floating-point rounding.</caption>
+  </table></div>
+  <p>Two things stand out. The surprises inside the fight are tiny, a few thousandths of the return. Card by card, this policy rarely surprises its own critic in a fight it wins. And the advantages are all slightly negative, because they inherit the last step: the map after the fight was worth a little less than the critic predicted at the end of it.</p>
+
+  <h2 id="privileged">8. Privileged critics</h2>
+  <p>In Slay the Spire the agent sees its hand, its relics and the enemies' announced intents. It does not see the order of its draw pile, the enemies' next moves beyond the announced one, or which rooms the map generator has placed behind each node. Chapter 1 calls the visible part the observation \(o_t\) and the full state \(s_t\). The policy must be a function of what it can see, \(\pi_\theta(a \mid o_t)\), or it could not play at test time.</p>
+  <p>The critic has no such constraint. It is used only during training, to build targets and advantages, and during training the simulator knows everything. A critic that reads the hidden state is called <dfn>asymmetric</dfn> or <dfn>privileged</dfn>. Pinto and colleagues introduced the idea for robots trained in simulation: the policy sees camera images, the critic sees the simulator's exact positions <span class="cite">[<a href="#ref-4">4</a>]</span>.</p>
+  <p>Is that legitimate? Equation \eqref{eq:baseline} answers half the question. The baseline may depend on anything that does not depend on the action. The policy's action distribution depends only on \(o_t\), so for a baseline \(b(o_t, s_t)\),</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi_\theta(\cdot \mid o_t)}\!\left[ \nabla_\theta \log \pi_\theta(a \mid o_t)\; b(o_t, s_t) \right] = b(o_t, s_t)\, \nabla_\theta \sum_a \pi_\theta(a \mid o_t) = 0. \label{eq:priv-baseline} \end{equation}</div>
+  <p>The hidden state adds no bias as a baseline. What it adds is explanatory power. If the critic knows the draw pile will deal three Strikes next turn, it predicts the bad turn before it happens, and the bad turn no longer shows up as a negative surprise attributed to whatever card was played. The variance that luck contributes to the advantage drops.</p>
+  <p>The other half is subtler. Baisero and Amato showed that a critic of the state <em>alone</em>, \(V(s_t)\), is in general a biased estimate of what the observation-conditioned policy can achieve, because it implicitly assumes the agent knows things it does not. They prove that a critic of both, \(V(o_t, s_t)\) or with history in place of \(o_t\), keeps the policy gradient unbiased <span class="cite">[<a href="#ref-5">5</a>]</span>. Spire Mentor's critic reads the policy's own observation tokens and the privileged tokens together, which is the second form. (That match is our reading of the architecture; the project does not cite the paper.)</p>
+
+  <h2 id="engineered">9. The textbook version against the engineered version</h2>
+  <p>The clean statement is: collect full episodes, compute \eqref{eq:gae} on each, regress \(V_\phi\) on \(\hat{A} + V\), weight the policy gradient by \(\hat{A}\). Real systems depart from it in five ways, and Spire Mentor departs in all five.</p>
+  <ol>
+    <li><b>Truncated trajectories.</b> Training collects a fixed number of decisions per iteration (131,072 here), not whole runs. A run that is still in progress at the cut has no future yet. The chain ends at the cut and bootstraps from \(V_\phi\) of the next state, which is the n-step idea applied by necessity. The repository's tests check an exact identity for this: the cut advantage differs from the uncut one by \(\lambda^m\) times what the cut threw away, where \(m\) counts the steps to the cut.</li>
+    <li><b>Values frozen at the start of the update.</b> Targets are computed once with the critic's values before the update and held fixed through the update's epochs, which makes the regression in \eqref{eq:value-loss} a fixed supervised problem for that update.</li>
+    <li><b>No value clipping.</b> Many PPO implementations clip the change in \(V_\phi\) per update. This project removed it on purpose and uses the plain squared error with coefficient 0.5.</li>
+    <li><b>Advantage normalisation.</b> Advantages are standardised before they weight the policy loss, here separately for each decision type (card play, map choice, card reward and so on), with running moments. A map decision's advantages and a card play's advantages live on different scales; normalising per type keeps one type from dominating the gradient.</li>
+    <li><b>Two critics in one network, and two chains.</b> Combat decisions and between-fight decisions get separate value heads and separate λ, joined so that a fight's result flows into the run. The next section shows how.</li>
+  </ol>
+
+  <h2 id="spire">10. In Spire Mentor</h2>
+  <p>The network is one transformer over a set of tokens (Chapter 2). The policy heads read its output. The critic is one more transformer block that reads the same token stream plus the privileged tokens, and two linear heads that read the first token, the run-context token. Figure 4.2 traces the data.</p>
+
+  <figure id="fig-dataflow">
+    <div class="scroll">
+      <svg viewBox="0 0 660 300" role="img" aria-label="Data flow: observation tokens go through the trunk to the policy heads; the trunk output and the privileged tokens go through the value block to two value heads, whose values feed GAE, which produces advantages for the policy loss and targets for the value loss.">
+        <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="10" y="30" width="130" height="46" rx="3"/><text x="75" y="50" text-anchor="middle">observation tokens</text><text class="muted" x="75" y="66" text-anchor="middle">hand, deck, map, intents</text>
+          <rect class="box" x="10" y="190" width="130" height="46" rx="3"/><text x="75" y="210" text-anchor="middle">PRIV tokens</text><text class="muted" x="75" y="226" text-anchor="middle">draw order, moves, rooms</text>
+          <rect class="box" x="190" y="30" width="110" height="46" rx="3"/><text x="245" y="58" text-anchor="middle">trunk (4 blocks)</text>
+          <rect class="box" x="360" y="30" width="120" height="46" rx="3"/><text x="420" y="50" text-anchor="middle">policy heads</text><text class="muted" x="420" y="66" text-anchor="middle">combat, out of combat</text>
+          <rect class="box" x="360" y="140" width="120" height="46" rx="3"/><text x="420" y="160" text-anchor="middle">value block</text><text class="muted" x="420" y="176" text-anchor="middle">+ V_combat, V_run</text>
+          <rect class="box" x="530" y="140" width="110" height="46" rx="3"/><text x="585" y="168" text-anchor="middle">GAE, two chains</text>
+          <rect class="box" x="530" y="30" width="110" height="46" rx="3"/><text x="585" y="50" text-anchor="middle">policy loss</text><text class="muted" x="585" y="66" text-anchor="middle">(Chapter 5)</text>
+          <rect class="box" x="530" y="240" width="110" height="46" rx="3"/><text x="585" y="268" text-anchor="middle">value loss, MSE</text>
+          <line class="ink" x1="140" y1="53" x2="190" y2="53" marker-end="url(#ar4)"/>
+          <line class="ink" x1="300" y1="53" x2="360" y2="53" marker-end="url(#ar4)"/><text class="muted" x="330" y="46" text-anchor="middle">h</text>
+          <path class="ink" d="M245 76 L245 163 L360 163" marker-end="url(#ar4)"/><text class="muted" x="300" y="156" text-anchor="middle">residual stream</text>
+          <path class="ink" d="M140 213 L330 213 L330 175 L360 175" marker-end="url(#ar4)"/><text class="muted" x="235" y="206" text-anchor="middle">critic only</text>
+          <line class="ink" x1="480" y1="163" x2="530" y2="163" marker-end="url(#ar4)"/><text class="muted" x="505" y="156" text-anchor="middle">V</text>
+          <line class="ink" x1="480" y1="53" x2="530" y2="53" marker-end="url(#ar4)"/><text class="muted" x="505" y="46" text-anchor="middle">logits</text>
+          <line class="ink" x1="585" y1="140" x2="585" y2="76" marker-end="url(#ar4)"/><text class="muted" x="592" y="112">Â (weights)</text>
+          <line class="ink" x1="585" y1="186" x2="585" y2="240" marker-end="url(#ar4)"/><text class="muted" x="592" y="218">y = Â + V</text>
+          <line class="l2" stroke-dasharray="4 3" x1="10" y1="120" x2="350" y2="120"/><text class="muted" x="12" y="112">used when playing ↑</text><text class="muted" x="12" y="136">training only ↓</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 4.2. Where the critic sits.</b> Everything above the dashed line runs when the agent plays; the privileged tokens and the value block below it run only in training. The privileged tokens enter only the value block, so they cannot change a single logit; a test in the repository permutes them and checks the logits stay bit-identical. GAE turns the critic's values into the advantage that weights the policy loss and the target that trains the critic.</figcaption>
+  </figure>
+
+  <figure class="listing">
+    <pre><code>z = torch.cat([x, e_priv.to(x.dtype)], 1)
+keep = ~torch.cat([pad, ppad], 1)[:, None, None, :]
+for blk in self.blocks[:-1]:
+    z = blk(z, keep)
+# Only RUNCTX is read, so the last block runs its query and MLP there alone.
+z0 = self.blocks[-1].forward_first(z, keep) if len(self.blocks) else z[:, 0]
+with torch.autocast(z0.device.type, enabled=False):
+    hs = self.norm(z0.float())
+    vc = F.linear(hs, self.v_combat.weight, self.v_combat.bias).squeeze(-1)
+    vr = F.linear(hs, self.v_run.weight, self.v_run.bias).squeeze(-1)
+return vc, vr</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/net.py, lines 1471-1481: the value module. x is the trunk's token stream, e_priv the embedded privileged tokens.</figcaption>
+  </figure>
+  <p>Token 0 of every decision is the run-context token, so both heads give one number per decision. Training uses <code>V_combat</code> at combat decisions and <code>V_run</code> at every other decision. In the tour's notation both are \(V_\phi\); we write \(V_\phi^{\text{c}}\) and \(V_\phi^{\text{r}}\) when the head matters. The repository's <code>adv</code> column is \(\hat{A}_t\), its <code>target</code> column is \(\hat{A}_t + V_\phi(s_t)\), and its <code>LAM_C</code>, <code>LAM_R</code> are \(\lambda_c = 0.95\) and \(\lambda_r = 0.97\).</p>
+
+  <h3>Two chains</h3>
+  <p>A run interleaves two kinds of decision: about 88% are card plays and targets inside fights, the rest are map moves, card rewards, shops, rest sites and events. Spire Mentor runs GAE along two chains through the same run.</p>
+
+  <figure id="fig-chains">
+    <div class="scroll">
+      <svg viewBox="0 0 660 200" role="img" aria-label="A run's decisions on a line: run decisions R and fight decisions C. The combat chain links consecutive fight decisions and ends at the next run decision. The run chain links run decisions and jumps over each fight.">
+        <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <text class="muted" x="8" y="104">decisions</text>
+          <g>
+            <circle class="f2" cx="90" cy="100" r="9"/><text x="90" y="104" text-anchor="middle" font-size="10">R</text>
+            <circle class="f2" cx="125" cy="100" r="9"/><text x="125" y="104" text-anchor="middle" font-size="10">R</text>
+            <circle class="f1" cx="170" cy="100" r="9"/><circle class="f1" cx="205" cy="100" r="9"/><circle class="f1" cx="240" cy="100" r="9"/><circle class="f1" cx="275" cy="100" r="9"/><circle class="f1" cx="310" cy="100" r="9"/>
+            <circle class="f2" cx="355" cy="100" r="9"/><text x="355" y="104" text-anchor="middle" font-size="10">R</text>
+            <circle class="f1" cx="400" cy="100" r="9"/><circle class="f1" cx="435" cy="100" r="9"/><circle class="f1" cx="470" cy="100" r="9"/><circle class="f1" cx="505" cy="100" r="9"/>
+            <circle class="f2" cx="550" cy="100" r="9"/><text x="550" y="104" text-anchor="middle" font-size="10">R</text>
+            <circle class="f2" cx="585" cy="100" r="9"/><text x="585" y="104" text-anchor="middle" font-size="10">R</text>
+          </g>
+          <text class="muted" x="240" y="132" text-anchor="middle">elite fight: combat decisions</text>
+          <text class="muted" x="452" y="132" text-anchor="middle">monster fight</text>
+          <path class="l1" d="M179 92 Q187 80 196 92 M214 92 Q222 80 231 92 M249 92 Q257 80 266 92 M284 92 Q292 80 301 92" stroke-width="1.5"/>
+          <path class="l1" d="M319 92 Q334 74 349 92" stroke-width="2" marker-end="url(#ar5)"/>
+          <text x="334" y="68" text-anchor="middle" font-size="11">fight ends at V_run</text>
+          <path class="l1" d="M409 92 Q417 80 426 92 M444 92 Q452 80 461 92 M479 92 Q487 80 496 92" stroke-width="1.5"/>
+          <path class="l1" d="M514 92 Q529 74 544 92" stroke-width="2" marker-end="url(#ar5)"/>
+          <path class="l2" d="M99 110 Q108 122 116 110" stroke-width="1.5"/>
+          <path class="l2" d="M125 110 Q240 185 355 110" stroke-width="2" marker-end="url(#ar5)"/>
+          <text x="240" y="172" text-anchor="middle" font-size="11">run chain: R = reward over the fight, δ = R + V_after − V_before</text>
+          <path class="l2" d="M355 110 Q452 175 550 110" stroke-width="2" marker-end="url(#ar5)"/>
+          <path class="l2" d="M559 110 Q567 122 576 110" stroke-width="1.5"/>
+          <line class="l1" stroke-width="2" x1="70" y1="20" x2="92" y2="20"/><text x="98" y="24">combat chain, λ_c = 0.95, values from V_combat</text>
+          <line class="l2" stroke-width="2" x1="70" y1="40" x2="92" y2="40"/><text x="98" y="44">run chain, λ_r = 0.97, values from V_run</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 4.3. The two advantage chains of one run.</b> Each arc is one surprise \(\delta\). The combat chain (above) runs decision by decision inside a fight; its last surprise lands on the run decision after the fight, so every card play is scored partly by what the fight did to the value of the whole run. The run chain (below) skips over fights: one surprise per fight, summing whatever reward the fight paid. The elite question lives in the run chain's arc over the elite.</figcaption>
+  </figure>
+
+  <figure class="listing">
+    <pre><code>- *combat chain*, by row adjacency: ``δ_t = r_t + V(succ) - V(t)`` and
+  ``A_t = δ_t + λ_c · 1[succ is a non-bootstrap combat row] · A_succ``. So
+  act-3 boss 1 chains into boss 2, and a fight hands its value over to the next
+  run row (``V(succ)`` is then ``V_run``).
+- *run chain*, over the run rows of a run: ``δ_i = R(i→j) + V(j) - V(i)`` and
+  ``A_i = δ_i + λ_r · A_j``, where j is the next run row and R(i→j) sums the
+  reward of every row from i up to j. Without a next run row, j is the end:
+  the bootstrap row (cut) or the terminal (value 0).</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/algo.py, lines 24-31: the two chains as the code's own docstring states them. "Row" is one stored decision.</figcaption>
+  </figure>
+  <p>The indicator \(\mathbf{1}[\cdot]\) is the whole trick. A combat advantage continues backward only into another combat decision. So the recursion \eqref{eq:gae-rec} restarts at every fight, but each fight's last surprise is measured against \(V_\phi^{\text{r}}\) of the map after the fight. A card play is scored by how it moved the fight toward a better run, not by how the run eventually ended. The one exception is act 3, which ends in two bosses back to back: the first boss chains straight into the second.</p>
+  <p>The plan that set this design quotes the reason for that exception: scoring each boss fight on its own gives a won first boss a mean surprise of \(-0.62\), because the critic at the end of boss 1 has to predict boss 2 too. (That figure is the plan's; we did not re-derive it.) The run chain uses \(\lambda_r = 0.97\), slightly longer than the combat chain's, because there are only about 78 run decisions per run and each one, like choosing a path or a card, has slow consequences.</p>
+
+  <figure class="listing">
+    <pre><code>| Returns | γ = 1. Combat rows chain by row adjacency: successor = the next
+  stored row of the same run (combat or run) or the terminal;
+  A_t = δ_t + λ_c·1[successor is combat]·A_{t+1}, λ_c = 0.95. ...
+  Run rows: λ_r = 0.97 over the run-row subsequence, held back until the run
+  ends or for 4 iterations ...
+| Values | MSE × 0.5; no value clipping; update-start targets |
+| Advantages | normalised per decision type by exponentially weighted moments
+  of student-acted rows |
+
+Reward (pre-registered): win +1.0; +0.05 per boss beaten ...; +0.002 per new
+floor; death or cap 0; no HP shaping.</code></pre>
+    <figcaption>docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md, lines 267-269 and 276 (abridged, rewrapped).</figcaption>
+  </figure>
+  <p>Two alternatives are on record as rejected. The plan lists "critic splits" and a histogram-loss value head among the changes it did not plan, because earlier screens found no gain. And it gives run decisions a hold-back: a run decision waits up to four iterations for its run to finish, so its chain reaches the true end more often instead of bootstrapping from a cut.</p>
+
+  <div class="example"><span class="label">In Spire Mentor · the elite fork</span>
+    <p>Back to the question we opened with. An elite fight pays only its floor, +0.002. It never touches the per-boss or win reward directly. In the run chain its surprise is</p>
+    <div class="eq">\begin{equation} \delta_{\text{elite}} = R_{\text{fight}} + V_\phi^{\text{r}}(s_{\text{after}}) - V_\phi^{\text{r}}(s_{\text{before}}), \label{eq:elite} \end{equation}</div>
+    <p>where \(s_{\text{before}}\) is the map decision that chose the elite path and \(s_{\text{after}}\) the first decision after the fight (usually the card reward). With \(R_{\text{fight}} \approx 0\), the whole judgement is the critic's change of mind across the fight. If the critic believes relics win runs, a won elite raises \(V^{\text{r}}\), the surprise is positive, and the map decision that chose the elite path gets a positive advantage. If the fight cost too much HP, \(V^{\text{r}}\) falls and the choice is punished. The win at the end of the run never had to arrive.</p>
+  </div>
+
+  <h2 id="measured">11. Measured</h2>
+  <p>We played the first 200 seeds of the tour's seed panel A with the published Ironclad checkpoint, <code>ironclad_e2e_d9000_ema0999</code>. Each run was played on the project's own training environment, with privileged tokens on as training builds them. At each of the 133,398 decisions we ran the full network, took its greedy move and recorded both value heads. Instinct won 166 of the 200 runs, with 667 decisions per run on average.</p>
+
+  <div class="measured"><span class="label">Measured · 200 seeds of PANEL_A · M2 Max, CPU</span>
+    <p>This is the real critic, not a substitute: the checkpoint's own value module, with privileged inputs supplied by the same Rust environment the training workers use. Two departures from training. Moves are greedy, where training samples, so these are the values along the policy's most likely path. And the check computes everything after the fact on whole runs, so no chain is cut. On the first 12 seeds, greedy play from this checkpoint matched the published runtime network in outcome, number of decisions and final floor.</p>
+  </div>
+
+  <h3>What the critic says along a run</h3>
+  <details class="predict"><summary>Pause and predict: at the first decision of a run, before any card is seen, what value does the critic give? A won run collects about 1.24.</summary>
+    <p>On average 0.961. Instinct won 83% of these runs, and a won run collects about 1.24, so the honest expected return is about 1.063. The critic's opening estimate is about 0.10 below that, which you can see again in the calibration plot below.</p>
+  </details>
+
+  <figure id="fig-traces">
+    <div class="scroll">
+<!-- FIG:traces -->
+<svg viewBox="0 0 640 480" role="img" aria-label="The critic's value at every decision of a won run and of a lost run, with fights shaded by room type.">
+<line class="grid" x1="62" x2="622" y1="184.0" y2="184.0"/>
+<text class="muted" x="56" y="188.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="622" y1="150.0" y2="150.0"/>
+<text class="muted" x="56" y="154.0" text-anchor="end">0.25</text>
+<line class="grid" x1="62" x2="622" y1="116.0" y2="116.0"/>
+<text class="muted" x="56" y="120.0" text-anchor="end">0.5</text>
+<line class="grid" x1="62" x2="622" y1="82.0" y2="82.0"/>
+<text class="muted" x="56" y="86.0" text-anchor="end">0.75</text>
+<line class="grid" x1="62" x2="622" y1="48.0" y2="48.0"/>
+<text class="muted" x="56" y="52.0" text-anchor="end">1</text>
+<line class="grid" x1="62" x2="622" y1="14.0" y2="14.0"/>
+<text class="muted" x="56" y="18.0" text-anchor="end">1.25</text>
+<line class="ink" x1="62.0" x2="62.0" y1="184" y2="188"/>
+<text class="muted" x="62.0" y="201" text-anchor="middle">0</text>
+<line class="ink" x1="140.0" x2="140.0" y1="184" y2="188"/>
+<text class="muted" x="140.0" y="201" text-anchor="middle">100</text>
+<line class="ink" x1="218.0" x2="218.0" y1="184" y2="188"/>
+<text class="muted" x="218.0" y="201" text-anchor="middle">200</text>
+<line class="ink" x1="296.0" x2="296.0" y1="184" y2="188"/>
+<text class="muted" x="296.0" y="201" text-anchor="middle">300</text>
+<line class="ink" x1="374.0" x2="374.0" y1="184" y2="188"/>
+<text class="muted" x="374.0" y="201" text-anchor="middle">400</text>
+<line class="ink" x1="452.0" x2="452.0" y1="184" y2="188"/>
+<text class="muted" x="452.0" y="201" text-anchor="middle">500</text>
+<line class="ink" x1="530.0" x2="530.0" y1="184" y2="188"/>
+<text class="muted" x="530.0" y="201" text-anchor="middle">600</text>
+<line class="ink" x1="608.0" x2="608.0" y1="184" y2="188"/>
+<text class="muted" x="608.0" y="201" text-anchor="middle">700</text>
+<line class="ink" x1="62" x2="622" y1="184" y2="184"/>
+<line class="ink" x1="62" x2="62" y1="14" y2="184"/>
+<text x="342.0" y="220" text-anchor="middle">decision index in the run</text>
+<text x="14" y="99.0" text-anchor="middle" transform="rotate(-90 14 99.0)">critic value (reward units)</text>
+<rect class="f4" opacity=".14" x="63.6" y="14" width="13.999999999999993" height="170"/>
+<rect class="f4" opacity=".14" x="79.9" y="14" width="10.199999999999989" height="170"/>
+<rect class="f4" opacity=".14" x="90.9" y="14" width="4.599999999999994" height="170"/>
+<rect class="f4" opacity=".14" x="96.3" y="14" width="16.400000000000006" height="170"/>
+<rect class="f4" opacity=".14" x="115.0" y="14" width="14.099999999999994" height="170"/>
+<rect class="f2" opacity=".32" x="134.5" y="14" width="15.599999999999994" height="170"/>
+<rect class="f4" opacity=".14" x="150.9" y="14" width="8.599999999999994" height="170"/>
+<rect class="f2" opacity=".32" x="162.6" y="14" width="15.599999999999994" height="170"/>
+<rect class="f3" opacity=".32" x="180.6" y="14" width="28.80000000000001" height="170"/>
+<rect class="f4" opacity=".14" x="211.7" y="14" width="18.80000000000001" height="170"/>
+<rect class="f4" opacity=".14" x="235.1" y="14" width="14.099999999999994" height="170"/>
+<rect class="f4" opacity=".14" x="250.0" y="14" width="17.899999999999977" height="170"/>
+<rect class="f2" opacity=".32" x="271.8" y="14" width="26.5" height="170"/>
+<rect class="f2" opacity=".32" x="299.1" y="14" width="19.5" height="170"/>
+<rect class="f4" opacity=".14" x="320.9" y="14" width="22.700000000000045" height="170"/>
+<rect class="f2" opacity=".32" x="345.9" y="14" width="18.700000000000045" height="170"/>
+<rect class="f4" opacity=".14" x="366.2" y="14" width="17.100000000000023" height="170"/>
+<rect class="f3" opacity=".32" x="384.9" y="14" width="25.0" height="170"/>
+<rect class="f4" opacity=".14" x="412.2" y="14" width="21.80000000000001" height="170"/>
+<rect class="f4" opacity=".14" x="438.7" y="14" width="12.5" height="170"/>
+<rect class="f2" opacity=".32" x="457.4" y="14" width="28.100000000000023" height="170"/>
+<rect class="f4" opacity=".14" x="486.3" y="14" width="10.099999999999966" height="170"/>
+<rect class="f2" opacity=".32" x="498.0" y="14" width="24.200000000000045" height="170"/>
+<rect class="f3" opacity=".32" x="524.5" y="14" width="38.200000000000045" height="170"/>
+<rect class="f3" opacity=".32" x="562.7" y="14" width="59.299999999999955" height="170"/>
+<polyline class="l1" stroke-width="1.6" points="62.0,49.8 62.8,45.0 63.6,49.0 64.3,49.1 65.1,48.8 65.9,48.7 66.7,48.5 67.5,48.3 68.2,48.3 69.0,47.7 69.8,48.1 70.6,47.9 71.4,47.9 72.1,47.6 72.9,48.5 73.7,48.0 74.5,47.7 75.3,48.0 76.0,48.0 76.8,48.1 77.6,39.6 78.4,41.5 79.2,41.9 79.9,43.1 80.7,42.4 81.5,42.6 82.3,41.9 83.1,42.0 83.8,42.2 84.6,41.9 85.4,42.0 86.2,42.0 87.0,41.9 87.7,41.2 88.5,41.2 89.3,43.1 90.1,39.0 90.9,37.4 91.6,36.7 92.4,36.6 93.2,36.6 94.0,36.8 94.8,36.6 95.5,37.1 96.3,39.8 97.1,40.2 97.9,40.0 98.7,39.6 99.4,39.8 100.2,39.7 101.0,39.0 101.8,39.0 102.6,39.8 103.3,39.0 104.1,39.2 104.9,39.3 105.7,38.8 106.5,38.6 107.2,38.2 108.0,38.9 108.8,38.6 109.6,38.6 110.4,38.6 111.1,38.9 111.9,38.5 112.7,36.7 113.5,36.0 114.3,35.6 115.0,39.6 115.8,39.4 116.6,39.4 117.4,39.3 118.2,40.7 118.9,40.1 119.7,40.2 120.5,40.5 121.3,40.2 122.1,39.8 122.8,40.8 123.6,40.2 124.4,40.2 125.2,40.2 126.0,40.0 126.7,40.0 127.5,39.4 128.3,39.2 129.1,36.7 129.9,37.0 130.6,39.3 131.4,39.7 132.2,31.4 133.0,33.7 133.8,32.9 134.5,31.7 135.3,31.4 136.1,31.5 136.9,31.4 137.7,31.0 138.4,31.0 139.2,31.1 140.0,30.9 140.8,31.1 141.6,31.3 142.3,31.4 143.1,31.4 143.9,31.3 144.7,31.3 145.5,31.4 146.2,31.4 147.0,31.3 147.8,31.4 148.6,31.5 149.4,31.4 150.1,31.8 150.9,31.0 151.7,30.9 152.5,30.9 153.3,31.0 154.0,31.1 154.8,31.1 155.6,31.1 156.4,31.0 157.2,30.9 157.9,31.7 158.7,31.1 159.5,33.2 160.3,32.5 161.1,35.6 161.8,38.1 162.6,33.3 163.4,33.2 164.2,33.3 165.0,32.8 165.7,33.2 166.5,32.5 167.3,32.4 168.1,32.0 168.9,32.0 169.6,32.0 170.4,32.2 171.2,33.0 172.0,33.6 172.8,33.3 173.5,33.0 174.3,32.9 175.1,32.5 175.9,32.4 176.7,32.4 177.4,32.2 178.2,34.1 179.0,34.9 179.8,34.3 180.6,33.6 181.3,33.7 182.1,33.6 182.9,32.6 183.7,32.9 184.5,32.4 185.2,32.6 186.0,32.8 186.8,32.4 187.6,32.5 188.4,33.0 189.1,33.0 189.9,33.0 190.7,33.2 191.5,33.2 192.3,32.8 193.0,33.0 193.8,32.0 194.6,31.4 195.4,31.5 196.2,31.5 196.9,31.3 197.7,31.5 198.5,31.5 199.3,31.7 200.1,31.8 200.8,32.0 201.6,31.7 202.4,31.8 203.2,31.3 203.9,31.5 204.7,32.0 205.5,32.4 206.3,32.5 207.1,32.5 207.8,32.2 208.6,31.7 209.4,37.4 210.2,37.5 211.0,34.9 211.7,35.8 212.5,35.5 213.3,35.8 214.1,35.8 214.9,35.8 215.6,35.8 216.4,35.9 217.2,35.8 218.0,35.1 218.8,35.6 219.5,35.2 220.3,35.1 221.1,34.5 221.9,34.3 222.7,35.2 223.4,35.6 224.2,35.6 225.0,35.6 225.8,35.5 226.6,35.6 227.3,35.8 228.1,35.6 228.9,35.6 229.7,35.4 230.5,36.4 231.2,35.9 232.0,35.4 232.8,34.1 233.6,34.3 234.4,33.9 235.1,32.6 235.9,32.6 236.7,32.5 237.5,32.4 238.3,32.2 239.0,32.0 239.8,32.4 240.6,32.5 241.4,32.6 242.2,32.5 242.9,32.4 243.7,32.2 244.5,32.6 245.3,32.6 246.1,32.6 246.8,33.2 247.6,33.3 248.4,33.2 249.2,33.6 250.0,33.9 250.7,33.9 251.5,34.0 252.3,34.1 253.1,34.5 253.9,34.8 254.6,33.4 255.4,33.4 256.2,33.4 257.0,33.4 257.8,33.4 258.5,33.0 259.3,32.9 260.1,32.9 260.9,32.9 261.7,32.8 262.4,32.9 263.2,32.9 264.0,32.9 264.8,32.9 265.6,33.0 266.3,32.6 267.1,32.9 267.9,32.6 268.7,33.9 269.5,31.8 270.2,32.4 271.0,32.0 271.8,31.5 272.6,31.5 273.4,31.4 274.1,31.4 274.9,31.5 275.7,31.4 276.5,31.1 277.3,31.4 278.0,31.4 278.8,31.3 279.6,31.3 280.4,31.3 281.2,31.4 281.9,31.4 282.7,31.4 283.5,31.5 284.3,31.5 285.1,31.5 285.8,31.1 286.6,31.3 287.4,31.3 288.2,31.1 289.0,31.3 289.7,31.4 290.5,31.7 291.3,31.4 292.1,31.4 292.9,31.4 293.6,31.4 294.4,31.4 295.2,31.3 296.0,31.4 296.8,31.3 297.5,31.3 298.3,32.1 299.1,32.0 299.9,31.8 300.7,32.2 301.4,33.2 302.2,32.8 303.0,32.8 303.8,32.5 304.6,32.4 305.3,32.0 306.1,32.1 306.9,32.2 307.7,32.1 308.5,32.4 309.2,32.0 310.0,32.0 310.8,31.5 311.6,31.8 312.4,31.3 313.1,31.3 313.9,31.1 314.7,31.1 315.5,31.3 316.3,31.3 317.0,31.5 317.8,31.4 318.6,32.0 319.4,32.2 320.2,31.5 320.9,31.7 321.7,31.7 322.5,31.7 323.3,31.7 324.1,31.8 324.8,31.5 325.6,31.5 326.4,31.5 327.2,31.7 328.0,31.7 328.7,31.7 329.5,31.7 330.3,31.7 331.1,32.0 331.9,32.0 332.6,31.8 333.4,31.7 334.2,31.7 335.0,31.7 335.8,31.7 336.5,31.7 337.3,31.7 338.1,31.5 338.9,31.5 339.7,31.7 340.4,31.7 341.2,31.5 342.0,31.5 342.8,31.8 343.6,32.2 344.3,32.1 345.1,32.8 345.9,31.4 346.7,31.4 347.5,31.4 348.2,31.4 349.0,31.4 349.8,31.5 350.6,31.4 351.4,31.4 352.1,31.7 352.9,31.4 353.7,31.7 354.5,31.4 355.3,31.4 356.0,31.7 356.8,31.8 357.6,31.5 358.4,31.7 359.2,31.7 359.9,31.5 360.7,31.4 361.5,31.4 362.3,31.4 363.1,31.4 363.8,31.3 364.6,32.5 365.4,32.4 366.2,31.8 367.0,32.0 367.7,32.4 368.5,32.2 369.3,31.8 370.1,31.7 370.9,32.0 371.6,32.0 372.4,32.0 373.2,31.8 374.0,32.0 374.8,32.1 375.5,32.4 376.3,32.4 377.1,32.2 377.9,32.4 378.7,32.6 379.4,32.5 380.2,32.5 381.0,32.5 381.8,32.4 382.6,32.2 383.3,32.9 384.1,33.6 384.9,31.7 385.7,31.8 386.5,31.7 387.2,32.4 388.0,32.4 388.8,32.1 389.6,32.0 390.4,31.8 391.1,31.7 391.9,31.4 392.7,31.4 393.5,31.4 394.3,31.4 395.0,31.3 395.8,31.4 396.6,31.7 397.4,31.5 398.2,31.5 398.9,31.7 399.7,31.7 400.5,31.7 401.3,31.7 402.1,31.5 402.8,31.5 403.6,31.5 404.4,31.5 405.2,31.5 406.0,31.4 406.7,31.5 407.5,31.3 408.3,31.4 409.1,31.5 409.9,39.3 410.6,39.2 411.4,40.8 412.2,41.5 413.0,41.2 413.8,41.3 414.5,41.1 415.3,41.3 416.1,41.1 416.9,41.7 417.7,42.0 418.4,42.0 419.2,41.7 420.0,41.6 420.8,42.0 421.6,42.2 422.3,41.5 423.1,41.7 423.9,41.7 424.7,41.7 425.5,41.9 426.2,42.0 427.0,41.9 427.8,41.9 428.6,41.9 429.4,41.2 430.1,41.5 430.9,41.7 431.7,41.9 432.5,41.9 433.3,42.0 434.0,41.2 434.8,41.5 435.6,41.3 436.4,41.3 437.2,41.7 437.9,41.5 438.7,41.3 439.5,41.5 440.3,41.5 441.1,41.5 441.8,41.3 442.6,41.9 443.4,41.7 444.2,41.9 445.0,41.6 445.7,41.5 446.5,41.5 447.3,41.7 448.1,41.7 448.9,41.5 449.6,41.5 450.4,41.9 451.2,42.0 452.0,43.0 452.8,41.9 453.5,42.7 454.3,43.6 455.1,41.9 455.9,41.9 456.7,42.6 457.4,42.4 458.2,42.0 459.0,42.0 459.8,42.0 460.6,42.0 461.3,42.2 462.1,41.9 462.9,41.9 463.7,43.4 464.5,43.4 465.2,43.4 466.0,43.4 466.8,43.4 467.6,43.4 468.4,43.5 469.1,43.0 469.9,42.6 470.7,42.3 471.5,42.4 472.3,42.3 473.0,42.6 473.8,42.6 474.6,42.4 475.4,42.4 476.2,42.7 476.9,42.0 477.7,41.9 478.5,41.7 479.3,41.7 480.1,41.9 480.8,41.9 481.6,42.2 482.4,42.0 483.2,42.0 483.9,42.0 484.7,42.0 485.5,42.6 486.3,42.4 487.1,42.6 487.8,42.6 488.6,42.4 489.4,42.4 490.2,42.4 491.0,42.4 491.7,42.3 492.5,42.3 493.3,42.4 494.1,42.6 494.9,42.6 495.6,42.4 496.4,42.7 497.2,43.4 498.0,43.1 498.8,43.1 499.5,43.0 500.3,43.1 501.1,43.2 501.9,43.2 502.7,43.1 503.4,43.4 504.2,43.5 505.0,43.6 505.8,43.9 506.6,43.6 507.3,43.6 508.1,43.2 508.9,43.1 509.7,43.1 510.5,43.1 511.2,43.2 512.0,43.0 512.8,42.8 513.6,43.1 514.4,42.2 515.1,42.2 515.9,42.2 516.7,42.6 517.5,42.7 518.3,42.6 519.0,42.6 519.8,42.4 520.6,42.2 521.4,42.3 522.2,43.1 522.9,44.3 523.7,45.8 524.5,43.9 525.3,42.7 526.1,43.1 526.8,43.1 527.6,43.1 528.4,43.9 529.2,43.2 530.0,43.6 530.7,43.5 531.5,42.8 532.3,43.2 533.1,44.1 533.9,44.2 534.6,43.9 535.4,42.8 536.2,42.4 537.0,42.0 537.8,41.9 538.5,41.7 539.3,41.7 540.1,41.7 540.9,41.7 541.7,42.0 542.4,42.3 543.2,42.2 544.0,42.2 544.8,42.6 545.6,42.4 546.3,42.0 547.1,42.2 547.9,42.3 548.7,42.4 549.5,42.4 550.2,42.2 551.0,42.3 551.8,42.3 552.6,41.6 553.4,41.2 554.1,41.3 554.9,41.5 555.7,41.2 556.5,40.9 557.3,41.1 558.0,41.1 558.8,41.6 559.6,41.6 560.4,41.3 561.2,41.5 561.9,41.3 562.7,48.4 563.5,48.1 564.3,48.1 565.1,48.3 565.8,48.1 566.6,48.1 567.4,48.1 568.2,48.1 569.0,48.0 569.7,48.0 570.5,48.1 571.3,48.0 572.1,48.0 572.9,48.1 573.6,48.0 574.4,48.0 575.2,48.0 576.0,48.3 576.8,48.0 577.5,48.1 578.3,48.0 579.1,48.0 579.9,48.0 580.7,48.0 581.4,48.0 582.2,48.0 583.0,48.0 583.8,47.9 584.6,47.9 585.3,48.0 586.1,47.9 586.9,47.9 587.7,47.9 588.5,47.9 589.2,47.7 590.0,47.7 590.8,47.7 591.6,47.7 592.4,47.7 593.1,47.7 593.9,47.7 594.7,47.7 595.5,47.7 596.3,47.7 597.0,47.9 597.8,47.9 598.6,47.9 599.4,47.9 600.2,47.9 600.9,47.9 601.7,47.9 602.5,47.9 603.3,48.0 604.1,48.0 604.8,47.9 605.6,47.9 606.4,47.9 607.2,47.9 608.0,47.9 608.7,47.7 609.5,47.6 610.3,47.7 611.1,47.6 611.9,47.7 612.6,47.7 613.4,47.7 614.2,47.7 615.0,47.9 615.8,47.7 616.5,47.9 617.3,47.9 618.1,47.9 618.9,47.9 619.7,47.9 620.4,48.0 621.2,47.9"/>
+<text class="muted" x="68" y="12" text-anchor="start">seed 170000000: won the run</text>
+<line class="l1" stroke-width="2" x1="76" x2="98" y1="91" y2="91"/>
+<text x="104" y="95">critic value V (training input, with PRIV)</text>
+<line class="l4" stroke-width="2" stroke-dasharray="5 3" x1="76" x2="98" y1="108" y2="108"/>
+<text x="104" y="112">same critic, PRIV tokens removed (lower panel)</text>
+<rect class="f4" opacity=".3" x="76" y="119" width="22" height="11"/>
+<text x="104" y="129">monster fight</text>
+<rect class="f2" opacity=".3" x="76" y="136" width="22" height="11"/>
+<text x="104" y="146">elite fight</text>
+<rect class="f3" opacity=".3" x="76" y="153" width="22" height="11"/>
+<text x="104" y="163">boss fight</text>
+<line class="grid" x1="62" x2="622" y1="434.0" y2="434.0"/>
+<text class="muted" x="56" y="438.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="622" y1="400.0" y2="400.0"/>
+<text class="muted" x="56" y="404.0" text-anchor="end">0.25</text>
+<line class="grid" x1="62" x2="622" y1="366.0" y2="366.0"/>
+<text class="muted" x="56" y="370.0" text-anchor="end">0.5</text>
+<line class="grid" x1="62" x2="622" y1="332.0" y2="332.0"/>
+<text class="muted" x="56" y="336.0" text-anchor="end">0.75</text>
+<line class="grid" x1="62" x2="622" y1="298.0" y2="298.0"/>
+<text class="muted" x="56" y="302.0" text-anchor="end">1</text>
+<line class="grid" x1="62" x2="622" y1="264.0" y2="264.0"/>
+<text class="muted" x="56" y="268.0" text-anchor="end">1.25</text>
+<line class="ink" x1="62.0" x2="62.0" y1="434" y2="438"/>
+<text class="muted" x="62.0" y="451" text-anchor="middle">0</text>
+<line class="ink" x1="195.3" x2="195.3" y1="434" y2="438"/>
+<text class="muted" x="195.3" y="451" text-anchor="middle">50</text>
+<line class="ink" x1="328.7" x2="328.7" y1="434" y2="438"/>
+<text class="muted" x="328.7" y="451" text-anchor="middle">100</text>
+<line class="ink" x1="462.0" x2="462.0" y1="434" y2="438"/>
+<text class="muted" x="462.0" y="451" text-anchor="middle">150</text>
+<line class="ink" x1="595.3" x2="595.3" y1="434" y2="438"/>
+<text class="muted" x="595.3" y="451" text-anchor="middle">200</text>
+<line class="ink" x1="62" x2="622" y1="434" y2="434"/>
+<line class="ink" x1="62" x2="62" y1="264" y2="434"/>
+<text x="342.0" y="470" text-anchor="middle">decision index in the run</text>
+<text x="14" y="349.0" text-anchor="middle" transform="rotate(-90 14 349.0)">critic value (reward units)</text>
+<rect class="f4" opacity=".14" x="67.3" y="264" width="56.0" height="170"/>
+<rect class="f4" opacity=".14" x="128.7" y="264" width="29.30000000000001" height="170"/>
+<rect class="f4" opacity=".14" x="160.7" y="264" width="37.30000000000001" height="170"/>
+<rect class="f4" opacity=".14" x="203.3" y="264" width="69.39999999999998" height="170"/>
+<rect class="f2" opacity=".32" x="283.3" y="264" width="72.0" height="170"/>
+<rect class="f4" opacity=".14" x="366.0" y="264" width="34.69999999999999" height="170"/>
+<rect class="f2" opacity=".32" x="403.3" y="264" width="32.0" height="170"/>
+<rect class="f2" opacity=".32" x="440.7" y="264" width="32.0" height="170"/>
+<rect class="f4" opacity=".14" x="478.0" y="264" width="32.0" height="170"/>
+<rect class="f3" opacity=".32" x="518.0" y="264" width="104.0" height="170"/>
+<polyline class="l4" stroke-width="1.4" stroke-dasharray="5 3" points="62.0,347.4 64.7,370.5 67.3,344.5 70.0,341.5 72.7,341.2 75.3,340.8 78.0,343.0 80.7,347.2 83.3,338.1 86.0,341.4 88.7,344.8 91.3,337.3 94.0,337.2 96.7,338.7 99.3,335.3 102.0,334.4 104.7,336.2 107.3,335.7 110.0,335.7 112.7,335.5 115.3,336.4 118.0,340.2 120.7,336.1 123.3,362.2 126.0,360.2 128.7,332.0 131.3,332.3 134.0,335.3 136.7,324.2 139.3,329.4 142.0,329.0 144.7,325.6 147.3,326.6 150.0,326.4 152.7,327.5 155.3,326.6 158.0,348.9 160.7,326.6 163.3,328.6 166.0,329.1 168.7,332.8 171.3,323.0 174.0,321.5 176.7,327.8 179.3,323.8 182.0,327.8 184.7,325.7 187.3,325.2 190.0,330.0 192.7,326.8 195.3,327.5 198.0,346.3 200.7,355.1 203.3,352.5 206.0,343.2 208.7,349.8 211.3,354.3 214.0,359.5 216.7,367.0 219.3,355.9 222.0,358.5 224.7,358.8 227.3,363.3 230.0,349.3 232.7,349.0 235.3,352.1 238.0,358.4 240.7,355.4 243.3,355.0 246.0,357.3 248.7,361.1 251.3,345.6 254.0,350.0 256.7,351.6 259.3,352.1 262.0,354.7 264.7,354.3 267.3,356.1 270.0,355.4 272.7,355.4 275.3,355.1 278.0,378.5 280.7,355.8 283.3,359.9 286.0,342.3 288.7,340.7 291.3,343.2 294.0,335.3 296.7,335.0 299.3,333.0 302.0,330.0 304.7,335.5 307.3,350.1 310.0,354.8 312.7,354.2 315.3,360.3 318.0,350.6 320.7,362.9 323.3,358.8 326.0,351.7 328.7,343.6 331.3,326.0 334.0,332.4 336.7,334.3 339.3,336.2 342.0,336.6 344.7,338.1 347.3,343.4 350.0,360.2 352.7,340.0 355.3,381.5 358.0,396.1 360.7,391.6 363.3,369.3 366.0,350.4 368.7,352.3 371.3,357.3 374.0,358.9 376.7,358.1 379.3,359.1 382.0,356.8 384.7,352.3 387.3,357.0 390.0,350.9 392.7,351.4 395.3,351.2 398.0,352.4 400.7,380.0 403.3,400.8 406.0,385.6 408.7,373.1 411.3,368.9 414.0,347.0 416.7,349.3 419.3,349.5 422.0,354.2 424.7,355.9 427.3,361.0 430.0,360.3 432.7,353.1 435.3,358.1 438.0,336.1 440.7,351.0 443.3,330.6 446.0,329.6 448.7,329.0 451.3,330.0 454.0,329.3 456.7,329.4 459.3,330.4 462.0,329.8 464.7,325.9 467.3,326.7 470.0,326.4 472.7,329.0 475.3,345.6 478.0,349.3 480.7,316.9 483.3,318.5 486.0,320.0 488.7,324.7 491.3,321.1 494.0,323.3 496.7,324.4 499.3,323.3 502.0,319.1 504.7,318.7 507.3,318.8 510.0,320.0 512.7,326.0 515.3,329.3 518.0,367.9 520.7,360.4 523.3,361.8 526.0,371.7 528.7,381.4 531.3,381.8 534.0,358.5 536.7,356.1 539.3,366.5 542.0,367.4 544.7,351.6 547.3,359.7 550.0,354.2 552.7,349.7 555.3,345.3 558.0,349.0 560.7,353.8 563.3,349.1 566.0,338.1 568.7,328.9 571.3,330.5 574.0,327.8 576.7,324.1 579.3,312.0 582.0,313.5 584.7,311.1 587.3,310.6 590.0,309.4 592.7,306.7 595.3,307.7 598.0,307.2 600.7,306.4 603.3,307.5 606.0,349.4 608.7,401.8 611.3,422.6 614.0,429.5 616.7,429.4 619.3,433.2"/>
+<polyline class="l1" stroke-width="1.6" points="62.0,309.4 64.7,307.9 67.3,308.5 70.0,308.5 72.7,308.7 75.3,308.2 78.0,308.2 80.7,307.9 83.3,308.1 86.0,308.6 88.7,308.5 91.3,308.5 94.0,308.2 96.7,308.6 99.3,308.1 102.0,308.1 104.7,308.3 107.3,307.9 110.0,308.1 112.7,308.6 115.3,308.6 118.0,308.7 120.7,308.2 123.3,306.4 126.0,310.9 128.7,307.9 131.3,308.5 134.0,307.9 136.7,307.1 139.3,307.5 142.0,307.5 144.7,307.4 147.3,307.1 150.0,307.0 152.7,306.7 155.3,306.7 158.0,303.3 160.7,300.0 163.3,300.0 166.0,299.9 168.7,300.6 171.3,300.3 174.0,300.2 176.7,300.3 179.3,299.8 182.0,299.6 184.7,299.8 187.3,299.8 190.0,299.9 192.7,300.4 195.3,300.4 198.0,302.4 200.7,307.7 203.3,308.5 206.0,308.5 208.7,308.6 211.3,308.5 214.0,309.7 216.7,310.0 219.3,308.3 222.0,308.9 224.7,308.5 227.3,309.4 230.0,308.2 232.7,308.3 235.3,308.1 238.0,308.6 240.7,307.9 243.3,307.7 246.0,307.8 248.7,308.1 251.3,308.9 254.0,309.2 256.7,308.3 259.3,308.1 262.0,307.8 264.7,307.5 267.3,307.5 270.0,307.1 272.7,304.9 275.3,305.1 278.0,304.5 280.7,302.1 283.3,307.7 286.0,307.7 288.7,308.5 291.3,309.3 294.0,306.4 296.7,307.7 299.3,308.2 302.0,308.7 304.7,311.2 307.3,309.0 310.0,309.7 312.7,311.5 315.3,311.7 318.0,310.4 320.7,313.4 323.3,311.3 326.0,309.8 328.7,308.6 331.3,307.8 334.0,308.1 336.7,307.1 339.3,307.1 342.0,307.9 344.7,308.1 347.3,308.1 350.0,314.5 352.7,317.3 355.3,314.2 358.0,314.3 360.7,314.6 363.3,317.3 366.0,322.3 368.7,321.7 371.3,322.6 374.0,322.8 376.7,322.9 379.3,323.8 382.0,322.3 384.7,321.0 387.3,322.8 390.0,321.1 392.7,321.7 395.3,322.9 398.0,321.9 400.7,331.3 403.3,326.8 406.0,322.2 408.7,321.4 411.3,321.7 414.0,319.5 416.7,320.7 419.3,321.5 422.0,321.9 424.7,319.1 427.3,322.9 430.0,323.6 432.7,327.2 435.3,318.3 438.0,312.6 440.7,311.3 443.3,311.1 446.0,310.1 448.7,310.2 451.3,311.3 454.0,309.8 456.7,310.8 459.3,311.9 462.0,311.7 464.7,310.4 467.3,310.9 470.0,311.3 472.7,304.5 475.3,304.9 478.0,300.4 480.7,300.2 483.3,301.1 486.0,302.5 488.7,303.2 491.3,302.8 494.0,303.7 496.7,303.6 499.3,303.4 502.0,299.2 504.7,300.4 507.3,301.4 510.0,297.3 512.7,301.5 515.3,300.7 518.0,312.4 520.7,311.2 523.3,313.0 526.0,316.9 528.7,320.0 531.3,318.9 534.0,316.6 536.7,315.5 539.3,318.3 542.0,318.9 544.7,318.5 547.3,320.3 550.0,316.9 552.7,313.0 555.3,311.6 558.0,311.9 560.7,316.9 563.3,316.8 566.0,307.9 568.7,305.8 571.3,306.2 574.0,305.8 576.7,305.3 579.3,302.4 582.0,304.0 584.7,301.9 587.3,301.8 590.0,301.9 592.7,299.8 595.3,300.4 598.0,300.4 600.7,300.7 603.3,302.4 606.0,336.4 608.7,377.4 611.3,409.7 614.0,422.7 616.7,418.1 619.3,432.1"/>
+<text class="muted" x="68" y="262" text-anchor="start">seed 170000002: lost the run</text>
+</svg>
+<!-- /FIG:traces -->
+    </div>
+    <figcaption><b>Figure 4.4. The critic's value at every decision of two runs.</b> Shaded bands are fights: grey for ordinary monsters, orange for elites, purple for bosses. In the won run (top) the value sits near its ceiling for all 718 decisions and moves mostly at fight boundaries; it steps down after each boss because the boss bonus has just been paid and is no longer in the future. In the lost run (bottom) the value holds until the fight that kills Instinct, then collapses within a few turns. The dashed line is the same critic with its privileged tokens removed: it reads lower throughout, most of all early in the run, and falls at the same decision.</figcaption>
+  </figure>
+
+  <p>Where does the critic change its mind? We split the one-step surprises \(|\delta_t|\) by where they occur.</p>
+  <div class="table"><table>
+    <thead><tr><th>where the surprise occurs</th><th class="num">decisions</th><th class="num">mean \(|\delta|\)</th><th class="num">total \(|\delta|\)</th></tr></thead>
+    <tbody>
+      <tr><td>inside a fight</td><td class="num">113,041</td><td class="num">0.0063</td><td class="num">712.0</td></tr>
+      <tr><td>a fight's last decision</td><td class="num">4,604</td><td class="num">0.0261</td><td class="num">120.0</td></tr>
+      <tr><td>run chain step</td><td class="num">15,565</td><td class="num">0.0249</td><td class="num">387.5</td></tr>
+    </tbody>
+    <caption>Mean and total absolute one-step surprise, over all 200 runs. "Inside a fight" is a combat decision followed by another decision of the same fight. "Fight's last decision" is the hand-over from \(V^{\text{c}}\) to \(V^{\text{r}}\) (or to the end of the run). "Run chain step" is one arc of the run chain in Figure 4.3, spanning a whole fight when one follows.</caption>
+  </table></div>
+  <p>A surprise inside a fight is small: 0.006 on average, a quarter of the size of one at a fight's end. But there are 25 times as many of them, so in total most of the critic's revisions happen card by card. Per decision, the critic changes its mind most where a fight ends and the combat head hands over to the run head. The two-chain design puts a chain boundary exactly there.</p>
+
+  <h3>Is the critic calibrated?</h3>
+  <p>A regression is <dfn>calibrated</dfn> if, among inputs where it predicts \(v\), the label averages \(v\). We grouped all 133,398 decisions into bands of predicted value and compared each band's mean value with the mean return that actually followed.</p>
+  <figure id="fig-calibration">
+    <div class="scroll">
+<!-- FIG:calibration -->
+<svg viewBox="0 0 520 340" role="img" aria-label="Calibration: the mean return that followed each band of critic values, against the band's mean value.">
+<line class="grid" x1="62" x2="502" y1="294.0" y2="294.0"/>
+<text class="muted" x="56" y="298.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="502" y1="247.3" y2="247.3"/>
+<text class="muted" x="56" y="251.3" text-anchor="end">0.2</text>
+<line class="grid" x1="62" x2="502" y1="200.7" y2="200.7"/>
+<text class="muted" x="56" y="204.7" text-anchor="end">0.4</text>
+<line class="grid" x1="62" x2="502" y1="154.0" y2="154.0"/>
+<text class="muted" x="56" y="158.0" text-anchor="end">0.6</text>
+<line class="grid" x1="62" x2="502" y1="107.3" y2="107.3"/>
+<text class="muted" x="56" y="111.3" text-anchor="end">0.8</text>
+<line class="grid" x1="62" x2="502" y1="60.7" y2="60.7"/>
+<text class="muted" x="56" y="64.7" text-anchor="end">1</text>
+<line class="grid" x1="62" x2="502" y1="14.0" y2="14.0"/>
+<text class="muted" x="56" y="18.0" text-anchor="end">1.2</text>
+<line class="ink" x1="62.0" x2="62.0" y1="294" y2="298"/>
+<text class="muted" x="62.0" y="311" text-anchor="middle">0</text>
+<line class="ink" x1="135.3" x2="135.3" y1="294" y2="298"/>
+<text class="muted" x="135.3" y="311" text-anchor="middle">0.2</text>
+<line class="ink" x1="208.7" x2="208.7" y1="294" y2="298"/>
+<text class="muted" x="208.7" y="311" text-anchor="middle">0.4</text>
+<line class="ink" x1="282.0" x2="282.0" y1="294" y2="298"/>
+<text class="muted" x="282.0" y="311" text-anchor="middle">0.6</text>
+<line class="ink" x1="355.3" x2="355.3" y1="294" y2="298"/>
+<text class="muted" x="355.3" y="311" text-anchor="middle">0.8</text>
+<line class="ink" x1="428.7" x2="428.7" y1="294" y2="298"/>
+<text class="muted" x="428.7" y="311" text-anchor="middle">1</text>
+<line class="ink" x1="502.0" x2="502.0" y1="294" y2="298"/>
+<text class="muted" x="502.0" y="311" text-anchor="middle">1.2</text>
+<line class="ink" x1="62" x2="502" y1="294" y2="294"/>
+<line class="ink" x1="62" x2="62" y1="14" y2="294"/>
+<text x="282.0" y="330" text-anchor="middle">mean critic value V in the band (reward units)</text>
+<text x="14" y="154.0" text-anchor="middle" transform="rotate(-90 14 154.0)">G (reward units) or share won</text>
+<polyline class="l4" stroke-width="1.2" stroke-dasharray="4 4" points="62.0,294.0 502.0,14.0"/>
+<polyline class="l1" stroke-width="1.4" points="87.0,286.0 179.8,191.3 250.4,177.1 325.0,127.4 376.1,84.9 412.9,56.6 445.4,43.1 472.8,23.8"/>
+<circle class="f1" cx="87.0" cy="286.0" r="3.5"/>
+<circle class="f1" cx="179.8" cy="191.3" r="3.5"/>
+<circle class="f1" cx="250.4" cy="177.1" r="3.5"/>
+<circle class="f1" cx="325.0" cy="127.4" r="3.5"/>
+<circle class="f1" cx="376.1" cy="84.9" r="3.5"/>
+<circle class="f1" cx="412.9" cy="56.6" r="3.5"/>
+<circle class="f1" cx="445.4" cy="43.1" r="3.5"/>
+<circle class="f1" cx="472.8" cy="23.8" r="3.5"/>
+<rect class="f2" x="83.5" y="286.1" width="7.0" height="7.0"/>
+<rect class="f2" x="176.3" y="200.0" width="7.0" height="7.0"/>
+<rect class="f2" x="246.9" y="193.5" width="7.0" height="7.0"/>
+<rect class="f2" x="321.5" y="150.4" width="7.0" height="7.0"/>
+<rect class="f2" x="372.6" y="113.1" width="7.0" height="7.0"/>
+<rect class="f2" x="409.4" y="84.0" width="7.0" height="7.0"/>
+<rect class="f2" x="441.9" y="65.2" width="7.0" height="7.0"/>
+<rect class="f2" x="469.3" y="60.4" width="7.0" height="7.0"/>
+<text class="muted" x="80.0" y="279.0" text-anchor="end">788</text>
+<text class="muted" x="172.8" y="184.3" text-anchor="end">1,496</text>
+<text class="muted" x="243.4" y="170.1" text-anchor="end">5,383</text>
+<text class="muted" x="318.0" y="120.4" text-anchor="end">11,916</text>
+<text class="muted" x="369.1" y="77.9" text-anchor="end">15,520</text>
+<text class="muted" x="405.9" y="49.6" text-anchor="end">33,347</text>
+<text class="muted" x="438.4" y="36.1" text-anchor="end">53,083</text>
+<text class="muted" x="465.8" y="16.8" text-anchor="end">11,865</text>
+<circle class="f1" cx="293" cy="230" r="3.5"/>
+<text x="310" y="234">return that followed, G</text>
+<rect class="f2" x="289" y="243" width="8" height="8"/>
+<text x="310" y="251">share of runs won</text>
+<line class="l4" stroke-width="2" stroke-dasharray="5 3" x1="282" x2="304" y1="264" y2="264"/>
+<text x="310" y="268">perfect calibration</text>
+</svg>
+<!-- /FIG:calibration -->
+    </div>
+    <figcaption><b>Figure 4.5. Calibration of the critic.</b> Each circle is a band of decisions (numbers give the count), placed at the band's mean predicted value and the mean return that followed. On the dashed diagonal the critic would be exactly right on average. Squares show the share of those decisions that belong to won runs; they sit below the circles near the top because \(G\) also counts boss and floor rewards.</figcaption>
+  </figure>
+  <details class="predict"><summary>Pause and predict: when the critic says about 0.5, how often is the run won?</summary>
+    <p>42% of the 5,383 decisions with \(0.4 \le V &lt; 0.6\) belong to runs that were won. Averaged over those decisions, the return that followed was 0.501 against a predicted 0.514: right on average. The win share sits below the value because a won run pays about 1.24, so a 42% chance of winning plus some boss and floor reward is worth about 0.5.</p>
+  </details>
+  <p>The circles sit close to the diagonal across the whole range. Below 0.2 the critic is slightly high (0.068 predicted, 0.034 realised). Between 0.2 and 0.4 it is low (0.321 against 0.440, over 1,496 decisions), and above 0.8 it is low by 0.03 to 0.06. One likely reason for the upper gap: these runs were played greedily, and the critic was trained to evaluate the sampling policy. If greedy play wins more often than sampled play, the critic will under-predict greedy returns by exactly this kind of offset. (We did not measure sampled play here, so this is an explanation, not a measurement.)</p>
+
+  <h3>How much of the return does the critic explain?</h3>
+  <p>The usual diagnostic is the <dfn>explained variance</dfn>, \(1 - \operatorname{Var}(G_t - V_\phi(s_t)) / \operatorname{Var}(G_t)\): the share of the return's variance across decisions that the critic predicts. It is the \(R^2\) of the regression, with \(G_t\) as the label. We computed it with the repository's own function, separately for combat and run decisions, and again with the privileged tokens removed.</p>
+  <div class="table"><table>
+    <thead><tr><th>decisions</th><th class="num">with PRIV (as trained)</th><th class="num">PRIV removed</th></tr></thead>
+    <tbody>
+      <tr><td>inside fights</td><td class="num">0.248</td><td class="num">0.047</td></tr>
+      <tr><td>between fights</td><td class="num">0.191</td><td class="num">-0.135</td></tr>
+    </tbody>
+    <caption>Explained variance of the return-to-go \(G_t\) by \(V_\phi(s_t)\), over 133,398 decisions. The training statistic uses the λ-return as the label; we use the full return, which is noisier and gives lower numbers.</caption>
+  </table></div>
+  <p>With its privileged tokens, the critic explains a quarter of the return's variance inside fights and a fifth between fights. Remove them and the share inside fights falls to 0.05; between fights it goes negative, meaning the critic predicts worse than a constant would. A negative score is possible because the network now reads an input it never saw in training, and its values shift down across the board (the dashed line in Figure 4.4). The size of the drop says this critic leans heavily on what it knows about the draw pile, the enemies' moves and the map ahead.</p>
+  <div class="measured"><span class="label">Measured · substitute for a non-privileged critic</span>
+    <p>"PRIV removed" is not a critic trained without privileged information. It is the trained critic fed an input it never saw in training: the same network with the privileged tokens deleted. Its drop in explained variance is an upper bound on how much this critic relies on them, not a measure of what an honest critic could learn. An honest critic for comparison would need its own training run, which we did not do.</p>
+  </div>
+
+  <h3>Bias against variance, measured</h3>
+  <p>Equation \eqref{eq:gae} predicts that the spread of \(\hat{A}_t\) grows with \(\lambda\), because more future surprises enter each estimate. We recomputed every advantage of every run with the repository's function at nine values of \(\lambda\), setting both chains' \(\lambda\) together.</p>
+  <figure id="fig-lambda">
+    <div class="scroll">
+<!-- FIG:lambda -->
+<svg viewBox="0 0 640 260" role="img" aria-label="Standard deviation of the advantage estimate across decisions as lambda moves from 0 to 1.">
+<line class="grid" x1="62" x2="622" y1="214.0" y2="214.0"/>
+<text class="muted" x="56" y="218.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="622" y1="185.4" y2="185.4"/>
+<text class="muted" x="56" y="189.4" text-anchor="end">0.05</text>
+<line class="grid" x1="62" x2="622" y1="156.9" y2="156.9"/>
+<text class="muted" x="56" y="160.9" text-anchor="end">0.1</text>
+<line class="grid" x1="62" x2="622" y1="128.3" y2="128.3"/>
+<text class="muted" x="56" y="132.3" text-anchor="end">0.15</text>
+<line class="grid" x1="62" x2="622" y1="99.7" y2="99.7"/>
+<text class="muted" x="56" y="103.7" text-anchor="end">0.2</text>
+<line class="grid" x1="62" x2="622" y1="71.1" y2="71.1"/>
+<text class="muted" x="56" y="75.1" text-anchor="end">0.25</text>
+<line class="grid" x1="62" x2="622" y1="42.6" y2="42.6"/>
+<text class="muted" x="56" y="46.6" text-anchor="end">0.3</text>
+<line class="grid" x1="62" x2="622" y1="14.0" y2="14.0"/>
+<text class="muted" x="56" y="18.0" text-anchor="end">0.35</text>
+<line class="ink" x1="62.0" x2="62.0" y1="214" y2="218"/>
+<text class="muted" x="62.0" y="231" text-anchor="middle">0</text>
+<line class="ink" x1="202.0" x2="202.0" y1="214" y2="218"/>
+<text class="muted" x="202.0" y="231" text-anchor="middle">0.25</text>
+<line class="ink" x1="342.0" x2="342.0" y1="214" y2="218"/>
+<text class="muted" x="342.0" y="231" text-anchor="middle">0.5</text>
+<line class="ink" x1="482.0" x2="482.0" y1="214" y2="218"/>
+<text class="muted" x="482.0" y="231" text-anchor="middle">0.75</text>
+<line class="ink" x1="566.0" x2="566.0" y1="214" y2="218"/>
+<text class="muted" x="566.0" y="231" text-anchor="middle">0.9</text>
+<line class="ink" x1="622.0" x2="622.0" y1="214" y2="218"/>
+<text class="muted" x="622.0" y="231" text-anchor="middle">1</text>
+<line class="ink" x1="62" x2="622" y1="214" y2="214"/>
+<line class="ink" x1="62" x2="62" y1="14" y2="214"/>
+<text x="342.0" y="250" text-anchor="middle">λ (unitless)</text>
+<text x="14" y="114.0" text-anchor="middle" transform="rotate(-90 14 114.0)">std of Â (reward units)</text>
+<polyline class="l1" stroke-width="1.8" points="62.0,203.4 202.0,203.3 342.0,202.3 482.0,199.4 566.0,193.3 594.0,187.2 605.2,182.0 616.4,170.6 622.0,156.8"/>
+<circle class="f1" cx="62.0" cy="203.4" r="3.5"/>
+<circle class="f1" cx="202.0" cy="203.3" r="3.5"/>
+<circle class="f1" cx="342.0" cy="202.3" r="3.5"/>
+<circle class="f1" cx="482.0" cy="199.4" r="3.5"/>
+<circle class="f1" cx="566.0" cy="193.3" r="3.5"/>
+<circle class="f1" cx="594.0" cy="187.2" r="3.5"/>
+<circle class="f1" cx="605.2" cy="182.0" r="3.5"/>
+<circle class="f1" cx="616.4" cy="170.6" r="3.5"/>
+<circle class="f1" cx="622.0" cy="156.8" r="3.5"/>
+<polyline class="l2" stroke-width="1.8" points="62.0,184.6 202.0,184.3 342.0,181.5 482.0,172.6 566.0,153.3 594.0,132.1 605.2,112.8 616.4,69.5 622.0,22.8"/>
+<rect class="f2" x="58.5" y="181.1" width="7.0" height="7.0"/>
+<rect class="f2" x="198.5" y="180.8" width="7.0" height="7.0"/>
+<rect class="f2" x="338.5" y="178.0" width="7.0" height="7.0"/>
+<rect class="f2" x="478.5" y="169.1" width="7.0" height="7.0"/>
+<rect class="f2" x="562.5" y="149.8" width="7.0" height="7.0"/>
+<rect class="f2" x="590.5" y="128.6" width="7.0" height="7.0"/>
+<rect class="f2" x="601.7" y="109.3" width="7.0" height="7.0"/>
+<rect class="f2" x="612.9" y="66.0" width="7.0" height="7.0"/>
+<rect class="f2" x="618.5" y="19.3" width="7.0" height="7.0"/>
+<circle class="f1" cx="87" cy="24" r="3.5"/>
+<text x="104" y="28">combat decisions</text>
+<rect class="f2" x="83" y="37" width="8" height="8"/>
+<text x="104" y="45">run decisions (map, rewards, shop)</text>
+</svg>
+<!-- /FIG:lambda -->
+    </div>
+    <figcaption><b>Figure 4.6. The spread of the advantage estimate as λ moves from TD to Monte Carlo.</b> At λ = 0 each advantage is a single surprise; at λ = 1 it is the full return minus the critic's value. Notice that the spread grows slowly up to about 0.75 and then fast: between λ = 0.95 and λ = 1 it more than doubles on both kinds of decision.</figcaption>
+  </figure>
+  <p>Moving from \(\lambda = 0\) to \(\lambda = 1\) multiplies the standard deviation of \(\hat{A}_t\) by 5.4 inside fights (0.019 to 0.100) and by 6.5 between fights (0.051 to 0.335). Run decisions spread more because each run-chain step spans a whole fight. The project's values, 0.95 and 0.97, sit just before the curve turns up: they buy a look-ahead of tens of decisions (Figure 4.1) at less than half the Monte Carlo spread. This plot shows only the variance side of the trade. The bias side, the cost of trusting a critic that explains a quarter of the variance, does not appear here, which is why \(\lambda\) is set by training experiments rather than by a formula.</p>
+
+  <h3>The elite fork, measured</h3>
+  <p>For every fight that follows a map decision, we took \(V^{\text{r}}\) at the decision just before the fight and just after it, and grouped fights by room type and by the HP fraction at the fight's start. Act 3's second boss has no map decision before it and is left out.</p>
+  <details class="predict"><summary>Pause and predict: on average, does the run value rise or fall across an elite fight, and how does that compare with an ordinary fight?</summary>
+    <p>It rises slightly: by +0.005 on average over 1,382 elite fights. Across an ordinary monster fight it falls by 0.012. The difference, +0.017, is the critic's estimate of what an elite is worth to this policy beyond an ordinary fight, after the HP it costs.</p>
+  </details>
+  <figure id="fig-fork">
+    <div class="scroll">
+<!-- FIG:fork -->
+<svg viewBox="0 0 640 280" role="img" aria-label="Mean change in the run value across a fight, by room type and by HP at the start of the fight.">
+<line class="grid" x1="62" x2="622" y1="217.4" y2="217.4"/>
+<text class="muted" x="56" y="221.4" text-anchor="end">-0.06</text>
+<line class="grid" x1="62" x2="622" y1="172.2" y2="172.2"/>
+<text class="muted" x="56" y="176.2" text-anchor="end">-0.04</text>
+<line class="grid" x1="62" x2="622" y1="127.0" y2="127.0"/>
+<text class="muted" x="56" y="131.0" text-anchor="end">-0.02</text>
+<line class="grid" x1="62" x2="622" y1="81.8" y2="81.8"/>
+<text class="muted" x="56" y="85.8" text-anchor="end">+0.00</text>
+<line class="grid" x1="62" x2="622" y1="36.6" y2="36.6"/>
+<text class="muted" x="56" y="40.6" text-anchor="end">+0.02</text>
+<line class="ink" x1="62" x2="622" y1="234" y2="234"/>
+<line class="ink" x1="62" x2="62" y1="14" y2="234"/>
+<text x="342.0" y="270" text-anchor="middle">HP at the start of the fight (share of max HP)</text>
+<text x="14" y="124.0" text-anchor="middle" transform="rotate(-90 14 124.0)">mean ΔV_run (reward units)</text>
+<line class="ink" x1="62" x2="622" y1="81.8" y2="81.8"/>
+<text class="muted" x="132.0" y="251" text-anchor="middle">all fights</text>
+<rect class="f4" x="85.8" y="81.8" width="28.799999999999997" height="27.5"/>
+<text class="muted" x="101.2" y="121.3" text-anchor="middle" font-size="10">2634</text>
+<rect class="f2" x="116.6" y="71.4" width="28.80000000000001" height="10.399999999999991"/>
+<text class="muted" x="132.0" y="67.4" text-anchor="middle" font-size="10">1382</text>
+<rect class="f3" x="147.4" y="81.8" width="28.799999999999983" height="117.89999999999999"/>
+<text class="muted" x="162.8" y="211.7" text-anchor="middle" font-size="10">400</text>
+<text class="muted" x="272.0" y="251" text-anchor="middle">HP &lt; 50%</text>
+<rect class="f4" x="225.8" y="81.8" width="28.80000000000001" height="35.60000000000001"/>
+<text class="muted" x="241.2" y="129.4" text-anchor="middle" font-size="10">61</text>
+<rect class="f2" x="256.6" y="81.8" width="28.799999999999955" height="21.200000000000003"/>
+<text class="muted" x="272.0" y="115.0" text-anchor="middle" font-size="10">43</text>
+<rect class="f3" x="287.4" y="81.8" width="28.80000000000001" height="27.200000000000003"/>
+<text class="muted" x="302.8" y="121.0" text-anchor="middle" font-size="10">9</text>
+<text class="muted" x="412.0" y="251" text-anchor="middle">HP 50-80%</text>
+<rect class="f4" x="365.8" y="81.8" width="28.80000000000001" height="35.400000000000006"/>
+<text class="muted" x="381.2" y="129.2" text-anchor="middle" font-size="10">870</text>
+<rect class="f2" x="396.6" y="71.5" width="28.799999999999955" height="10.299999999999997"/>
+<text class="muted" x="412.0" y="67.5" text-anchor="middle" font-size="10">509</text>
+<rect class="f3" x="427.4" y="81.8" width="28.80000000000001" height="106.2"/>
+<text class="muted" x="442.8" y="200.0" text-anchor="middle" font-size="10">161</text>
+<text class="muted" x="552.0" y="251" text-anchor="middle">HP ≥ 80%</text>
+<rect class="f4" x="505.8" y="81.8" width="28.80000000000001" height="23.200000000000003"/>
+<text class="muted" x="521.2" y="117.0" text-anchor="middle" font-size="10">1703</text>
+<rect class="f2" x="536.6" y="69.6" width="28.799999999999955" height="12.200000000000003"/>
+<text class="muted" x="552.0" y="65.6" text-anchor="middle" font-size="10">830</text>
+<rect class="f3" x="567.4" y="81.8" width="28.800000000000068" height="129.60000000000002"/>
+<text class="muted" x="582.8" y="223.4" text-anchor="middle" font-size="10">230</text>
+<rect class="f4" x="519" y="20" width="8" height="8"/>
+<text x="540" y="28">monster</text>
+<rect class="f2" x="519" y="37" width="8" height="8"/>
+<text x="540" y="45">elite</text>
+<rect class="f3" x="519" y="54" width="8" height="8"/>
+<text x="540" y="62">boss</text>
+</svg>
+<!-- /FIG:fork -->
+    </div>
+    <figcaption><b>Figure 4.7. How a fight changes the critic's view of the run.</b> Bars are the mean of \(V^{\text{r}}_{\text{after}} - V^{\text{r}}_{\text{before}}\); small numbers are fight counts. A run that ends in the fight counts \(V_{\text{after}} = 0\). Boss bars are negative partly by construction: the boss bonus is paid during the fight, so it leaves the value.</figcaption>
+  </figure>
+  <div class="table"><table>
+    <thead><tr><th>room</th><th>HP at start</th><th class="num">fights</th><th class="num">runs ended</th><th class="num">mean \(V_{\text{before}}\)</th><th class="num">mean \(\Delta V\)</th><th class="num">mean \(\delta\)</th></tr></thead>
+    <tbody>
+      <tr><td>monster</td><td>all</td><td class="num">2634</td><td class="num">0</td><td class="num">0.953</td><td class="num">−0.0122</td><td class="num">−0.0102</td></tr>
+      <tr><td>monster</td><td><50%</td><td class="num">61</td><td class="num">0</td><td class="num">0.848</td><td class="num">−0.0157</td><td class="num">−0.0138</td></tr>
+      <tr><td>monster</td><td>50-80%</td><td class="num">870</td><td class="num">0</td><td class="num">0.949</td><td class="num">−0.0157</td><td class="num">−0.0136</td></tr>
+      <tr><td>monster</td><td>>=80%</td><td class="num">1703</td><td class="num">0</td><td class="num">0.959</td><td class="num">−0.0103</td><td class="num">−0.0083</td></tr>
+      <tr><td>elite</td><td>all</td><td class="num">1382</td><td class="num">6</td><td class="num">0.962</td><td class="num">0.0046</td><td class="num">0.0068</td></tr>
+      <tr><td>elite</td><td><50%</td><td class="num">43</td><td class="num">2</td><td class="num">0.849</td><td class="num">−0.0094</td><td class="num">−0.0073</td></tr>
+      <tr><td>elite</td><td>50-80%</td><td class="num">509</td><td class="num">2</td><td class="num">0.956</td><td class="num">0.0045</td><td class="num">0.0067</td></tr>
+      <tr><td>elite</td><td>>=80%</td><td class="num">830</td><td class="num">2</td><td class="num">0.972</td><td class="num">0.0054</td><td class="num">0.0075</td></tr>
+      <tr><td>boss</td><td>all</td><td class="num">400</td><td class="num">11</td><td class="num">0.962</td><td class="num">−0.0521</td><td class="num">−0.0015</td></tr>
+      <tr><td>boss</td><td><50%</td><td class="num">9</td><td class="num">0</td><td class="num">0.932</td><td class="num">−0.0120</td><td class="num">0.0399</td></tr>
+      <tr><td>boss</td><td>50-80%</td><td class="num">161</td><td class="num">5</td><td class="num">0.957</td><td class="num">−0.0470</td><td class="num">0.0035</td></tr>
+      <tr><td>boss</td><td>>=80%</td><td class="num">230</td><td class="num">6</td><td class="num">0.967</td><td class="num">−0.0573</td><td class="num">−0.0066</td></tr>
+    </tbody>
+    <caption>\(\Delta V = V^{\text{r}}_{\text{after}} - V^{\text{r}}_{\text{before}}\). \(\delta\) adds the reward paid during the fight (floors, boss bonus): it is the run chain's surprise, Equation \eqref{eq:elite}. Over 200 runs.</caption>
+  </table></div>
+  <p>Elites raise the run's value at every HP level except below half HP, where they lower it (−0.009 over 43 fights, 2 of which ended the run). Ordinary fights lower it at every HP level: each one costs HP and potions and adds no relic. A won boss in act 1 or act 2 lowers \(V^{\text{r}}\) by a median of 0.044 (389 fights), because the +0.05 bonus is paid during the fight and leaves the future; add it back and the run chain's surprise across a boss is close to zero. Every one of the 34 lost runs ended in an elite or a boss fight: 6 in elites, 11 in the bosses in this table, and 17 in act 3's second boss, which the table leaves out. So the advantage of the map decision before an elite, Equation \eqref{eq:elite}, is on average positive for this policy, and the critic makes it so without waiting for the end of the run.</p>
+
+  <h2 id="confusions">12. Common confusions</h2>
+  <p><b>"The critic is a Q-network without the action."</b> A DQN regresses on \(r + \gamma \max_{a'} Q(s', a')\) and acts by arg max. This critic regresses on returns of the current policy, with no max, and never chooses anything. It estimates \(V^\pi\), which changes every time \(\pi\) changes, rather than \(V^*\), which is fixed. Its errors cannot cause maximisation bias, but a stale critic gives stale advantages.</p>
+  <p><b>"A positive advantage means a good action."</b> It means better than this policy's own average in that state, Equation \eqref{eq:a-mean-zero}. As the policy improves, the bar rises: an action that had positive advantage under a weak policy can have negative advantage under a strong one. That is why the advantage, not the return, drives improvement: it always asks "better than what I usually do here?"</p>
+  <p><b>"λ is another discount factor."</b> Both multiply future terms, but \(\gamma\) changes the objective and \(\lambda\) does not. With an exact critic, every \(\lambda\) gives an unbiased advantage. \(\lambda\) only decides how much to trust the critic against the observed rewards. Spire Mentor uses \(\gamma = 1\) and still has \(\lambda &lt; 1\).</p>
+  <p><b>"Low explained variance means a broken critic."</b> The label is the return to the end of the run, which depends on fights the map has not generated yet. A perfect estimate of the expected return still leaves that luck unexplained. Explained variance in a long, random game has a ceiling well below one. What should worry you is explained variance that falls over training, or a critic that is miscalibrated in one direction.</p>
+  <p><b>"Giving the critic hidden information is cheating."</b> The policy never sees it, so play stays honest. The critic is a training device: it only decides which actions get credit. Equation \eqref{eq:priv-baseline} shows the extra information adds no bias as a baseline, and the variance it removes is luck the policy could not have controlled anyway.</p>
+
+  <h2 id="experiments">13. Suggested experiments</h2>
+  <p>All commands run from the fork's worktree. They need the published weights and the simulator's Python environment.</p>
+  <ol>
+    <li><b>The full check.</b> Plays 300 seeds, prints a value trace, the calibration table, GAE by hand against the repository's function, and the elite fork. <code>--quick</code> plays 40.
+      <pre><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-4-critic/check.py --quick</code></pre></li>
+    <li><b>Regenerate this chapter's data and figures</b>, with more or fewer runs. <code>figures.py</code> writes <code>chapter_data.json</code>; <code>plots.py</code> redraws every figure from it.
+      <pre><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-4-critic/figures.py --runs 200 --workers 3
+python3 tour/stop-4-critic/plots.py</code></pre></li>
+    <li><b>Change only one chain's λ.</b> In <code>figures.py</code>, <code>lam_sweep</code> sets both chains together. Hold the run chain at 0.97 and sweep only the combat chain (pass <code>lam_r=0.97</code>), then rerun with <code>--reuse</code> to skip the simulation. Does the combat-decision spread change in the same way?</li>
+    <li><b>The hand computation as a test.</b> The tests compare the loop in Equation \eqref{eq:gae-rec} with the repository's vectorised version on 20 synthetic runs and one real run.
+      <pre><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run -m pytest tour/stop-4-critic</code></pre></li>
+  </ol>
+
+  <h2 id="references">References</h2>
+  <ol class="refs">
+    <li id="ref-1">Sutton, R. S. and Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em>, second edition. MIT Press. §3.5 Policies and Value Functions; §3.6 Optimal Policies and Optimal Value Functions; §6.1 TD Prediction; §7.1 n-step TD Prediction; §9.3 Stochastic-gradient and Semi-gradient Methods; §12.1 The λ-return; §13.4 REINFORCE with Baseline; §13.5 Actor–Critic Methods.</li>
+    <li id="ref-2">Schulman, J., Moritz, P., Levine, S., Jordan, M. I. and Abbeel, P. (2016). <em>High-Dimensional Continuous Control Using Generalized Advantage Estimation</em>. ICLR 2016. arXiv:1506.02438.</li>
+    <li id="ref-3">Schulman, J., Wolski, F., Dhariwal, P., Radford, A. and Klimov, O. (2017). <em>Proximal Policy Optimization Algorithms</em>. arXiv:1707.06347.</li>
+    <li id="ref-4">Pinto, L., Andrychowicz, M., Welinder, P., Zaremba, W. and Abbeel, P. (2018). <em>Asymmetric Actor Critic for Image-Based Robot Learning</em>. Robotics: Science and Systems 2018. arXiv:1710.06542.</li>
+    <li id="ref-5">Baisero, A. and Amato, C. (2022). <em>Unbiased Asymmetric Reinforcement Learning under Partial Observability</em>. AAMAS 2022. arXiv:2105.11674.</li>
+    <li id="ref-6">Konda, V. R. and Tsitsiklis, J. N. (2000). <em>Actor-Critic Algorithms</em>. Advances in Neural Information Processing Systems 12.</li>
+    <li id="ref-7">Mnih, V. et al. (2015). <em>Human-level control through deep reinforcement learning</em>. Nature 518, 529-533.</li>
+    <li id="ref-8">Greensmith, E., Bartlett, P. L. and Baxter, J. (2004). <em>Variance Reduction Techniques for Gradient Estimates in Reinforcement Learning</em>. Journal of Machine Learning Research 5, 1471-1530.</li>
+  </ol>
+</main>
+
+<footer class="chapter"><span>← Chapter 3: Reward and return</span><span>Chapter 5: Policy gradients and PPO →</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>

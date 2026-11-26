@@ -198,7 +198,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--quick", action="store_true", help="40 runs instead of 300")
     ap.add_argument("--runs", type=int, default=None)
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=3)
     args = ap.parse_args()
     n = args.runs or (40 if args.quick else 300)
     seeds = list(tourlib.PANEL_A[:n])
