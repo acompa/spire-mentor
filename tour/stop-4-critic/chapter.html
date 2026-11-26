@@ -123,7 +123,7 @@ main li pre { overflow-x: auto; max-width: 100%; background: var(--surface); pad
 <header class="chapter">
   <div class="eyebrow"><span>RL tour · Chapter 4 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
   <h1>Value functions and advantage</h1>
-  <p class="lede">A run of Slay the Spire 2 is about 670 decisions long, and almost all of its reward arrives at the end. This chapter builds the machinery that turns that one late number into a score for each decision: the value function, the critic that learns it by regression, and the advantage estimate that weights the policy update.</p>
+  <p class="lede">A value function predicts the return that a policy will collect from a state. The critic is a network trained to be that function. The advantage is how much better an action turned out than the critic predicted, and it is the weight on each decision in the policy update. A Spire Mentor run is about 670 decisions long, and almost all of its reward arrives at the end. The critic and the advantage turn that one late number into a score for each decision.</p>
 </header>
 
 <nav class="contents" aria-label="Chapter contents">
@@ -131,15 +131,15 @@ main li pre { overflow-x: auto; max-width: 100%; background: var(--surface); pad
   <ol>
     <li><a href="#opening">The credit assignment problem</a></li>
     <li><a href="#values">V, Q and A</a></li>
-    <li><a href="#bellman">Bellman equations, without the max</a></li>
+    <li><a href="#bellman">Bellman equations without the max</a></li>
     <li><a href="#regression">The critic as regression</a></li>
-    <li><a href="#targets">Monte Carlo, TD and everything between</a></li>
+    <li><a href="#targets">Monte Carlo targets, TD targets and the range between them</a></li>
     <li><a href="#advantage">Why the advantage weights the update</a></li>
     <li><a href="#gae">Generalised advantage estimation</a></li>
     <li><a href="#privileged">Privileged critics</a></li>
-    <li><a href="#engineered">Textbook against engineered</a></li>
-    <li><a href="#spire">In Spire Mentor</a></li>
-    <li><a href="#measured">Measured</a></li>
+    <li><a href="#engineered">How real systems change the textbook recipe</a></li>
+    <li><a href="#spire">The critic in Spire Mentor</a></li>
+    <li><a href="#measured">The critic measured on 200 runs</a></li>
     <li><a href="#confusions">Common confusions</a></li>
     <li><a href="#experiments">Suggested experiments</a></li>
     <li><a href="#references">References</a></li>
@@ -148,106 +148,107 @@ main li pre { overflow-x: auto; max-width: 100%; background: var(--surface); pad
 
 <main>
   <h2 id="opening">1. The credit assignment problem</h2>
-  <p>Start with one decision. Floor 11 of act 1, and the map forks. The left path walks through an <em>elite</em> room, a harder fight that pays a relic. The right path walks around it. Our agent, Instinct, takes the left path and wins the fight after 20 card plays. Was that choice good?</p>
-  <p>The reward function in this project (Chapter 3 builds it) pays +1 for winning the run, +0.05 for each boss beaten and +0.002 for each new floor. The elite fight pays nothing beyond its floor. It costs HP. Its payoff, the relic, shows up only as a higher chance of beating bosses several hundred decisions later. If we scored the elite choice with the reward that eventually arrived, we would hand it the same +1 or 0 as every one of the next 500 decisions. Each of those decisions would share the blame for a bad card draw on floor 40. The signal for any single choice would drown in that noise.</p>
-  <p>This is the <dfn>credit assignment problem</dfn>: deciding which of many earlier actions caused a late outcome. You have met it in Q-learning, where the answer is a learned function that predicts the future from the present, so that a decision can be judged against a prediction instead of against the final outcome. The same idea solves it here, with three changes that this chapter is about.</p>
+  <p>Take one decision. On floor 11 of act 1 the map forks. The left path goes through an <em>elite</em> room, a harder fight that pays a relic. The right path goes around it. Instinct, Spire Mentor's agent, takes the left path and wins the fight after 20 card plays. Was that choice good?</p>
+  <p>The reward function (Chapter 3) pays +1 for winning the run, +0.05 for each boss beaten and +0.002 for each new floor. The elite fight pays only its floor, and it costs HP. Its payoff, the relic, shows up later as a higher chance of beating bosses, several hundred decisions on. Suppose you score the elite choice with the reward that eventually arrives. Then it gets the same +1 or 0 as each of the next 500 decisions, and a bad card draw on floor 40 counts against it too. With 500 decisions sharing one number, the score of any single choice is mostly noise from the others.</p>
+  <p>Deciding which of many earlier actions caused a late outcome is the <dfn>credit assignment problem</dfn>. Q-learning solves it with a learned function that predicts the future return from the present state. A decision is then judged against a prediction instead of against the final outcome. Actor-critic methods use the same idea with three changes:</p>
   <ol>
-    <li>We learn a function of the state alone, \(V\), not of the state and action, \(Q\). It is used to <em>score</em> actions the policy already took, never to choose one.</li>
-    <li>It predicts the return of the <em>current</em> policy, not of the optimal one. No \(\max\) appears anywhere.</li>
-    <li>It is trained only to produce a low-variance estimate of how much better an action went than expected: the <dfn>advantage</dfn>. That estimate becomes the weight on each decision in the policy update of Chapter 5.</li>
+    <li>The learned function is \(V\), a function of the state alone, not \(Q\), a function of the state and the action. It scores actions that the policy already took. It never chooses one.</li>
+    <li>It predicts the return of the current policy, not of the optimal policy. No \(\max\) appears.</li>
+    <li>Its job is a low-variance estimate of how much better an action went than expected. That estimate is the <dfn>advantage</dfn>, and it is the weight on each decision in the policy update of Chapter 5.</li>
   </ol>
-  <p>We define the value functions, write their Bellman equations, and set up the critic as a regression problem. Then we compare the targets you can regress on, from the Monte Carlo return to the one-step TD target, and show that they trade bias against variance. We derive generalised advantage estimation (GAE) from the n-step advantages, compute it by hand on twenty real decisions, and end with critics that see information the policy cannot. Every result is then measured on Spire Mentor's Ironclad network.</p>
 
   <h2 id="values">2. V, Q and A</h2>
-  <p>We use the tour's notation. The agent sees state \(s_t\), takes action \(a_t\) and then receives reward \(r_t\); an episode ends at step \(T\). Sutton and Barto write the reward that follows \(a_t\) as \(R_{t+1}\); we write \(r_t\) <span class="cite">[<a href="#ref-1">1</a>]</span>. The <dfn>return</dfn> from step \(t\) is \(G_t = \sum_{k=0}^{T-t} \gamma^k r_{t+k}\), with discount \(\gamma \le 1\). Spire Mentor uses \(\gamma = 1\): every reward counts the same no matter how late, which is fine because every run ends.</p>
+  <p>This chapter uses the tour's notation. The agent sees state \(s_t\), takes action \(a_t\) and then receives reward \(r_t\). An episode ends at step \(T\). Sutton and Barto write the reward that follows \(a_t\) as \(R_{t+1}\), and this tour writes \(r_t\) <span class="cite">[<a href="#ref-1">1</a>]</span>. The <dfn>return</dfn> from step \(t\) is \(G_t = \sum_{k=0}^{T-t} \gamma^k r_{t+k}\), with discount \(\gamma \le 1\). Spire Mentor uses \(\gamma = 1\), so every reward counts the same no matter how late it arrives. That is safe because every run ends.</p>
 
   <div class="definition"><span class="label">Definition 4.1 · State value, action value, advantage</span>
-    <p>For a policy \(\pi\), the <dfn>state value</dfn> is the expected return from state \(s\) when every action from now on is drawn from \(\pi\):</p>
+    <p>For a policy \(\pi\), the <dfn>state value</dfn> is the expected return from state \(s\) when \(\pi\) draws every action from now on:</p>
     <div class="eq">\begin{equation} V^\pi(s) = \mathbb{E}_{\tau \sim \pi}\!\left[\, G_t \mid s_t = s \,\right]. \label{eq:v} \end{equation}</div>
     <p>The <dfn>action value</dfn> fixes the first action and follows \(\pi\) afterwards:</p>
     <div class="eq">\begin{equation} Q^\pi(s, a) = \mathbb{E}_{\tau \sim \pi}\!\left[\, G_t \mid s_t = s,\, a_t = a \,\right]. \label{eq:q} \end{equation}</div>
     <p>The <dfn>advantage</dfn> is their difference:</p>
     <div class="eq">\begin{equation} A^\pi(s, a) = Q^\pi(s, a) - V^\pi(s). \label{eq:a} \end{equation}</div>
   </div>
-  <p>The expectation in \eqref{eq:v} runs over everything random after \(s\): the policy's own action choices, the shuffle of the draw pile, the enemies' moves, which rooms the map generates. In \eqref{eq:q} the first action is no longer random, but everything after it still is. The subscript \(\tau \sim \pi\) says the trajectory \(\tau\) is generated by following \(\pi\).</p>
-  <p>Two identities follow at once. Averaging \(Q^\pi\) over the policy's own action gives back \(V^\pi\):</p>
-  <div class="eq">\begin{equation} V^\pi(s) = \sum_{a \in \mathcal{A}(s)} \pi(a \mid s)\, Q^\pi(s, a), \label{eq:v-from-q} \end{equation}</div>
-  <p>where \(\mathcal{A}(s)\) is the set of legal actions in \(s\): the cards you can afford, the map nodes you can reach. Substituting \eqref{eq:v-from-q} into \eqref{eq:a} shows that the advantage has mean zero under the policy:</p>
+  <p>The expectation in \eqref{eq:v} runs over everything random after \(s\): the policy's own action choices, the shuffle of the draw pile, the enemies' moves and the rooms the map generates. In \eqref{eq:q} the first action is fixed, and everything after it is still random. The subscript \(\tau \sim \pi\) says that following \(\pi\) generates the trajectory \(\tau\).</p>
+  <p>Averaging \(Q^\pi\) over the policy's own action gives back \(V^\pi\):</p>
+  <div class="eq">\begin{equation} V^\pi(s) = \sum_{a \in \mathcal{A}(s)} \pi(a \mid s)\, Q^\pi(s, a). \label{eq:v-from-q} \end{equation}</div>
+  <p>Here \(\mathcal{A}(s)\) is the set of legal actions in \(s\), such as the cards you can afford and the map nodes you can reach. Substitute \eqref{eq:v-from-q} into \eqref{eq:a}, and the advantage has mean zero under the policy:</p>
   <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi(\cdot \mid s)}\!\left[ A^\pi(s, a) \right] = \sum_a \pi(a \mid s) Q^\pi(s, a) - V^\pi(s) = 0. \label{eq:a-mean-zero} \end{equation}</div>
-  <p>Equation \eqref{eq:a-mean-zero} is the property that matters most in this chapter. The advantage does not say whether an action is good in absolute terms. It says whether it is better or worse than what this policy does on average in this state. At the elite fork, \(A^\pi(s, \text{left}) &gt; 0\) means "taking the elite beats this policy's usual mix of left and right." In a state where every option is bad, the least bad option still has positive advantage.</p>
+  <p>So the advantage does not say whether an action is good in absolute terms. It says whether the action is better or worse than what this policy does on average in this state. At the elite fork, \(A^\pi(s, \text{left}) &gt; 0\) means that taking the elite beats this policy's usual mix of left and right. In a state where every option is bad, the least bad option still has a positive advantage.</p>
 
-  <h2 id="bellman">3. Bellman equations, without the max</h2>
-  <p>A return is the first reward plus the rest of the return: \(G_t = r_t + \gamma G_{t+1}\). Take expectations of both sides given \(s_t = s\). The rest of the return, given the next state, averages to the next state's value, so</p>
+  <h2 id="bellman">3. Bellman equations without the max</h2>
+  <p>A return is the first reward plus the rest of the return: \(G_t = r_t + \gamma G_{t+1}\). Take the expectation of both sides given \(s_t = s\). Given the next state, the rest of the return averages to the next state's value. So</p>
   <div class="eq">\begin{equation} V^\pi(s) = \mathbb{E}_{a_t \sim \pi(\cdot \mid s),\; s_{t+1}}\!\left[\, r_t + \gamma V^\pi(s_{t+1}) \;\middle|\; s_t = s \,\right]. \label{eq:bellman-v} \end{equation}</div>
-  <p>This is the <dfn>Bellman expectation equation</dfn> for \(V^\pi\) <span class="cite">[<a href="#ref-1">1</a>, §3.5]</span>. The expectation is over two sources of randomness: the action, drawn from \(\pi\), and the environment's response, which gives \(r_t\) and \(s_{t+1}\). The same step for \(Q\) gives</p>
+  <p>This is the <dfn>Bellman expectation equation</dfn> for \(V^\pi\) <span class="cite">[<a href="#ref-1">1</a>, §3.5]</span>. The expectation covers two sources of randomness. The policy draws the action, and the environment's response gives \(r_t\) and \(s_{t+1}\). The same step for \(Q\) gives</p>
   <div class="eq">\begin{equation} Q^\pi(s, a) = \mathbb{E}_{s_{t+1}}\!\left[\, r_t + \gamma V^\pi(s_{t+1}) \;\middle|\; s_t = s, a_t = a \,\right]. \label{eq:bellman-q} \end{equation}</div>
-  <p>Here only the environment is random; the action is fixed at \(a\). Compare it with the equation behind deep Q-learning <span class="cite">[<a href="#ref-7">7</a>]</span>:</p>
+  <p>Here only the environment is random, because the action is fixed at \(a\). Compare \eqref{eq:bellman-q} with the equation behind deep Q-learning <span class="cite">[<a href="#ref-7">7</a>]</span>:</p>
   <div class="eq">\begin{equation} Q^*(s, a) = \mathbb{E}_{s_{t+1}}\!\left[\, r_t + \gamma \max_{a'} Q^*(s_{t+1}, a') \;\middle|\; s_t = s, a_t = a \,\right]. \label{eq:bellman-opt} \end{equation}</div>
-  <p>The difference is the \(\max\). Equation \eqref{eq:bellman-opt} describes the best possible policy, and a network that satisfies it can act by taking the arg max. That is <em>control</em>. Equations \eqref{eq:bellman-v} and \eqref{eq:bellman-q} describe a given policy, and solving them is <em>prediction</em>, or policy evaluation <span class="cite">[<a href="#ref-1">1</a>, §3.6]</span>. An actor-critic method splits the two jobs. The actor, \(\pi_\theta\), does control by gradient ascent (Chapter 5). The critic only evaluates the actor as it currently is. When the actor changes, the critic's target changes with it.</p>
-  <p>This removes the part of DQN that needs the most care. There is no maximisation bias, because no max is taken over noisy estimates. There is no replay of data from long-dead policies, because the critic wants the value of the current policy and old data describes a different one (Chapter 6 deals with the mild staleness that remains). And because we learn \(V(s)\) rather than \(Q(s, a)\), the network needs one output per state, not one per legal action. That matters when \(\mathcal{A}(s)\) changes size from decision to decision, as it does here.</p>
+  <p>The difference is the \(\max\). Equation \eqref{eq:bellman-opt} describes the best possible policy. A network that satisfies it can act by taking the arg max, and that job is called <em>control</em>. Equations \eqref{eq:bellman-v} and \eqref{eq:bellman-q} describe one given policy. Solving them is called <em>prediction</em>, or policy evaluation <span class="cite">[<a href="#ref-1">1</a>, §3.6]</span>. An actor-critic method splits the two jobs. The actor, \(\pi_\theta\), does control by gradient ascent (Chapter 5). The critic only evaluates the actor as it is now. When the actor changes, the critic's target changes with it.</p>
+  <p>The split removes three parts of DQN. No max is taken over noisy estimates, so there is no maximisation bias. The critic does not replay data from old policies, because it wants the value of the current policy and old data describes a different policy. Chapter 6 handles the small staleness that remains. And the critic learns \(V(s)\), not \(Q(s, a)\), so the network needs one output per state instead of one per legal action. That matters in Slay the Spire, because \(\mathcal{A}(s)\) changes size from one decision to the next.</p>
 
   <h2 id="regression">4. The critic as regression</h2>
-  <p>We cannot compute \eqref{eq:v}: the expectation is over every possible future of a card game. We learn it instead. The <dfn>critic</dfn> is a network \(V_\phi(s)\) with parameters \(\phi\), fit by least squares to a <dfn>target</dfn> \(y_t\) computed from data:</p>
+  <p>You cannot compute \eqref{eq:v}, because the expectation runs over every possible future of a card game. You learn it instead. The <dfn>critic</dfn> is a network \(V_\phi(s)\) with parameters \(\phi\). It is fit by least squares to a <dfn>target</dfn> \(y_t\) computed from data:</p>
   <div class="eq">\begin{equation} \mathcal{L}_V(\phi) = \tfrac{1}{2}\, \mathbb{E}_t\!\left[ \big( V_\phi(s_t) - y_t \big)^2 \right]. \label{eq:value-loss} \end{equation}</div>
-  <p>The expectation \(\mathbb{E}_t\) is the average over the decisions in a batch of trajectories just played by the current policy. If \(y_t\) were an unbiased sample of \(G_t\) given \(s_t\), the minimiser of \eqref{eq:value-loss} over all functions would be \(V^\pi\), for the same reason a least-squares regressor converges to the conditional mean of its label. This is plain supervised learning with two twists. First, the labels are not given: we manufacture them from the trajectories, and the choice of manufacturing is the subject of the next section. Second, some of those recipes use the critic's own predictions inside the label. Then the label moves when \(\phi\) moves, and we treat it as a constant when we take the gradient, a <dfn>semi-gradient</dfn> update <span class="cite">[<a href="#ref-1">1</a>, §9.3]</span>. You know this from DQN's target network; here the "frozen copy" is simply the critic's values computed once at the start of each update.</p>
+  <p>Here \(\mathbb{E}_t\) is the average over the decisions in a batch of trajectories that the current policy just played. Suppose \(y_t\) is an unbiased sample of \(G_t\) given \(s_t\). Then the function that minimises \eqref{eq:value-loss} is \(V^\pi\), for the same reason that a least-squares regressor converges to the conditional mean of its label.</p>
+  <p>So the critic is supervised regression, with two differences. First, nobody gives you the labels. You build them from the trajectories, and Section 5 compares the ways to build them. Second, some of those labels contain the critic's own predictions, so the label moves when \(\phi\) moves. The update treats such a label as a constant when it takes the gradient. That is called a <dfn>semi-gradient</dfn> update <span class="cite">[<a href="#ref-1">1</a>, §9.3]</span>. DQN's target network does the same job. In this chapter's critic, the frozen copy is the set of values that the critic computes once at the start of each update.</p>
 
-  <h2 id="targets">5. Monte Carlo, TD and everything between</h2>
-  <h3>The two extremes</h3>
+  <h2 id="targets">5. Monte Carlo targets, TD targets and the range between them</h2>
+  <h3>The two extreme targets</h3>
   <p>The <dfn>Monte Carlo target</dfn> is the return that actually followed:</p>
   <div class="eq">\begin{equation} y_t^{\text{MC}} = G_t = \sum_{k=0}^{T-t} \gamma^k r_{t+k}. \label{eq:mc} \end{equation}</div>
-  <p>It is an unbiased sample of \(V^\pi(s_t)\) by definition \eqref{eq:v}. It is also noisy: it carries the luck of every draw, every enemy roll and every later decision until the end of the run.</p>
-  <p>The <dfn>temporal-difference (TD) target</dfn> looks one step ahead and trusts the critic for the rest <span class="cite">[<a href="#ref-1">1</a>, §6.1]</span>:</p>
+  <p>By definition \eqref{eq:v}, it is an unbiased sample of \(V^\pi(s_t)\). It is also noisy. It carries the luck of every draw, every enemy move and every later decision until the end of the run.</p>
+  <p>The <dfn>temporal-difference (TD) target</dfn> uses one real reward and then the critic's value of the next state <span class="cite">[<a href="#ref-1">1</a>, §6.1]</span>:</p>
   <div class="eq">\begin{equation} y_t^{\text{TD}} = r_t + \gamma V_\phi(s_{t+1}). \label{eq:td} \end{equation}</div>
-  <p>Its randomness comes from one step only. But it is biased whenever \(V_\phi\) is wrong at \(s_{t+1}\), and early in training it is wrong everywhere.</p>
-  <p>The gap between the target and the critic's current prediction is the object this chapter is built on. The <dfn>TD residual</dfn>, or one-step surprise, is</p>
+  <p>Its randomness comes from one step only. But it is biased wherever \(V_\phi\) is wrong at \(s_{t+1}\), and early in training \(V_\phi\) is wrong everywhere.</p>
+  <p>The difference between the TD target and the critic's current prediction is the <dfn>TD residual</dfn>:</p>
   <div class="eq">\begin{equation} \delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t). \label{eq:delta} \end{equation}</div>
-  <p>A positive \(\delta_t\) says the step went better than the critic expected; negative, worse. At the end of an episode \(V_\phi(s_{T+1}) = 0\): nothing is left to collect.</p>
+  <p>A positive \(\delta_t\) says that the step went better than the critic predicted. A negative \(\delta_t\) says that it went worse. At the end of an episode, \(V_\phi(s_{T+1}) = 0\), because nothing is left to collect. Every advantage estimate in this chapter is built from TD residuals.</p>
 
   <h3>Where the Monte Carlo variance comes from</h3>
-  <p>Replace \(V_\phi\) by the true \(V^\pi\) in \eqref{eq:delta} and call the result \(\delta^\pi_t\). Sum the residuals from \(t\) to the end. Each \(V^\pi(s_{t+k})\) appears once with a plus sign and once with a minus sign, so the sum telescopes:</p>
+  <p>Replace \(V_\phi\) by the true \(V^\pi\) in \eqref{eq:delta} and call the result \(\delta^\pi_t\). We sum the residuals from \(t\) to the end. Each \(V^\pi(s_{t+k})\) appears once with a plus sign and once with a minus sign, so the sum telescopes:</p>
   <div class="eq">\begin{equation} G_t - V^\pi(s_t) = \sum_{l=0}^{T-t} \gamma^l\, \delta^\pi_{t+l}. \label{eq:telescope} \end{equation}</div>
-  <p>The error of the Monte Carlo target is a sum of one surprise per remaining step. Each \(\delta^\pi\) has mean zero given its own state (that is Equation \eqref{eq:bellman-v} rearranged), and surprises at different steps are uncorrelated, because each one is zero-mean given everything before it. So the variance of the Monte Carlo error is the sum of the per-step variances. Early in a 670-decision run, that is several hundred terms. The TD target keeps one term and replaces the rest by \(V_\phi(s_{t+1}) - V^\pi(s_{t+1})\): a bias that shrinks as the critic improves, instead of a variance that never does.</p>
+  <p>So the error of the Monte Carlo target is a sum of one TD residual per remaining step. Each \(\delta^\pi\) has mean zero given its own state, which is Equation \eqref{eq:bellman-v} rearranged. Residuals at different steps are uncorrelated, because each one has mean zero given everything before it. So the variance of the Monte Carlo error is the sum of the per-step variances. Early in a 670-decision run, that sum has several hundred terms.</p>
+  <p>The TD target keeps one term. It replaces the rest with \(V_\phi(s_{t+1}) - V^\pi(s_{t+1})\), the critic's error at the next state. That error is a bias, and it shrinks as the critic improves. The Monte Carlo variance does not shrink.</p>
 
   <h3>n-step targets and the λ-return</h3>
-  <p>Between the two sits the <dfn>n-step target</dfn>: \(n\) real rewards, then the critic <span class="cite">[<a href="#ref-1">1</a>, §7.1]</span>.</p>
+  <p>Between the two extremes is the <dfn>n-step target</dfn>, which uses \(n\) real rewards and then the critic <span class="cite">[<a href="#ref-1">1</a>, §7.1]</span>:</p>
   <div class="eq">\begin{equation} G_t^{(n)} = \sum_{k=0}^{n-1} \gamma^k r_{t+k} + \gamma^n V_\phi(s_{t+n}). \label{eq:nstep} \end{equation}</div>
-  <p>With \(n = 1\) this is the TD target \eqref{eq:td}; when \(t + n\) passes the end of the episode, it is the Monte Carlo return \eqref{eq:mc}. Larger \(n\) means less reliance on the critic and more on noisy rewards. Rather than pick one \(n\), the <dfn>λ-return</dfn> averages all of them with geometrically decaying weights <span class="cite">[<a href="#ref-1">1</a>, §12.1]</span>:</p>
+  <p>With \(n = 1\) this is the TD target \eqref{eq:td}. When \(t + n\) passes the end of the episode, it is the Monte Carlo return \eqref{eq:mc}. A larger \(n\) relies less on the critic and more on noisy rewards. The <dfn>λ-return</dfn> avoids picking one \(n\). It averages all of them with weights that decay geometrically <span class="cite">[<a href="#ref-1">1</a>, §12.1]</span>:</p>
   <div class="eq">\begin{equation} G_t^{\lambda} = (1 - \lambda) \sum_{n=1}^{\infty} \lambda^{n-1}\, G_t^{(n)}, \qquad 0 \le \lambda \le 1. \label{eq:lambda-return} \end{equation}</div>
-  <p>The weights \((1-\lambda)\lambda^{n-1}\) sum to one. Every n-step return past the end of the episode equals \(G_t\), so all the leftover weight lands on the full return. \(\lambda = 0\) gives the TD target; \(\lambda = 1\) gives Monte Carlo. A note on symbols: in this tour \(\lambda\) is always the GAE parameter, never a risk or penalty weight, and \(\mu\) (from Chapter 6 on) is always the behaviour policy that generated the data, never a mean cost.</p>
+  <p>The weights \((1-\lambda)\lambda^{n-1}\) sum to one. Every n-step return past the end of the episode equals \(G_t\), so all the leftover weight lands on the full return. \(\lambda = 0\) gives the TD target, and \(\lambda = 1\) gives the Monte Carlo return. In this tour, \(\lambda\) is always the GAE parameter, never a risk or penalty weight. From Chapter 6 on, \(\mu\) is always the behaviour policy that generated the data, never a mean cost.</p>
 
   <h2 id="advantage">6. Why the advantage weights the update</h2>
-  <p>Chapter 5 derives the policy gradient. We need one consequence of it here. The gradient of the objective \(J(\theta)\) can be estimated by a weighted log-likelihood gradient over the decisions the policy made:</p>
-  <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[ \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t)\; \Psi_t \right], \label{eq:pg} \end{equation}</div>
-  <p>where the weight \(\Psi_t\) may be the return \(G_t\), or the return minus a baseline, or the advantage \(A^\pi(s_t, a_t)\); all give the same expectation <span class="cite">[<a href="#ref-2">2</a>, §2]</span>. If you think of the policy head as a classifier over legal actions, \eqref{eq:pg} is the gradient of a log-likelihood where each observed action is a label and \(\Psi_t\) is its sample weight. A positive weight pushes up the probability of the action taken; a negative weight pushes it down.</p>
-  <p>Why may we subtract a baseline \(b(s_t)\) from the weight for free? Because the extra term has expectation zero:</p>
+  <p>Chapter 5 derives the policy gradient. This chapter needs one result from it. You can estimate the gradient of the objective \(J(\theta)\) as a weighted log-likelihood gradient over the decisions that the policy made:</p>
+  <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[ \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t)\; \Psi_t \right]. \label{eq:pg} \end{equation}</div>
+  <p>The weight \(\Psi_t\) can be the return \(G_t\), the return minus a baseline, or the advantage \(A^\pi(s_t, a_t)\). All three give the same expectation <span class="cite">[<a href="#ref-2">2</a>, §2]</span>. Think of the policy head as a classifier over legal actions. Then \eqref{eq:pg} is the gradient of a log-likelihood in which each observed action is a label and \(\Psi_t\) is its sample weight. A positive weight raises the probability of the action taken. A negative weight lowers it.</p>
+  <p>You can subtract any baseline \(b(s_t)\) from the weight without changing the expectation, because the extra term has expectation zero:</p>
   <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi_\theta(\cdot \mid s)}\!\left[ \nabla_\theta \log \pi_\theta(a \mid s)\, b(s) \right] = b(s) \sum_a \nabla_\theta \pi_\theta(a \mid s) = b(s)\, \nabla_\theta \sum_a \pi_\theta(a \mid s) = b(s)\, \nabla_\theta 1 = 0. \label{eq:baseline} \end{equation}</div>
-  <p>The first step uses \(\pi \nabla \log \pi = \nabla \pi\), the log-derivative identity. The baseline can depend on anything that does not depend on the action \(a\) <span class="cite">[<a href="#ref-1">1</a>, §13.4]</span>. If you have used CUPED or any control variate, this is the same move: subtract a quantity with known zero mean that is correlated with the noise, and the estimate keeps its mean while its variance falls. The best simple baseline is close to \(V^\pi(s_t)\) <span class="cite">[<a href="#ref-8">8</a>]</span>, which turns \(G_t - b(s_t)\) into an estimate of the advantage.</p>
-  <p>So the return is a legitimate weight, but a poor one. In a run Instinct wins, \(G_t \approx 1.24\) for nearly every decision, good or bad, and in a run it loses \(G_t \approx 0\) for nearly every decision. Every action in a won run would be reinforced. The advantage removes what the state already predicted and keeps only what the action changed. It is centred by \eqref{eq:a-mean-zero}, and its noise is what is left after the critic has explained what it can.</p>
+  <p>The first step uses the log-derivative identity \(\pi \nabla \log \pi = \nabla \pi\). The baseline can depend on anything except the action \(a\) <span class="cite">[<a href="#ref-1">1</a>, §13.4]</span>. A baseline is a control variate. You subtract a quantity that has a known mean of zero and is correlated with the noise, and the estimate keeps its mean while its variance falls. The best simple baseline is close to \(V^\pi(s_t)\) <span class="cite">[<a href="#ref-8">8</a>]</span>, and that baseline turns \(G_t - b(s_t)\) into an estimate of the advantage.</p>
+  <p>So the return is a valid weight, but a noisy one. In a run Instinct wins, \(G_t \approx 1.24\) for nearly every decision, good or bad. In a run it loses, \(G_t \approx 0\) for nearly every decision. Weighting by the return reinforces every action in a won run. The advantage removes what the state already predicted and keeps what the action changed. It has mean zero by \eqref{eq:a-mean-zero}, and its noise is whatever the critic could not explain.</p>
 
   <h2 id="gae">7. Generalised advantage estimation</h2>
   <h3>The one-step advantage</h3>
-  <p>The TD residual is itself an advantage estimate. If the critic were exact, \(V_\phi = V^\pi\), then taking the expectation of \eqref{eq:delta} over the environment's response and using \eqref{eq:bellman-q},</p>
+  <p>The TD residual is itself an advantage estimate. Suppose the critic is exact, \(V_\phi = V^\pi\). We take the expectation of \eqref{eq:delta} over the environment's response and use \eqref{eq:bellman-q}:</p>
   <div class="eq">\begin{equation} \mathbb{E}_{s_{t+1}}\!\left[ \delta^\pi_t \mid s_t, a_t \right] = \mathbb{E}_{s_{t+1}}\!\left[ r_t + \gamma V^\pi(s_{t+1}) \mid s_t, a_t \right] - V^\pi(s_t) = Q^\pi(s_t, a_t) - V^\pi(s_t) = A^\pi(s_t, a_t). \label{eq:delta-unbiased} \end{equation}</div>
-  <p>This is Equation 10 of the GAE paper <span class="cite">[<a href="#ref-2">2</a>]</span>. With an imperfect critic, \(\delta_t\) is biased by the critic's error, but its variance is one step's worth.</p>
+  <p>This is Equation 10 of the GAE paper <span class="cite">[<a href="#ref-2">2</a>]</span>. With an imperfect critic, the critic's error biases \(\delta_t\), but the variance of \(\delta_t\) comes from one step only.</p>
 
   <h3>n-step advantages</h3>
-  <p>Subtract \(V_\phi(s_t)\) from each n-step target \eqref{eq:nstep} to get an n-step advantage. Writing it as a sum of residuals and telescoping, as in \eqref{eq:telescope}:</p>
+  <p>Subtract \(V_\phi(s_t)\) from each n-step target \eqref{eq:nstep} to get an n-step advantage. We write it as a sum of residuals, which telescopes as in \eqref{eq:telescope}:</p>
   <div class="eq">\begin{equation} \hat{A}_t^{(k)} = \sum_{l=0}^{k-1} \gamma^l \delta_{t+l} = -V_\phi(s_t) + r_t + \gamma r_{t+1} + \dots + \gamma^{k-1} r_{t+k-1} + \gamma^k V_\phi(s_{t+k}). \label{eq:kstep-adv} \end{equation}</div>
-  <p>As \(k\) grows, the critic's error enters only through the discounted end term \(\gamma^k V_\phi(s_{t+k})\) and the baseline \(V_\phi(s_t)\), which adds no bias to the gradient by \eqref{eq:baseline}. With \(k \to \infty\) we get \(G_t - V_\phi(s_t)\): no bias from the critic, all the variance of the return <span class="cite">[<a href="#ref-2">2</a>, eqs. 11-15]</span>.</p>
+  <p>The critic's error enters \(\hat{A}_t^{(k)}\) through two terms only. One is the end term \(\gamma^k V_\phi(s_{t+k})\), which disappears once \(t + k\) passes the end of the episode. The other is the baseline \(V_\phi(s_t)\), which adds no bias to the gradient by \eqref{eq:baseline}. As \(k \to \infty\), the estimate becomes \(G_t - V_\phi(s_t)\). It has no bias from the critic and all the variance of the return <span class="cite">[<a href="#ref-2">2</a>, eqs. 11-15]</span>.</p>
 
   <h3>The exponentially weighted average</h3>
-  <p>GAE averages the k-step advantages with the λ-return's weights <span class="cite">[<a href="#ref-2">2</a>, eq. 16]</span>. Expand each \(\hat{A}^{(k)}\) as a sum of residuals and collect the coefficient of each \(\delta_{t+l}\):</p>
+  <p>GAE averages the k-step advantages with the λ-return's weights <span class="cite">[<a href="#ref-2">2</a>, eq. 16]</span>. We expand each \(\hat{A}^{(k)}\) as a sum of residuals and collect the coefficient of each \(\delta_{t+l}\):</p>
   <div class="eq">\begin{equation}\begin{aligned}
   \hat{A}_t^{\text{GAE}(\gamma,\lambda)} &amp;= (1-\lambda)\left( \hat{A}_t^{(1)} + \lambda \hat{A}_t^{(2)} + \lambda^2 \hat{A}_t^{(3)} + \dots \right) \\
   &amp;= (1-\lambda)\left( \delta_t (1 + \lambda + \lambda^2 + \dots) + \gamma \delta_{t+1} (\lambda + \lambda^2 + \dots) + \gamma^2 \delta_{t+2} (\lambda^2 + \dots) + \dots \right) \\
   &amp;= (1-\lambda)\left( \frac{\delta_t}{1-\lambda} + \frac{\gamma\lambda\, \delta_{t+1}}{1-\lambda} + \frac{(\gamma\lambda)^2 \delta_{t+2}}{1-\lambda} + \dots \right)
   = \sum_{l=0}^{\infty} (\gamma\lambda)^l\, \delta_{t+l}.
   \end{aligned} \label{eq:gae} \end{equation}</div>
-  <p>The residual \(\delta_{t+l}\) appears in every \(\hat{A}^{(k)}\) with \(k &gt; l\), each time multiplied by \(\gamma^l\). Its total weight is \((1-\lambda)\gamma^l(\lambda^l + \lambda^{l+1} + \dots) = (\gamma\lambda)^l\). The result is strikingly simple: an advantage is the discounted sum of the surprises that follow, with discount \(\gamma\lambda\). On a finite episode, \(\delta_{t+l} = 0\) past the end. Two special cases bracket it <span class="cite">[<a href="#ref-2">2</a>, eqs. 17-18]</span>:</p>
+  <p>The residual \(\delta_{t+l}\) appears in every \(\hat{A}^{(k)}\) with \(k &gt; l\), each time multiplied by \(\gamma^l\). Its total weight is \((1-\lambda)\gamma^l(\lambda^l + \lambda^{l+1} + \dots) = (\gamma\lambda)^l\). So an advantage is the sum of the TD residuals that follow the decision, discounted by \(\gamma\lambda\). On a finite episode, \(\delta_{t+l} = 0\) past the end. Two special cases bound the range <span class="cite">[<a href="#ref-2">2</a>, eqs. 17-18]</span>:</p>
   <div class="eq">\begin{equation} \lambda = 0:\;\; \hat{A}_t = \delta_t, \qquad\qquad \lambda = 1:\;\; \hat{A}_t = \sum_{l=0}^{T-t} \gamma^l r_{t+l} - V_\phi(s_t) = G_t - V_\phi(s_t). \label{eq:gae-limits} \end{equation}</div>
-  <p>Computing \eqref{eq:gae} directly costs a sum per step. Peel off the first term and the rest is the next step's advantage times \(\gamma\lambda\), which gives a backward recursion over the trajectory:</p>
+  <p>Computing \eqref{eq:gae} directly costs one sum per step. Take out the first term, and what remains is the next step's advantage times \(\gamma\lambda\). That gives a backward recursion over the trajectory:</p>
   <div class="eq">\begin{equation} \hat{A}_t = \delta_t + \gamma\lambda\, \hat{A}_{t+1}, \qquad \hat{A}_{T} = \delta_T. \label{eq:gae-rec} \end{equation}</div>
-  <p>The critic is then trained toward \(y_t = \hat{A}_t + V_\phi(s_t)\). Adding \(V_\phi(s_t)\) back to \eqref{eq:gae} and comparing with \eqref{eq:lambda-return} shows this target is exactly the λ-return \(G^\lambda_t\). One parameter sets both the policy's weights and the critic's labels.</p>
+  <p>The critic trains toward \(y_t = \hat{A}_t + V_\phi(s_t)\). Add \(V_\phi(s_t)\) to \eqref{eq:gae} and compare the result with \eqref{eq:lambda-return}: the target is exactly the λ-return \(G^\lambda_t\). So one parameter sets both the policy's weights and the critic's labels.</p>
 
   <figure id="fig-weights">
     <div class="scroll">
@@ -302,19 +303,16 @@ main li pre { overflow-x: auto; max-width: 100%; background: var(--surface); pad
 </svg>
 <!-- /FIG:weights -->
     </div>
-    <figcaption><b>Figure 4.1. How far ahead GAE looks.</b> With \(\gamma = 1\), the weight on a surprise \(l\) steps after the decision is \(\lambda^l\) (Equation \eqref{eq:gae}). The weight halves every \(\ln 2 / \ln(1/\lambda)\) steps: about 1 step at λ = 0.5, 7 at 0.9, 14 at 0.95 and 23 at 0.97. Notice that a typical Spire Mentor fight lasts about 25 decisions, so at λ = 0.95 a card played on turn one still feels more than a quarter of what happens on the fight's last turn.</figcaption>
+    <figcaption><b>Figure 4.1. How far ahead GAE looks.</b> With \(\gamma = 1\), the weight on a TD residual \(l\) steps after the decision is \(\lambda^l\) (Equation \eqref{eq:gae}). The weight halves every \(\ln 2 / \ln(1/\lambda)\) steps: about 1 step at λ = 0.5, 7 at 0.9, 14 at 0.95 and 23 at 0.97.</figcaption>
   </figure>
+  <p>A typical Spire Mentor fight lasts about 25 decisions. At \(\lambda = 0.95\), a residual 20 decisions after the decision gets weight \(0.95^{20} = 0.3585\). The chapter's check reads this number from the repository's own advantage function. It gives the function a chain of 21 decisions with zero values and one unit of reward on the last, and the first decision's advantage comes out as 0.3585. A residual one fight away, about 25 decisions, keeps more than a quarter of its size. A residual two fights away keeps about 8%.</p>
 
-  <details class="predict"><summary>Pause and predict: with λ = 0.95 and γ = 1, what weight does a surprise 20 decisions later get in this decision's advantage?</summary>
-    <p>\(0.95^{20} = 0.3585\). The check reads this number off the repository's own advantage function by feeding it a chain of 21 decisions with zero values and one unit of reward on the last; the first decision's advantage comes out as 0.3585. A surprise one fight away (about 25 decisions) still carries over a quarter of its size. A surprise two fights away carries about 8%.</p>
-  </details>
+  <h3>What γ and λ each cost</h3>
+  <p>The GAE paper states what each parameter costs. A discount \(\gamma &lt; 1\) biases the gradient even with a perfect critic, because it changes the objective. A \(\lambda &lt; 1\) biases the gradient only to the extent that the critic is wrong <span class="cite">[<a href="#ref-2">2</a>, §3]</span>. For that reason \(\lambda\) is usually set well below \(\gamma\). The PPO paper used \(\gamma = 0.99\) with \(\lambda = 0.95\) <span class="cite">[<a href="#ref-3">3</a>]</span>. Spire Mentor sets \(\gamma = 1\), for the reasons in Chapter 3, so \(\lambda\) does all the variance reduction.</p>
 
-  <h3>Bias and variance in one picture</h3>
-  <p>The GAE paper is explicit about what each parameter costs. A discount \(\gamma &lt; 1\) biases the gradient even with a perfect critic, because it changes the objective. A \(\lambda &lt; 1\) biases it only to the extent the critic is wrong <span class="cite">[<a href="#ref-2">2</a>, §3]</span>. That is why practitioners set \(\lambda\) well below \(\gamma\): the PPO paper used \(\gamma = 0.99\) with \(\lambda = 0.95\) <span class="cite">[<a href="#ref-3">3</a>]</span>. Spire Mentor sets \(\gamma = 1\) because its runs are finite and it wants the true objective, and lets \(\lambda\) do all the variance reduction.</p>
-
-  <h3>Worked by hand on a real fight</h3>
-  <p>Here is the end of an elite fight from a real run (seed 170000000, act 1, floor 11), with the critic's values exactly as the network produced them. Inside a fight the reward is zero, so each \(\delta_t\) is just the change in value. The fight's last decision is special: its next state is the map screen after the fight, so its \(V(s_{t+1})\) is the critic's value of the run after the fight.</p>
-  <p>Take the last row, decision 112. \(r = 0\), \(V(s_t) = 1.12204\) and the next state's value is 1.11865. So \(\delta = 0 + 1.11865 - 1.12204 = −0.00339\). It is the last decision of the fight, and in this project the fight's chain stops at the map (Section 10), so \(\hat{A} = \delta = −0.00339\). One row up, decision 111: \(\delta = 1.12204 - 1.12141 = 0.00063\), and \(\hat{A} = 0.00063 + 0.95 \times (−0.00339)\) \(= −0.00259\). Continue upward with \eqref{eq:gae-rec}:</p>
+  <h3>GAE by hand on a real fight</h3>
+  <p>The table below is the end of an elite fight from a real run: seed 170000000, act 1, floor 11. The critic's values are exactly what the network produced. Inside a fight the reward is zero, so each \(\delta_t\) is the change in value. The last decision of the fight is different. Its next state is the map screen after the fight, so its \(V(s_{t+1})\) is the critic's value of the run after the fight.</p>
+  <p>Start at the last row, decision 112. There \(r = 0\), \(V(s_t) = 1.12204\), and the next state's value is 1.11865. So \(\delta = 0 + 1.11865 - 1.12204 = −0.00339\). In Spire Mentor a fight's chain stops at the map (Section 10), so \(\hat{A} = \delta = −0.00339\). One row up, at decision 111, \(\delta = 1.12204 - 1.12141 = 0.00063\) and \(\hat{A} = 0.00063 + 0.95 \times (−0.00339)\) \(= −0.00259\). Continue upward with \eqref{eq:gae-rec}:</p>
   <div class="table"><table class="gae">
     <thead><tr><th class="num">decision</th><th class="num">\(r_t\)</th><th class="num">\(V(s_t)\)</th><th class="num">\(V(s_{t+1})\)</th><th class="num">\(\delta_t\)</th><th class="num">\(\hat{A}_t\) by hand</th><th class="num">\(\hat{A}_t\) repository</th></tr></thead>
     <tbody>
@@ -325,57 +323,72 @@ main li pre { overflow-x: auto; max-width: 100%; background: var(--surface); pad
       <tr><td class="num">111</td><td class="num">0.000</td><td class="num">1.12141</td><td class="num">1.12204</td><td class="num">0.00063</td><td class="num">−0.00259</td><td class="num">−0.00259</td></tr>
       <tr><td class="num">112</td><td class="num">0.000</td><td class="num">1.12204</td><td class="num">1.11865</td><td class="num">−0.00339</td><td class="num">−0.00339</td><td class="num">−0.00339</td></tr>
     </tbody>
-    <caption>The last six decisions of an elite fight, \(\lambda = 0.95\), \(\gamma = 1\). The hand column is the loop in Equation \eqref{eq:gae-rec}; the repository column is Spire Mentor's vectorised advantage function on the whole run. Over all 718 decisions of this run the largest difference between them is 5.6e-17, which is floating-point rounding.</caption>
+    <caption>The last six decisions of an elite fight, \(\lambda = 0.95\), \(\gamma = 1\). The hand column applies Equation \eqref{eq:gae-rec} one row at a time. The repository column is Spire Mentor's vectorised advantage function, run on the whole run. Over all 718 decisions of this run, the largest difference between the two columns is 5.6e-17, which is floating-point rounding.</caption>
   </table></div>
-  <p>Two things stand out. The surprises inside the fight are tiny, a few thousandths of the return. Card by card, this policy rarely surprises its own critic in a fight it wins. And the advantages are all slightly negative, because they inherit the last step: the map after the fight was worth a little less than the critic predicted at the end of it.</p>
+  <p>The residuals inside the fight are small, a few thousandths of the return. In a fight that it wins, this policy rarely does anything its critic did not predict. The advantages are all slightly negative because each one includes the last residual. The map after the fight was worth a little less than the critic predicted at the fight's end.</p>
 
   <h2 id="privileged">8. Privileged critics</h2>
-  <p>In Slay the Spire the agent sees its hand, its relics and the enemies' announced intents. It does not see the order of its draw pile, the enemies' next moves beyond the announced one, or which rooms the map generator has placed behind each node. Chapter 1 calls the visible part the observation \(o_t\) and the full state \(s_t\). The policy must be a function of what it can see, \(\pi_\theta(a \mid o_t)\), or it could not play at test time.</p>
-  <p>The critic has no such constraint. It is used only during training, to build targets and advantages, and during training the simulator knows everything. A critic that reads the hidden state is called <dfn>asymmetric</dfn> or <dfn>privileged</dfn>. Pinto and colleagues introduced the idea for robots trained in simulation: the policy sees camera images, the critic sees the simulator's exact positions <span class="cite">[<a href="#ref-4">4</a>]</span>.</p>
-  <p>Is that legitimate? Equation \eqref{eq:baseline} answers half the question. The baseline may depend on anything that does not depend on the action. The policy's action distribution depends only on \(o_t\), so for a baseline \(b(o_t, s_t)\),</p>
+  <p>In Slay the Spire the agent sees its hand, its relics and the enemies' announced intents. It does not see the order of its draw pile, the enemies' moves after the announced one, or the rooms that the map generator has placed behind each node. Chapter 1 calls the visible part the observation \(o_t\) and the full state \(s_t\). The policy must be a function of what it can see, \(\pi_\theta(a \mid o_t)\). Otherwise it could not play at test time.</p>
+  <p>The critic has no such constraint. It runs only during training, to build targets and advantages, and during training the simulator knows everything. A critic that reads the hidden state is called <dfn>asymmetric</dfn> or <dfn>privileged</dfn>. Pinto and colleagues introduced the idea for robots trained in simulation. Their policy sees camera images, and their critic sees the simulator's exact positions <span class="cite">[<a href="#ref-4">4</a>]</span>.</p>
+  <p>Does a privileged critic bias the gradient? The baseline argument answers half of the question. A baseline can depend on anything except the action. The policy's action distribution depends only on \(o_t\), so for a baseline \(b(o_t, s_t)\):</p>
   <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi_\theta(\cdot \mid o_t)}\!\left[ \nabla_\theta \log \pi_\theta(a \mid o_t)\; b(o_t, s_t) \right] = b(o_t, s_t)\, \nabla_\theta \sum_a \pi_\theta(a \mid o_t) = 0. \label{eq:priv-baseline} \end{equation}</div>
-  <p>The hidden state adds no bias as a baseline. What it adds is explanatory power. If the critic knows the draw pile will deal three Strikes next turn, it predicts the bad turn before it happens, and the bad turn no longer shows up as a negative surprise attributed to whatever card was played. The variance that luck contributes to the advantage drops.</p>
-  <p>The other half is subtler. Baisero and Amato showed that a critic of the state <em>alone</em>, \(V(s_t)\), is in general a biased estimate of what the observation-conditioned policy can achieve, because it implicitly assumes the agent knows things it does not. They prove that a critic of both, \(V(o_t, s_t)\) or with history in place of \(o_t\), keeps the policy gradient unbiased <span class="cite">[<a href="#ref-5">5</a>]</span>. Spire Mentor's critic reads the policy's own observation tokens and the privileged tokens together, which is the second form. (That match is our reading of the architecture; the project does not cite the paper.)</p>
+  <p>As a baseline, the hidden state adds no bias. It adds explanatory power. Suppose the critic knows that the draw pile will deal three Strikes next turn. It predicts the bad turn before the turn happens. The bad turn then no longer appears as a negative TD residual on the card played before it. Luck contributes less variance to the advantage.</p>
+  <p>The other half of the question is about the critic's target, not the baseline. Baisero and Amato showed that a critic of the state alone, \(V(s_t)\), is in general a biased estimate of what the observation-conditioned policy can achieve. Such a critic assumes that the agent knows things it does not know. They prove that a critic of both inputs, \(V(o_t, s_t)\), keeps the policy gradient unbiased, and so does the same critic with the history in place of \(o_t\) <span class="cite">[<a href="#ref-5">5</a>]</span>. Spire Mentor's critic reads the policy's observation tokens and the privileged tokens together, which is the second form. That match is this chapter's reading of the architecture. The project does not cite the paper.</p>
 
-  <h2 id="engineered">9. The textbook version against the engineered version</h2>
-  <p>The clean statement is: collect full episodes, compute \eqref{eq:gae} on each, regress \(V_\phi\) on \(\hat{A} + V\), weight the policy gradient by \(\hat{A}\). Real systems depart from it in five ways, and Spire Mentor departs in all five.</p>
+  <h2 id="engineered">9. How real systems change the textbook recipe</h2>
+  <p>The textbook recipe is short. Collect full episodes, compute \eqref{eq:gae} on each, regress \(V_\phi\) on \(\hat{A} + V\), and weight the policy gradient by \(\hat{A}\). Real systems change that recipe in five ways, and Spire Mentor makes all five changes:</p>
   <ol>
-    <li><b>Truncated trajectories.</b> Training collects a fixed number of decisions per iteration (131,072 here), not whole runs. A run that is still in progress at the cut has no future yet. The chain ends at the cut and bootstraps from \(V_\phi\) of the next state, which is the n-step idea applied by necessity. The repository's tests check an exact identity for this: the cut advantage differs from the uncut one by \(\lambda^m\) times what the cut threw away, where \(m\) counts the steps to the cut.</li>
-    <li><b>Values frozen at the start of the update.</b> Targets are computed once with the critic's values before the update and held fixed through the update's epochs, which makes the regression in \eqref{eq:value-loss} a fixed supervised problem for that update.</li>
-    <li><b>No value clipping.</b> Many PPO implementations clip the change in \(V_\phi\) per update. This project removed it on purpose and uses the plain squared error with coefficient 0.5.</li>
-    <li><b>Advantage normalisation.</b> Advantages are standardised before they weight the policy loss, here separately for each decision type (card play, map choice, card reward and so on), with running moments. A map decision's advantages and a card play's advantages live on different scales; normalising per type keeps one type from dominating the gradient.</li>
-    <li><b>Two critics in one network, and two chains.</b> Combat decisions and between-fight decisions get separate value heads and separate λ, joined so that a fight's result flows into the run. The next section shows how.</li>
+    <li><b>Truncated trajectories.</b> Training collects a fixed number of decisions per iteration, 131,072 here, not whole runs. A run that is still in progress at the cut has no future yet. Its chain ends at the cut and bootstraps from \(V_\phi\) of the next state, which is the n-step idea. The repository's tests check an exact identity for this case. The cut advantage differs from the uncut one by \(\lambda^m\) times what the cut removed, where \(m\) counts the steps to the cut.</li>
+    <li><b>Values frozen at the start of the update.</b> The update computes the targets once, from the critic's values before the update, and holds them fixed through the update's epochs. Each update then solves a fixed regression problem \eqref{eq:value-loss}.</li>
+    <li><b>No value clipping.</b> Many PPO implementations clip the change in \(V_\phi\) per update. Spire Mentor's plan deletes that clip and uses the plain squared error with coefficient 0.5. The plan does not record why.</li>
+    <li><b>Advantage normalisation per decision type.</b> Advantages are standardised before they weight the policy loss. Spire Mentor keeps a separate running mean and standard deviation for each decision type, such as card play, map choice and card reward. The plan gives no reason. A likely reason, which is this chapter's inference, is scale. Section 11 measures a one-step spread of 0.019 for combat decisions and 0.051 for run decisions, and standardising per type stops one type from dominating the gradient.</li>
+    <li><b>Two critics in one network, and two chains.</b> Combat decisions and between-fight decisions get separate value heads and separate \(\lambda\) values. The two chains are joined, so a fight's result flows into the run's value.</li>
   </ol>
 
-  <h2 id="spire">10. In Spire Mentor</h2>
-  <p>The network is one transformer over a set of tokens (Chapter 2). The policy heads read its output. The critic is one more transformer block that reads the same token stream plus the privileged tokens, and two linear heads that read the first token, the run-context token. Figure 4.2 traces the data.</p>
+  <h2 id="spire">10. The critic in Spire Mentor</h2>
+  <p>Spire Mentor's network is one transformer over a set of tokens (Chapter 2). When Instinct plays, only the trunk and the policy heads run.</p>
 
-  <figure id="fig-dataflow">
+  <figure id="fig-dataflow-a">
     <div class="scroll">
-      <svg viewBox="0 0 660 300" role="img" aria-label="Data flow: observation tokens go through the trunk to the policy heads; the trunk output and the privileged tokens go through the value block to two value heads, whose values feed GAE, which produces advantages for the policy loss and targets for the value loss.">
-        <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <svg viewBox="0 0 660 96" role="img" aria-label="Observation tokens go into the trunk. The trunk output h goes to the policy heads, which give logits for the chosen action.">
+        <defs><marker id="ar4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
         <g color="var(--fg)">
           <rect class="box" x="10" y="30" width="130" height="46" rx="3"/><text x="75" y="50" text-anchor="middle">observation tokens</text><text class="muted" x="75" y="66" text-anchor="middle">hand, deck, map, intents</text>
-          <rect class="box" x="10" y="190" width="130" height="46" rx="3"/><text x="75" y="210" text-anchor="middle">PRIV tokens</text><text class="muted" x="75" y="226" text-anchor="middle">draw order, moves, rooms</text>
           <rect class="box" x="190" y="30" width="110" height="46" rx="3"/><text x="245" y="58" text-anchor="middle">trunk (4 blocks)</text>
           <rect class="box" x="360" y="30" width="120" height="46" rx="3"/><text x="420" y="50" text-anchor="middle">policy heads</text><text class="muted" x="420" y="66" text-anchor="middle">combat, out of combat</text>
-          <rect class="box" x="360" y="140" width="120" height="46" rx="3"/><text x="420" y="160" text-anchor="middle">value block</text><text class="muted" x="420" y="176" text-anchor="middle">+ V_combat, V_run</text>
-          <rect class="box" x="530" y="140" width="110" height="46" rx="3"/><text x="585" y="168" text-anchor="middle">GAE, two chains</text>
-          <rect class="box" x="530" y="30" width="110" height="46" rx="3"/><text x="585" y="50" text-anchor="middle">policy loss</text><text class="muted" x="585" y="66" text-anchor="middle">(Chapter 5)</text>
-          <rect class="box" x="530" y="240" width="110" height="46" rx="3"/><text x="585" y="268" text-anchor="middle">value loss, MSE</text>
-          <line class="ink" x1="140" y1="53" x2="190" y2="53" marker-end="url(#ar4)"/>
-          <line class="ink" x1="300" y1="53" x2="360" y2="53" marker-end="url(#ar4)"/><text class="muted" x="330" y="46" text-anchor="middle">h</text>
-          <path class="ink" d="M245 76 L245 163 L360 163" marker-end="url(#ar4)"/><text class="muted" x="300" y="156" text-anchor="middle">residual stream</text>
-          <path class="ink" d="M140 213 L330 213 L330 175 L360 175" marker-end="url(#ar4)"/><text class="muted" x="235" y="206" text-anchor="middle">critic only</text>
-          <line class="ink" x1="480" y1="163" x2="530" y2="163" marker-end="url(#ar4)"/><text class="muted" x="505" y="156" text-anchor="middle">V</text>
-          <line class="ink" x1="480" y1="53" x2="530" y2="53" marker-end="url(#ar4)"/><text class="muted" x="505" y="46" text-anchor="middle">logits</text>
-          <line class="ink" x1="585" y1="140" x2="585" y2="76" marker-end="url(#ar4)"/><text class="muted" x="592" y="112">Â (weights)</text>
-          <line class="ink" x1="585" y1="186" x2="585" y2="240" marker-end="url(#ar4)"/><text class="muted" x="592" y="218">y = Â + V</text>
-          <line class="l2" stroke-dasharray="4 3" x1="10" y1="120" x2="350" y2="120"/><text class="muted" x="12" y="112">used when playing ↑</text><text class="muted" x="12" y="136">training only ↓</text>
+          <rect class="box" x="530" y="30" width="110" height="46" rx="3"/><text x="585" y="58" text-anchor="middle">chosen action</text>
+          <line class="ink" x1="140" y1="53" x2="190" y2="53" marker-end="url(#ar4a)"/>
+          <line class="ink" x1="300" y1="53" x2="360" y2="53" marker-end="url(#ar4a)"/><text class="muted" x="330" y="46" text-anchor="middle">h</text>
+          <line class="ink" x1="480" y1="53" x2="530" y2="53" marker-end="url(#ar4a)"/><text class="muted" x="505" y="46" text-anchor="middle">logits</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figure 4.2. Where the critic sits.</b> Everything above the dashed line runs when the agent plays; the privileged tokens and the value block below it run only in training. The privileged tokens enter only the value block, so they cannot change a single logit; a test in the repository permutes them and checks the logits stay bit-identical. GAE turns the critic's values into the advantage that weights the policy loss and the target that trains the critic.</figcaption>
+    <figcaption><b>Figure 4.2a. What runs when Instinct plays.</b> The trunk reads the observation tokens. The policy heads turn the trunk's output into logits over the legal actions.</figcaption>
+  </figure>
+
+  <p>The critic adds one transformer block, the value block. It reads the trunk's residual stream, taken before the trunk's final norm, together with the privileged tokens. Two linear heads on the first token give two values, \(V_{\text{combat}}\) and \(V_{\text{run}}\).</p>
+
+  <figure id="fig-dataflow-b">
+    <div class="scroll">
+      <svg viewBox="0 0 660 212" role="img" aria-label="The play path from Figure 4.2a, plus a value block below a dashed line. The value block reads the trunk's residual stream and the privileged tokens and outputs V_combat and V_run.">
+        <defs><marker id="ar4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="10" y="30" width="130" height="46" rx="3"/><text x="75" y="50" text-anchor="middle">observation tokens</text><text class="muted" x="75" y="66" text-anchor="middle">hand, deck, map, intents</text>
+          <rect class="box" x="190" y="30" width="110" height="46" rx="3"/><text x="245" y="58" text-anchor="middle">trunk (4 blocks)</text>
+          <rect class="box" x="360" y="30" width="120" height="46" rx="3"/><text x="420" y="50" text-anchor="middle">policy heads</text><text class="muted" x="420" y="66" text-anchor="middle">combat, out of combat</text>
+          <rect class="box" x="530" y="30" width="110" height="46" rx="3"/><text x="585" y="58" text-anchor="middle">chosen action</text>
+          <line class="ink" x1="140" y1="53" x2="190" y2="53" marker-end="url(#ar4b)"/>
+          <line class="ink" x1="300" y1="53" x2="360" y2="53" marker-end="url(#ar4b)"/><text class="muted" x="330" y="46" text-anchor="middle">h</text>
+          <line class="ink" x1="480" y1="53" x2="530" y2="53" marker-end="url(#ar4b)"/><text class="muted" x="505" y="46" text-anchor="middle">logits</text>
+          <line class="l2" stroke-dasharray="4 3" x1="10" y1="108" x2="650" y2="108"/><text class="muted" x="12" y="100">used when playing ↑</text><text class="muted" x="12" y="124">training only ↓</text>
+          <rect class="box" x="10" y="156" width="130" height="46" rx="3"/><text x="75" y="176" text-anchor="middle">PRIV tokens</text><text class="muted" x="75" y="192" text-anchor="middle">draw order, moves, rooms</text>
+          <rect class="box" x="360" y="140" width="120" height="46" rx="3"/><text x="420" y="160" text-anchor="middle">value block</text><text class="muted" x="420" y="176" text-anchor="middle">V_combat, V_run</text>
+          <path class="ink" d="M245 76 L245 154 L360 154" marker-end="url(#ar4b)"/><text class="muted" x="300" y="147" text-anchor="middle">residual stream</text>
+          <path class="ink" d="M140 179 L360 179" marker-end="url(#ar4b)"/><text class="muted" x="250" y="196" text-anchor="middle">critic only</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 4.2b. The value block and its inputs.</b> Everything below the dashed line runs only in training. The privileged tokens enter only the value block, so they cannot change a logit. A repository test scrambles every privileged field and checks that the logits stay bit-identical while the values change.</figcaption>
   </figure>
 
   <figure class="listing">
@@ -392,44 +405,126 @@ with torch.autocast(z0.device.type, enabled=False):
 return vc, vr</code></pre>
     <figcaption>sts2-pycli/python/ppo/e2e/net.py, lines 1471-1481: the value module. x is the trunk's token stream, e_priv the embedded privileged tokens.</figcaption>
   </figure>
-  <p>Token 0 of every decision is the run-context token, so both heads give one number per decision. Training uses <code>V_combat</code> at combat decisions and <code>V_run</code> at every other decision. In the tour's notation both are \(V_\phi\); we write \(V_\phi^{\text{c}}\) and \(V_\phi^{\text{r}}\) when the head matters. The repository's <code>adv</code> column is \(\hat{A}_t\), its <code>target</code> column is \(\hat{A}_t + V_\phi(s_t)\), and its <code>LAM_C</code>, <code>LAM_R</code> are \(\lambda_c = 0.95\) and \(\lambda_r = 0.97\).</p>
+  <p>Token 0 of every decision is the run-context token, so each head gives one number per decision. Combat decisions use <code>V_combat</code>, and every other decision uses <code>V_run</code>. In the tour's notation both are \(V_\phi\). This chapter writes \(V_\phi^{\text{c}}\) and \(V_\phi^{\text{r}}\) when the head matters. In the repository, the <code>adv</code> column is \(\hat{A}_t\), the <code>target</code> column is \(\hat{A}_t + V_\phi(s_t)\), and <code>LAM_C</code> and <code>LAM_R</code> are \(\lambda_c = 0.95\) and \(\lambda_r = 0.97\).</p>
+  <p>GAE turns the critic's values into the two outputs that training uses.</p>
+
+  <figure id="fig-dataflow-c">
+    <div class="scroll">
+      <svg viewBox="0 0 660 300" role="img" aria-label="Figure 4.2b plus a GAE box. GAE reads V from the value block and sends the advantage to the policy loss and the target to the value loss.">
+        <defs><marker id="ar4c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="10" y="30" width="130" height="46" rx="3"/><text x="75" y="50" text-anchor="middle">observation tokens</text><text class="muted" x="75" y="66" text-anchor="middle">hand, deck, map, intents</text>
+          <rect class="box" x="190" y="30" width="110" height="46" rx="3"/><text x="245" y="58" text-anchor="middle">trunk (4 blocks)</text>
+          <rect class="box" x="360" y="30" width="120" height="46" rx="3"/><text x="420" y="50" text-anchor="middle">policy heads</text><text class="muted" x="420" y="66" text-anchor="middle">combat, out of combat</text>
+          <rect class="box" x="530" y="30" width="110" height="46" rx="3"/><text x="585" y="58" text-anchor="middle">chosen action</text>
+          <line class="ink" x1="140" y1="53" x2="190" y2="53" marker-end="url(#ar4c)"/>
+          <line class="ink" x1="300" y1="53" x2="360" y2="53" marker-end="url(#ar4c)"/><text class="muted" x="330" y="46" text-anchor="middle">h</text>
+          <line class="ink" x1="480" y1="53" x2="530" y2="53" marker-end="url(#ar4c)"/><text class="muted" x="505" y="46" text-anchor="middle">logits</text>
+          <line class="l2" stroke-dasharray="4 3" x1="10" y1="108" x2="650" y2="108"/><text class="muted" x="12" y="100">used when playing ↑</text><text class="muted" x="12" y="124">training only ↓</text>
+          <rect class="box" x="10" y="156" width="130" height="46" rx="3"/><text x="75" y="176" text-anchor="middle">PRIV tokens</text><text class="muted" x="75" y="192" text-anchor="middle">draw order, moves, rooms</text>
+          <rect class="box" x="360" y="140" width="120" height="46" rx="3"/><text x="420" y="160" text-anchor="middle">value block</text><text class="muted" x="420" y="176" text-anchor="middle">V_combat, V_run</text>
+          <path class="ink" d="M245 76 L245 154 L360 154" marker-end="url(#ar4c)"/><text class="muted" x="300" y="147" text-anchor="middle">residual stream</text>
+          <path class="ink" d="M140 179 L360 179" marker-end="url(#ar4c)"/><text class="muted" x="250" y="196" text-anchor="middle">critic only</text>
+          <rect class="box" x="530" y="140" width="110" height="46" rx="3"/><text x="585" y="168" text-anchor="middle">GAE, two chains</text>
+          <rect class="box" x="360" y="244" width="120" height="46" rx="3"/><text x="420" y="264" text-anchor="middle">policy loss</text><text class="muted" x="420" y="280" text-anchor="middle">(Chapter 5)</text>
+          <rect class="box" x="530" y="244" width="110" height="46" rx="3"/><text x="585" y="272" text-anchor="middle">value loss, MSE</text>
+          <line class="ink" x1="480" y1="163" x2="530" y2="163" marker-end="url(#ar4c)"/><text class="muted" x="505" y="156" text-anchor="middle">V</text>
+          <path class="ink" d="M550 186 L550 222 L460 222 L460 244" marker-end="url(#ar4c)"/><text class="muted" x="505" y="216" text-anchor="middle">Â (weight)</text>
+          <line class="ink" x1="615" y1="186" x2="615" y2="244" marker-end="url(#ar4c)"/><text class="muted" x="609" y="236" text-anchor="end">Â + V</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 4.2c. What the critic's values are for.</b> GAE turns them into the advantage \(\hat{A}\), which weights the policy loss of Chapter 5, and the target \(\hat{A} + V\), which trains the critic by squared error.</figcaption>
+  </figure>
 
   <h3>Two chains</h3>
-  <p>A run interleaves two kinds of decision: about 88% are card plays and targets inside fights, the rest are map moves, card rewards, shops, rest sites and events. Spire Mentor runs GAE along two chains through the same run.</p>
+  <p>A run interleaves two kinds of decision. About 88% are card plays and target choices inside fights. The rest are map moves, card rewards, shops, rest sites and events. Spire Mentor runs GAE along two chains through the same run. Inside a fight, the combat chain links each decision to the next one.</p>
 
-  <figure id="fig-chains">
+  <figure id="fig-chains-a">
     <div class="scroll">
-      <svg viewBox="0 0 660 200" role="img" aria-label="A run's decisions on a line: run decisions R and fight decisions C. The combat chain links consecutive fight decisions and ends at the next run decision. The run chain links run decisions and jumps over each fight.">
-        <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <svg viewBox="0 0 660 140" role="img" aria-label="A run's decisions on a line: run decisions R and fight decisions. Arcs link consecutive decisions inside each fight.">
         <g color="var(--fg)">
           <text class="muted" x="8" y="104">decisions</text>
-          <g>
-            <circle class="f2" cx="90" cy="100" r="9"/><text x="90" y="104" text-anchor="middle" font-size="10">R</text>
-            <circle class="f2" cx="125" cy="100" r="9"/><text x="125" y="104" text-anchor="middle" font-size="10">R</text>
-            <circle class="f1" cx="170" cy="100" r="9"/><circle class="f1" cx="205" cy="100" r="9"/><circle class="f1" cx="240" cy="100" r="9"/><circle class="f1" cx="275" cy="100" r="9"/><circle class="f1" cx="310" cy="100" r="9"/>
-            <circle class="f2" cx="355" cy="100" r="9"/><text x="355" y="104" text-anchor="middle" font-size="10">R</text>
-            <circle class="f1" cx="400" cy="100" r="9"/><circle class="f1" cx="435" cy="100" r="9"/><circle class="f1" cx="470" cy="100" r="9"/><circle class="f1" cx="505" cy="100" r="9"/>
-            <circle class="f2" cx="550" cy="100" r="9"/><text x="550" y="104" text-anchor="middle" font-size="10">R</text>
-            <circle class="f2" cx="585" cy="100" r="9"/><text x="585" y="104" text-anchor="middle" font-size="10">R</text>
-          </g>
+          <circle class="f2" cx="90" cy="100" r="9"/><text x="90" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f2" cx="125" cy="100" r="9"/><text x="125" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f1" cx="170" cy="100" r="9"/><circle class="f1" cx="205" cy="100" r="9"/><circle class="f1" cx="240" cy="100" r="9"/><circle class="f1" cx="275" cy="100" r="9"/><circle class="f1" cx="310" cy="100" r="9"/>
+          <circle class="f2" cx="355" cy="100" r="9"/><text x="355" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f1" cx="400" cy="100" r="9"/><circle class="f1" cx="435" cy="100" r="9"/><circle class="f1" cx="470" cy="100" r="9"/><circle class="f1" cx="505" cy="100" r="9"/>
+          <circle class="f2" cx="550" cy="100" r="9"/><text x="550" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f2" cx="585" cy="100" r="9"/><text x="585" y="104" text-anchor="middle" font-size="10">R</text>
           <text class="muted" x="240" y="132" text-anchor="middle">elite fight: combat decisions</text>
           <text class="muted" x="452" y="132" text-anchor="middle">monster fight</text>
           <path class="l1" d="M179 92 Q187 80 196 92 M214 92 Q222 80 231 92 M249 92 Q257 80 266 92 M284 92 Q292 80 301 92" stroke-width="1.5"/>
-          <path class="l1" d="M319 92 Q334 74 349 92" stroke-width="2" marker-end="url(#ar5)"/>
-          <text x="334" y="68" text-anchor="middle" font-size="11">fight ends at V_run</text>
           <path class="l1" d="M409 92 Q417 80 426 92 M444 92 Q452 80 461 92 M479 92 Q487 80 496 92" stroke-width="1.5"/>
+          <line class="l1" stroke-width="2" x1="70" y1="20" x2="92" y2="20"/><text x="98" y="24">combat chain, λ_c = 0.95, values from V_combat</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 4.3a. The combat chain inside fights.</b> R marks a run decision. An unlabelled circle is a combat decision. Each arc is one TD residual, and the recursion \eqref{eq:gae-rec} runs backward along the arcs.</figcaption>
+  </figure>
+
+  <p>The last decision of a fight has a run decision as its successor. So its TD residual uses that run decision's value from <code>V_run</code>.</p>
+
+  <figure id="fig-chains-b">
+    <div class="scroll">
+      <svg viewBox="0 0 660 140" role="img" aria-label="Figure 4.3a plus one arc at the end of each fight, from the fight's last decision to the next run decision.">
+        <defs><marker id="ar5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <text class="muted" x="8" y="104">decisions</text>
+          <circle class="f2" cx="90" cy="100" r="9"/><text x="90" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f2" cx="125" cy="100" r="9"/><text x="125" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f1" cx="170" cy="100" r="9"/><circle class="f1" cx="205" cy="100" r="9"/><circle class="f1" cx="240" cy="100" r="9"/><circle class="f1" cx="275" cy="100" r="9"/><circle class="f1" cx="310" cy="100" r="9"/>
+          <circle class="f2" cx="355" cy="100" r="9"/><text x="355" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f1" cx="400" cy="100" r="9"/><circle class="f1" cx="435" cy="100" r="9"/><circle class="f1" cx="470" cy="100" r="9"/><circle class="f1" cx="505" cy="100" r="9"/>
+          <circle class="f2" cx="550" cy="100" r="9"/><text x="550" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f2" cx="585" cy="100" r="9"/><text x="585" y="104" text-anchor="middle" font-size="10">R</text>
+          <text class="muted" x="240" y="132" text-anchor="middle">elite fight: combat decisions</text>
+          <text class="muted" x="452" y="132" text-anchor="middle">monster fight</text>
+          <path class="l1" d="M179 92 Q187 80 196 92 M214 92 Q222 80 231 92 M249 92 Q257 80 266 92 M284 92 Q292 80 301 92" stroke-width="1.5"/>
+          <path class="l1" d="M409 92 Q417 80 426 92 M444 92 Q452 80 461 92 M479 92 Q487 80 496 92" stroke-width="1.5"/>
+          <line class="l1" stroke-width="2" x1="70" y1="20" x2="92" y2="20"/><text x="98" y="24">combat chain, λ_c = 0.95, values from V_combat</text>
+          <path class="l1" d="M319 92 Q334 74 349 92" stroke-width="2" marker-end="url(#ar5b)"/>
+          <text x="334" y="70" text-anchor="middle" font-size="11">fight ends at V_run</text>
+          <path class="l1" d="M514 92 Q529 74 544 92" stroke-width="2" marker-end="url(#ar5b)"/>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 4.3b. Each fight ends at the run's value.</b> The last residual of a fight lands on the run decision after the fight, valued by \(V_{\text{run}}\). So every card play is scored partly by what the fight did to the value of the whole run.</figcaption>
+  </figure>
+
+  <p>Run decisions get their own chain, the run chain, which skips over fights.</p>
+
+  <figure id="fig-chains">
+    <div class="scroll">
+      <svg viewBox="0 0 660 200" role="img" aria-label="Figure 4.3b plus the run chain below the line: arcs that link run decisions and jump over each fight.">
+        <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <text class="muted" x="8" y="104">decisions</text>
+          <circle class="f2" cx="90" cy="100" r="9"/><text x="90" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f2" cx="125" cy="100" r="9"/><text x="125" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f1" cx="170" cy="100" r="9"/><circle class="f1" cx="205" cy="100" r="9"/><circle class="f1" cx="240" cy="100" r="9"/><circle class="f1" cx="275" cy="100" r="9"/><circle class="f1" cx="310" cy="100" r="9"/>
+          <circle class="f2" cx="355" cy="100" r="9"/><text x="355" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f1" cx="400" cy="100" r="9"/><circle class="f1" cx="435" cy="100" r="9"/><circle class="f1" cx="470" cy="100" r="9"/><circle class="f1" cx="505" cy="100" r="9"/>
+          <circle class="f2" cx="550" cy="100" r="9"/><text x="550" y="104" text-anchor="middle" font-size="10">R</text>
+          <circle class="f2" cx="585" cy="100" r="9"/><text x="585" y="104" text-anchor="middle" font-size="10">R</text>
+          <text class="muted" x="240" y="132" text-anchor="middle">elite fight: combat decisions</text>
+          <text class="muted" x="452" y="132" text-anchor="middle">monster fight</text>
+          <path class="l1" d="M179 92 Q187 80 196 92 M214 92 Q222 80 231 92 M249 92 Q257 80 266 92 M284 92 Q292 80 301 92" stroke-width="1.5"/>
+          <path class="l1" d="M409 92 Q417 80 426 92 M444 92 Q452 80 461 92 M479 92 Q487 80 496 92" stroke-width="1.5"/>
+          <line class="l1" stroke-width="2" x1="70" y1="20" x2="92" y2="20"/><text x="98" y="24">combat chain, λ_c = 0.95, values from V_combat</text>
+          <path class="l1" d="M319 92 Q334 74 349 92" stroke-width="2" marker-end="url(#ar5)"/>
+          <text x="334" y="70" text-anchor="middle" font-size="11">fight ends at V_run</text>
           <path class="l1" d="M514 92 Q529 74 544 92" stroke-width="2" marker-end="url(#ar5)"/>
+          <line class="l2" stroke-width="2" x1="70" y1="40" x2="92" y2="40"/><text x="98" y="44">run chain, λ_r = 0.97, values from V_run</text>
           <path class="l2" d="M99 110 Q108 122 116 110" stroke-width="1.5"/>
           <path class="l2" d="M125 110 Q240 185 355 110" stroke-width="2" marker-end="url(#ar5)"/>
           <text x="240" y="172" text-anchor="middle" font-size="11">run chain: R = reward over the fight, δ = R + V_after − V_before</text>
           <path class="l2" d="M355 110 Q452 175 550 110" stroke-width="2" marker-end="url(#ar5)"/>
           <path class="l2" d="M559 110 Q567 122 576 110" stroke-width="1.5"/>
-          <line class="l1" stroke-width="2" x1="70" y1="20" x2="92" y2="20"/><text x="98" y="24">combat chain, λ_c = 0.95, values from V_combat</text>
-          <line class="l2" stroke-width="2" x1="70" y1="40" x2="92" y2="40"/><text x="98" y="44">run chain, λ_r = 0.97, values from V_run</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figure 4.3. The two advantage chains of one run.</b> Each arc is one surprise \(\delta\). The combat chain (above) runs decision by decision inside a fight; its last surprise lands on the run decision after the fight, so every card play is scored partly by what the fight did to the value of the whole run. The run chain (below) skips over fights: one surprise per fight, summing whatever reward the fight paid. The elite question lives in the run chain's arc over the elite.</figcaption>
+    <figcaption><b>Figure 4.3c. The run chain skips over fights.</b> One residual of the run chain spans a whole fight and adds up whatever reward the fight paid. The elite question from Section 1 is answered by the run chain's arc over the elite.</figcaption>
   </figure>
 
   <figure class="listing">
@@ -443,8 +538,9 @@ return vc, vr</code></pre>
   the bootstrap row (cut) or the terminal (value 0).</code></pre>
     <figcaption>sts2-pycli/python/ppo/e2e/algo.py, lines 24-31: the two chains as the code's own docstring states them. "Row" is one stored decision.</figcaption>
   </figure>
-  <p>The indicator \(\mathbf{1}[\cdot]\) is the whole trick. A combat advantage continues backward only into another combat decision. So the recursion \eqref{eq:gae-rec} restarts at every fight, but each fight's last surprise is measured against \(V_\phi^{\text{r}}\) of the map after the fight. A card play is scored by how it moved the fight toward a better run, not by how the run eventually ended. The one exception is act 3, which ends in two bosses back to back: the first boss chains straight into the second.</p>
-  <p>The plan that set this design quotes the reason for that exception: scoring each boss fight on its own gives a won first boss a mean surprise of \(-0.62\), because the critic at the end of boss 1 has to predict boss 2 too. (That figure is the plan's; we did not re-derive it.) The run chain uses \(\lambda_r = 0.97\), slightly longer than the combat chain's, because there are only about 78 run decisions per run and each one, like choosing a path or a card, has slow consequences.</p>
+  <p>The indicator \(\mathbf{1}[\cdot]\) in the listing restarts the combat recursion at every fight. A combat advantage continues backward only into another combat decision. So a card play is scored by how it moved the fight toward a better run, not by how the run ended.</p>
+  <p>Act 3 ends in two bosses back to back. The map step between them is forced, and Spire Mentor never stores a forced step. So the last decision of the first boss has the first decision of the second boss as its successor, and the combat chain runs through both fights. The plan gives the reason for wanting that. When each boss fight is scored on its own, a won first boss gets a mean TD residual of \(-0.62\), because the critic at the end of the first boss has to predict the second boss too. That number is the plan's, and this chapter did not re-derive it.</p>
+  <p>The plan states the goal of the two chains in its summary: combat advantages chain into the run's value, "so a fight is scored by what it does to the run". An earlier training lane in the project, called H3, already scored each fight by the change in the run critic's value. The run chain uses \(\lambda_r = 0.97\), which looks further ahead than the combat chain's 0.95. The plan does not say why. A possible reason, which is this chapter's inference: a run has only about 78 run decisions, and the consequences of each one, such as a choice of path or card, arrive slowly.</p>
 
   <figure class="listing">
     <pre><code>| Returns | γ = 1. Combat rows chain by row adjacency: successor = the next
@@ -460,25 +556,23 @@ Reward (pre-registered): win +1.0; +0.05 per boss beaten ...; +0.002 per new
 floor; death or cap 0; no HP shaping.</code></pre>
     <figcaption>docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md, lines 267-269 and 276 (abridged, rewrapped).</figcaption>
   </figure>
-  <p>Two alternatives are on record as rejected. The plan lists "critic splits" and a histogram-loss value head among the changes it did not plan, because earlier screens found no gain. And it gives run decisions a hold-back: a run decision waits up to four iterations for its run to finish, so its chain reaches the true end more often instead of bootstrapping from a cut.</p>
+  <p>The plan rejects two alternatives. It lists critic splits and a histogram-loss value head among the changes it did not plan, because earlier screens found no gain. It also holds run decisions back. A run decision waits up to four iterations for its run to finish, so its chain reaches the true end more often instead of bootstrapping from a cut. The plan puts numbers on the trade. The weight of the bootstrapped value in a run advantage falls from 0.78 to 0.08, and the held decisions are on average 3.7 iterations old when they train.</p>
 
   <div class="example"><span class="label">In Spire Mentor · the elite fork</span>
-    <p>Back to the question we opened with. An elite fight pays only its floor, +0.002. It never touches the per-boss or win reward directly. In the run chain its surprise is</p>
-    <div class="eq">\begin{equation} \delta_{\text{elite}} = R_{\text{fight}} + V_\phi^{\text{r}}(s_{\text{after}}) - V_\phi^{\text{r}}(s_{\text{before}}), \label{eq:elite} \end{equation}</div>
-    <p>where \(s_{\text{before}}\) is the map decision that chose the elite path and \(s_{\text{after}}\) the first decision after the fight (usually the card reward). With \(R_{\text{fight}} \approx 0\), the whole judgement is the critic's change of mind across the fight. If the critic believes relics win runs, a won elite raises \(V^{\text{r}}\), the surprise is positive, and the map decision that chose the elite path gets a positive advantage. If the fight cost too much HP, \(V^{\text{r}}\) falls and the choice is punished. The win at the end of the run never had to arrive.</p>
+    <p>Go back to the elite fork from Section 1. An elite fight pays only its floor, +0.002. It never pays the per-boss reward or the win reward directly. In the run chain, its TD residual is</p>
+    <div class="eq">\begin{equation} \delta_{\text{elite}} = R_{\text{fight}} + V_\phi^{\text{r}}(s_{\text{after}}) - V_\phi^{\text{r}}(s_{\text{before}}). \label{eq:elite} \end{equation}</div>
+    <p>Here \(s_{\text{before}}\) is the map decision that chose the elite path, and \(s_{\text{after}}\) is the first decision after the fight, usually the card reward. With \(R_{\text{fight}} \approx 0\), the critic's change in value across the fight decides the score. If the critic predicts that relics win runs, a won elite raises \(V^{\text{r}}\). The TD residual is positive, and the map decision that chose the elite gets a positive advantage. If the fight cost too much HP, \(V^{\text{r}}\) falls, and the choice gets a negative advantage. The score does not wait for the win at the end of the run.</p>
   </div>
 
-  <h2 id="measured">11. Measured</h2>
-  <p>We played the first 200 seeds of the tour's seed panel A with the published Ironclad checkpoint, <code>ironclad_e2e_d9000_ema0999</code>. Each run was played on the project's own training environment, with privileged tokens on as training builds them. At each of the 133,398 decisions we ran the full network, took its greedy move and recorded both value heads. Instinct won 166 of the 200 runs, with 667 decisions per run on average.</p>
+  <h2 id="measured">11. The critic measured on 200 runs</h2>
+  <p>This chapter's measurement script, <code>figures.py</code>, played the first 200 seeds of the tour's seed panel A with the published Ironclad checkpoint, <code>ironclad_e2e_d9000_ema0999</code>. Each run used the project's own training environment, with privileged tokens on, as in training. At each of the 133,398 decisions, the script ran the full network, took its greedy move and recorded both value heads. Instinct won 166 of the 200 runs, with 667 decisions per run on average.</p>
 
   <div class="measured"><span class="label">Measured · 200 seeds of PANEL_A · M2 Max, CPU</span>
-    <p>This is the real critic, not a substitute: the checkpoint's own value module, with privileged inputs supplied by the same Rust environment the training workers use. Two departures from training. Moves are greedy, where training samples, so these are the values along the policy's most likely path. And the check computes everything after the fact on whole runs, so no chain is cut. On the first 12 seeds, greedy play from this checkpoint matched the published runtime network in outcome, number of decisions and final floor.</p>
+    <p>This is the real critic: the checkpoint's own value module, with privileged inputs from the same Rust environment that the training workers use. The measurement differs from training in two ways. Moves are greedy, where training samples, so these values follow the policy's most likely path. And the script computes everything afterwards on whole runs, so no chain is cut. On the first 12 seeds, greedy play from this checkpoint matched the published runtime network in outcome, number of decisions and final floor.</p>
   </div>
 
-  <h3>What the critic says along a run</h3>
-  <details class="predict"><summary>Pause and predict: at the first decision of a run, before any card is seen, what value does the critic give? A won run collects about 1.24.</summary>
-    <p>On average 0.961. Instinct won 83% of these runs, and a won run collects about 1.24, so the honest expected return is about 1.063. The critic's opening estimate is about 0.10 below that, which you can see again in the calibration plot below.</p>
-  </details>
+  <h3>The critic's value along a run</h3>
+  <p>At the first decision of a run, before any card is seen, the critic gives 0.961 on average. Instinct won 83% of these runs, and a won run collects about 1.24, so the true expected return is about 1.063. The critic's opening estimate is about 0.10 too low. The calibration plot in Figure 4.5 shows the same gap.</p>
 
   <figure id="fig-traces">
     <div class="scroll">
@@ -595,23 +689,23 @@ floor; death or cap 0; no HP shaping.</code></pre>
 </svg>
 <!-- /FIG:traces -->
     </div>
-    <figcaption><b>Figure 4.4. The critic's value at every decision of two runs.</b> Shaded bands are fights: grey for ordinary monsters, orange for elites, purple for bosses. In the won run (top) the value sits near its ceiling for all 718 decisions and moves mostly at fight boundaries; it steps down after each boss because the boss bonus has just been paid and is no longer in the future. In the lost run (bottom) the value holds until the fight that kills Instinct, then collapses within a few turns. The dashed line is the same critic with its privileged tokens removed: it reads lower throughout, most of all early in the run, and falls at the same decision.</figcaption>
+    <figcaption><b>Figure 4.4. The critic's value at every decision of two runs.</b> Shaded bands are fights: grey for ordinary monsters, orange for elites and purple for bosses. In the won run (top), the value stays near its ceiling for all 718 decisions and moves mostly at fight boundaries. It steps down after each boss, because the boss bonus has been paid and is no longer in the future. In the lost run (bottom), the value holds until the fight that kills Instinct, and then it falls to zero within a few turns. The dashed line is the same critic with its privileged tokens removed. It reads lower throughout, most of all early in the run, and falls at the same decision.</figcaption>
   </figure>
 
-  <p>Where does the critic change its mind? We split the one-step surprises \(|\delta_t|\) by where they occur.</p>
+  <p>The table splits the absolute TD residuals \(|\delta_t|\) by where they occur.</p>
   <div class="table"><table>
-    <thead><tr><th>where the surprise occurs</th><th class="num">decisions</th><th class="num">mean \(|\delta|\)</th><th class="num">total \(|\delta|\)</th></tr></thead>
+    <thead><tr><th>where the residual occurs</th><th class="num">decisions</th><th class="num">mean \(|\delta|\)</th><th class="num">total \(|\delta|\)</th></tr></thead>
     <tbody>
       <tr><td>inside a fight</td><td class="num">113,041</td><td class="num">0.0063</td><td class="num">712.0</td></tr>
       <tr><td>a fight's last decision</td><td class="num">4,604</td><td class="num">0.0261</td><td class="num">120.0</td></tr>
       <tr><td>run chain step</td><td class="num">15,565</td><td class="num">0.0249</td><td class="num">387.5</td></tr>
     </tbody>
-    <caption>Mean and total absolute one-step surprise, over all 200 runs. "Inside a fight" is a combat decision followed by another decision of the same fight. "Fight's last decision" is the hand-over from \(V^{\text{c}}\) to \(V^{\text{r}}\) (or to the end of the run). "Run chain step" is one arc of the run chain in Figure 4.3, spanning a whole fight when one follows.</caption>
+    <caption>Mean and total absolute TD residual, over all 200 runs. "Inside a fight" is a combat decision followed by another decision of the same fight. "A fight's last decision" is the hand-over from \(V^{\text{c}}\) to \(V^{\text{r}}\), or to the end of the run. "Run chain step" is one arc of the run chain in Figure 4.3c, and it spans a whole fight when one follows.</caption>
   </table></div>
-  <p>A surprise inside a fight is small: 0.006 on average, a quarter of the size of one at a fight's end. But there are 25 times as many of them, so in total most of the critic's revisions happen card by card. Per decision, the critic changes its mind most where a fight ends and the combat head hands over to the run head. The two-chain design puts a chain boundary exactly there.</p>
+  <p>A residual inside a fight is small: 0.006 on average, a quarter of the size of one at a fight's end. But there are 25 times as many of them, so most of the critic's total revision happens card by card. Per decision, the critic revises its value most where a fight ends and the combat head hands over to the run head. The two-chain design puts a chain boundary exactly there.</p>
 
-  <h3>Is the critic calibrated?</h3>
-  <p>A regression is <dfn>calibrated</dfn> if, among inputs where it predicts \(v\), the label averages \(v\). We grouped all 133,398 decisions into bands of predicted value and compared each band's mean value with the mean return that actually followed.</p>
+  <h3>The critic is close to calibrated</h3>
+  <p>A regression is <dfn>calibrated</dfn> if, among inputs where it predicts \(v\), the label averages \(v\). The script grouped all 133,398 decisions into bands of predicted value. It compared each band's mean value with the mean return that followed.</p>
   <figure id="fig-calibration">
     <div class="scroll">
 <!-- FIG:calibration -->
@@ -683,30 +777,28 @@ floor; death or cap 0; no HP shaping.</code></pre>
 </svg>
 <!-- /FIG:calibration -->
     </div>
-    <figcaption><b>Figure 4.5. Calibration of the critic.</b> Each circle is a band of decisions (numbers give the count), placed at the band's mean predicted value and the mean return that followed. On the dashed diagonal the critic would be exactly right on average. Squares show the share of those decisions that belong to won runs; they sit below the circles near the top because \(G\) also counts boss and floor rewards.</figcaption>
+    <figcaption><b>Figure 4.5. Calibration of the critic.</b> Each circle is a band of decisions, labelled with its count. It sits at the band's mean predicted value and the mean return that followed. On the dashed diagonal, the critic would be exactly right on average. Squares show the share of those decisions that belong to won runs. Near the top, the squares sit below the circles, because \(G\) also counts boss and floor rewards.</figcaption>
   </figure>
-  <details class="predict"><summary>Pause and predict: when the critic says about 0.5, how often is the run won?</summary>
-    <p>42% of the 5,383 decisions with \(0.4 \le V &lt; 0.6\) belong to runs that were won. Averaged over those decisions, the return that followed was 0.501 against a predicted 0.514: right on average. The win share sits below the value because a won run pays about 1.24, so a 42% chance of winning plus some boss and floor reward is worth about 0.5.</p>
-  </details>
-  <p>The circles sit close to the diagonal across the whole range. Below 0.2 the critic is slightly high (0.068 predicted, 0.034 realised). Between 0.2 and 0.4 it is low (0.321 against 0.440, over 1,496 decisions), and above 0.8 it is low by 0.03 to 0.06. One likely reason for the upper gap: these runs were played greedily, and the critic was trained to evaluate the sampling policy. If greedy play wins more often than sampled play, the critic will under-predict greedy returns by exactly this kind of offset. (We did not measure sampled play here, so this is an explanation, not a measurement.)</p>
+  <p>The circles sit close to the diagonal across the whole range. Take the band where the critic says about 0.5: the 5,383 decisions with \(0.4 \le V &lt; 0.6\). The return that followed averaged 0.501, against a predicted 0.514. Of those decisions, 42% belong to runs that were won. The win share is below the value because a won run pays about 1.24. A 42% chance of winning, plus some boss and floor reward, is worth about 0.5.</p>
+  <p>The other bands are off by small amounts. Below 0.2 the critic is slightly high: 0.068 predicted, 0.034 realised. Between 0.2 and 0.4 it is low: 0.321 against 0.440, over 1,496 decisions. Above 0.8 it is low by 0.03 to 0.06. One possible reason for the upper gap is that these runs were played greedily, and the critic was trained to evaluate the sampling policy. If greedy play wins more often than sampled play, the critic under-predicts greedy returns by this kind of offset. The script did not measure sampled play, so this reason is untested.</p>
 
-  <h3>How much of the return does the critic explain?</h3>
-  <p>The usual diagnostic is the <dfn>explained variance</dfn>, \(1 - \operatorname{Var}(G_t - V_\phi(s_t)) / \operatorname{Var}(G_t)\): the share of the return's variance across decisions that the critic predicts. It is the \(R^2\) of the regression, with \(G_t\) as the label. We computed it with the repository's own function, separately for combat and run decisions, and again with the privileged tokens removed.</p>
+  <h3>The critic explains a quarter of the return's variance</h3>
+  <p>The usual diagnostic is the <dfn>explained variance</dfn>, \(1 - \operatorname{Var}(G_t - V_\phi(s_t)) / \operatorname{Var}(G_t)\). It is the share of the return's variance across decisions that the critic predicts, which is the \(R^2\) of the regression with \(G_t\) as the label. The script computed it with the repository's own function, separately for combat and run decisions. Then it computed it again with the privileged tokens removed.</p>
   <div class="table"><table>
     <thead><tr><th>decisions</th><th class="num">with PRIV (as trained)</th><th class="num">PRIV removed</th></tr></thead>
     <tbody>
       <tr><td>inside fights</td><td class="num">0.248</td><td class="num">0.047</td></tr>
-      <tr><td>between fights</td><td class="num">0.191</td><td class="num">-0.135</td></tr>
+      <tr><td>between fights</td><td class="num">0.191</td><td class="num">−0.135</td></tr>
     </tbody>
-    <caption>Explained variance of the return-to-go \(G_t\) by \(V_\phi(s_t)\), over 133,398 decisions. The training statistic uses the λ-return as the label; we use the full return, which is noisier and gives lower numbers.</caption>
+    <caption>Explained variance of the return-to-go \(G_t\) by \(V_\phi(s_t)\), over 133,398 decisions. The training statistic uses the λ-return as the label. This table uses the full return, which is noisier and gives lower numbers.</caption>
   </table></div>
-  <p>With its privileged tokens, the critic explains a quarter of the return's variance inside fights and a fifth between fights. Remove them and the share inside fights falls to 0.05; between fights it goes negative, meaning the critic predicts worse than a constant would. A negative score is possible because the network now reads an input it never saw in training, and its values shift down across the board (the dashed line in Figure 4.4). The size of the drop says this critic leans heavily on what it knows about the draw pile, the enemies' moves and the map ahead.</p>
+  <p>With its privileged tokens, the critic explains a quarter of the return's variance inside fights and a fifth between fights. Without them, the share inside fights falls to 0.05. Between fights it goes negative, which means that the critic predicts worse than a constant would. A negative score is possible because the network now reads an input it never saw in training, and its values shift down everywhere. The dashed line in Figure 4.4 shows that shift. The size of the drop says that this critic relies heavily on what it knows about the draw pile, the enemies' moves and the map ahead.</p>
   <div class="measured"><span class="label">Measured · substitute for a non-privileged critic</span>
-    <p>"PRIV removed" is not a critic trained without privileged information. It is the trained critic fed an input it never saw in training: the same network with the privileged tokens deleted. Its drop in explained variance is an upper bound on how much this critic relies on them, not a measure of what an honest critic could learn. An honest critic for comparison would need its own training run, which we did not do.</p>
+    <p>"PRIV removed" is not a critic trained without privileged information. It is the trained critic given an input that it never saw in training: the same network with the privileged tokens deleted. So its drop in explained variance is an upper bound on how much this critic relies on them. It does not measure what a critic trained without them could learn. That comparison needs its own training run, which this chapter did not do.</p>
   </div>
 
-  <h3>Bias against variance, measured</h3>
-  <p>Equation \eqref{eq:gae} predicts that the spread of \(\hat{A}_t\) grows with \(\lambda\), because more future surprises enter each estimate. We recomputed every advantage of every run with the repository's function at nine values of \(\lambda\), setting both chains' \(\lambda\) together.</p>
+  <h3>The advantage's spread grows with λ</h3>
+  <p>Equation \eqref{eq:gae} predicts that the spread of \(\hat{A}_t\) grows with \(\lambda\), because each estimate includes more future residuals. The script recomputed every advantage of every run with the repository's function at nine values of \(\lambda\), with both chains set to the same \(\lambda\).</p>
   <figure id="fig-lambda">
     <div class="scroll">
 <!-- FIG:lambda -->
@@ -770,15 +862,13 @@ floor; death or cap 0; no HP shaping.</code></pre>
 </svg>
 <!-- /FIG:lambda -->
     </div>
-    <figcaption><b>Figure 4.6. The spread of the advantage estimate as λ moves from TD to Monte Carlo.</b> At λ = 0 each advantage is a single surprise; at λ = 1 it is the full return minus the critic's value. Notice that the spread grows slowly up to about 0.75 and then fast: between λ = 0.95 and λ = 1 it more than doubles on both kinds of decision.</figcaption>
+    <figcaption><b>Figure 4.6. The spread of the advantage estimate as λ moves from the TD end to the Monte Carlo end.</b> At λ = 0, each advantage is one TD residual. At λ = 1, it is the full return minus the critic's value. The spread grows slowly up to about λ = 0.75 and fast after it. Between λ = 0.95 and λ = 1, it more than doubles on both kinds of decision.</figcaption>
   </figure>
-  <p>Moving from \(\lambda = 0\) to \(\lambda = 1\) multiplies the standard deviation of \(\hat{A}_t\) by 5.4 inside fights (0.019 to 0.100) and by 6.5 between fights (0.051 to 0.335). Run decisions spread more because each run-chain step spans a whole fight. The project's values, 0.95 and 0.97, sit just before the curve turns up: they buy a look-ahead of tens of decisions (Figure 4.1) at less than half the Monte Carlo spread. This plot shows only the variance side of the trade. The bias side, the cost of trusting a critic that explains a quarter of the variance, does not appear here, which is why \(\lambda\) is set by training experiments rather than by a formula.</p>
+  <p>From \(\lambda = 0\) to \(\lambda = 1\), the standard deviation of \(\hat{A}_t\) grows 5.4 times inside fights, from 0.019 to 0.100. Between fights it grows 6.5 times, from 0.051 to 0.335. Run decisions spread more because each run-chain step spans a whole fight. The project's values, 0.95 and 0.97, sit just before the curve turns up. They look tens of decisions ahead (Figure 4.1) at less than half the Monte Carlo spread. This plot shows only the variance side of the trade. The bias side comes from trusting a critic that explains a quarter of the variance, and measuring it needs a training run for each \(\lambda\). This chapter did not do those runs.</p>
 
-  <h3>The elite fork, measured</h3>
-  <p>For every fight that follows a map decision, we took \(V^{\text{r}}\) at the decision just before the fight and just after it, and grouped fights by room type and by the HP fraction at the fight's start. Act 3's second boss has no map decision before it and is left out.</p>
-  <details class="predict"><summary>Pause and predict: on average, does the run value rise or fall across an elite fight, and how does that compare with an ordinary fight?</summary>
-    <p>It rises slightly: by +0.005 on average over 1,382 elite fights. Across an ordinary monster fight it falls by 0.012. The difference, +0.017, is the critic's estimate of what an elite is worth to this policy beyond an ordinary fight, after the HP it costs.</p>
-  </details>
+  <h3>Elites raise the run's value and ordinary fights lower it</h3>
+  <p>For every fight that follows a map decision, the script took \(V^{\text{r}}\) at the decision just before the fight and just after it. It grouped the fights by room type and by the HP fraction at the fight's start. Act 3's second boss has no map decision before it, so the table leaves it out.</p>
+  <p>Across an elite fight, the run's value rises by 0.005 on average, over 1,382 elite fights. Across an ordinary monster fight, it falls by 0.012. The difference, +0.017, is the critic's estimate of what an elite is worth to this policy beyond an ordinary fight, after the HP it costs.</p>
   <figure id="fig-fork">
     <div class="scroll">
 <!-- FIG:fork -->
@@ -835,45 +925,46 @@ floor; death or cap 0; no HP shaping.</code></pre>
 </svg>
 <!-- /FIG:fork -->
     </div>
-    <figcaption><b>Figure 4.7. How a fight changes the critic's view of the run.</b> Bars are the mean of \(V^{\text{r}}_{\text{after}} - V^{\text{r}}_{\text{before}}\); small numbers are fight counts. A run that ends in the fight counts \(V_{\text{after}} = 0\). Boss bars are negative partly by construction: the boss bonus is paid during the fight, so it leaves the value.</figcaption>
+    <figcaption><b>Figure 4.7. How a fight changes the critic's view of the run.</b> Bars are the mean of \(V^{\text{r}}_{\text{after}} - V^{\text{r}}_{\text{before}}\), and the small numbers are fight counts. A run that ends in the fight counts \(V_{\text{after}} = 0\). Boss bars are negative partly by construction. The boss bonus is paid during the fight, so it leaves the value.</figcaption>
   </figure>
   <div class="table"><table>
     <thead><tr><th>room</th><th>HP at start</th><th class="num">fights</th><th class="num">runs ended</th><th class="num">mean \(V_{\text{before}}\)</th><th class="num">mean \(\Delta V\)</th><th class="num">mean \(\delta\)</th></tr></thead>
     <tbody>
-      <tr><td>monster</td><td>all</td><td class="num">2634</td><td class="num">0</td><td class="num">0.953</td><td class="num">−0.0122</td><td class="num">−0.0102</td></tr>
-      <tr><td>monster</td><td><50%</td><td class="num">61</td><td class="num">0</td><td class="num">0.848</td><td class="num">−0.0157</td><td class="num">−0.0138</td></tr>
+      <tr><td>monster</td><td>all</td><td class="num">2,634</td><td class="num">0</td><td class="num">0.953</td><td class="num">−0.0122</td><td class="num">−0.0102</td></tr>
+      <tr><td>monster</td><td>&lt;50%</td><td class="num">61</td><td class="num">0</td><td class="num">0.848</td><td class="num">−0.0157</td><td class="num">−0.0138</td></tr>
       <tr><td>monster</td><td>50-80%</td><td class="num">870</td><td class="num">0</td><td class="num">0.949</td><td class="num">−0.0157</td><td class="num">−0.0136</td></tr>
-      <tr><td>monster</td><td>>=80%</td><td class="num">1703</td><td class="num">0</td><td class="num">0.959</td><td class="num">−0.0103</td><td class="num">−0.0083</td></tr>
-      <tr><td>elite</td><td>all</td><td class="num">1382</td><td class="num">6</td><td class="num">0.962</td><td class="num">0.0046</td><td class="num">0.0068</td></tr>
-      <tr><td>elite</td><td><50%</td><td class="num">43</td><td class="num">2</td><td class="num">0.849</td><td class="num">−0.0094</td><td class="num">−0.0073</td></tr>
+      <tr><td>monster</td><td>≥80%</td><td class="num">1,703</td><td class="num">0</td><td class="num">0.959</td><td class="num">−0.0103</td><td class="num">−0.0083</td></tr>
+      <tr><td>elite</td><td>all</td><td class="num">1,382</td><td class="num">6</td><td class="num">0.962</td><td class="num">0.0046</td><td class="num">0.0068</td></tr>
+      <tr><td>elite</td><td>&lt;50%</td><td class="num">43</td><td class="num">2</td><td class="num">0.849</td><td class="num">−0.0094</td><td class="num">−0.0073</td></tr>
       <tr><td>elite</td><td>50-80%</td><td class="num">509</td><td class="num">2</td><td class="num">0.956</td><td class="num">0.0045</td><td class="num">0.0067</td></tr>
-      <tr><td>elite</td><td>>=80%</td><td class="num">830</td><td class="num">2</td><td class="num">0.972</td><td class="num">0.0054</td><td class="num">0.0075</td></tr>
+      <tr><td>elite</td><td>≥80%</td><td class="num">830</td><td class="num">2</td><td class="num">0.972</td><td class="num">0.0054</td><td class="num">0.0075</td></tr>
       <tr><td>boss</td><td>all</td><td class="num">400</td><td class="num">11</td><td class="num">0.962</td><td class="num">−0.0521</td><td class="num">−0.0015</td></tr>
-      <tr><td>boss</td><td><50%</td><td class="num">9</td><td class="num">0</td><td class="num">0.932</td><td class="num">−0.0120</td><td class="num">0.0399</td></tr>
+      <tr><td>boss</td><td>&lt;50%</td><td class="num">9</td><td class="num">0</td><td class="num">0.932</td><td class="num">−0.0120</td><td class="num">0.0399</td></tr>
       <tr><td>boss</td><td>50-80%</td><td class="num">161</td><td class="num">5</td><td class="num">0.957</td><td class="num">−0.0470</td><td class="num">0.0035</td></tr>
-      <tr><td>boss</td><td>>=80%</td><td class="num">230</td><td class="num">6</td><td class="num">0.967</td><td class="num">−0.0573</td><td class="num">−0.0066</td></tr>
+      <tr><td>boss</td><td>≥80%</td><td class="num">230</td><td class="num">6</td><td class="num">0.967</td><td class="num">−0.0573</td><td class="num">−0.0066</td></tr>
     </tbody>
-    <caption>\(\Delta V = V^{\text{r}}_{\text{after}} - V^{\text{r}}_{\text{before}}\). \(\delta\) adds the reward paid during the fight (floors, boss bonus): it is the run chain's surprise, Equation \eqref{eq:elite}. Over 200 runs.</caption>
+    <caption>\(\Delta V = V^{\text{r}}_{\text{after}} - V^{\text{r}}_{\text{before}}\). The column \(\delta\) adds the reward paid during the fight, such as floors and the boss bonus. It is the run chain's TD residual, Equation \eqref{eq:elite}. Over 200 runs.</caption>
   </table></div>
-  <p>Elites raise the run's value at every HP level except below half HP, where they lower it (−0.009 over 43 fights, 2 of which ended the run). Ordinary fights lower it at every HP level: each one costs HP and potions and adds no relic. A won boss in act 1 or act 2 lowers \(V^{\text{r}}\) by a median of 0.044 (389 fights), because the +0.05 bonus is paid during the fight and leaves the future; add it back and the run chain's surprise across a boss is close to zero. Every one of the 34 lost runs ended in an elite or a boss fight: 6 in elites, 11 in the bosses in this table, and 17 in act 3's second boss, which the table leaves out. So the advantage of the map decision before an elite, Equation \eqref{eq:elite}, is on average positive for this policy, and the critic makes it so without waiting for the end of the run.</p>
+  <p>Elites raise the run's value at every HP level except below half HP. There they lower it by 0.009, over 43 fights, 2 of which ended the run. Ordinary fights lower it at every HP level, because each one costs HP and potions and gives no relic. A won boss in act 1 or act 2 lowers \(V^{\text{r}}\) by a median of 0.044 over 389 fights. The +0.05 bonus is paid during the fight, so it leaves the future. Add the bonus back, and the run chain's TD residual across a boss is close to zero.</p>
+  <p>Every one of the 34 lost runs ended in an elite fight or a boss fight: 6 in elites, 11 in the bosses in this table and 17 in act 3's second boss, which the table leaves out. So for this policy, the advantage of the map decision before an elite, Equation \eqref{eq:elite}, is positive on average. The critic produces that score without waiting for the end of the run.</p>
 
   <h2 id="confusions">12. Common confusions</h2>
-  <p><b>"The critic is a Q-network without the action."</b> A DQN regresses on \(r + \gamma \max_{a'} Q(s', a')\) and acts by arg max. This critic regresses on returns of the current policy, with no max, and never chooses anything. It estimates \(V^\pi\), which changes every time \(\pi\) changes, rather than \(V^*\), which is fixed. Its errors cannot cause maximisation bias, but a stale critic gives stale advantages.</p>
-  <p><b>"A positive advantage means a good action."</b> It means better than this policy's own average in that state, Equation \eqref{eq:a-mean-zero}. As the policy improves, the bar rises: an action that had positive advantage under a weak policy can have negative advantage under a strong one. That is why the advantage, not the return, drives improvement: it always asks "better than what I usually do here?"</p>
-  <p><b>"λ is another discount factor."</b> Both multiply future terms, but \(\gamma\) changes the objective and \(\lambda\) does not. With an exact critic, every \(\lambda\) gives an unbiased advantage. \(\lambda\) only decides how much to trust the critic against the observed rewards. Spire Mentor uses \(\gamma = 1\) and still has \(\lambda &lt; 1\).</p>
-  <p><b>"Low explained variance means a broken critic."</b> The label is the return to the end of the run, which depends on fights the map has not generated yet. A perfect estimate of the expected return still leaves that luck unexplained. Explained variance in a long, random game has a ceiling well below one. What should worry you is explained variance that falls over training, or a critic that is miscalibrated in one direction.</p>
-  <p><b>"Giving the critic hidden information is cheating."</b> The policy never sees it, so play stays honest. The critic is a training device: it only decides which actions get credit. Equation \eqref{eq:priv-baseline} shows the extra information adds no bias as a baseline, and the variance it removes is luck the policy could not have controlled anyway.</p>
+  <p><b>"The critic is a Q-network without the action."</b> A DQN regresses on \(r + \gamma \max_{a'} Q(s', a')\) and acts by arg max. This critic regresses on returns of the current policy, takes no max and never chooses an action. It estimates \(V^\pi\), which changes every time \(\pi\) changes, not \(V^*\), which is fixed. Its errors cannot cause maximisation bias. A stale critic still gives stale advantages.</p>
+  <p><b>"A positive advantage means a good action."</b> It means better than this policy's own average in that state, Equation \eqref{eq:a-mean-zero}. As the policy improves, that average rises. An action with a positive advantage under a weak policy can have a negative advantage under a strong one. The advantage, not the return, drives improvement, because it compares each action with what the policy usually does in that state.</p>
+  <p><b>"λ is another discount factor."</b> Both multiply future terms, but \(\gamma\) changes the objective and \(\lambda\) does not. With an exact critic, every \(\lambda\) gives an unbiased advantage. \(\lambda\) only sets how much the estimate relies on the critic and how much on the observed rewards. Spire Mentor uses \(\gamma = 1\) and still uses \(\lambda &lt; 1\).</p>
+  <p><b>"Low explained variance means a broken critic."</b> The label is the return to the end of the run, which depends on fights that the map has not generated yet. A perfect estimate of the expected return still leaves that luck unexplained. So in a long, random game, explained variance has a ceiling well below one. Worry instead about explained variance that falls during training, or about a critic that is wrong in one direction across its whole range.</p>
+  <p><b>"Giving the critic hidden information is cheating."</b> The policy never sees the hidden information, so play stays honest. The critic runs only in training, where it decides which actions get credit. Equation \eqref{eq:priv-baseline} shows that the extra information adds no bias as a baseline. The variance that it removes is luck that the policy could not have controlled.</p>
 
   <h2 id="experiments">13. Suggested experiments</h2>
-  <p>All commands run from the fork's worktree. They need the published weights and the simulator's Python environment.</p>
+  <p>Run these commands from the root of the fork's worktree. They need the published weights and the simulator's Python environment. If your checkout is somewhere else, change the <code>TOUR_VENV</code> and <code>TOUR_WEIGHTS</code> paths in each command.</p>
   <ol>
-    <li><b>The full check.</b> Plays 300 seeds, prints a value trace, the calibration table, GAE by hand against the repository's function, and the elite fork. <code>--quick</code> plays 40.
+    <li><b>Run the full check.</b> It prints a value trace, the calibration table, GAE by hand against the repository's function, and the elite fork table. The command below plays 40 seeds. To play 300 seeds, remove <code>--quick</code>.
       <pre><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-4-critic/check.py --quick</code></pre></li>
-    <li><b>Regenerate this chapter's data and figures</b>, with more or fewer runs. <code>figures.py</code> writes <code>chapter_data.json</code>; <code>plots.py</code> redraws every figure from it.
+    <li><b>Regenerate this chapter's data and figures.</b> <code>figures.py</code> writes <code>chapter_data.json</code>. Then <code>plots.py</code> redraws every plot in <code>chapter.html</code> from that file. To use more or fewer runs, change <code>--runs</code>.
       <pre><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-4-critic/figures.py --runs 200 --workers 3
 python3 tour/stop-4-critic/plots.py</code></pre></li>
-    <li><b>Change only one chain's λ.</b> In <code>figures.py</code>, <code>lam_sweep</code> sets both chains together. Hold the run chain at 0.97 and sweep only the combat chain (pass <code>lam_r=0.97</code>), then rerun with <code>--reuse</code> to skip the simulation. Does the combat-decision spread change in the same way?</li>
-    <li><b>The hand computation as a test.</b> The tests compare the loop in Equation \eqref{eq:gae-rec} with the repository's vectorised version on 20 synthetic runs and one real run.
+    <li><b>Sweep only the combat chain's λ.</b> In <code>figures.py</code>, the function <code>lam_sweep</code> passes <code>lam_r=lam</code>, so both chains move together. Change it to <code>lam_r=0.97</code>. Rerun <code>figures.py</code> with <code>--reuse</code>, which reads the cached runs and skips the simulation. Then run <code>plots.py</code> and compare the combat curve in Figure 4.6 with the original.</li>
+    <li><b>Run the hand computation as a test.</b> The tests compare the loop in Equation \eqref{eq:gae-rec} with the repository's vectorised version on 20 synthetic runs and one real run. All tests should pass.
       <pre><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run -m pytest tour/stop-4-critic</code></pre></li>
   </ol>
 
@@ -889,6 +980,7 @@ python3 tour/stop-4-critic/plots.py</code></pre></li>
     <li id="ref-8">Greensmith, E., Bartlett, P. L. and Baxter, J. (2004). <em>Variance Reduction Techniques for Gradient Estimates in Reinforcement Learning</em>. Journal of Machine Learning Research 5, 1471-1530.</li>
   </ol>
 </main>
+
 
 <footer class="chapter"><span>← Chapter 3: Reward and return</span><span>Chapter 5: Policy gradients and PPO →</span></footer>
 
