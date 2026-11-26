@@ -1,0 +1,50 @@
+# Stop 6 predictions. Fill in guess, low and high (your 80% interval) for each.
+
+[small_gap_clamped_pct]
+question = "Small gap (target = A moved 0.1 of the way towards B): what share of per-decision weights pi_target/pi_A exceed the clamp of 2?"
+unit = "percent of A's decisions"
+guess = ""
+low = ""
+high = ""
+
+[large_gap_clamped_pct]
+question = "Large gap (target = B): what share of per-decision weights pi_B/pi_A exceed the clamp of 2?"
+unit = "percent of A's decisions"
+guess = ""
+low = ""
+high = ""
+
+[top_action_agreement_pct]
+question = "On the states A visits, how often do A and B rank the same action first?"
+unit = "percent of A's decisions"
+guess = ""
+low = ""
+high = ""
+
+[small_gap_run_ess_pct]
+question = "Small gap: effective sample size of the per-run weights (product of every ratio in a run), as a share of the runs."
+unit = "percent of runs"
+guess = ""
+low = ""
+high = ""
+
+[large_gap_run_ess_pct]
+question = "Large gap: effective sample size of the per-run weights, as a share of the runs."
+unit = "percent of runs"
+guess = ""
+low = ""
+high = ""
+
+[plain_is_log10]
+question = "Plain (not normalised) per-run IS estimate of B's win rate from A's runs: what is its log10? The truth is a win rate between 0 and 1, so its log10 is between about -1 and 0."
+unit = "log10 of a probability"
+guess = ""
+low = ""
+high = ""
+
+[snis_error_pp]
+question = "How far is the self-normalised IS estimate of B's win rate, from A's runs, from B's measured win rate on the same seeds?"
+unit = "percentage points (absolute)"
+guess = ""
+low = ""
+high = ""
