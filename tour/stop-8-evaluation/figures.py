@@ -31,9 +31,6 @@ IDLE_RATE_10 = 800.0
 EXPECTED_RANGE_6 = 2.534
 
 
-# ------------------------------------------------------------------ analysis
-
-
 def expected_max_normal(k: int) -> float:
     """E[max of k independent standard normals], by numerical integration."""
     if k == 1:
@@ -52,9 +49,9 @@ def selection_bias(k: int, n: int, d: float) -> float:
 def simulate_selection(k: int, n: int, p: float, d: float, reps: int, rng) -> float:
     """Monte Carlo of `selection_bias`: k candidates of true rate p with pairwise discordance d.
 
-    On each seed, with probability q all candidates share one Bernoulli(p) outcome;
-    otherwise each draws its own. Pairwise discordance is then q' * 2p(1-p) with
-    q' = 1 - q, so q' = d / (2p(1-p)).
+    On each seed, with probability d / (2p(1-p)) every candidate draws its own
+    Bernoulli(p) outcome; otherwise all share one. Two candidates then disagree
+    with probability d.
     """
     indep = d / (2 * p * (1 - p))
     shared = rng.random((reps, n, 1)) < p
@@ -193,9 +190,6 @@ def analyse(raw: dict) -> dict:
         },
         "running": [int(x) for x in np.cumsum(w1)],
     }
-
-
-# ------------------------------------------------------------------- drawing
 
 
 class Plot:
