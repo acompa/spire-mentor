@@ -24,7 +24,8 @@ STOP = Path(__file__).resolve().parent
 DATA = STOP / "data"
 CHAPTER = STOP / "chapter.html"
 SIM_SEED = 20261125
-#: Idle-machine throughput for ten threads, measured for the tour (tour/README.md, "Running a check").
+#: Idle-machine throughput for ten threads. The only committed source is the tour README
+#: before 05ce399b ("Running a check"), which says "about 800"; no measurement is recorded.
 IDLE_RATE_10 = 800.0
 #: Expected range (max - min) of six independent standard normals.
 EXPECTED_RANGE_6 = 2.534
