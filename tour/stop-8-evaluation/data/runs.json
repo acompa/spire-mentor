@@ -1,0 +1,10837 @@
+{
+ "arms": [
+  "ironclad_e2e_d9000_ema0999",
+  "allchar_e2e_d4500_ema0999"
+ ],
+ "panels": {
+  "A": [
+   170000000,
+   170000300
+  ],
+  "B": [
+   171000000,
+   171000300
+  ]
+ },
+ "workers": 3,
+ "wall_seconds": {
+  "ironclad_e2e_d9000_ema0999": 1618.84,
+  "allchar_e2e_d4500_ema0999": 1110.98
+ },
+ "loadavg_before": [
+  109.10205078125,
+  46.64501953125,
+  21.4658203125
+ ],
+ "loadavg_after": [
+  3.43017578125,
+  4.95068359375,
+  18.13330078125
+ ],
+ "runs": {
+  "ironclad_e2e_d9000_ema0999": [
+   {
+    "panel": "A",
+    "seed": 170000000,
+    "won": true,
+    "outcome": "won",
+    "decisions": 718,
+    "floor": 46,
+    "seconds": 14.4156
+   },
+   {
+    "panel": "A",
+    "seed": 170000001,
+    "won": true,
+    "outcome": "won",
+    "decisions": 588,
+    "floor": 46,
+    "seconds": 12.1238
+   },
+   {
+    "panel": "A",
+    "seed": 170000002,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 210,
+    "floor": 16,
+    "seconds": 2.2536
+   },
+   {
+    "panel": "A",
+    "seed": 170000003,
+    "won": true,
+    "outcome": "won",
+    "decisions": 822,
+    "floor": 46,
+    "seconds": 18.2697
+   },
+   {
+    "panel": "A",
+    "seed": 170000004,
+    "won": true,
+    "outcome": "won",
+    "decisions": 663,
+    "floor": 46,
+    "seconds": 14.0184
+   },
+   {
+    "panel": "A",
+    "seed": 170000005,
+    "won": true,
+    "outcome": "won",
+    "decisions": 867,
+    "floor": 46,
+    "seconds": 20.7494
+   },
+   {
+    "panel": "A",
+    "seed": 170000006,
+    "won": true,
+    "outcome": "won",
+    "decisions": 606,
+    "floor": 46,
+    "seconds": 12.8681
+   },
+   {
+    "panel": "A",
+    "seed": 170000007,
+    "won": true,
+    "outcome": "won",
+    "decisions": 679,
+    "floor": 46,
+    "seconds": 14.9935
+   },
+   {
+    "panel": "A",
+    "seed": 170000008,
+    "won": true,
+    "outcome": "won",
+    "decisions": 670,
+    "floor": 46,
+    "seconds": 14.9468
+   },
+   {
+    "panel": "A",
+    "seed": 170000009,
+    "won": true,
+    "outcome": "won",
+    "decisions": 569,
+    "floor": 46,
+    "seconds": 10.2168
+   },
+   {
+    "panel": "A",
+    "seed": 170000010,
+    "won": true,
+    "outcome": "won",
+    "decisions": 756,
+    "floor": 46,
+    "seconds": 14.0655
+   },
+   {
+    "panel": "A",
+    "seed": 170000011,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 645,
+    "floor": 45,
+    "seconds": 13.7965
+   },
+   {
+    "panel": "A",
+    "seed": 170000012,
+    "won": true,
+    "outcome": "won",
+    "decisions": 720,
+    "floor": 46,
+    "seconds": 14.7261
+   },
+   {
+    "panel": "A",
+    "seed": 170000013,
+    "won": true,
+    "outcome": "won",
+    "decisions": 801,
+    "floor": 46,
+    "seconds": 16.0675
+   },
+   {
+    "panel": "A",
+    "seed": 170000014,
+    "won": true,
+    "outcome": "won",
+    "decisions": 465,
+    "floor": 46,
+    "seconds": 8.6579
+   },
+   {
+    "panel": "A",
+    "seed": 170000015,
+    "won": true,
+    "outcome": "won",
+    "decisions": 823,
+    "floor": 46,
+    "seconds": 17.7697
+   },
+   {
+    "panel": "A",
+    "seed": 170000016,
+    "won": true,
+    "outcome": "won",
+    "decisions": 728,
+    "floor": 46,
+    "seconds": 17.1044
+   },
+   {
+    "panel": "A",
+    "seed": 170000017,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 48,
+    "seconds": 18.632
+   },
+   {
+    "panel": "A",
+    "seed": 170000018,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 17.185
+   },
+   {
+    "panel": "A",
+    "seed": 170000019,
+    "won": true,
+    "outcome": "won",
+    "decisions": 727,
+    "floor": 46,
+    "seconds": 16.8635
+   },
+   {
+    "panel": "A",
+    "seed": 170000020,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 857,
+    "floor": 46,
+    "seconds": 19.0989
+   },
+   {
+    "panel": "A",
+    "seed": 170000021,
+    "won": true,
+    "outcome": "won",
+    "decisions": 629,
+    "floor": 46,
+    "seconds": 13.3659
+   },
+   {
+    "panel": "A",
+    "seed": 170000022,
+    "won": true,
+    "outcome": "won",
+    "decisions": 629,
+    "floor": 46,
+    "seconds": 14.32
+   },
+   {
+    "panel": "A",
+    "seed": 170000023,
+    "won": true,
+    "outcome": "won",
+    "decisions": 685,
+    "floor": 46,
+    "seconds": 15.7987
+   },
+   {
+    "panel": "A",
+    "seed": 170000024,
+    "won": true,
+    "outcome": "won",
+    "decisions": 785,
+    "floor": 46,
+    "seconds": 17.8627
+   },
+   {
+    "panel": "A",
+    "seed": 170000025,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 613,
+    "floor": 43,
+    "seconds": 12.0582
+   },
+   {
+    "panel": "A",
+    "seed": 170000026,
+    "won": true,
+    "outcome": "won",
+    "decisions": 650,
+    "floor": 46,
+    "seconds": 12.789
+   },
+   {
+    "panel": "A",
+    "seed": 170000027,
+    "won": true,
+    "outcome": "won",
+    "decisions": 616,
+    "floor": 46,
+    "seconds": 15.3109
+   },
+   {
+    "panel": "A",
+    "seed": 170000028,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 733,
+    "floor": 45,
+    "seconds": 14.6028
+   },
+   {
+    "panel": "A",
+    "seed": 170000029,
+    "won": true,
+    "outcome": "won",
+    "decisions": 872,
+    "floor": 46,
+    "seconds": 21.2688
+   },
+   {
+    "panel": "A",
+    "seed": 170000030,
+    "won": true,
+    "outcome": "won",
+    "decisions": 956,
+    "floor": 46,
+    "seconds": 25.6335
+   },
+   {
+    "panel": "A",
+    "seed": 170000031,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 16.767
+   },
+   {
+    "panel": "A",
+    "seed": 170000032,
+    "won": true,
+    "outcome": "won",
+    "decisions": 651,
+    "floor": 46,
+    "seconds": 17.1695
+   },
+   {
+    "panel": "A",
+    "seed": 170000033,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 203,
+    "floor": 22,
+    "seconds": 2.8784
+   },
+   {
+    "panel": "A",
+    "seed": 170000034,
+    "won": true,
+    "outcome": "won",
+    "decisions": 723,
+    "floor": 46,
+    "seconds": 18.0736
+   },
+   {
+    "panel": "A",
+    "seed": 170000035,
+    "won": true,
+    "outcome": "won",
+    "decisions": 700,
+    "floor": 46,
+    "seconds": 16.0496
+   },
+   {
+    "panel": "A",
+    "seed": 170000036,
+    "won": true,
+    "outcome": "won",
+    "decisions": 674,
+    "floor": 46,
+    "seconds": 15.2056
+   },
+   {
+    "panel": "A",
+    "seed": 170000037,
+    "won": true,
+    "outcome": "won",
+    "decisions": 621,
+    "floor": 46,
+    "seconds": 14.9037
+   },
+   {
+    "panel": "A",
+    "seed": 170000038,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 242,
+    "floor": 26,
+    "seconds": 3.643
+   },
+   {
+    "panel": "A",
+    "seed": 170000039,
+    "won": true,
+    "outcome": "won",
+    "decisions": 721,
+    "floor": 46,
+    "seconds": 17.8279
+   },
+   {
+    "panel": "A",
+    "seed": 170000040,
+    "won": true,
+    "outcome": "won",
+    "decisions": 662,
+    "floor": 46,
+    "seconds": 14.1526
+   },
+   {
+    "panel": "A",
+    "seed": 170000041,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 17.4274
+   },
+   {
+    "panel": "A",
+    "seed": 170000042,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 565,
+    "floor": 45,
+    "seconds": 11.9718
+   },
+   {
+    "panel": "A",
+    "seed": 170000043,
+    "won": true,
+    "outcome": "won",
+    "decisions": 630,
+    "floor": 46,
+    "seconds": 16.0201
+   },
+   {
+    "panel": "A",
+    "seed": 170000044,
+    "won": true,
+    "outcome": "won",
+    "decisions": 936,
+    "floor": 46,
+    "seconds": 22.9215
+   },
+   {
+    "panel": "A",
+    "seed": 170000045,
+    "won": true,
+    "outcome": "won",
+    "decisions": 602,
+    "floor": 48,
+    "seconds": 15.1132
+   },
+   {
+    "panel": "A",
+    "seed": 170000046,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 664,
+    "floor": 46,
+    "seconds": 15.6214
+   },
+   {
+    "panel": "A",
+    "seed": 170000047,
+    "won": true,
+    "outcome": "won",
+    "decisions": 647,
+    "floor": 46,
+    "seconds": 16.1335
+   },
+   {
+    "panel": "A",
+    "seed": 170000048,
+    "won": true,
+    "outcome": "won",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 19.1558
+   },
+   {
+    "panel": "A",
+    "seed": 170000049,
+    "won": true,
+    "outcome": "won",
+    "decisions": 784,
+    "floor": 46,
+    "seconds": 20.7737
+   },
+   {
+    "panel": "A",
+    "seed": 170000050,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 17.2273
+   },
+   {
+    "panel": "A",
+    "seed": 170000051,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 554,
+    "floor": 42,
+    "seconds": 11.2573
+   },
+   {
+    "panel": "A",
+    "seed": 170000052,
+    "won": true,
+    "outcome": "won",
+    "decisions": 697,
+    "floor": 46,
+    "seconds": 16.3644
+   },
+   {
+    "panel": "A",
+    "seed": 170000053,
+    "won": true,
+    "outcome": "won",
+    "decisions": 678,
+    "floor": 46,
+    "seconds": 15.9026
+   },
+   {
+    "panel": "A",
+    "seed": 170000054,
+    "won": true,
+    "outcome": "won",
+    "decisions": 828,
+    "floor": 46,
+    "seconds": 20.5707
+   },
+   {
+    "panel": "A",
+    "seed": 170000055,
+    "won": true,
+    "outcome": "won",
+    "decisions": 649,
+    "floor": 46,
+    "seconds": 16.089
+   },
+   {
+    "panel": "A",
+    "seed": 170000056,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 790,
+    "floor": 46,
+    "seconds": 18.3482
+   },
+   {
+    "panel": "A",
+    "seed": 170000057,
+    "won": true,
+    "outcome": "won",
+    "decisions": 778,
+    "floor": 46,
+    "seconds": 19.0372
+   },
+   {
+    "panel": "A",
+    "seed": 170000058,
+    "won": true,
+    "outcome": "won",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 16.0194
+   },
+   {
+    "panel": "A",
+    "seed": 170000059,
+    "won": true,
+    "outcome": "won",
+    "decisions": 697,
+    "floor": 46,
+    "seconds": 14.5745
+   },
+   {
+    "panel": "A",
+    "seed": 170000060,
+    "won": true,
+    "outcome": "won",
+    "decisions": 729,
+    "floor": 46,
+    "seconds": 19.2495
+   },
+   {
+    "panel": "A",
+    "seed": 170000061,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 382,
+    "floor": 31,
+    "seconds": 7.0705
+   },
+   {
+    "panel": "A",
+    "seed": 170000062,
+    "won": true,
+    "outcome": "won",
+    "decisions": 779,
+    "floor": 46,
+    "seconds": 21.8377
+   },
+   {
+    "panel": "A",
+    "seed": 170000063,
+    "won": true,
+    "outcome": "won",
+    "decisions": 644,
+    "floor": 46,
+    "seconds": 16.815
+   },
+   {
+    "panel": "A",
+    "seed": 170000064,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 537,
+    "floor": 46,
+    "seconds": 11.8293
+   },
+   {
+    "panel": "A",
+    "seed": 170000065,
+    "won": true,
+    "outcome": "won",
+    "decisions": 609,
+    "floor": 46,
+    "seconds": 15.6708
+   },
+   {
+    "panel": "A",
+    "seed": 170000066,
+    "won": true,
+    "outcome": "won",
+    "decisions": 562,
+    "floor": 46,
+    "seconds": 14.7591
+   },
+   {
+    "panel": "A",
+    "seed": 170000067,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 195,
+    "floor": 16,
+    "seconds": 3.1896
+   },
+   {
+    "panel": "A",
+    "seed": 170000068,
+    "won": true,
+    "outcome": "won",
+    "decisions": 636,
+    "floor": 46,
+    "seconds": 15.2271
+   },
+   {
+    "panel": "A",
+    "seed": 170000069,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 705,
+    "floor": 45,
+    "seconds": 17.2279
+   },
+   {
+    "panel": "A",
+    "seed": 170000070,
+    "won": true,
+    "outcome": "won",
+    "decisions": 621,
+    "floor": 46,
+    "seconds": 16.3215
+   },
+   {
+    "panel": "A",
+    "seed": 170000071,
+    "won": true,
+    "outcome": "won",
+    "decisions": 737,
+    "floor": 46,
+    "seconds": 18.1294
+   },
+   {
+    "panel": "A",
+    "seed": 170000072,
+    "won": true,
+    "outcome": "won",
+    "decisions": 550,
+    "floor": 46,
+    "seconds": 12.5262
+   },
+   {
+    "panel": "A",
+    "seed": 170000073,
+    "won": true,
+    "outcome": "won",
+    "decisions": 733,
+    "floor": 46,
+    "seconds": 17.0683
+   },
+   {
+    "panel": "A",
+    "seed": 170000074,
+    "won": true,
+    "outcome": "won",
+    "decisions": 592,
+    "floor": 46,
+    "seconds": 11.7216
+   },
+   {
+    "panel": "A",
+    "seed": 170000075,
+    "won": true,
+    "outcome": "won",
+    "decisions": 843,
+    "floor": 46,
+    "seconds": 17.8597
+   },
+   {
+    "panel": "A",
+    "seed": 170000076,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 471,
+    "floor": 48,
+    "seconds": 8.8138
+   },
+   {
+    "panel": "A",
+    "seed": 170000077,
+    "won": true,
+    "outcome": "won",
+    "decisions": 710,
+    "floor": 46,
+    "seconds": 14.0571
+   },
+   {
+    "panel": "A",
+    "seed": 170000078,
+    "won": true,
+    "outcome": "won",
+    "decisions": 747,
+    "floor": 46,
+    "seconds": 14.1409
+   },
+   {
+    "panel": "A",
+    "seed": 170000079,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 523,
+    "floor": 46,
+    "seconds": 9.3283
+   },
+   {
+    "panel": "A",
+    "seed": 170000080,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 657,
+    "floor": 46,
+    "seconds": 11.6633
+   },
+   {
+    "panel": "A",
+    "seed": 170000081,
+    "won": true,
+    "outcome": "won",
+    "decisions": 660,
+    "floor": 46,
+    "seconds": 13.9608
+   },
+   {
+    "panel": "A",
+    "seed": 170000082,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 16.2875
+   },
+   {
+    "panel": "A",
+    "seed": 170000083,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 580,
+    "floor": 46,
+    "seconds": 10.735
+   },
+   {
+    "panel": "A",
+    "seed": 170000084,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 12.3733
+   },
+   {
+    "panel": "A",
+    "seed": 170000085,
+    "won": true,
+    "outcome": "won",
+    "decisions": 767,
+    "floor": 46,
+    "seconds": 18.8915
+   },
+   {
+    "panel": "A",
+    "seed": 170000086,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 16.4518
+   },
+   {
+    "panel": "A",
+    "seed": 170000087,
+    "won": true,
+    "outcome": "won",
+    "decisions": 595,
+    "floor": 46,
+    "seconds": 13.2442
+   },
+   {
+    "panel": "A",
+    "seed": 170000088,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 12.7027
+   },
+   {
+    "panel": "A",
+    "seed": 170000089,
+    "won": true,
+    "outcome": "won",
+    "decisions": 622,
+    "floor": 46,
+    "seconds": 12.6707
+   },
+   {
+    "panel": "A",
+    "seed": 170000090,
+    "won": true,
+    "outcome": "won",
+    "decisions": 612,
+    "floor": 46,
+    "seconds": 11.3271
+   },
+   {
+    "panel": "A",
+    "seed": 170000091,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 460,
+    "floor": 31,
+    "seconds": 7.2255
+   },
+   {
+    "panel": "A",
+    "seed": 170000092,
+    "won": true,
+    "outcome": "won",
+    "decisions": 519,
+    "floor": 46,
+    "seconds": 9.2313
+   },
+   {
+    "panel": "A",
+    "seed": 170000093,
+    "won": true,
+    "outcome": "won",
+    "decisions": 753,
+    "floor": 46,
+    "seconds": 18.4659
+   },
+   {
+    "panel": "A",
+    "seed": 170000094,
+    "won": true,
+    "outcome": "won",
+    "decisions": 677,
+    "floor": 46,
+    "seconds": 15.2543
+   },
+   {
+    "panel": "A",
+    "seed": 170000095,
+    "won": true,
+    "outcome": "won",
+    "decisions": 718,
+    "floor": 46,
+    "seconds": 15.2591
+   },
+   {
+    "panel": "A",
+    "seed": 170000096,
+    "won": true,
+    "outcome": "won",
+    "decisions": 657,
+    "floor": 46,
+    "seconds": 14.0406
+   },
+   {
+    "panel": "A",
+    "seed": 170000097,
+    "won": true,
+    "outcome": "won",
+    "decisions": 619,
+    "floor": 46,
+    "seconds": 14.464
+   },
+   {
+    "panel": "A",
+    "seed": 170000098,
+    "won": true,
+    "outcome": "won",
+    "decisions": 714,
+    "floor": 46,
+    "seconds": 16.6601
+   },
+   {
+    "panel": "A",
+    "seed": 170000099,
+    "won": true,
+    "outcome": "won",
+    "decisions": 675,
+    "floor": 46,
+    "seconds": 15.5755
+   },
+   {
+    "panel": "A",
+    "seed": 170000100,
+    "won": true,
+    "outcome": "won",
+    "decisions": 677,
+    "floor": 46,
+    "seconds": 14.8256
+   },
+   {
+    "panel": "A",
+    "seed": 170000101,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 13.7599
+   },
+   {
+    "panel": "A",
+    "seed": 170000102,
+    "won": true,
+    "outcome": "won",
+    "decisions": 556,
+    "floor": 46,
+    "seconds": 12.9101
+   },
+   {
+    "panel": "A",
+    "seed": 170000103,
+    "won": true,
+    "outcome": "won",
+    "decisions": 615,
+    "floor": 46,
+    "seconds": 13.5593
+   },
+   {
+    "panel": "A",
+    "seed": 170000104,
+    "won": true,
+    "outcome": "won",
+    "decisions": 718,
+    "floor": 46,
+    "seconds": 18.0071
+   },
+   {
+    "panel": "A",
+    "seed": 170000105,
+    "won": true,
+    "outcome": "won",
+    "decisions": 853,
+    "floor": 46,
+    "seconds": 23.4885
+   },
+   {
+    "panel": "A",
+    "seed": 170000106,
+    "won": true,
+    "outcome": "won",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 15.2636
+   },
+   {
+    "panel": "A",
+    "seed": 170000107,
+    "won": true,
+    "outcome": "won",
+    "decisions": 508,
+    "floor": 46,
+    "seconds": 12.097
+   },
+   {
+    "panel": "A",
+    "seed": 170000108,
+    "won": true,
+    "outcome": "won",
+    "decisions": 607,
+    "floor": 46,
+    "seconds": 13.1795
+   },
+   {
+    "panel": "A",
+    "seed": 170000109,
+    "won": true,
+    "outcome": "won",
+    "decisions": 746,
+    "floor": 46,
+    "seconds": 17.2413
+   },
+   {
+    "panel": "A",
+    "seed": 170000110,
+    "won": true,
+    "outcome": "won",
+    "decisions": 642,
+    "floor": 46,
+    "seconds": 15.3693
+   },
+   {
+    "panel": "A",
+    "seed": 170000111,
+    "won": true,
+    "outcome": "won",
+    "decisions": 839,
+    "floor": 46,
+    "seconds": 17.6071
+   },
+   {
+    "panel": "A",
+    "seed": 170000112,
+    "won": true,
+    "outcome": "won",
+    "decisions": 651,
+    "floor": 46,
+    "seconds": 14.052
+   },
+   {
+    "panel": "A",
+    "seed": 170000113,
+    "won": true,
+    "outcome": "won",
+    "decisions": 716,
+    "floor": 46,
+    "seconds": 17.0069
+   },
+   {
+    "panel": "A",
+    "seed": 170000114,
+    "won": true,
+    "outcome": "won",
+    "decisions": 741,
+    "floor": 46,
+    "seconds": 16.9475
+   },
+   {
+    "panel": "A",
+    "seed": 170000115,
+    "won": true,
+    "outcome": "won",
+    "decisions": 668,
+    "floor": 46,
+    "seconds": 13.7788
+   },
+   {
+    "panel": "A",
+    "seed": 170000116,
+    "won": true,
+    "outcome": "won",
+    "decisions": 668,
+    "floor": 46,
+    "seconds": 14.7377
+   },
+   {
+    "panel": "A",
+    "seed": 170000117,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 9.1997
+   },
+   {
+    "panel": "A",
+    "seed": 170000118,
+    "won": true,
+    "outcome": "won",
+    "decisions": 665,
+    "floor": 46,
+    "seconds": 12.3365
+   },
+   {
+    "panel": "A",
+    "seed": 170000119,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 11.064
+   },
+   {
+    "panel": "A",
+    "seed": 170000120,
+    "won": true,
+    "outcome": "won",
+    "decisions": 719,
+    "floor": 46,
+    "seconds": 13.0715
+   },
+   {
+    "panel": "A",
+    "seed": 170000121,
+    "won": true,
+    "outcome": "won",
+    "decisions": 638,
+    "floor": 46,
+    "seconds": 10.4333
+   },
+   {
+    "panel": "A",
+    "seed": 170000122,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 11.6435
+   },
+   {
+    "panel": "A",
+    "seed": 170000123,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 14.4144
+   },
+   {
+    "panel": "A",
+    "seed": 170000124,
+    "won": true,
+    "outcome": "won",
+    "decisions": 954,
+    "floor": 46,
+    "seconds": 15.2712
+   },
+   {
+    "panel": "A",
+    "seed": 170000125,
+    "won": true,
+    "outcome": "won",
+    "decisions": 519,
+    "floor": 46,
+    "seconds": 8.267
+   },
+   {
+    "panel": "A",
+    "seed": 170000126,
+    "won": true,
+    "outcome": "won",
+    "decisions": 582,
+    "floor": 46,
+    "seconds": 8.6803
+   },
+   {
+    "panel": "A",
+    "seed": 170000127,
+    "won": true,
+    "outcome": "won",
+    "decisions": 599,
+    "floor": 46,
+    "seconds": 9.0556
+   },
+   {
+    "panel": "A",
+    "seed": 170000128,
+    "won": true,
+    "outcome": "won",
+    "decisions": 713,
+    "floor": 46,
+    "seconds": 13.6936
+   },
+   {
+    "panel": "A",
+    "seed": 170000129,
+    "won": true,
+    "outcome": "won",
+    "decisions": 733,
+    "floor": 46,
+    "seconds": 12.9161
+   },
+   {
+    "panel": "A",
+    "seed": 170000130,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 10.3731
+   },
+   {
+    "panel": "A",
+    "seed": 170000131,
+    "won": true,
+    "outcome": "won",
+    "decisions": 755,
+    "floor": 46,
+    "seconds": 12.8296
+   },
+   {
+    "panel": "A",
+    "seed": 170000132,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 658,
+    "floor": 45,
+    "seconds": 10.4853
+   },
+   {
+    "panel": "A",
+    "seed": 170000133,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 618,
+    "floor": 46,
+    "seconds": 9.4778
+   },
+   {
+    "panel": "A",
+    "seed": 170000134,
+    "won": true,
+    "outcome": "won",
+    "decisions": 593,
+    "floor": 46,
+    "seconds": 8.0597
+   },
+   {
+    "panel": "A",
+    "seed": 170000135,
+    "won": true,
+    "outcome": "won",
+    "decisions": 549,
+    "floor": 46,
+    "seconds": 6.9599
+   },
+   {
+    "panel": "A",
+    "seed": 170000136,
+    "won": true,
+    "outcome": "won",
+    "decisions": 601,
+    "floor": 46,
+    "seconds": 7.4311
+   },
+   {
+    "panel": "A",
+    "seed": 170000137,
+    "won": true,
+    "outcome": "won",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 10.4307
+   },
+   {
+    "panel": "A",
+    "seed": 170000138,
+    "won": true,
+    "outcome": "won",
+    "decisions": 651,
+    "floor": 46,
+    "seconds": 10.0821
+   },
+   {
+    "panel": "A",
+    "seed": 170000139,
+    "won": true,
+    "outcome": "won",
+    "decisions": 614,
+    "floor": 46,
+    "seconds": 8.1695
+   },
+   {
+    "panel": "A",
+    "seed": 170000140,
+    "won": true,
+    "outcome": "won",
+    "decisions": 663,
+    "floor": 46,
+    "seconds": 10.6592
+   },
+   {
+    "panel": "A",
+    "seed": 170000141,
+    "won": true,
+    "outcome": "won",
+    "decisions": 794,
+    "floor": 46,
+    "seconds": 14.1956
+   },
+   {
+    "panel": "A",
+    "seed": 170000142,
+    "won": true,
+    "outcome": "won",
+    "decisions": 683,
+    "floor": 46,
+    "seconds": 11.3604
+   },
+   {
+    "panel": "A",
+    "seed": 170000143,
+    "won": true,
+    "outcome": "won",
+    "decisions": 637,
+    "floor": 46,
+    "seconds": 11.8387
+   },
+   {
+    "panel": "A",
+    "seed": 170000144,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 727,
+    "floor": 46,
+    "seconds": 13.1149
+   },
+   {
+    "panel": "A",
+    "seed": 170000145,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 535,
+    "floor": 46,
+    "seconds": 8.6839
+   },
+   {
+    "panel": "A",
+    "seed": 170000146,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 11.217
+   },
+   {
+    "panel": "A",
+    "seed": 170000147,
+    "won": true,
+    "outcome": "won",
+    "decisions": 696,
+    "floor": 46,
+    "seconds": 10.3096
+   },
+   {
+    "panel": "A",
+    "seed": 170000148,
+    "won": true,
+    "outcome": "won",
+    "decisions": 718,
+    "floor": 46,
+    "seconds": 11.7708
+   },
+   {
+    "panel": "A",
+    "seed": 170000149,
+    "won": true,
+    "outcome": "won",
+    "decisions": 749,
+    "floor": 46,
+    "seconds": 10.3982
+   },
+   {
+    "panel": "A",
+    "seed": 170000150,
+    "won": true,
+    "outcome": "won",
+    "decisions": 749,
+    "floor": 46,
+    "seconds": 10.8982
+   },
+   {
+    "panel": "A",
+    "seed": 170000151,
+    "won": true,
+    "outcome": "won",
+    "decisions": 569,
+    "floor": 46,
+    "seconds": 8.4843
+   },
+   {
+    "panel": "A",
+    "seed": 170000152,
+    "won": true,
+    "outcome": "won",
+    "decisions": 633,
+    "floor": 46,
+    "seconds": 10.0589
+   },
+   {
+    "panel": "A",
+    "seed": 170000153,
+    "won": true,
+    "outcome": "won",
+    "decisions": 712,
+    "floor": 46,
+    "seconds": 9.0701
+   },
+   {
+    "panel": "A",
+    "seed": 170000154,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 682,
+    "floor": 46,
+    "seconds": 9.3867
+   },
+   {
+    "panel": "A",
+    "seed": 170000155,
+    "won": true,
+    "outcome": "won",
+    "decisions": 614,
+    "floor": 46,
+    "seconds": 7.5027
+   },
+   {
+    "panel": "A",
+    "seed": 170000156,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 663,
+    "floor": 46,
+    "seconds": 8.1997
+   },
+   {
+    "panel": "A",
+    "seed": 170000157,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 255,
+    "floor": 16,
+    "seconds": 2.2659
+   },
+   {
+    "panel": "A",
+    "seed": 170000158,
+    "won": true,
+    "outcome": "won",
+    "decisions": 730,
+    "floor": 46,
+    "seconds": 9.1005
+   },
+   {
+    "panel": "A",
+    "seed": 170000159,
+    "won": true,
+    "outcome": "won",
+    "decisions": 939,
+    "floor": 46,
+    "seconds": 11.809
+   },
+   {
+    "panel": "A",
+    "seed": 170000160,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 10.914
+   },
+   {
+    "panel": "A",
+    "seed": 170000161,
+    "won": true,
+    "outcome": "won",
+    "decisions": 761,
+    "floor": 46,
+    "seconds": 10.3244
+   },
+   {
+    "panel": "A",
+    "seed": 170000162,
+    "won": true,
+    "outcome": "won",
+    "decisions": 770,
+    "floor": 46,
+    "seconds": 11.1147
+   },
+   {
+    "panel": "A",
+    "seed": 170000163,
+    "won": true,
+    "outcome": "won",
+    "decisions": 927,
+    "floor": 46,
+    "seconds": 13.139
+   },
+   {
+    "panel": "A",
+    "seed": 170000164,
+    "won": true,
+    "outcome": "won",
+    "decisions": 778,
+    "floor": 46,
+    "seconds": 10.5668
+   },
+   {
+    "panel": "A",
+    "seed": 170000165,
+    "won": true,
+    "outcome": "won",
+    "decisions": 670,
+    "floor": 46,
+    "seconds": 7.9384
+   },
+   {
+    "panel": "A",
+    "seed": 170000166,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 699,
+    "floor": 46,
+    "seconds": 8.5244
+   },
+   {
+    "panel": "A",
+    "seed": 170000167,
+    "won": true,
+    "outcome": "won",
+    "decisions": 724,
+    "floor": 46,
+    "seconds": 10.0366
+   },
+   {
+    "panel": "A",
+    "seed": 170000168,
+    "won": true,
+    "outcome": "won",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 8.898
+   },
+   {
+    "panel": "A",
+    "seed": 170000169,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 306,
+    "floor": 26,
+    "seconds": 2.9489
+   },
+   {
+    "panel": "A",
+    "seed": 170000170,
+    "won": true,
+    "outcome": "won",
+    "decisions": 505,
+    "floor": 48,
+    "seconds": 5.8395
+   },
+   {
+    "panel": "A",
+    "seed": 170000171,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 675,
+    "floor": 42,
+    "seconds": 7.9943
+   },
+   {
+    "panel": "A",
+    "seed": 170000172,
+    "won": true,
+    "outcome": "won",
+    "decisions": 581,
+    "floor": 46,
+    "seconds": 6.7634
+   },
+   {
+    "panel": "A",
+    "seed": 170000173,
+    "won": true,
+    "outcome": "won",
+    "decisions": 489,
+    "floor": 46,
+    "seconds": 5.026
+   },
+   {
+    "panel": "A",
+    "seed": 170000174,
+    "won": true,
+    "outcome": "won",
+    "decisions": 773,
+    "floor": 46,
+    "seconds": 8.4495
+   },
+   {
+    "panel": "A",
+    "seed": 170000175,
+    "won": true,
+    "outcome": "won",
+    "decisions": 682,
+    "floor": 46,
+    "seconds": 8.0021
+   },
+   {
+    "panel": "A",
+    "seed": 170000176,
+    "won": true,
+    "outcome": "won",
+    "decisions": 595,
+    "floor": 46,
+    "seconds": 6.3093
+   },
+   {
+    "panel": "A",
+    "seed": 170000177,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 7.7483
+   },
+   {
+    "panel": "A",
+    "seed": 170000178,
+    "won": true,
+    "outcome": "won",
+    "decisions": 816,
+    "floor": 46,
+    "seconds": 9.0282
+   },
+   {
+    "panel": "A",
+    "seed": 170000179,
+    "won": true,
+    "outcome": "won",
+    "decisions": 731,
+    "floor": 46,
+    "seconds": 7.6422
+   },
+   {
+    "panel": "A",
+    "seed": 170000180,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 796,
+    "floor": 45,
+    "seconds": 7.8594
+   },
+   {
+    "panel": "A",
+    "seed": 170000181,
+    "won": true,
+    "outcome": "won",
+    "decisions": 727,
+    "floor": 46,
+    "seconds": 7.9716
+   },
+   {
+    "panel": "A",
+    "seed": 170000182,
+    "won": true,
+    "outcome": "won",
+    "decisions": 683,
+    "floor": 46,
+    "seconds": 8.2453
+   },
+   {
+    "panel": "A",
+    "seed": 170000183,
+    "won": true,
+    "outcome": "won",
+    "decisions": 551,
+    "floor": 46,
+    "seconds": 5.745
+   },
+   {
+    "panel": "A",
+    "seed": 170000184,
+    "won": true,
+    "outcome": "won",
+    "decisions": 684,
+    "floor": 46,
+    "seconds": 7.2047
+   },
+   {
+    "panel": "A",
+    "seed": 170000185,
+    "won": true,
+    "outcome": "won",
+    "decisions": 521,
+    "floor": 46,
+    "seconds": 4.7468
+   },
+   {
+    "panel": "A",
+    "seed": 170000186,
+    "won": true,
+    "outcome": "won",
+    "decisions": 748,
+    "floor": 46,
+    "seconds": 8.2099
+   },
+   {
+    "panel": "A",
+    "seed": 170000187,
+    "won": true,
+    "outcome": "won",
+    "decisions": 628,
+    "floor": 46,
+    "seconds": 6.0736
+   },
+   {
+    "panel": "A",
+    "seed": 170000188,
+    "won": true,
+    "outcome": "won",
+    "decisions": 705,
+    "floor": 46,
+    "seconds": 7.5486
+   },
+   {
+    "panel": "A",
+    "seed": 170000189,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 659,
+    "floor": 46,
+    "seconds": 5.8348
+   },
+   {
+    "panel": "A",
+    "seed": 170000190,
+    "won": true,
+    "outcome": "won",
+    "decisions": 422,
+    "floor": 46,
+    "seconds": 4.6686
+   },
+   {
+    "panel": "A",
+    "seed": 170000191,
+    "won": true,
+    "outcome": "won",
+    "decisions": 737,
+    "floor": 46,
+    "seconds": 7.1642
+   },
+   {
+    "panel": "A",
+    "seed": 170000192,
+    "won": true,
+    "outcome": "won",
+    "decisions": 683,
+    "floor": 46,
+    "seconds": 6.807
+   },
+   {
+    "panel": "A",
+    "seed": 170000193,
+    "won": true,
+    "outcome": "won",
+    "decisions": 648,
+    "floor": 46,
+    "seconds": 6.225
+   },
+   {
+    "panel": "A",
+    "seed": 170000194,
+    "won": true,
+    "outcome": "won",
+    "decisions": 607,
+    "floor": 46,
+    "seconds": 6.2593
+   },
+   {
+    "panel": "A",
+    "seed": 170000195,
+    "won": true,
+    "outcome": "won",
+    "decisions": 746,
+    "floor": 46,
+    "seconds": 8.1199
+   },
+   {
+    "panel": "A",
+    "seed": 170000196,
+    "won": true,
+    "outcome": "won",
+    "decisions": 909,
+    "floor": 46,
+    "seconds": 9.4039
+   },
+   {
+    "panel": "A",
+    "seed": 170000197,
+    "won": true,
+    "outcome": "won",
+    "decisions": 841,
+    "floor": 46,
+    "seconds": 8.4557
+   },
+   {
+    "panel": "A",
+    "seed": 170000198,
+    "won": true,
+    "outcome": "won",
+    "decisions": 838,
+    "floor": 46,
+    "seconds": 7.5256
+   },
+   {
+    "panel": "A",
+    "seed": 170000199,
+    "won": true,
+    "outcome": "won",
+    "decisions": 656,
+    "floor": 46,
+    "seconds": 6.4203
+   },
+   {
+    "panel": "A",
+    "seed": 170000200,
+    "won": true,
+    "outcome": "won",
+    "decisions": 666,
+    "floor": 46,
+    "seconds": 6.6194
+   },
+   {
+    "panel": "A",
+    "seed": 170000201,
+    "won": true,
+    "outcome": "won",
+    "decisions": 755,
+    "floor": 46,
+    "seconds": 8.3196
+   },
+   {
+    "panel": "A",
+    "seed": 170000202,
+    "won": true,
+    "outcome": "won",
+    "decisions": 712,
+    "floor": 46,
+    "seconds": 7.0755
+   },
+   {
+    "panel": "A",
+    "seed": 170000203,
+    "won": true,
+    "outcome": "won",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 6.9426
+   },
+   {
+    "panel": "A",
+    "seed": 170000204,
+    "won": true,
+    "outcome": "won",
+    "decisions": 623,
+    "floor": 46,
+    "seconds": 5.5523
+   },
+   {
+    "panel": "A",
+    "seed": 170000205,
+    "won": true,
+    "outcome": "won",
+    "decisions": 761,
+    "floor": 46,
+    "seconds": 7.2253
+   },
+   {
+    "panel": "A",
+    "seed": 170000206,
+    "won": true,
+    "outcome": "won",
+    "decisions": 608,
+    "floor": 46,
+    "seconds": 6.008
+   },
+   {
+    "panel": "A",
+    "seed": 170000207,
+    "won": true,
+    "outcome": "won",
+    "decisions": 596,
+    "floor": 46,
+    "seconds": 6.5714
+   },
+   {
+    "panel": "A",
+    "seed": 170000208,
+    "won": true,
+    "outcome": "won",
+    "decisions": 583,
+    "floor": 46,
+    "seconds": 5.7677
+   },
+   {
+    "panel": "A",
+    "seed": 170000209,
+    "won": true,
+    "outcome": "won",
+    "decisions": 677,
+    "floor": 46,
+    "seconds": 6.517
+   },
+   {
+    "panel": "A",
+    "seed": 170000210,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 524,
+    "floor": 43,
+    "seconds": 4.6133
+   },
+   {
+    "panel": "A",
+    "seed": 170000211,
+    "won": true,
+    "outcome": "won",
+    "decisions": 570,
+    "floor": 46,
+    "seconds": 5.128
+   },
+   {
+    "panel": "A",
+    "seed": 170000212,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 6.8181
+   },
+   {
+    "panel": "A",
+    "seed": 170000213,
+    "won": true,
+    "outcome": "won",
+    "decisions": 616,
+    "floor": 46,
+    "seconds": 7.293
+   },
+   {
+    "panel": "A",
+    "seed": 170000214,
+    "won": true,
+    "outcome": "won",
+    "decisions": 558,
+    "floor": 46,
+    "seconds": 6.2951
+   },
+   {
+    "panel": "A",
+    "seed": 170000215,
+    "won": true,
+    "outcome": "won",
+    "decisions": 617,
+    "floor": 46,
+    "seconds": 6.2367
+   },
+   {
+    "panel": "A",
+    "seed": 170000216,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 267,
+    "floor": 16,
+    "seconds": 1.854
+   },
+   {
+    "panel": "A",
+    "seed": 170000217,
+    "won": true,
+    "outcome": "won",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 6.986
+   },
+   {
+    "panel": "A",
+    "seed": 170000218,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 7.7529
+   },
+   {
+    "panel": "A",
+    "seed": 170000219,
+    "won": true,
+    "outcome": "won",
+    "decisions": 528,
+    "floor": 46,
+    "seconds": 5.3621
+   },
+   {
+    "panel": "A",
+    "seed": 170000220,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 151,
+    "floor": 16,
+    "seconds": 0.9516
+   },
+   {
+    "panel": "A",
+    "seed": 170000221,
+    "won": true,
+    "outcome": "won",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 6.979
+   },
+   {
+    "panel": "A",
+    "seed": 170000222,
+    "won": true,
+    "outcome": "won",
+    "decisions": 634,
+    "floor": 46,
+    "seconds": 6.395
+   },
+   {
+    "panel": "A",
+    "seed": 170000223,
+    "won": true,
+    "outcome": "won",
+    "decisions": 877,
+    "floor": 46,
+    "seconds": 9.4695
+   },
+   {
+    "panel": "A",
+    "seed": 170000224,
+    "won": true,
+    "outcome": "won",
+    "decisions": 822,
+    "floor": 46,
+    "seconds": 7.8955
+   },
+   {
+    "panel": "A",
+    "seed": 170000225,
+    "won": true,
+    "outcome": "won",
+    "decisions": 702,
+    "floor": 46,
+    "seconds": 6.1664
+   },
+   {
+    "panel": "A",
+    "seed": 170000226,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 7.8798
+   },
+   {
+    "panel": "A",
+    "seed": 170000227,
+    "won": true,
+    "outcome": "won",
+    "decisions": 848,
+    "floor": 46,
+    "seconds": 7.8733
+   },
+   {
+    "panel": "A",
+    "seed": 170000228,
+    "won": true,
+    "outcome": "won",
+    "decisions": 662,
+    "floor": 46,
+    "seconds": 5.4755
+   },
+   {
+    "panel": "A",
+    "seed": 170000229,
+    "won": true,
+    "outcome": "won",
+    "decisions": 815,
+    "floor": 46,
+    "seconds": 7.8505
+   },
+   {
+    "panel": "A",
+    "seed": 170000230,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 123,
+    "floor": 7,
+    "seconds": 0.6381
+   },
+   {
+    "panel": "A",
+    "seed": 170000231,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 5.5917
+   },
+   {
+    "panel": "A",
+    "seed": 170000232,
+    "won": true,
+    "outcome": "won",
+    "decisions": 797,
+    "floor": 46,
+    "seconds": 8.0889
+   },
+   {
+    "panel": "A",
+    "seed": 170000233,
+    "won": true,
+    "outcome": "won",
+    "decisions": 852,
+    "floor": 46,
+    "seconds": 8.9087
+   },
+   {
+    "panel": "A",
+    "seed": 170000234,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 529,
+    "floor": 46,
+    "seconds": 4.1328
+   },
+   {
+    "panel": "A",
+    "seed": 170000235,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 6.039
+   },
+   {
+    "panel": "A",
+    "seed": 170000236,
+    "won": true,
+    "outcome": "won",
+    "decisions": 586,
+    "floor": 46,
+    "seconds": 6.0852
+   },
+   {
+    "panel": "A",
+    "seed": 170000237,
+    "won": true,
+    "outcome": "won",
+    "decisions": 613,
+    "floor": 46,
+    "seconds": 6.7866
+   },
+   {
+    "panel": "A",
+    "seed": 170000238,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 309,
+    "floor": 26,
+    "seconds": 2.2587
+   },
+   {
+    "panel": "A",
+    "seed": 170000239,
+    "won": true,
+    "outcome": "won",
+    "decisions": 512,
+    "floor": 46,
+    "seconds": 4.9648
+   },
+   {
+    "panel": "A",
+    "seed": 170000240,
+    "won": true,
+    "outcome": "won",
+    "decisions": 681,
+    "floor": 46,
+    "seconds": 7.5547
+   },
+   {
+    "panel": "A",
+    "seed": 170000241,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 551,
+    "floor": 45,
+    "seconds": 4.9756
+   },
+   {
+    "panel": "A",
+    "seed": 170000242,
+    "won": true,
+    "outcome": "won",
+    "decisions": 555,
+    "floor": 46,
+    "seconds": 5.7421
+   },
+   {
+    "panel": "A",
+    "seed": 170000243,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 149,
+    "floor": 11,
+    "seconds": 0.8286
+   },
+   {
+    "panel": "A",
+    "seed": 170000244,
+    "won": true,
+    "outcome": "won",
+    "decisions": 601,
+    "floor": 46,
+    "seconds": 5.8518
+   },
+   {
+    "panel": "A",
+    "seed": 170000245,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 531,
+    "floor": 39,
+    "seconds": 4.8202
+   },
+   {
+    "panel": "A",
+    "seed": 170000246,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 584,
+    "floor": 46,
+    "seconds": 5.4208
+   },
+   {
+    "panel": "A",
+    "seed": 170000247,
+    "won": true,
+    "outcome": "won",
+    "decisions": 695,
+    "floor": 46,
+    "seconds": 7.4936
+   },
+   {
+    "panel": "A",
+    "seed": 170000248,
+    "won": true,
+    "outcome": "won",
+    "decisions": 752,
+    "floor": 46,
+    "seconds": 8.3967
+   },
+   {
+    "panel": "A",
+    "seed": 170000249,
+    "won": true,
+    "outcome": "won",
+    "decisions": 753,
+    "floor": 46,
+    "seconds": 8.7186
+   },
+   {
+    "panel": "A",
+    "seed": 170000250,
+    "won": true,
+    "outcome": "won",
+    "decisions": 705,
+    "floor": 46,
+    "seconds": 8.1176
+   },
+   {
+    "panel": "A",
+    "seed": 170000251,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 611,
+    "floor": 45,
+    "seconds": 6.0304
+   },
+   {
+    "panel": "A",
+    "seed": 170000252,
+    "won": true,
+    "outcome": "won",
+    "decisions": 546,
+    "floor": 46,
+    "seconds": 5.383
+   },
+   {
+    "panel": "A",
+    "seed": 170000253,
+    "won": true,
+    "outcome": "won",
+    "decisions": 583,
+    "floor": 46,
+    "seconds": 5.0211
+   },
+   {
+    "panel": "A",
+    "seed": 170000254,
+    "won": true,
+    "outcome": "won",
+    "decisions": 802,
+    "floor": 46,
+    "seconds": 7.5994
+   },
+   {
+    "panel": "A",
+    "seed": 170000255,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 697,
+    "floor": 46,
+    "seconds": 7.0618
+   },
+   {
+    "panel": "A",
+    "seed": 170000256,
+    "won": true,
+    "outcome": "won",
+    "decisions": 719,
+    "floor": 46,
+    "seconds": 6.7602
+   },
+   {
+    "panel": "A",
+    "seed": 170000257,
+    "won": true,
+    "outcome": "won",
+    "decisions": 657,
+    "floor": 46,
+    "seconds": 6.787
+   },
+   {
+    "panel": "A",
+    "seed": 170000258,
+    "won": true,
+    "outcome": "won",
+    "decisions": 612,
+    "floor": 46,
+    "seconds": 6.0682
+   },
+   {
+    "panel": "A",
+    "seed": 170000259,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 622,
+    "floor": 45,
+    "seconds": 5.7316
+   },
+   {
+    "panel": "A",
+    "seed": 170000260,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 456,
+    "floor": 31,
+    "seconds": 4.0581
+   },
+   {
+    "panel": "A",
+    "seed": 170000261,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 173,
+    "floor": 16,
+    "seconds": 1.2598
+   },
+   {
+    "panel": "A",
+    "seed": 170000262,
+    "won": true,
+    "outcome": "won",
+    "decisions": 800,
+    "floor": 46,
+    "seconds": 7.577
+   },
+   {
+    "panel": "A",
+    "seed": 170000263,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 449,
+    "floor": 31,
+    "seconds": 4.1591
+   },
+   {
+    "panel": "A",
+    "seed": 170000264,
+    "won": true,
+    "outcome": "won",
+    "decisions": 927,
+    "floor": 46,
+    "seconds": 10.1613
+   },
+   {
+    "panel": "A",
+    "seed": 170000265,
+    "won": true,
+    "outcome": "won",
+    "decisions": 624,
+    "floor": 46,
+    "seconds": 5.6425
+   },
+   {
+    "panel": "A",
+    "seed": 170000266,
+    "won": true,
+    "outcome": "won",
+    "decisions": 679,
+    "floor": 46,
+    "seconds": 6.8133
+   },
+   {
+    "panel": "A",
+    "seed": 170000267,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 187,
+    "floor": 16,
+    "seconds": 1.1927
+   },
+   {
+    "panel": "A",
+    "seed": 170000268,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 804,
+    "floor": 42,
+    "seconds": 7.7178
+   },
+   {
+    "panel": "A",
+    "seed": 170000269,
+    "won": true,
+    "outcome": "won",
+    "decisions": 693,
+    "floor": 46,
+    "seconds": 6.8077
+   },
+   {
+    "panel": "A",
+    "seed": 170000270,
+    "won": true,
+    "outcome": "won",
+    "decisions": 644,
+    "floor": 46,
+    "seconds": 6.4412
+   },
+   {
+    "panel": "A",
+    "seed": 170000271,
+    "won": true,
+    "outcome": "won",
+    "decisions": 623,
+    "floor": 46,
+    "seconds": 5.2427
+   },
+   {
+    "panel": "A",
+    "seed": 170000272,
+    "won": true,
+    "outcome": "won",
+    "decisions": 806,
+    "floor": 46,
+    "seconds": 7.4775
+   },
+   {
+    "panel": "A",
+    "seed": 170000273,
+    "won": true,
+    "outcome": "won",
+    "decisions": 733,
+    "floor": 48,
+    "seconds": 7.6546
+   },
+   {
+    "panel": "A",
+    "seed": 170000274,
+    "won": true,
+    "outcome": "won",
+    "decisions": 631,
+    "floor": 46,
+    "seconds": 5.3065
+   },
+   {
+    "panel": "A",
+    "seed": 170000275,
+    "won": true,
+    "outcome": "won",
+    "decisions": 728,
+    "floor": 46,
+    "seconds": 7.0578
+   },
+   {
+    "panel": "A",
+    "seed": 170000276,
+    "won": true,
+    "outcome": "won",
+    "decisions": 588,
+    "floor": 46,
+    "seconds": 5.4212
+   },
+   {
+    "panel": "A",
+    "seed": 170000277,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 623,
+    "floor": 46,
+    "seconds": 5.2236
+   },
+   {
+    "panel": "A",
+    "seed": 170000278,
+    "won": true,
+    "outcome": "won",
+    "decisions": 621,
+    "floor": 46,
+    "seconds": 6.5323
+   },
+   {
+    "panel": "A",
+    "seed": 170000279,
+    "won": true,
+    "outcome": "won",
+    "decisions": 607,
+    "floor": 48,
+    "seconds": 6.7475
+   },
+   {
+    "panel": "A",
+    "seed": 170000280,
+    "won": true,
+    "outcome": "won",
+    "decisions": 609,
+    "floor": 46,
+    "seconds": 5.8319
+   },
+   {
+    "panel": "A",
+    "seed": 170000281,
+    "won": true,
+    "outcome": "won",
+    "decisions": 678,
+    "floor": 46,
+    "seconds": 7.3764
+   },
+   {
+    "panel": "A",
+    "seed": 170000282,
+    "won": true,
+    "outcome": "won",
+    "decisions": 694,
+    "floor": 46,
+    "seconds": 6.4206
+   },
+   {
+    "panel": "A",
+    "seed": 170000283,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 714,
+    "floor": 46,
+    "seconds": 7.2461
+   },
+   {
+    "panel": "A",
+    "seed": 170000284,
+    "won": true,
+    "outcome": "won",
+    "decisions": 812,
+    "floor": 46,
+    "seconds": 9.2256
+   },
+   {
+    "panel": "A",
+    "seed": 170000285,
+    "won": true,
+    "outcome": "won",
+    "decisions": 643,
+    "floor": 46,
+    "seconds": 6.4141
+   },
+   {
+    "panel": "A",
+    "seed": 170000286,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 6.1616
+   },
+   {
+    "panel": "A",
+    "seed": 170000287,
+    "won": true,
+    "outcome": "won",
+    "decisions": 611,
+    "floor": 46,
+    "seconds": 5.6448
+   },
+   {
+    "panel": "A",
+    "seed": 170000288,
+    "won": true,
+    "outcome": "won",
+    "decisions": 591,
+    "floor": 46,
+    "seconds": 5.7012
+   },
+   {
+    "panel": "A",
+    "seed": 170000289,
+    "won": true,
+    "outcome": "won",
+    "decisions": 805,
+    "floor": 46,
+    "seconds": 7.6929
+   },
+   {
+    "panel": "A",
+    "seed": 170000290,
+    "won": true,
+    "outcome": "won",
+    "decisions": 731,
+    "floor": 46,
+    "seconds": 6.4925
+   },
+   {
+    "panel": "A",
+    "seed": 170000291,
+    "won": true,
+    "outcome": "won",
+    "decisions": 655,
+    "floor": 46,
+    "seconds": 5.8745
+   },
+   {
+    "panel": "A",
+    "seed": 170000292,
+    "won": true,
+    "outcome": "won",
+    "decisions": 763,
+    "floor": 46,
+    "seconds": 9.6057
+   },
+   {
+    "panel": "A",
+    "seed": 170000293,
+    "won": true,
+    "outcome": "won",
+    "decisions": 540,
+    "floor": 46,
+    "seconds": 4.8162
+   },
+   {
+    "panel": "A",
+    "seed": 170000294,
+    "won": true,
+    "outcome": "won",
+    "decisions": 566,
+    "floor": 46,
+    "seconds": 5.2961
+   },
+   {
+    "panel": "A",
+    "seed": 170000295,
+    "won": true,
+    "outcome": "won",
+    "decisions": 522,
+    "floor": 46,
+    "seconds": 4.2326
+   },
+   {
+    "panel": "A",
+    "seed": 170000296,
+    "won": true,
+    "outcome": "won",
+    "decisions": 803,
+    "floor": 46,
+    "seconds": 7.8644
+   },
+   {
+    "panel": "A",
+    "seed": 170000297,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 9.8866
+   },
+   {
+    "panel": "A",
+    "seed": 170000298,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 6.0851
+   },
+   {
+    "panel": "A",
+    "seed": 170000299,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 611,
+    "floor": 45,
+    "seconds": 5.4083
+   },
+   {
+    "panel": "B",
+    "seed": 171000000,
+    "won": true,
+    "outcome": "won",
+    "decisions": 491,
+    "floor": 46,
+    "seconds": 4.671
+   },
+   {
+    "panel": "B",
+    "seed": 171000001,
+    "won": true,
+    "outcome": "won",
+    "decisions": 630,
+    "floor": 46,
+    "seconds": 7.1543
+   },
+   {
+    "panel": "B",
+    "seed": 171000002,
+    "won": true,
+    "outcome": "won",
+    "decisions": 742,
+    "floor": 46,
+    "seconds": 6.5888
+   },
+   {
+    "panel": "B",
+    "seed": 171000003,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 918,
+    "floor": 46,
+    "seconds": 8.1981
+   },
+   {
+    "panel": "B",
+    "seed": 171000004,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 357,
+    "floor": 31,
+    "seconds": 2.7365
+   },
+   {
+    "panel": "B",
+    "seed": 171000005,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 8.7156
+   },
+   {
+    "panel": "B",
+    "seed": 171000006,
+    "won": true,
+    "outcome": "won",
+    "decisions": 651,
+    "floor": 46,
+    "seconds": 7.0652
+   },
+   {
+    "panel": "B",
+    "seed": 171000007,
+    "won": true,
+    "outcome": "won",
+    "decisions": 489,
+    "floor": 46,
+    "seconds": 3.8324
+   },
+   {
+    "panel": "B",
+    "seed": 171000008,
+    "won": true,
+    "outcome": "won",
+    "decisions": 700,
+    "floor": 46,
+    "seconds": 8.0059
+   },
+   {
+    "panel": "B",
+    "seed": 171000009,
+    "won": true,
+    "outcome": "won",
+    "decisions": 725,
+    "floor": 46,
+    "seconds": 6.8529
+   },
+   {
+    "panel": "B",
+    "seed": 171000010,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 6.8532
+   },
+   {
+    "panel": "B",
+    "seed": 171000011,
+    "won": true,
+    "outcome": "won",
+    "decisions": 562,
+    "floor": 48,
+    "seconds": 4.8328
+   },
+   {
+    "panel": "B",
+    "seed": 171000012,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 185,
+    "floor": 16,
+    "seconds": 1.0586
+   },
+   {
+    "panel": "B",
+    "seed": 171000013,
+    "won": true,
+    "outcome": "won",
+    "decisions": 657,
+    "floor": 46,
+    "seconds": 7.4005
+   },
+   {
+    "panel": "B",
+    "seed": 171000014,
+    "won": true,
+    "outcome": "won",
+    "decisions": 709,
+    "floor": 46,
+    "seconds": 6.7081
+   },
+   {
+    "panel": "B",
+    "seed": 171000015,
+    "won": true,
+    "outcome": "won",
+    "decisions": 864,
+    "floor": 46,
+    "seconds": 8.1155
+   },
+   {
+    "panel": "B",
+    "seed": 171000016,
+    "won": true,
+    "outcome": "won",
+    "decisions": 629,
+    "floor": 46,
+    "seconds": 6.3367
+   },
+   {
+    "panel": "B",
+    "seed": 171000017,
+    "won": true,
+    "outcome": "won",
+    "decisions": 873,
+    "floor": 46,
+    "seconds": 8.5422
+   },
+   {
+    "panel": "B",
+    "seed": 171000018,
+    "won": true,
+    "outcome": "won",
+    "decisions": 662,
+    "floor": 46,
+    "seconds": 6.2201
+   },
+   {
+    "panel": "B",
+    "seed": 171000019,
+    "won": true,
+    "outcome": "won",
+    "decisions": 767,
+    "floor": 46,
+    "seconds": 8.6807
+   },
+   {
+    "panel": "B",
+    "seed": 171000020,
+    "won": true,
+    "outcome": "won",
+    "decisions": 673,
+    "floor": 46,
+    "seconds": 5.5972
+   },
+   {
+    "panel": "B",
+    "seed": 171000021,
+    "won": true,
+    "outcome": "won",
+    "decisions": 687,
+    "floor": 46,
+    "seconds": 6.0044
+   },
+   {
+    "panel": "B",
+    "seed": 171000022,
+    "won": true,
+    "outcome": "won",
+    "decisions": 941,
+    "floor": 46,
+    "seconds": 8.7989
+   },
+   {
+    "panel": "B",
+    "seed": 171000023,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 196,
+    "floor": 16,
+    "seconds": 1.207
+   },
+   {
+    "panel": "B",
+    "seed": 171000024,
+    "won": true,
+    "outcome": "won",
+    "decisions": 754,
+    "floor": 46,
+    "seconds": 7.4577
+   },
+   {
+    "panel": "B",
+    "seed": 171000025,
+    "won": true,
+    "outcome": "won",
+    "decisions": 578,
+    "floor": 46,
+    "seconds": 4.969
+   },
+   {
+    "panel": "B",
+    "seed": 171000026,
+    "won": true,
+    "outcome": "won",
+    "decisions": 770,
+    "floor": 46,
+    "seconds": 6.6126
+   },
+   {
+    "panel": "B",
+    "seed": 171000027,
+    "won": true,
+    "outcome": "won",
+    "decisions": 739,
+    "floor": 46,
+    "seconds": 6.0023
+   },
+   {
+    "panel": "B",
+    "seed": 171000028,
+    "won": true,
+    "outcome": "won",
+    "decisions": 517,
+    "floor": 46,
+    "seconds": 5.5237
+   },
+   {
+    "panel": "B",
+    "seed": 171000029,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 167,
+    "floor": 16,
+    "seconds": 0.9686
+   },
+   {
+    "panel": "B",
+    "seed": 171000030,
+    "won": true,
+    "outcome": "won",
+    "decisions": 850,
+    "floor": 46,
+    "seconds": 8.2531
+   },
+   {
+    "panel": "B",
+    "seed": 171000031,
+    "won": true,
+    "outcome": "won",
+    "decisions": 562,
+    "floor": 46,
+    "seconds": 5.2969
+   },
+   {
+    "panel": "B",
+    "seed": 171000032,
+    "won": true,
+    "outcome": "won",
+    "decisions": 502,
+    "floor": 46,
+    "seconds": 4.3976
+   },
+   {
+    "panel": "B",
+    "seed": 171000033,
+    "won": true,
+    "outcome": "won",
+    "decisions": 616,
+    "floor": 46,
+    "seconds": 5.1858
+   },
+   {
+    "panel": "B",
+    "seed": 171000034,
+    "won": true,
+    "outcome": "won",
+    "decisions": 654,
+    "floor": 46,
+    "seconds": 6.6478
+   },
+   {
+    "panel": "B",
+    "seed": 171000035,
+    "won": true,
+    "outcome": "won",
+    "decisions": 753,
+    "floor": 46,
+    "seconds": 6.9842
+   },
+   {
+    "panel": "B",
+    "seed": 171000036,
+    "won": true,
+    "outcome": "won",
+    "decisions": 795,
+    "floor": 46,
+    "seconds": 7.5553
+   },
+   {
+    "panel": "B",
+    "seed": 171000037,
+    "won": true,
+    "outcome": "won",
+    "decisions": 851,
+    "floor": 48,
+    "seconds": 9.0746
+   },
+   {
+    "panel": "B",
+    "seed": 171000038,
+    "won": true,
+    "outcome": "won",
+    "decisions": 900,
+    "floor": 46,
+    "seconds": 8.4454
+   },
+   {
+    "panel": "B",
+    "seed": 171000039,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 587,
+    "floor": 46,
+    "seconds": 4.8262
+   },
+   {
+    "panel": "B",
+    "seed": 171000040,
+    "won": true,
+    "outcome": "won",
+    "decisions": 721,
+    "floor": 46,
+    "seconds": 8.4235
+   },
+   {
+    "panel": "B",
+    "seed": 171000041,
+    "won": true,
+    "outcome": "won",
+    "decisions": 868,
+    "floor": 46,
+    "seconds": 8.386
+   },
+   {
+    "panel": "B",
+    "seed": 171000042,
+    "won": true,
+    "outcome": "won",
+    "decisions": 484,
+    "floor": 46,
+    "seconds": 4.533
+   },
+   {
+    "panel": "B",
+    "seed": 171000043,
+    "won": true,
+    "outcome": "won",
+    "decisions": 737,
+    "floor": 46,
+    "seconds": 7.1426
+   },
+   {
+    "panel": "B",
+    "seed": 171000044,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 678,
+    "floor": 45,
+    "seconds": 6.8683
+   },
+   {
+    "panel": "B",
+    "seed": 171000045,
+    "won": true,
+    "outcome": "won",
+    "decisions": 560,
+    "floor": 46,
+    "seconds": 5.2981
+   },
+   {
+    "panel": "B",
+    "seed": 171000046,
+    "won": true,
+    "outcome": "won",
+    "decisions": 552,
+    "floor": 46,
+    "seconds": 4.4721
+   },
+   {
+    "panel": "B",
+    "seed": 171000047,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 685,
+    "floor": 46,
+    "seconds": 7.0587
+   },
+   {
+    "panel": "B",
+    "seed": 171000048,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 320,
+    "floor": 23,
+    "seconds": 2.8817
+   },
+   {
+    "panel": "B",
+    "seed": 171000049,
+    "won": true,
+    "outcome": "won",
+    "decisions": 605,
+    "floor": 46,
+    "seconds": 6.0171
+   },
+   {
+    "panel": "B",
+    "seed": 171000050,
+    "won": true,
+    "outcome": "won",
+    "decisions": 673,
+    "floor": 46,
+    "seconds": 6.0752
+   },
+   {
+    "panel": "B",
+    "seed": 171000051,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 6.0502
+   },
+   {
+    "panel": "B",
+    "seed": 171000052,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 142,
+    "floor": 16,
+    "seconds": 1.0829
+   },
+   {
+    "panel": "B",
+    "seed": 171000053,
+    "won": true,
+    "outcome": "won",
+    "decisions": 559,
+    "floor": 46,
+    "seconds": 5.1496
+   },
+   {
+    "panel": "B",
+    "seed": 171000054,
+    "won": true,
+    "outcome": "won",
+    "decisions": 909,
+    "floor": 46,
+    "seconds": 9.9434
+   },
+   {
+    "panel": "B",
+    "seed": 171000055,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 198,
+    "floor": 16,
+    "seconds": 1.1984
+   },
+   {
+    "panel": "B",
+    "seed": 171000056,
+    "won": true,
+    "outcome": "won",
+    "decisions": 610,
+    "floor": 46,
+    "seconds": 5.595
+   },
+   {
+    "panel": "B",
+    "seed": 171000057,
+    "won": true,
+    "outcome": "won",
+    "decisions": 887,
+    "floor": 46,
+    "seconds": 8.9351
+   },
+   {
+    "panel": "B",
+    "seed": 171000058,
+    "won": true,
+    "outcome": "won",
+    "decisions": 753,
+    "floor": 46,
+    "seconds": 6.8537
+   },
+   {
+    "panel": "B",
+    "seed": 171000059,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 624,
+    "floor": 46,
+    "seconds": 6.5798
+   },
+   {
+    "panel": "B",
+    "seed": 171000060,
+    "won": true,
+    "outcome": "won",
+    "decisions": 530,
+    "floor": 46,
+    "seconds": 4.7848
+   },
+   {
+    "panel": "B",
+    "seed": 171000061,
+    "won": true,
+    "outcome": "won",
+    "decisions": 615,
+    "floor": 46,
+    "seconds": 6.0117
+   },
+   {
+    "panel": "B",
+    "seed": 171000062,
+    "won": true,
+    "outcome": "won",
+    "decisions": 924,
+    "floor": 46,
+    "seconds": 9.2049
+   },
+   {
+    "panel": "B",
+    "seed": 171000063,
+    "won": true,
+    "outcome": "won",
+    "decisions": 779,
+    "floor": 46,
+    "seconds": 7.2993
+   },
+   {
+    "panel": "B",
+    "seed": 171000064,
+    "won": true,
+    "outcome": "won",
+    "decisions": 741,
+    "floor": 46,
+    "seconds": 8.2475
+   },
+   {
+    "panel": "B",
+    "seed": 171000065,
+    "won": true,
+    "outcome": "won",
+    "decisions": 786,
+    "floor": 46,
+    "seconds": 7.2824
+   },
+   {
+    "panel": "B",
+    "seed": 171000066,
+    "won": true,
+    "outcome": "won",
+    "decisions": 598,
+    "floor": 46,
+    "seconds": 5.3783
+   },
+   {
+    "panel": "B",
+    "seed": 171000067,
+    "won": true,
+    "outcome": "won",
+    "decisions": 668,
+    "floor": 46,
+    "seconds": 8.2717
+   },
+   {
+    "panel": "B",
+    "seed": 171000068,
+    "won": true,
+    "outcome": "won",
+    "decisions": 596,
+    "floor": 46,
+    "seconds": 5.5122
+   },
+   {
+    "panel": "B",
+    "seed": 171000069,
+    "won": true,
+    "outcome": "won",
+    "decisions": 613,
+    "floor": 46,
+    "seconds": 5.4414
+   },
+   {
+    "panel": "B",
+    "seed": 171000070,
+    "won": true,
+    "outcome": "won",
+    "decisions": 723,
+    "floor": 46,
+    "seconds": 7.1381
+   },
+   {
+    "panel": "B",
+    "seed": 171000071,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 5.6039
+   },
+   {
+    "panel": "B",
+    "seed": 171000072,
+    "won": true,
+    "outcome": "won",
+    "decisions": 794,
+    "floor": 46,
+    "seconds": 8.828
+   },
+   {
+    "panel": "B",
+    "seed": 171000073,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 6.2216
+   },
+   {
+    "panel": "B",
+    "seed": 171000074,
+    "won": true,
+    "outcome": "won",
+    "decisions": 636,
+    "floor": 46,
+    "seconds": 5.5031
+   },
+   {
+    "panel": "B",
+    "seed": 171000075,
+    "won": true,
+    "outcome": "won",
+    "decisions": 621,
+    "floor": 46,
+    "seconds": 6.4319
+   },
+   {
+    "panel": "B",
+    "seed": 171000076,
+    "won": true,
+    "outcome": "won",
+    "decisions": 699,
+    "floor": 46,
+    "seconds": 5.7594
+   },
+   {
+    "panel": "B",
+    "seed": 171000077,
+    "won": true,
+    "outcome": "won",
+    "decisions": 780,
+    "floor": 46,
+    "seconds": 8.2849
+   },
+   {
+    "panel": "B",
+    "seed": 171000078,
+    "won": true,
+    "outcome": "won",
+    "decisions": 576,
+    "floor": 46,
+    "seconds": 5.4879
+   },
+   {
+    "panel": "B",
+    "seed": 171000079,
+    "won": true,
+    "outcome": "won",
+    "decisions": 670,
+    "floor": 46,
+    "seconds": 6.0476
+   },
+   {
+    "panel": "B",
+    "seed": 171000080,
+    "won": true,
+    "outcome": "won",
+    "decisions": 698,
+    "floor": 46,
+    "seconds": 6.4995
+   },
+   {
+    "panel": "B",
+    "seed": 171000081,
+    "won": true,
+    "outcome": "won",
+    "decisions": 747,
+    "floor": 46,
+    "seconds": 7.7222
+   },
+   {
+    "panel": "B",
+    "seed": 171000082,
+    "won": true,
+    "outcome": "won",
+    "decisions": 691,
+    "floor": 46,
+    "seconds": 5.3648
+   },
+   {
+    "panel": "B",
+    "seed": 171000083,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 433,
+    "floor": 31,
+    "seconds": 3.0424
+   },
+   {
+    "panel": "B",
+    "seed": 171000084,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 190,
+    "floor": 16,
+    "seconds": 1.0754
+   },
+   {
+    "panel": "B",
+    "seed": 171000085,
+    "won": true,
+    "outcome": "won",
+    "decisions": 781,
+    "floor": 46,
+    "seconds": 9.2664
+   },
+   {
+    "panel": "B",
+    "seed": 171000086,
+    "won": true,
+    "outcome": "won",
+    "decisions": 725,
+    "floor": 46,
+    "seconds": 7.0103
+   },
+   {
+    "panel": "B",
+    "seed": 171000087,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 400,
+    "floor": 31,
+    "seconds": 3.0063
+   },
+   {
+    "panel": "B",
+    "seed": 171000088,
+    "won": true,
+    "outcome": "won",
+    "decisions": 645,
+    "floor": 46,
+    "seconds": 6.1269
+   },
+   {
+    "panel": "B",
+    "seed": 171000089,
+    "won": true,
+    "outcome": "won",
+    "decisions": 863,
+    "floor": 46,
+    "seconds": 7.6992
+   },
+   {
+    "panel": "B",
+    "seed": 171000090,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 5.9592
+   },
+   {
+    "panel": "B",
+    "seed": 171000091,
+    "won": true,
+    "outcome": "won",
+    "decisions": 735,
+    "floor": 46,
+    "seconds": 7.4732
+   },
+   {
+    "panel": "B",
+    "seed": 171000092,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 6.063
+   },
+   {
+    "panel": "B",
+    "seed": 171000093,
+    "won": true,
+    "outcome": "won",
+    "decisions": 591,
+    "floor": 46,
+    "seconds": 5.9729
+   },
+   {
+    "panel": "B",
+    "seed": 171000094,
+    "won": true,
+    "outcome": "won",
+    "decisions": 592,
+    "floor": 46,
+    "seconds": 5.0248
+   },
+   {
+    "panel": "B",
+    "seed": 171000095,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 6.0858
+   },
+   {
+    "panel": "B",
+    "seed": 171000096,
+    "won": true,
+    "outcome": "won",
+    "decisions": 720,
+    "floor": 46,
+    "seconds": 7.0303
+   },
+   {
+    "panel": "B",
+    "seed": 171000097,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 6.7098
+   },
+   {
+    "panel": "B",
+    "seed": 171000098,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 162,
+    "floor": 16,
+    "seconds": 0.8993
+   },
+   {
+    "panel": "B",
+    "seed": 171000099,
+    "won": true,
+    "outcome": "won",
+    "decisions": 625,
+    "floor": 46,
+    "seconds": 5.6139
+   },
+   {
+    "panel": "B",
+    "seed": 171000100,
+    "won": true,
+    "outcome": "won",
+    "decisions": 666,
+    "floor": 46,
+    "seconds": 5.9255
+   },
+   {
+    "panel": "B",
+    "seed": 171000101,
+    "won": true,
+    "outcome": "won",
+    "decisions": 818,
+    "floor": 46,
+    "seconds": 7.9495
+   },
+   {
+    "panel": "B",
+    "seed": 171000102,
+    "won": true,
+    "outcome": "won",
+    "decisions": 493,
+    "floor": 48,
+    "seconds": 4.1616
+   },
+   {
+    "panel": "B",
+    "seed": 171000103,
+    "won": true,
+    "outcome": "won",
+    "decisions": 821,
+    "floor": 46,
+    "seconds": 8.963
+   },
+   {
+    "panel": "B",
+    "seed": 171000104,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 514,
+    "floor": 37,
+    "seconds": 3.7366
+   },
+   {
+    "panel": "B",
+    "seed": 171000105,
+    "won": true,
+    "outcome": "won",
+    "decisions": 573,
+    "floor": 46,
+    "seconds": 4.7553
+   },
+   {
+    "panel": "B",
+    "seed": 171000106,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 169,
+    "floor": 16,
+    "seconds": 0.8562
+   },
+   {
+    "panel": "B",
+    "seed": 171000107,
+    "won": true,
+    "outcome": "won",
+    "decisions": 876,
+    "floor": 46,
+    "seconds": 8.0455
+   },
+   {
+    "panel": "B",
+    "seed": 171000108,
+    "won": true,
+    "outcome": "won",
+    "decisions": 656,
+    "floor": 46,
+    "seconds": 6.1844
+   },
+   {
+    "panel": "B",
+    "seed": 171000109,
+    "won": true,
+    "outcome": "won",
+    "decisions": 670,
+    "floor": 46,
+    "seconds": 7.3186
+   },
+   {
+    "panel": "B",
+    "seed": 171000110,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 612,
+    "floor": 46,
+    "seconds": 5.2178
+   },
+   {
+    "panel": "B",
+    "seed": 171000111,
+    "won": true,
+    "outcome": "won",
+    "decisions": 591,
+    "floor": 46,
+    "seconds": 5.6632
+   },
+   {
+    "panel": "B",
+    "seed": 171000112,
+    "won": true,
+    "outcome": "won",
+    "decisions": 727,
+    "floor": 46,
+    "seconds": 7.7459
+   },
+   {
+    "panel": "B",
+    "seed": 171000113,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 859,
+    "floor": 46,
+    "seconds": 7.5366
+   },
+   {
+    "panel": "B",
+    "seed": 171000114,
+    "won": true,
+    "outcome": "won",
+    "decisions": 668,
+    "floor": 46,
+    "seconds": 5.8793
+   },
+   {
+    "panel": "B",
+    "seed": 171000115,
+    "won": true,
+    "outcome": "won",
+    "decisions": 550,
+    "floor": 46,
+    "seconds": 5.3903
+   },
+   {
+    "panel": "B",
+    "seed": 171000116,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 794,
+    "floor": 46,
+    "seconds": 7.0161
+   },
+   {
+    "panel": "B",
+    "seed": 171000117,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 6.2727
+   },
+   {
+    "panel": "B",
+    "seed": 171000118,
+    "won": true,
+    "outcome": "won",
+    "decisions": 709,
+    "floor": 46,
+    "seconds": 8.7067
+   },
+   {
+    "panel": "B",
+    "seed": 171000119,
+    "won": true,
+    "outcome": "won",
+    "decisions": 641,
+    "floor": 46,
+    "seconds": 5.5962
+   },
+   {
+    "panel": "B",
+    "seed": 171000120,
+    "won": true,
+    "outcome": "won",
+    "decisions": 549,
+    "floor": 46,
+    "seconds": 4.5573
+   },
+   {
+    "panel": "B",
+    "seed": 171000121,
+    "won": true,
+    "outcome": "won",
+    "decisions": 571,
+    "floor": 46,
+    "seconds": 5.6071
+   },
+   {
+    "panel": "B",
+    "seed": 171000122,
+    "won": true,
+    "outcome": "won",
+    "decisions": 659,
+    "floor": 46,
+    "seconds": 5.7395
+   },
+   {
+    "panel": "B",
+    "seed": 171000123,
+    "won": true,
+    "outcome": "won",
+    "decisions": 721,
+    "floor": 46,
+    "seconds": 6.7509
+   },
+   {
+    "panel": "B",
+    "seed": 171000124,
+    "won": true,
+    "outcome": "won",
+    "decisions": 897,
+    "floor": 46,
+    "seconds": 9.7129
+   },
+   {
+    "panel": "B",
+    "seed": 171000125,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 386,
+    "floor": 29,
+    "seconds": 2.5569
+   },
+   {
+    "panel": "B",
+    "seed": 171000126,
+    "won": true,
+    "outcome": "won",
+    "decisions": 684,
+    "floor": 46,
+    "seconds": 6.255
+   },
+   {
+    "panel": "B",
+    "seed": 171000127,
+    "won": true,
+    "outcome": "won",
+    "decisions": 847,
+    "floor": 46,
+    "seconds": 7.6259
+   },
+   {
+    "panel": "B",
+    "seed": 171000128,
+    "won": true,
+    "outcome": "won",
+    "decisions": 723,
+    "floor": 46,
+    "seconds": 6.7973
+   },
+   {
+    "panel": "B",
+    "seed": 171000129,
+    "won": true,
+    "outcome": "won",
+    "decisions": 643,
+    "floor": 46,
+    "seconds": 7.5322
+   },
+   {
+    "panel": "B",
+    "seed": 171000130,
+    "won": true,
+    "outcome": "won",
+    "decisions": 775,
+    "floor": 46,
+    "seconds": 7.3566
+   },
+   {
+    "panel": "B",
+    "seed": 171000131,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 7.3645
+   },
+   {
+    "panel": "B",
+    "seed": 171000132,
+    "won": true,
+    "outcome": "won",
+    "decisions": 796,
+    "floor": 46,
+    "seconds": 8.3102
+   },
+   {
+    "panel": "B",
+    "seed": 171000133,
+    "won": true,
+    "outcome": "won",
+    "decisions": 772,
+    "floor": 46,
+    "seconds": 7.1418
+   },
+   {
+    "panel": "B",
+    "seed": 171000134,
+    "won": true,
+    "outcome": "won",
+    "decisions": 620,
+    "floor": 46,
+    "seconds": 5.4192
+   },
+   {
+    "panel": "B",
+    "seed": 171000135,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 102,
+    "floor": 6,
+    "seconds": 0.5188
+   },
+   {
+    "panel": "B",
+    "seed": 171000136,
+    "won": true,
+    "outcome": "won",
+    "decisions": 648,
+    "floor": 46,
+    "seconds": 5.6194
+   },
+   {
+    "panel": "B",
+    "seed": 171000137,
+    "won": true,
+    "outcome": "won",
+    "decisions": 673,
+    "floor": 46,
+    "seconds": 7.4578
+   },
+   {
+    "panel": "B",
+    "seed": 171000138,
+    "won": true,
+    "outcome": "won",
+    "decisions": 836,
+    "floor": 46,
+    "seconds": 7.4422
+   },
+   {
+    "panel": "B",
+    "seed": 171000139,
+    "won": true,
+    "outcome": "won",
+    "decisions": 682,
+    "floor": 46,
+    "seconds": 6.4698
+   },
+   {
+    "panel": "B",
+    "seed": 171000140,
+    "won": true,
+    "outcome": "won",
+    "decisions": 718,
+    "floor": 46,
+    "seconds": 6.3732
+   },
+   {
+    "panel": "B",
+    "seed": 171000141,
+    "won": true,
+    "outcome": "won",
+    "decisions": 729,
+    "floor": 46,
+    "seconds": 7.2118
+   },
+   {
+    "panel": "B",
+    "seed": 171000142,
+    "won": true,
+    "outcome": "won",
+    "decisions": 740,
+    "floor": 46,
+    "seconds": 6.5996
+   },
+   {
+    "panel": "B",
+    "seed": 171000143,
+    "won": true,
+    "outcome": "won",
+    "decisions": 659,
+    "floor": 46,
+    "seconds": 6.1447
+   },
+   {
+    "panel": "B",
+    "seed": 171000144,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 638,
+    "floor": 45,
+    "seconds": 5.2954
+   },
+   {
+    "panel": "B",
+    "seed": 171000145,
+    "won": true,
+    "outcome": "won",
+    "decisions": 599,
+    "floor": 46,
+    "seconds": 5.3798
+   },
+   {
+    "panel": "B",
+    "seed": 171000146,
+    "won": true,
+    "outcome": "won",
+    "decisions": 516,
+    "floor": 46,
+    "seconds": 4.2366
+   },
+   {
+    "panel": "B",
+    "seed": 171000147,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 737,
+    "floor": 46,
+    "seconds": 6.5998
+   },
+   {
+    "panel": "B",
+    "seed": 171000148,
+    "won": true,
+    "outcome": "won",
+    "decisions": 641,
+    "floor": 46,
+    "seconds": 5.336
+   },
+   {
+    "panel": "B",
+    "seed": 171000149,
+    "won": true,
+    "outcome": "won",
+    "decisions": 764,
+    "floor": 46,
+    "seconds": 7.4626
+   },
+   {
+    "panel": "B",
+    "seed": 171000150,
+    "won": true,
+    "outcome": "won",
+    "decisions": 748,
+    "floor": 46,
+    "seconds": 7.023
+   },
+   {
+    "panel": "B",
+    "seed": 171000151,
+    "won": true,
+    "outcome": "won",
+    "decisions": 710,
+    "floor": 46,
+    "seconds": 6.8438
+   },
+   {
+    "panel": "B",
+    "seed": 171000152,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 626,
+    "floor": 41,
+    "seconds": 4.9917
+   },
+   {
+    "panel": "B",
+    "seed": 171000153,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 264,
+    "floor": 22,
+    "seconds": 1.8109
+   },
+   {
+    "panel": "B",
+    "seed": 171000154,
+    "won": true,
+    "outcome": "won",
+    "decisions": 660,
+    "floor": 46,
+    "seconds": 5.6213
+   },
+   {
+    "panel": "B",
+    "seed": 171000155,
+    "won": true,
+    "outcome": "won",
+    "decisions": 802,
+    "floor": 46,
+    "seconds": 7.254
+   },
+   {
+    "panel": "B",
+    "seed": 171000156,
+    "won": true,
+    "outcome": "won",
+    "decisions": 712,
+    "floor": 46,
+    "seconds": 5.371
+   },
+   {
+    "panel": "B",
+    "seed": 171000157,
+    "won": true,
+    "outcome": "won",
+    "decisions": 584,
+    "floor": 46,
+    "seconds": 5.0651
+   },
+   {
+    "panel": "B",
+    "seed": 171000158,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 150,
+    "floor": 16,
+    "seconds": 0.792
+   },
+   {
+    "panel": "B",
+    "seed": 171000159,
+    "won": true,
+    "outcome": "won",
+    "decisions": 778,
+    "floor": 46,
+    "seconds": 6.6749
+   },
+   {
+    "panel": "B",
+    "seed": 171000160,
+    "won": true,
+    "outcome": "won",
+    "decisions": 614,
+    "floor": 46,
+    "seconds": 5.5306
+   },
+   {
+    "panel": "B",
+    "seed": 171000161,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 88,
+    "floor": 7,
+    "seconds": 0.4704
+   },
+   {
+    "panel": "B",
+    "seed": 171000162,
+    "won": true,
+    "outcome": "won",
+    "decisions": 568,
+    "floor": 46,
+    "seconds": 5.4234
+   },
+   {
+    "panel": "B",
+    "seed": 171000163,
+    "won": true,
+    "outcome": "won",
+    "decisions": 610,
+    "floor": 46,
+    "seconds": 4.8846
+   },
+   {
+    "panel": "B",
+    "seed": 171000164,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 646,
+    "floor": 46,
+    "seconds": 5.0041
+   },
+   {
+    "panel": "B",
+    "seed": 171000165,
+    "won": true,
+    "outcome": "won",
+    "decisions": 758,
+    "floor": 46,
+    "seconds": 6.4202
+   },
+   {
+    "panel": "B",
+    "seed": 171000166,
+    "won": true,
+    "outcome": "won",
+    "decisions": 713,
+    "floor": 46,
+    "seconds": 6.3953
+   },
+   {
+    "panel": "B",
+    "seed": 171000167,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 769,
+    "floor": 46,
+    "seconds": 6.3588
+   },
+   {
+    "panel": "B",
+    "seed": 171000168,
+    "won": true,
+    "outcome": "won",
+    "decisions": 596,
+    "floor": 46,
+    "seconds": 4.7603
+   },
+   {
+    "panel": "B",
+    "seed": 171000169,
+    "won": true,
+    "outcome": "won",
+    "decisions": 602,
+    "floor": 46,
+    "seconds": 4.4667
+   },
+   {
+    "panel": "B",
+    "seed": 171000170,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 701,
+    "floor": 46,
+    "seconds": 5.791
+   },
+   {
+    "panel": "B",
+    "seed": 171000171,
+    "won": true,
+    "outcome": "won",
+    "decisions": 520,
+    "floor": 46,
+    "seconds": 3.9294
+   },
+   {
+    "panel": "B",
+    "seed": 171000172,
+    "won": true,
+    "outcome": "won",
+    "decisions": 628,
+    "floor": 46,
+    "seconds": 4.9284
+   },
+   {
+    "panel": "B",
+    "seed": 171000173,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 655,
+    "floor": 47,
+    "seconds": 5.3311
+   },
+   {
+    "panel": "B",
+    "seed": 171000174,
+    "won": true,
+    "outcome": "won",
+    "decisions": 709,
+    "floor": 46,
+    "seconds": 5.4813
+   },
+   {
+    "panel": "B",
+    "seed": 171000175,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 286,
+    "floor": 33,
+    "seconds": 1.8934
+   },
+   {
+    "panel": "B",
+    "seed": 171000176,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 586,
+    "floor": 46,
+    "seconds": 4.5567
+   },
+   {
+    "panel": "B",
+    "seed": 171000177,
+    "won": true,
+    "outcome": "won",
+    "decisions": 912,
+    "floor": 46,
+    "seconds": 8.4414
+   },
+   {
+    "panel": "B",
+    "seed": 171000178,
+    "won": true,
+    "outcome": "won",
+    "decisions": 761,
+    "floor": 46,
+    "seconds": 6.1203
+   },
+   {
+    "panel": "B",
+    "seed": 171000179,
+    "won": true,
+    "outcome": "won",
+    "decisions": 651,
+    "floor": 46,
+    "seconds": 5.1276
+   },
+   {
+    "panel": "B",
+    "seed": 171000180,
+    "won": true,
+    "outcome": "won",
+    "decisions": 984,
+    "floor": 46,
+    "seconds": 9.1035
+   },
+   {
+    "panel": "B",
+    "seed": 171000181,
+    "won": true,
+    "outcome": "won",
+    "decisions": 629,
+    "floor": 46,
+    "seconds": 5.5429
+   },
+   {
+    "panel": "B",
+    "seed": 171000182,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 203,
+    "floor": 16,
+    "seconds": 1.1585
+   },
+   {
+    "panel": "B",
+    "seed": 171000183,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 549,
+    "floor": 46,
+    "seconds": 4.0944
+   },
+   {
+    "panel": "B",
+    "seed": 171000184,
+    "won": true,
+    "outcome": "won",
+    "decisions": 542,
+    "floor": 46,
+    "seconds": 4.7104
+   },
+   {
+    "panel": "B",
+    "seed": 171000185,
+    "won": true,
+    "outcome": "won",
+    "decisions": 723,
+    "floor": 46,
+    "seconds": 5.9343
+   },
+   {
+    "panel": "B",
+    "seed": 171000186,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 602,
+    "floor": 46,
+    "seconds": 4.9726
+   },
+   {
+    "panel": "B",
+    "seed": 171000187,
+    "won": true,
+    "outcome": "won",
+    "decisions": 589,
+    "floor": 46,
+    "seconds": 4.4974
+   },
+   {
+    "panel": "B",
+    "seed": 171000188,
+    "won": true,
+    "outcome": "won",
+    "decisions": 673,
+    "floor": 46,
+    "seconds": 5.4198
+   },
+   {
+    "panel": "B",
+    "seed": 171000189,
+    "won": true,
+    "outcome": "won",
+    "decisions": 995,
+    "floor": 46,
+    "seconds": 8.3489
+   },
+   {
+    "panel": "B",
+    "seed": 171000190,
+    "won": true,
+    "outcome": "won",
+    "decisions": 592,
+    "floor": 46,
+    "seconds": 4.7578
+   },
+   {
+    "panel": "B",
+    "seed": 171000191,
+    "won": true,
+    "outcome": "won",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 5.4237
+   },
+   {
+    "panel": "B",
+    "seed": 171000192,
+    "won": true,
+    "outcome": "won",
+    "decisions": 551,
+    "floor": 46,
+    "seconds": 4.6623
+   },
+   {
+    "panel": "B",
+    "seed": 171000193,
+    "won": true,
+    "outcome": "won",
+    "decisions": 598,
+    "floor": 46,
+    "seconds": 5.6008
+   },
+   {
+    "panel": "B",
+    "seed": 171000194,
+    "won": true,
+    "outcome": "won",
+    "decisions": 524,
+    "floor": 46,
+    "seconds": 4.3059
+   },
+   {
+    "panel": "B",
+    "seed": 171000195,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 6.7832
+   },
+   {
+    "panel": "B",
+    "seed": 171000196,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 578,
+    "floor": 45,
+    "seconds": 4.7671
+   },
+   {
+    "panel": "B",
+    "seed": 171000197,
+    "won": true,
+    "outcome": "won",
+    "decisions": 822,
+    "floor": 46,
+    "seconds": 6.9375
+   },
+   {
+    "panel": "B",
+    "seed": 171000198,
+    "won": true,
+    "outcome": "won",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 4.9269
+   },
+   {
+    "panel": "B",
+    "seed": 171000199,
+    "won": true,
+    "outcome": "won",
+    "decisions": 626,
+    "floor": 46,
+    "seconds": 5.4047
+   },
+   {
+    "panel": "B",
+    "seed": 171000200,
+    "won": true,
+    "outcome": "won",
+    "decisions": 728,
+    "floor": 46,
+    "seconds": 6.3658
+   },
+   {
+    "panel": "B",
+    "seed": 171000201,
+    "won": true,
+    "outcome": "won",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 6.1737
+   },
+   {
+    "panel": "B",
+    "seed": 171000202,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 4.9759
+   },
+   {
+    "panel": "B",
+    "seed": 171000203,
+    "won": true,
+    "outcome": "won",
+    "decisions": 639,
+    "floor": 46,
+    "seconds": 5.4269
+   },
+   {
+    "panel": "B",
+    "seed": 171000204,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 547,
+    "floor": 45,
+    "seconds": 4.2566
+   },
+   {
+    "panel": "B",
+    "seed": 171000205,
+    "won": true,
+    "outcome": "won",
+    "decisions": 569,
+    "floor": 46,
+    "seconds": 4.7271
+   },
+   {
+    "panel": "B",
+    "seed": 171000206,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 339,
+    "floor": 31,
+    "seconds": 2.2752
+   },
+   {
+    "panel": "B",
+    "seed": 171000207,
+    "won": true,
+    "outcome": "won",
+    "decisions": 548,
+    "floor": 46,
+    "seconds": 4.02
+   },
+   {
+    "panel": "B",
+    "seed": 171000208,
+    "won": true,
+    "outcome": "won",
+    "decisions": 734,
+    "floor": 46,
+    "seconds": 6.3696
+   },
+   {
+    "panel": "B",
+    "seed": 171000209,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 135,
+    "floor": 10,
+    "seconds": 0.6738
+   },
+   {
+    "panel": "B",
+    "seed": 171000210,
+    "won": true,
+    "outcome": "won",
+    "decisions": 704,
+    "floor": 46,
+    "seconds": 6.0187
+   },
+   {
+    "panel": "B",
+    "seed": 171000211,
+    "won": true,
+    "outcome": "won",
+    "decisions": 694,
+    "floor": 46,
+    "seconds": 5.7796
+   },
+   {
+    "panel": "B",
+    "seed": 171000212,
+    "won": true,
+    "outcome": "won",
+    "decisions": 654,
+    "floor": 46,
+    "seconds": 5.677
+   },
+   {
+    "panel": "B",
+    "seed": 171000213,
+    "won": true,
+    "outcome": "won",
+    "decisions": 719,
+    "floor": 46,
+    "seconds": 5.5788
+   },
+   {
+    "panel": "B",
+    "seed": 171000214,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 612,
+    "floor": 46,
+    "seconds": 4.9675
+   },
+   {
+    "panel": "B",
+    "seed": 171000215,
+    "won": true,
+    "outcome": "won",
+    "decisions": 807,
+    "floor": 46,
+    "seconds": 7.4705
+   },
+   {
+    "panel": "B",
+    "seed": 171000216,
+    "won": true,
+    "outcome": "won",
+    "decisions": 716,
+    "floor": 46,
+    "seconds": 5.5592
+   },
+   {
+    "panel": "B",
+    "seed": 171000217,
+    "won": true,
+    "outcome": "won",
+    "decisions": 762,
+    "floor": 46,
+    "seconds": 6.3046
+   },
+   {
+    "panel": "B",
+    "seed": 171000218,
+    "won": true,
+    "outcome": "won",
+    "decisions": 905,
+    "floor": 46,
+    "seconds": 8.0349
+   },
+   {
+    "panel": "B",
+    "seed": 171000219,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 5.8746
+   },
+   {
+    "panel": "B",
+    "seed": 171000220,
+    "won": true,
+    "outcome": "won",
+    "decisions": 613,
+    "floor": 46,
+    "seconds": 5.2241
+   },
+   {
+    "panel": "B",
+    "seed": 171000221,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 5.7825
+   },
+   {
+    "panel": "B",
+    "seed": 171000222,
+    "won": true,
+    "outcome": "won",
+    "decisions": 762,
+    "floor": 46,
+    "seconds": 6.0235
+   },
+   {
+    "panel": "B",
+    "seed": 171000223,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 4.9695
+   },
+   {
+    "panel": "B",
+    "seed": 171000224,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 458,
+    "floor": 35,
+    "seconds": 3.1462
+   },
+   {
+    "panel": "B",
+    "seed": 171000225,
+    "won": true,
+    "outcome": "won",
+    "decisions": 616,
+    "floor": 46,
+    "seconds": 5.0047
+   },
+   {
+    "panel": "B",
+    "seed": 171000226,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 717,
+    "floor": 46,
+    "seconds": 5.746
+   },
+   {
+    "panel": "B",
+    "seed": 171000227,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 5.5828
+   },
+   {
+    "panel": "B",
+    "seed": 171000228,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 660,
+    "floor": 46,
+    "seconds": 5.6286
+   },
+   {
+    "panel": "B",
+    "seed": 171000229,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 597,
+    "floor": 46,
+    "seconds": 4.3013
+   },
+   {
+    "panel": "B",
+    "seed": 171000230,
+    "won": true,
+    "outcome": "won",
+    "decisions": 652,
+    "floor": 46,
+    "seconds": 6.1607
+   },
+   {
+    "panel": "B",
+    "seed": 171000231,
+    "won": true,
+    "outcome": "won",
+    "decisions": 676,
+    "floor": 46,
+    "seconds": 5.6335
+   },
+   {
+    "panel": "B",
+    "seed": 171000232,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 541,
+    "floor": 45,
+    "seconds": 4.4251
+   },
+   {
+    "panel": "B",
+    "seed": 171000233,
+    "won": true,
+    "outcome": "won",
+    "decisions": 688,
+    "floor": 46,
+    "seconds": 5.4053
+   },
+   {
+    "panel": "B",
+    "seed": 171000234,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 423,
+    "floor": 45,
+    "seconds": 3.024
+   },
+   {
+    "panel": "B",
+    "seed": 171000235,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 276,
+    "floor": 19,
+    "seconds": 1.5425
+   },
+   {
+    "panel": "B",
+    "seed": 171000236,
+    "won": true,
+    "outcome": "won",
+    "decisions": 732,
+    "floor": 46,
+    "seconds": 5.6781
+   },
+   {
+    "panel": "B",
+    "seed": 171000237,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 5.6504
+   },
+   {
+    "panel": "B",
+    "seed": 171000238,
+    "won": true,
+    "outcome": "won",
+    "decisions": 759,
+    "floor": 46,
+    "seconds": 6.1922
+   },
+   {
+    "panel": "B",
+    "seed": 171000239,
+    "won": true,
+    "outcome": "won",
+    "decisions": 620,
+    "floor": 48,
+    "seconds": 4.6978
+   },
+   {
+    "panel": "B",
+    "seed": 171000240,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 107,
+    "floor": 6,
+    "seconds": 0.5293
+   },
+   {
+    "panel": "B",
+    "seed": 171000241,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 533,
+    "floor": 46,
+    "seconds": 4.0056
+   },
+   {
+    "panel": "B",
+    "seed": 171000242,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 550,
+    "floor": 46,
+    "seconds": 3.9672
+   },
+   {
+    "panel": "B",
+    "seed": 171000243,
+    "won": true,
+    "outcome": "won",
+    "decisions": 603,
+    "floor": 46,
+    "seconds": 5.3715
+   },
+   {
+    "panel": "B",
+    "seed": 171000244,
+    "won": true,
+    "outcome": "won",
+    "decisions": 534,
+    "floor": 46,
+    "seconds": 4.3558
+   },
+   {
+    "panel": "B",
+    "seed": 171000245,
+    "won": true,
+    "outcome": "won",
+    "decisions": 623,
+    "floor": 46,
+    "seconds": 4.8735
+   },
+   {
+    "panel": "B",
+    "seed": 171000246,
+    "won": true,
+    "outcome": "won",
+    "decisions": 659,
+    "floor": 46,
+    "seconds": 5.9915
+   },
+   {
+    "panel": "B",
+    "seed": 171000247,
+    "won": true,
+    "outcome": "won",
+    "decisions": 652,
+    "floor": 46,
+    "seconds": 5.5758
+   },
+   {
+    "panel": "B",
+    "seed": 171000248,
+    "won": true,
+    "outcome": "won",
+    "decisions": 685,
+    "floor": 46,
+    "seconds": 5.9106
+   },
+   {
+    "panel": "B",
+    "seed": 171000249,
+    "won": true,
+    "outcome": "won",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 5.5518
+   },
+   {
+    "panel": "B",
+    "seed": 171000250,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 5.9184
+   },
+   {
+    "panel": "B",
+    "seed": 171000251,
+    "won": true,
+    "outcome": "won",
+    "decisions": 781,
+    "floor": 46,
+    "seconds": 6.7198
+   },
+   {
+    "panel": "B",
+    "seed": 171000252,
+    "won": true,
+    "outcome": "won",
+    "decisions": 582,
+    "floor": 46,
+    "seconds": 4.5188
+   },
+   {
+    "panel": "B",
+    "seed": 171000253,
+    "won": true,
+    "outcome": "won",
+    "decisions": 663,
+    "floor": 46,
+    "seconds": 5.6425
+   },
+   {
+    "panel": "B",
+    "seed": 171000254,
+    "won": true,
+    "outcome": "won",
+    "decisions": 787,
+    "floor": 46,
+    "seconds": 6.8197
+   },
+   {
+    "panel": "B",
+    "seed": 171000255,
+    "won": true,
+    "outcome": "won",
+    "decisions": 881,
+    "floor": 46,
+    "seconds": 6.3432
+   },
+   {
+    "panel": "B",
+    "seed": 171000256,
+    "won": true,
+    "outcome": "won",
+    "decisions": 493,
+    "floor": 46,
+    "seconds": 3.5499
+   },
+   {
+    "panel": "B",
+    "seed": 171000257,
+    "won": true,
+    "outcome": "won",
+    "decisions": 637,
+    "floor": 46,
+    "seconds": 5.6911
+   },
+   {
+    "panel": "B",
+    "seed": 171000258,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 5.621
+   },
+   {
+    "panel": "B",
+    "seed": 171000259,
+    "won": true,
+    "outcome": "won",
+    "decisions": 578,
+    "floor": 46,
+    "seconds": 4.6687
+   },
+   {
+    "panel": "B",
+    "seed": 171000260,
+    "won": true,
+    "outcome": "won",
+    "decisions": 675,
+    "floor": 46,
+    "seconds": 5.3381
+   },
+   {
+    "panel": "B",
+    "seed": 171000261,
+    "won": true,
+    "outcome": "won",
+    "decisions": 746,
+    "floor": 46,
+    "seconds": 5.9173
+   },
+   {
+    "panel": "B",
+    "seed": 171000262,
+    "won": true,
+    "outcome": "won",
+    "decisions": 909,
+    "floor": 46,
+    "seconds": 7.9475
+   },
+   {
+    "panel": "B",
+    "seed": 171000263,
+    "won": true,
+    "outcome": "won",
+    "decisions": 681,
+    "floor": 46,
+    "seconds": 5.6338
+   },
+   {
+    "panel": "B",
+    "seed": 171000264,
+    "won": true,
+    "outcome": "won",
+    "decisions": 557,
+    "floor": 46,
+    "seconds": 4.5524
+   },
+   {
+    "panel": "B",
+    "seed": 171000265,
+    "won": true,
+    "outcome": "won",
+    "decisions": 567,
+    "floor": 46,
+    "seconds": 5.0772
+   },
+   {
+    "panel": "B",
+    "seed": 171000266,
+    "won": true,
+    "outcome": "won",
+    "decisions": 501,
+    "floor": 46,
+    "seconds": 3.8642
+   },
+   {
+    "panel": "B",
+    "seed": 171000267,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 666,
+    "floor": 46,
+    "seconds": 4.8479
+   },
+   {
+    "panel": "B",
+    "seed": 171000268,
+    "won": true,
+    "outcome": "won",
+    "decisions": 545,
+    "floor": 46,
+    "seconds": 4.6163
+   },
+   {
+    "panel": "B",
+    "seed": 171000269,
+    "won": true,
+    "outcome": "won",
+    "decisions": 617,
+    "floor": 46,
+    "seconds": 4.8715
+   },
+   {
+    "panel": "B",
+    "seed": 171000270,
+    "won": true,
+    "outcome": "won",
+    "decisions": 568,
+    "floor": 46,
+    "seconds": 5.1483
+   },
+   {
+    "panel": "B",
+    "seed": 171000271,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 5.61
+   },
+   {
+    "panel": "B",
+    "seed": 171000272,
+    "won": true,
+    "outcome": "won",
+    "decisions": 764,
+    "floor": 46,
+    "seconds": 6.4221
+   },
+   {
+    "panel": "B",
+    "seed": 171000273,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 478,
+    "floor": 46,
+    "seconds": 3.9182
+   },
+   {
+    "panel": "B",
+    "seed": 171000274,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 535,
+    "floor": 45,
+    "seconds": 4.1354
+   },
+   {
+    "panel": "B",
+    "seed": 171000275,
+    "won": true,
+    "outcome": "won",
+    "decisions": 683,
+    "floor": 46,
+    "seconds": 5.5553
+   },
+   {
+    "panel": "B",
+    "seed": 171000276,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 584,
+    "floor": 46,
+    "seconds": 5.7778
+   },
+   {
+    "panel": "B",
+    "seed": 171000277,
+    "won": true,
+    "outcome": "won",
+    "decisions": 759,
+    "floor": 46,
+    "seconds": 6.3519
+   },
+   {
+    "panel": "B",
+    "seed": 171000278,
+    "won": true,
+    "outcome": "won",
+    "decisions": 993,
+    "floor": 46,
+    "seconds": 9.6757
+   },
+   {
+    "panel": "B",
+    "seed": 171000279,
+    "won": true,
+    "outcome": "won",
+    "decisions": 663,
+    "floor": 46,
+    "seconds": 5.4262
+   },
+   {
+    "panel": "B",
+    "seed": 171000280,
+    "won": true,
+    "outcome": "won",
+    "decisions": 622,
+    "floor": 46,
+    "seconds": 5.4179
+   },
+   {
+    "panel": "B",
+    "seed": 171000281,
+    "won": true,
+    "outcome": "won",
+    "decisions": 652,
+    "floor": 46,
+    "seconds": 5.4657
+   },
+   {
+    "panel": "B",
+    "seed": 171000282,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 426,
+    "floor": 31,
+    "seconds": 2.9418
+   },
+   {
+    "panel": "B",
+    "seed": 171000283,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 728,
+    "floor": 45,
+    "seconds": 5.5304
+   },
+   {
+    "panel": "B",
+    "seed": 171000284,
+    "won": true,
+    "outcome": "won",
+    "decisions": 792,
+    "floor": 46,
+    "seconds": 7.2165
+   },
+   {
+    "panel": "B",
+    "seed": 171000285,
+    "won": true,
+    "outcome": "won",
+    "decisions": 625,
+    "floor": 46,
+    "seconds": 4.4184
+   },
+   {
+    "panel": "B",
+    "seed": 171000286,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 6.3197
+   },
+   {
+    "panel": "B",
+    "seed": 171000287,
+    "won": true,
+    "outcome": "won",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 5.6415
+   },
+   {
+    "panel": "B",
+    "seed": 171000288,
+    "won": true,
+    "outcome": "won",
+    "decisions": 658,
+    "floor": 46,
+    "seconds": 5.1773
+   },
+   {
+    "panel": "B",
+    "seed": 171000289,
+    "won": true,
+    "outcome": "won",
+    "decisions": 615,
+    "floor": 48,
+    "seconds": 4.7906
+   },
+   {
+    "panel": "B",
+    "seed": 171000290,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 738,
+    "floor": 46,
+    "seconds": 5.8757
+   },
+   {
+    "panel": "B",
+    "seed": 171000291,
+    "won": true,
+    "outcome": "won",
+    "decisions": 839,
+    "floor": 46,
+    "seconds": 7.6071
+   },
+   {
+    "panel": "B",
+    "seed": 171000292,
+    "won": true,
+    "outcome": "won",
+    "decisions": 757,
+    "floor": 46,
+    "seconds": 6.9211
+   },
+   {
+    "panel": "B",
+    "seed": 171000293,
+    "won": true,
+    "outcome": "won",
+    "decisions": 648,
+    "floor": 46,
+    "seconds": 4.9258
+   },
+   {
+    "panel": "B",
+    "seed": 171000294,
+    "won": true,
+    "outcome": "won",
+    "decisions": 941,
+    "floor": 46,
+    "seconds": 8.0943
+   },
+   {
+    "panel": "B",
+    "seed": 171000295,
+    "won": true,
+    "outcome": "won",
+    "decisions": 774,
+    "floor": 46,
+    "seconds": 7.2463
+   },
+   {
+    "panel": "B",
+    "seed": 171000296,
+    "won": true,
+    "outcome": "won",
+    "decisions": 595,
+    "floor": 46,
+    "seconds": 4.7513
+   },
+   {
+    "panel": "B",
+    "seed": 171000297,
+    "won": true,
+    "outcome": "won",
+    "decisions": 592,
+    "floor": 46,
+    "seconds": 4.99
+   },
+   {
+    "panel": "B",
+    "seed": 171000298,
+    "won": true,
+    "outcome": "won",
+    "decisions": 620,
+    "floor": 46,
+    "seconds": 6.0463
+   },
+   {
+    "panel": "B",
+    "seed": 171000299,
+    "won": true,
+    "outcome": "won",
+    "decisions": 883,
+    "floor": 46,
+    "seconds": 7.8148
+   }
+  ],
+  "allchar_e2e_d4500_ema0999": [
+   {
+    "panel": "A",
+    "seed": 170000000,
+    "won": true,
+    "outcome": "won",
+    "decisions": 723,
+    "floor": 46,
+    "seconds": 6.4301
+   },
+   {
+    "panel": "A",
+    "seed": 170000001,
+    "won": true,
+    "outcome": "won",
+    "decisions": 578,
+    "floor": 46,
+    "seconds": 5.2285
+   },
+   {
+    "panel": "A",
+    "seed": 170000002,
+    "won": true,
+    "outcome": "won",
+    "decisions": 701,
+    "floor": 46,
+    "seconds": 5.909
+   },
+   {
+    "panel": "A",
+    "seed": 170000003,
+    "won": true,
+    "outcome": "won",
+    "decisions": 849,
+    "floor": 46,
+    "seconds": 8.6954
+   },
+   {
+    "panel": "A",
+    "seed": 170000004,
+    "won": true,
+    "outcome": "won",
+    "decisions": 603,
+    "floor": 46,
+    "seconds": 5.2366
+   },
+   {
+    "panel": "A",
+    "seed": 170000005,
+    "won": true,
+    "outcome": "won",
+    "decisions": 778,
+    "floor": 46,
+    "seconds": 8.1973
+   },
+   {
+    "panel": "A",
+    "seed": 170000006,
+    "won": true,
+    "outcome": "won",
+    "decisions": 698,
+    "floor": 46,
+    "seconds": 6.5078
+   },
+   {
+    "panel": "A",
+    "seed": 170000007,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 4.8955
+   },
+   {
+    "panel": "A",
+    "seed": 170000008,
+    "won": true,
+    "outcome": "won",
+    "decisions": 646,
+    "floor": 46,
+    "seconds": 5.9187
+   },
+   {
+    "panel": "A",
+    "seed": 170000009,
+    "won": true,
+    "outcome": "won",
+    "decisions": 700,
+    "floor": 46,
+    "seconds": 6.1378
+   },
+   {
+    "panel": "A",
+    "seed": 170000010,
+    "won": true,
+    "outcome": "won",
+    "decisions": 748,
+    "floor": 46,
+    "seconds": 6.1501
+   },
+   {
+    "panel": "A",
+    "seed": 170000011,
+    "won": true,
+    "outcome": "won",
+    "decisions": 754,
+    "floor": 46,
+    "seconds": 7.8142
+   },
+   {
+    "panel": "A",
+    "seed": 170000012,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 677,
+    "floor": 46,
+    "seconds": 5.8847
+   },
+   {
+    "panel": "A",
+    "seed": 170000013,
+    "won": true,
+    "outcome": "won",
+    "decisions": 637,
+    "floor": 46,
+    "seconds": 4.9943
+   },
+   {
+    "panel": "A",
+    "seed": 170000014,
+    "won": true,
+    "outcome": "won",
+    "decisions": 566,
+    "floor": 46,
+    "seconds": 5.0216
+   },
+   {
+    "panel": "A",
+    "seed": 170000015,
+    "won": true,
+    "outcome": "won",
+    "decisions": 756,
+    "floor": 46,
+    "seconds": 6.5176
+   },
+   {
+    "panel": "A",
+    "seed": 170000016,
+    "won": true,
+    "outcome": "won",
+    "decisions": 751,
+    "floor": 46,
+    "seconds": 7.0529
+   },
+   {
+    "panel": "A",
+    "seed": 170000017,
+    "won": true,
+    "outcome": "won",
+    "decisions": 766,
+    "floor": 48,
+    "seconds": 7.7266
+   },
+   {
+    "panel": "A",
+    "seed": 170000018,
+    "won": true,
+    "outcome": "won",
+    "decisions": 743,
+    "floor": 46,
+    "seconds": 7.3198
+   },
+   {
+    "panel": "A",
+    "seed": 170000019,
+    "won": true,
+    "outcome": "won",
+    "decisions": 835,
+    "floor": 46,
+    "seconds": 8.4101
+   },
+   {
+    "panel": "A",
+    "seed": 170000020,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 717,
+    "floor": 45,
+    "seconds": 6.2008
+   },
+   {
+    "panel": "A",
+    "seed": 170000021,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 627,
+    "floor": 46,
+    "seconds": 5.2164
+   },
+   {
+    "panel": "A",
+    "seed": 170000022,
+    "won": true,
+    "outcome": "won",
+    "decisions": 693,
+    "floor": 46,
+    "seconds": 5.9882
+   },
+   {
+    "panel": "A",
+    "seed": 170000023,
+    "won": true,
+    "outcome": "won",
+    "decisions": 761,
+    "floor": 46,
+    "seconds": 6.304
+   },
+   {
+    "panel": "A",
+    "seed": 170000024,
+    "won": true,
+    "outcome": "won",
+    "decisions": 711,
+    "floor": 46,
+    "seconds": 5.8246
+   },
+   {
+    "panel": "A",
+    "seed": 170000025,
+    "won": true,
+    "outcome": "won",
+    "decisions": 746,
+    "floor": 46,
+    "seconds": 6.1193
+   },
+   {
+    "panel": "A",
+    "seed": 170000026,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 5.5851
+   },
+   {
+    "panel": "A",
+    "seed": 170000027,
+    "won": true,
+    "outcome": "won",
+    "decisions": 749,
+    "floor": 46,
+    "seconds": 7.3385
+   },
+   {
+    "panel": "A",
+    "seed": 170000028,
+    "won": true,
+    "outcome": "won",
+    "decisions": 873,
+    "floor": 48,
+    "seconds": 8.9284
+   },
+   {
+    "panel": "A",
+    "seed": 170000029,
+    "won": true,
+    "outcome": "won",
+    "decisions": 903,
+    "floor": 46,
+    "seconds": 7.9831
+   },
+   {
+    "panel": "A",
+    "seed": 170000030,
+    "won": true,
+    "outcome": "won",
+    "decisions": 741,
+    "floor": 46,
+    "seconds": 5.9568
+   },
+   {
+    "panel": "A",
+    "seed": 170000031,
+    "won": true,
+    "outcome": "won",
+    "decisions": 645,
+    "floor": 46,
+    "seconds": 5.8074
+   },
+   {
+    "panel": "A",
+    "seed": 170000032,
+    "won": true,
+    "outcome": "won",
+    "decisions": 656,
+    "floor": 46,
+    "seconds": 6.1227
+   },
+   {
+    "panel": "A",
+    "seed": 170000033,
+    "won": true,
+    "outcome": "won",
+    "decisions": 700,
+    "floor": 46,
+    "seconds": 6.265
+   },
+   {
+    "panel": "A",
+    "seed": 170000034,
+    "won": true,
+    "outcome": "won",
+    "decisions": 666,
+    "floor": 46,
+    "seconds": 5.3975
+   },
+   {
+    "panel": "A",
+    "seed": 170000035,
+    "won": true,
+    "outcome": "won",
+    "decisions": 726,
+    "floor": 46,
+    "seconds": 6.0875
+   },
+   {
+    "panel": "A",
+    "seed": 170000036,
+    "won": true,
+    "outcome": "won",
+    "decisions": 695,
+    "floor": 46,
+    "seconds": 5.8306
+   },
+   {
+    "panel": "A",
+    "seed": 170000037,
+    "won": true,
+    "outcome": "won",
+    "decisions": 625,
+    "floor": 46,
+    "seconds": 5.5442
+   },
+   {
+    "panel": "A",
+    "seed": 170000038,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 6.1685
+   },
+   {
+    "panel": "A",
+    "seed": 170000039,
+    "won": true,
+    "outcome": "won",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 6.0401
+   },
+   {
+    "panel": "A",
+    "seed": 170000040,
+    "won": true,
+    "outcome": "won",
+    "decisions": 820,
+    "floor": 46,
+    "seconds": 7.2748
+   },
+   {
+    "panel": "A",
+    "seed": 170000041,
+    "won": true,
+    "outcome": "won",
+    "decisions": 657,
+    "floor": 46,
+    "seconds": 5.4967
+   },
+   {
+    "panel": "A",
+    "seed": 170000042,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 645,
+    "floor": 46,
+    "seconds": 5.2181
+   },
+   {
+    "panel": "A",
+    "seed": 170000043,
+    "won": true,
+    "outcome": "won",
+    "decisions": 717,
+    "floor": 46,
+    "seconds": 5.9226
+   },
+   {
+    "panel": "A",
+    "seed": 170000044,
+    "won": true,
+    "outcome": "won",
+    "decisions": 921,
+    "floor": 46,
+    "seconds": 8.1044
+   },
+   {
+    "panel": "A",
+    "seed": 170000045,
+    "won": true,
+    "outcome": "won",
+    "decisions": 795,
+    "floor": 46,
+    "seconds": 6.7162
+   },
+   {
+    "panel": "A",
+    "seed": 170000046,
+    "won": true,
+    "outcome": "won",
+    "decisions": 640,
+    "floor": 46,
+    "seconds": 5.2619
+   },
+   {
+    "panel": "A",
+    "seed": 170000047,
+    "won": true,
+    "outcome": "won",
+    "decisions": 684,
+    "floor": 46,
+    "seconds": 5.8148
+   },
+   {
+    "panel": "A",
+    "seed": 170000048,
+    "won": true,
+    "outcome": "won",
+    "decisions": 673,
+    "floor": 46,
+    "seconds": 6.1481
+   },
+   {
+    "panel": "A",
+    "seed": 170000049,
+    "won": true,
+    "outcome": "won",
+    "decisions": 644,
+    "floor": 46,
+    "seconds": 5.2485
+   },
+   {
+    "panel": "A",
+    "seed": 170000050,
+    "won": true,
+    "outcome": "won",
+    "decisions": 649,
+    "floor": 46,
+    "seconds": 5.571
+   },
+   {
+    "panel": "A",
+    "seed": 170000051,
+    "won": true,
+    "outcome": "won",
+    "decisions": 726,
+    "floor": 46,
+    "seconds": 6.4036
+   },
+   {
+    "panel": "A",
+    "seed": 170000052,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 276,
+    "floor": 25,
+    "seconds": 1.6144
+   },
+   {
+    "panel": "A",
+    "seed": 170000053,
+    "won": true,
+    "outcome": "won",
+    "decisions": 681,
+    "floor": 46,
+    "seconds": 5.6456
+   },
+   {
+    "panel": "A",
+    "seed": 170000054,
+    "won": true,
+    "outcome": "won",
+    "decisions": 821,
+    "floor": 46,
+    "seconds": 7.0791
+   },
+   {
+    "panel": "A",
+    "seed": 170000055,
+    "won": true,
+    "outcome": "won",
+    "decisions": 631,
+    "floor": 46,
+    "seconds": 5.3694
+   },
+   {
+    "panel": "A",
+    "seed": 170000056,
+    "won": true,
+    "outcome": "won",
+    "decisions": 687,
+    "floor": 46,
+    "seconds": 6.0005
+   },
+   {
+    "panel": "A",
+    "seed": 170000057,
+    "won": true,
+    "outcome": "won",
+    "decisions": 716,
+    "floor": 46,
+    "seconds": 6.2844
+   },
+   {
+    "panel": "A",
+    "seed": 170000058,
+    "won": true,
+    "outcome": "won",
+    "decisions": 574,
+    "floor": 46,
+    "seconds": 4.4813
+   },
+   {
+    "panel": "A",
+    "seed": 170000059,
+    "won": true,
+    "outcome": "won",
+    "decisions": 668,
+    "floor": 46,
+    "seconds": 4.6763
+   },
+   {
+    "panel": "A",
+    "seed": 170000060,
+    "won": true,
+    "outcome": "won",
+    "decisions": 638,
+    "floor": 46,
+    "seconds": 5.6181
+   },
+   {
+    "panel": "A",
+    "seed": 170000061,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 581,
+    "floor": 46,
+    "seconds": 4.6609
+   },
+   {
+    "panel": "A",
+    "seed": 170000062,
+    "won": true,
+    "outcome": "won",
+    "decisions": 715,
+    "floor": 46,
+    "seconds": 6.4726
+   },
+   {
+    "panel": "A",
+    "seed": 170000063,
+    "won": true,
+    "outcome": "won",
+    "decisions": 608,
+    "floor": 46,
+    "seconds": 5.4145
+   },
+   {
+    "panel": "A",
+    "seed": 170000064,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 4.7284
+   },
+   {
+    "panel": "A",
+    "seed": 170000065,
+    "won": true,
+    "outcome": "won",
+    "decisions": 622,
+    "floor": 46,
+    "seconds": 5.978
+   },
+   {
+    "panel": "A",
+    "seed": 170000066,
+    "won": true,
+    "outcome": "won",
+    "decisions": 469,
+    "floor": 46,
+    "seconds": 4.119
+   },
+   {
+    "panel": "A",
+    "seed": 170000067,
+    "won": true,
+    "outcome": "won",
+    "decisions": 711,
+    "floor": 46,
+    "seconds": 6.0106
+   },
+   {
+    "panel": "A",
+    "seed": 170000068,
+    "won": true,
+    "outcome": "won",
+    "decisions": 677,
+    "floor": 46,
+    "seconds": 5.8112
+   },
+   {
+    "panel": "A",
+    "seed": 170000069,
+    "won": true,
+    "outcome": "won",
+    "decisions": 609,
+    "floor": 46,
+    "seconds": 4.9891
+   },
+   {
+    "panel": "A",
+    "seed": 170000070,
+    "won": true,
+    "outcome": "won",
+    "decisions": 620,
+    "floor": 46,
+    "seconds": 5.2238
+   },
+   {
+    "panel": "A",
+    "seed": 170000071,
+    "won": true,
+    "outcome": "won",
+    "decisions": 589,
+    "floor": 46,
+    "seconds": 4.5397
+   },
+   {
+    "panel": "A",
+    "seed": 170000072,
+    "won": true,
+    "outcome": "won",
+    "decisions": 558,
+    "floor": 46,
+    "seconds": 4.595
+   },
+   {
+    "panel": "A",
+    "seed": 170000073,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 5.7559
+   },
+   {
+    "panel": "A",
+    "seed": 170000074,
+    "won": true,
+    "outcome": "won",
+    "decisions": 675,
+    "floor": 46,
+    "seconds": 5.5158
+   },
+   {
+    "panel": "A",
+    "seed": 170000075,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 412,
+    "floor": 31,
+    "seconds": 2.8792
+   },
+   {
+    "panel": "A",
+    "seed": 170000076,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 508,
+    "floor": 48,
+    "seconds": 4.1378
+   },
+   {
+    "panel": "A",
+    "seed": 170000077,
+    "won": true,
+    "outcome": "won",
+    "decisions": 586,
+    "floor": 46,
+    "seconds": 4.8622
+   },
+   {
+    "panel": "A",
+    "seed": 170000078,
+    "won": true,
+    "outcome": "won",
+    "decisions": 784,
+    "floor": 46,
+    "seconds": 6.2423
+   },
+   {
+    "panel": "A",
+    "seed": 170000079,
+    "won": true,
+    "outcome": "won",
+    "decisions": 565,
+    "floor": 46,
+    "seconds": 4.6424
+   },
+   {
+    "panel": "A",
+    "seed": 170000080,
+    "won": true,
+    "outcome": "won",
+    "decisions": 759,
+    "floor": 46,
+    "seconds": 5.9231
+   },
+   {
+    "panel": "A",
+    "seed": 170000081,
+    "won": true,
+    "outcome": "won",
+    "decisions": 578,
+    "floor": 46,
+    "seconds": 4.6039
+   },
+   {
+    "panel": "A",
+    "seed": 170000082,
+    "won": true,
+    "outcome": "won",
+    "decisions": 621,
+    "floor": 46,
+    "seconds": 5.6417
+   },
+   {
+    "panel": "A",
+    "seed": 170000083,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 158,
+    "floor": 16,
+    "seconds": 0.9108
+   },
+   {
+    "panel": "A",
+    "seed": 170000084,
+    "won": true,
+    "outcome": "won",
+    "decisions": 654,
+    "floor": 46,
+    "seconds": 4.896
+   },
+   {
+    "panel": "A",
+    "seed": 170000085,
+    "won": true,
+    "outcome": "won",
+    "decisions": 658,
+    "floor": 46,
+    "seconds": 6.2139
+   },
+   {
+    "panel": "A",
+    "seed": 170000086,
+    "won": true,
+    "outcome": "won",
+    "decisions": 664,
+    "floor": 46,
+    "seconds": 5.9957
+   },
+   {
+    "panel": "A",
+    "seed": 170000087,
+    "won": true,
+    "outcome": "won",
+    "decisions": 620,
+    "floor": 46,
+    "seconds": 5.3755
+   },
+   {
+    "panel": "A",
+    "seed": 170000088,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 154,
+    "floor": 16,
+    "seconds": 0.8496
+   },
+   {
+    "panel": "A",
+    "seed": 170000089,
+    "won": true,
+    "outcome": "won",
+    "decisions": 783,
+    "floor": 46,
+    "seconds": 6.8609
+   },
+   {
+    "panel": "A",
+    "seed": 170000090,
+    "won": true,
+    "outcome": "won",
+    "decisions": 679,
+    "floor": 46,
+    "seconds": 5.4409
+   },
+   {
+    "panel": "A",
+    "seed": 170000091,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 792,
+    "floor": 45,
+    "seconds": 6.6305
+   },
+   {
+    "panel": "A",
+    "seed": 170000092,
+    "won": true,
+    "outcome": "won",
+    "decisions": 531,
+    "floor": 46,
+    "seconds": 4.4096
+   },
+   {
+    "panel": "A",
+    "seed": 170000093,
+    "won": true,
+    "outcome": "won",
+    "decisions": 682,
+    "floor": 46,
+    "seconds": 6.3763
+   },
+   {
+    "panel": "A",
+    "seed": 170000094,
+    "won": true,
+    "outcome": "won",
+    "decisions": 659,
+    "floor": 46,
+    "seconds": 5.813
+   },
+   {
+    "panel": "A",
+    "seed": 170000095,
+    "won": true,
+    "outcome": "won",
+    "decisions": 668,
+    "floor": 46,
+    "seconds": 5.4169
+   },
+   {
+    "panel": "A",
+    "seed": 170000096,
+    "won": true,
+    "outcome": "won",
+    "decisions": 655,
+    "floor": 46,
+    "seconds": 5.4995
+   },
+   {
+    "panel": "A",
+    "seed": 170000097,
+    "won": true,
+    "outcome": "won",
+    "decisions": 600,
+    "floor": 46,
+    "seconds": 4.9995
+   },
+   {
+    "panel": "A",
+    "seed": 170000098,
+    "won": true,
+    "outcome": "won",
+    "decisions": 647,
+    "floor": 46,
+    "seconds": 5.4021
+   },
+   {
+    "panel": "A",
+    "seed": 170000099,
+    "won": true,
+    "outcome": "won",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 5.4921
+   },
+   {
+    "panel": "A",
+    "seed": 170000100,
+    "won": true,
+    "outcome": "won",
+    "decisions": 714,
+    "floor": 46,
+    "seconds": 5.6496
+   },
+   {
+    "panel": "A",
+    "seed": 170000101,
+    "won": true,
+    "outcome": "won",
+    "decisions": 696,
+    "floor": 46,
+    "seconds": 5.825
+   },
+   {
+    "panel": "A",
+    "seed": 170000102,
+    "won": true,
+    "outcome": "won",
+    "decisions": 495,
+    "floor": 46,
+    "seconds": 4.0476
+   },
+   {
+    "panel": "A",
+    "seed": 170000103,
+    "won": true,
+    "outcome": "won",
+    "decisions": 691,
+    "floor": 46,
+    "seconds": 6.1616
+   },
+   {
+    "panel": "A",
+    "seed": 170000104,
+    "won": true,
+    "outcome": "won",
+    "decisions": 557,
+    "floor": 46,
+    "seconds": 4.9688
+   },
+   {
+    "panel": "A",
+    "seed": 170000105,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 176,
+    "floor": 16,
+    "seconds": 1.0614
+   },
+   {
+    "panel": "A",
+    "seed": 170000106,
+    "won": true,
+    "outcome": "won",
+    "decisions": 605,
+    "floor": 46,
+    "seconds": 5.0841
+   },
+   {
+    "panel": "A",
+    "seed": 170000107,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 455,
+    "floor": 42,
+    "seconds": 3.278
+   },
+   {
+    "panel": "A",
+    "seed": 170000108,
+    "won": true,
+    "outcome": "won",
+    "decisions": 739,
+    "floor": 46,
+    "seconds": 6.7093
+   },
+   {
+    "panel": "A",
+    "seed": 170000109,
+    "won": true,
+    "outcome": "won",
+    "decisions": 795,
+    "floor": 46,
+    "seconds": 6.6512
+   },
+   {
+    "panel": "A",
+    "seed": 170000110,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 178,
+    "floor": 16,
+    "seconds": 1.0002
+   },
+   {
+    "panel": "A",
+    "seed": 170000111,
+    "won": true,
+    "outcome": "won",
+    "decisions": 912,
+    "floor": 46,
+    "seconds": 8.5833
+   },
+   {
+    "panel": "A",
+    "seed": 170000112,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 164,
+    "floor": 16,
+    "seconds": 0.9013
+   },
+   {
+    "panel": "A",
+    "seed": 170000113,
+    "won": true,
+    "outcome": "won",
+    "decisions": 578,
+    "floor": 46,
+    "seconds": 4.9793
+   },
+   {
+    "panel": "A",
+    "seed": 170000114,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 5.0259
+   },
+   {
+    "panel": "A",
+    "seed": 170000115,
+    "won": true,
+    "outcome": "won",
+    "decisions": 641,
+    "floor": 46,
+    "seconds": 5.2397
+   },
+   {
+    "panel": "A",
+    "seed": 170000116,
+    "won": true,
+    "outcome": "won",
+    "decisions": 688,
+    "floor": 46,
+    "seconds": 6.1046
+   },
+   {
+    "panel": "A",
+    "seed": 170000117,
+    "won": true,
+    "outcome": "won",
+    "decisions": 705,
+    "floor": 46,
+    "seconds": 5.8302
+   },
+   {
+    "panel": "A",
+    "seed": 170000118,
+    "won": true,
+    "outcome": "won",
+    "decisions": 735,
+    "floor": 46,
+    "seconds": 6.5045
+   },
+   {
+    "panel": "A",
+    "seed": 170000119,
+    "won": true,
+    "outcome": "won",
+    "decisions": 868,
+    "floor": 46,
+    "seconds": 8.1969
+   },
+   {
+    "panel": "A",
+    "seed": 170000120,
+    "won": true,
+    "outcome": "won",
+    "decisions": 725,
+    "floor": 46,
+    "seconds": 6.5716
+   },
+   {
+    "panel": "A",
+    "seed": 170000121,
+    "won": true,
+    "outcome": "won",
+    "decisions": 713,
+    "floor": 46,
+    "seconds": 6.1476
+   },
+   {
+    "panel": "A",
+    "seed": 170000122,
+    "won": true,
+    "outcome": "won",
+    "decisions": 724,
+    "floor": 46,
+    "seconds": 6.4803
+   },
+   {
+    "panel": "A",
+    "seed": 170000123,
+    "won": true,
+    "outcome": "won",
+    "decisions": 638,
+    "floor": 46,
+    "seconds": 6.6498
+   },
+   {
+    "panel": "A",
+    "seed": 170000124,
+    "won": true,
+    "outcome": "won",
+    "decisions": 960,
+    "floor": 46,
+    "seconds": 8.0312
+   },
+   {
+    "panel": "A",
+    "seed": 170000125,
+    "won": true,
+    "outcome": "won",
+    "decisions": 622,
+    "floor": 46,
+    "seconds": 5.5007
+   },
+   {
+    "panel": "A",
+    "seed": 170000126,
+    "won": true,
+    "outcome": "won",
+    "decisions": 582,
+    "floor": 46,
+    "seconds": 4.5576
+   },
+   {
+    "panel": "A",
+    "seed": 170000127,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 5.3185
+   },
+   {
+    "panel": "A",
+    "seed": 170000128,
+    "won": true,
+    "outcome": "won",
+    "decisions": 743,
+    "floor": 46,
+    "seconds": 7.0023
+   },
+   {
+    "panel": "A",
+    "seed": 170000129,
+    "won": true,
+    "outcome": "won",
+    "decisions": 1013,
+    "floor": 46,
+    "seconds": 9.1904
+   },
+   {
+    "panel": "A",
+    "seed": 170000130,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 620,
+    "floor": 46,
+    "seconds": 4.838
+   },
+   {
+    "panel": "A",
+    "seed": 170000131,
+    "won": true,
+    "outcome": "won",
+    "decisions": 733,
+    "floor": 46,
+    "seconds": 6.1703
+   },
+   {
+    "panel": "A",
+    "seed": 170000132,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 5.5379
+   },
+   {
+    "panel": "A",
+    "seed": 170000133,
+    "won": true,
+    "outcome": "won",
+    "decisions": 697,
+    "floor": 46,
+    "seconds": 5.9113
+   },
+   {
+    "panel": "A",
+    "seed": 170000134,
+    "won": true,
+    "outcome": "won",
+    "decisions": 702,
+    "floor": 46,
+    "seconds": 5.4576
+   },
+   {
+    "panel": "A",
+    "seed": 170000135,
+    "won": true,
+    "outcome": "won",
+    "decisions": 734,
+    "floor": 46,
+    "seconds": 6.8312
+   },
+   {
+    "panel": "A",
+    "seed": 170000136,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 6.4541
+   },
+   {
+    "panel": "A",
+    "seed": 170000137,
+    "won": true,
+    "outcome": "won",
+    "decisions": 840,
+    "floor": 46,
+    "seconds": 8.1686
+   },
+   {
+    "panel": "A",
+    "seed": 170000138,
+    "won": true,
+    "outcome": "won",
+    "decisions": 663,
+    "floor": 46,
+    "seconds": 6.1232
+   },
+   {
+    "panel": "A",
+    "seed": 170000139,
+    "won": true,
+    "outcome": "won",
+    "decisions": 668,
+    "floor": 46,
+    "seconds": 5.545
+   },
+   {
+    "panel": "A",
+    "seed": 170000140,
+    "won": true,
+    "outcome": "won",
+    "decisions": 678,
+    "floor": 46,
+    "seconds": 6.7846
+   },
+   {
+    "panel": "A",
+    "seed": 170000141,
+    "won": true,
+    "outcome": "won",
+    "decisions": 666,
+    "floor": 46,
+    "seconds": 5.5379
+   },
+   {
+    "panel": "A",
+    "seed": 170000142,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 6.1882
+   },
+   {
+    "panel": "A",
+    "seed": 170000143,
+    "won": true,
+    "outcome": "won",
+    "decisions": 851,
+    "floor": 46,
+    "seconds": 8.5622
+   },
+   {
+    "panel": "A",
+    "seed": 170000144,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 490,
+    "floor": 37,
+    "seconds": 3.6945
+   },
+   {
+    "panel": "A",
+    "seed": 170000145,
+    "won": true,
+    "outcome": "won",
+    "decisions": 631,
+    "floor": 46,
+    "seconds": 6.6866
+   },
+   {
+    "panel": "A",
+    "seed": 170000146,
+    "won": true,
+    "outcome": "won",
+    "decisions": 568,
+    "floor": 46,
+    "seconds": 4.4257
+   },
+   {
+    "panel": "A",
+    "seed": 170000147,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 602,
+    "floor": 39,
+    "seconds": 4.6016
+   },
+   {
+    "panel": "A",
+    "seed": 170000148,
+    "won": true,
+    "outcome": "won",
+    "decisions": 580,
+    "floor": 46,
+    "seconds": 5.0733
+   },
+   {
+    "panel": "A",
+    "seed": 170000149,
+    "won": true,
+    "outcome": "won",
+    "decisions": 654,
+    "floor": 46,
+    "seconds": 5.3303
+   },
+   {
+    "panel": "A",
+    "seed": 170000150,
+    "won": true,
+    "outcome": "won",
+    "decisions": 676,
+    "floor": 46,
+    "seconds": 5.5716
+   },
+   {
+    "panel": "A",
+    "seed": 170000151,
+    "won": true,
+    "outcome": "won",
+    "decisions": 578,
+    "floor": 46,
+    "seconds": 5.4983
+   },
+   {
+    "panel": "A",
+    "seed": 170000152,
+    "won": true,
+    "outcome": "won",
+    "decisions": 611,
+    "floor": 46,
+    "seconds": 5.7982
+   },
+   {
+    "panel": "A",
+    "seed": 170000153,
+    "won": true,
+    "outcome": "won",
+    "decisions": 746,
+    "floor": 46,
+    "seconds": 5.8316
+   },
+   {
+    "panel": "A",
+    "seed": 170000154,
+    "won": true,
+    "outcome": "won",
+    "decisions": 682,
+    "floor": 46,
+    "seconds": 5.8671
+   },
+   {
+    "panel": "A",
+    "seed": 170000155,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 587,
+    "floor": 46,
+    "seconds": 4.6134
+   },
+   {
+    "panel": "A",
+    "seed": 170000156,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 679,
+    "floor": 46,
+    "seconds": 5.5667
+   },
+   {
+    "panel": "A",
+    "seed": 170000157,
+    "won": true,
+    "outcome": "won",
+    "decisions": 778,
+    "floor": 46,
+    "seconds": 7.0564
+   },
+   {
+    "panel": "A",
+    "seed": 170000158,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 5.9706
+   },
+   {
+    "panel": "A",
+    "seed": 170000159,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 534,
+    "floor": 37,
+    "seconds": 3.7344
+   },
+   {
+    "panel": "A",
+    "seed": 170000160,
+    "won": true,
+    "outcome": "won",
+    "decisions": 702,
+    "floor": 46,
+    "seconds": 7.678
+   },
+   {
+    "panel": "A",
+    "seed": 170000161,
+    "won": true,
+    "outcome": "won",
+    "decisions": 716,
+    "floor": 46,
+    "seconds": 5.9216
+   },
+   {
+    "panel": "A",
+    "seed": 170000162,
+    "won": true,
+    "outcome": "won",
+    "decisions": 624,
+    "floor": 46,
+    "seconds": 5.5932
+   },
+   {
+    "panel": "A",
+    "seed": 170000163,
+    "won": true,
+    "outcome": "won",
+    "decisions": 739,
+    "floor": 46,
+    "seconds": 6.718
+   },
+   {
+    "panel": "A",
+    "seed": 170000164,
+    "won": true,
+    "outcome": "won",
+    "decisions": 772,
+    "floor": 46,
+    "seconds": 7.3437
+   },
+   {
+    "panel": "A",
+    "seed": 170000165,
+    "won": true,
+    "outcome": "won",
+    "decisions": 555,
+    "floor": 46,
+    "seconds": 4.5995
+   },
+   {
+    "panel": "A",
+    "seed": 170000166,
+    "won": true,
+    "outcome": "won",
+    "decisions": 786,
+    "floor": 46,
+    "seconds": 6.9492
+   },
+   {
+    "panel": "A",
+    "seed": 170000167,
+    "won": true,
+    "outcome": "won",
+    "decisions": 551,
+    "floor": 46,
+    "seconds": 4.8308
+   },
+   {
+    "panel": "A",
+    "seed": 170000168,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 610,
+    "floor": 46,
+    "seconds": 5.4625
+   },
+   {
+    "panel": "A",
+    "seed": 170000169,
+    "won": true,
+    "outcome": "won",
+    "decisions": 805,
+    "floor": 46,
+    "seconds": 7.1819
+   },
+   {
+    "panel": "A",
+    "seed": 170000170,
+    "won": true,
+    "outcome": "won",
+    "decisions": 552,
+    "floor": 48,
+    "seconds": 4.381
+   },
+   {
+    "panel": "A",
+    "seed": 170000171,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 774,
+    "floor": 46,
+    "seconds": 6.9735
+   },
+   {
+    "panel": "A",
+    "seed": 170000172,
+    "won": true,
+    "outcome": "won",
+    "decisions": 590,
+    "floor": 46,
+    "seconds": 5.2585
+   },
+   {
+    "panel": "A",
+    "seed": 170000173,
+    "won": true,
+    "outcome": "won",
+    "decisions": 474,
+    "floor": 46,
+    "seconds": 3.9166
+   },
+   {
+    "panel": "A",
+    "seed": 170000174,
+    "won": true,
+    "outcome": "won",
+    "decisions": 812,
+    "floor": 46,
+    "seconds": 7.4886
+   },
+   {
+    "panel": "A",
+    "seed": 170000175,
+    "won": true,
+    "outcome": "won",
+    "decisions": 745,
+    "floor": 46,
+    "seconds": 7.1327
+   },
+   {
+    "panel": "A",
+    "seed": 170000176,
+    "won": true,
+    "outcome": "won",
+    "decisions": 621,
+    "floor": 46,
+    "seconds": 5.4188
+   },
+   {
+    "panel": "A",
+    "seed": 170000177,
+    "won": true,
+    "outcome": "won",
+    "decisions": 657,
+    "floor": 46,
+    "seconds": 5.6088
+   },
+   {
+    "panel": "A",
+    "seed": 170000178,
+    "won": true,
+    "outcome": "won",
+    "decisions": 834,
+    "floor": 46,
+    "seconds": 7.7221
+   },
+   {
+    "panel": "A",
+    "seed": 170000179,
+    "won": true,
+    "outcome": "won",
+    "decisions": 781,
+    "floor": 46,
+    "seconds": 6.8806
+   },
+   {
+    "panel": "A",
+    "seed": 170000180,
+    "won": true,
+    "outcome": "won",
+    "decisions": 815,
+    "floor": 46,
+    "seconds": 7.0083
+   },
+   {
+    "panel": "A",
+    "seed": 170000181,
+    "won": true,
+    "outcome": "won",
+    "decisions": 646,
+    "floor": 46,
+    "seconds": 6.0709
+   },
+   {
+    "panel": "A",
+    "seed": 170000182,
+    "won": true,
+    "outcome": "won",
+    "decisions": 602,
+    "floor": 46,
+    "seconds": 5.6391
+   },
+   {
+    "panel": "A",
+    "seed": 170000183,
+    "won": true,
+    "outcome": "won",
+    "decisions": 610,
+    "floor": 46,
+    "seconds": 5.0807
+   },
+   {
+    "panel": "A",
+    "seed": 170000184,
+    "won": true,
+    "outcome": "won",
+    "decisions": 725,
+    "floor": 46,
+    "seconds": 6.3292
+   },
+   {
+    "panel": "A",
+    "seed": 170000185,
+    "won": true,
+    "outcome": "won",
+    "decisions": 627,
+    "floor": 46,
+    "seconds": 5.422
+   },
+   {
+    "panel": "A",
+    "seed": 170000186,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 219,
+    "floor": 16,
+    "seconds": 1.2898
+   },
+   {
+    "panel": "A",
+    "seed": 170000187,
+    "won": true,
+    "outcome": "won",
+    "decisions": 667,
+    "floor": 46,
+    "seconds": 5.5875
+   },
+   {
+    "panel": "A",
+    "seed": 170000188,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 660,
+    "floor": 46,
+    "seconds": 5.9347
+   },
+   {
+    "panel": "A",
+    "seed": 170000189,
+    "won": true,
+    "outcome": "won",
+    "decisions": 788,
+    "floor": 46,
+    "seconds": 6.1771
+   },
+   {
+    "panel": "A",
+    "seed": 170000190,
+    "won": true,
+    "outcome": "won",
+    "decisions": 502,
+    "floor": 46,
+    "seconds": 4.6042
+   },
+   {
+    "panel": "A",
+    "seed": 170000191,
+    "won": true,
+    "outcome": "won",
+    "decisions": 743,
+    "floor": 46,
+    "seconds": 6.759
+   },
+   {
+    "panel": "A",
+    "seed": 170000192,
+    "won": true,
+    "outcome": "won",
+    "decisions": 700,
+    "floor": 46,
+    "seconds": 6.1688
+   },
+   {
+    "panel": "A",
+    "seed": 170000193,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 630,
+    "floor": 46,
+    "seconds": 5.2614
+   },
+   {
+    "panel": "A",
+    "seed": 170000194,
+    "won": true,
+    "outcome": "won",
+    "decisions": 586,
+    "floor": 46,
+    "seconds": 5.3019
+   },
+   {
+    "panel": "A",
+    "seed": 170000195,
+    "won": true,
+    "outcome": "won",
+    "decisions": 701,
+    "floor": 46,
+    "seconds": 6.2708
+   },
+   {
+    "panel": "A",
+    "seed": 170000196,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 817,
+    "floor": 45,
+    "seconds": 6.5239
+   },
+   {
+    "panel": "A",
+    "seed": 170000197,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 324,
+    "floor": 25,
+    "seconds": 2.0399
+   },
+   {
+    "panel": "A",
+    "seed": 170000198,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 764,
+    "floor": 46,
+    "seconds": 6.0686
+   },
+   {
+    "panel": "A",
+    "seed": 170000199,
+    "won": true,
+    "outcome": "won",
+    "decisions": 757,
+    "floor": 46,
+    "seconds": 6.8555
+   },
+   {
+    "panel": "A",
+    "seed": 170000200,
+    "won": true,
+    "outcome": "won",
+    "decisions": 595,
+    "floor": 46,
+    "seconds": 4.923
+   },
+   {
+    "panel": "A",
+    "seed": 170000201,
+    "won": true,
+    "outcome": "won",
+    "decisions": 617,
+    "floor": 46,
+    "seconds": 5.4766
+   },
+   {
+    "panel": "A",
+    "seed": 170000202,
+    "won": true,
+    "outcome": "won",
+    "decisions": 774,
+    "floor": 46,
+    "seconds": 7.2261
+   },
+   {
+    "panel": "A",
+    "seed": 170000203,
+    "won": true,
+    "outcome": "won",
+    "decisions": 675,
+    "floor": 46,
+    "seconds": 6.419
+   },
+   {
+    "panel": "A",
+    "seed": 170000204,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 6.1372
+   },
+   {
+    "panel": "A",
+    "seed": 170000205,
+    "won": true,
+    "outcome": "won",
+    "decisions": 820,
+    "floor": 46,
+    "seconds": 7.187
+   },
+   {
+    "panel": "A",
+    "seed": 170000206,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 724,
+    "floor": 46,
+    "seconds": 6.2328
+   },
+   {
+    "panel": "A",
+    "seed": 170000207,
+    "won": true,
+    "outcome": "won",
+    "decisions": 670,
+    "floor": 46,
+    "seconds": 5.9025
+   },
+   {
+    "panel": "A",
+    "seed": 170000208,
+    "won": true,
+    "outcome": "won",
+    "decisions": 586,
+    "floor": 46,
+    "seconds": 5.2092
+   },
+   {
+    "panel": "A",
+    "seed": 170000209,
+    "won": true,
+    "outcome": "won",
+    "decisions": 664,
+    "floor": 46,
+    "seconds": 5.9732
+   },
+   {
+    "panel": "A",
+    "seed": 170000210,
+    "won": true,
+    "outcome": "won",
+    "decisions": 626,
+    "floor": 46,
+    "seconds": 5.2825
+   },
+   {
+    "panel": "A",
+    "seed": 170000211,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 520,
+    "floor": 46,
+    "seconds": 3.9487
+   },
+   {
+    "panel": "A",
+    "seed": 170000212,
+    "won": true,
+    "outcome": "won",
+    "decisions": 667,
+    "floor": 46,
+    "seconds": 5.8316
+   },
+   {
+    "panel": "A",
+    "seed": 170000213,
+    "won": true,
+    "outcome": "won",
+    "decisions": 786,
+    "floor": 46,
+    "seconds": 7.0423
+   },
+   {
+    "panel": "A",
+    "seed": 170000214,
+    "won": true,
+    "outcome": "won",
+    "decisions": 539,
+    "floor": 46,
+    "seconds": 4.2265
+   },
+   {
+    "panel": "A",
+    "seed": 170000215,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 248,
+    "floor": 16,
+    "seconds": 1.534
+   },
+   {
+    "panel": "A",
+    "seed": 170000216,
+    "won": true,
+    "outcome": "won",
+    "decisions": 568,
+    "floor": 46,
+    "seconds": 4.2215
+   },
+   {
+    "panel": "A",
+    "seed": 170000217,
+    "won": true,
+    "outcome": "won",
+    "decisions": 761,
+    "floor": 46,
+    "seconds": 6.9214
+   },
+   {
+    "panel": "A",
+    "seed": 170000218,
+    "won": true,
+    "outcome": "won",
+    "decisions": 535,
+    "floor": 46,
+    "seconds": 4.7158
+   },
+   {
+    "panel": "A",
+    "seed": 170000219,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 4.896
+   },
+   {
+    "panel": "A",
+    "seed": 170000220,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 163,
+    "floor": 16,
+    "seconds": 0.9387
+   },
+   {
+    "panel": "A",
+    "seed": 170000221,
+    "won": true,
+    "outcome": "won",
+    "decisions": 794,
+    "floor": 46,
+    "seconds": 7.2907
+   },
+   {
+    "panel": "A",
+    "seed": 170000222,
+    "won": true,
+    "outcome": "won",
+    "decisions": 613,
+    "floor": 46,
+    "seconds": 5.4136
+   },
+   {
+    "panel": "A",
+    "seed": 170000223,
+    "won": true,
+    "outcome": "won",
+    "decisions": 837,
+    "floor": 46,
+    "seconds": 8.0288
+   },
+   {
+    "panel": "A",
+    "seed": 170000224,
+    "won": true,
+    "outcome": "won",
+    "decisions": 707,
+    "floor": 46,
+    "seconds": 5.9782
+   },
+   {
+    "panel": "A",
+    "seed": 170000225,
+    "won": true,
+    "outcome": "won",
+    "decisions": 552,
+    "floor": 46,
+    "seconds": 4.7035
+   },
+   {
+    "panel": "A",
+    "seed": 170000226,
+    "won": true,
+    "outcome": "won",
+    "decisions": 707,
+    "floor": 46,
+    "seconds": 7.6158
+   },
+   {
+    "panel": "A",
+    "seed": 170000227,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 450,
+    "floor": 31,
+    "seconds": 3.2977
+   },
+   {
+    "panel": "A",
+    "seed": 170000228,
+    "won": true,
+    "outcome": "won",
+    "decisions": 660,
+    "floor": 46,
+    "seconds": 5.4087
+   },
+   {
+    "panel": "A",
+    "seed": 170000229,
+    "won": true,
+    "outcome": "won",
+    "decisions": 877,
+    "floor": 46,
+    "seconds": 8.8605
+   },
+   {
+    "panel": "A",
+    "seed": 170000230,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 137,
+    "floor": 6,
+    "seconds": 0.6728
+   },
+   {
+    "panel": "A",
+    "seed": 170000231,
+    "won": true,
+    "outcome": "won",
+    "decisions": 663,
+    "floor": 46,
+    "seconds": 5.6658
+   },
+   {
+    "panel": "A",
+    "seed": 170000232,
+    "won": true,
+    "outcome": "won",
+    "decisions": 753,
+    "floor": 46,
+    "seconds": 7.2673
+   },
+   {
+    "panel": "A",
+    "seed": 170000233,
+    "won": true,
+    "outcome": "won",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 5.3411
+   },
+   {
+    "panel": "A",
+    "seed": 170000234,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 5.4207
+   },
+   {
+    "panel": "A",
+    "seed": 170000235,
+    "won": true,
+    "outcome": "won",
+    "decisions": 593,
+    "floor": 46,
+    "seconds": 5.2477
+   },
+   {
+    "panel": "A",
+    "seed": 170000236,
+    "won": true,
+    "outcome": "won",
+    "decisions": 613,
+    "floor": 46,
+    "seconds": 6.0446
+   },
+   {
+    "panel": "A",
+    "seed": 170000237,
+    "won": true,
+    "outcome": "won",
+    "decisions": 649,
+    "floor": 46,
+    "seconds": 6.2944
+   },
+   {
+    "panel": "A",
+    "seed": 170000238,
+    "won": true,
+    "outcome": "won",
+    "decisions": 612,
+    "floor": 46,
+    "seconds": 5.7663
+   },
+   {
+    "panel": "A",
+    "seed": 170000239,
+    "won": true,
+    "outcome": "won",
+    "decisions": 891,
+    "floor": 46,
+    "seconds": 7.7181
+   },
+   {
+    "panel": "A",
+    "seed": 170000240,
+    "won": true,
+    "outcome": "won",
+    "decisions": 600,
+    "floor": 46,
+    "seconds": 5.5928
+   },
+   {
+    "panel": "A",
+    "seed": 170000241,
+    "won": true,
+    "outcome": "won",
+    "decisions": 511,
+    "floor": 46,
+    "seconds": 4.5446
+   },
+   {
+    "panel": "A",
+    "seed": 170000242,
+    "won": true,
+    "outcome": "won",
+    "decisions": 619,
+    "floor": 46,
+    "seconds": 5.2903
+   },
+   {
+    "panel": "A",
+    "seed": 170000243,
+    "won": true,
+    "outcome": "won",
+    "decisions": 909,
+    "floor": 46,
+    "seconds": 8.5306
+   },
+   {
+    "panel": "A",
+    "seed": 170000244,
+    "won": true,
+    "outcome": "won",
+    "decisions": 702,
+    "floor": 46,
+    "seconds": 5.7192
+   },
+   {
+    "panel": "A",
+    "seed": 170000245,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 634,
+    "floor": 46,
+    "seconds": 5.6959
+   },
+   {
+    "panel": "A",
+    "seed": 170000246,
+    "won": true,
+    "outcome": "won",
+    "decisions": 692,
+    "floor": 46,
+    "seconds": 5.706
+   },
+   {
+    "panel": "A",
+    "seed": 170000247,
+    "won": true,
+    "outcome": "won",
+    "decisions": 639,
+    "floor": 46,
+    "seconds": 5.8862
+   },
+   {
+    "panel": "A",
+    "seed": 170000248,
+    "won": true,
+    "outcome": "won",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 5.7103
+   },
+   {
+    "panel": "A",
+    "seed": 170000249,
+    "won": true,
+    "outcome": "won",
+    "decisions": 728,
+    "floor": 46,
+    "seconds": 6.7528
+   },
+   {
+    "panel": "A",
+    "seed": 170000250,
+    "won": true,
+    "outcome": "won",
+    "decisions": 731,
+    "floor": 46,
+    "seconds": 7.3663
+   },
+   {
+    "panel": "A",
+    "seed": 170000251,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 5.934
+   },
+   {
+    "panel": "A",
+    "seed": 170000252,
+    "won": true,
+    "outcome": "won",
+    "decisions": 620,
+    "floor": 46,
+    "seconds": 5.3519
+   },
+   {
+    "panel": "A",
+    "seed": 170000253,
+    "won": true,
+    "outcome": "won",
+    "decisions": 678,
+    "floor": 46,
+    "seconds": 5.4926
+   },
+   {
+    "panel": "A",
+    "seed": 170000254,
+    "won": true,
+    "outcome": "won",
+    "decisions": 667,
+    "floor": 46,
+    "seconds": 5.8494
+   },
+   {
+    "panel": "A",
+    "seed": 170000255,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 461,
+    "floor": 35,
+    "seconds": 3.1539
+   },
+   {
+    "panel": "A",
+    "seed": 170000256,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 169,
+    "floor": 16,
+    "seconds": 0.912
+   },
+   {
+    "panel": "A",
+    "seed": 170000257,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 5.4908
+   },
+   {
+    "panel": "A",
+    "seed": 170000258,
+    "won": true,
+    "outcome": "won",
+    "decisions": 726,
+    "floor": 46,
+    "seconds": 6.3979
+   },
+   {
+    "panel": "A",
+    "seed": 170000259,
+    "won": true,
+    "outcome": "won",
+    "decisions": 552,
+    "floor": 46,
+    "seconds": 4.6312
+   },
+   {
+    "panel": "A",
+    "seed": 170000260,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 136,
+    "floor": 11,
+    "seconds": 0.6743
+   },
+   {
+    "panel": "A",
+    "seed": 170000261,
+    "won": true,
+    "outcome": "won",
+    "decisions": 724,
+    "floor": 46,
+    "seconds": 6.8434
+   },
+   {
+    "panel": "A",
+    "seed": 170000262,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 890,
+    "floor": 46,
+    "seconds": 7.4569
+   },
+   {
+    "panel": "A",
+    "seed": 170000263,
+    "won": true,
+    "outcome": "won",
+    "decisions": 683,
+    "floor": 46,
+    "seconds": 5.7848
+   },
+   {
+    "panel": "A",
+    "seed": 170000264,
+    "won": true,
+    "outcome": "won",
+    "decisions": 568,
+    "floor": 46,
+    "seconds": 4.4688
+   },
+   {
+    "panel": "A",
+    "seed": 170000265,
+    "won": true,
+    "outcome": "won",
+    "decisions": 649,
+    "floor": 46,
+    "seconds": 5.4443
+   },
+   {
+    "panel": "A",
+    "seed": 170000266,
+    "won": true,
+    "outcome": "won",
+    "decisions": 625,
+    "floor": 46,
+    "seconds": 5.1852
+   },
+   {
+    "panel": "A",
+    "seed": 170000267,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 5.2093
+   },
+   {
+    "panel": "A",
+    "seed": 170000268,
+    "won": true,
+    "outcome": "won",
+    "decisions": 975,
+    "floor": 46,
+    "seconds": 8.7619
+   },
+   {
+    "panel": "A",
+    "seed": 170000269,
+    "won": true,
+    "outcome": "won",
+    "decisions": 707,
+    "floor": 46,
+    "seconds": 6.3396
+   },
+   {
+    "panel": "A",
+    "seed": 170000270,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 5.1268
+   },
+   {
+    "panel": "A",
+    "seed": 170000271,
+    "won": true,
+    "outcome": "won",
+    "decisions": 650,
+    "floor": 46,
+    "seconds": 5.3468
+   },
+   {
+    "panel": "A",
+    "seed": 170000272,
+    "won": true,
+    "outcome": "won",
+    "decisions": 597,
+    "floor": 46,
+    "seconds": 4.6496
+   },
+   {
+    "panel": "A",
+    "seed": 170000273,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 326,
+    "floor": 31,
+    "seconds": 2.0987
+   },
+   {
+    "panel": "A",
+    "seed": 170000274,
+    "won": true,
+    "outcome": "won",
+    "decisions": 658,
+    "floor": 46,
+    "seconds": 5.1974
+   },
+   {
+    "panel": "A",
+    "seed": 170000275,
+    "won": true,
+    "outcome": "won",
+    "decisions": 821,
+    "floor": 46,
+    "seconds": 6.9171
+   },
+   {
+    "panel": "A",
+    "seed": 170000276,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 466,
+    "floor": 29,
+    "seconds": 3.2578
+   },
+   {
+    "panel": "A",
+    "seed": 170000277,
+    "won": true,
+    "outcome": "won",
+    "decisions": 604,
+    "floor": 46,
+    "seconds": 4.7294
+   },
+   {
+    "panel": "A",
+    "seed": 170000278,
+    "won": true,
+    "outcome": "won",
+    "decisions": 744,
+    "floor": 46,
+    "seconds": 6.1691
+   },
+   {
+    "panel": "A",
+    "seed": 170000279,
+    "won": true,
+    "outcome": "won",
+    "decisions": 598,
+    "floor": 48,
+    "seconds": 5.389
+   },
+   {
+    "panel": "A",
+    "seed": 170000280,
+    "won": true,
+    "outcome": "won",
+    "decisions": 571,
+    "floor": 46,
+    "seconds": 4.7784
+   },
+   {
+    "panel": "A",
+    "seed": 170000281,
+    "won": true,
+    "outcome": "won",
+    "decisions": 740,
+    "floor": 46,
+    "seconds": 7.5844
+   },
+   {
+    "panel": "A",
+    "seed": 170000282,
+    "won": true,
+    "outcome": "won",
+    "decisions": 713,
+    "floor": 46,
+    "seconds": 6.0783
+   },
+   {
+    "panel": "A",
+    "seed": 170000283,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 537,
+    "floor": 46,
+    "seconds": 4.2438
+   },
+   {
+    "panel": "A",
+    "seed": 170000284,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 6.1092
+   },
+   {
+    "panel": "A",
+    "seed": 170000285,
+    "won": true,
+    "outcome": "won",
+    "decisions": 629,
+    "floor": 46,
+    "seconds": 5.5283
+   },
+   {
+    "panel": "A",
+    "seed": 170000286,
+    "won": true,
+    "outcome": "won",
+    "decisions": 578,
+    "floor": 46,
+    "seconds": 4.7968
+   },
+   {
+    "panel": "A",
+    "seed": 170000287,
+    "won": true,
+    "outcome": "won",
+    "decisions": 649,
+    "floor": 46,
+    "seconds": 5.5456
+   },
+   {
+    "panel": "A",
+    "seed": 170000288,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 579,
+    "floor": 46,
+    "seconds": 4.5124
+   },
+   {
+    "panel": "A",
+    "seed": 170000289,
+    "won": true,
+    "outcome": "won",
+    "decisions": 678,
+    "floor": 46,
+    "seconds": 5.7053
+   },
+   {
+    "panel": "A",
+    "seed": 170000290,
+    "won": true,
+    "outcome": "won",
+    "decisions": 716,
+    "floor": 46,
+    "seconds": 6.0157
+   },
+   {
+    "panel": "A",
+    "seed": 170000291,
+    "won": true,
+    "outcome": "won",
+    "decisions": 652,
+    "floor": 46,
+    "seconds": 5.5515
+   },
+   {
+    "panel": "A",
+    "seed": 170000292,
+    "won": true,
+    "outcome": "won",
+    "decisions": 754,
+    "floor": 46,
+    "seconds": 6.4845
+   },
+   {
+    "panel": "A",
+    "seed": 170000293,
+    "won": true,
+    "outcome": "won",
+    "decisions": 503,
+    "floor": 46,
+    "seconds": 4.7516
+   },
+   {
+    "panel": "A",
+    "seed": 170000294,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 312,
+    "floor": 29,
+    "seconds": 2.0323
+   },
+   {
+    "panel": "A",
+    "seed": 170000295,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 392,
+    "floor": 31,
+    "seconds": 2.6602
+   },
+   {
+    "panel": "A",
+    "seed": 170000296,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 5.9288
+   },
+   {
+    "panel": "A",
+    "seed": 170000297,
+    "won": true,
+    "outcome": "won",
+    "decisions": 608,
+    "floor": 46,
+    "seconds": 5.4973
+   },
+   {
+    "panel": "A",
+    "seed": 170000298,
+    "won": true,
+    "outcome": "won",
+    "decisions": 659,
+    "floor": 46,
+    "seconds": 5.7904
+   },
+   {
+    "panel": "A",
+    "seed": 170000299,
+    "won": true,
+    "outcome": "won",
+    "decisions": 611,
+    "floor": 46,
+    "seconds": 4.7947
+   },
+   {
+    "panel": "B",
+    "seed": 171000000,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 531,
+    "floor": 46,
+    "seconds": 4.5551
+   },
+   {
+    "panel": "B",
+    "seed": 171000001,
+    "won": true,
+    "outcome": "won",
+    "decisions": 634,
+    "floor": 46,
+    "seconds": 4.8641
+   },
+   {
+    "panel": "B",
+    "seed": 171000002,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 5.5067
+   },
+   {
+    "panel": "B",
+    "seed": 171000003,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 762,
+    "floor": 46,
+    "seconds": 6.3325
+   },
+   {
+    "panel": "B",
+    "seed": 171000004,
+    "won": true,
+    "outcome": "won",
+    "decisions": 670,
+    "floor": 46,
+    "seconds": 5.9174
+   },
+   {
+    "panel": "B",
+    "seed": 171000005,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 812,
+    "floor": 46,
+    "seconds": 7.0969
+   },
+   {
+    "panel": "B",
+    "seed": 171000006,
+    "won": true,
+    "outcome": "won",
+    "decisions": 550,
+    "floor": 46,
+    "seconds": 5.0581
+   },
+   {
+    "panel": "B",
+    "seed": 171000007,
+    "won": true,
+    "outcome": "won",
+    "decisions": 485,
+    "floor": 46,
+    "seconds": 3.8438
+   },
+   {
+    "panel": "B",
+    "seed": 171000008,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 6.045
+   },
+   {
+    "panel": "B",
+    "seed": 171000009,
+    "won": true,
+    "outcome": "won",
+    "decisions": 725,
+    "floor": 46,
+    "seconds": 6.2385
+   },
+   {
+    "panel": "B",
+    "seed": 171000010,
+    "won": true,
+    "outcome": "won",
+    "decisions": 713,
+    "floor": 46,
+    "seconds": 6.3275
+   },
+   {
+    "panel": "B",
+    "seed": 171000011,
+    "won": true,
+    "outcome": "won",
+    "decisions": 591,
+    "floor": 48,
+    "seconds": 5.1543
+   },
+   {
+    "panel": "B",
+    "seed": 171000012,
+    "won": true,
+    "outcome": "won",
+    "decisions": 639,
+    "floor": 46,
+    "seconds": 5.2986
+   },
+   {
+    "panel": "B",
+    "seed": 171000013,
+    "won": true,
+    "outcome": "won",
+    "decisions": 814,
+    "floor": 46,
+    "seconds": 7.206
+   },
+   {
+    "panel": "B",
+    "seed": 171000014,
+    "won": true,
+    "outcome": "won",
+    "decisions": 728,
+    "floor": 46,
+    "seconds": 6.6586
+   },
+   {
+    "panel": "B",
+    "seed": 171000015,
+    "won": true,
+    "outcome": "won",
+    "decisions": 776,
+    "floor": 46,
+    "seconds": 6.4437
+   },
+   {
+    "panel": "B",
+    "seed": 171000016,
+    "won": true,
+    "outcome": "won",
+    "decisions": 617,
+    "floor": 46,
+    "seconds": 4.999
+   },
+   {
+    "panel": "B",
+    "seed": 171000017,
+    "won": true,
+    "outcome": "won",
+    "decisions": 649,
+    "floor": 46,
+    "seconds": 5.8149
+   },
+   {
+    "panel": "B",
+    "seed": 171000018,
+    "won": true,
+    "outcome": "won",
+    "decisions": 611,
+    "floor": 46,
+    "seconds": 4.8763
+   },
+   {
+    "panel": "B",
+    "seed": 171000019,
+    "won": true,
+    "outcome": "won",
+    "decisions": 704,
+    "floor": 46,
+    "seconds": 5.6447
+   },
+   {
+    "panel": "B",
+    "seed": 171000020,
+    "won": true,
+    "outcome": "won",
+    "decisions": 670,
+    "floor": 46,
+    "seconds": 5.1513
+   },
+   {
+    "panel": "B",
+    "seed": 171000021,
+    "won": true,
+    "outcome": "won",
+    "decisions": 749,
+    "floor": 46,
+    "seconds": 5.7655
+   },
+   {
+    "panel": "B",
+    "seed": 171000022,
+    "won": true,
+    "outcome": "won",
+    "decisions": 812,
+    "floor": 46,
+    "seconds": 7.1207
+   },
+   {
+    "panel": "B",
+    "seed": 171000023,
+    "won": true,
+    "outcome": "won",
+    "decisions": 601,
+    "floor": 46,
+    "seconds": 4.53
+   },
+   {
+    "panel": "B",
+    "seed": 171000024,
+    "won": true,
+    "outcome": "won",
+    "decisions": 849,
+    "floor": 46,
+    "seconds": 7.087
+   },
+   {
+    "panel": "B",
+    "seed": 171000025,
+    "won": true,
+    "outcome": "won",
+    "decisions": 660,
+    "floor": 46,
+    "seconds": 6.7722
+   },
+   {
+    "panel": "B",
+    "seed": 171000026,
+    "won": true,
+    "outcome": "won",
+    "decisions": 719,
+    "floor": 46,
+    "seconds": 5.6992
+   },
+   {
+    "panel": "B",
+    "seed": 171000027,
+    "won": true,
+    "outcome": "won",
+    "decisions": 733,
+    "floor": 46,
+    "seconds": 5.639
+   },
+   {
+    "panel": "B",
+    "seed": 171000028,
+    "won": true,
+    "outcome": "won",
+    "decisions": 603,
+    "floor": 46,
+    "seconds": 5.4299
+   },
+   {
+    "panel": "B",
+    "seed": 171000029,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 177,
+    "floor": 16,
+    "seconds": 0.9532
+   },
+   {
+    "panel": "B",
+    "seed": 171000030,
+    "won": true,
+    "outcome": "won",
+    "decisions": 858,
+    "floor": 46,
+    "seconds": 7.9669
+   },
+   {
+    "panel": "B",
+    "seed": 171000031,
+    "won": true,
+    "outcome": "won",
+    "decisions": 555,
+    "floor": 46,
+    "seconds": 4.3135
+   },
+   {
+    "panel": "B",
+    "seed": 171000032,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 424,
+    "floor": 46,
+    "seconds": 3.2864
+   },
+   {
+    "panel": "B",
+    "seed": 171000033,
+    "won": true,
+    "outcome": "won",
+    "decisions": 647,
+    "floor": 46,
+    "seconds": 5.0509
+   },
+   {
+    "panel": "B",
+    "seed": 171000034,
+    "won": true,
+    "outcome": "won",
+    "decisions": 589,
+    "floor": 46,
+    "seconds": 4.9877
+   },
+   {
+    "panel": "B",
+    "seed": 171000035,
+    "won": true,
+    "outcome": "won",
+    "decisions": 629,
+    "floor": 46,
+    "seconds": 5.5156
+   },
+   {
+    "panel": "B",
+    "seed": 171000036,
+    "won": true,
+    "outcome": "won",
+    "decisions": 785,
+    "floor": 46,
+    "seconds": 6.5763
+   },
+   {
+    "panel": "B",
+    "seed": 171000037,
+    "won": true,
+    "outcome": "won",
+    "decisions": 764,
+    "floor": 48,
+    "seconds": 7.3806
+   },
+   {
+    "panel": "B",
+    "seed": 171000038,
+    "won": true,
+    "outcome": "won",
+    "decisions": 828,
+    "floor": 46,
+    "seconds": 7.7614
+   },
+   {
+    "panel": "B",
+    "seed": 171000039,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 5.3828
+   },
+   {
+    "panel": "B",
+    "seed": 171000040,
+    "won": true,
+    "outcome": "won",
+    "decisions": 724,
+    "floor": 46,
+    "seconds": 6.8999
+   },
+   {
+    "panel": "B",
+    "seed": 171000041,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 864,
+    "floor": 46,
+    "seconds": 7.5222
+   },
+   {
+    "panel": "B",
+    "seed": 171000042,
+    "won": true,
+    "outcome": "won",
+    "decisions": 610,
+    "floor": 46,
+    "seconds": 6.0849
+   },
+   {
+    "panel": "B",
+    "seed": 171000043,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 6.4462
+   },
+   {
+    "panel": "B",
+    "seed": 171000044,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 762,
+    "floor": 46,
+    "seconds": 6.5806
+   },
+   {
+    "panel": "B",
+    "seed": 171000045,
+    "won": true,
+    "outcome": "won",
+    "decisions": 584,
+    "floor": 46,
+    "seconds": 5.0775
+   },
+   {
+    "panel": "B",
+    "seed": 171000046,
+    "won": true,
+    "outcome": "won",
+    "decisions": 637,
+    "floor": 46,
+    "seconds": 4.9045
+   },
+   {
+    "panel": "B",
+    "seed": 171000047,
+    "won": true,
+    "outcome": "won",
+    "decisions": 647,
+    "floor": 46,
+    "seconds": 5.7621
+   },
+   {
+    "panel": "B",
+    "seed": 171000048,
+    "won": true,
+    "outcome": "won",
+    "decisions": 586,
+    "floor": 46,
+    "seconds": 5.4221
+   },
+   {
+    "panel": "B",
+    "seed": 171000049,
+    "won": true,
+    "outcome": "won",
+    "decisions": 726,
+    "floor": 46,
+    "seconds": 5.7535
+   },
+   {
+    "panel": "B",
+    "seed": 171000050,
+    "won": true,
+    "outcome": "won",
+    "decisions": 560,
+    "floor": 46,
+    "seconds": 5.328
+   },
+   {
+    "panel": "B",
+    "seed": 171000051,
+    "won": true,
+    "outcome": "won",
+    "decisions": 787,
+    "floor": 46,
+    "seconds": 6.8879
+   },
+   {
+    "panel": "B",
+    "seed": 171000052,
+    "won": true,
+    "outcome": "won",
+    "decisions": 511,
+    "floor": 46,
+    "seconds": 4.5193
+   },
+   {
+    "panel": "B",
+    "seed": 171000053,
+    "won": true,
+    "outcome": "won",
+    "decisions": 543,
+    "floor": 46,
+    "seconds": 4.8039
+   },
+   {
+    "panel": "B",
+    "seed": 171000054,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 212,
+    "floor": 16,
+    "seconds": 1.1523
+   },
+   {
+    "panel": "B",
+    "seed": 171000055,
+    "won": true,
+    "outcome": "won",
+    "decisions": 673,
+    "floor": 46,
+    "seconds": 6.505
+   },
+   {
+    "panel": "B",
+    "seed": 171000056,
+    "won": true,
+    "outcome": "won",
+    "decisions": 558,
+    "floor": 46,
+    "seconds": 4.8969
+   },
+   {
+    "panel": "B",
+    "seed": 171000057,
+    "won": true,
+    "outcome": "won",
+    "decisions": 800,
+    "floor": 46,
+    "seconds": 6.9742
+   },
+   {
+    "panel": "B",
+    "seed": 171000058,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 1024,
+    "floor": 46,
+    "seconds": 9.6969
+   },
+   {
+    "panel": "B",
+    "seed": 171000059,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 133,
+    "floor": 14,
+    "seconds": 0.7462
+   },
+   {
+    "panel": "B",
+    "seed": 171000060,
+    "won": true,
+    "outcome": "won",
+    "decisions": 639,
+    "floor": 46,
+    "seconds": 5.1204
+   },
+   {
+    "panel": "B",
+    "seed": 171000061,
+    "won": true,
+    "outcome": "won",
+    "decisions": 646,
+    "floor": 46,
+    "seconds": 5.3751
+   },
+   {
+    "panel": "B",
+    "seed": 171000062,
+    "won": true,
+    "outcome": "won",
+    "decisions": 702,
+    "floor": 46,
+    "seconds": 6.697
+   },
+   {
+    "panel": "B",
+    "seed": 171000063,
+    "won": true,
+    "outcome": "won",
+    "decisions": 707,
+    "floor": 46,
+    "seconds": 6.2843
+   },
+   {
+    "panel": "B",
+    "seed": 171000064,
+    "won": true,
+    "outcome": "won",
+    "decisions": 755,
+    "floor": 46,
+    "seconds": 6.619
+   },
+   {
+    "panel": "B",
+    "seed": 171000065,
+    "won": true,
+    "outcome": "won",
+    "decisions": 745,
+    "floor": 46,
+    "seconds": 6.1116
+   },
+   {
+    "panel": "B",
+    "seed": 171000066,
+    "won": true,
+    "outcome": "won",
+    "decisions": 827,
+    "floor": 46,
+    "seconds": 7.1904
+   },
+   {
+    "panel": "B",
+    "seed": 171000067,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 7.1224
+   },
+   {
+    "panel": "B",
+    "seed": 171000068,
+    "won": true,
+    "outcome": "won",
+    "decisions": 643,
+    "floor": 46,
+    "seconds": 5.7657
+   },
+   {
+    "panel": "B",
+    "seed": 171000069,
+    "won": true,
+    "outcome": "won",
+    "decisions": 661,
+    "floor": 46,
+    "seconds": 5.6593
+   },
+   {
+    "panel": "B",
+    "seed": 171000070,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 697,
+    "floor": 46,
+    "seconds": 6.0974
+   },
+   {
+    "panel": "B",
+    "seed": 171000071,
+    "won": true,
+    "outcome": "won",
+    "decisions": 627,
+    "floor": 46,
+    "seconds": 5.4014
+   },
+   {
+    "panel": "B",
+    "seed": 171000072,
+    "won": true,
+    "outcome": "won",
+    "decisions": 664,
+    "floor": 46,
+    "seconds": 5.9685
+   },
+   {
+    "panel": "B",
+    "seed": 171000073,
+    "won": true,
+    "outcome": "won",
+    "decisions": 549,
+    "floor": 46,
+    "seconds": 4.0436
+   },
+   {
+    "panel": "B",
+    "seed": 171000074,
+    "won": true,
+    "outcome": "won",
+    "decisions": 526,
+    "floor": 46,
+    "seconds": 4.308
+   },
+   {
+    "panel": "B",
+    "seed": 171000075,
+    "won": true,
+    "outcome": "won",
+    "decisions": 588,
+    "floor": 46,
+    "seconds": 5.1415
+   },
+   {
+    "panel": "B",
+    "seed": 171000076,
+    "won": true,
+    "outcome": "won",
+    "decisions": 710,
+    "floor": 46,
+    "seconds": 5.9349
+   },
+   {
+    "panel": "B",
+    "seed": 171000077,
+    "won": true,
+    "outcome": "won",
+    "decisions": 596,
+    "floor": 46,
+    "seconds": 5.7535
+   },
+   {
+    "panel": "B",
+    "seed": 171000078,
+    "won": true,
+    "outcome": "won",
+    "decisions": 616,
+    "floor": 46,
+    "seconds": 4.7983
+   },
+   {
+    "panel": "B",
+    "seed": 171000079,
+    "won": true,
+    "outcome": "won",
+    "decisions": 495,
+    "floor": 46,
+    "seconds": 3.7599
+   },
+   {
+    "panel": "B",
+    "seed": 171000080,
+    "won": true,
+    "outcome": "won",
+    "decisions": 729,
+    "floor": 46,
+    "seconds": 6.2885
+   },
+   {
+    "panel": "B",
+    "seed": 171000081,
+    "won": true,
+    "outcome": "won",
+    "decisions": 764,
+    "floor": 46,
+    "seconds": 6.8006
+   },
+   {
+    "panel": "B",
+    "seed": 171000082,
+    "won": true,
+    "outcome": "won",
+    "decisions": 533,
+    "floor": 46,
+    "seconds": 3.6837
+   },
+   {
+    "panel": "B",
+    "seed": 171000083,
+    "won": true,
+    "outcome": "won",
+    "decisions": 619,
+    "floor": 46,
+    "seconds": 4.9433
+   },
+   {
+    "panel": "B",
+    "seed": 171000084,
+    "won": true,
+    "outcome": "won",
+    "decisions": 689,
+    "floor": 46,
+    "seconds": 6.0556
+   },
+   {
+    "panel": "B",
+    "seed": 171000085,
+    "won": true,
+    "outcome": "won",
+    "decisions": 766,
+    "floor": 46,
+    "seconds": 7.6476
+   },
+   {
+    "panel": "B",
+    "seed": 171000086,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 688,
+    "floor": 46,
+    "seconds": 6.3777
+   },
+   {
+    "panel": "B",
+    "seed": 171000087,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 574,
+    "floor": 45,
+    "seconds": 4.418
+   },
+   {
+    "panel": "B",
+    "seed": 171000088,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 135,
+    "floor": 16,
+    "seconds": 0.7023
+   },
+   {
+    "panel": "B",
+    "seed": 171000089,
+    "won": true,
+    "outcome": "won",
+    "decisions": 722,
+    "floor": 46,
+    "seconds": 5.4202
+   },
+   {
+    "panel": "B",
+    "seed": 171000090,
+    "won": true,
+    "outcome": "won",
+    "decisions": 647,
+    "floor": 46,
+    "seconds": 5.3718
+   },
+   {
+    "panel": "B",
+    "seed": 171000091,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 6.5001
+   },
+   {
+    "panel": "B",
+    "seed": 171000092,
+    "won": true,
+    "outcome": "won",
+    "decisions": 614,
+    "floor": 46,
+    "seconds": 5.2816
+   },
+   {
+    "panel": "B",
+    "seed": 171000093,
+    "won": true,
+    "outcome": "won",
+    "decisions": 804,
+    "floor": 46,
+    "seconds": 6.8357
+   },
+   {
+    "panel": "B",
+    "seed": 171000094,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 624,
+    "floor": 46,
+    "seconds": 5.1794
+   },
+   {
+    "panel": "B",
+    "seed": 171000095,
+    "won": true,
+    "outcome": "won",
+    "decisions": 646,
+    "floor": 46,
+    "seconds": 5.6069
+   },
+   {
+    "panel": "B",
+    "seed": 171000096,
+    "won": true,
+    "outcome": "won",
+    "decisions": 693,
+    "floor": 46,
+    "seconds": 5.495
+   },
+   {
+    "panel": "B",
+    "seed": 171000097,
+    "won": true,
+    "outcome": "won",
+    "decisions": 807,
+    "floor": 46,
+    "seconds": 7.2135
+   },
+   {
+    "panel": "B",
+    "seed": 171000098,
+    "won": true,
+    "outcome": "won",
+    "decisions": 707,
+    "floor": 48,
+    "seconds": 6.3022
+   },
+   {
+    "panel": "B",
+    "seed": 171000099,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 102,
+    "floor": 10,
+    "seconds": 0.5323
+   },
+   {
+    "panel": "B",
+    "seed": 171000100,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 114,
+    "floor": 12,
+    "seconds": 0.62
+   },
+   {
+    "panel": "B",
+    "seed": 171000101,
+    "won": true,
+    "outcome": "won",
+    "decisions": 887,
+    "floor": 46,
+    "seconds": 7.8493
+   },
+   {
+    "panel": "B",
+    "seed": 171000102,
+    "won": true,
+    "outcome": "won",
+    "decisions": 608,
+    "floor": 48,
+    "seconds": 5.0628
+   },
+   {
+    "panel": "B",
+    "seed": 171000103,
+    "won": true,
+    "outcome": "won",
+    "decisions": 687,
+    "floor": 46,
+    "seconds": 5.3731
+   },
+   {
+    "panel": "B",
+    "seed": 171000104,
+    "won": true,
+    "outcome": "won",
+    "decisions": 711,
+    "floor": 46,
+    "seconds": 5.5269
+   },
+   {
+    "panel": "B",
+    "seed": 171000105,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 448,
+    "floor": 31,
+    "seconds": 3.1732
+   },
+   {
+    "panel": "B",
+    "seed": 171000106,
+    "won": true,
+    "outcome": "won",
+    "decisions": 667,
+    "floor": 46,
+    "seconds": 5.2927
+   },
+   {
+    "panel": "B",
+    "seed": 171000107,
+    "won": true,
+    "outcome": "won",
+    "decisions": 774,
+    "floor": 46,
+    "seconds": 6.5983
+   },
+   {
+    "panel": "B",
+    "seed": 171000108,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 395,
+    "floor": 31,
+    "seconds": 2.7646
+   },
+   {
+    "panel": "B",
+    "seed": 171000109,
+    "won": true,
+    "outcome": "won",
+    "decisions": 632,
+    "floor": 46,
+    "seconds": 5.5128
+   },
+   {
+    "panel": "B",
+    "seed": 171000110,
+    "won": true,
+    "outcome": "won",
+    "decisions": 763,
+    "floor": 46,
+    "seconds": 7.1793
+   },
+   {
+    "panel": "B",
+    "seed": 171000111,
+    "won": true,
+    "outcome": "won",
+    "decisions": 576,
+    "floor": 46,
+    "seconds": 5.0092
+   },
+   {
+    "panel": "B",
+    "seed": 171000112,
+    "won": true,
+    "outcome": "won",
+    "decisions": 801,
+    "floor": 46,
+    "seconds": 6.9996
+   },
+   {
+    "panel": "B",
+    "seed": 171000113,
+    "won": true,
+    "outcome": "won",
+    "decisions": 690,
+    "floor": 46,
+    "seconds": 5.4089
+   },
+   {
+    "panel": "B",
+    "seed": 171000114,
+    "won": true,
+    "outcome": "won",
+    "decisions": 589,
+    "floor": 46,
+    "seconds": 4.7186
+   },
+   {
+    "panel": "B",
+    "seed": 171000115,
+    "won": true,
+    "outcome": "won",
+    "decisions": 556,
+    "floor": 46,
+    "seconds": 4.5704
+   },
+   {
+    "panel": "B",
+    "seed": 171000116,
+    "won": true,
+    "outcome": "won",
+    "decisions": 505,
+    "floor": 46,
+    "seconds": 3.6485
+   },
+   {
+    "panel": "B",
+    "seed": 171000117,
+    "won": true,
+    "outcome": "won",
+    "decisions": 536,
+    "floor": 46,
+    "seconds": 4.1888
+   },
+   {
+    "panel": "B",
+    "seed": 171000118,
+    "won": true,
+    "outcome": "won",
+    "decisions": 693,
+    "floor": 46,
+    "seconds": 6.5956
+   },
+   {
+    "panel": "B",
+    "seed": 171000119,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 675,
+    "floor": 46,
+    "seconds": 5.5675
+   },
+   {
+    "panel": "B",
+    "seed": 171000120,
+    "won": true,
+    "outcome": "won",
+    "decisions": 581,
+    "floor": 46,
+    "seconds": 4.6152
+   },
+   {
+    "panel": "B",
+    "seed": 171000121,
+    "won": true,
+    "outcome": "won",
+    "decisions": 583,
+    "floor": 46,
+    "seconds": 5.2199
+   },
+   {
+    "panel": "B",
+    "seed": 171000122,
+    "won": true,
+    "outcome": "won",
+    "decisions": 530,
+    "floor": 46,
+    "seconds": 4.4352
+   },
+   {
+    "panel": "B",
+    "seed": 171000123,
+    "won": true,
+    "outcome": "won",
+    "decisions": 718,
+    "floor": 46,
+    "seconds": 6.1767
+   },
+   {
+    "panel": "B",
+    "seed": 171000124,
+    "won": true,
+    "outcome": "won",
+    "decisions": 866,
+    "floor": 46,
+    "seconds": 6.9956
+   },
+   {
+    "panel": "B",
+    "seed": 171000125,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 6.102
+   },
+   {
+    "panel": "B",
+    "seed": 171000126,
+    "won": true,
+    "outcome": "won",
+    "decisions": 624,
+    "floor": 46,
+    "seconds": 4.9663
+   },
+   {
+    "panel": "B",
+    "seed": 171000127,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 832,
+    "floor": 46,
+    "seconds": 6.4807
+   },
+   {
+    "panel": "B",
+    "seed": 171000128,
+    "won": true,
+    "outcome": "won",
+    "decisions": 675,
+    "floor": 46,
+    "seconds": 6.1897
+   },
+   {
+    "panel": "B",
+    "seed": 171000129,
+    "won": true,
+    "outcome": "won",
+    "decisions": 630,
+    "floor": 46,
+    "seconds": 5.7664
+   },
+   {
+    "panel": "B",
+    "seed": 171000130,
+    "won": true,
+    "outcome": "won",
+    "decisions": 848,
+    "floor": 46,
+    "seconds": 7.7153
+   },
+   {
+    "panel": "B",
+    "seed": 171000131,
+    "won": true,
+    "outcome": "won",
+    "decisions": 711,
+    "floor": 46,
+    "seconds": 6.9064
+   },
+   {
+    "panel": "B",
+    "seed": 171000132,
+    "won": true,
+    "outcome": "won",
+    "decisions": 704,
+    "floor": 46,
+    "seconds": 5.6449
+   },
+   {
+    "panel": "B",
+    "seed": 171000133,
+    "won": true,
+    "outcome": "won",
+    "decisions": 566,
+    "floor": 46,
+    "seconds": 4.7601
+   },
+   {
+    "panel": "B",
+    "seed": 171000134,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 526,
+    "floor": 46,
+    "seconds": 3.7861
+   },
+   {
+    "panel": "B",
+    "seed": 171000135,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 669,
+    "floor": 46,
+    "seconds": 4.9546
+   },
+   {
+    "panel": "B",
+    "seed": 171000136,
+    "won": true,
+    "outcome": "won",
+    "decisions": 736,
+    "floor": 46,
+    "seconds": 6.3043
+   },
+   {
+    "panel": "B",
+    "seed": 171000137,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 5.6002
+   },
+   {
+    "panel": "B",
+    "seed": 171000138,
+    "won": true,
+    "outcome": "won",
+    "decisions": 834,
+    "floor": 46,
+    "seconds": 6.9645
+   },
+   {
+    "panel": "B",
+    "seed": 171000139,
+    "won": true,
+    "outcome": "won",
+    "decisions": 633,
+    "floor": 46,
+    "seconds": 5.3315
+   },
+   {
+    "panel": "B",
+    "seed": 171000140,
+    "won": true,
+    "outcome": "won",
+    "decisions": 753,
+    "floor": 46,
+    "seconds": 6.4984
+   },
+   {
+    "panel": "B",
+    "seed": 171000141,
+    "won": true,
+    "outcome": "won",
+    "decisions": 667,
+    "floor": 46,
+    "seconds": 5.9113
+   },
+   {
+    "panel": "B",
+    "seed": 171000142,
+    "won": true,
+    "outcome": "won",
+    "decisions": 826,
+    "floor": 46,
+    "seconds": 7.2381
+   },
+   {
+    "panel": "B",
+    "seed": 171000143,
+    "won": true,
+    "outcome": "won",
+    "decisions": 634,
+    "floor": 46,
+    "seconds": 5.488
+   },
+   {
+    "panel": "B",
+    "seed": 171000144,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 770,
+    "floor": 46,
+    "seconds": 7.2315
+   },
+   {
+    "panel": "B",
+    "seed": 171000145,
+    "won": true,
+    "outcome": "won",
+    "decisions": 471,
+    "floor": 46,
+    "seconds": 4.0265
+   },
+   {
+    "panel": "B",
+    "seed": 171000146,
+    "won": true,
+    "outcome": "won",
+    "decisions": 630,
+    "floor": 46,
+    "seconds": 5.508
+   },
+   {
+    "panel": "B",
+    "seed": 171000147,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 702,
+    "floor": 46,
+    "seconds": 6.1773
+   },
+   {
+    "panel": "B",
+    "seed": 171000148,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 680,
+    "floor": 46,
+    "seconds": 5.1416
+   },
+   {
+    "panel": "B",
+    "seed": 171000149,
+    "won": true,
+    "outcome": "won",
+    "decisions": 643,
+    "floor": 46,
+    "seconds": 5.7639
+   },
+   {
+    "panel": "B",
+    "seed": 171000150,
+    "won": true,
+    "outcome": "won",
+    "decisions": 809,
+    "floor": 46,
+    "seconds": 7.2138
+   },
+   {
+    "panel": "B",
+    "seed": 171000151,
+    "won": true,
+    "outcome": "won",
+    "decisions": 602,
+    "floor": 46,
+    "seconds": 5.249
+   },
+   {
+    "panel": "B",
+    "seed": 171000152,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 320,
+    "floor": 26,
+    "seconds": 1.9004
+   },
+   {
+    "panel": "B",
+    "seed": 171000153,
+    "won": true,
+    "outcome": "won",
+    "decisions": 658,
+    "floor": 46,
+    "seconds": 5.9009
+   },
+   {
+    "panel": "B",
+    "seed": 171000154,
+    "won": true,
+    "outcome": "won",
+    "decisions": 657,
+    "floor": 46,
+    "seconds": 5.3535
+   },
+   {
+    "panel": "B",
+    "seed": 171000155,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 448,
+    "floor": 31,
+    "seconds": 3.1443
+   },
+   {
+    "panel": "B",
+    "seed": 171000156,
+    "won": true,
+    "outcome": "won",
+    "decisions": 672,
+    "floor": 46,
+    "seconds": 5.7385
+   },
+   {
+    "panel": "B",
+    "seed": 171000157,
+    "won": true,
+    "outcome": "won",
+    "decisions": 746,
+    "floor": 46,
+    "seconds": 6.6651
+   },
+   {
+    "panel": "B",
+    "seed": 171000158,
+    "won": true,
+    "outcome": "won",
+    "decisions": 605,
+    "floor": 46,
+    "seconds": 5.7071
+   },
+   {
+    "panel": "B",
+    "seed": 171000159,
+    "won": true,
+    "outcome": "won",
+    "decisions": 778,
+    "floor": 46,
+    "seconds": 6.6475
+   },
+   {
+    "panel": "B",
+    "seed": 171000160,
+    "won": true,
+    "outcome": "won",
+    "decisions": 637,
+    "floor": 46,
+    "seconds": 5.8465
+   },
+   {
+    "panel": "B",
+    "seed": 171000161,
+    "won": true,
+    "outcome": "won",
+    "decisions": 550,
+    "floor": 46,
+    "seconds": 4.8685
+   },
+   {
+    "panel": "B",
+    "seed": 171000162,
+    "won": true,
+    "outcome": "won",
+    "decisions": 532,
+    "floor": 46,
+    "seconds": 5.0152
+   },
+   {
+    "panel": "B",
+    "seed": 171000163,
+    "won": true,
+    "outcome": "won",
+    "decisions": 612,
+    "floor": 46,
+    "seconds": 4.6806
+   },
+   {
+    "panel": "B",
+    "seed": 171000164,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 637,
+    "floor": 46,
+    "seconds": 4.9581
+   },
+   {
+    "panel": "B",
+    "seed": 171000165,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 224,
+    "floor": 16,
+    "seconds": 1.2254
+   },
+   {
+    "panel": "B",
+    "seed": 171000166,
+    "won": true,
+    "outcome": "won",
+    "decisions": 707,
+    "floor": 46,
+    "seconds": 6.0686
+   },
+   {
+    "panel": "B",
+    "seed": 171000167,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 742,
+    "floor": 45,
+    "seconds": 5.5418
+   },
+   {
+    "panel": "B",
+    "seed": 171000168,
+    "won": true,
+    "outcome": "won",
+    "decisions": 513,
+    "floor": 46,
+    "seconds": 3.8647
+   },
+   {
+    "panel": "B",
+    "seed": 171000169,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 46,
+    "seconds": 5.0908
+   },
+   {
+    "panel": "B",
+    "seed": 171000170,
+    "won": true,
+    "outcome": "won",
+    "decisions": 547,
+    "floor": 46,
+    "seconds": 4.2797
+   },
+   {
+    "panel": "B",
+    "seed": 171000171,
+    "won": true,
+    "outcome": "won",
+    "decisions": 424,
+    "floor": 46,
+    "seconds": 3.0683
+   },
+   {
+    "panel": "B",
+    "seed": 171000172,
+    "won": true,
+    "outcome": "won",
+    "decisions": 728,
+    "floor": 46,
+    "seconds": 6.2027
+   },
+   {
+    "panel": "B",
+    "seed": 171000173,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 318,
+    "floor": 29,
+    "seconds": 1.9644
+   },
+   {
+    "panel": "B",
+    "seed": 171000174,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 346,
+    "floor": 31,
+    "seconds": 2.1668
+   },
+   {
+    "panel": "B",
+    "seed": 171000175,
+    "won": true,
+    "outcome": "won",
+    "decisions": 514,
+    "floor": 48,
+    "seconds": 4.4633
+   },
+   {
+    "panel": "B",
+    "seed": 171000176,
+    "won": true,
+    "outcome": "won",
+    "decisions": 695,
+    "floor": 46,
+    "seconds": 6.8658
+   },
+   {
+    "panel": "B",
+    "seed": 171000177,
+    "won": true,
+    "outcome": "won",
+    "decisions": 815,
+    "floor": 46,
+    "seconds": 7.5953
+   },
+   {
+    "panel": "B",
+    "seed": 171000178,
+    "won": true,
+    "outcome": "won",
+    "decisions": 843,
+    "floor": 46,
+    "seconds": 7.6095
+   },
+   {
+    "panel": "B",
+    "seed": 171000179,
+    "won": true,
+    "outcome": "won",
+    "decisions": 607,
+    "floor": 46,
+    "seconds": 5.0279
+   },
+   {
+    "panel": "B",
+    "seed": 171000180,
+    "won": true,
+    "outcome": "won",
+    "decisions": 945,
+    "floor": 46,
+    "seconds": 8.6958
+   },
+   {
+    "panel": "B",
+    "seed": 171000181,
+    "won": true,
+    "outcome": "won",
+    "decisions": 574,
+    "floor": 46,
+    "seconds": 5.2015
+   },
+   {
+    "panel": "B",
+    "seed": 171000182,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 226,
+    "floor": 16,
+    "seconds": 1.2927
+   },
+   {
+    "panel": "B",
+    "seed": 171000183,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 6.1756
+   },
+   {
+    "panel": "B",
+    "seed": 171000184,
+    "won": true,
+    "outcome": "won",
+    "decisions": 542,
+    "floor": 46,
+    "seconds": 4.8865
+   },
+   {
+    "panel": "B",
+    "seed": 171000185,
+    "won": true,
+    "outcome": "won",
+    "decisions": 705,
+    "floor": 46,
+    "seconds": 6.0374
+   },
+   {
+    "panel": "B",
+    "seed": 171000186,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 5.4377
+   },
+   {
+    "panel": "B",
+    "seed": 171000187,
+    "won": true,
+    "outcome": "won",
+    "decisions": 794,
+    "floor": 46,
+    "seconds": 6.4446
+   },
+   {
+    "panel": "B",
+    "seed": 171000188,
+    "won": true,
+    "outcome": "won",
+    "decisions": 639,
+    "floor": 46,
+    "seconds": 5.4221
+   },
+   {
+    "panel": "B",
+    "seed": 171000189,
+    "won": true,
+    "outcome": "won",
+    "decisions": 831,
+    "floor": 46,
+    "seconds": 7.0997
+   },
+   {
+    "panel": "B",
+    "seed": 171000190,
+    "won": true,
+    "outcome": "won",
+    "decisions": 662,
+    "floor": 46,
+    "seconds": 5.8979
+   },
+   {
+    "panel": "B",
+    "seed": 171000191,
+    "won": true,
+    "outcome": "won",
+    "decisions": 664,
+    "floor": 46,
+    "seconds": 5.1873
+   },
+   {
+    "panel": "B",
+    "seed": 171000192,
+    "won": true,
+    "outcome": "won",
+    "decisions": 556,
+    "floor": 46,
+    "seconds": 4.6881
+   },
+   {
+    "panel": "B",
+    "seed": 171000193,
+    "won": true,
+    "outcome": "won",
+    "decisions": 546,
+    "floor": 46,
+    "seconds": 5.1769
+   },
+   {
+    "panel": "B",
+    "seed": 171000194,
+    "won": true,
+    "outcome": "won",
+    "decisions": 620,
+    "floor": 46,
+    "seconds": 5.4951
+   },
+   {
+    "panel": "B",
+    "seed": 171000195,
+    "won": true,
+    "outcome": "won",
+    "decisions": 794,
+    "floor": 46,
+    "seconds": 7.5986
+   },
+   {
+    "panel": "B",
+    "seed": 171000196,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 6.5837
+   },
+   {
+    "panel": "B",
+    "seed": 171000197,
+    "won": true,
+    "outcome": "won",
+    "decisions": 862,
+    "floor": 46,
+    "seconds": 7.4822
+   },
+   {
+    "panel": "B",
+    "seed": 171000198,
+    "won": true,
+    "outcome": "won",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 5.6011
+   },
+   {
+    "panel": "B",
+    "seed": 171000199,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 4.8546
+   },
+   {
+    "panel": "B",
+    "seed": 171000200,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 6.5422
+   },
+   {
+    "panel": "B",
+    "seed": 171000201,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 631,
+    "floor": 46,
+    "seconds": 5.9874
+   },
+   {
+    "panel": "B",
+    "seed": 171000202,
+    "won": true,
+    "outcome": "won",
+    "decisions": 650,
+    "floor": 46,
+    "seconds": 5.6821
+   },
+   {
+    "panel": "B",
+    "seed": 171000203,
+    "won": true,
+    "outcome": "won",
+    "decisions": 619,
+    "floor": 46,
+    "seconds": 5.6633
+   },
+   {
+    "panel": "B",
+    "seed": 171000204,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 642,
+    "floor": 46,
+    "seconds": 5.1978
+   },
+   {
+    "panel": "B",
+    "seed": 171000205,
+    "won": true,
+    "outcome": "won",
+    "decisions": 561,
+    "floor": 46,
+    "seconds": 4.5112
+   },
+   {
+    "panel": "B",
+    "seed": 171000206,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 605,
+    "floor": 46,
+    "seconds": 5.3766
+   },
+   {
+    "panel": "B",
+    "seed": 171000207,
+    "won": true,
+    "outcome": "won",
+    "decisions": 490,
+    "floor": 46,
+    "seconds": 3.458
+   },
+   {
+    "panel": "B",
+    "seed": 171000208,
+    "won": true,
+    "outcome": "won",
+    "decisions": 721,
+    "floor": 46,
+    "seconds": 6.3086
+   },
+   {
+    "panel": "B",
+    "seed": 171000209,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 109,
+    "floor": 10,
+    "seconds": 0.5051
+   },
+   {
+    "panel": "B",
+    "seed": 171000210,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 6.346
+   },
+   {
+    "panel": "B",
+    "seed": 171000211,
+    "won": true,
+    "outcome": "won",
+    "decisions": 691,
+    "floor": 46,
+    "seconds": 5.7575
+   },
+   {
+    "panel": "B",
+    "seed": 171000212,
+    "won": true,
+    "outcome": "won",
+    "decisions": 692,
+    "floor": 46,
+    "seconds": 6.141
+   },
+   {
+    "panel": "B",
+    "seed": 171000213,
+    "won": true,
+    "outcome": "won",
+    "decisions": 802,
+    "floor": 46,
+    "seconds": 6.9313
+   },
+   {
+    "panel": "B",
+    "seed": 171000214,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 699,
+    "floor": 46,
+    "seconds": 6.1815
+   },
+   {
+    "panel": "B",
+    "seed": 171000215,
+    "won": true,
+    "outcome": "won",
+    "decisions": 878,
+    "floor": 46,
+    "seconds": 8.6387
+   },
+   {
+    "panel": "B",
+    "seed": 171000216,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 618,
+    "floor": 46,
+    "seconds": 4.7769
+   },
+   {
+    "panel": "B",
+    "seed": 171000217,
+    "won": true,
+    "outcome": "won",
+    "decisions": 754,
+    "floor": 46,
+    "seconds": 6.3217
+   },
+   {
+    "panel": "B",
+    "seed": 171000218,
+    "won": true,
+    "outcome": "won",
+    "decisions": 708,
+    "floor": 46,
+    "seconds": 5.9125
+   },
+   {
+    "panel": "B",
+    "seed": 171000219,
+    "won": true,
+    "outcome": "won",
+    "decisions": 740,
+    "floor": 46,
+    "seconds": 6.4032
+   },
+   {
+    "panel": "B",
+    "seed": 171000220,
+    "won": true,
+    "outcome": "won",
+    "decisions": 569,
+    "floor": 46,
+    "seconds": 4.8656
+   },
+   {
+    "panel": "B",
+    "seed": 171000221,
+    "won": true,
+    "outcome": "won",
+    "decisions": 665,
+    "floor": 46,
+    "seconds": 5.9923
+   },
+   {
+    "panel": "B",
+    "seed": 171000222,
+    "won": true,
+    "outcome": "won",
+    "decisions": 802,
+    "floor": 46,
+    "seconds": 6.7931
+   },
+   {
+    "panel": "B",
+    "seed": 171000223,
+    "won": true,
+    "outcome": "won",
+    "decisions": 723,
+    "floor": 46,
+    "seconds": 6.3486
+   },
+   {
+    "panel": "B",
+    "seed": 171000224,
+    "won": true,
+    "outcome": "won",
+    "decisions": 636,
+    "floor": 46,
+    "seconds": 5.355
+   },
+   {
+    "panel": "B",
+    "seed": 171000225,
+    "won": true,
+    "outcome": "won",
+    "decisions": 665,
+    "floor": 46,
+    "seconds": 5.4399
+   },
+   {
+    "panel": "B",
+    "seed": 171000226,
+    "won": true,
+    "outcome": "won",
+    "decisions": 641,
+    "floor": 46,
+    "seconds": 4.7975
+   },
+   {
+    "panel": "B",
+    "seed": 171000227,
+    "won": true,
+    "outcome": "won",
+    "decisions": 522,
+    "floor": 46,
+    "seconds": 3.9583
+   },
+   {
+    "panel": "B",
+    "seed": 171000228,
+    "won": true,
+    "outcome": "won",
+    "decisions": 623,
+    "floor": 46,
+    "seconds": 5.9471
+   },
+   {
+    "panel": "B",
+    "seed": 171000229,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 4.8725
+   },
+   {
+    "panel": "B",
+    "seed": 171000230,
+    "won": true,
+    "outcome": "won",
+    "decisions": 604,
+    "floor": 46,
+    "seconds": 5.2431
+   },
+   {
+    "panel": "B",
+    "seed": 171000231,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 136,
+    "floor": 14,
+    "seconds": 0.6498
+   },
+   {
+    "panel": "B",
+    "seed": 171000232,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 572,
+    "floor": 46,
+    "seconds": 4.6395
+   },
+   {
+    "panel": "B",
+    "seed": 171000233,
+    "won": true,
+    "outcome": "won",
+    "decisions": 602,
+    "floor": 46,
+    "seconds": 4.8421
+   },
+   {
+    "panel": "B",
+    "seed": 171000234,
+    "won": true,
+    "outcome": "won",
+    "decisions": 605,
+    "floor": 46,
+    "seconds": 4.4941
+   },
+   {
+    "panel": "B",
+    "seed": 171000235,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 181,
+    "floor": 16,
+    "seconds": 0.9631
+   },
+   {
+    "panel": "B",
+    "seed": 171000236,
+    "won": true,
+    "outcome": "won",
+    "decisions": 652,
+    "floor": 46,
+    "seconds": 5.4024
+   },
+   {
+    "panel": "B",
+    "seed": 171000237,
+    "won": true,
+    "outcome": "won",
+    "decisions": 703,
+    "floor": 46,
+    "seconds": 6.2158
+   },
+   {
+    "panel": "B",
+    "seed": 171000238,
+    "won": true,
+    "outcome": "won",
+    "decisions": 762,
+    "floor": 46,
+    "seconds": 6.5211
+   },
+   {
+    "panel": "B",
+    "seed": 171000239,
+    "won": true,
+    "outcome": "won",
+    "decisions": 671,
+    "floor": 48,
+    "seconds": 5.5303
+   },
+   {
+    "panel": "B",
+    "seed": 171000240,
+    "won": true,
+    "outcome": "won",
+    "decisions": 706,
+    "floor": 46,
+    "seconds": 5.2384
+   },
+   {
+    "panel": "B",
+    "seed": 171000241,
+    "won": true,
+    "outcome": "won",
+    "decisions": 760,
+    "floor": 46,
+    "seconds": 6.6465
+   },
+   {
+    "panel": "B",
+    "seed": 171000242,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 630,
+    "floor": 46,
+    "seconds": 4.9112
+   },
+   {
+    "panel": "B",
+    "seed": 171000243,
+    "won": true,
+    "outcome": "won",
+    "decisions": 612,
+    "floor": 46,
+    "seconds": 4.9858
+   },
+   {
+    "panel": "B",
+    "seed": 171000244,
+    "won": true,
+    "outcome": "won",
+    "decisions": 558,
+    "floor": 46,
+    "seconds": 4.385
+   },
+   {
+    "panel": "B",
+    "seed": 171000245,
+    "won": true,
+    "outcome": "won",
+    "decisions": 664,
+    "floor": 46,
+    "seconds": 5.5543
+   },
+   {
+    "panel": "B",
+    "seed": 171000246,
+    "won": true,
+    "outcome": "won",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 5.6199
+   },
+   {
+    "panel": "B",
+    "seed": 171000247,
+    "won": true,
+    "outcome": "won",
+    "decisions": 775,
+    "floor": 46,
+    "seconds": 6.8332
+   },
+   {
+    "panel": "B",
+    "seed": 171000248,
+    "won": true,
+    "outcome": "won",
+    "decisions": 721,
+    "floor": 46,
+    "seconds": 6.4435
+   },
+   {
+    "panel": "B",
+    "seed": 171000249,
+    "won": true,
+    "outcome": "won",
+    "decisions": 715,
+    "floor": 46,
+    "seconds": 5.7779
+   },
+   {
+    "panel": "B",
+    "seed": 171000250,
+    "won": true,
+    "outcome": "won",
+    "decisions": 709,
+    "floor": 46,
+    "seconds": 6.152
+   },
+   {
+    "panel": "B",
+    "seed": 171000251,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 104,
+    "floor": 11,
+    "seconds": 0.5423
+   },
+   {
+    "panel": "B",
+    "seed": 171000252,
+    "won": true,
+    "outcome": "won",
+    "decisions": 681,
+    "floor": 46,
+    "seconds": 5.7319
+   },
+   {
+    "panel": "B",
+    "seed": 171000253,
+    "won": true,
+    "outcome": "won",
+    "decisions": 686,
+    "floor": 46,
+    "seconds": 5.6537
+   },
+   {
+    "panel": "B",
+    "seed": 171000254,
+    "won": true,
+    "outcome": "won",
+    "decisions": 922,
+    "floor": 46,
+    "seconds": 8.2143
+   },
+   {
+    "panel": "B",
+    "seed": 171000255,
+    "won": true,
+    "outcome": "won",
+    "decisions": 803,
+    "floor": 46,
+    "seconds": 6.1732
+   },
+   {
+    "panel": "B",
+    "seed": 171000256,
+    "won": true,
+    "outcome": "won",
+    "decisions": 635,
+    "floor": 46,
+    "seconds": 4.954
+   },
+   {
+    "panel": "B",
+    "seed": 171000257,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 593,
+    "floor": 46,
+    "seconds": 4.835
+   },
+   {
+    "panel": "B",
+    "seed": 171000258,
+    "won": true,
+    "outcome": "won",
+    "decisions": 584,
+    "floor": 46,
+    "seconds": 4.2063
+   },
+   {
+    "panel": "B",
+    "seed": 171000259,
+    "won": true,
+    "outcome": "won",
+    "decisions": 609,
+    "floor": 46,
+    "seconds": 5.0022
+   },
+   {
+    "panel": "B",
+    "seed": 171000260,
+    "won": true,
+    "outcome": "won",
+    "decisions": 658,
+    "floor": 46,
+    "seconds": 5.5204
+   },
+   {
+    "panel": "B",
+    "seed": 171000261,
+    "won": true,
+    "outcome": "won",
+    "decisions": 753,
+    "floor": 46,
+    "seconds": 6.435
+   },
+   {
+    "panel": "B",
+    "seed": 171000262,
+    "won": true,
+    "outcome": "won",
+    "decisions": 831,
+    "floor": 46,
+    "seconds": 6.9641
+   },
+   {
+    "panel": "B",
+    "seed": 171000263,
+    "won": true,
+    "outcome": "won",
+    "decisions": 705,
+    "floor": 46,
+    "seconds": 5.8494
+   },
+   {
+    "panel": "B",
+    "seed": 171000264,
+    "won": true,
+    "outcome": "won",
+    "decisions": 568,
+    "floor": 46,
+    "seconds": 4.8582
+   },
+   {
+    "panel": "B",
+    "seed": 171000265,
+    "won": true,
+    "outcome": "won",
+    "decisions": 577,
+    "floor": 46,
+    "seconds": 5.1605
+   },
+   {
+    "panel": "B",
+    "seed": 171000266,
+    "won": true,
+    "outcome": "won",
+    "decisions": 552,
+    "floor": 46,
+    "seconds": 4.2115
+   },
+   {
+    "panel": "B",
+    "seed": 171000267,
+    "won": true,
+    "outcome": "won",
+    "decisions": 588,
+    "floor": 46,
+    "seconds": 4.8726
+   },
+   {
+    "panel": "B",
+    "seed": 171000268,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 650,
+    "floor": 46,
+    "seconds": 5.5318
+   },
+   {
+    "panel": "B",
+    "seed": 171000269,
+    "won": true,
+    "outcome": "won",
+    "decisions": 588,
+    "floor": 46,
+    "seconds": 4.9259
+   },
+   {
+    "panel": "B",
+    "seed": 171000270,
+    "won": true,
+    "outcome": "won",
+    "decisions": 687,
+    "floor": 46,
+    "seconds": 6.1519
+   },
+   {
+    "panel": "B",
+    "seed": 171000271,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 116,
+    "floor": 11,
+    "seconds": 0.5909
+   },
+   {
+    "panel": "B",
+    "seed": 171000272,
+    "won": true,
+    "outcome": "won",
+    "decisions": 817,
+    "floor": 46,
+    "seconds": 7.3151
+   },
+   {
+    "panel": "B",
+    "seed": 171000273,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 567,
+    "floor": 46,
+    "seconds": 4.9452
+   },
+   {
+    "panel": "B",
+    "seed": 171000274,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 384,
+    "floor": 31,
+    "seconds": 2.6426
+   },
+   {
+    "panel": "B",
+    "seed": 171000275,
+    "won": true,
+    "outcome": "won",
+    "decisions": 634,
+    "floor": 46,
+    "seconds": 5.2256
+   },
+   {
+    "panel": "B",
+    "seed": 171000276,
+    "won": true,
+    "outcome": "won",
+    "decisions": 689,
+    "floor": 46,
+    "seconds": 6.7245
+   },
+   {
+    "panel": "B",
+    "seed": 171000277,
+    "won": true,
+    "outcome": "won",
+    "decisions": 796,
+    "floor": 46,
+    "seconds": 6.4628
+   },
+   {
+    "panel": "B",
+    "seed": 171000278,
+    "won": true,
+    "outcome": "won",
+    "decisions": 767,
+    "floor": 46,
+    "seconds": 6.9874
+   },
+   {
+    "panel": "B",
+    "seed": 171000279,
+    "won": true,
+    "outcome": "won",
+    "decisions": 646,
+    "floor": 46,
+    "seconds": 5.4622
+   },
+   {
+    "panel": "B",
+    "seed": 171000280,
+    "won": true,
+    "outcome": "won",
+    "decisions": 616,
+    "floor": 46,
+    "seconds": 5.5915
+   },
+   {
+    "panel": "B",
+    "seed": 171000281,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 589,
+    "floor": 45,
+    "seconds": 4.361
+   },
+   {
+    "panel": "B",
+    "seed": 171000282,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 750,
+    "floor": 46,
+    "seconds": 5.9549
+   },
+   {
+    "panel": "B",
+    "seed": 171000283,
+    "won": true,
+    "outcome": "won",
+    "decisions": 732,
+    "floor": 46,
+    "seconds": 6.2713
+   },
+   {
+    "panel": "B",
+    "seed": 171000284,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 672,
+    "floor": 46,
+    "seconds": 5.9294
+   },
+   {
+    "panel": "B",
+    "seed": 171000285,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 539,
+    "floor": 46,
+    "seconds": 4.0399
+   },
+   {
+    "panel": "B",
+    "seed": 171000286,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 158,
+    "floor": 16,
+    "seconds": 0.8782
+   },
+   {
+    "panel": "B",
+    "seed": 171000287,
+    "won": true,
+    "outcome": "won",
+    "decisions": 860,
+    "floor": 46,
+    "seconds": 7.5179
+   },
+   {
+    "panel": "B",
+    "seed": 171000288,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 179,
+    "floor": 16,
+    "seconds": 0.9519
+   },
+   {
+    "panel": "B",
+    "seed": 171000289,
+    "won": true,
+    "outcome": "won",
+    "decisions": 437,
+    "floor": 48,
+    "seconds": 3.6011
+   },
+   {
+    "panel": "B",
+    "seed": 171000290,
+    "won": true,
+    "outcome": "won",
+    "decisions": 968,
+    "floor": 46,
+    "seconds": 8.657
+   },
+   {
+    "panel": "B",
+    "seed": 171000291,
+    "won": true,
+    "outcome": "won",
+    "decisions": 743,
+    "floor": 46,
+    "seconds": 6.4822
+   },
+   {
+    "panel": "B",
+    "seed": 171000292,
+    "won": true,
+    "outcome": "won",
+    "decisions": 653,
+    "floor": 46,
+    "seconds": 5.5456
+   },
+   {
+    "panel": "B",
+    "seed": 171000293,
+    "won": true,
+    "outcome": "won",
+    "decisions": 611,
+    "floor": 46,
+    "seconds": 5.1918
+   },
+   {
+    "panel": "B",
+    "seed": 171000294,
+    "won": true,
+    "outcome": "won",
+    "decisions": 711,
+    "floor": 46,
+    "seconds": 5.6173
+   },
+   {
+    "panel": "B",
+    "seed": 171000295,
+    "won": true,
+    "outcome": "won",
+    "decisions": 805,
+    "floor": 46,
+    "seconds": 7.5174
+   },
+   {
+    "panel": "B",
+    "seed": 171000296,
+    "won": true,
+    "outcome": "won",
+    "decisions": 537,
+    "floor": 46,
+    "seconds": 4.2504
+   },
+   {
+    "panel": "B",
+    "seed": 171000297,
+    "won": false,
+    "outcome": "lost",
+    "decisions": 681,
+    "floor": 46,
+    "seconds": 5.5546
+   },
+   {
+    "panel": "B",
+    "seed": 171000298,
+    "won": true,
+    "outcome": "won",
+    "decisions": 465,
+    "floor": 46,
+    "seconds": 4.4488
+   },
+   {
+    "panel": "B",
+    "seed": 171000299,
+    "won": true,
+    "outcome": "won",
+    "decisions": 805,
+    "floor": 46,
+    "seconds": 6.8628
+   }
+  ]
+ }
+}

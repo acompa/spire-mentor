@@ -40,9 +40,36 @@ def test_unpaired_z_p():
 
 def test_slice_rates_are_disjoint_and_consecutive():
     wins = [True] * 4 + [False] * 4 + [True, False] * 2
-    assert check.slice_rates(wins, 3) == [1.0, 0.0, 0.5]
+    assert check.slice_rates(wins, 4) == [1.0, 0.0, 0.5]
+    assert check.slice_rates(wins + [True], 4) == [1.0, 0.0, 0.5]
 
 
 def test_hours_for():
     # 1,000 seeds x 2 networks x 700 decisions at 800 decisions/s
     assert check.hours_for(1000, 700, 800) == pytest.approx(1000 * 2 * 700 / 800 / 3600)
+
+
+def test_expected_max_normal():
+    import figures
+
+    assert figures.expected_max_normal(1) == 0.0
+    assert figures.expected_max_normal(2) == pytest.approx(1 / math.sqrt(math.pi), abs=1e-4)
+    assert figures.expected_max_normal(3) == pytest.approx(3 / (2 * math.sqrt(math.pi)), abs=1e-4)
+
+
+def test_selection_bias_formula_matches_simulation():
+    import numpy as np
+
+    import figures
+
+    rng = np.random.default_rng(0)
+    sim = figures.simulate_selection(5, 400, 0.8, 0.2, 3000, rng)
+    assert sim == pytest.approx(figures.selection_bias(5, 400, 0.2), rel=0.1)
+
+
+def test_fill_numbers():
+    import figures
+
+    html = '<p><span data-m="a.b.1" data-f="pct1">?</span> and <span data-m="n" data-f="int">old</span></p>'
+    out = figures.fill_numbers(html, {"a": {"b": [0, 0.8123]}, "n": 1234.0})
+    assert out == '<p><span data-m="a.b.1" data-f="pct1">81.2%</span> and <span data-m="n" data-f="int">1,234</span></p>'
