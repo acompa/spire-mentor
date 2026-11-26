@@ -1,0 +1,45 @@
+# Stop 2 predictions. Fill in guess, low and high for each entry: low and high
+# bound an 80% interval (you expect the measured value inside it 4 times in 5).
+# The check refuses to run while any value is blank.
+
+[median_top_p_fight]
+question = "Median probability of the top class at decisions inside a fight"
+unit = "probability, 0 to 1"
+guess = ""
+low = ""
+high = ""
+
+[median_top_p_between]
+question = "Median probability of the top class at decisions between fights"
+unit = "probability, 0 to 1"
+guess = ""
+low = ""
+high = ""
+
+[share_top_over_0_9]
+question = "Share of all greedy decisions where the top class has more than 0.9"
+unit = "fraction, 0 to 1"
+guess = ""
+low = ""
+high = ""
+
+[share_sampled_differs]
+question = "Share of sampled decisions where the sampled class differs from the greedy one"
+unit = "fraction, 0 to 1"
+guess = ""
+low = ""
+high = ""
+
+[winrate_sampled_minus_greedy_pp]
+question = "Sampled win rate minus greedy win rate"
+unit = "percentage points"
+guess = ""
+low = ""
+high = ""
+
+[share_seeds_disagree]
+question = "Share of seeds where greedy and sampled play reach different results (one wins, one loses)"
+unit = "fraction of seeds, 0 to 1"
+guess = ""
+low = ""
+high = ""
