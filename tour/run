@@ -1,0 +1,19 @@
+#!/bin/bash
+# Run a tour script with the simulator's Python environment.
+#
+#   tour/run stop-1-episode/check.py [args]
+#   tour/run -m pytest tour/stop-1-episode
+#
+# TOUR_VENV: the sts2-pycli checkout whose .venv to use (default: this one).
+# A git worktree has no built environment, so point it at the main checkout:
+#   TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run ...
+set -euo pipefail
+tour="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(dirname "$tour")"
+py="${TOUR_VENV:-$repo/sts2-pycli}/.venv/bin/python"
+[ -x "$py" ] || { echo "no Python at $py: see tour/README.md, 'Setup'" >&2; exit 1; }
+export PYTHONPATH="$tour:$repo/sts2-pycli/python${PYTHONPATH:+:$PYTHONPATH}"
+if [ "${1:-}" = "-m" ]; then exec "$py" "$@"; fi
+script="$1"; shift
+[ -f "$script" ] || script="$tour/$script"
+exec "$py" "$script" "$@"
