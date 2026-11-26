@@ -96,17 +96,17 @@ trained on 100 runs.
 | --- | --- | --- |
 | `heldout_agreement` | On 10 teacher runs nobody trained on, how often the student picks the teacher's move. | percent of decisions |
 | `own_state_agreement` | When the student plays `PANEL_A` runs itself, how often the teacher, shown the same state, would pick the same move. | percent of decisions |
-| `student_mean_floor` | The student's mean floor reached on 60 `PANEL_A` runs. A run that is won ends at the last floor. | floor |
-| `student_win_rate` | The student's win rate on the same 60 runs. | percent of runs |
+| `student_mean_floor` | The student's mean floor reached on 150 `PANEL_A` runs. A run that is won ends at the last floor. | floor |
+| `student_win_rate` | The student's win rate on the same 150 runs. | percent of runs |
 | `agreement_gain_from_doubling` | Held-out agreement of the student minus that of the student trained on 50 runs. | percentage points |
-| `dagger_floor_change` | The DAgger student's mean floor minus the student's, on the same 60 seeds. | floors |
+| `dagger_floor_change` | The DAgger student's mean floor minus the student's, on the same 150 seeds. | floors |
 
 The DAgger student: the student plays 50 other `PANEL_B` runs, the teacher
 labels every state it reaches, and a fresh network is trained on the
 100-run teacher data plus those rows.
 
 For scale, the check also prints the teacher's own win rate and mean floor
-on the same 60 seeds, and the version 1 numbers are in reading item 3.
+on the same 150 seeds, and the version 1 numbers are in reading item 3.
 
 ## Run
 
@@ -117,8 +117,8 @@ TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights 
 ```
 
 This plays the teacher on 110 runs, trains four students on the GPU (MPS),
-runs the DAgger round and scores the teacher. It takes about an hour on an
-idle M2 Max, longer when other work shares the machine. It writes
+runs the DAgger round and scores the teacher. It takes 30 to 60 minutes on
+an M2 Max, depending on what else shares the machine. It writes
 everything to `tour/stop-7-imitation/out/full/` (ignored by git) and skips
 any step whose output exists, so a stopped run resumes where it was.
 
@@ -127,10 +127,11 @@ TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights 
 ```
 
 This refuses to start until `predictions.toml` is complete, then measures
-each student and scores your predictions. It finishes within 15 minutes.
+each student and scores your predictions. It takes about 4 minutes on an
+idle M2 Max.
 
 `check.py --quick` needs no preparation. It runs a tiny plan end to end in
-about two minutes: datasets of 2 and 4 teacher runs, 4 evaluation runs.
+under two minutes: datasets of 2 and 4 teacher runs, 4 evaluation runs.
 Its numbers only show that the pipeline works; they say nothing about the
 answer. `--workers N` sets the number of game processes (default 4).
 
@@ -178,12 +179,19 @@ answer. `--workers N` sets the number of game processes (default 4).
 
 The check prints a table with one row per policy: `bc025`, `bc050`,
 `bc100` (the student), `dagger`, and the teacher for reference. Columns:
-held-out agreement, own-state agreement, win rate, mean floor and decisions
-per run. Then it prints your predictions beside the measured values.
+held-out agreement, early held-out agreement (explained below), own-state
+agreement, win rate, mean floor and decisions per run. Then it prints your predictions beside the measured values.
 
-- Compare the two agreement columns. Held-out agreement is measured where
-  the teacher goes. Own-state agreement is measured where the student goes.
-  The gap between them is distribution shift, measured.
+- Compare the agreement columns, and be careful what each averages over.
+  Held-out agreement averages over whole teacher runs, early and late
+  floors alike. Own-state agreement averages over the student's runs, which
+  stop wherever the student dies. Two things move it: the student's states
+  drift away from the teacher's (distribution shift), and the student only
+  reaches the stages of a run it survives to, which may be easier or harder
+  to agree on. "Early held-out" is held-out agreement on only the first K
+  decisions of each teacher run, K being the student's mean decisions per
+  run. Compare own-state agreement with that column: same stage of the run,
+  different source of states.
 - Compare agreement with win rate and mean floor. Ask what per-decision
   error rate would let a policy survive several hundred decisions, if even a
   small share of errors cost a run.
@@ -196,7 +204,7 @@ per run. Then it prints your predictions beside the measured values.
 - The DAgger row changed two things at once: where the new labels come from,
   and how much data there is. The check does not separate them. Before you
   credit DAgger with a difference, ask how big a difference the seeds alone
-  would produce: each policy plays only 60 runs.
+  would produce: each policy plays 150 runs.
 - Everything is greedy and seeded, so a rerun prints the same table. A
   different training seed or panel would not.
 

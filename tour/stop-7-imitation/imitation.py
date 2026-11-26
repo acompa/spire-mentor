@@ -274,7 +274,7 @@ class Plan:
         return [f"bc{n:03d}" for n in self.sizes] + ["dagger"]
 
 
-FULL = Plan("full", sizes=(25, 50, 100), heldout=10, dagger=50, evaluate=60, epochs=6)
+FULL = Plan("full", sizes=(25, 50, 100), heldout=10, dagger=50, evaluate=150, epochs=6)
 QUICK = Plan("quick", sizes=(2, 4), heldout=1, dagger=3, evaluate=4, epochs=2)
 
 
@@ -340,7 +340,9 @@ def prepare(plan: Plan, out: Path, workers: int, log=print) -> None:
 
 def measure(plan: Plan, out: Path, workers: int, log=print) -> dict[str, dict]:
     """Per student: held-out agreement, own-state agreement, win rate (percent)
-    and mean floor."""
+    and mean floor. `heldout_early_agreement` is held-out agreement on only
+    the first K decisions of each teacher run, K the student's mean decisions
+    per run: teacher states from the same stage of a run the student reaches."""
     paths = {k: out / f"{k}.pt" for k in plan.names()}
     need = [out / "heldout_rows.npz", *paths.values(), *(p.with_suffix(".e2ew") for p in paths.values())]
     missing = [str(p) for p in need if not p.exists()]
@@ -356,8 +358,11 @@ def measure(plan: Plan, out: Path, workers: int, log=print) -> dict[str, dict]:
             f"plays {plan.evaluate} PANEL_A runs")
         games = play_many(plan.eval_seeds(), pt.with_suffix(".e2ew"), workers)
         srb, chosen = gather(games)
+        held = choices(pt, hrb)
+        early = hrb["t"] < len(chosen) / len(games)
         res[k] = {
-            "heldout_agreement": agreement(choices(pt, hrb), hy),
+            "heldout_agreement": agreement(held, hy),
+            "heldout_early_agreement": agreement(held[early], hy[early]),
             "own_agreement": agreement(choices(teacher_pt, srb), chosen),
             "win_rate": 100.0 * float(np.mean([g.won for g in games])),
             "mean_floor": float(np.mean([g.floor for g in games])),

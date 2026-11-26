@@ -2,7 +2,7 @@
 student per dataset size, and one DAgger round. Caches everything under
 `out/<plan>/`; rerunning skips what exists.
 
-    tour/run stop-7-imitation/prepare.py             # about an hour
+    tour/run stop-7-imitation/prepare.py             # 30 to 60 minutes
     tour/run stop-7-imitation/prepare.py --quick     # the --quick check's plan
 """
 

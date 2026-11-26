@@ -23,12 +23,13 @@ import imitation  # noqa: E402
 
 
 def table(res: dict, teacher: dict) -> None:
-    print(f"\n{'policy':<8} {'held-out agree %':>17} {'own-state agree %':>18} "
-          f"{'win %':>7} {'mean floor':>11} {'decisions/run':>14}")
+    print(f"\n{'policy':<8} {'held-out agree %':>17} {'early held-out %':>17} "
+          f"{'own-state agree %':>18} {'win %':>7} {'mean floor':>11} {'decisions/run':>14}")
     for k, r in res.items():
-        print(f"{k:<8} {r['heldout_agreement']:>17.1f} {r['own_agreement']:>18.1f} "
-              f"{r['win_rate']:>7.1f} {r['mean_floor']:>11.2f} {r['decisions_per_run']:>14.0f}")
-    print(f"{'teacher':<8} {'':>17} {'':>18} {teacher['win_rate']:>7.1f} "
+        print(f"{k:<8} {r['heldout_agreement']:>17.1f} {r['heldout_early_agreement']:>17.1f} "
+              f"{r['own_agreement']:>18.1f} {r['win_rate']:>7.1f} {r['mean_floor']:>11.2f} "
+              f"{r['decisions_per_run']:>14.0f}")
+    print(f"{'teacher':<8} {'':>17} {'':>17} {'':>18} {teacher['win_rate']:>7.1f} "
           f"{teacher['mean_floor']:>11.2f} {teacher['decisions_per_run']:>14.0f}")
 
 
