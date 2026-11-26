@@ -198,47 +198,94 @@ def svg(w, h, label, body):
 # ── the figures ─────────────────────────────────────────────────────────────
 
 
-def fig_clip() -> str:
-    """One term of the PPO objective against the ratio, for A > 0 and A < 0,
-    with the dual clip (c = 3) the project adds for A < 0."""
+def fig_clip(panels: str, dual: bool) -> str:
+    """One term of the PPO objective against the ratio. `panels` is "pos"
+    (A > 0 only) or "both" (A > 0 and A < 0). `dual` adds the dual clip
+    (c = 3) that the project applies when A < 0. The chapter draws three
+    versions in sequence, each adding one part to the last."""
     eps, c = 0.2, 3.0
     body = []
-    panels = [(1.0, 60, "Â > 0 (here Â = +1)"), (-1.0, 380, "Â < 0 (here Â = −1)")]
-    for A, x0, title in panels:
-        ax = Axes(x0, 34, 240, 190, (0, 4), (-3.6, 4.2) if A < 0 else (-0.2, 4.2))
-        ylim = ax.ylim
+    specs = [(1.0, "Â > 0 (here Â = +1)")]
+    if panels == "both":
+        specs.append((-1.0, "Â < 0 (here Â = −1)"))
+    for i, (A, title) in enumerate(specs):
+        x0 = 60 + 320 * i
+        ax = Axes(x0, 34, 240, 190, (0, 4), (-3.6, 1.4) if A < 0 else (-0.2, 4.2))
         yt = [-3, -2, -1, 0, 1] if A < 0 else [0, 1, 2, 3, 4]
-        ax.ylim = (-3.6, 1.4) if A < 0 else (-0.2, 4.2)
         body += ax.frame([0, 1, 2, 3, 4], yt, "ratio ρ = π_θ / π_old", "objective term", yfmt=lambda t: f"{t:g}")
-        _ = ylim
         lo, hi = ax.X(1 - eps), ax.X(1 + eps)
         # Where the gradient with respect to rho is zero: the flat parts.
         if A > 0:
             body.append(f'<rect x="{f(hi)}" y="{ax.y0}" width="{f(ax.X(4) - hi)}" height="{ax.h}" class="f4" opacity="0.13"/>')
         else:
             body.append(f'<rect x="{f(ax.X(0))}" y="{ax.y0}" width="{f(lo - ax.X(0))}" height="{ax.h}" class="f4" opacity="0.13"/>')
-            body.append(f'<rect x="{f(ax.X(c))}" y="{ax.y0}" width="{f(ax.X(4) - ax.X(c))}" height="{ax.h}" class="f4" opacity="0.13"/>')
-        rs = [i / 200 * 4 for i in range(201)]
+            if dual:
+                body.append(f'<rect x="{f(ax.X(c))}" y="{ax.y0}" width="{f(ax.X(4) - ax.X(c))}" height="{ax.h}" class="f4" opacity="0.13"/>')
+        rs = [k / 200 * 4 for k in range(201)]
         body += ax.line([(r, r * A) for r in rs], 4, width=1.5, dash="5 4")
 
         def term(r):
             s = min(r * A, max(1 - eps, min(1 + eps, r)) * A)
-            if A < 0:
+            if A < 0 and dual:
                 s = max(s, c * A)
-            return s
+            return max(s, ax.ylim[0])
 
         body += ax.line([(r, term(r)) for r in rs], 1, width=2.6)
-        x1 = ax.X(1)
-        body.append(f'<circle class="f2" cx="{f(x1)}" cy="{f(ax.Y(A))}" r="4"/>')
+        body.append(f'<circle class="f2" cx="{f(ax.X(1))}" cy="{f(ax.Y(A))}" r="4"/>')
         body.append(f'<text x="{f(x0 + 120)}" y="20" text-anchor="middle">{title}</text>')
         if A > 0:
             body.append(f'<text class="muted" x="{f(hi + 6)}" y="{f(ax.y0 + 16)}">flat: no gradient</text>')
             body.append(f'<text class="muted" x="{f(ax.X(2.2))}" y="{f(ax.Y(3.2))}">ρÂ (unclipped)</text>')
         else:
             body.append(f'<text class="muted" x="{f(ax.X(0.05))}" y="{f(ax.y0 + 16)}">flat</text>')
-            body.append(f'<text class="muted" x="{f(ax.X(c) + 4)}" y="{f(ax.y0 + 16)}">dual clip</text>')
+            if dual:
+                body.append(f'<text class="muted" x="{f(ax.X(c) + 4)}" y="{f(ax.y0 + 16)}">dual clip</text>')
             body.append(f'<text class="muted" x="{f(ax.X(1.5))}" y="{f(ax.Y(-2.4))}">ρÂ</text>')
-    return svg(640, 270, "The clipped PPO objective as a function of the probability ratio", body)
+    return svg(320 * len(specs), 270, "The clipped PPO objective as a function of the probability ratio", body)
+
+
+def fig_flow(stage: int) -> str:
+    """One iteration of the project's learner, drawn in five stages. Each
+    stage redraws the previous one and adds one part, in a fixed layout."""
+    box = [
+        (20, 20, "Rollout workers", ["Rust simulator", "the learner samples a ~ μ"]),
+        (240, 20, "Batch of decisions", ["131,072 per iteration"]),
+        (460, 20, "Pre-pass (no grad)", ["weights at update start"]),
+        (460, 140, "Returns, advantages", ["GAE (Ch. 4), normalised"]),
+        (240, 140, "2 epochs × minibatches", ["clipped loss + value + entropy", "grad clip 1.0, AdamW"]),
+        (20, 140, "Probe KL", ["exact, 8,192 rows, per epoch"]),
+    ]
+    out = ['<defs><marker id="arr5-' + str(stage) + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>']
+    out.append('<g color="var(--fg)">')
+    arrow = f'marker-end="url(#arr5-{stage})"'
+    for i, (x, y, title, lines) in enumerate(box[: stage + 1]):
+        out.append(f'<rect class="box" x="{x}" y="{y}" width="160" height="62" rx="3"/>')
+        ty = y + (20 if len(lines) > 1 else 24)
+        out.append(f'<text x="{x + 80}" y="{ty}" text-anchor="middle">{title}</text>')
+        for j, line in enumerate(lines):
+            out.append(f'<text class="muted small" x="{x + 80}" y="{ty + 17 + 15 * j}" text-anchor="middle">{line}</text>')
+    edges = [
+        ('<line class="ink" x1="180" y1="51" x2="240" y2="51" {a}/>', '<text class="muted small" x="210" y="100" text-anchor="middle">tokens, a_t, log μ, r_t</text>'),
+        ('<line class="ink" x1="400" y1="51" x2="460" y2="51" {a}/>', ""),
+        ('<line class="ink" x1="540" y1="82" x2="540" y2="140" {a}/>', '<text class="muted small" x="532" y="115" text-anchor="end">V_φ(s_t), log π_old(a_t|s_t)</text>'),
+        ('<line class="ink" x1="460" y1="171" x2="400" y2="171" {a}/>', '<text class="muted small" x="430" y="222" text-anchor="middle">Â_t, V^targ</text>'),
+        ('<line class="ink" x1="240" y1="171" x2="180" y2="171" {a}/>', '<text class="muted small" x="210" y="222" text-anchor="middle">new θ</text>'),
+    ]
+    for k in range(stage):
+        line, label = edges[k]
+        out.append(line.format(a=arrow))
+        if label:
+            out.append(label)
+    if stage >= 4:
+        # The new weights go back to the workers.
+        out.append('<line class="ink" x1="320" y1="202" x2="320" y2="290"/>')
+        out.append(f'<path class="ink" d="M320 290 L630 290 L630 6 L100 6 L100 20" fill="none" stroke-dasharray="4 4" {arrow}/>')
+        out.append('<text class="muted small" x="470" y="310" text-anchor="middle">new weights replace the acting network between inference batches</text>')
+    if stage >= 5:
+        out.append('<path class="ink" d="M100 202 L100 270 L320 270" fill="none"/>')
+        out.append('<text class="muted small" x="110" y="258">KL &gt; 0.06 in U1, U2: stop</text>')
+    out.append("</g>")
+    return f'<svg class="flow" viewBox="0 0 640 320" role="img" aria-label="Data flow of one PPO iteration in Spire Mentor, stage {stage} of 5">' + "".join(out) + "</svg>"
 
 
 def fig_baseline() -> str:
@@ -364,7 +411,10 @@ def fig_clipfrac(data) -> str:
 def render() -> None:
     data = json.loads(DATA.read_text())
     figs = {
-        "clip": fig_clip(),
+        "clip-pos": fig_clip("pos", dual=False),
+        "clip-neg": fig_clip("both", dual=False),
+        "clip-dual": fig_clip("both", dual=True),
+        **{f"flow-{k}": fig_flow(k) for k in range(1, 6)},
         "baseline": fig_baseline(),
         "floor": fig_floor(data),
         "kl": fig_kl(data),
