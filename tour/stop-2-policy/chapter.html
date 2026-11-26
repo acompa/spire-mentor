@@ -124,24 +124,24 @@ main mjx-container[jax="SVG"] a { fill: var(--accent) !important; stroke: var(--
 
 <header class="chapter">
   <div class="eyebrow"><span>RL tour · Chapter 2 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
-  <h1>Policies: scores, softmax, and what greedy play throws away</h1>
-  <p class="lede">A Q-learner acts by taking an argmax over estimated values. A policy-gradient agent instead keeps a probability for every legal action and learns those probabilities directly. This chapter builds that object from scratch, shows how a network produces it when the set of legal actions changes from one moment to the next, and measures what happens when Spire Mentor's agent samples from it rather than taking its top choice.</p>
+  <h1>Policies: from scores to probabilities to one action</h1>
+  <p class="lede">A policy gives every legal action a probability. A Q-learner acts by taking an argmax over estimated values. A policy-gradient agent learns the probabilities directly. This chapter shows how a network produces those probabilities when the set of legal actions changes at every decision. It then measures what happens when Spire Mentor's agent samples from the probabilities instead of taking its top choice.</p>
 </header>
 
 <nav class="contents" aria-label="Chapter contents">
   <strong>Contents</strong>
   <ol>
-    <li><a href="#s1">From argmax to a distribution</a></li>
-    <li><a href="#s2">What a policy is</a></li>
-    <li><a href="#s3">Softmax over a variable action set</a></li>
-    <li><a href="#s4">A network that scores candidate actions</a></li>
-    <li><a href="#s5">Entropy</a></li>
-    <li><a href="#s6">Temperature, sampling and greedy selection</a></li>
-    <li><a href="#s7">Why training must sample</a></li>
-    <li><a href="#s8">Exploration: ε-greedy against a softmax policy</a></li>
-    <li><a href="#s9">Textbook against engineered</a></li>
-    <li><a href="#s10">In Spire Mentor</a></li>
-    <li><a href="#s11">Measured</a></li>
+    <li><a href="#s1">A policy-gradient agent learns its action distribution directly</a></li>
+    <li><a href="#s2">A policy maps each state to a distribution over legal actions</a></li>
+    <li><a href="#s3">A softmax turns scores into probabilities over the legal set</a></li>
+    <li><a href="#s4">One network scores every candidate action</a></li>
+    <li><a href="#s5">Entropy measures how spread a policy is</a></li>
+    <li><a href="#s6">Temperature moves a policy between sampling and greedy selection</a></li>
+    <li><a href="#s7">Training must sample to estimate its gradient</a></li>
+    <li><a href="#s8">A softmax policy learns where to explore, and ε-greedy does not</a></li>
+    <li><a href="#s9">Production code departs from the textbook form in six ways</a></li>
+    <li><a href="#s10">How Spire Mentor builds its policy, and why</a></li>
+    <li><a href="#s11">Measurements: the policy is mostly certain, and sampling costs a few points</a></li>
     <li><a href="#s12">Common confusions</a></li>
     <li><a href="#experiments">Suggested experiments</a></li>
     <li><a href="#references">References</a></li>
@@ -149,90 +149,119 @@ main mjx-container[jax="SVG"] a { fill: var(--accent) !important; stroke: var(--
 </nav>
 
 <main>
-  <h2 id="s1">1. From argmax to a distribution</h2>
-  <p>If you have trained a deep Q-network, you already have a way to act. The network estimates \(Q(s,a)\) for each action, and the agent plays \(\arg\max_a Q(s,a)\). The policy is a by-product of the value estimate. During training you add exploration from outside: with probability \(\varepsilon\) the agent ignores its estimates and picks a uniformly random action. The original DQN annealed \(\varepsilon\) from 1 to 0.1 over the first million frames and then held it there <span class="cite">[<a href="#ref-7">7</a>]</span>.</p>
-  <p>Policy-gradient methods turn this around. The object being learned is the action distribution itself. The network outputs a score for every legal action, a softmax turns the scores into probabilities, and training nudges those probabilities toward actions that led to good outcomes. No value estimate is needed to choose an action, though Chapter 4 adds one to help training. Exploration is no longer bolted on: the agent explores because it samples from its own distribution, and the distribution's spread is itself something training adjusts.</p>
-  <p>Three things change when you move to this setting, and this chapter takes them in order.</p>
+  <h2 id="s1">1. A policy-gradient agent learns its action distribution directly</h2>
+  <p>A <dfn>policy</dfn> is the rule an agent uses to choose an action. For each state, it gives every legal action a probability. Spire Mentor's agent builds its policy in three steps. A network gives each legal option a score. A softmax turns the scores into probabilities. A selection rule then picks one option. During training, the rule draws an option at random with those probabilities. The shipped agent takes the most probable option.</p>
+  <p>If you have trained a deep Q-network, you already know another way to act. The network estimates \(Q(s,a)\) for each action, and the agent plays \(\arg\max_a Q(s,a)\). The policy is a by-product of the value estimate. Exploration comes from outside the network. With probability \(\varepsilon\), the agent ignores its estimates and picks an action uniformly at random. The original DQN annealed \(\varepsilon\) from 1 to 0.1 over the first million frames and then held it there <span class="cite">[<a href="#ref-7">7</a>]</span>.</p>
+  <p>Policy-gradient methods learn the action distribution itself. Training moves probability toward the actions that led to good outcomes. The agent needs no value estimate to choose an action, although Chapter 4 adds one to help training. The agent explores because it samples from its own distribution. Training also adjusts how spread that distribution is.</p>
+  <p>Three things change when you move from Q-learning to a policy.</p>
   <ul>
-    <li><strong>The output is a distribution, not a number per action.</strong> We need to say exactly how scores become probabilities, what the scores mean, and what they do not mean (they are not values).</li>
-    <li><strong>The set of legal actions varies.</strong> A DQN for Atari has one output unit per valid joystick action, between 4 and 18 depending on the game, and the same set every frame <span class="cite">[<a href="#ref-7">7</a>]</span>. A card game offers three cards now, eleven plays next turn and a map with two paths after that. The network must score whatever is on offer.</li>
-    <li><strong>How you pick from the distribution matters.</strong> Training samples from it. Evaluation usually takes the most probable action. These are different policies, and the gap between them is measurable.</li>
+    <li><strong>The output is a distribution.</strong> Section 3 shows how scores become probabilities. It also shows what the scores mean. They are not values.</li>
+    <li><strong>The set of legal actions varies.</strong> A DQN for Atari has one output unit per valid joystick action. The game sets that number between 4 and 18, and the set is the same in every frame <span class="cite">[<a href="#ref-7">7</a>]</span>. A card game offers three cards now, eleven plays next turn and a map with two paths after that. The network must score whatever is on offer. Section 4 shows how.</li>
+    <li><strong>The selection rule matters.</strong> Training samples from the distribution. Evaluation usually takes the most probable action. These two rules define different policies, and Section 11 measures the gap between them.</li>
   </ul>
-  <p>The worked example throughout is Spire Mentor's end-to-end agent, which its author calls Instinct. It plays Slay the Spire 2 as the Ironclad from the first decision of a run to the last. Chapter 1 defined what one decision is in this game; here we look at what the network says at each one.</p>
+  <p>The worked example throughout is Spire Mentor's end-to-end agent, which its author calls Instinct. It plays Slay the Spire 2 as the Ironclad, from the first decision of a run to the last. Chapter 1 defined one decision in this game. This chapter looks at what the network outputs at each decision.</p>
 
-  <h2 id="s2">2. What a policy is</h2>
-  <p>A <dfn>policy</dfn> is a rule that maps each state to a probability distribution over the actions legal in that state. We write it \(\pi(a \mid s)\). When the rule has learnable parameters \(\theta\) (here, the weights of a neural network) we write \(\pi_\theta(a \mid s)\).</p>
+  <h2 id="s2">2. A policy maps each state to a distribution over legal actions</h2>
+  <p>The notation for a policy is \(\pi(a \mid s)\), the probability of action \(a\) in state \(s\). When the rule has learnable parameters \(\theta\), such as the weights of a neural network, the notation is \(\pi_\theta(a \mid s)\).</p>
 
   <div class="definition"><span class="label">Definition 2.1 · Policy</span>
     <p>A policy assigns to every state \(s\) and every legal action \(a \in \mathcal{A}(s)\) a probability, and these probabilities sum to one over the legal actions.</p>
     <div class="eq">\begin{equation} \pi_\theta(a \mid s) \ge 0, \qquad \sum_{a \in \mathcal{A}(s)} \pi_\theta(a \mid s) = 1 \quad \text{for every } s. \label{eq:policy} \end{equation}</div>
   </div>
-  <p>Here \(\mathcal{A}(s)\) is the set of actions the game allows in state \(s\), and \(\theta\) is the parameter vector. The equation says nothing more than "a policy is a conditional distribution over legal actions". In a supervised-learning frame, it is a classifier whose label set depends on the input.</p>
-  <p>A <dfn>deterministic policy</dfn> puts all its probability on one action in every state. It is the special case \(\pi(a \mid s) = 1\) for a single \(a\). A <dfn>stochastic policy</dfn> spreads probability across several actions. Greedy Q-learning yields a deterministic policy; ε-greedy Q-learning yields a stochastic one whose randomness does not depend on how close the values are.</p>
-  <p>Strictly, an agent that sees only an observation \(o_t\) acts on \(o_t\) (or on its history), not on the hidden state \(s_t\). Chapter 1 drew that distinction for Slay the Spire, where the draw pile's order is hidden. To keep the notation of the RL literature we write \(\pi_\theta(a \mid s)\) and read \(s\) as "what the agent sees". Nothing in this chapter depends on the Markov property.</p>
-  <p>Why would we ever want a stochastic policy at the end of training? Sutton and Barto give two reasons <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>. First, when the agent cannot see the whole state, the best policy can be genuinely random. Their example is bluffing in poker: a player whose bets are predictable is exploited. Second, a smooth parameterization of probabilities gives smooth learning. A small change in \(\theta\) makes a small change in behaviour, which is not true of an argmax over noisy value estimates. The third reason is the one that matters most in practice: during training, randomness is how the agent finds out what its untried actions are worth. Section 7 makes that precise.</p>
+  <p>Here \(\mathcal{A}(s)\) is the set of actions that the game allows in state \(s\). The equation says only that a policy is a conditional distribution over legal actions. In supervised-learning terms, a policy is a classifier whose label set depends on the input.</p>
+  <p>A <dfn>deterministic policy</dfn> puts all its probability on one action in every state. It is the special case \(\pi(a \mid s) = 1\) for a single \(a\). A <dfn>stochastic policy</dfn> spreads probability across several actions. Greedy Q-learning gives a deterministic policy. ε-greedy Q-learning gives a stochastic policy, and its randomness does not depend on how close the values are.</p>
+  <p>An agent that sees only an observation \(o_t\) acts on \(o_t\) or on its history. It cannot act on the hidden state \(s_t\). Chapter 1 drew that distinction for Slay the Spire, where the order of the draw pile is hidden. This chapter keeps the notation of the RL literature. It writes \(\pi_\theta(a \mid s)\) and reads \(s\) as what the agent sees. Nothing in this chapter depends on the Markov property.</p>
+  <p>Sutton and Barto give a reason that the best policy itself can be stochastic <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>. When the agent cannot see the whole state, the best policy can be random. Their example is bluffing in poker, where opponents exploit a player whose bets are predictable. They also give an advantage of probabilities for learning <span class="cite">[<a href="#ref-1">1</a>, §13.2]</span>. With a smooth parameterization, a small change in \(\theta\) makes a small change in behaviour. An argmax over noisy value estimates does not have that property. In practice, a third reason matters most. During training, randomness is how the agent learns what its untried actions are worth. Section 7 makes that reason precise.</p>
 
-  <h2 id="s3">3. Softmax over a variable action set</h2>
-  <h3>From scores to probabilities, traced on one decision</h3>
-  <p>Take a real decision. On floor 1 of seed 170,000,000, the Ironclad faces a Seapunk with 48 hit points, which intends to attack for 13. The hand holds three Strikes, a Defend and the curse Ascender's Bane, and the potion belt holds two potions. After merging identical options (Chapter 1), the game offers five classes: play a Strike at the Seapunk, play Defend, drink potion 0, drink potion 1, or end the turn.</p>
-  <p>The network gives each class one real number, its <dfn>logit</dfn>. Write it \(z_\theta(s,a)\). The code calls these numbers <code>logits</code>; Sutton and Barto call them <dfn>action preferences</dfn> \(h(s,a,\theta)\) <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>. For this decision the logits are:</p>
+  <h2 id="s3">3. A softmax turns scores into probabilities over the legal set</h2>
+  <h3>One decision, from scores to probabilities</h3>
+  <p>Take a real decision. On floor 1 of seed 170,000,000, the Ironclad faces a Seapunk with 48 hit points. The Seapunk intends to attack for 13. The hand holds three Strikes, a Defend and the curse Ascender's Bane. The potion belt holds two potions. After identical options merge, as Chapter 1 described, the game offers five classes. The agent can play a Strike at the Seapunk, play Defend, drink potion 0, drink potion 1 or end the turn.</p>
+  <p>The network gives each class one real number, its <dfn>logit</dfn>, written \(z_\theta(s,a)\). The code calls these numbers <code>logits</code>. Sutton and Barto call them <dfn>action preferences</dfn> \(h(s,a,\theta)\) <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>. The table gives the logits for this decision.</p>
   <div class="table"><table>
     <thead><tr><th>Class</th><th class="num">Logit \(z\)</th><th class="num">\(e^{z - \max z}\)</th><th class="num">Probability</th></tr></thead>
     <tbody>
       <tr><td>drink potion 0</td><td class="num">8.82</td><td class="num">1</td><td class="num">0.816</td></tr>
-      <tr><td>play Defend</td><td class="num">7.33</td><td class="num">0.226</td><td class="num">0.184</td></tr>
+      <tr><td>play Defend</td><td class="num">7.33</td><td class="num">0.225</td><td class="num">0.184</td></tr>
       <tr><td>play Strike → Seapunk (3 copies merged)</td><td class="num">−3.80</td><td class="num">3.3 × 10⁻⁶</td><td class="num">2.7 × 10⁻⁶</td></tr>
       <tr><td>drink potion 1</td><td class="num">−14.29</td><td class="num">9.2 × 10⁻¹¹</td><td class="num">7.5 × 10⁻¹¹</td></tr>
       <tr><td>end turn</td><td class="num">−14.81</td><td class="num">5.5 × 10⁻¹¹</td><td class="num">4.5 × 10⁻¹¹</td></tr>
     </tbody>
-    <caption>The first fight decision of seed 170,000,000, as the published Ironclad network scores it. The third column subtracts the largest logit before exponentiating; the fourth divides by that column's sum, 1.226.</caption>
+    <caption>The first fight decision of seed 170,000,000, as the published Ironclad network scores it. The third column subtracts the largest logit before it exponentiates. The fourth column divides by the sum of the third column, 1.225.</caption>
   </table></div>
-  <p>To get probabilities, exponentiate each logit and divide by the sum. Subtracting the largest logit first changes nothing, as we show next, but keeps the exponentials from overflowing.</p>
+  <p>To get probabilities, exponentiate each logit and divide by the sum. If you subtract the largest logit first, the exponentials cannot overflow. The subtraction does not change the result, as the next subsection shows.</p>
 
   <div class="definition"><span class="label">Definition 2.2 · Softmax policy</span>
     <p>Given one logit per legal action, the softmax policy is</p>
     <div class="eq">\begin{equation} \pi_\theta(a \mid s) = \frac{\exp z_\theta(s,a)}{\sum_{b \in \mathcal{A}(s)} \exp z_\theta(s,b)}, \qquad a \in \mathcal{A}(s). \label{eq:softmax} \end{equation}</div>
   </div>
-  <p>The sum in the denominator runs over the legal actions of this state only. That is the whole trick for a variable action set: the normalising constant is recomputed for whatever \(\mathcal{A}(s)\) happens to be. Sutton and Barto write the same equation as their (13.2) and call it "soft-max in action preferences" <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>.</p>
+  <p>The sum in the denominator runs over the legal actions of this state only. That restriction is how a softmax handles a variable action set. The normalising constant is computed again for each \(\mathcal{A}(s)\). Sutton and Barto write the same equation as their (13.2) and call it "soft-max in action preferences" <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>.</p>
 
-  <h3>Only differences between logits matter</h3>
-  <p>Add the same constant \(c\) to every logit. Each numerator gains a factor \(e^{c}\), and so does the denominator, so the policy does not change:</p>
+  <h3>Only the differences between logits matter</h3>
+  <p>Add the same constant \(c\) to every logit. Each numerator gains a factor \(e^{c}\), and so does the denominator. The factors cancel, so the policy does not change:</p>
   <div class="eq">\begin{equation} \frac{\exp\big(z_\theta(s,a)+c\big)}{\sum_{b} \exp\big(z_\theta(s,b)+c\big)} = \frac{e^{c}\exp z_\theta(s,a)}{e^{c}\sum_{b}\exp z_\theta(s,b)} = \pi_\theta(a \mid s). \label{eq:shift} \end{equation}</div>
-  <p>Setting \(c = -\max_b z_\theta(s,b)\) gives the overflow-safe form the table used. The same cancellation gives the ratio of two actions' probabilities directly from their logit gap:</p>
+  <p>With \(c = -\max_b z_\theta(s,b)\), Equation \eqref{eq:shift} gives the overflow-safe form that the table used. The same cancellation gives the ratio of two probabilities from the gap between their logits:</p>
   <div class="eq">\begin{equation} \frac{\pi_\theta(a \mid s)}{\pi_\theta(b \mid s)} = \exp\big(z_\theta(s,a) - z_\theta(s,b)\big). \label{eq:ratio} \end{equation}</div>
-  <p>In the Seapunk decision, the potion's logit exceeds Defend's by 1.49, so the potion is \(e^{1.49} \approx 4.4\) times as likely. A gap of 2.3 is a factor of 10; a gap of 11.1, the distance from Defend down to Strike, is a factor of about 68,000. So a logit is a log-odds score relative to the other options on offer, not an estimate of return (Section 12).</p>
-  <p>Taking logs of Equation \eqref{eq:softmax} gives the <dfn>log-softmax</dfn>, the form training actually uses:</p>
+  <p>In the Seapunk decision, the potion's logit is 1.49 above Defend's. So the potion is \(e^{1.49} \approx 4.4\) times as likely as Defend. A gap of 2.3 is a factor of 10. Defend's logit is 11.1 above the Strike's, a factor of about 68,000. A logit is therefore a log-odds score relative to the other options on offer. It is not an estimate of return, and Section 12 returns to that point.</p>
+  <p>The log of Equation \eqref{eq:softmax} is the <dfn>log-softmax</dfn>. Training uses this form:</p>
   <div class="eq">\begin{equation} \log \pi_\theta(a \mid s) = z_\theta(s,a) - \log \sum_{b \in \mathcal{A}(s)} \exp z_\theta(s,b). \label{eq:logsoftmax} \end{equation}</div>
-  <p>The second term, the log-sum-exp, is a smooth maximum of the logits. A log-probability is therefore "this action's score minus a soft version of the best score".</p>
+  <p>The second term, the log-sum-exp, is a smooth maximum of the logits. A log-probability is the action's own score minus a smooth version of the best score.</p>
 
-  <h3>Masking: how a fixed-size tensor holds a variable set</h3>
-  <p>A batch of decisions on a GPU is a rectangular tensor. If the widest decision in the batch has 18 options, every row gets 18 slots, and a decision with 5 options has 13 empty ones. The network sets the logit of each empty slot to \(-\infty\) before the softmax. Since \(\exp(-\infty) = 0\), those slots get probability zero and contribute nothing to the denominator:</p>
+  <h3>A mask lets a fixed-size tensor hold a variable set</h3>
+  <p>A GPU processes a batch of decisions as a rectangular tensor. If the widest decision in the batch has 18 options, every row gets 18 slots. A decision with 5 options then has 13 empty slots. The network sets the logit of each empty slot to \(-\infty\) before the softmax. Because \(\exp(-\infty) = 0\), the empty slots get probability zero and add nothing to the denominator:</p>
   <div class="eq">\begin{equation} \tilde z_\theta(s,a) = \begin{cases} z_\theta(s,a) & a \in \mathcal{A}(s) \\ -\infty & \text{otherwise} \end{cases} \qquad \Longrightarrow \qquad \operatorname{softmax}(\tilde z)_a = \pi_\theta(a \mid s). \label{eq:mask} \end{equation}</div>
-  <p>Here \(\tilde z\) is the padded, masked vector of logits. Masking is how the "sum over \(\mathcal{A}(s)\)" of Equation \eqref{eq:softmax} becomes a tensor operation.</p>
+  <p>Here \(\tilde z\) is the padded and masked vector of logits. The mask turns the sum over \(\mathcal{A}(s)\) in Equation \eqref{eq:softmax} into a tensor operation.</p>
 
-  <h3>Why identical options are merged</h3>
-  <p>The hand above holds three Strikes, and any of them can be played. Suppose the network scored each copy as its own action. Identical inputs give identical logits, say \(z\), so the three copies together would get</p>
+  <h3>Identical options merge into one class</h3>
+  <p>The hand above holds three Strikes, and the Ironclad can play any of them. Suppose that the network scored each copy as its own action. Identical inputs give identical logits, say \(z\). The three copies together would then get this probability:</p>
   <div class="eq">\begin{equation} \pi(\text{some Strike} \mid s) = \frac{k\, e^{z}}{k\, e^{z} + \sum_{b \notin \text{Strikes}} e^{z_b}}, \qquad k = 3. \label{eq:dup} \end{equation}</div>
-  <p>Here \(k\) is the number of identical copies. The policy's appetite for "play a Strike" would grow with how many Strikes happen to be in hand, which has nothing to do with whether a Strike is a good play. Equivalently, duplicates add \(\log k\) to the merged option's effective logit. Spire Mentor merges identical options into one <dfn>class</dfn> before scoring, so the softmax runs over distinct choices. That is why the table lists one Strike row with "3 copies merged".</p>
+  <p>Here \(k\) is the number of identical copies. The probability of playing a Strike would grow with the number of Strikes in hand. That number has nothing to do with whether a Strike is a good play. In effect, \(k\) copies add \(\log k\) to the logit of the move. Spire Mentor merges identical options into one <dfn>class</dfn> before it scores them, so the softmax runs over distinct choices. The table therefore lists one Strike row, with 3 copies merged.</p>
 
   <h3>The gradient of a log-probability</h3>
-  <p>Training needs the derivative of \(\log \pi_\theta(a \mid s)\) with respect to each logit. Differentiate Equation \eqref{eq:logsoftmax} with respect to \(z_\theta(s,b)\). The first term gives 1 if \(b = a\) and 0 otherwise. The second gives \(\exp z_\theta(s,b) / \sum_{c}\exp z_\theta(s,c) = \pi_\theta(b \mid s)\). So</p>
+  <p>Training needs the derivative of \(\log \pi_\theta(a \mid s)\) with respect to each logit. We differentiate Equation \eqref{eq:logsoftmax} with respect to \(z_\theta(s,b)\). The first term gives 1 if \(b = a\) and 0 otherwise. The second term gives \(\exp z_\theta(s,b) / \sum_{c}\exp z_\theta(s,c) = \pi_\theta(b \mid s)\). So</p>
   <div class="eq">\begin{equation} \frac{\partial \log \pi_\theta(a \mid s)}{\partial z_\theta(s,b)} = \mathbb{1}[a = b] - \pi_\theta(b \mid s). \label{eq:gradlogpi} \end{equation}</div>
-  <p>Here \(\mathbb{1}[a=b]\) is 1 when \(b\) is the action taken and 0 otherwise. Increasing \(\log \pi(a \mid s)\) pushes \(a\)'s own logit up by \(1 - \pi(a \mid s)\) and every other logit down by its current probability. This is a classifier's cross-entropy gradient, "one-hot label minus predicted probabilities", with the sign flipped. It also says when learning stops: once \(\pi(a \mid s)\) is near 1, the push on \(a\) is near zero. Sutton and Barto derive the same expression for the gradient bandit, in the form \(\partial \pi(x)/\partial H(a) = \pi(x)\,(\mathbb{1}[a=x] - \pi(a))\) <span class="cite">[<a href="#ref-1">1</a>, §2.8]</span>.</p>
+  <p>Here \(\mathbb{1}[a=b]\) is 1 when \(b\) is the action taken and 0 otherwise. To raise \(\log \pi(a \mid s)\), the gradient pushes the logit of \(a\) up by \(1 - \pi(a \mid s)\). It pushes every other logit down by that action's current probability. The gradient of a classifier's cross-entropy loss with respect to its logits is the predicted probabilities minus the one-hot label. Equation \eqref{eq:gradlogpi} is that gradient with the sign flipped. So raising \(\log \pi(a \mid s)\) is the same step as lowering the cross-entropy loss for label \(a\). The equation also shows when learning stops. Once \(\pi(a \mid s)\) is near 1, the push on \(a\) is near zero. Sutton and Barto derive the same expression for the gradient bandit, in the form \(\partial \pi(x)/\partial H(a) = \pi(x)\,(\mathbb{1}[a=x] - \pi(a))\) <span class="cite">[<a href="#ref-1">1</a>, §2.8]</span>.</p>
 
-  <h2 id="s4">4. A network that scores candidate actions</h2>
-  <p>There are two ways to build a network whose output is Equation \eqref{eq:softmax}.</p>
-  <p>The first is the one you know from DQN. The network maps the state to a vector with one entry per action index: output unit 3 always means "fire". This works when the action set is small and fixed. It fails when actions are things like "play this card on that enemy", because the same card can sit at any hand position, the hand changes size, and the number of possible (card, target) pairs is large. A fixed output layer would need a unit for every action that could ever occur, and would have to learn separately that "Strike at hand position 2" and "Strike at position 4" are the same move.</p>
-  <p>The second way scores each candidate. Give each legal action its own input representation, run a shared function over each (state, candidate) pair, and read off one number per candidate:</p>
-  <div class="eq">\begin{equation} z_\theta(s,a) = f_\theta\big(\phi_\theta(s),\, \psi_\theta(s,a)\big), \qquad a \in \mathcal{A}(s). \label{eq:scorer} \end{equation}</div>
-  <p>Here \(\phi_\theta(s)\) is a vector summarising the state, \(\psi_\theta(s,a)\) is a vector describing candidate \(a\) in the context of \(s\), and \(f_\theta\) is a small network that returns a scalar. The same \(f_\theta\) is applied to every candidate, so the number of candidates can be anything. Sutton and Barto's simplest instance is linear, \(h(s,a,\theta) = \theta^{\top} x(s,a)\) with a hand-built feature vector \(x(s,a)\) for each state-action pair <span class="cite">[<a href="#ref-1">1</a>, §13.1, eq. 13.3]</span>. Deep RL agents for text games used the same pattern to score free-text actions <span class="cite">[<a href="#ref-9">9</a>]</span>, and pointer networks use it to choose among a variable number of input elements <span class="cite">[<a href="#ref-10">10</a>]</span>.</p>
-  <p>In supervised terms, Equation \eqref{eq:scorer} is a <em>ranking model</em>: a recommender that scores one user's candidate items and applies a softmax over them, with the game state as the query and the legal moves as the items.</p>
-  <p>Spire Mentor's network has exactly this shape, with an attention trunk computing both \(\phi\) and \(\psi\). Figure 2.1 traces it on the Seapunk decision.</p>
+  <h2 id="s4">4. One network scores every candidate action</h2>
+  <p>A network can produce Equation \eqref{eq:softmax} in two ways.</p>
+  <p>The first way is the DQN way. The network maps the state to a vector with one entry per action index. Output unit 3 always means "fire". This design works when the action set is small and fixed. It fails when an action is "play this card on that enemy". The same card can sit at any position in the hand, the hand changes size, and the number of possible card and target pairs is large. A fixed output layer would need a unit for every action that could ever occur. It would also have to learn separately that a Strike at hand position 2 and a Strike at position 4 are the same move.</p>
+  <p>The second way scores each candidate. Each legal action gets its own input vector. One shared function reads the state and one candidate, and returns one number for that candidate:</p>
+  <div class="eq">\begin{equation} z_\theta(s,a) = f_\theta\big(u_\theta(s),\, \psi_\theta(s,a)\big), \qquad a \in \mathcal{A}(s). \label{eq:scorer} \end{equation}</div>
+  <p>Here \(u_\theta(s)\) is a vector that summarises the state. \(\psi_\theta(s,a)\) is a vector that describes candidate \(a\) in the context of \(s\). \(f_\theta\) is a small network that returns a scalar. The same \(f_\theta\) runs on every candidate, so the number of candidates can be anything. Sutton and Barto's simplest instance is linear, \(h(s,a,\theta) = \theta^{\top} x(s,a)\), with a hand-built feature vector \(x(s,a)\) for each state and action <span class="cite">[<a href="#ref-1">1</a>, §13.1, eq. 13.3]</span>. Deep RL agents for text games used the same pattern to score free-text actions <span class="cite">[<a href="#ref-9">9</a>]</span>. Pointer networks use it to choose among a variable number of input elements <span class="cite">[<a href="#ref-10">10</a>]</span>.</p>
+  <p>In supervised-learning terms, Equation \eqref{eq:scorer} is a ranking model. A recommender scores the candidate items for one user and applies a softmax over them. Here the game state is the query, and the legal moves are the items.</p>
+  <p>Spire Mentor's network has this shape. An attention trunk computes both \(u\) and \(\psi\). Figures 2.1a, 2.1b and 2.1c build the network on the Seapunk decision, one stage at a time. The first stage is the trunk.</p>
 
-  <figure id="fig-1">
+  <figure id="fig-1a">
     <div class="scroll">
-<!-- fig:mechanism -->
-<svg viewBox="0 0 760 390" role="img" aria-label="How the policy network turns one observation and its 5 legal options into one probability per option.">
+<!-- fig:mechanism1 -->
+<svg viewBox="0 0 760 176" role="img" aria-label="Policy network, stage 1 of 3: the trunk turns one observation into one vector per token.">
+<defs><marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)">
+<text x="10" y="18" class="muted">observation o_t as tokens</text>
+<rect x="10" y="28" width="48" height="22" rx="3" class="f1" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="34" y="43" text-anchor="middle" font-size="11">RUNCTX</text>
+<rect x="61.599999999999994" y="28" width="34" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="79" y="43" text-anchor="middle" font-size="11">draw</text>
+<rect x="100.0" y="28" width="54" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="127" y="43" text-anchor="middle" font-size="11">discard</text>
+<rect x="158.2" y="28" width="34" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="175" y="43" text-anchor="middle" font-size="11">deck</text>
+<rect x="196.6" y="28" width="48" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="220" y="43" text-anchor="middle" font-size="11">relics</text>
+<rect x="248.2" y="28" width="34" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="265" y="43" text-anchor="middle" font-size="11">boss</text>
+<rect x="286.59999999999997" y="28" width="41" height="22" rx="3" class="f2" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="307" y="43" text-anchor="middle" font-size="11">enemy</text>
+<rect x="331.59999999999997" y="28" width="67" height="22" rx="3" class="f2" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="365" y="43" text-anchor="middle" font-size="11">hand card</text>
+<rect x="403.0" y="28" width="15" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="410" y="43" text-anchor="middle" font-size="11">…</text>
+<text x="426" y="43" class="muted" font-size="11">28 tokens in this decision</text>
+<line class="ink" x1="250" y1="52" x2="250" y2="72" marker-end="url(#ar1)"/>
+<rect class="box" x="10" y="74" width="740" height="40" rx="3"/><text x="380" y="92" text-anchor="middle">trunk: 4 attention blocks, no positions, one 256-number vector out per token</text><text x="380" y="107" text-anchor="middle" class="muted" font-size="11">every token can attend to every other token</text>
+<line class="ink" x1="250" y1="114" x2="250" y2="134" marker-end="url(#ar1)"/>
+<text x="10" y="152" font-size="11">out: h(RUNCTX), the state vector, and one vector h(a) for each of the 5 option tokens</text><text x="10" y="168" class="muted" font-size="11">Each option token was written by the tokenizer, one per merged class of legal actions.</text>
+</g></svg>
+<!-- /fig:mechanism1 -->
+    </div>
+    <figcaption><b>Figure 2.1a.</b> The trunk. The tokenizer writes the Seapunk decision as 28 tokens. Token 0 is the state token, <code>RUNCTX</code>. The other tokens describe the piles, the deck, the relics, the boss, the enemy and the hand. There is also one token for each legal option. The trunk is a transformer with no position information, so the tokens form a set. Each token can attend to every other token. The trunk returns one vector of 256 numbers per token.</figcaption>
+  </figure>
+
+  <p>The trunk output for an option token is that option's vector \(\psi\). The trunk output for the state token is the state vector \(u\). The second stage adds a head that scores each option from those two vectors.</p>
+
+  <figure id="fig-1b">
+    <div class="scroll">
+<!-- fig:mechanism2 -->
+<svg viewBox="0 0 760 350" role="img" aria-label="Policy network, stage 2 of 3: one head call per legal option turns the trunk's vectors into 5 logits.">
 <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)">
 <text x="10" y="18" class="muted">observation o_t as tokens</text>
 <rect x="10" y="28" width="48" height="22" rx="3" class="f1" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="34" y="43" text-anchor="middle" font-size="11">RUNCTX</text>
@@ -247,83 +276,129 @@ main mjx-container[jax="SVG"] a { fill: var(--accent) !important; stroke: var(--
 <text x="426" y="43" class="muted" font-size="11">28 tokens in this decision</text>
 <line class="ink" x1="250" y1="52" x2="250" y2="72" marker-end="url(#ar2)"/>
 <rect class="box" x="10" y="74" width="740" height="40" rx="3"/><text x="380" y="92" text-anchor="middle">trunk: 4 attention blocks, no positions, one 256-number vector out per token</text><text x="380" y="107" text-anchor="middle" class="muted" font-size="11">every token can attend to every other token</text>
-<text x="10" y="140" class="muted" font-size="11">option token h(a) + state token h(RUNCTX) + kind</text><text x="300" y="140" class="muted" font-size="11">combat head → logit z(s,a)</text><text x="500" y="140" class="muted" font-size="11">softmax over 𝒜(s) → π(a|s)</text>
+<text x="10" y="140" class="muted" font-size="11">option token h(a) + state token h(RUNCTX) + kind</text><text x="300" y="140" class="muted" font-size="11">combat head → logit z(s,a)</text>
 <line class="ink" x1="120" y1="114" x2="120" y2="128" marker-end="url(#ar2)"/>
 <rect x="10" y="150" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="167" font-size="11">POTION slot=0 target_index=None</text>
 <line class="ink" x1="262" y1="163" x2="296" y2="163" marker-end="url(#ar2)"/>
 <line x1="350.1" y1="150" x2="350.1" y2="176" class="grid"/><rect x="350.1" y="156" width="29.9" height="14" class="f3"/><text x="400" y="167" font-size="11">+8.82</text>
-<line class="ink" x1="448" y1="163" x2="496" y2="163" marker-end="url(#ar2)"/>
-<rect x="500" y="156" width="160" height="14" class="grid"/><rect x="500" y="156" width="130.6" height="14" class="f1"/><text x="668" y="167" font-size="11">0.816</text>
-<text x="706" y="167" font-size="11" font-weight="600">← max</text>
 <rect x="10" y="184" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="201" font-size="11">play DEFEND_IRONCLAD</text>
 <line class="ink" x1="262" y1="197" x2="296" y2="197" marker-end="url(#ar2)"/>
 <line x1="350.1" y1="184" x2="350.1" y2="210" class="grid"/><rect x="350.1" y="190" width="24.8" height="14" class="f3"/><text x="400" y="201" font-size="11">+7.33</text>
-<line class="ink" x1="448" y1="197" x2="496" y2="197" marker-end="url(#ar2)"/>
-<rect x="500" y="190" width="160" height="14" class="grid"/><rect x="500" y="190" width="29.4" height="14" class="f1"/><text x="668" y="201" font-size="11">0.184</text>
 <rect x="10" y="218" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="235" font-size="11">play STRIKE_IRONCLAD → Seapunk  (…</text>
 <line class="ink" x1="262" y1="231" x2="296" y2="231" marker-end="url(#ar2)"/>
 <line x1="350.1" y1="218" x2="350.1" y2="244" class="grid"/><rect x="337.3" y="224" width="12.9" height="14" class="f3"/><text x="400" y="235" font-size="11">-3.80</text>
-<line class="ink" x1="448" y1="231" x2="496" y2="231" marker-end="url(#ar2)"/>
-<rect x="500" y="224" width="160" height="14" class="grid"/><rect x="500" y="224" width="0.5" height="14" class="f1"/><text x="668" y="235" font-size="11">2.7e-6</text>
 <rect x="10" y="252" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="269" font-size="11">POTION slot=1 target_index=None</text>
 <line class="ink" x1="262" y1="265" x2="296" y2="265" marker-end="url(#ar2)"/>
 <line x1="350.1" y1="252" x2="350.1" y2="278" class="grid"/><rect x="301.8" y="258" width="48.4" height="14" class="f3"/><text x="400" y="269" font-size="11">-14.29</text>
-<line class="ink" x1="448" y1="265" x2="496" y2="265" marker-end="url(#ar2)"/>
-<rect x="500" y="258" width="160" height="14" class="grid"/><rect x="500" y="258" width="0.5" height="14" class="f1"/><text x="668" y="269" font-size="11">7.5e-11</text>
 <rect x="10" y="286" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="303" font-size="11">end turn</text>
 <line class="ink" x1="262" y1="299" x2="296" y2="299" marker-end="url(#ar2)"/>
 <line x1="350.1" y1="286" x2="350.1" y2="312" class="grid"/><rect x="300.0" y="292" width="50.1" height="14" class="f3"/><text x="400" y="303" font-size="11">-14.81</text>
-<line class="ink" x1="448" y1="299" x2="496" y2="299" marker-end="url(#ar2)"/>
+<text x="10" y="340" class="muted" font-size="11">A logit is an unbounded score. Only the differences between logits matter.</text>
+</g></svg>
+<!-- /fig:mechanism2 -->
+    </div>
+    <figcaption><b>Figure 2.1b.</b> The trunk and the head. For each of the five options, the head reads three inputs. They are the option's vector, the state vector and an embedding of the option's kind, such as "play a card" or "drink a potion". The head returns one logit per option. The same head weights score all five options.</figcaption>
+  </figure>
+
+  <p>The head in Figure 2.1b is the combat head. The network has two heads with the same architecture and separate weights, a <dfn>combat head</dfn> and an <dfn>out-of-combat head</dfn>. Both heads read the same trunk. The type of the decision selects the head:</p>
+  <div class="eq">\begin{equation} z_\theta(s,a) = \begin{cases} f^{\text{combat}}_\theta\big(h_a, h_{\text{state}}, e_{\text{kind}(a)}\big) & s \text{ is inside a fight} \\ f^{\text{ooc}}_\theta\big(h_a, h_{\text{state}}, e_{\text{kind}(a)}\big) & \text{otherwise.} \end{cases} \label{eq:heads} \end{equation}</div>
+  <p>Here \(h_a\) is the trunk output for the token of option \(a\), and \(h_{\text{state}}\) is the trunk output for the state token. \(e_{\text{kind}(a)}\) is a learned embedding of the kind of action that \(a\) is, such as playing a card, drinking a potion or moving on the map. Each head is a network with one hidden layer:</p>
+  <div class="eq">\begin{equation} f_\theta(h_a, h_{\text{state}}, e) = w^{\top} \operatorname{SiLU}\!\big(W_{\text{opt}}\, h_a + W_{\text{state}}\, h_{\text{state}} + W_{\text{kind}}\, e + b\big) + b_{\text{out}}. \label{eq:head} \end{equation}</div>
+  <p>The matrices \(W\) map vectors of 256 numbers to a hidden layer of 256 units. SiLU is the activation \(x \cdot \sigma(x)\). The vector \(w\) and the scalar \(b_{\text{out}}\) project the hidden layer to one number. The term \(W_{\text{state}} h_{\text{state}}\) is the same for every option. It acts as a state-dependent bias inside the nonlinearity, so the same option can score high in one state and low in another.</p>
+  <p>The third stage applies Equation \eqref{eq:softmax} to the five logits.</p>
+
+  <figure id="fig-1">
+    <div class="scroll">
+<!-- fig:mechanism -->
+<svg viewBox="0 0 760 390" role="img" aria-label="Policy network, stage 3 of 3: the softmax turns the 5 logits into 5 probabilities.">
+<defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)">
+<text x="10" y="18" class="muted">observation o_t as tokens</text>
+<rect x="10" y="28" width="48" height="22" rx="3" class="f1" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="34" y="43" text-anchor="middle" font-size="11">RUNCTX</text>
+<rect x="61.599999999999994" y="28" width="34" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="79" y="43" text-anchor="middle" font-size="11">draw</text>
+<rect x="100.0" y="28" width="54" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="127" y="43" text-anchor="middle" font-size="11">discard</text>
+<rect x="158.2" y="28" width="34" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="175" y="43" text-anchor="middle" font-size="11">deck</text>
+<rect x="196.6" y="28" width="48" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="220" y="43" text-anchor="middle" font-size="11">relics</text>
+<rect x="248.2" y="28" width="34" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="265" y="43" text-anchor="middle" font-size="11">boss</text>
+<rect x="286.59999999999997" y="28" width="41" height="22" rx="3" class="f2" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="307" y="43" text-anchor="middle" font-size="11">enemy</text>
+<rect x="331.59999999999997" y="28" width="67" height="22" rx="3" class="f2" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="365" y="43" text-anchor="middle" font-size="11">hand card</text>
+<rect x="403.0" y="28" width="15" height="22" rx="3" class="f4" fill-opacity="0.18" stroke="var(--fg)" stroke-width="0.6"/><text x="410" y="43" text-anchor="middle" font-size="11">…</text>
+<text x="426" y="43" class="muted" font-size="11">28 tokens in this decision</text>
+<line class="ink" x1="250" y1="52" x2="250" y2="72" marker-end="url(#ar3)"/>
+<rect class="box" x="10" y="74" width="740" height="40" rx="3"/><text x="380" y="92" text-anchor="middle">trunk: 4 attention blocks, no positions, one 256-number vector out per token</text><text x="380" y="107" text-anchor="middle" class="muted" font-size="11">every token can attend to every other token</text>
+<text x="10" y="140" class="muted" font-size="11">option token h(a) + state token h(RUNCTX) + kind</text><text x="300" y="140" class="muted" font-size="11">combat head → logit z(s,a)</text>
+<text x="500" y="140" class="muted" font-size="11">softmax over 𝒜(s) → π(a|s)</text>
+<line class="ink" x1="120" y1="114" x2="120" y2="128" marker-end="url(#ar3)"/>
+<rect x="10" y="150" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="167" font-size="11">POTION slot=0 target_index=None</text>
+<line class="ink" x1="262" y1="163" x2="296" y2="163" marker-end="url(#ar3)"/>
+<line x1="350.1" y1="150" x2="350.1" y2="176" class="grid"/><rect x="350.1" y="156" width="29.9" height="14" class="f3"/><text x="400" y="167" font-size="11">+8.82</text>
+<line class="ink" x1="448" y1="163" x2="496" y2="163" marker-end="url(#ar3)"/>
+<rect x="500" y="156" width="160" height="14" class="grid"/><rect x="500" y="156" width="130.6" height="14" class="f1"/><text x="668" y="167" font-size="11">0.816</text>
+<text x="706" y="167" font-size="11" font-weight="600">← max</text>
+<rect x="10" y="184" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="201" font-size="11">play DEFEND_IRONCLAD</text>
+<line class="ink" x1="262" y1="197" x2="296" y2="197" marker-end="url(#ar3)"/>
+<line x1="350.1" y1="184" x2="350.1" y2="210" class="grid"/><rect x="350.1" y="190" width="24.8" height="14" class="f3"/><text x="400" y="201" font-size="11">+7.33</text>
+<line class="ink" x1="448" y1="197" x2="496" y2="197" marker-end="url(#ar3)"/>
+<rect x="500" y="190" width="160" height="14" class="grid"/><rect x="500" y="190" width="29.4" height="14" class="f1"/><text x="668" y="201" font-size="11">0.184</text>
+<rect x="10" y="218" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="235" font-size="11">play STRIKE_IRONCLAD → Seapunk  (…</text>
+<line class="ink" x1="262" y1="231" x2="296" y2="231" marker-end="url(#ar3)"/>
+<line x1="350.1" y1="218" x2="350.1" y2="244" class="grid"/><rect x="337.3" y="224" width="12.9" height="14" class="f3"/><text x="400" y="235" font-size="11">-3.80</text>
+<line class="ink" x1="448" y1="231" x2="496" y2="231" marker-end="url(#ar3)"/>
+<rect x="500" y="224" width="160" height="14" class="grid"/><rect x="500" y="224" width="0.5" height="14" class="f1"/><text x="668" y="235" font-size="11">2.7e-6</text>
+<rect x="10" y="252" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="269" font-size="11">POTION slot=1 target_index=None</text>
+<line class="ink" x1="262" y1="265" x2="296" y2="265" marker-end="url(#ar3)"/>
+<line x1="350.1" y1="252" x2="350.1" y2="278" class="grid"/><rect x="301.8" y="258" width="48.4" height="14" class="f3"/><text x="400" y="269" font-size="11">-14.29</text>
+<line class="ink" x1="448" y1="265" x2="496" y2="265" marker-end="url(#ar3)"/>
+<rect x="500" y="258" width="160" height="14" class="grid"/><rect x="500" y="258" width="0.5" height="14" class="f1"/><text x="668" y="269" font-size="11">7.5e-11</text>
+<rect x="10" y="286" width="250" height="26" rx="3" class="f2" fill-opacity="0.12" stroke="var(--fg)" stroke-width="0.6"/><text x="18" y="303" font-size="11">end turn</text>
+<line class="ink" x1="262" y1="299" x2="296" y2="299" marker-end="url(#ar3)"/>
+<line x1="350.1" y1="286" x2="350.1" y2="312" class="grid"/><rect x="300.0" y="292" width="50.1" height="14" class="f3"/><text x="400" y="303" font-size="11">-14.81</text>
+<line class="ink" x1="448" y1="299" x2="496" y2="299" marker-end="url(#ar3)"/>
 <rect x="500" y="292" width="160" height="14" class="grid"/><rect x="500" y="292" width="0.5" height="14" class="f1"/><text x="668" y="303" font-size="11">4.5e-11</text>
-<text x="10" y="340" class="muted" font-size="11">Logits are unbounded scores; only their differences matter. The softmax turns them into probabilities that sum to 1.</text><text x="10" y="358" class="muted" font-size="11">Training samples a class from the bars on the right; the shipped agent takes the longest bar.</text>
+<text x="10" y="340" class="muted" font-size="11">The probabilities sum to 1 over the five legal options.</text><text x="10" y="358" class="muted" font-size="11">Training draws an option from these bars. The shipped agent takes the longest bar.</text>
 </g></svg>
 <!-- /fig:mechanism -->
     </div>
-    <figcaption><b>Figure 2.1.</b> How the published Ironclad network turns one observation and its five legal options into five probabilities, using the Seapunk decision from Section 3. The tokenizer writes the observation as a set of tokens, including one token per legal action. The trunk lets every token attend to every other. Then one small head is applied to each option separately: it reads that option's output vector, the state token's output vector and an embedding of the option's kind, and returns one logit. The softmax runs over the five logits only. Notice how lopsided the result is: two classes share almost all the mass, and three classes get less than one in a hundred thousand. Training would sample from the right-hand bars; the shipped agent takes the longest one.</p>
+    <figcaption><b>Figure 2.1c.</b> The trunk, the head and the softmax over the five legal options. Two classes share almost all the probability. Each of the other three classes gets less than one in a hundred thousand. Training draws an option from the bars on the right. The shipped agent takes the longest bar.</figcaption>
   </figure>
 
-  <p>Two details of the figure matter for what follows. First, the head that scores a fight decision is not the head that scores a card reward. The network has a <dfn>combat head</dfn> and an <dfn>out-of-combat head</dfn>: two copies of the same small architecture with separate weights, both reading the same trunk. The decision's type selects which one produces the logits:</p>
-  <div class="eq">\begin{equation} z_\theta(s,a) = \begin{cases} f^{\text{combat}}_\theta\big(h_a, h_{\text{state}}, e_{\text{kind}(a)}\big) & s \text{ is inside a fight} \\ f^{\text{ooc}}_\theta\big(h_a, h_{\text{state}}, e_{\text{kind}(a)}\big) & \text{otherwise.} \end{cases} \label{eq:heads} \end{equation}</div>
-  <p>Here \(h_a\) is the trunk's output for option \(a\)'s token, \(h_{\text{state}}\) is its output for the state token, and \(e_{\text{kind}(a)}\) is a learned embedding of what sort of action \(a\) is (play a card, drink a potion, move on the map). Each head is a one-hidden-layer network:</p>
-  <div class="eq">\begin{equation} f_\theta(h_a, h_{\text{state}}, e) = w^{\top} \operatorname{SiLU}\!\big(W_{\text{opt}}\, h_a + W_{\text{state}}\, h_{\text{state}} + W_{\text{kind}}\, e + b\big) + b_{\text{out}}. \label{eq:head} \end{equation}</div>
-  <p>The matrices \(W\) map 256-number vectors to a 256-unit hidden layer, SiLU is the activation \(x \cdot \sigma(x)\), and \(w\) and \(b_{\text{out}}\) project the hidden layer to one number. Because \(W_{\text{state}} h_{\text{state}}\) is the same for every option, it acts like a state-dependent bias inside the nonlinearity: the same option can score high in one state and low in another. Second, the scores are produced before anything is known about which option will be chosen. The network does not "pick"; it scores, and a separate rule picks.</p>
+  <p>The network computes every score before any option is chosen. The network does not pick. A separate selection rule picks, and Section 6 compares the two standard rules.</p>
 
-  <h2 id="s5">5. Entropy</h2>
-  <p>We need one number that says how spread out a policy is at a state. Is the agent sure, or torn between options? The standard measure comes from information theory <span class="cite">[<a href="#ref-11">11</a>]</span>.</p>
+  <h2 id="s5">5. Entropy measures how spread a policy is</h2>
+  <p>The <dfn>entropy</dfn> of a policy at a state is one number that says how spread the policy is. Low entropy means that the agent is sure of one option. High entropy means that the agent is split between options. The measure comes from information theory <span class="cite">[<a href="#ref-11">11</a>]</span>.</p>
   <div class="definition"><span class="label">Definition 2.3 · Entropy of a policy at a state</span>
     <div class="eq">\begin{equation} \mathcal{H}[\pi_\theta(\cdot \mid s)] = -\sum_{a \in \mathcal{A}(s)} \pi_\theta(a \mid s) \log \pi_\theta(a \mid s) = \mathbb{E}_{a \sim \pi_\theta(\cdot \mid s)}\big[-\log \pi_\theta(a \mid s)\big]. \label{eq:entropy} \end{equation}</div>
   </div>
-  <p>The sum runs over the legal actions, and the logarithm is natural, so entropy is measured in <dfn>nats</dfn>. Terms with \(\pi = 0\) contribute zero, by the limit \(p \log p \to 0\). The second form says what entropy is: the expected surprise, \(-\log \pi\), of the action the policy will draw. A policy that is certain is never surprised.</p>
-  <p>For the Seapunk decision the potion contributes \(-0.816 \ln 0.816 = 0.166\) and Defend \(-0.184 \ln 0.184 = 0.311\), for \(\mathcal H = 0.477\) nats, and the three tiny classes add less than 0.0001.</p>
-  <p>Entropy has hard limits. It is zero exactly when one action has probability 1. It is largest when all \(n = |\mathcal{A}(s)|\) actions are equally likely, where every term is \(-\tfrac{1}{n}\log\tfrac{1}{n}\):</p>
+  <p>The sum runs over the legal actions. The logarithm is natural, so the unit of entropy is the <dfn>nat</dfn>. A term with \(\pi = 0\) contributes zero, by the limit \(p \log p \to 0\). The second form gives the meaning of entropy. It is the expected surprise, \(-\log \pi\), of the action that the policy draws. A policy that is certain is never surprised.</p>
+  <p>In the Seapunk decision, the potion contributes \(-0.816 \ln 0.816 = 0.166\) nats. Defend contributes \(-0.184 \ln 0.184 = 0.311\) nats. The total is \(\mathcal H = 0.477\) nats. The three unlikely classes add less than 0.0001.</p>
+  <p>Entropy has fixed limits. It is zero exactly when one action has probability 1. It is largest when all \(n = |\mathcal{A}(s)|\) actions are equally likely. Then every term is \(-\tfrac{1}{n}\log\tfrac{1}{n}\), and the sum is \(\log n\):</p>
   <div class="eq">\begin{equation} 0 \;\le\; \mathcal{H}[\pi_\theta(\cdot \mid s)] \;\le\; \log |\mathcal{A}(s)|. \label{eq:bounds} \end{equation}</div>
-  <p>The upper bound depends on how many actions are on offer. A uniform choice between two map paths has entropy \(\log 2 = 0.69\) nats; a uniform choice among eighteen shop items has \(\log 18 = 2.89\). So raw entropy cannot compare a map decision with a shop decision. Divide by the bound to get the <dfn>normalised entropy</dfn>, which lies in \([0,1]\) for every decision:</p>
+  <p>The upper bound depends on the number of actions on offer. A uniform choice between two map paths has entropy \(\log 2 = 0.69\) nats. A uniform choice among eighteen shop items has \(\log 18 = 2.89\) nats. So raw entropy cannot compare a map decision with a shop decision. Divide by the bound to get the <dfn>normalised entropy</dfn>, which lies in \([0,1]\) for every decision:</p>
   <div class="eq">\begin{equation} \bar{\mathcal{H}}(s) = \frac{\mathcal{H}[\pi_\theta(\cdot \mid s)]}{\log |\mathcal{A}(s)|}, \qquad |\mathcal{A}(s)| \ge 2. \label{eq:normH} \end{equation}</div>
-  <p>The Seapunk decision has \(\bar{\mathcal H} = 0.477 / \log 5 = 0.30\). Spire Mentor's training uses this normalised form, per decision type, for its entropy bonus (Section 9).</p>
-  <p>For a softmax policy, entropy has a closed form in the logits. Substitute Equation \eqref{eq:logsoftmax} into \eqref{eq:entropy}:</p>
+  <p>The Seapunk decision has \(\bar{\mathcal H} = 0.477 / \log 5 = 0.30\). Spire Mentor's training uses this normalised form, per decision type, for its entropy bonus. Section 9 describes the bonus.</p>
+  <p>For a softmax policy, entropy has a closed form in the logits. We substitute Equation \eqref{eq:logsoftmax} into Equation \eqref{eq:entropy}:</p>
   <div class="eq">\begin{equation} \mathcal{H}[\pi_\theta(\cdot \mid s)] = \log \sum_{b \in \mathcal{A}(s)} \exp z_\theta(s,b) \;-\; \sum_{a \in \mathcal{A}(s)} \pi_\theta(a \mid s)\, z_\theta(s,a). \label{eq:Hlogits} \end{equation}</div>
-  <p>Entropy is the gap between the soft maximum of the logits and their probability-weighted average. When one logit towers over the rest, both terms approach that logit and the gap closes to zero.</p>
-  <p>Finally, the gradient. Chapter 5 adds a multiple of entropy to the training objective, so we need to know which way it pushes the logits. Differentiating Equation \eqref{eq:entropy} with the help of Equation \eqref{eq:gradlogpi} gives</p>
+  <p>Entropy is the gap between the smooth maximum of the logits and their probability-weighted average. When one logit is far above the rest, both terms approach that logit, and the gap closes to zero.</p>
+  <p>Chapter 5 adds a multiple of entropy to the training objective. You therefore need the direction in which entropy pushes each logit. We differentiate Equation \eqref{eq:entropy} with the help of Equation \eqref{eq:gradlogpi}:</p>
   <div class="eq">\begin{equation} \frac{\partial\, \mathcal{H}[\pi_\theta(\cdot \mid s)]}{\partial z_\theta(s,b)} = -\,\pi_\theta(b \mid s)\,\Big(\log \pi_\theta(b \mid s) + \mathcal{H}[\pi_\theta(\cdot \mid s)]\Big). \label{eq:gradH} \end{equation}</div>
-  <p>The bracket compares action \(b\)'s log-probability with its average, \(-\mathcal{H}\). Actions more likely than average (bracket positive) have their logits pushed down; less likely ones are pushed up. The factor \(\pi(b \mid s)\) means an action the policy has all but abandoned barely moves. At the Seapunk decision, raising entropy would lower the potion's logit by 0.22 per unit step and raise Defend's by the same amount, and leave the three tiny classes almost untouched.</p>
+  <p>The bracket compares the log-probability of action \(b\) with the average log-probability, \(-\mathcal{H}\). When an action is more likely than average, the bracket is positive and the gradient pushes its logit down. When an action is less likely than average, the gradient pushes its logit up. Because of the factor \(\pi(b \mid s)\), an action with almost no probability barely moves. At the Seapunk decision, a step that raises entropy lowers the potion's logit by 0.22 per unit step. The same step raises Defend's logit by 0.22 and leaves the three unlikely classes almost unchanged.</p>
 
-  <h2 id="s6">6. Temperature, sampling and greedy selection</h2>
-  <p>A policy is a distribution. To act, you still need a rule that turns it into one action. There are two standard rules, and one dial that slides between them.</p>
+  <h2 id="s6">6. Temperature moves a policy between sampling and greedy selection</h2>
+  <p>A policy is a distribution. To act, the agent also needs a rule that turns the distribution into one action. There are two standard rules. A setting called the temperature moves the policy between them.</p>
   <div class="definition"><span class="label">Definition 2.4 · Sampled and greedy selection</span>
-    <p><dfn>Sampled</dfn> selection draws \(a_t \sim \pi_\theta(\cdot \mid s_t)\): for a categorical distribution, pick action \(a\) with probability \(\pi_\theta(a \mid s_t)\) <span class="cite">[<a href="#ref-8">8</a>]</span>. <dfn>Greedy</dfn> selection takes the most probable action,</p>
+    <p><dfn>Sampled</dfn> selection draws \(a_t \sim \pi_\theta(\cdot \mid s_t)\). For a categorical distribution, the rule picks action \(a\) with probability \(\pi_\theta(a \mid s_t)\) <span class="cite">[<a href="#ref-8">8</a>]</span>. <dfn>Greedy</dfn> selection takes the most probable action,</p>
     <div class="eq">\begin{equation} a_t^{\text{greedy}} = \arg\max_{a \in \mathcal{A}(s_t)} \pi_\theta(a \mid s_t) = \arg\max_{a \in \mathcal{A}(s_t)} z_\theta(s_t, a). \label{eq:greedy} \end{equation}</div>
   </div>
-  <p>The two argmaxes are equal because the softmax is increasing in each logit. Greedy selection is itself a policy: the deterministic one that puts probability 1 on \(a^{\text{greedy}}\). So one network defines two agents, a stochastic one and a deterministic one, which can win at different rates.</p>
-  <p>What greedy selection throws away at one decision is the probability mass on every other action, \(1 - \max_a \pi_\theta(a \mid s)\). At the Seapunk decision that is 0.184, the chance that a sampling agent would have played Defend instead of drinking the potion.</p>
+  <p>The two argmaxes are equal because the softmax increases with each logit. Greedy selection is itself a policy. It is the deterministic policy that puts probability 1 on \(a^{\text{greedy}}\). So one network defines two agents, one stochastic and one deterministic, and the two agents can win at different rates.</p>
+  <p>At one decision, greedy selection discards the probability of every other action, \(1 - \max_a \pi_\theta(a \mid s)\). At the Seapunk decision, that probability is 0.184. It is the chance that a sampling agent plays Defend instead of drinking the potion.</p>
 
-  <h3>The temperature dial</h3>
-  <p>Divide every logit by a positive number \(T\), the <dfn>temperature</dfn>, before the softmax:</p>
+  <h3>Temperature scales every logit gap</h3>
+  <p>Divide every logit by a positive number \(T\), the <dfn>temperature</dfn>, before the softmax. In this chapter, \(T\) means the temperature, not the horizon of the tour's notation table. The softmax becomes:</p>
   <div class="eq">\begin{equation} \pi_{\theta,T}(a \mid s) = \frac{\exp\big(z_\theta(s,a)/T\big)}{\sum_{b \in \mathcal{A}(s)} \exp\big(z_\theta(s,b)/T\big)}. \label{eq:temp} \end{equation}</div>
-  <p>At \(T = 1\) this is the trained policy. Dividing by \(T\) multiplies every logit gap by \(1/T\), and by Equation \eqref{eq:ratio} every probability ratio is raised to the power \(1/T\). As \(T \to 0\) the gap to the top action becomes infinite, and the policy becomes greedy. As \(T \to \infty\) all gaps shrink to zero, and the policy becomes uniform over \(\mathcal{A}(s)\):</p>
+  <p>At \(T = 1\), Equation \eqref{eq:temp} is the trained policy. Division by \(T\) multiplies every logit gap by \(1/T\). By Equation \eqref{eq:ratio}, every probability ratio is raised to the power \(1/T\). As \(T \to 0\), the gap to the top action becomes infinite, and the policy becomes greedy. As \(T \to \infty\), all gaps shrink to zero, and the policy becomes uniform over \(\mathcal{A}(s)\):</p>
   <div class="eq">\begin{equation} \lim_{T \to 0^+} \pi_{\theta,T}(a \mid s) = \mathbb{1}\big[a = a^{\text{greedy}}\big], \qquad \lim_{T \to \infty} \pi_{\theta,T}(a \mid s) = \frac{1}{|\mathcal{A}(s)|}. \label{eq:limits} \end{equation}</div>
-  <p>The first limit assumes a unique top logit; with ties, the mass splits evenly among the tied actions. Between the limits, entropy rises steadily with temperature. Write \(\beta = 1/T\). From Equation \eqref{eq:Hlogits} with logits \(\beta z\), one can show \(d\mathcal{H}/d\beta = -\beta \operatorname{Var}_{\pi_{\theta,T}}[z]\), and the chain rule gives</p>
+  <p>The first limit assumes one top logit. If several logits tie for the top, the probability splits evenly among them. Between the limits, entropy rises with temperature. In the derivation, we write \(\kappa = 1/T\). From Equation \eqref{eq:Hlogits} with logits \(\kappa z\), we can show that \(d\mathcal{H}/d\kappa = -\kappa \operatorname{Var}_{\pi_{\theta,T}}[z]\). The chain rule then gives</p>
   <div class="eq">\begin{equation} \frac{d}{dT}\,\mathcal{H}[\pi_{\theta,T}(\cdot \mid s)] = \frac{1}{T^{3}}\, \operatorname{Var}_{a \sim \pi_{\theta,T}(\cdot \mid s)}\big[z_\theta(s,a)\big] \;\ge\; 0. \label{eq:dHdT} \end{equation}</div>
-  <p>The variance is that of the logits under the tempered policy. It is zero only when the policy has collapsed onto actions that share one logit, so entropy never decreases as temperature rises. Figure 2.2 shows the dial on the Seapunk decision.</p>
+  <p>The variance is the variance of the logits under the tempered policy. At any positive temperature, every legal action keeps some probability. So the variance is zero only when all legal logits are equal, and then the policy is uniform. So entropy never decreases as temperature rises. Figure 2.2 shows the effect of temperature on the Seapunk decision.</p>
 
   <figure id="fig-2">
     <div class="scroll">
@@ -357,76 +432,74 @@ main mjx-container[jax="SVG"] a { fill: var(--accent) !important; stroke: var(--
 </svg>
 <!-- /fig:temperature -->
     </div>
-    <figcaption><b>Figure 2.2.</b> Each coloured line is one class's probability at the Seapunk decision as the logits are divided by a temperature \(T\); the dashed black line is normalised entropy. The horizontal axis is logarithmic. At the trained temperature, \(T=1\), the potion and Defend share the mass. Halving the temperature makes the potion close to certain; doubling it moves Defend up to about a third and lifts the Strike class from about \(3\times10^{-6}\) to about \(10^{-3}\). The Strike rises first because their logit is only 11 below Defend's, while the last two classes sit 22 below. Notice that the two lowest classes stay near zero until \(T\) is large: temperature preserves the order of the logits and only stretches or squeezes their gaps.</figcaption>
+    <figcaption><b>Figure 2.2.</b> Each coloured line is the probability of one class at the Seapunk decision after the logits are divided by a temperature \(T\). The dashed black line is normalised entropy. The horizontal axis is logarithmic. At the trained temperature, \(T=1\), the potion and Defend share the probability. At half that temperature, the potion is close to certain. At double that temperature, Defend rises to about a third, and the Strike class rises from about \(3\times10^{-6}\) to about \(10^{-3}\). The Strike class rises first because its logit is only 11 below Defend's. The last two classes are 22 below Defend's, and they stay near zero until \(T\) is large. Temperature keeps the order of the logits. It only stretches or squeezes the gaps between them.</figcaption>
   </figure>
 
-  <h3>Sampling is greedy play on noisy logits</h3>
-  <p>A neat identity connects the two rules. Draw one independent noise value \(g_a\) for each legal action from the standard <dfn>Gumbel distribution</dfn>, whose distribution function is \(F(g) = \exp(-e^{-g})\). Then take the argmax of the noisy logits:</p>
+  <h3>Sampling is greedy selection on noisy logits</h3>
+  <p>The Gumbel-max trick connects the two rules <span class="cite">[<a href="#ref-12">12</a>]</span>. Draw one independent noise value \(g_a\) for each legal action from the standard <dfn>Gumbel distribution</dfn>. Its distribution function is \(F(g) = \exp(-e^{-g})\). Then take the argmax of the noisy logits:</p>
   <div class="eq">\begin{equation} \arg\max_{a \in \mathcal{A}(s)} \big(z_\theta(s,a) + g_a\big) \;\sim\; \pi_\theta(\cdot \mid s), \qquad g_a \overset{\text{iid}}{\sim} \operatorname{Gumbel}(0,1). \label{eq:gumbel} \end{equation}</div>
-  <p>The proof is short. Action \(a\) wins if \(z_a + g_a > z_b + g_b\) for every \(b \ne a\). Conditioning on \(g_a = g\), each such event has probability \(F(z_a - z_b + g) = \exp(-e^{-g} e^{z_b - z_a})\). Multiplying over \(b \ne a\), then integrating over \(g\) against the Gumbel density \(e^{-g}\exp(-e^{-g})\), gives \(\int e^{-g}\exp\!\big(-e^{-g} \sum_b e^{z_b - z_a}\big)\,dg\), which equals \(1 / \sum_b e^{z_b - z_a} = \pi(a \mid s)\). This is the <dfn>Gumbel-max trick</dfn> <span class="cite">[<a href="#ref-12">12</a>]</span>. It says a sampled agent is a greedy agent that sees its scores through noise with standard deviation \(\pi/\sqrt{6} \approx 1.3\). A lead of 10 almost never flips; a lead of 1 often does.</p>
+  <p>We prove it as follows. Action \(a\) wins if \(z_a + g_a > z_b + g_b\) for every \(b \ne a\). We condition on \(g_a = g\). Each such event then has probability \(F(z_a - z_b + g) = \exp(-e^{-g} e^{z_b - z_a})\). We multiply over \(b \ne a\) and integrate over \(g\) against the Gumbel density \(e^{-g}\exp(-e^{-g})\). The result is \(\int e^{-g}\exp\!\big(-e^{-g} \sum_b e^{z_b - z_a}\big)\,dg\). That integral equals \(1 / \sum_b e^{z_b - z_a} = \pi(a \mid s)\).</p>
+  <p>So a sampling agent is a greedy agent that sees its scores through noise. The noise has standard deviation \(\pi/\sqrt{6} \approx 1.3\), where \(\pi\) is the circle constant. A lead of 10 almost never flips. A lead of 1 often flips.</p>
 
-  <h3>The one-step cost of sampling</h3>
-  <p>Suppose we knew the true action values at a state, \(Q^\pi(s,a)\) (Chapter 4 defines them). Then the expected value of acting by sampling is a probability-weighted average of those values, and an average never exceeds the largest term:</p>
+  <h3>At one decision, sampling cannot beat the best action</h3>
+  <p>Suppose that you knew the true action values at a state, \(Q^\pi(s,a)\). Chapter 4 defines them. The expected value of acting by sampling is a probability-weighted average of those values. An average never exceeds its largest term:</p>
   <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi_\theta(\cdot \mid s)}\big[Q^\pi(s,a)\big] = \sum_{a \in \mathcal{A}(s)} \pi_\theta(a \mid s)\, Q^\pi(s,a) \;\le\; \max_{a \in \mathcal{A}(s)} Q^\pi(s,a). \label{eq:onestep} \end{equation}</div>
-  <p>So at a single decision, if the policy's top choice is also the value-maximising choice, sampling can only lose. That is the case for greedy evaluation. It has two gaps: the top choice may not be the best action, and over hundreds of decisions the greedy agent reaches states that the sampled agent, the one training saw, rarely visits. Section 11 measures the net effect.</p>
+  <p>If the top choice of the policy is also the best action, sampling can only lose at a single decision. That inequality is the case for greedy evaluation. The case has two gaps. First, the top choice may not be the best action. Second, over hundreds of decisions, the greedy agent reaches states that the sampling agent rarely visits. Training saw only the sampling agent. Section 11 measures the net effect.</p>
 
-  <h2 id="s7">7. Why training must sample</h2>
-  <p>Consider one decision in isolation, a <dfn>bandit</dfn>: the agent picks \(a\) from \(\mathcal{A}(s)\), receives a random payoff with mean \(q(a)\), and the episode ends. The objective is the expected payoff, \(J(\theta) = \sum_a \pi_\theta(a \mid s)\, q(a)\). We want its gradient, but we do not know \(q\). We only get payoffs for actions we actually try.</p>
-  <p>Apply the log-derivative identity, \(\nabla_\theta \pi = \pi\, \nabla_\theta \log \pi\):</p>
+  <h2 id="s7">7. Training must sample to estimate its gradient</h2>
+  <p>Consider one decision in isolation, a <dfn>bandit</dfn>. The agent picks \(a\) from \(\mathcal{A}(s)\), receives a random payoff with mean \(q(a)\), and the episode ends. The objective is the expected payoff, \(J(\theta) = \sum_a \pi_\theta(a \mid s)\, q(a)\). Training needs the gradient of \(J\), but the agent does not know \(q\). The agent gets payoffs only for the actions that it tries.</p>
+  <p>We apply the log-derivative identity, \(\nabla_\theta \pi = \pi\, \nabla_\theta \log \pi\):</p>
   <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \sum_{a \in \mathcal{A}(s)} q(a)\, \nabla_\theta \pi_\theta(a \mid s) = \mathbb{E}_{a \sim \pi_\theta(\cdot \mid s)}\Big[q(a)\, \nabla_\theta \log \pi_\theta(a \mid s)\Big]. \label{eq:score} \end{equation}</div>
-  <p>The left side needs \(q\) for every action. The right side is an expectation over actions drawn from the current policy, so we can estimate it by drawing actions from \(\pi_\theta\), observing their payoffs, and averaging \(\text{payoff} \times \nabla_\theta \log \pi_\theta(a \mid s)\). This is the <dfn>score-function</dfn> or likelihood-ratio estimator, introduced to reinforcement learning as REINFORCE by Williams <span class="cite">[<a href="#ref-2">2</a>]</span>. Chapter 5 extends it from one decision to a whole trajectory, which is the policy gradient theorem <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
-  <p>With Equation \eqref{eq:gradlogpi}, one sample \(a\) with payoff \(R\), and a baseline \(\bar R\) subtracted from the payoff, a gradient step on the logits is</p>
+  <p>The left side needs \(q\) for every action. The right side is an expectation over actions drawn from the current policy. So the agent can estimate the right side from its own play. It draws actions from \(\pi_\theta\), observes their payoffs, and averages the payoff times \(\nabla_\theta \log \pi_\theta(a \mid s)\). This estimator is the <dfn>score-function</dfn> or likelihood-ratio estimator. Williams introduced it to reinforcement learning as REINFORCE <span class="cite">[<a href="#ref-2">2</a>]</span>. Chapter 5 extends it from one decision to a whole trajectory, which gives the policy gradient theorem <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
+  <p>Take one sample \(a\) with payoff \(R\), and subtract a baseline \(\bar R\) from the payoff. With Equation \eqref{eq:gradlogpi}, a gradient step on the logits is</p>
   <div class="eq">\begin{equation} z(s,b) \leftarrow z(s,b) + \alpha\,(R - \bar R)\,\big(\mathbb{1}[b = a] - \pi_\theta(b \mid s)\big) \quad \text{for all } b \in \mathcal{A}(s). \label{eq:bandit} \end{equation}</div>
-  <p>Here \(\alpha\) is a step size and \(\bar R\) is a running average of payoffs. This is Sutton and Barto's gradient bandit algorithm, their Equation (2.12), with \(z\) in place of their preferences \(H\) <span class="cite">[<a href="#ref-1">1</a>, §2.8]</span>. If the payoff beats the average, the sampled action's logit goes up and the others go down in proportion to their probability. Chapter 4 explains why the baseline helps; for now, note only that it does not change the expected step.</p>
-  <p>Now read Equation \eqref{eq:score} as a statement about data. Three consequences follow, and each is a reason the learner samples.</p>
+  <p>Here \(\alpha\) is a step size and \(\bar R\) is a running average of payoffs. This update is the gradient bandit algorithm of Sutton and Barto, their Equation (2.12), with \(z\) in place of their preferences \(H\) <span class="cite">[<a href="#ref-1">1</a>, §2.8]</span>. If the payoff beats the average, the logit of the sampled action goes up. The other logits go down in proportion to their probabilities. The baseline does not change the expected step. Chapter 5 explains why it helps.</p>
+  <p>Equation \eqref{eq:score} is also a statement about data. It gives three reasons that the learner must sample.</p>
   <ul>
-    <li><strong>The expectation is over the current policy.</strong> Unbiased estimates need actions drawn from \(\pi_\theta\) itself. Data from a different rule, such as greedy play, estimates a different expectation. The tour writes the rule that actually chose the actions as \(\mu\), the <dfn>behaviour policy</dfn>; here \(\mu\) is a policy, not a mean. Chapter 6 shows how importance weights correct for a mismatch, and why the correction has a variance cost.</li>
-    <li><strong>Greedy data has no information about the other actions.</strong> If the agent always plays \(a^{\text{greedy}}\), every sample in Equation \eqref{eq:score} is that one action. The estimator can raise or lower its logit, but it can never discover that an untried action pays more. In the language of off-policy evaluation, a greedy behaviour policy has no support on the alternatives.</li>
-    <li><strong>An argmax has no useful gradient.</strong> The greedy action is a step function of the logits. Its derivative is zero almost everywhere, so there is nothing to follow. The softmax is the smooth surrogate that makes \(\nabla_\theta\) meaningful.</li>
+    <li><strong>The expectation is over the current policy.</strong> An unbiased estimate needs actions drawn from \(\pi_\theta\) itself. Data from another rule, such as greedy selection, estimates a different expectation. The tour writes the rule that chose the actions as \(\mu\), the <dfn>behaviour policy</dfn>. Here \(\mu\) is a policy, not a mean. Chapter 6 shows how importance weights correct for a mismatch, and why the correction adds variance.</li>
+    <li><strong>Greedy data has no information about the other actions.</strong> If the agent always plays \(a^{\text{greedy}}\), every sample in Equation \eqref{eq:score} is that one action. The estimator can raise or lower the logit of that action. It can never discover that an untried action pays more. In the terms of off-policy evaluation, a greedy behaviour policy has no support on the alternatives.</li>
+    <li><strong>An argmax has no useful gradient.</strong> The greedy action is a step function of the logits. Its derivative is zero almost everywhere, so gradient descent has nothing to follow. The softmax is a smooth replacement for the argmax, and its gradient is useful everywhere.</li>
   </ul>
+  <p>The Ironclad network plays about 660 decisions per run. When it samples at temperature 1, the sampled class differs from the greedy class at 10.6% of decisions, measured over 120 runs. At more than half of all decisions, the top class has a probability above 0.99, so most draws agree with greedy selection. A minority of split decisions produce nearly all the departures. Over a run, the departures add up to tens of off-greedy actions. Section 11 shows how early the runs diverge.</p>
 
-  <details class="predict"><summary>Pause and predict: the Ironclad net plays about 660 decisions per run. If you sample from it at temperature 1 instead of taking the argmax, at what share of decisions will the sampled class differ from the greedy one?</summary>
-    <p>Measured over 120 runs: 10.6%. Most decisions have a top class above 0.99, so most draws agree with greedy; a minority of split decisions produce nearly all the departures. Over a run that is tens of off-greedy actions, and Section 11 shows how early the runs diverge.</p>
-  </details>
-
-  <h2 id="s8">8. Exploration: ε-greedy against a softmax policy</h2>
-  <p>Value-based agents explore with <dfn>ε-greedy</dfn> selection <span class="cite">[<a href="#ref-1">1</a>, §2.2]</span>. Written as a policy over the legal actions, it is</p>
+  <h2 id="s8">8. A softmax policy learns where to explore, and ε-greedy does not</h2>
+  <p>Value-based agents explore with <dfn>ε-greedy</dfn> selection <span class="cite">[<a href="#ref-1">1</a>, §2.2]</span>. As a policy over the legal actions, ε-greedy is</p>
   <div class="eq">\begin{equation} \pi_{\varepsilon}(a \mid s) = (1 - \varepsilon)\, \mathbb{1}\Big[a = \arg\max_{b \in \mathcal{A}(s)} Q(s,b)\Big] + \frac{\varepsilon}{|\mathcal{A}(s)|}. \label{eq:egreedy} \end{equation}</div>
-  <p>Here \(Q\) is the agent's current value estimate and \(\varepsilon\) is a fixed or annealed exploration rate. Compare it with a softmax policy on three counts.</p>
+  <p>Here \(Q\) is the agent's current value estimate, and \(\varepsilon\) is a fixed or annealed exploration rate. This \(\varepsilon\) is the ε-greedy rate, not the PPO clip range of Chapter 5. A softmax policy differs from ε-greedy in three ways.</p>
   <ul>
-    <li><strong>Where the randomness goes.</strong> ε-greedy explores every non-greedy action equally. Playing a Strike at the Seapunk and ending the turn without acting would get the same exploration probability, though one is plausible and the other wasteful. A softmax policy spends its randomness on actions in proportion to \(e^{z}\), so plausible alternatives get tried far more than absurd ones.</li>
-    <li><strong>Where the amount of randomness comes from.</strong> In ε-greedy, \(\varepsilon\) is a schedule the engineer chooses. It is the same in a state where two actions are near-equal and in a state where one action is obviously right. In a softmax policy, the spread at each state is learned. It stays wide where the evidence is ambiguous and narrows where it is clear. Equation \eqref{eq:gradlogpi} drives probabilities toward 0 or 1 wherever one action keeps winning.</li>
-    <li><strong>Continuity.</strong> In ε-greedy, an arbitrarily small change in two \(Q\) estimates can swap which action gets probability \(1-\varepsilon\). Sutton and Barto cite this discontinuity as the main reason policy-gradient methods have stronger convergence guarantees <span class="cite">[<a href="#ref-1">1</a>, §13.2]</span>.</li>
+    <li><strong>A softmax spends its randomness on plausible actions.</strong> ε-greedy explores every non-greedy action equally. At the Seapunk decision, it gives a Strike and an idle end of turn the same exploration probability. The first is plausible, and the second wastes the turn. A softmax policy gives each action randomness in proportion to \(e^{z}\). It tries plausible alternatives far more often than poor ones.</li>
+    <li><strong>A softmax learns how much randomness to use at each state.</strong> In ε-greedy, \(\varepsilon\) is a schedule that the engineer chooses. It is the same at a state where two actions are close and at a state where one action is clearly right. In a softmax policy, training learns the spread at each state. The spread stays wide where the evidence is mixed and narrows where the evidence is clear. Equation \eqref{eq:gradlogpi} drives probabilities toward 0 or 1 wherever one action keeps winning.</li>
+    <li><strong>A softmax changes continuously.</strong> In ε-greedy, an arbitrarily small change in two \(Q\) estimates can swap the action that gets probability \(1-\varepsilon\). Sutton and Barto give this discontinuity as the main reason that policy-gradient methods have stronger convergence guarantees <span class="cite">[<a href="#ref-1">1</a>, §13.2]</span>.</li>
   </ul>
-  <p>There is also a softmax over values, the <dfn>Boltzmann</dfn> rule \(\pi(a \mid s) \propto \exp\big(Q(s,a)/T\big)\). It shares the first advantage but not the second. The \(Q\) estimates converge to fixed true values whose gaps are set by the game, so the policy's spread is set by those gaps and the chosen \(T\), not by learning <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>.</p>
-  <p>The learned spread has a failure mode. Equation \eqref{eq:gradlogpi} keeps pushing the winning action's probability toward 1, and once it is near 1 the agent almost never tries anything else, so it never collects the evidence that could reverse the decision. Policies can collapse early onto a mediocre deterministic choice. The standard remedy adds the policy's entropy to the objective with a small weight \(\beta\), so the gradient of Equation \eqref{eq:gradH} resists the collapse:</p>
+  <p>A softmax over values also exists. The <dfn>Boltzmann</dfn> rule is \(\pi(a \mid s) \propto \exp\big(Q(s,a)/T\big)\). It shares the first advantage but not the second. The \(Q\) estimates converge to fixed true values, and the game sets the gaps between those values. So the value gaps and the chosen \(T\) set the spread of the policy. Learning does not set it <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>.</p>
+  <p>The learned spread has a failure mode. Equation \eqref{eq:gradlogpi} keeps pushing the probability of the winning action toward 1. Once that probability is near 1, the agent almost never tries anything else. It then never collects the evidence that could reverse the choice. A policy can collapse early onto a mediocre deterministic choice. The standard remedy adds the entropy of the policy to the objective with a small weight \(\beta\). The gradient in Equation \eqref{eq:gradH} then resists the collapse:</p>
   <div class="eq">\begin{equation} J_\beta(\theta) = J(\theta) + \beta\; \mathbb{E}_{s}\Big[\mathcal{H}\big[\pi_\theta(\cdot \mid s)\big]\Big]. \label{eq:entbonus} \end{equation}</div>
-  <p>The expectation is over states the policy visits. Williams and Peng proposed this <dfn>entropy bonus</dfn> in 1991 <span class="cite">[<a href="#ref-4">4</a>]</span>, and A3C made it standard in deep RL, reporting that it "improved exploration by discouraging premature convergence to suboptimal deterministic policies" <span class="cite">[<a href="#ref-5">5</a>]</span>. Chapter 5 places it inside the PPO loss.</p>
-  <p>Push the idea to its limit and you get <dfn>maximum-entropy RL</dfn>. Soft actor-critic maximises reward plus \(\alpha\) times entropy at every step, not as a regulariser but as the objective <span class="cite">[<a href="#ref-6">6</a>]</span>. Its policy-improvement step moves the policy toward a Boltzmann distribution over a "soft" action value, \(\pi_{\text{new}}(\cdot \mid s) \propto \exp\big(Q^{\pi_{\text{old}}}(s,\cdot)\big)\), with the temperature folded into the reward scale. The bridge from Q-learning runs through here. In maximum-entropy RL, a softmax over action values is not an exploration heuristic added to a greedy learner; it is the optimal policy for an objective that pays for staying uncertain.</p>
+  <p>The expectation is over the states that the policy visits. Williams and Peng proposed this <dfn>entropy bonus</dfn> in 1991 <span class="cite">[<a href="#ref-4">4</a>]</span>. A3C made it standard in deep RL. Its authors reported that the bonus "improved exploration by discouraging premature convergence to suboptimal deterministic policies" <span class="cite">[<a href="#ref-5">5</a>]</span>. Chapter 5 places the bonus inside the PPO loss.</p>
+  <p>The extreme form of this idea is <dfn>maximum-entropy RL</dfn>. Soft actor-critic maximises reward plus \(\alpha\) times entropy at every step <span class="cite">[<a href="#ref-6">6</a>]</span>. There, entropy is part of the objective, not a regulariser. The policy-improvement step of soft actor-critic moves the policy toward a Boltzmann distribution over a soft action value, \(\pi_{\text{new}}(\cdot \mid s) \propto \exp\big(Q^{\pi_{\text{old}}}(s,\cdot)\big)\). The temperature is folded into the reward scale. Maximum-entropy RL therefore connects the Q-learning view of Section 1 to the policy view. In maximum-entropy RL, a softmax over action values is the optimal policy for an objective that pays for staying uncertain. It is not an exploration heuristic added to a greedy learner.</p>
 
-  <h2 id="s9">9. Textbook against engineered</h2>
-  <p>The clean statement is Equations \eqref{eq:softmax} and \eqref{eq:score}: logits, a softmax, sampled actions for training, greedy actions for evaluation. A production system departs from it in several ways, and each departure has a reason.</p>
+  <h2 id="s9">9. Production code departs from the textbook form in six ways</h2>
+  <p>The textbook form is Equations \eqref{eq:softmax} and \eqref{eq:score}. A network produces logits, and a softmax turns them into probabilities. Training samples actions, and evaluation takes the greedy action. Spire Mentor departs from that form in six ways, and each departure has a reason.</p>
   <ul>
-    <li><strong>Padding and masking.</strong> Variable sets are padded to a fixed width, with \(-\infty\) logits in the empty slots (Equation \eqref{eq:mask}). Spire Mentor also pads to a small set of fixed widths so that the compiled GPU graph sees few distinct shapes.</li>
-    <li><strong>Numerical precision.</strong> Large parts of the network run in bfloat16 for speed, but the final projection to logits and the log-softmax run in float32. Logits in this network reach magnitudes of tens (the card reward in Section 10 has a 27-unit gap between its top two classes), and \(\exp\) of such numbers loses all precision in a 16-bit format. The Rust inference port goes further: it computes the softmax in float64.</li>
-    <li><strong>Ties.</strong> Equation \eqref{eq:greedy} needs a rule for equal logits. Spire Mentor takes the first maximum, as PyTorch's argmax does, so the greedy agent is fully deterministic given the state.</li>
-    <li><strong>The behaviour policy is not always the student.</strong> During parts of training, some actions are chosen by teacher networks rather than by \(\pi_\theta\). The learner records the log-probability of whatever rule acted, the behaviour policy \(\mu\). Chapter 6 shows how the update corrects for \(\mu \ne \pi_\theta\). Here \(\mu\) is the behaviour policy; it has nothing to do with a mean.</li>
-    <li><strong>Entropy per decision type.</strong> A single entropy weight would treat a two-way rest-site choice and an eighteen-way shop the same. Spire Mentor uses normalised entropy (Equation \eqref{eq:normH}), separate weights for fights and for decisions between fights, and a schedule that lowers them over training.</li>
-    <li><strong>The evaluated policy is an average of policies.</strong> The published network's weights are an exponential moving average of the training weights over roughly the last 131 million decisions. Evaluating it greedily evaluates neither the policy that generated any training data nor its argmax, but the argmax of a smoothed version.</li>
+    <li><strong>Padding and masking.</strong> Each batch is padded to a fixed width, with \(-\infty\) logits in the empty slots, as in Equation \eqref{eq:mask}. Spire Mentor pads to a few fixed widths, such as 8, 16, 32 or 64 options. The compiled GPU graph then sees few distinct shapes.</li>
+    <li><strong>Numerical precision.</strong> The training plan runs the network under bfloat16 autocast for speed. It keeps the weights, the optimizer, the log-softmax and the value projection in float32. The policy's final projection to logits also runs in float32. Logits in this network reach magnitudes of tens. The card reward in Section 10 has a top logit of 39.5 and a gap of 27 to the next class. The softmax subtracts the largest logit before it exponentiates, so overflow is not the risk. Rounding is. Between 32 and 64, bfloat16 values are 0.25 apart, so a logit near 40 can move by up to 0.125. Two such roundings can shift a probability ratio by a factor of up to \(e^{0.25} \approx 1.28\). The Rust inference port computes in float32 and reports probabilities in float64.</li>
+    <li><strong>Ties.</strong> Equation \eqref{eq:greedy} needs a rule for equal logits. Spire Mentor takes the first maximum, as PyTorch's argmax does. The greedy agent is therefore fully deterministic for a given state.</li>
+    <li><strong>The behaviour policy is not always the student.</strong> In parts of training, teacher networks choose some actions instead of \(\pi_\theta\). The learner records the log-probability under the rule that acted, the behaviour policy \(\mu\). Chapter 6 shows how the update corrects for \(\mu \ne \pi_\theta\).</li>
+    <li><strong>Entropy per decision type.</strong> One entropy weight would treat a two-way choice at a rest site the same as an eighteen-way choice in a shop. Spire Mentor uses normalised entropy, Equation \eqref{eq:normH}. It has separate weights for fights and for decisions between fights, and a schedule lowers both weights over training.</li>
+    <li><strong>The evaluated policy is an average of policies.</strong> The published network's weights are an exponential moving average of the training weights over roughly the last 131 million decisions. A greedy evaluation of this network measures the argmax of a smoothed policy. That smoothed policy generated none of the training data.</li>
   </ul>
 
-  <h2 id="s10">10. In Spire Mentor</h2>
+  <h2 id="s10">10. How Spire Mentor builds its policy, and why</h2>
   <div class="example"><span class="label">In Spire Mentor · the policy network</span>
-    <p><strong>Input.</strong> Every decision becomes a set of tokens. Token 0 is the state token, which the code calls <code>RUNCTX</code>. Then come summary tokens for the draw pile, discard pile, exhaust pile, deck and relics, and the act's boss. A fight decision adds tokens for the enemies, the cards and the fight context, plus one token per legal action; when several actions merge into one class, only the first member's token is visible to the policy. A decision between fights adds the deck, relics, potions and what is on offer, plus one option token per class. The Seapunk decision is 28 tokens; the card reward that follows it is 19.</p>
-    <p><strong>Trunk.</strong> A transformer with no positional encoding, so the tokens form a set and their order means nothing. The design specified 6 blocks of width 256 unless a throughput benchmark chose 4; the published Ironclad network has 4 blocks of width 256 with 4 attention heads, and 6.1 million parameters including the value module.</p>
-    <p><strong>Heads.</strong> Two policy heads of the form of Equation \eqref{eq:head}, one for fights and one for everything else, each with a 256-unit hidden layer. Separate weights let the network learn different scales and features for "which card now" and "which reward to take" while sharing everything it knows about the deck and the run.</p>
-    <p><strong>Output.</strong> One logit per merged class, \(-\infty\) in padded slots, then a float32 log-softmax. In code, \(z_\theta(s,a)\) is <code>logits</code>, \(\log\pi_\theta(a \mid s)\) is <code>logp</code>, and the option token is found through <code>cls_pos</code>.</p>
-    <p>The card reward that follows the Seapunk fight offers Unrelenting, Pommel Strike, True Grit or skipping. The out-of-combat head scores them 39.5, 12.8, −15.9 and −7.3. The 27-unit gap between the top two leaves \(2 \times 10^{-12}\) of probability off Unrelenting, and the entropy of this decision rounds to zero.</p>
-    <p><strong>Training.</strong> Actions are drawn from the behaviour policy's probabilities with <code>torch.multinomial</code>. The entropy bonus of Equation \eqref{eq:entbonus} uses normalised entropy per decision type. Its weight is zero while the teacher term is strong, then decays from 0.01 to 0.002 in fights and from 0.0125 to 0.006 between fights. If any decision type's raw entropy stays below 0.1 nats for 20 iterations, the weight is raised by half, at most twice.</p>
-    <p><strong>Evaluation.</strong> Every reported win rate uses greedy selection, "greedy argmax over merged options" in the plan's words.</p>
+    <p><strong>Input.</strong> Every decision becomes a set of tokens. Token 0 is the state token, which the code calls <code>RUNCTX</code>. Summary tokens follow for the draw pile, the discard pile, the exhaust pile, the deck, the relics and the act's boss. A fight decision adds tokens for the enemies, the cards and the fight context. It also adds one token per legal action. When several actions merge into one class, the policy sees only the token of the first member. A decision between fights adds tokens for the deck, the relics, the potions and the offer, plus one option token per class. The Seapunk decision has 28 tokens, and the card reward after it has 19.</p>
+    <p><strong>Trunk.</strong> The trunk is a transformer with no positional encoding, so the order of the tokens means nothing. The published Ironclad network has 4 blocks of width 256 with 4 attention heads. It has 6.1 million parameters, including the value module. The code's default is 6 blocks.</p>
+    <p><strong>Heads.</strong> Two policy heads have the form of Equation \eqref{eq:head}. One scores fights, and the other scores all other decisions. Each head has a hidden layer of 256 units.</p>
+    <p><strong>Output.</strong> The network returns one logit per merged class, with \(-\infty\) in the padded slots. Then it applies a log-softmax in float32. In the code, \(z_\theta(s,a)\) is <code>logits</code> and \(\log\pi_\theta(a \mid s)\) is <code>logp</code>. The index <code>cls_pos</code> locates the option token of each class.</p>
+    <p>The card reward after the Seapunk fight offers Unrelenting, Pommel Strike, True Grit or a skip. The out-of-combat head scores them 39.5, 12.8, −15.9 and −7.3. The gap of 27 between the top two leaves \(2 \times 10^{-12}\) of probability off Unrelenting. The entropy of this decision rounds to zero.</p>
+    <p><strong>Training.</strong> The learner draws actions from the behaviour policy's probabilities with <code>torch.multinomial</code>. The entropy bonus of Equation \eqref{eq:entbonus} uses normalised entropy per decision type. Its weight is zero while the teacher term is strong. Then the weight decays from 0.01 to 0.002 in fights and from 0.0125 to 0.006 between fights. If the raw entropy of a decision type stays below 0.1 nats for 20 iterations, that type's gate opens and its weight is multiplied by 1.5. This boost can happen at most twice per type.</p>
+    <p><strong>Evaluation.</strong> Every reported win rate uses greedy selection. The plan calls it "greedy argmax over merged options".</p>
   </div>
 
-  <p>The head is short enough to read whole. Its three input projections are summed inside the nonlinearity, and the state projection is computed once per decision and broadcast over the options:</p>
+  <p>The head is short enough to read whole. Its three input projections are summed inside the nonlinearity. The state projection is computed once per decision and broadcast over the options:</p>
   <figure class="listing">
     <pre><code>def forward(
     self, h_opt: torch.Tensor, h_state: torch.Tensor, e_kind: torch.Tensor
@@ -437,7 +510,7 @@ main mjx-container[jax="SVG"] a { fill: var(--accent) !important; stroke: var(--
     <figcaption>sts2-pycli/python/ppo/e2e/net.py, lines 1434-1439 (PolicyHead.forward)</figcaption>
   </figure>
 
-  <p>The step from head outputs to masked logits picks the option tokens out of the trunk's output, runs both heads, keeps the one that matches the decision type, and masks the empty slots. This is Equations \eqref{eq:heads} and \eqref{eq:mask} in four lines:</p>
+  <p>The next step picks the option tokens out of the trunk output and runs both heads. It keeps the head that matches the decision type and masks the empty slots. The last four lines are Equations \eqref{eq:heads} and \eqref{eq:mask}:</p>
   <figure class="listing">
     <pre><code>h_opt = torch.gather(h, 1, b.cls_pos[..., None].expand(-1, -1, h.shape[-1]))
 h_state = h[:, 0]
@@ -447,10 +520,10 @@ zc = self.head_combat(h_opt, h_state, e_kind)
 zo = self.head_ooc(h_opt, h_state, e_kind)
 z = torch.where(b.is_combat[:, None], zc, zo)
 return z.masked_fill(~b.opt_mask, float("-inf"))</code></pre>
-    <figcaption>sts2-pycli/python/ppo/e2e/net.py, lines 1752-1770 (E2ENet._logits, abridged)</figcaption>
+    <figcaption>sts2-pycli/python/ppo/e2e/net.py, lines 1751-1768 (E2ENet._logits, abridged)</figcaption>
   </figure>
 
-  <p>During training, the learner samples. <code>beh</code> holds the behaviour policy's log-probabilities for each decision in the batch, so this is \(a_t \sim \mu(\cdot \mid s_t)\), and \(\log \mu(a_t \mid s_t)\) is kept for the off-policy correction of Chapter 6:</p>
+  <p>During training, the learner samples. <code>beh</code> holds the behaviour policy's log-probabilities for each decision in the batch. For a decision that a teacher acts on, <code>beh</code> holds the teacher's log-probabilities. The draw is \(a_t \sim \mu(\cdot \mid s_t)\). The learner keeps \(\log \mu(a_t \mid s_t)\) for the off-policy correction of Chapter 6:</p>
   <figure class="listing">
     <pre><code>probs = beh.exp().masked_fill(bad[:, None], 1.0)
 act = torch.multinomial(probs, 1, generator=self.gen).squeeze(1)
@@ -458,7 +531,7 @@ logp = beh.gather(1, act[:, None]).squeeze(1).cpu().numpy()</code></pre>
     <figcaption>sts2-pycli/python/ppo/e2e/learner.py, lines 1753-1755 (Learner._serve)</figcaption>
   </figure>
 
-  <p>The game mod and the evaluation harness run the network through a Rust port. Its softmax is Equation \eqref{eq:shift} with \(c = -\max z\), in float64, and its argmax keeps the first maximum:</p>
+  <p>The game mod and the evaluation harness run the network through a Rust port. Its softmax is Equation \eqref{eq:shift} with \(c = -\max z\). It takes the maximum in float32 and exponentiates in float64. Its argmax keeps the first maximum:</p>
   <figure class="listing">
     <pre><code>pub fn softmax(logits: &amp;[f32]) -&gt; Vec&lt;f64&gt; {
     let m = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -479,7 +552,7 @@ pub fn argmax(v: &amp;[f32]) -&gt; usize {
     }
     best
 }</code></pre>
-    <figcaption>sts2-rs/crates/sts2-e2e/src/net.rs, lines 951-971 (doc comments omitted)</figcaption>
+    <figcaption>sts2-rs/crates/sts2-e2e/src/net.rs, lines 951-970 (doc comments omitted)</figcaption>
   </figure>
 
   <p>The training plan records the entropy settings as one row of its algorithm table. "λ_KS" is the weight on the teacher term, which Chapter 7 covers:</p>
@@ -491,17 +564,26 @@ lifts the gate, β ×1.5, at most twice |</code></pre>
     <figcaption>docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md, line 270 (wrapped)</figcaption>
   </figure>
 
-  <p>Three choices in this design are worth naming as choices. The author merged identical options rather than letting duplicates inflate a move's probability (Equation \eqref{eq:dup}). The author gave fights and non-fights separate heads but one trunk, a middle ground between one head for everything and two networks. And the author normalised entropy by \(\log|\mathcal{A}(s)|\) per decision type, so that the bonus does not mostly reward randomness in the decisions with the most options. The plan also kept a guard against the failure Section 8 described: it watches each decision type's entropy for collapse and raises the bonus if one collapses.</p>
+  <h3>The design record explains some choices and only describes others</h3>
+  <p>The record of this design is the training plan, <code>docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md</code>, and the campaign log of the run. The commits that change the network are sync commits. Their messages list one-line subjects and give no design reasons. Where the record is silent, the list below says so. A statement marked "Inference" is this chapter's reading, not the author's.</p>
+  <ul>
+    <li><strong>Candidate scoring and greedy evaluation follow a published recipe.</strong> The plan says that the design "replicates AlphaDefect's recipe class: entity transformer, PPO, greedy play". It gives no separate reason to score each candidate instead of using a fixed output layer. It also gives no separate reason for greedy evaluation. Inference: a fixed output layer fits a changing set of options badly, as Section 4 showed. Greedy play also gives the deterministic, paired results on fixed seeds that the plan requires.</li>
+    <li><strong>One trunk feeds both heads so that all decisions train together.</strong> In the plan's words, "One trunk feeds both the combat and the out-of-combat (OOC) heads, so run and combat decisions train together". The plan does not say why the heads are separate. Inference: fights and decisions between fights differ enough to need separate weights.</li>
+    <li><strong>The plan chose the merge key with care but does not say why it merges.</strong> It rejected a coarser key that "would merge enchanted with plain Strikes". Inference: the reason to merge is Equation \eqref{eq:dup}, because duplicate copies inflate the probability of a move.</li>
+    <li><strong>Normalised entropy keeps the bonus in a fixed range.</strong> The plan normalises entropy by the log of the class count, into \([0,1]\). One of its unit tests requires entropy in that range. The record gives no reason for the zero weight while the teacher term is strong. It also gives no reason for the decay endpoints or the collapse thresholds. Inference: the teacher term already keeps the policy spread early in training, and normalisation makes one weight comparable across decisions with different option counts.</li>
+    <li><strong>The plan's precision reason concerns the value output.</strong> The plan notes that bfloat16 spacing near 1 is 0.0039, which is larger than the smallest reward, 0.002. The record gives no separate reason for the float32 log-softmax or for float64 in the Rust port. Inference: bfloat16 would round logits of magnitude tens to steps of 0.25 and distort the probability ratios, as Section 9 showed.</li>
+    <li><strong>A throughput benchmark chose 4 blocks.</strong> The plan's default was 6 blocks of width 256, the size of AlphaDefect's network. Its rule kept 6 blocks only if training updates on 3 GPUs reached 12,000 decisions per second. The 6-block network reached 7,916, so the run used 4 blocks. End to end, the two sizes ran at nearly the same rate, about 3,200 and 3,050 decisions per second.</li>
+  </ul>
 
-  <h2 id="s11">11. Measured</h2>
-  <p>Everything in this section comes from playing the published Ironclad network, <code>ironclad_e2e_d9000_ema0999</code>, on the first 120 seeds of the tour's seed panel A (170,000,000 to 170,000,119). Each seed was played four times: greedily, then by sampling at temperatures 0.5, 1 and 2. The sampler for a seed uses a fixed random stream, so every number here can be reproduced exactly.</p>
+  <h2 id="s11">11. Measurements: the policy is mostly certain, and sampling costs a few points</h2>
+  <p>All numbers in this section come from the published Ironclad network, <code>ironclad_e2e_d9000_ema0999</code>. It played the first 120 seeds of the tour's seed panel A, 170,000,000 to 170,000,119. Each seed was played four times. The first run was greedy. The other three runs sampled at temperatures 0.5, 1 and 2. The sampler for each seed uses a fixed random stream, so you can reproduce every number exactly.</p>
 
   <div class="measured"><span class="label">Measured · how the published net plays · 120 seeds of PANEL_A · M2 Max</span>
-    <p>Each run asks the simulator what it is waiting for, asks the network for its logits, and applies the chosen class. A test confirms that this loop, played greedily, makes exactly the choices of the simulator's built-in greedy self-play on three seeds, so the greedy numbers are the shipped agent's own play.</p>
-    <p>One caveat: these runs sample from the final published network, while training sampled from each iteration's network and sometimes from teachers. They describe what sampling does to a finished policy. The 480 runs took 25 minutes on 3 worker processes.</p>
+    <p>Each run asks the simulator which decision is pending, asks the network for its logits, and applies the chosen class. A test checks this loop on three seeds. Played greedily, the loop makes exactly the choices of the simulator's built-in greedy self-play. The greedy numbers are therefore the shipped agent's own play.</p>
+    <p>These runs sample from the final published network. Training sampled from the network of each iteration, and sometimes from teachers. So the runs show what sampling does to a finished policy. The 480 runs took 25 minutes on 3 worker processes.</p>
   </div>
 
-  <h3>How decided is the policy?</h3>
+  <h3>Most decisions are nearly certain, and a minority are split</h3>
   <div class="table"><table>
     <thead><tr><th></th><th class="num">In a fight</th><th class="num">Between fights</th><th class="num">All</th></tr></thead>
     <tbody>
@@ -512,7 +594,7 @@ lifts the gate, β ×1.5, at most twice |</code></pre>
     </tbody>
     <caption>The policy's probabilities at every decision of the 120 greedy runs, split by which head scored them.</caption>
   </table></div>
-  <p>The median decision is almost certain: the top class holds more than 99% of the probability. Yet about 31% of decisions have their top class below 0.9. Most decisions are settled and a sizeable minority are not, and the median hides that minority. Figure 2.3 shows the whole distribution.</p>
+  <p>At the median decision, the top class holds more than 99% of the probability. Yet about 31% of decisions have a top class below 0.9. The median hides that minority. Figure 2.3 shows the whole distribution.</p>
 
   <figure id="fig-3">
     <div class="scroll">
@@ -537,12 +619,10 @@ lifts the gate, β ×1.5, at most twice |</code></pre>
 </svg>
 <!-- /fig:cdf -->
     </div>
-    <figcaption><b>Figure 2.3.</b> For every decision in the greedy runs, the probability the policy left off its top class, \(1 - \max_a \pi_\theta(a \mid s)\), on a log scale; each curve is the share of decisions at or below that value. A curve that rises early means many decisions are near-certain. Notice how far left the bulk sits: a large share of decisions leave less than one part in a thousand off the top class, which is the "preferences driven infinitely higher" behaviour Sutton and Barto predict for a softmax policy whose best action keeps winning <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>. Everything right of the dotted line is a decision where the policy is not even 90% sure. The two heads produce nearly the same shape.</figcaption>
+    <figcaption><b>Figure 2.3.</b> For each decision in the greedy runs, the probability that the policy left off its top class, \(1 - \max_a \pi_\theta(a \mid s)\), on a log scale. Each curve is the share of decisions at or below that value. A curve that rises early means many near-certain decisions. A large share of decisions leave less than one part in a thousand off the top class. Sutton and Barto predict this behaviour for a softmax policy whose best action keeps winning, because its preferences grow without bound <span class="cite">[<a href="#ref-1">1</a>, §13.1]</span>. Everything to the right of the dotted line is a decision where the policy is less than 90% sure. The two heads produce nearly the same curve.</figcaption>
   </figure>
 
-  <details class="predict"><summary>Pause and predict: which decision types do you expect the policy to be least settled on? Think about where the game makes options nearly equivalent, and where training sees few examples.</summary>
-    <p>Figure 2.4 has the answer. The least settled types are potion swap (0.44), rest (0.32), map (0.29). The most settled are neow (0.02), card transform (0.03), card grant (0.04).</p>
-  </details>
+  <p>The least settled decision types are potion swap, with a mean normalised entropy of 0.44, then rest at 0.32 and map at 0.29. The most settled are neow at 0.02, card transform at 0.03 and card grant at 0.04. Figure 2.4 shows every type with at least 20 decisions.</p>
 
   <figure id="fig-4">
     <div class="scroll">
@@ -573,15 +653,15 @@ lifts the gate, β ×1.5, at most twice |</code></pre>
 </svg>
 <!-- /fig:types -->
     </div>
-    <figcaption><b>Figure 2.4.</b> Mean normalised entropy (Equation \eqref{eq:normH}) for each decision type with at least 20 decisions in the greedy runs; teal bars are scored by the combat head and orange bars by the out-of-combat head. The right-hand column gives the number of decisions and the mean number of options. A bar at 0.3 means the policy keeps about 30% of the uncertainty it could have. Notice that the ordering is about the game, not the head. Potion swaps, where any of several potions is a fine thing to discard, sit at the top. Picks the network sees once a run and that have a clear best answer, such as the boss relic and the opening Neow choice, sit near zero.</figcaption>
+    <figcaption><b>Figure 2.4.</b> Mean normalised entropy, Equation \eqref{eq:normH}, for each decision type with at least 20 decisions in the greedy runs. The combat head scores the teal bars, and the out-of-combat head scores the orange bars. The right-hand column gives the number of decisions and the mean number of options. A bar at 0.3 means that the policy keeps about 30% of the uncertainty it could have. Rows are ordered by the number of decisions. Potion swaps have the longest bar, at 0.44. Inference: any of several potions is often a fine one to discard. Picks that the network sees once or twice a run, such as the opening Neow choice and the boss relic, are near zero.</figcaption>
   </figure>
 
-  <p>A policy can stay uncertain for two reasons. The options may really be close, as with which potion to discard; then staying spread costs little. Or the network may not have learned enough about a rare decision to settle it. From inside the loss the two look the same, which is why the plan sets entropy weights per type.</p>
+  <p>A policy can stay uncertain for two reasons. The options may be close, as when the agent chooses a potion to discard. Then a spread policy costs little. Or the network may not have learned enough about a rare decision to settle it. The loss cannot tell the two cases apart.</p>
 
-  <h3>How fast does a sampled run leave the greedy path?</h3>
-  <p>A sampled run copies the greedy run until its first departure. At each decision along the greedy path, a temperature-1 sampler stays on that path with probability \(\max_a \pi_\theta(a \mid s_t)\). Its chance of matching greedy for the first \(k\) decisions is the product of those probabilities, and its expected number of departures is roughly their complements summed:</p>
-  <div class="eq">\begin{equation} \Pr\big[\text{no departure in decisions } 0,\dots,k-1\big] = \prod_{t=0}^{k-1} \max_{a} \pi_\theta(a \mid s_t), \qquad \mathbb{E}[\#\text{departures}] \approx \sum_{t=0}^{T} \Big(1 - \max_a \pi_\theta(a \mid s_t)\Big). \label{eq:survival} \end{equation}</div>
-  <p>Here \(s_t\) are the states of the greedy run. The product is exact, because until the first departure the sampler is in exactly the greedy run's states. The sum is an approximation, because after a departure the sampler visits states the greedy run never reached.</p>
+  <h3>A sampling run leaves the greedy path within a few dozen decisions</h3>
+  <p>A sampling run copies the greedy run until its first departure. At each decision on the greedy path, a sampler at temperature 1 stays on the path with probability \(\max_a \pi_\theta(a \mid s_t)\). Its chance to match greedy for the first \(k\) decisions is the product of those probabilities. Its expected number of departures is roughly the sum of their complements:</p>
+  <div class="eq">\begin{equation} \Pr\big[\text{no departure in decisions } 0,\dots,k-1\big] = \prod_{t=0}^{k-1} \max_{a} \pi_\theta(a \mid s_t), \qquad \mathbb{E}[\#\text{departures}] \approx \sum_{t} \Big(1 - \max_a \pi_\theta(a \mid s_t)\Big). \label{eq:survival} \end{equation}</div>
+  <p>Here \(s_t\) are the states of the greedy run, and the sum runs over all of its decisions. The product is exact, because the sampler stays in the greedy run's states until it first departs. The sum is an approximation, because after a departure the sampler visits states that the greedy run never reached.</p>
 
   <figure id="fig-5">
     <div class="scroll">
@@ -605,14 +685,13 @@ lifts the gate, β ×1.5, at most twice |</code></pre>
 </svg>
 <!-- /fig:survival -->
     </div>
-    <figcaption><b>Figure 2.5.</b> The left side of Equation \eqref{eq:survival}, the chance that a temperature-1 sampler has not yet departed from the greedy run after \(k\) decisions, as the median over the 120 greedy runs; the vertical axis is logarithmic. Past about 600 decisions few runs are still going, so the right end is noisy. Notice how early the curve falls: within the first 30 decisions, the median run has a better-than-even chance of having departed, and by decision 300, about halfway through a run, the chance that the sampler is still copying greedy is about \(10^{-9}\). Summing the complements along each greedy run gives a mean of 86 expected departures per run. The sampled runs below departed about 68 times per run instead. That figure is not the same quantity: once a sampled run departs, it visits states the greedy run never saw, so the greedy path's probabilities stop describing it.</figcaption>
+    <figcaption><b>Figure 2.5.</b> The left side of Equation \eqref{eq:survival}, which is the chance that a sampler at temperature 1 has not yet departed from the greedy run after \(k\) decisions. The curve is the median over the 120 greedy runs, and the vertical axis is logarithmic. Runs end at different lengths, and the greedy runs average 662 decisions. Past about 600 decisions, the median covers fewer and fewer runs, so the right end is noisy. Within the first 30 decisions, the median run has a better-than-even chance of having departed. By decision 300, about halfway through a run, the chance that the sampler still copies greedy is about \(10^{-9}\). The sum of the complements along each greedy run gives a mean of 86 expected departures per run. The sampled runs below departed about 68 times per run. The two numbers measure different things. After a sampled run departs, it visits states that the greedy run never saw, and the greedy path's probabilities no longer describe it.</figcaption>
   </figure>
 
-  <p>So after the first few dozen decisions, sampled and greedy play of one seed are different runs that meet different fights, rewards and shops. The paired comparison below compares two policies on the same seeds, not the same trajectories.</p>
+  <p>After the first few dozen decisions, a sampled run and a greedy run of one seed meet different fights, rewards and shops. The paired comparison below compares two policies on the same seeds. It does not compare the same trajectories.</p>
 
-  <details class="predict"><summary>Pause and predict: greedy wins about 82% of these seeds. Will sampling at temperature 1 win more, fewer, or about the same? What about temperature 2?</summary>
-    <p>At temperature 1, sampling won 79.2% against greedy's 82.5%, a difference of -3.3 points. At temperature 2 it won 75.8%, and at 0.5 it won 80.8%. The interpretation is in the text after Figure 2.6.</p>
-  </details>
+  <h3>Sampling costs a few points of win rate</h3>
+  <p>Greedy selection won 82.5% of these seeds. Sampling at temperature 1 won 79.2%, which is 3.3 points less. Sampling at temperature 0.5 won 80.8%, and sampling at temperature 2 won 75.8%. Figure 2.6 shows the four rates with their intervals.</p>
 
   <figure id="fig-6">
     <div class="scroll">
@@ -632,7 +711,7 @@ lifts the gate, β ×1.5, at most twice |</code></pre>
 </svg>
 <!-- /fig:winrate -->
     </div>
-    <figcaption><b>Figure 2.6.</b> Win rate on the same 120 seeds for greedy selection (orange) and for sampling at three temperatures (teal), with 95% Wilson intervals. Each interval is about ±7 points wide, so only differences larger than that between unpaired rates would be clear; the paired table below is the sharper comparison. Notice the shape: the win rate falls steadily as the temperature rises. The intervals all overlap, but the order is the one Equation \eqref{eq:onestep} predicts for a policy whose top choice is usually the best.</figcaption>
+    <figcaption><b>Figure 2.6.</b> Win rate on the same 120 seeds for greedy selection, in orange, and for sampling at three temperatures, in teal, with 95% Wilson intervals. Each interval is about ±7 points wide. For two unpaired rates near 80% on 120 seeds each, a two-sided test at the 5% level needs a difference of about 10 points. The paired table below gives a sharper comparison. The win rate falls as the temperature rises. The intervals all overlap. The order is what you would expect if the top choice is usually the best. A lower temperature moves the sampler closer to greedy selection, and Equation \eqref{eq:onestep} says that greedy selection cannot lose at a single decision.</figcaption>
   </figure>
 
   <div class="table"><table>
@@ -645,39 +724,43 @@ lifts the gate, β ×1.5, at most twice |</code></pre>
     <caption>Paired results against greedy play on the same 120 seeds. "Sampled ≠ greedy" is the share of decisions in the sampled runs where the sampled class was not the network's top class at that state. The greedy runs averaged 662 decisions.</caption>
   </table></div>
 
-  <p>Sampling at temperature 1 cost 3.3 points: 95 wins against greedy's 99. Halving the temperature cost half as much, and doubling it cost 6.7 points, with 20 seeds lost by sampling and 12 gained. The departure share rises with temperature as Equation \eqref{eq:temp} predicts, from 7.0% at T = 0.5 to 10.6% at T = 1 and 15.7% at T = 2. The striking thing is how little the departures cost: about 68 per run at temperature 1, for 4 fewer wins in 120. Most of the residual probability sits on runners-up that are nearly as good. Greedy still comes out ahead, which supports evaluating greedily, though 120 seeds cannot separate differences of 2 or 3 points.</p>
-  <p>Read the middle columns of the paired table. Seeds where both rules win, or both lose, say nothing about which rule is better; only the discordant seeds do, and Chapter 8 turns these counts into a test.</p>
-  <p>Taken together: the policy is near-deterministic at most decisions and uncertain at a minority, concentrated in types where options are close. Greedy selection removes that residual uncertainty. It changes the trajectory almost at once but the win rate only modestly.</p>
+  <p>Sampling at temperature 1 won 95 seeds against greedy's 99, a cost of 3.3 points. Half the temperature cost half as much. Double the temperature cost 6.7 points, with 20 seeds lost by sampling and 12 gained. The departure share rises with temperature, as Equation \eqref{eq:temp} predicts. It is 7.0% at T = 0.5, 10.6% at T = 1 and 15.7% at T = 2. The departures cost little. At temperature 1, about 68 departures per run cost 4 wins in 120. Inference: most of the leftover probability sits on runner-up options that are nearly as good as the top choice. The runs did not record which option each departure chose, so this is not measured. Greedy selection still wins more often. That result supports greedy evaluation, but 120 seeds cannot separate differences of 2 or 3 points.</p>
+  <p>Only the middle columns of the paired table compare the two rules. A seed that both rules win, or both rules lose, says nothing about which rule is better. The discordant seeds carry the comparison, and Chapter 8 turns their counts into a test.</p>
+  <p>The policy is nearly deterministic at most decisions. It stays uncertain at a minority of decisions, mostly in types where the options are close. Greedy selection removes that leftover uncertainty. It changes the trajectory almost at once, but it changes the win rate only a little.</p>
+  <p>Later chapters build on these pieces. Chapter 5 uses the gradient of Equation \eqref{eq:gradlogpi} to build the PPO update. Chapter 6 corrects for actions that the behaviour policy \(\mu\) chose. Chapter 8 tests whether a gap like the 3.3 points here is real.</p>
 
   <h2 id="s12">12. Common confusions</h2>
-  <p><strong>"A logit is a value estimate."</strong> It is not. A Q-value predicts return, and its absolute level means something. A logit has no absolute level: add 100 to every logit at a state and the policy is unchanged (Equation \eqref{eq:shift}). The card reward in Section 10 gives its favourite card a logit of 39.5. That does not mean the card is worth 39.5 of anything; it means the card is preferred to the next option by a factor of about \(e^{27}\). Chapter 4 introduces the separate value head that does predict return.</p>
-  <p><strong>"A top-class probability of 0.999 means the network is 99.9% sure it is right."</strong> A policy probability is not a calibrated probability of correctness. Training drives the probability of any action that keeps winning toward 1, whether or not a slightly better action exists that the policy stopped trying. Near-certainty in Figure 2.3 says the policy has stopped exploring there. It does not say the choice is optimal.</p>
-  <p><strong>"Evaluating greedily measures the policy we trained."</strong> It measures a different, deterministic policy built from the same network. The trained policy is the stochastic one, and the training data came from sampling it (or from teachers). Section 11 shows that the two diverge within the first few dozen decisions of a run. Greedy is a reasonable way to deploy and to compare checkpoints, but the number it produces belongs to the argmax policy.</p>
-  <p><strong>"Sampling from the policy is just ε-greedy with a learned ε."</strong> The two spend their randomness differently. ε-greedy deviates from its top choice at the same rate everywhere and spreads the deviation evenly over all other actions. A softmax policy deviates almost never at settled decisions and often at split ones, and it deviates mostly toward the runner-up. That is why a sampler that departs from greedy at roughly one decision in ten can still win nearly as often.</p>
-  <p><strong>"More entropy is always better for exploration."</strong> Entropy is useful during training at states where the right answer is not yet known. At states where options are equivalent, high entropy is correct and costs nothing. At states where one option is clearly best, high entropy is just noise. The entropy bonus is kept small, scheduled to shrink, and normalised per decision type for this reason.</p>
+  <p><strong>"A logit is a value estimate."</strong> It is not. A Q-value predicts return, and its absolute level means something. A logit has no absolute level. If you add 100 to every logit at a state, the policy does not change, by Equation \eqref{eq:shift}. The card reward in Section 10 gives its favourite card a logit of 39.5. The card is not worth 39.5 of anything. The logit means that the policy prefers the card to the next option by a factor of about \(e^{27}\). Chapter 4 introduces the separate value head, which does predict return.</p>
+  <p><strong>"A top-class probability of 0.999 means the network is 99.9% sure it is right."</strong> A policy probability is not a calibrated probability of correctness. Training drives the probability of an action that keeps winning toward 1. It does so even when a slightly better action exists that the policy stopped trying. Near-certainty in Figure 2.3 means that the policy has stopped exploring at that decision. It does not mean that the choice is optimal.</p>
+  <p><strong>"Evaluating greedily measures the policy we trained."</strong> Greedy evaluation measures a different, deterministic policy built from the same network. The trained policy is the stochastic one. The training data came from sampling it, or from teachers. Section 11 shows that the two policies diverge within the first few dozen decisions of a run. Greedy selection is a reasonable way to deploy and to compare checkpoints. The number it produces belongs to the argmax policy.</p>
+  <p><strong>"Sampling from the policy is just ε-greedy with a learned ε."</strong> The two spend their randomness differently. ε-greedy departs from its top choice at a rate set by \(\varepsilon\) and the number of legal actions, whatever the evidence at that state. It spreads the departures evenly over all other actions. A softmax policy almost never departs at settled decisions and often departs at split ones. Inference: it departs mostly toward the runner-up. That would explain why a sampler that departs at about one decision in ten still wins nearly as often. The runs did not record the rank of each departure.</p>
+  <p><strong>"More entropy is always better for exploration."</strong> Entropy helps during training at states where the right answer is not yet known. At states where the options are equivalent, high entropy is correct and costs nothing. At states where one option is clearly best, high entropy is noise. For these reasons, the entropy bonus is small and scheduled to shrink.</p>
 
   <h2 id="experiments">Suggested experiments</h2>
-  <p>Run these from the root of the repository. In a git worktree, prefix each command with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
+  <p>Run each command from the root of the repository. If you work in a git worktree, prefix each command with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
   <ol>
     <li>
-      <p><strong>Reproduce the greedy-against-sampled comparison.</strong> This prints the Seapunk decision and the card reward with their logits, the certainty statistics by decision type, and the paired table at temperature 1. It asks you to fill in predictions first; set <code>TOUR_DEV=1</code> to skip that.</p>
-      <figure class="listing"><pre><code>tour/run stop-2-policy/check.py --quick</code></pre><figcaption>20 seeds; drop --quick for 120</figcaption></figure>
+      <p><strong>Reproduce the comparison of greedy and sampled play.</strong> The script first asks you to fill in predictions. To skip the predictions, set <code>TOUR_DEV=1</code>. Run the check on 20 seeds:</p>
+      <figure class="listing"><pre><code>tour/run stop-2-policy/check.py --quick</code></pre><figcaption>20 seeds. Remove --quick for 120 seeds.</figcaption></figure>
+      <p>The script prints the Seapunk decision and the card reward with their logits. It also prints the certainty statistics by decision type and the paired table at temperature 1.</p>
     </li>
     <li>
-      <p><strong>Rebuild this chapter's data and figures, on more seeds.</strong> The wide intervals in Figure 2.6 come from 120 seeds. Quadrupling the seeds halves them.</p>
+      <p><strong>Rebuild the data and figures on more seeds.</strong> The intervals in Figure 2.6 come from 120 seeds. Four times as many seeds makes them half as wide. Collect the data, then redraw the figures:</p>
       <figure class="listing"><pre><code>tour/run stop-2-policy/figures.py collect --seeds 480 --workers 3
-tour/run stop-2-policy/figures.py svg</code></pre><figcaption>collect writes figures.json; svg redraws the figures inside chapter.html</figcaption></figure>
+tour/run stop-2-policy/figures.py svg</code></pre><figcaption>collect writes figures.json. svg redraws the figures in chapter.html.</figcaption></figure>
+      <p>The collection takes about four times as long as the 25 minutes in Section 11.</p>
     </li>
     <li>
-      <p><strong>Compare a network trained on all characters.</strong> The repository also publishes a network trained on several characters. Run the same check with it, still playing the Ironclad, and compare its entropy by decision type with Figure 2.4. Does a broader training distribution leave the policy less settled?</p>
-      <figure class="listing"><pre><code>TOUR_DEV=1 tour/run stop-2-policy/check.py --quick --net allchar_e2e_d4500_ema0999.e2ew</code></pre><figcaption>same check, another network</figcaption></figure>
+      <p><strong>Check a network trained on all characters.</strong> The repository also publishes a network trained on several characters. Run the same check with that network. The agent still plays the Ironclad:</p>
+      <figure class="listing"><pre><code>TOUR_DEV=1 tour/run stop-2-policy/check.py --quick --net allchar_e2e_d4500_ema0999.e2ew</code></pre><figcaption>The same check with another network.</figcaption></figure>
+      <p>Compare its entropy by decision type with Figure 2.4. A higher entropy means that the broader training left the policy less settled.</p>
     </li>
   </ol>
 
   <h2 id="references">References</h2>
   <ol class="refs">
     <li id="ref-1">Sutton, R. S., and Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em>, second edition. MIT Press. Sections 2.2 (ε-greedy), 2.8 (gradient bandit algorithms), 13.1 (policy approximation, soft-max in action preferences) and 13.2. Sutton and Barto write the reward that follows \(A_t\) as \(R_{t+1}\); this tour writes \(r_t\).</li>
-    <li id="ref-2">Williams, R. J. (1992). Simple statistical gradient-following algorithms for connectionist reinforcement learning. <em>Machine Learning</em>, 8(3), 229-256.</li>
+    <li id="ref-2">Williams, R. J. (1992). Simple statistical gradient-following algorithms for connectionist reinforcement learning. <em>Machine Learning</em>, 8(3-4), 229-256.</li>
     <li id="ref-3">Sutton, R. S., McAllester, D., Singh, S., and Mansour, Y. (2000). Policy gradient methods for reinforcement learning with function approximation. <em>Advances in Neural Information Processing Systems 12</em>.</li>
     <li id="ref-4">Williams, R. J., and Peng, J. (1991). Function optimization using connectionist reinforcement learning algorithms. <em>Connection Science</em>, 3(3), 241-268.</li>
     <li id="ref-5">Mnih, V., Badia, A. P., Mirza, M., Graves, A., Lillicrap, T., Harley, T., Silver, D., and Kavukcuoglu, K. (2016). Asynchronous methods for deep reinforcement learning. <em>ICML</em>. arXiv:1602.01783.</li>
