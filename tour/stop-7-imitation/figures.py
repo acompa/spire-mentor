@@ -234,7 +234,7 @@ def fig_bound() -> str:
     p.label(640, eps * 640, "εT (DAgger)", "", "end", -4, -8)
     p.label(100, 100, "εT² (behaviour cloning)", "", "start", 4, 14)
     return p.svg("Two bounds on extra cost against the horizon T for per-step error 0.01: "
-                 "the linear bound stays below 7 at T = 700, the quadratic one passes 100 at T = 100.")
+                 "the linear bound reaches 7 at T = 700, the quadratic one reaches 100 at T = 100.")
 
 
 def fig_agreement_along_run(d) -> str:
@@ -316,6 +316,8 @@ def derived(d: dict) -> dict:
         "wins": {k: float(sum(v["won"])) for k, v in {**S, "teacher": t}.items()},
         "past_floor_17": {k: 100.0 * float(np.mean(np.asarray(v["floors"]) >= 17))
                           for k, v in {**S, "teacher": t}.items()},
+        "reach_floor_16": {k: 100.0 * float(np.mean(np.asarray(v["floors"]) >= 16))
+                           for k, v in {**S, "teacher": t}.items()},
     }
     # If mean floor grows with log(data), as bc025 -> bc050 -> bc100 suggests,
     # the DAgger round's extra rows are worth this many floors as teacher rows.
