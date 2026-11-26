@@ -76,3 +76,12 @@ def test_each_arm_is_a_valid_learner_command(arm, size, tmp_path):
     assert sched.lr_trunk == pytest.approx(S.DEFAULT.lr_trunk * a["lr_scale"])
     assert S.anneal(1_800_000_000.0, sched) == 1.0  # no anneal on any day of the tour
     assert cfg.net == check.SMALL_NET and cfg.max_wall_s == size.wall_s
+
+
+def test_unknown_arms_are_refused_before_any_training(monkeypatch, tmp_path):
+    monkeypatch.setenv("TOUR_DEV", "1")
+    monkeypatch.setattr(sys, "argv", ["check.py", "--arms", "clipped,nope", "--keep", str(tmp_path / "k")])
+    monkeypatch.setattr(check, "run_arms", lambda *a, **k: pytest.fail("trained"))
+    with pytest.raises(SystemExit, match="unknown arms"):
+        check.main()
+    assert not (tmp_path / "k").exists()
