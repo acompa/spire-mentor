@@ -1,0 +1,2129 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<title>RL Tour 1: The Decision Process</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+
+<style>
+/* Chapter 1 only. */
+.notation td:first-child { white-space: nowrap; }
+.showcase td:nth-child(2) { font-family: var(--mono); font-size: .82rem; }
+.experiments pre { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .6rem .8rem; font: 400 .82rem/1.5 var(--mono); }
+.experiments code { overflow-wrap: anywhere; }
+figure mjx-container svg { display: inline; margin: 0; max-width: none; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 1 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>The decision process</h1>
+  <p class="lede">Before we can train a policy we have to say what it is trained on: which situations it meets, what it may choose there, where a run of choices begins and ends, and which single number we want it to raise. This chapter builds that object, the decision process, and measures it in Spire Mentor.</p>
+</header>
+
+<nav class="contents" aria-label="Chapter contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#opening">Where this chapter sits</a></li>
+    <li><a href="#game">The game in four sentences</a></li>
+    <li><a href="#notation">Notation for the tour</a></li>
+    <li><a href="#mdp">Markov decision processes</a></li>
+    <li><a href="#episodes">Episodes, trajectories and returns</a></li>
+    <li><a href="#objective">The objective</a></li>
+    <li><a href="#pomdp">Partial observability</a></li>
+    <li><a href="#engineered">The textbook version against the engineered one</a></li>
+    <li><a href="#spire">In Spire Mentor</a></li>
+    <li><a href="#measured">Measured</a></li>
+    <li><a href="#confusions">Common confusions</a></li>
+    <li><a href="#experiments">Suggested experiments</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h2 id="opening">1. Where this chapter sits</h2>
+
+<p>In supervised learning the unit of data is a pair \((x, y)\). The pairs are drawn independently from one fixed distribution, and nothing the model predicts changes which \(x\) it sees next. Reinforcement learning breaks both halves of that. The agent's choice changes what it sees next, and the data it learns from is a sequence whose distribution depends on the very parameters being trained.</p>
+
+<p>If you have trained a deep Q-network, you have already met the object that handles this: the Markov decision process. Q-learning uses it in a particular way. It learns \(Q^*(s, a)\), the value of the best action in each state, and acts greedily on it. The rest of this tour takes a different route. It trains a policy directly, by raising the expected total reward of whole runs. That route asks four things of the decision process that Q-learning lets you leave vague.</p>
+
+<ul>
+  <li><strong>What the agent sees.</strong> A DQN on Atari stacks four frames and calls the stack the state. In a card game the agent cannot see the order of its draw pile. We need a clean account of state against observation.</li>
+  <li><strong>What the agent may choose.</strong> An Atari agent has the same 18 buttons everywhere. Here the legal choices change at every step: five cards in hand now, a map with three paths later, a shop with a dozen items after that.</li>
+  <li><strong>What one step is.</strong> The game applies many actions that nobody chooses. We must decide which steps count as decisions.</li>
+  <li><strong>What one sample is.</strong> A policy-gradient method scores a whole trajectory. The sampling unit is the run, not the decision, so the length of a run matters for everything that follows.</li>
+</ul>
+
+<p>Chapter 2 builds the policy that acts in this process. Chapter 3 designs the reward it is paid. Chapter 4 learns values over it, and Chapter 5 derives the gradient of the objective we define here. This chapter only builds the process and measures it.</p>
+
+<h2 id="game">2. The game in four sentences</h2>
+
+<p>Slay the Spire 2 is a single-player deck-building game. You lead one character, here the Ironclad, up a branching map of 46 floors in three acts; each floor is a fight, an event, a shop, a rest site or a treasure, and each act ends with a boss. In a fight you draw five cards a turn from your deck, spend three energy to play them against enemies who show their next attack in advance, then end your turn and take the hits. Between fights you change the deck: you take a new card from a reward, buy or remove cards in a shop, upgrade one at a rest site; one death ends the run, and beating the final boss wins it. Spire Mentor plays the hard setting, Ascension 10, on game version v0.111.0, in a simulator written in Rust.</p>
+
+<h2 id="notation">3. Notation for the tour</h2>
+
+<p>All eight chapters use the symbols below and no others for these things. Where the project's code uses a different name, the chapter that meets it gives the mapping once.</p>
+
+<div class="table notation">
+<table>
+  <thead><tr><th>Thing</th><th>Symbol</th></tr></thead>
+  <tbody>
+    <tr><td>State, observation, action, reward at step \(t\)</td><td>\(s_t\), \(o_t\), \(a_t\), \(r_t\)</td></tr>
+    <tr><td>Set of legal actions in a state</td><td>\(\mathcal{A}(s)\)</td></tr>
+    <tr><td>Horizon (last step of an episode)</td><td>\(T\)</td></tr>
+    <tr><td>Trajectory</td><td>\(\tau = (s_0, a_0, r_0, \dots, s_T)\)</td></tr>
+    <tr><td>Discount</td><td>\(\gamma\)</td></tr>
+    <tr><td>Return from step \(t\)</td><td>\(G_t = \sum_{k=0}^{T-t} \gamma^k r_{t+k}\)</td></tr>
+    <tr><td>Policy with parameters \(\theta\)</td><td>\(\pi_\theta(a \mid s)\)</td></tr>
+    <tr><td>Logits</td><td>\(z_\theta(s, a)\)</td></tr>
+    <tr><td>Behaviour policy (the one that generated the data)</td><td>\(\mu(a \mid s)\)</td></tr>
+    <tr><td>Objective</td><td>\(J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}[G_0]\)</td></tr>
+    <tr><td>State value, action value, advantage</td><td>\(V^\pi(s)\), \(Q^\pi(s,a)\), \(A^\pi(s,a)\)</td></tr>
+    <tr><td>Learned critic with parameters \(\phi\)</td><td>\(V_\phi(s)\)</td></tr>
+    <tr><td>TD residual</td><td>\(\delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)\)</td></tr>
+    <tr><td>Estimated advantage</td><td>\(\hat{A}_t\)</td></tr>
+    <tr><td>GAE parameter</td><td>\(\lambda\)</td></tr>
+    <tr><td>Importance ratio</td><td>\(\rho_t = \pi_\theta(a_t \mid s_t) / \mu(a_t \mid s_t)\)</td></tr>
+    <tr><td>PPO clip range</td><td>\(\epsilon\)</td></tr>
+    <tr><td>Entropy, KL divergence</td><td>\(\mathcal{H}[\pi]\), \(D_{\mathrm{KL}}(p \,\|\, q)\)</td></tr>
+    <tr><td>Expectation</td><td>\(\mathbb{E}\)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Two conventions need a word now. First, the reward \(r_t\) is the reward that <em>follows</em> action \(a_t\). Sutton and Barto write the same quantity \(R_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>]</span>; Spinning Up writes \(r_t\), as we do <span class="cite">[<a href="#ref-6">6</a>]</span>. Second, \(\mu\) here always means the behaviour policy and \(\lambda\) always means the GAE parameter, whatever they mean in other notes you keep.</p>
+
+<h2 id="mdp">4. Markov decision processes</h2>
+
+<p>Start with one position in a fight. The Ironclad has 64 of 80 hit points and three energy. Its hand is three Strikes, a Defend and Ascender's Bane, a curse card that cannot be played. A Seapunk with 48 hit points shows that it will attack for 13. The Ironclad also carries two potions. The game will let it play any Strike at the Seapunk, play the Defend, drink either potion, or end the turn. After it chooses, the game moves to a new position: the Seapunk loses 6 hit points, or the Ironclad gains 5 block, and so on. Some of that move is random. Ending the turn, for example, draws five cards from a shuffled pile.</p>
+
+<p>A <dfn>Markov decision process</dfn> (MDP) is the abstraction of exactly this. Bellman introduced it in the 1950s to study sequential decisions under uncertainty <span class="cite">[<a href="#ref-2">2</a>]</span>; Puterman's book is the standard reference for its theory <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
+
+<div class="definition"><span class="label">Definition 1.1 · Markov decision process</span>
+  <p>An MDP is a tuple</p>
+  <div class="eq">\begin{equation} \mathcal{M} = \big(\mathcal{S},\ \{\mathcal{A}(s)\}_{s \in \mathcal{S}},\ p,\ \rho_0,\ \gamma\big) \label{eq:mdp} \end{equation}</div>
+  <p>where \(\mathcal{S}\) is a set of <dfn>states</dfn>, \(\mathcal{A}(s)\) is the set of <dfn>legal actions</dfn> in state \(s\), \(p\) is the dynamics defined below, \(\rho_0\) is the distribution of the first state, and \(\gamma \in [0, 1]\) is the discount.</p>
+</div>
+
+<p>The <dfn>dynamics</dfn> say how the world answers an action. Following Sutton and Barto's four-argument form <span class="cite">[<a href="#ref-1">1</a>, eq. 3.2]</span>, but with our reward index:</p>
+
+<div class="eq">\begin{equation} p(s', r \mid s, a) = \Pr\{s_{t+1} = s',\ r_t = r \mid s_t = s,\ a_t = a\}. \label{eq:dynamics} \end{equation}</div>
+
+<p>Read it as a table with one row per state-action pair. Each row is a joint distribution over the next state \(s'\) and the reward \(r\) paid on the way there. Because each row is a distribution, it sums to one over everything that can follow:</p>
+
+<div class="eq">\begin{equation} \sum_{s' \in \mathcal{S}} \sum_{r} p(s', r \mid s, a) = 1 \quad \text{for all } s \in \mathcal{S},\ a \in \mathcal{A}(s). \label{eq:normalise} \end{equation}</div>
+
+<p>Note the range of \(a\): only actions legal in \(s\) have a row. Sutton and Barto state this with \(\mathcal{A}(s)\) as well <span class="cite">[<a href="#ref-1">1</a>, eq. 3.3]</span>, and most deep-RL code forgets it, because Atari and MuJoCo offer every action everywhere. A card game does not. Ascender's Bane is in the hand but "play Ascender's Bane" has no row.</p>
+
+<p>The word <em>Markov</em> names one assumption: the dynamics need only the current state and action, not the path that led there. Written out over the whole history,</p>
+
+<div class="eq">\begin{equation} \Pr\{s_{t+1}, r_t \mid s_t, a_t, s_{t-1}, a_{t-1}, \dots, s_0, a_0\} = \Pr\{s_{t+1}, r_t \mid s_t, a_t\}. \label{eq:markov} \end{equation}</div>
+
+<p>This is a statement about what we put in \(s_t\), not a fact about the world. Put the whole history in the state and Equation \eqref{eq:markov} holds trivially. In a fight, the state the simulator holds is Markov: it contains the draw pile in its true order, every enemy's move pattern and the random-number generator. Section 7 shows that the agent does not get that state.</p>
+
+<p>A <dfn>policy</dfn> is a rule for choosing actions. In this tour it is a conditional distribution \(\pi_\theta(a \mid s)\) with parameters \(\theta\), the weights of a network. Chapter 2 builds it. All this chapter needs is its support. A policy may put mass only on legal actions, and must put all of its mass there:</p>
+
+<div class="eq">\begin{equation} \pi_\theta(a \mid s) = 0 \ \text{ for } a \notin \mathcal{A}(s), \qquad \sum_{a \in \mathcal{A}(s)} \pi_\theta(a \mid s) = 1. \label{eq:support} \end{equation}</div>
+
+<p>Equation \eqref{eq:support} is easy to write and easy to get wrong. A network with a fixed output layer gives every action a logit in every state. Practical systems then either mask illegal logits to \(-\infty\) before the softmax, or, as Spire Mentor does, never produce a logit for an illegal action at all: the network scores only the candidates the game offers. Huang and Ontañón analyse the masking approach and show that it is a valid policy gradient for the masked policy <span class="cite">[<a href="#ref-7">7</a>]</span>.</p>
+
+<figure id="fig-1">
+  <div class="scroll">
+    <svg viewBox="0 0 640 250" role="img" aria-label="Two agent-environment loops. Left, the agent receives the state. Right, the environment keeps the state hidden and emits only an observation, and the agent keeps a belief or history.">
+      <defs><marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <text x="150" y="20" text-anchor="middle" font-weight="600">MDP: the agent sees the state</text>
+        <rect class="box" x="20" y="50" width="100" height="60" rx="3"/><text x="70" y="78" text-anchor="middle">Agent</text><text class="muted" x="70" y="96" text-anchor="middle">π(a | s)</text>
+        <rect class="box" x="190" y="50" width="110" height="60" rx="3"/><text x="245" y="78" text-anchor="middle">Environment</text><text class="muted" x="245" y="96" text-anchor="middle">p(s′, r | s, a)</text>
+        <line class="ink" x1="120" y1="62" x2="190" y2="62" marker-end="url(#ar1)"/><text class="muted" x="155" y="56" text-anchor="middle">aₜ</text>
+        <line class="ink" x1="190" y1="98" x2="120" y2="98" marker-end="url(#ar1)"/><text class="muted" x="155" y="118" text-anchor="middle">sₜ₊₁, rₜ</text>
+        <text class="muted" x="160" y="160" text-anchor="middle">the state carries everything</text>
+        <text class="muted" x="160" y="176" text-anchor="middle">the dynamics need</text>
+
+        <line class="grid" x1="320" y1="30" x2="320" y2="230"/>
+
+        <text x="480" y="20" text-anchor="middle" font-weight="600">POMDP: the state is hidden</text>
+        <rect class="box" x="340" y="50" width="120" height="96" rx="3"/><text x="400" y="74" text-anchor="middle">Agent</text>
+        <rect x="352" y="84" width="96" height="50" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="400" y="104" text-anchor="middle">belief bₜ</text><text class="muted" x="400" y="122" text-anchor="middle">or history hₜ</text>
+        <rect class="box" x="510" y="50" width="120" height="96" rx="3"/><text x="570" y="74" text-anchor="middle">Environment</text>
+        <rect x="522" y="84" width="96" height="50" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="570" y="104" text-anchor="middle">hidden sₜ</text><text class="muted" x="570" y="122" text-anchor="middle">draw order, RNG</text>
+        <line class="ink" x1="460" y1="62" x2="510" y2="62" marker-end="url(#ar1)"/><text class="muted" x="485" y="56" text-anchor="middle">aₜ</text>
+        <line class="ink" x1="510" y1="140" x2="460" y2="140" marker-end="url(#ar1)"/><text class="muted" x="485" y="160" text-anchor="middle">oₜ₊₁, rₜ</text>
+        <text class="muted" x="480" y="196" text-anchor="middle">π acts on what the agent keeps,</text>
+        <text class="muted" x="480" y="212" text-anchor="middle">not on the hidden state</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 1.1.</b> The agent–environment loop, twice. On the left the environment hands the agent its state, so the policy can condition on everything that drives the dynamics. On the right the environment keeps its state (in this game, the order of the draw pile and the random-number generator) and emits only an observation. Notice which box the policy reads in each case: the true state on the left, the agent's own summary on the right.</figcaption>
+</figure>
+
+<h2 id="episodes">5. Episodes, trajectories and returns</h2>
+
+<p>A run of the game has a first position and a last one. Tasks like this are <dfn>episodic</dfn>: interaction breaks into independent <dfn>episodes</dfn>, each starting from a draw of \(\rho_0\) and ending in a <dfn>terminal state</dfn>, after which nothing more happens <span class="cite">[<a href="#ref-1">1</a>, §3.3–3.4]</span>. The <dfn>horizon</dfn> \(T\) is the step at which the episode reaches its terminal state. In this game \(T\) is random: a run that dies on floor 3 is short, a run that beats the last boss is long.</p>
+
+<p>One episode, written down, is a <dfn>trajectory</dfn>:</p>
+
+<div class="eq">\begin{equation} \tau = (s_0, a_0, r_0, s_1, a_1, r_1, \dots, s_{T-1}, a_{T-1}, r_{T-1}, s_T). \label{eq:trajectory} \end{equation}</div>
+
+<p>There are \(T\) actions, indexed \(0\) to \(T-1\), and \(T + 1\) states. The last state \(s_T\) is terminal and has no action after it.</p>
+
+<p>How likely is a given trajectory? Follow it forward. The first state is drawn from \(\rho_0\). Then, at each step, the policy picks an action and the dynamics pick the next state and reward. Each draw depends only on the step before it, so the probabilities multiply:</p>
+
+<div class="eq">\begin{equation} p_\theta(\tau) = \rho_0(s_0) \prod_{t=0}^{T-1} \pi_\theta(a_t \mid s_t)\, p(s_{t+1}, r_t \mid s_t, a_t). \label{eq:traj-prob} \end{equation}</div>
+
+<p>This one line organises the whole tour. Of its three kinds of factor, only \(\pi_\theta\) depends on \(\theta\). The start distribution and the dynamics belong to the game, and we never need to know them: we only need to be able to sample from them by playing. Chapter 5 takes the logarithm of Equation \eqref{eq:traj-prob} and differentiates; the dynamics drop out because they do not depend on \(\theta\), which is why policy gradients need no model of the game.</p>
+
+<p>The <dfn>return</dfn> from step \(t\) is the discounted sum of the rewards that follow it:</p>
+
+<div class="definition"><span class="label">Definition 1.2 · Return</span>
+  <div class="eq">\begin{equation} G_t = \sum_{k=0}^{T-t} \gamma^{k}\, r_{t+k}, \qquad r_T \equiv 0. \label{eq:return} \end{equation}</div>
+  <p>The discount \(\gamma\) weights a reward \(k\) steps ahead by \(\gamma^k\). The terminal state takes no action and earns nothing, so we set \(r_T = 0\); the last real reward is \(r_{T-1}\).</p>
+</div>
+
+<p>The convention \(r_T = 0\) is the same as Sutton and Barto's \(G_T = 0\) <span class="cite">[<a href="#ref-1">1</a>, §3.3]</span>. It lets the tour's formula run to \(T - t\) without inventing a reward after the end. Splitting off the first term gives the recursion that every value method is built on:</p>
+
+<div class="eq">\begin{equation} G_t = r_t + \gamma\, G_{t+1}, \qquad G_T = 0. \label{eq:return-rec} \end{equation}</div>
+
+<p>Check it on a short case. Take \(T = 3\), rewards \(r_0 = 0.002\), \(r_1 = 0\), \(r_2 = 1\), and \(\gamma = 1\). Then \(G_2 = 1\), \(G_1 = 0 + 1 = 1\), and \(G_0 = 0.002 + 1 = 1.002\). With \(\gamma = 1\) the return is just the total reward still to come. Sutton and Barto write the same recursion as \(G_t = R_{t+1} + \gamma G_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>, eq. 3.9]</span>; the only difference is the reward index.</p>
+
+<p>Why discount at all? In a <dfn>continuing task</dfn>, one with no terminal state, the undiscounted sum can be infinite, and \(\gamma &lt; 1\) keeps it finite. In an episodic task with a bounded horizon the sum is already finite, and \(\gamma = 1\) is allowed. Many episodic systems still use \(\gamma &lt; 1\) as a variance-reduction device rather than as part of the problem. Chapter 3 discusses that choice; Spire Mentor sets \(\gamma = 1\).</p>
+
+<h2 id="objective">6. The objective</h2>
+
+<p>We want the policy whose runs earn the most. "The most" has to mean an average, because runs are random. The <dfn>objective</dfn> is the expected return from the start:</p>
+
+<div class="eq">\begin{equation} J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[G_0\right] = \sum_{\tau} p_\theta(\tau)\, G_0(\tau). \label{eq:objective} \end{equation}</div>
+
+<p>The expectation is over whole trajectories drawn by playing \(\pi_\theta\) in the game: \(\rho_0\) picks the seed's starting position, the policy picks actions, and the dynamics pick what follows. The sum form makes plain that \(\theta\) enters only through \(p_\theta(\tau)\), and so only through the policy factors of Equation \eqref{eq:traj-prob}.</p>
+
+<p>This is a different target from Q-learning's. A DQN learns \(Q^*\) by regressing toward a bootstrapped target, and the policy is whatever is greedy with respect to it; \(J\) is never written down. Here \(J\) is the thing we climb. Chapter 4 brings value functions back, but as helpers for estimating the gradient of \(J\), not as the object we learn for its own sake.</p>
+
+<p>We cannot compute the sum in Equation \eqref{eq:objective}; there are far too many trajectories. We can estimate it by playing. Play \(N\) runs with independent seeds and average their returns:</p>
+
+<div class="eq">\begin{equation} \hat{J} = \frac{1}{N} \sum_{i=1}^{N} G_0^{(i)}, \qquad \widehat{\mathrm{se}}(\hat{J}) = \frac{\hat\sigma_G}{\sqrt{N}}, \label{eq:mc-j} \end{equation}</div>
+
+<p>where \(G_0^{(i)}\) is the return of run \(i\) and \(\hat\sigma_G\) is the sample standard deviation of the returns. The sampling unit is the run. Decisions inside one run are not independent draws: they share a deck, a map and a fate. Counting decisions instead of runs in the denominator would shrink the standard error by roughly \(\sqrt{T}\), a design effect of several hundred. This is the same mistake as treating correlated turns of one user session as independent observations, and it has the same fix. Chapter 8 builds on this.</p>
+
+<details class="predict"><summary>Pause and predict: a won run earns 1 for the win, 0.05 for each of three bosses beaten, and 0.002 for each new floor. If the network wins about four runs in five, roughly what is \(\hat J\) for the network, and for random play?</summary>
+  <p>A won run that reaches floor 46 earns \(1 + 3 \times 0.05 + 46 \times 0.002 = 1.242\). The measured mean return of the network's won runs is <span class="v" data-k="net.G_win" data-f=".3f">1.242</span>. Its lost runs average <span class="v" data-k="net.G_loss" data-f=".3f">0.189</span>, because they collect floor and boss rewards before they die. Over <span class="v" data-k="panel.runs">200</span> seeds the network wins <span class="v" data-k="net.wins">166</span>, and \(\hat J = \) <span class="v" data-k="net.J_hat" data-f=".3f">1.063</span> with standard error <span class="v" data-k="net.J_se" data-f=".3f">0.028</span>. Random play never wins; its \(\hat J\) is <span class="v" data-k="random.J_hat" data-f=".4f">0.0041</span>, a few floors' worth of reward. The win term supplies about three quarters of the network's \(\hat J\); the floor and boss terms supply the rest, mostly through runs that die late. Chapter 3 asks whether that split is what the designers wanted.</p>
+</details>
+
+<h2 id="pomdp">7. Partial observability</h2>
+
+<p>Go back to the Seapunk fight. The simulator's state includes the order of the six cards left in the draw pile. The top three are a Strike and two Defends. A player cannot see that order, and Spire Mentor's policy is not allowed to either. It sees that the pile holds six cards and which six, as an unordered multiset. If the policy could read the order, it would learn to play as if it knew the next draw, and that skill would be worthless in the real game.</p>
+
+<p>The formal object for this is the <dfn>partially observable MDP</dfn> (POMDP) <span class="cite">[<a href="#ref-4">4</a>]</span>. It adds a set of observations \(\mathcal{O}\) and an observation kernel to the MDP:</p>
+
+<div class="eq">\begin{equation} O(o \mid s) = \Pr\{o_t = o \mid s_t = s\}. \label{eq:obs-kernel} \end{equation}</div>
+
+<p>The state \(s_t\) still evolves by \(p\), still Markov, but the agent receives only \(o_t\). Kaelbling, Littman and Cassandra's formulation lets the observation depend on the last action as well; dropping that argument loses nothing here. The agent's information at step \(t\) is its <dfn>history</dfn>:</p>
+
+<div class="eq">\begin{equation} h_t = (o_0, a_0, o_1, a_1, \dots, a_{t-1}, o_t). \label{eq:history} \end{equation}</div>
+
+<p>The history is Markov by construction, because nothing the agent could know is left out, but it grows without bound. Sutton and Barto frame the agent's state as a compact function of the history, \(s^{\text{agent}}_t = f(h_t)\), updated incrementally from the last state, action and observation <span class="cite">[<a href="#ref-1">1</a>, §17.3]</span>. The classical choice of \(f\) is the <dfn>belief state</dfn>: the posterior over hidden states given the history, \(b_t(s) = \Pr\{s_t = s \mid h_t\}\). Bayes' rule updates it after action \(a\) and observation \(o\):</p>
+
+<div class="eq">\begin{equation} b'(s') = \frac{O(o \mid s') \sum_{s} p(s' \mid s, a)\, b(s)}{\sum_{s''} O(o \mid s'') \sum_{s} p(s'' \mid s, a)\, b(s)}, \label{eq:belief} \end{equation}</div>
+
+<p>where \(p(s' \mid s, a) = \sum_r p(s', r \mid s, a)\) is the state-transition probability. The numerator predicts where the hidden state went and weights each candidate by how well it explains the observation; the denominator normalises. This is Sutton and Barto's equation 17.10 with their joint kernel \(p(x', o \mid x, a)\) split into a transition and an observation factor.</p>
+
+<p>Equation \eqref{eq:belief} is exact and almost never computed. The hidden state of a card game is enormous, and the update needs the full dynamics. Practical agents replace the belief with a learned or hand-built summary. Spire Mentor uses a hand-built one: the game engine itself computes a <dfn>belief view</dfn> of each fight, the fight as a player could know it, with the draw pile as an unordered multiset and the random-number generator removed. The policy reads only that view.</p>
+
+<p>What changes in the objective? Nothing in its form. A policy that acts on observations, \(\pi_\theta(a \mid o_t)\) or more generally \(\pi_\theta(a \mid h_t)\), still induces a distribution over trajectories of hidden states, and the trajectory probability still factorises:</p>
+
+<div class="eq">\begin{equation} p_\theta(\tau) = \rho_0(s_0)\, \prod_{t=0}^{T-1} O(o_t \mid s_t)\, \pi_\theta(a_t \mid h_t)\, p(s_{t+1}, r_t \mid s_t, a_t). \label{eq:pomdp-traj} \end{equation}</div>
+
+<p>Here \(\tau\) records the hidden states and the observations together. Only the policy factors depend on \(\theta\), exactly as in Equation \eqref{eq:traj-prob}. This is why the policy-gradient machinery of Chapter 5 carries over to partial observability without change. What we lose is a guarantee about the optimum: the best policy over the agent's summary may be worse than the best policy over the true state, because the summary discards information. Value functions suffer more, and in a specific way: a critic \(V_\phi\) that reads only the observation cannot be Markov in the observation. Chapter 4 shows how Spire Mentor's critic gets extra, privileged inputs that the policy never sees.</p>
+
+<div class="definition"><span class="label">Definition 1.3 · State, observation, decision, episode, return in this tour</span>
+  <p>The <em>state</em> \(s_t\) is the simulator's full position, the draw order and random-number generator included. The <em>observation</em> \(o_t\) is what the policy reads: a set of tokens built from the belief view. The <em>action</em> \(a_t\) is one of the offered classes (Section 8). A <em>decision</em> is a position with at least two classes. An <em>episode</em> is one run, from its first decision to a win, a death or a cap. The <em>return</em> \(G_0\) is the run's total reward, since \(\gamma = 1\).</p>
+</div>
+
+<h2 id="engineered">8. The textbook version against the engineered one</h2>
+
+<p>The definitions above are clean. A real game forces three departures, and each one changes what a "step" means.</p>
+
+<h3>Forced steps: decisions are not game steps</h3>
+
+<p>Many positions in the game offer exactly one legal action. A fight where every card in hand is unplayable offers only "end turn". A reward screen after a fight may offer only "proceed". The game still needs that action applied. Should it be a step of the MDP?</p>
+
+<p>If it is, the policy is asked to "choose" from a set of one. The choice carries no information and costs a network evaluation. Worse, it adds a step to every trajectory, lengthening the chain that reward has to travel back along. Spire Mentor calls these <dfn>forced steps</dfn> and applies them without asking the policy. A forced step makes no row in the training data.</p>
+
+<p>Formally, the process the policy sees is an MDP over <em>decision points</em>, not over game steps. From a decision \(s\) and the chosen action \(a\), the game runs its own forced steps, \(f_1, f_2, \dots, f_m\), until it reaches the next position with a real choice. The transition the agent experiences composes those steps:</p>
+
+<div class="eq">\begin{equation} \tilde{p}(s', \tilde r \mid s, a) = \Pr\Big\{\text{next decision point} = s',\ \textstyle\sum_{j} r^{\text{game}}_j = \tilde r \ \Big|\ s, a\Big\}, \label{eq:composed} \end{equation}</div>
+
+<p>where the sum runs over the rewards of every game step between the two decision points: the chosen one and all the forced ones. Because no forced step has a choice, \(\tilde p\) does not depend on the policy, and the composed process is again an MDP, with the same objective. Sutton, Precup and Singh made this idea general: a fixed sub-policy that runs for several primitive steps turns an MDP into a semi-MDP over the points where control returns <span class="cite">[<a href="#ref-5">5</a>]</span>. Forced steps are the degenerate case, a sub-policy with nothing to choose.</p>
+
+<p>The reward bookkeeping follows from Equation \eqref{eq:composed}. In Spire Mentor, \(r_t\) is all the reward earned on the way from decision \(t\) to decision \(t + 1\), forced steps included. So \(t\) counts decisions, \(T\) is the number of decisions in a run, and the game's own step count is larger.</p>
+
+<figure id="fig-2">
+  <div class="scroll">
+    <svg viewBox="0 0 640 270" role="img" aria-label="A row of game steps, some decisions and some forced, mapped onto a shorter row of stored decisions.">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <text x="10" y="22" font-weight="600">game steps</text>
+        <g>
+          <rect x="10" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="52" y="56" text-anchor="middle">Neow gift</text><text class="muted" x="52" y="74" text-anchor="middle">3 options</text>
+          <rect x="100" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="142" y="56" text-anchor="middle">map path</text><text class="muted" x="142" y="74" text-anchor="middle">3 options</text>
+          <rect x="190" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="232" y="56" text-anchor="middle">fight turn</text><text class="muted" x="232" y="74" text-anchor="middle">7 actions</text>
+          <rect x="280" y="34" width="84" height="54" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="322" y="56" text-anchor="middle">end turn</text><text class="muted" x="322" y="74" text-anchor="middle">only action</text>
+          <rect x="370" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="412" y="56" text-anchor="middle">fight turn</text><text class="muted" x="412" y="74" text-anchor="middle">4 actions</text>
+          <rect x="460" y="34" width="84" height="54" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="502" y="56" text-anchor="middle">map path</text><text class="muted" x="502" y="74" text-anchor="middle">one node</text>
+          <rect x="550" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="592" y="56" text-anchor="middle">card reward</text><text class="muted" x="592" y="74" text-anchor="middle">4 options</text>
+        </g>
+        <text x="10" y="138" class="muted">merge identical actions</text>
+        <line class="ink" x1="232" y1="88" x2="232" y2="126" marker-end="url(#ar2)"/>
+        <text x="245" y="112" class="muted">3 Strikes → 1 class</text>
+        <text x="10" y="186" font-weight="600">decisions t</text>
+        <g>
+          <rect x="10" y="198" width="84" height="44" rx="3" class="box"/><text x="52" y="225" text-anchor="middle">t = 0</text>
+          <rect x="100" y="198" width="84" height="44" rx="3" class="box"/><text x="142" y="225" text-anchor="middle">t = 1</text>
+          <rect x="190" y="198" width="84" height="44" rx="3" class="box"/><text x="232" y="219" text-anchor="middle">t = 2</text><text class="muted" x="232" y="235" text-anchor="middle">5 classes</text>
+          <rect x="370" y="198" width="84" height="44" rx="3" class="box"/><text x="412" y="225" text-anchor="middle">t = 3</text>
+          <rect x="550" y="198" width="84" height="44" rx="3" class="box"/><text x="592" y="225" text-anchor="middle">t = 4</text>
+        </g>
+        <line class="ink" x1="52" y1="88" x2="52" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="142" y1="88" x2="142" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="232" y1="140" x2="232" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="412" y1="88" x2="412" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="592" y1="88" x2="592" y2="198" marker-end="url(#ar2)"/>
+        <text x="322" y="160" text-anchor="middle" class="muted">applied, no row;</text>
+        <text x="322" y="176" text-anchor="middle" class="muted">its reward joins r₂</text>
+        <text x="502" y="160" text-anchor="middle" class="muted">applied, no row;</text>
+        <text x="502" y="176" text-anchor="middle" class="muted">its reward joins r₃</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 1.2.</b> How the game's steps become the agent's decisions. Solid boxes offer at least two options and become decisions; dashed boxes offer one and are applied without asking the policy. At the first fight turn, seven legal actions (three identical Strikes, a Defend, two potions, end turn) merge into five classes. Notice that \(t\) skips the forced steps, and that each forced step's reward is added to the reward of the decision before it. The steps here are schematic; Figure 1.4 shows a real run.</figcaption>
+</figure>
+
+<h3>Merged classes: the action is a class, not a button</h3>
+
+<p>In the Seapunk position, three of the seven legal actions are "play a Strike at the Seapunk". They are different cards in the hand, so the game lists them separately. They lead to the same next state. Suppose the policy scored each one and took a softmax. Then a single good idea, "attack now", would be split across three outputs, and its total probability would depend on how many copies of Strike happen to be in hand.</p>
+
+<p>Spire Mentor removes the duplication before the policy sees it. It groups legal actions whose effects are identical into one <dfn>class</dfn>, and the policy chooses among classes. When it picks a class, the env plays that class's first member, its <dfn>representative</dfn>. Let \(\mathcal{C}(s)\) be the classes in state \(s\), each class \(c\) a set of legal actions. A distribution over actions induces one over classes by summing:</p>
+
+<div class="eq">\begin{equation} \pi(c \mid s) = \sum_{a \in c} \pi(a \mid s), \qquad c \in \mathcal{C}(s), \quad \bigcup_{c \in \mathcal{C}(s)} c = \mathcal{A}(s). \label{eq:class-prob} \end{equation}</div>
+
+<p>Spire Mentor goes the other way: its network outputs one logit per class, so \(\pi_\theta(c \mid s)\) is primary and nothing has to be summed. In the rest of the tour, \(a_t\) means the chosen class and \(\mathcal{A}(s)\) means the set of classes, unless we say otherwise. The merge is safe only if the members of a class really are interchangeable. The project merges by a key built from what the player can see (the card, its cost, enchantment, damage and block numbers, and the target), and checks that the members of a class produce byte-identical inputs to the network.</p>
+
+<h3>Caps: an episode can be cut off</h3>
+
+<p>A random policy can stall forever: it can end its turn every turn in a fight against an enemy that never kills it. The env therefore caps a fight at 100 turns or 1,000 decisions, and a run at 6,000 decisions, and scores a capped run as a loss. A cap is a terminal state that the game itself does not have. Strictly, it makes the process depend on time, since the same position is non-terminal at decision 5,999 and terminal at 6,000. The textbook remedy is to put the step count in the state. Spire Mentor instead makes the cap rare: the design treats more than 0.1% capped runs as an alarm.</p>
+
+<h2 id="spire">9. In Spire Mentor</h2>
+
+<div class="example"><span class="label">In Spire Mentor · one policy for the whole run</span>
+  <p>The project's other agents split the work: tree search plays the fights and a separate run policy answers the screens between them. The end-to-end agent, which the project calls Instinct, uses one network for every decision of a run. A fight turn and a card reward are both rows of one trajectory, scored by one return. The project calls this "end-to-end". It means that a card picked on floor 3 and a block played on floor 40 sit in the same trajectory, and the final win or loss is credited to both. Chapter 4 shows how the project's critic splits that credit.</p>
+</div>
+
+<p>The env's main loop is short enough to read in full. It is the Rust port of the Python env, and the check for this chapter drives the same loop through its Python bindings.</p>
+
+<figure class="listing">
+<pre><code>/// `_drive`: peek, apply the forced steps, stop at a decision or the end.
+fn run_to_decision(&amp;mut self) -&gt; Step {
+    loop {
+        match self.drv.peek(&amp;mut self.rm) {
+            Next::Forced(f) =&gt; {
+                if let Err(e) = self.drv.apply(&amp;mut self.rm, &amp;f.action, f.kind) {
+                    return Step::Terminal(self.drv.error(&amp;self.rm, e));
+                }
+            }
+            Next::Decision(d) =&gt; {
+                self.pending = Some(Pending {
+                    combat: d.is_combat(),
+                    actions: d.actions.clone(),
+                    members: d.members.clone(),
+                });
+                return Step::Decision(d);
+            }
+            Next::Terminal(t) =&gt; return Step::Terminal(t),
+        }
+    }
+}</code></pre>
+<figcaption>sts2-rs/crates/sts2-e2e/src/env.rs, lines 1908-1928</figcaption>
+</figure>
+
+<p>Every position is one of three things. A <code>Forced</code> position is applied and the loop continues. A <code>Decision</code> is returned to the caller, who answers with a class index; <code>step(c)</code> then plays the representative, <code>members[c][0]</code>, and calls this loop again. A <code>Terminal</code> ends the episode. That is Figure 1.2 in code.</p>
+
+<p>Two rules make a position forced. Out of fights, the env first checks for a lone action, then classifies the actions, builds the merge keys and checks for a lone class:</p>
+
+<figure class="listing">
+<pre><code>if actions.len() == 1 {
+    return Ok(Next::Forced(Forced {
+        action: actions[0].clone(),
+        kind: ApplyKind::Run { strict: false },
+    }));
+}
+// ... classify, build merge keys, group into classes ...
+let (classes, members) = ct::classes_from_keys(&amp;keys);
+if members.len() == 1 {
+    return Ok(Next::Forced(Forced {
+        action: actions[members[0][0]].clone(),
+        kind: ApplyKind::Run { strict: true },
+    }));
+}</code></pre>
+<figcaption>sts2-rs/crates/sts2-e2e/src/env.rs, lines 1476-1481 and 1510-1515 (abridged)</figcaption>
+</figure>
+
+<p>Fights follow the same two rules, with one twist: the merge keys come from the belief view of the fight, never from the true state. Merging on the true state would leak hidden information into the action set itself.</p>
+
+<h3>What the policy reads</h3>
+
+<p>The observation \(o_t\) is not a picture of the screen. It is a set of <dfn>tokens</dfn>, each a short vector of 32 categorical ids and 210 numbers, tagged with a section that says what it describes. The project's tokenizer builds them; Chapter 2 shows how the network reads them. Here is the Seapunk decision, the network's first decision in a fight on seed 170,000,000, as a person and as the policy would see it.</p>
+
+<div class="table showcase">
+<table>
+  <caption>The first fight decision of the network's run on seed 170,000,000 (floor 1, round 1). Probabilities are the network's softmax over the five classes.</caption>
+  <thead><tr><th>class</th><th>representative action</th><th class="num">members</th><th class="num">\(\pi_\theta\)</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>play Strike at Seapunk</td><td class="num">3</td><td class="num">0.000</td></tr>
+    <tr><td>1</td><td>play Defend</td><td class="num">1</td><td class="num">0.184</td></tr>
+    <tr><td>2</td><td>drink Swift Potion</td><td class="num">1</td><td class="num">0.816</td></tr>
+    <tr><td>3</td><td>drink Orobic Acid</td><td class="num">1</td><td class="num">0.000</td></tr>
+    <tr><td>4</td><td>end turn</td><td class="num">1</td><td class="num">0.000</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The policy's row for this position has 28 tokens: one run-context token (RUNCTX), one for the act's boss, five pooled summaries (draw pile, discard, exhaust, deck, relics), the player's state, five hand cards, three for the draw pile's unordered contents (DRAW_UNK), two relics, two potions, one enemy, and seven option tokens, one per legal action (four plays, two potions, end turn). The true top of the draw pile, Strike, Defend, Defend, is in the simulator's state and in none of these tokens. The project has a section for it, PRIV_DRAW, but only the critic reads it.</p>
+
+<p>The first card reward of the same run makes a 19-token row: the same run context, boss and summaries, four tokens for the deck's distinct cards, two relics, two potions, three offered cards (True Grit, Unrelenting, Pommel Strike) and one token for "skip". The fight sections are gone and option sections have taken their place. One network reads both kinds of row, through the sections they share.</p>
+
+<h3>The decision types</h3>
+
+<p>Every decision carries a <dfn>decision type</dfn>, set from the kinds of action it offers. Two are fight types: COMBAT_TURN (play a card, drink a potion, end the turn) and COMBAT_CHOICE (a card asks you to pick other cards, for example to exhaust). The rest are between fights: NEOW (the opening gift), MAP, CARD_REWARD, SHOP, REST, SMITH (which card to upgrade at a rest site), EVENT, BOSS_RELIC, POTION_SWAP (a full potion belt), and a handful of rarer deck operations. Whether a type is a fight type picks which of the network's two output heads, fight or between-fight, scores the options; the token sections then differ by type.</p>
+
+<h3>Reward and horizon</h3>
+
+<p>The pre-registration fixes the reward before training, and the code follows it:</p>
+
+<figure class="listing">
+<pre><code>Win +1.0; +0.05 per boss beaten (act 1, act 2, act-3 boss 1);
++0.002 per new floor; death or a cap 0; no HP shaping; γ = 1.
+Caps: 100 turns or 1,000 decisions per fight, 6,000 per run;
+a capped run is a loss; alarm above 0.1%.</code></pre>
+<figcaption>docs/experiments/2026-11-03-ironclad-e2e-v111/PREREG.md, line 109 (wrapped)</figcaption>
+</figure>
+
+<p>With \(\gamma = 1\), Equation \eqref{eq:return} reduces to the plain sum of rewards still to come. The largest possible return is about 1.242, for a win on floor 46. Chapter 3 asks why the designers chose these numbers and what they left out.</p>
+
+<h2 id="measured">10. Measured</h2>
+
+<p>We played the first <span class="v" data-k="panel.runs">200</span> seeds of the tour's seed panel twice: once with a player that picks uniformly at random among the offered classes, once with the published Ironclad network, <code>ironclad_e2e_d9000_ema0999</code>, playing greedily (always its most probable class). Every run went through the env's own decision loop with each step logged. Each run's choices were then replayed in the project's training env, which reported the same number of decisions, the same end and the same floor for every one of the 400 runs, and supplied the return \(G_0\).</p>
+
+<details class="predict"><summary>Pause and predict: how many decisions does one of the network's runs take, and how many does a random run take?</summary>
+  <p>The network averages <span class="v" data-k="net.T_mean" data-f=".0f">667</span> decisions per run (median <span class="v" data-k="net.T_median" data-f=".0f">676</span>, range <span class="v" data-k="net.T_min">195</span> to <span class="v" data-k="net.T_max">956</span>). Random play averages <span class="v" data-k="random.T_mean" data-f=".1f">28.2</span> (range <span class="v" data-k="random.T_min">8</span> to <span class="v" data-k="random.T_max">66</span>). A random run is short because it dies early, not because its decisions are fewer per floor.</p>
+</details>
+
+<div class="measured"><span class="label">Measured · <span class="v" data-k="panel.runs">200</span> seeds of PANEL_A per player · M2 Max</span>
+  <div class="table">
+  <table>
+    <thead><tr><th></th><th class="num">random play</th><th class="num">network</th></tr></thead>
+    <tbody>
+      <tr><td>decisions per run, mean \(\bar T\)</td><td class="num"><span class="v" data-k="random.T_mean" data-f=".1f">28.2</span></td><td class="num"><span class="v" data-k="net.T_mean" data-f=".1f">667.0</span></td></tr>
+      <tr><td>share of decisions inside fights</td><td class="num"><span class="v" data-k="random.fight_share" data-f=".3f">0.858</span></td><td class="num"><span class="v" data-k="net.fight_share" data-f=".3f">0.883</span></td></tr>
+      <tr><td>forced steps per run</td><td class="num"><span class="v" data-k="random.forced_per_run" data-f=".1f">4.4</span></td><td class="num"><span class="v" data-k="net.forced_per_run" data-f=".1f">49.4</span></td></tr>
+      <tr><td>share of game steps that are forced</td><td class="num"><span class="v" data-k="random.forced_share" data-f=".3f">0.135</span></td><td class="num"><span class="v" data-k="net.forced_share" data-f=".3f">0.069</span></td></tr>
+      <tr><td>classes per decision, median</td><td class="num"><span class="v" data-k="random.classes_median" data-f=".0f">4</span></td><td class="num"><span class="v" data-k="net.classes_median" data-f=".0f">6</span></td></tr>
+      <tr><td>classes per decision, mean</td><td class="num"><span class="v" data-k="random.classes_mean" data-f=".2f">3.80</span></td><td class="num"><span class="v" data-k="net.classes_mean" data-f=".2f">6.46</span></td></tr>
+      <tr><td>legal actions per decision, mean</td><td class="num"><span class="v" data-k="random.members_mean" data-f=".2f">5.48</span></td><td class="num"><span class="v" data-k="net.members_mean" data-f=".2f">7.19</span></td></tr>
+      <tr><td>floor reached, mean</td><td class="num"><span class="v" data-k="random.floor_mean" data-f=".2f">2.06</span></td><td class="num"><span class="v" data-k="net.floor_mean" data-f=".2f">45.03</span></td></tr>
+      <tr><td>runs won</td><td class="num"><span class="v" data-k="random.wins">0</span></td><td class="num"><span class="v" data-k="net.wins">166</span></td></tr>
+      <tr><td>\(\hat J\) (mean \(G_0\)) ± standard error</td><td class="num"><span class="v" data-k="random.J_hat" data-f=".4f">0.0041</span> ± <span class="v" data-k="random.J_se" data-f=".4f">0.0002</span></td><td class="num"><span class="v" data-k="net.J_hat" data-f=".3f">1.063</span> ± <span class="v" data-k="net.J_se" data-f=".3f">0.028</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>No substitute: these are the repository's own env, merge rules and published network. The network's runs were played with the project's threaded self-play function and replayed through the logged loop; the check stops if a replay leaves its self-play run. The panel is the tour's own seed range, disjoint from the project's development, test and smoke panels, so no number here comes from a seed the published network was selected on.</p>
+</div>
+
+<p>Read the table one row at a time. An episode for the network is several hundred decisions, and between them the env applies about <span class="v" data-k="net.forced_per_run" data-f=".0f">49</span> forced steps the policy never sees. Most decisions happen inside fights, for both players. So most of the data a policy-gradient method collects is about playing cards, and between-fight choices, which shape the deck for the rest of the run, are a small minority of rows. That imbalance is why the project normalises advantages separately per decision type (Chapter 5).</p>
+
+<p>Forced steps are a small share of the network's game steps but a larger share of random play's. The difference is mostly in fights: random play often ends a turn with cards it cannot afford to play, and when only "end turn" is legal the step is forced.</p>
+
+<figure id="fig-showcase">
+  <div class="scroll">
+<!-- plot:showcase -->
+<svg viewBox="0 0 560 260" role="img" aria-label="Floor against decision index for one network episode">
+  <line class="grid" x1="56" x2="544" y1="214.0" y2="214.0"/>
+  <text class="muted" x="50" y="218.0" text-anchor="end">0</text>
+  <line class="grid" x1="56" x2="544" y1="174.8" y2="174.8"/>
+  <text class="muted" x="50" y="178.8" text-anchor="end">10</text>
+  <line class="grid" x1="56" x2="544" y1="135.6" y2="135.6"/>
+  <text class="muted" x="50" y="139.6" text-anchor="end">20</text>
+  <line class="grid" x1="56" x2="544" y1="96.4" y2="96.4"/>
+  <text class="muted" x="50" y="100.4" text-anchor="end">30</text>
+  <line class="grid" x1="56" x2="544" y1="57.2" y2="57.2"/>
+  <text class="muted" x="50" y="61.2" text-anchor="end">40</text>
+  <line class="grid" x1="56" x2="544" y1="18.0" y2="18.0"/>
+  <text class="muted" x="50" y="22.0" text-anchor="end">50</text>
+  <line class="ink" x1="56.0" x2="56.0" y1="214" y2="218"/>
+  <text class="muted" x="56.0" y="231" text-anchor="middle">0</text>
+  <line class="ink" x1="124.0" x2="124.0" y1="214" y2="218"/>
+  <text class="muted" x="124.0" y="231" text-anchor="middle">100</text>
+  <line class="ink" x1="191.9" x2="191.9" y1="214" y2="218"/>
+  <text class="muted" x="191.9" y="231" text-anchor="middle">200</text>
+  <line class="ink" x1="259.9" x2="259.9" y1="214" y2="218"/>
+  <text class="muted" x="259.9" y="231" text-anchor="middle">300</text>
+  <line class="ink" x1="327.9" x2="327.9" y1="214" y2="218"/>
+  <text class="muted" x="327.9" y="231" text-anchor="middle">400</text>
+  <line class="ink" x1="395.8" x2="395.8" y1="214" y2="218"/>
+  <text class="muted" x="395.8" y="231" text-anchor="middle">500</text>
+  <line class="ink" x1="463.8" x2="463.8" y1="214" y2="218"/>
+  <text class="muted" x="463.8" y="231" text-anchor="middle">600</text>
+  <line class="ink" x1="531.8" x2="531.8" y1="214" y2="218"/>
+  <text class="muted" x="531.8" y="231" text-anchor="middle">700</text>
+  <line class="ink" x1="56" x2="544" y1="214" y2="214"/>
+  <text x="300" y="252" text-anchor="middle">decision index t</text>
+  <text x="14" y="116" text-anchor="middle" transform="rotate(-90 14 116)">floor</text>
+  <circle class="f2" cx="56.0" cy="214.0" r="2.6"/>
+  <circle class="f2" cx="56.7" cy="214.0" r="2.6"/>
+  <circle class="f1" cx="57.4" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="58.0" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="58.7" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="59.4" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="60.1" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="60.8" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="61.4" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="62.1" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="62.8" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="63.5" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="64.2" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="64.8" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="65.5" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="66.2" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="66.9" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="67.6" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="68.2" cy="210.1" r="1.6"/>
+  <circle class="f1" cx="68.9" cy="210.1" r="1.6"/>
+  <circle class="f2" cx="69.6" cy="210.1" r="2.6"/>
+  <circle class="f2" cx="70.3" cy="210.1" r="2.6"/>
+  <circle class="f2" cx="71.0" cy="206.2" r="2.6"/>
+  <line class="l4" x1="71.6" x2="71.6" y1="236" y2="242"/>
+  <circle class="f1" cx="71.6" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="72.3" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="73.0" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="73.7" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="74.4" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="75.0" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="75.7" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="76.4" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="77.1" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="77.7" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="78.4" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="79.1" cy="202.2" r="1.6"/>
+  <circle class="f1" cx="79.8" cy="202.2" r="1.6"/>
+  <circle class="f2" cx="80.5" cy="202.2" r="2.6"/>
+  <line class="l4" x1="81.1" x2="81.1" y1="236" y2="242"/>
+  <circle class="f1" cx="81.1" cy="198.3" r="1.6"/>
+  <circle class="f1" cx="81.8" cy="198.3" r="1.6"/>
+  <circle class="f1" cx="82.5" cy="198.3" r="1.6"/>
+  <circle class="f1" cx="83.2" cy="198.3" r="1.6"/>
+  <circle class="f1" cx="83.9" cy="198.3" r="1.6"/>
+  <circle class="f1" cx="84.5" cy="198.3" r="1.6"/>
+  <circle class="f2" cx="85.2" cy="198.3" r="2.6"/>
+  <line class="l4" x1="85.9" x2="85.9" y1="236" y2="242"/>
+  <circle class="f1" cx="85.9" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="86.6" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="87.3" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="87.9" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="88.6" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="89.3" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="90.0" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="90.7" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="91.3" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="92.0" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="92.7" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="93.4" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="94.1" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="94.7" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="95.4" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="96.1" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="96.8" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="97.5" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="98.1" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="98.8" cy="194.4" r="1.6"/>
+  <circle class="f1" cx="99.5" cy="194.4" r="1.6"/>
+  <circle class="f2" cx="100.2" cy="194.4" r="2.6"/>
+  <line class="l4" x1="100.9" x2="100.9" y1="236" y2="242"/>
+  <circle class="f2" cx="100.9" cy="190.5" r="2.6"/>
+  <circle class="f2" cx="101.5" cy="190.5" r="2.6"/>
+  <line class="l4" x1="102.2" x2="102.2" y1="236" y2="242"/>
+  <circle class="f1" cx="102.2" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="102.9" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="103.6" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="104.3" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="104.9" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="105.6" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="106.3" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="107.0" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="107.7" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="108.3" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="109.0" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="109.7" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="110.4" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="111.1" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="111.7" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="112.4" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="113.1" cy="186.6" r="1.6"/>
+  <circle class="f1" cx="113.8" cy="186.6" r="1.6"/>
+  <circle class="f2" cx="114.5" cy="186.6" r="2.6"/>
+  <circle class="f2" cx="115.1" cy="186.6" r="2.6"/>
+  <circle class="f2" cx="115.8" cy="182.6" r="2.6"/>
+  <circle class="f2" cx="116.5" cy="182.6" r="2.6"/>
+  <line class="l4" x1="117.2" x2="117.2" y1="236" y2="242"/>
+  <circle class="f2" cx="117.2" cy="178.7" r="2.6"/>
+  <circle class="f2" cx="117.8" cy="174.8" r="2.6"/>
+  <circle class="f2" cx="118.5" cy="174.8" r="2.6"/>
+  <line class="l4" x1="119.2" x2="119.2" y1="236" y2="242"/>
+  <circle class="f1" cx="119.2" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="119.9" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="120.6" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="121.2" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="121.9" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="122.6" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="123.3" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="124.0" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="124.6" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="125.3" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="126.0" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="126.7" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="127.4" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="128.0" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="128.7" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="129.4" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="130.1" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="130.8" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="131.4" cy="170.9" r="1.6"/>
+  <circle class="f1" cx="132.1" cy="170.9" r="1.6"/>
+  <circle class="f2" cx="132.8" cy="170.9" r="2.6"/>
+  <line class="l4" x1="133.5" x2="133.5" y1="236" y2="242"/>
+  <circle class="f1" cx="133.5" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="134.2" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="134.8" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="135.5" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="136.2" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="136.9" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="137.6" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="138.2" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="138.9" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="139.6" cy="167.0" r="1.6"/>
+  <circle class="f1" cx="140.3" cy="167.0" r="1.6"/>
+  <circle class="f2" cx="141.0" cy="167.0" r="2.6"/>
+  <circle class="f2" cx="141.6" cy="167.0" r="2.6"/>
+  <circle class="f2" cx="142.3" cy="163.0" r="2.6"/>
+  <circle class="f2" cx="143.0" cy="163.0" r="2.6"/>
+  <line class="l4" x1="143.7" x2="143.7" y1="236" y2="242"/>
+  <circle class="f1" cx="143.7" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="144.4" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="145.0" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="145.7" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="146.4" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="147.1" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="147.8" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="148.4" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="149.1" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="149.8" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="150.5" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="151.2" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="151.8" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="152.5" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="153.2" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="153.9" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="154.6" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="155.2" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="155.9" cy="159.1" r="1.6"/>
+  <circle class="f1" cx="156.6" cy="159.1" r="1.6"/>
+  <circle class="f2" cx="157.3" cy="159.1" r="2.6"/>
+  <line class="l4" x1="157.9" x2="157.9" y1="236" y2="242"/>
+  <circle class="f2" cx="157.9" cy="155.2" r="2.6"/>
+  <circle class="f2" cx="158.6" cy="155.2" r="2.6"/>
+  <line class="l4" x1="159.3" x2="159.3" y1="236" y2="242"/>
+  <circle class="f1" cx="159.3" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="160.0" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="160.7" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="161.3" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="162.0" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="162.7" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="163.4" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="164.1" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="164.7" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="165.4" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="166.1" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="166.8" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="167.5" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="168.1" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="168.8" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="169.5" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="170.2" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="170.9" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="171.5" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="172.2" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="172.9" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="173.6" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="174.3" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="174.9" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="175.6" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="176.3" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="177.0" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="177.7" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="178.3" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="179.0" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="179.7" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="180.4" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="181.1" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="181.7" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="182.4" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="183.1" cy="151.3" r="1.6"/>
+  <circle class="f1" cx="183.8" cy="151.3" r="1.6"/>
+  <circle class="f2" cx="184.5" cy="151.3" r="2.6"/>
+  <circle class="f2" cx="185.1" cy="151.3" r="2.6"/>
+  <circle class="f2" cx="185.8" cy="151.3" r="2.6"/>
+  <circle class="f1" cx="186.5" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="187.2" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="187.9" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="188.5" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="189.2" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="189.9" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="190.6" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="191.3" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="191.9" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="192.6" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="193.3" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="194.0" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="194.7" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="195.3" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="196.0" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="196.7" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="197.4" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="198.1" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="198.7" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="199.4" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="200.1" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="200.8" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="201.4" cy="147.4" r="1.6"/>
+  <circle class="f1" cx="202.1" cy="147.4" r="1.6"/>
+  <circle class="f2" cx="202.8" cy="147.4" r="2.6"/>
+  <circle class="f2" cx="203.5" cy="147.4" r="2.6"/>
+  <circle class="f2" cx="204.2" cy="143.4" r="2.6"/>
+  <circle class="f2" cx="204.8" cy="143.4" r="2.6"/>
+  <circle class="f2" cx="205.5" cy="143.4" r="2.6"/>
+  <line class="l4" x1="206.2" x2="206.2" y1="236" y2="242"/>
+  <circle class="f2" cx="206.2" cy="139.5" r="2.6"/>
+  <line class="l4" x1="206.9" x2="206.9" y1="236" y2="242"/>
+  <circle class="f1" cx="206.9" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="207.6" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="208.2" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="208.9" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="209.6" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="210.3" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="211.0" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="211.6" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="212.3" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="213.0" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="213.7" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="214.4" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="215.0" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="215.7" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="216.4" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="217.1" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="217.8" cy="139.5" r="1.6"/>
+  <circle class="f1" cx="218.4" cy="139.5" r="1.6"/>
+  <circle class="f2" cx="219.1" cy="139.5" r="2.6"/>
+  <line class="l4" x1="219.8" x2="219.8" y1="236" y2="242"/>
+  <circle class="f1" cx="219.8" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="220.5" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="221.2" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="221.8" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="222.5" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="223.2" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="223.9" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="224.6" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="225.2" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="225.9" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="226.6" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="227.3" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="228.0" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="228.6" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="229.3" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="230.0" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="230.7" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="231.4" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="232.0" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="232.7" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="233.4" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="234.1" cy="135.6" r="1.6"/>
+  <circle class="f1" cx="234.8" cy="135.6" r="1.6"/>
+  <circle class="f2" cx="235.4" cy="135.6" r="2.6"/>
+  <circle class="f2" cx="236.1" cy="135.6" r="2.6"/>
+  <circle class="f2" cx="236.8" cy="131.7" r="2.6"/>
+  <line class="l4" x1="237.5" x2="237.5" y1="236" y2="242"/>
+  <line class="l4" x1="237.5" x2="237.5" y1="236" y2="242"/>
+  <line class="l4" x1="237.5" x2="237.5" y1="236" y2="242"/>
+  <circle class="f2" cx="237.5" cy="127.8" r="2.6"/>
+  <circle class="f2" cx="238.2" cy="127.8" r="2.6"/>
+  <line class="l4" x1="238.8" x2="238.8" y1="236" y2="242"/>
+  <circle class="f1" cx="238.8" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="239.5" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="240.2" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="240.9" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="241.5" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="242.2" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="242.9" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="243.6" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="244.3" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="244.9" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="245.6" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="246.3" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="247.0" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="247.7" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="248.3" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="249.0" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="249.7" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="250.4" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="251.1" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="251.7" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="252.4" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="253.1" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="253.8" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="254.5" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="255.1" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="255.8" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="256.5" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="257.2" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="257.9" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="258.5" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="259.2" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="259.9" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="260.6" cy="123.8" r="1.6"/>
+  <circle class="f1" cx="261.3" cy="123.8" r="1.6"/>
+  <circle class="f2" cx="261.9" cy="123.8" r="2.6"/>
+  <line class="l4" x1="262.6" x2="262.6" y1="236" y2="242"/>
+  <line class="l4" x1="262.6" x2="262.6" y1="236" y2="242"/>
+  <circle class="f1" cx="262.6" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="263.3" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="264.0" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="264.7" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="265.3" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="266.0" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="266.7" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="267.4" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="268.1" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="268.7" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="269.4" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="270.1" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="270.8" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="271.5" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="272.1" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="272.8" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="273.5" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="274.2" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="274.9" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="275.5" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="276.2" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="276.9" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="277.6" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="278.3" cy="116.0" r="1.6"/>
+  <circle class="f1" cx="278.9" cy="116.0" r="1.6"/>
+  <circle class="f2" cx="279.6" cy="116.0" r="2.6"/>
+  <circle class="f2" cx="280.3" cy="116.0" r="2.6"/>
+  <circle class="f2" cx="281.0" cy="112.1" r="2.6"/>
+  <line class="l4" x1="281.6" x2="281.6" y1="236" y2="242"/>
+  <circle class="f1" cx="281.6" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="282.3" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="283.0" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="283.7" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="284.4" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="285.0" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="285.7" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="286.4" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="287.1" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="287.8" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="288.4" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="289.1" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="289.8" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="290.5" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="291.2" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="291.8" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="292.5" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="293.2" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="293.9" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="294.6" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="295.2" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="295.9" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="296.6" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="297.3" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="298.0" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="298.6" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="299.3" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="300.0" cy="108.2" r="1.6"/>
+  <circle class="f1" cx="300.7" cy="108.2" r="1.6"/>
+  <circle class="f2" cx="301.4" cy="108.2" r="2.6"/>
+  <circle class="f2" cx="302.0" cy="108.2" r="2.6"/>
+  <circle class="f2" cx="302.7" cy="108.2" r="2.6"/>
+  <circle class="f1" cx="303.4" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="304.1" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="304.8" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="305.4" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="306.1" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="306.8" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="307.5" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="308.2" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="308.8" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="309.5" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="310.2" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="310.9" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="311.6" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="312.2" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="312.9" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="313.6" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="314.3" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="315.0" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="315.6" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="316.3" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="317.0" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="317.7" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="318.4" cy="104.2" r="1.6"/>
+  <circle class="f1" cx="319.0" cy="104.2" r="1.6"/>
+  <circle class="f2" cx="319.7" cy="104.2" r="2.6"/>
+  <circle class="f2" cx="320.4" cy="104.2" r="2.6"/>
+  <line class="l4" x1="321.1" x2="321.1" y1="236" y2="242"/>
+  <circle class="f1" cx="321.1" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="321.7" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="322.4" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="323.1" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="323.8" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="324.5" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="325.1" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="325.8" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="326.5" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="327.2" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="327.9" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="328.5" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="329.2" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="329.9" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="330.6" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="331.3" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="331.9" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="332.6" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="333.3" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="334.0" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="334.7" cy="100.3" r="1.6"/>
+  <circle class="f1" cx="335.3" cy="100.3" r="1.6"/>
+  <circle class="f2" cx="336.0" cy="100.3" r="2.6"/>
+  <line class="l4" x1="336.7" x2="336.7" y1="236" y2="242"/>
+  <circle class="f2" cx="336.7" cy="96.4" r="2.6"/>
+  <line class="l4" x1="337.4" x2="337.4" y1="236" y2="242"/>
+  <circle class="f1" cx="337.4" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="338.1" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="338.7" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="339.4" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="340.1" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="340.8" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="341.5" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="342.1" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="342.8" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="343.5" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="344.2" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="344.9" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="345.5" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="346.2" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="346.9" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="347.6" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="348.3" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="348.9" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="349.6" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="350.3" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="351.0" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="351.7" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="352.3" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="353.0" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="353.7" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="354.4" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="355.1" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="355.7" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="356.4" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="357.1" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="357.8" cy="92.5" r="1.6"/>
+  <circle class="f1" cx="358.5" cy="92.5" r="1.6"/>
+  <circle class="f2" cx="359.1" cy="92.5" r="2.6"/>
+  <circle class="f2" cx="359.8" cy="92.5" r="2.6"/>
+  <circle class="f2" cx="360.5" cy="92.5" r="2.6"/>
+  <circle class="f1" cx="361.2" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="361.8" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="362.5" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="363.2" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="363.9" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="364.6" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="365.2" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="365.9" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="366.6" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="367.3" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="368.0" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="368.6" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="369.3" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="370.0" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="370.7" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="371.4" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="372.0" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="372.7" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="373.4" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="374.1" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="374.8" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="375.4" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="376.1" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="376.8" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="377.5" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="378.2" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="378.8" cy="88.6" r="1.6"/>
+  <circle class="f1" cx="379.5" cy="88.6" r="1.6"/>
+  <circle class="f2" cx="380.2" cy="88.6" r="2.6"/>
+  <circle class="f2" cx="380.9" cy="88.6" r="2.6"/>
+  <line class="l4" x1="381.6" x2="381.6" y1="236" y2="242"/>
+  <circle class="f2" cx="381.6" cy="84.6" r="2.6"/>
+  <circle class="f2" cx="382.2" cy="84.6" r="2.6"/>
+  <circle class="f2" cx="382.9" cy="84.6" r="2.6"/>
+  <line class="l4" x1="383.6" x2="383.6" y1="236" y2="242"/>
+  <circle class="f2" cx="383.6" cy="80.7" r="2.6"/>
+  <line class="l4" x1="384.3" x2="384.3" y1="236" y2="242"/>
+  <circle class="f1" cx="384.3" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="385.0" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="385.6" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="386.3" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="387.0" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="387.7" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="388.4" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="389.0" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="389.7" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="390.4" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="391.1" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="391.8" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="392.4" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="393.1" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="393.8" cy="76.8" r="1.6"/>
+  <circle class="f1" cx="394.5" cy="76.8" r="1.6"/>
+  <circle class="f2" cx="395.2" cy="76.8" r="2.6"/>
+  <line class="l4" x1="395.8" x2="395.8" y1="236" y2="242"/>
+  <circle class="f2" cx="395.8" cy="72.9" r="2.6"/>
+  <line class="l4" x1="396.5" x2="396.5" y1="236" y2="242"/>
+  <circle class="f2" cx="396.5" cy="69.0" r="2.6"/>
+  <circle class="f2" cx="397.2" cy="69.0" r="2.6"/>
+  <line class="l4" x1="397.9" x2="397.9" y1="236" y2="242"/>
+  <line class="l4" x1="397.9" x2="397.9" y1="236" y2="242"/>
+  <circle class="f2" cx="397.9" cy="61.1" r="2.6"/>
+  <line class="l4" x1="398.6" x2="398.6" y1="236" y2="242"/>
+  <circle class="f2" cx="398.6" cy="57.2" r="2.6"/>
+  <circle class="f2" cx="399.2" cy="57.2" r="2.6"/>
+  <circle class="f2" cx="399.9" cy="57.2" r="2.6"/>
+  <circle class="f1" cx="400.6" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="401.3" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="401.9" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="402.6" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="403.3" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="404.0" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="404.7" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="405.3" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="406.0" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="406.7" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="407.4" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="408.1" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="408.7" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="409.4" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="410.1" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="410.8" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="411.5" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="412.1" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="412.8" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="413.5" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="414.2" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="414.9" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="415.5" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="416.2" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="416.9" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="417.6" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="418.3" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="418.9" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="419.6" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="420.3" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="421.0" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="421.7" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="422.3" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="423.0" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="423.7" cy="53.3" r="1.6"/>
+  <circle class="f1" cx="424.4" cy="53.3" r="1.6"/>
+  <circle class="f2" cx="425.1" cy="53.3" r="2.6"/>
+  <line class="l4" x1="425.7" x2="425.7" y1="236" y2="242"/>
+  <circle class="f1" cx="425.7" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="426.4" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="427.1" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="427.8" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="428.5" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="429.1" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="429.8" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="430.5" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="431.2" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="431.9" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="432.5" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="433.2" cy="49.4" r="1.6"/>
+  <circle class="f1" cx="433.9" cy="49.4" r="1.6"/>
+  <circle class="f2" cx="434.6" cy="49.4" r="2.6"/>
+  <circle class="f2" cx="435.3" cy="49.4" r="2.6"/>
+  <line class="l4" x1="435.9" x2="435.9" y1="236" y2="242"/>
+  <circle class="f1" cx="435.9" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="436.6" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="437.3" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="438.0" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="438.7" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="439.3" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="440.0" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="440.7" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="441.4" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="442.1" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="442.7" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="443.4" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="444.1" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="444.8" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="445.4" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="446.1" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="446.8" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="447.5" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="448.2" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="448.8" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="449.5" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="450.2" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="450.9" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="451.6" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="452.2" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="452.9" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="453.6" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="454.3" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="455.0" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="455.6" cy="45.4" r="1.6"/>
+  <circle class="f1" cx="456.3" cy="45.4" r="1.6"/>
+  <circle class="f2" cx="457.0" cy="45.4" r="2.6"/>
+  <circle class="f2" cx="457.7" cy="45.4" r="2.6"/>
+  <line class="l4" x1="458.4" x2="458.4" y1="236" y2="242"/>
+  <circle class="f2" cx="458.4" cy="41.5" r="2.6"/>
+  <line class="l4" x1="459.0" x2="459.0" y1="236" y2="242"/>
+  <circle class="f1" cx="459.0" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="459.7" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="460.4" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="461.1" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="461.8" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="462.4" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="463.1" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="463.8" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="464.5" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="465.2" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="465.8" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="466.5" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="467.2" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="467.9" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="468.6" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="469.2" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="469.9" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="470.6" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="471.3" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="472.0" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="472.6" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="473.3" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="474.0" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="474.7" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="475.4" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="476.0" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="476.7" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="477.4" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="478.1" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="478.8" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="479.4" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="480.1" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="480.8" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="481.5" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="482.2" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="482.8" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="483.5" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="484.2" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="484.9" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="485.5" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="486.2" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="486.9" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="487.6" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="488.3" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="488.9" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="489.6" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="490.3" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="491.0" cy="37.6" r="1.6"/>
+  <circle class="f1" cx="491.7" cy="37.6" r="1.6"/>
+  <line class="l4" x1="492.3" x2="492.3" y1="236" y2="242"/>
+  <circle class="f1" cx="492.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="493.0" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="493.7" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="494.4" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="495.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="495.7" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="496.4" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="497.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="497.8" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="498.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="499.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="499.8" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="500.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="501.2" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="501.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="502.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="503.2" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="503.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="504.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="505.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="505.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="506.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="507.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="508.0" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="508.7" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="509.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="510.0" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="510.7" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="511.4" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="512.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="512.7" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="513.4" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="514.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="514.8" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="515.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="516.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="516.8" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="517.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="518.2" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="518.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="519.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="520.2" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="520.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="521.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="522.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="522.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="523.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="524.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="525.0" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="525.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="526.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="527.0" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="527.7" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="528.4" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="529.0" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="529.7" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="530.4" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="531.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="531.8" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="532.4" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="533.1" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="533.8" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="534.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="535.2" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="535.8" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="536.5" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="537.2" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="537.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="538.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="539.2" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="539.9" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="540.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="541.3" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="542.0" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="542.6" cy="33.7" r="1.6"/>
+  <circle class="f1" cx="543.3" cy="33.7" r="1.6"/>
+  <rect class="f1" x="66" y="19" width="12" height="10"/>
+  <text x="84" y="28">decision inside a fight</text>
+  <rect class="f2" x="66" y="37" width="12" height="10"/>
+  <text x="84" y="46">decision between fights</text>
+  <rect class="f4" x="66" y="55" width="12" height="10"/>
+  <text x="84" y="64">forced step (tick under the axis)</text>
+</svg>
+<!-- /plot:showcase -->
+  </div>
+  <figcaption><b>Figure 1.4.</b> One episode, the network's run on seed 170,000,000: the floor at each decision, from Neow to the final boss (<span class="v" data-k="showcase.T">718</span> decisions, <span class="v" data-k="showcase.forced">37</span> forced steps). Each fight is a flat run of dots, because a fight takes dozens of decisions on one floor. The climbs between flat runs are the between-fight decisions, a handful per floor. Notice how unevenly the decisions are spread: the longest flat runs, the hardest fights, take a large share of the horizontal axis, and all of their decisions share the run's final win or loss</figcaption>
+</figure>
+
+<figure id="fig-lengths">
+  <div class="scroll">
+<!-- plot:lengths -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Histogram of decisions per episode for random play and the network">
+  <line class="grid" x1="56" x2="544" y1="254.0" y2="254.0"/>
+  <text class="muted" x="50" y="258.0" text-anchor="end">0.0</text>
+  <line class="grid" x1="56" x2="544" y1="220.3" y2="220.3"/>
+  <text class="muted" x="50" y="224.3" text-anchor="end">0.1</text>
+  <line class="grid" x1="56" x2="544" y1="186.6" y2="186.6"/>
+  <text class="muted" x="50" y="190.6" text-anchor="end">0.2</text>
+  <line class="grid" x1="56" x2="544" y1="152.9" y2="152.9"/>
+  <text class="muted" x="50" y="156.9" text-anchor="end">0.3</text>
+  <line class="grid" x1="56" x2="544" y1="119.1" y2="119.1"/>
+  <text class="muted" x="50" y="123.1" text-anchor="end">0.4</text>
+  <line class="grid" x1="56" x2="544" y1="85.4" y2="85.4"/>
+  <text class="muted" x="50" y="89.4" text-anchor="end">0.5</text>
+  <line class="grid" x1="56" x2="544" y1="51.7" y2="51.7"/>
+  <text class="muted" x="50" y="55.7" text-anchor="end">0.6</text>
+  <line class="grid" x1="56" x2="544" y1="18.0" y2="18.0"/>
+  <text class="muted" x="50" y="22.0" text-anchor="end">0.7</text>
+  <line class="ink" x1="58.9" x2="58.9" y1="254" y2="258"/>
+  <text class="muted" x="58.9" y="271" text-anchor="middle">10</text>
+  <line class="ink" x1="68.7" x2="68.7" y1="254" y2="258"/>
+  <text class="muted" x="68.7" y="271" text-anchor="middle">30</text>
+  <line class="ink" x1="103.0" x2="103.0" y1="254" y2="258"/>
+  <text class="muted" x="103.0" y="271" text-anchor="middle">100</text>
+  <line class="ink" x1="201.0" x2="201.0" y1="254" y2="258"/>
+  <text class="muted" x="201.0" y="271" text-anchor="middle">300</text>
+  <line class="ink" x1="544.0" x2="544.0" y1="254" y2="258"/>
+  <text class="muted" x="544.0" y="271" text-anchor="middle">1000</text>
+  <line class="ink" x1="56" x2="544" y1="254" y2="254"/>
+  <text x="300" y="292" text-anchor="middle">decisions in the episode, T (log scale)</text>
+  <text x="14" y="136" text-anchor="middle" transform="rotate(-90 14 136)">share of runs</text>
+  <rect class="f2" x="58.9" y="252.3" width="-1.0" height="1.7" opacity="0.85"/>
+  <rect class="f2" x="59.9" y="242.2" width="-0.7" height="11.8" opacity="0.85"/>
+  <rect class="f2" x="61.2" y="227.0" width="-0.4" height="27.0" opacity="0.85"/>
+  <rect class="f2" x="62.8" y="210.2" width="0.0" height="43.8" opacity="0.85"/>
+  <rect class="f2" x="64.8" y="176.5" width="0.5" height="77.5" opacity="0.85"/>
+  <rect class="f2" x="67.4" y="196.7" width="1.2" height="57.3" opacity="0.85"/>
+  <rect class="f2" x="70.5" y="186.6" width="2.0" height="67.4" opacity="0.85"/>
+  <rect class="f2" x="74.6" y="223.7" width="3.1" height="30.3" opacity="0.85"/>
+  <rect class="f2" x="79.6" y="237.1" width="4.4" height="16.9" opacity="0.85"/>
+  <rect class="f2" x="86.0" y="250.6" width="6.0" height="3.4" opacity="0.85"/>
+  <rect class="f1" x="132.7" y="252.3" width="18.1" height="1.7" opacity="0.85"/>
+  <rect class="f1" x="152.8" y="248.9" width="23.3" height="5.1" opacity="0.85"/>
+  <rect class="f1" x="178.1" y="250.6" width="29.9" height="3.4" opacity="0.85"/>
+  <rect class="f1" x="210.0" y="252.3" width="38.1" height="1.7" opacity="0.85"/>
+  <rect class="f1" x="250.1" y="245.6" width="48.5" height="8.4" opacity="0.85"/>
+  <rect class="f1" x="300.6" y="174.8" width="61.6" height="79.2" opacity="0.85"/>
+  <rect class="f1" x="364.2" y="50.0" width="78.0" height="204.0" opacity="0.85"/>
+  <rect class="f1" x="444.2" y="220.3" width="98.8" height="33.7" opacity="0.85"/>
+  <rect class="f2" x="70" y="23" width="12" height="10"/>
+  <text x="88" y="32">random play</text>
+  <rect class="f1" x="70" y="41" width="12" height="10"/>
+  <text x="88" y="50">network</text>
+</svg>
+<!-- /plot:lengths -->
+  </div>
+  <figcaption><b>Figure 1.5.</b> The horizon \(T\) is random, and its distribution depends on the policy. Histogram of decisions per run over <span class="v" data-k="panel.runs">200</span> seeds, log scale. Notice that the two players' episodes do not overlap in length: the same environment gives episodes an order of magnitude apart. The network's short runs are its losses.</figcaption>
+</figure>
+
+<figure id="fig-survival">
+  <div class="scroll">
+<!-- plot:survival -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Share of runs that reach each floor, random play against the network">
+  <line class="grid" x1="56" x2="544" y1="254.0" y2="254.0"/>
+  <text class="muted" x="50" y="258.0" text-anchor="end">0</text>
+  <line class="grid" x1="56" x2="544" y1="195.0" y2="195.0"/>
+  <text class="muted" x="50" y="199.0" text-anchor="end">0.25</text>
+  <line class="grid" x1="56" x2="544" y1="136.0" y2="136.0"/>
+  <text class="muted" x="50" y="140.0" text-anchor="end">0.5</text>
+  <line class="grid" x1="56" x2="544" y1="77.0" y2="77.0"/>
+  <text class="muted" x="50" y="81.0" text-anchor="end">0.75</text>
+  <line class="grid" x1="56" x2="544" y1="18.0" y2="18.0"/>
+  <text class="muted" x="50" y="22.0" text-anchor="end">1</text>
+  <line class="ink" x1="56.0" x2="56.0" y1="254" y2="258"/>
+  <text class="muted" x="56.0" y="271" text-anchor="middle">0</text>
+  <line class="ink" x1="153.6" x2="153.6" y1="254" y2="258"/>
+  <text class="muted" x="153.6" y="271" text-anchor="middle">10</text>
+  <line class="ink" x1="251.2" x2="251.2" y1="254" y2="258"/>
+  <text class="muted" x="251.2" y="271" text-anchor="middle">20</text>
+  <line class="ink" x1="348.8" x2="348.8" y1="254" y2="258"/>
+  <text class="muted" x="348.8" y="271" text-anchor="middle">30</text>
+  <line class="ink" x1="446.4" x2="446.4" y1="254" y2="258"/>
+  <text class="muted" x="446.4" y="271" text-anchor="middle">40</text>
+  <line class="ink" x1="544.0" x2="544.0" y1="254" y2="258"/>
+  <text class="muted" x="544.0" y="271" text-anchor="middle">50</text>
+  <line class="ink" x1="56" x2="544" y1="254" y2="254"/>
+  <text x="300" y="292" text-anchor="middle">floor</text>
+  <text x="14" y="136" text-anchor="middle" transform="rotate(-90 14 136)">share of runs reaching it</text>
+  <polyline class="l2" stroke-width="2.2" points="56.0,18.0 65.8,18.0 65.8,18.0 75.5,18.0 75.5,121.8 85.3,121.8 85.3,185.6 95.0,185.6 95.0,226.9 104.8,226.9 104.8,238.7 114.6,238.7 114.6,249.3 124.3,249.3 124.3,252.8 134.1,252.8 134.1,254.0 143.8,254.0 143.8,254.0 153.6,254.0 153.6,254.0 163.4,254.0 163.4,254.0 173.1,254.0 173.1,254.0 182.9,254.0 182.9,254.0 192.6,254.0 192.6,254.0 202.4,254.0 202.4,254.0 212.2,254.0 212.2,254.0 221.9,254.0 221.9,254.0 231.7,254.0 231.7,254.0 241.4,254.0 241.4,254.0 251.2,254.0 251.2,254.0 261.0,254.0 261.0,254.0 270.7,254.0 270.7,254.0 280.5,254.0 280.5,254.0 290.2,254.0 290.2,254.0 300.0,254.0 300.0,254.0 309.8,254.0 309.8,254.0 319.5,254.0 319.5,254.0 329.3,254.0 329.3,254.0 339.0,254.0 339.0,254.0 348.8,254.0 348.8,254.0 358.6,254.0 358.6,254.0 368.3,254.0 368.3,254.0 378.1,254.0 378.1,254.0 387.8,254.0 387.8,254.0 397.6,254.0 397.6,254.0 407.4,254.0 407.4,254.0 417.1,254.0 417.1,254.0 426.9,254.0 426.9,254.0 436.6,254.0 436.6,254.0 446.4,254.0 446.4,254.0 456.2,254.0 456.2,254.0 465.9,254.0 465.9,254.0 475.7,254.0 475.7,254.0 485.4,254.0 485.4,254.0 495.2,254.0 495.2,254.0 505.0,254.0 505.0,254.0 514.7,254.0 514.7,254.0 524.5,254.0 524.5,254.0 534.2,254.0 534.2,254.0 544.0,254.0"/>
+  <polyline class="l1" stroke-width="2.2" points="56.0,18.0 65.8,18.0 65.8,18.0 75.5,18.0 75.5,18.0 85.3,18.0 85.3,18.0 95.0,18.0 95.0,18.0 104.8,18.0 104.8,18.0 114.6,18.0 114.6,18.0 124.3,18.0 124.3,18.0 134.1,18.0 134.1,18.0 143.8,18.0 143.8,18.0 153.6,18.0 153.6,18.0 163.4,18.0 163.4,18.0 173.1,18.0 173.1,18.0 182.9,18.0 182.9,18.0 192.6,18.0 192.6,18.0 202.4,18.0 202.4,18.0 212.2,18.0 212.2,18.0 221.9,18.0 221.9,21.5 231.7,21.5 231.7,21.5 241.4,21.5 241.4,21.5 251.2,21.5 251.2,21.5 261.0,21.5 261.0,21.5 270.7,21.5 270.7,21.5 280.5,21.5 280.5,22.7 290.2,22.7 290.2,22.7 300.0,22.7 300.0,22.7 309.8,22.7 309.8,22.7 319.5,22.7 319.5,25.1 329.3,25.1 329.3,25.1 339.0,25.1 339.0,25.1 348.8,25.1 348.8,25.1 358.6,25.1 358.6,25.1 368.3,25.1 368.3,27.4 378.1,27.4 378.1,27.4 387.8,27.4 387.8,27.4 397.6,27.4 397.6,27.4 407.4,27.4 407.4,27.4 417.1,27.4 417.1,27.4 426.9,27.4 426.9,27.4 436.6,27.4 436.6,27.4 446.4,27.4 446.4,27.4 456.2,27.4 456.2,27.4 465.9,27.4 465.9,27.4 475.7,27.4 475.7,29.8 485.4,29.8 485.4,31.0 495.2,31.0 495.2,31.0 505.0,31.0 505.0,38.1 514.7,38.1 514.7,249.3 524.5,249.3 524.5,249.3 534.2,249.3 534.2,254.0 544.0,254.0"/>
+  <rect class="f2" x="414" y="23" width="12" height="10"/>
+  <text x="432" y="32">random play</text>
+  <rect class="f1" x="414" y="41" width="12" height="10"/>
+  <text x="432" y="50">network</text>
+</svg>
+<!-- /plot:survival -->
+  </div>
+  <figcaption><b>Figure 1.6.</b> Share of runs that reach each floor. Random play loses most runs in the first two or three fights; the network's curve falls slowly, and most of its losses come at the end, on the final bosses of floors 45 and 46. This curve is the reason \(T\) depends on the policy: an episode ends at death, and the policy decides when that is.</figcaption>
+</figure>
+
+<details class="predict"><summary>Pause and predict: before merging, the game offers some number of legal actions at each of the network's decisions. After merging, the policy sees classes. Which is larger on average, and by how much?</summary>
+  <p>The network's decisions offer <span class="v" data-k="net.members_mean" data-f=".2f">7.19</span> legal actions on average and <span class="v" data-k="net.classes_mean" data-f=".2f">6.46</span> classes: merging shrinks the average choice by a factor of <span class="v" data-k="net.merge_ratio" data-f=".2f">1.11</span>. The median decision offers <span class="v" data-k="net.classes_median" data-f=".0f">6</span> classes. The tail is long: a shop or a late-game hand can offer thirty or more. Figure 1.7 shows the whole distribution.</p>
+</details>
+
+<figure id="fig-classes">
+  <div class="scroll">
+<!-- plot:classes -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Distribution of legal actions and merged classes per network decision">
+  <line class="grid" x1="56" x2="544" y1="254.0" y2="254.0"/>
+  <text class="muted" x="50" y="258.0" text-anchor="end">0.00</text>
+  <line class="grid" x1="56" x2="544" y1="175.3" y2="175.3"/>
+  <text class="muted" x="50" y="179.3" text-anchor="end">0.05</text>
+  <line class="grid" x1="56" x2="544" y1="96.7" y2="96.7"/>
+  <text class="muted" x="50" y="100.7" text-anchor="end">0.10</text>
+  <line class="grid" x1="56" x2="544" y1="18.0" y2="18.0"/>
+  <text class="muted" x="50" y="22.0" text-anchor="end">0.15</text>
+  <line class="ink" x1="80.4" x2="80.4" y1="254" y2="258"/>
+  <text class="muted" x="80.4" y="271" text-anchor="middle">2</text>
+  <line class="ink" x1="129.2" x2="129.2" y1="254" y2="258"/>
+  <text class="muted" x="129.2" y="271" text-anchor="middle">5</text>
+  <line class="ink" x1="210.5" x2="210.5" y1="254" y2="258"/>
+  <text class="muted" x="210.5" y="271" text-anchor="middle">10</text>
+  <line class="ink" x1="291.9" x2="291.9" y1="254" y2="258"/>
+  <text class="muted" x="291.9" y="271" text-anchor="middle">15</text>
+  <line class="ink" x1="373.2" x2="373.2" y1="254" y2="258"/>
+  <text class="muted" x="373.2" y="271" text-anchor="middle">20</text>
+  <line class="ink" x1="454.5" x2="454.5" y1="254" y2="258"/>
+  <text class="muted" x="454.5" y="271" text-anchor="middle">25</text>
+  <line class="ink" x1="535.9" x2="535.9" y1="254" y2="258"/>
+  <text class="muted" x="535.9" y="271" text-anchor="middle">30</text>
+  <line class="ink" x1="56" x2="544" y1="254" y2="254"/>
+  <text x="300" y="292" text-anchor="middle">options at the decision</text>
+  <text x="14" y="136" text-anchor="middle" transform="rotate(-90 14 136)">share of decisions</text>
+  <rect class="f4" x="73.3" y="101.4" width="7.1" height="152.6"/>
+  <rect class="f1" x="80.4" y="86.3" width="7.1" height="167.7"/>
+  <rect class="f4" x="89.5" y="120.3" width="7.1" height="133.7"/>
+  <rect class="f1" x="96.7" y="89.2" width="7.1" height="164.8"/>
+  <rect class="f4" x="105.8" y="83.1" width="7.1" height="170.9"/>
+  <rect class="f1" x="112.9" y="36.3" width="7.1" height="217.7"/>
+  <rect class="f4" x="122.1" y="98.0" width="7.1" height="156.0"/>
+  <rect class="f1" x="129.2" y="67.7" width="7.1" height="186.3"/>
+  <rect class="f4" x="138.3" y="73.7" width="7.1" height="180.3"/>
+  <rect class="f1" x="145.5" y="69.8" width="7.1" height="184.2"/>
+  <rect class="f4" x="154.6" y="74.8" width="7.1" height="179.2"/>
+  <rect class="f1" x="161.7" y="88.5" width="7.1" height="165.5"/>
+  <rect class="f4" x="170.9" y="105.6" width="7.1" height="148.4"/>
+  <rect class="f1" x="178.0" y="120.0" width="7.1" height="134.0"/>
+  <rect class="f4" x="187.1" y="141.4" width="7.1" height="112.6"/>
+  <rect class="f1" x="194.3" y="153.4" width="7.1" height="100.6"/>
+  <rect class="f4" x="203.4" y="168.3" width="7.1" height="85.7"/>
+  <rect class="f1" x="210.5" y="182.3" width="7.1" height="71.7"/>
+  <rect class="f4" x="219.7" y="188.4" width="7.1" height="65.6"/>
+  <rect class="f1" x="226.8" y="201.8" width="7.1" height="52.2"/>
+  <rect class="f4" x="235.9" y="207.4" width="7.1" height="46.6"/>
+  <rect class="f1" x="243.1" y="219.7" width="7.1" height="34.3"/>
+  <rect class="f4" x="252.2" y="221.5" width="7.1" height="32.5"/>
+  <rect class="f1" x="259.3" y="230.3" width="7.1" height="23.7"/>
+  <rect class="f4" x="268.5" y="230.7" width="7.1" height="23.3"/>
+  <rect class="f1" x="275.6" y="237.5" width="7.1" height="16.5"/>
+  <rect class="f4" x="284.7" y="235.2" width="7.1" height="18.8"/>
+  <rect class="f1" x="291.9" y="240.4" width="7.1" height="13.6"/>
+  <rect class="f4" x="301.0" y="240.3" width="7.1" height="13.7"/>
+  <rect class="f1" x="308.1" y="245.1" width="7.1" height="8.9"/>
+  <rect class="f4" x="317.3" y="243.7" width="7.1" height="10.3"/>
+  <rect class="f1" x="324.4" y="247.3" width="7.1" height="6.7"/>
+  <rect class="f4" x="333.5" y="246.9" width="7.1" height="7.1"/>
+  <rect class="f1" x="340.7" y="249.5" width="7.1" height="4.5"/>
+  <rect class="f4" x="349.8" y="247.7" width="7.1" height="6.3"/>
+  <rect class="f1" x="356.9" y="250.0" width="7.1" height="4.0"/>
+  <rect class="f4" x="366.1" y="249.0" width="7.1" height="5.0"/>
+  <rect class="f1" x="373.2" y="251.6" width="7.1" height="2.4"/>
+  <rect class="f4" x="382.3" y="250.4" width="7.1" height="3.6"/>
+  <rect class="f1" x="389.5" y="252.3" width="7.1" height="1.7"/>
+  <rect class="f4" x="398.6" y="251.1" width="7.1" height="2.9"/>
+  <rect class="f1" x="405.7" y="252.7" width="7.1" height="1.3"/>
+  <rect class="f4" x="414.9" y="251.8" width="7.1" height="2.2"/>
+  <rect class="f1" x="422.0" y="252.9" width="7.1" height="1.1"/>
+  <rect class="f4" x="431.1" y="252.4" width="7.1" height="1.6"/>
+  <rect class="f1" x="438.3" y="253.1" width="7.1" height="0.9"/>
+  <rect class="f4" x="447.4" y="252.8" width="7.1" height="1.2"/>
+  <rect class="f1" x="454.5" y="252.9" width="7.1" height="1.1"/>
+  <rect class="f4" x="463.7" y="252.8" width="7.1" height="1.2"/>
+  <rect class="f1" x="470.8" y="252.9" width="7.1" height="1.1"/>
+  <rect class="f4" x="479.9" y="252.8" width="7.1" height="1.2"/>
+  <rect class="f1" x="487.1" y="253.0" width="7.1" height="1.0"/>
+  <rect class="f4" x="496.2" y="253.2" width="7.1" height="0.8"/>
+  <rect class="f1" x="503.3" y="253.0" width="7.1" height="1.0"/>
+  <rect class="f4" x="512.5" y="253.2" width="7.1" height="0.8"/>
+  <rect class="f1" x="519.6" y="253.2" width="7.1" height="0.8"/>
+  <rect class="f4" x="528.7" y="253.4" width="7.1" height="0.6"/>
+  <rect class="f1" x="535.9" y="253.2" width="7.1" height="0.8"/>
+  <text class="muted" x="544" y="68" text-anchor="end">beyond 30: 0.5% of legal-action counts, 0.2% of class counts</text>
+  <rect class="f4" x="374" y="19" width="12" height="10"/>
+  <text x="392" y="28">legal actions |A(s)|</text>
+  <rect class="f1" x="374" y="37" width="12" height="10"/>
+  <text x="392" y="46">merged classes</text>
+</svg>
+<!-- /plot:classes -->
+  </div>
+  <figcaption><b>Figure 1.7.</b> The size of the choice. For every decision of the network's runs: the number of legal actions the game offered (grey) and the number of classes after merging identical ones (colour). Notice that merging shifts mass toward smaller sets, and that no decision has fewer than two classes, because a one-class position is forced. The policy's output must cover anything from two options to several dozen.</figcaption>
+</figure>
+
+<figure id="fig-types">
+  <div class="scroll">
+<!-- plot:types -->
+<svg viewBox="0 0 560 410" role="img" aria-label="Network decisions per run by decision type">
+  <line class="grid" x1="150.0" x2="150.0" y1="20" y2="370"/>
+  <text class="muted" x="150.0" y="384" text-anchor="middle">0.1</text>
+  <line class="grid" x1="237.5" x2="237.5" y1="20" y2="370"/>
+  <text class="muted" x="237.5" y="384" text-anchor="middle">1</text>
+  <line class="grid" x1="325.0" x2="325.0" y1="20" y2="370"/>
+  <text class="muted" x="325.0" y="384" text-anchor="middle">10</text>
+  <line class="grid" x1="412.5" x2="412.5" y1="20" y2="370"/>
+  <text class="muted" x="412.5" y="384" text-anchor="middle">100</text>
+  <line class="grid" x1="500.0" x2="500.0" y1="20" y2="370"/>
+  <text class="muted" x="500.0" y="384" text-anchor="middle">1000</text>
+  <text x="142" y="37" text-anchor="end">COMBAT_TURN</text>
+  <rect class="f1" x="150" y="26" width="328.0" height="14"/>
+  <text class="muted" x="483.0" y="37">560</text>
+  <text x="142" y="57" text-anchor="end">COMBAT_CHOICE</text>
+  <rect class="f1" x="150" y="46" width="215.7" height="14"/>
+  <text class="muted" x="370.7" y="57">29.2</text>
+  <text x="142" y="77" text-anchor="end">CARD_REWARD</text>
+  <rect class="f2" x="150" y="66" width="206.9" height="14"/>
+  <text class="muted" x="361.9" y="77">23.1</text>
+  <text x="142" y="97" text-anchor="end">MAP</text>
+  <rect class="f2" x="150" y="86" width="193.4" height="14"/>
+  <text class="muted" x="348.4" y="97">16.2</text>
+  <text x="142" y="117" text-anchor="end">SHOP</text>
+  <rect class="f2" x="150" y="106" width="175.0" height="14"/>
+  <text class="muted" x="330.0" y="117">10</text>
+  <text x="142" y="137" text-anchor="end">REST</text>
+  <rect class="f2" x="150" y="126" width="168.5" height="14"/>
+  <text class="muted" x="323.5" y="137">8.44</text>
+  <text x="142" y="157" text-anchor="end">EVENT</text>
+  <rect class="f2" x="150" y="146" width="158.7" height="14"/>
+  <text class="muted" x="313.7" y="157">6.51</text>
+  <text x="142" y="177" text-anchor="end">SMITH</text>
+  <rect class="f2" x="150" y="166" width="153.9" height="14"/>
+  <text class="muted" x="308.9" y="177">5.75</text>
+  <text x="142" y="197" text-anchor="end">POTION_SWAP</text>
+  <rect class="f2" x="150" y="186" width="130.2" height="14"/>
+  <text class="muted" x="285.2" y="197">3.08</text>
+  <text x="142" y="217" text-anchor="end">BOSS_RELIC</text>
+  <rect class="f2" x="150" y="206" width="112.8" height="14"/>
+  <text class="muted" x="267.8" y="217">1.95</text>
+  <text x="142" y="237" text-anchor="end">NEOW</text>
+  <rect class="f2" x="150" y="226" width="87.5" height="14"/>
+  <text class="muted" x="242.5" y="237">1</text>
+  <text x="142" y="257" text-anchor="end">CARD_TRANSFORM</text>
+  <rect class="f2" x="150" y="246" width="66.5" height="14"/>
+  <text class="muted" x="221.5" y="257">0.575</text>
+  <text x="142" y="277" text-anchor="end">CARD_ENCHANT</text>
+  <rect class="f2" x="150" y="266" width="63.0" height="14"/>
+  <text class="muted" x="218.0" y="277">0.525</text>
+  <text x="142" y="297" text-anchor="end">CARD_GRANT</text>
+  <rect class="f2" x="150" y="286" width="37.0" height="14"/>
+  <text class="muted" x="192.0" y="297">0.265</text>
+  <text x="142" y="317" text-anchor="end">CARD_UPGRADE</text>
+  <rect class="f2" x="150" y="306" width="31.7" height="14"/>
+  <text class="muted" x="186.7" y="317">0.23</text>
+  <text x="142" y="337" text-anchor="end">CARD_REMOVE</text>
+  <rect class="f2" x="150" y="326" width="15.4" height="14"/>
+  <text class="muted" x="170.4" y="337">0.15</text>
+  <text x="142" y="357" text-anchor="end">CARD_BUNDLE</text>
+  <rect class="f2" x="150" y="346" width="0.0" height="14"/>
+  <text class="muted" x="155.0" y="357">0.005</text>
+  <text x="325" y="402" text-anchor="middle">decisions per run (log scale)</text>
+</svg>
+<!-- /plot:types -->
+  </div>
+  <figcaption><b>Figure 1.8.</b> What the network's decisions are, per run, on a log scale (fight types in the first colour, between-fight types in the second). Notice the spread: about 560 fight turns per run against one Neow choice, two boss relics and about sixteen map choices. Most map moves are forced, because most map nodes have one exit. A loss averaged over all rows is dominated by fight turns.</figcaption>
+</figure>
+
+<h3>The forced steps</h3>
+
+<p>Which steps does the env take without asking? The table lists the network's most common forced actions per run.</p>
+
+<div class="table">
+<!-- plot:forced -->
+<table><thead><tr><th>where</th><th>forced action</th><th class="num">per run</th><th class="num">share of forced steps</th></tr></thead><tbody><tr><td>between</td><td><code>move</code></td><td class="num">28.81</td><td class="num">58.3%</td></tr><tr><td>fight</td><td><code>end_turn</code></td><td class="num">17.80</td><td class="num">36.0%</td></tr><tr><td>between</td><td><code>leave_shop</code></td><td class="num">1.99</td><td class="num">4.0%</td></tr><tr><td>between</td><td><code>event_choice</code></td><td class="num">0.41</td><td class="num">0.8%</td></tr><tr><td>fight</td><td><code>combat_resolve_choice</code></td><td class="num">0.14</td><td class="num">0.3%</td></tr><tr><td>between</td><td><code>remove_deck_card</code></td><td class="num">0.13</td><td class="num">0.3%</td></tr><tr><td>between</td><td><code>transform_deck_card</code></td><td class="num">0.09</td><td class="num">0.2%</td></tr><tr><td>between</td><td><code>enchant_deck_card</code></td><td class="num">0.03</td><td class="num">0.1%</td></tr></tbody></table>
+<!-- /plot:forced -->
+</div>
+
+<p>Of the network's forced steps, <span class="v" data-k="net.forced_fight_share" data-f="%">36.3%</span> happen inside fights. The rest are between fights: proceeding from screens with one exit, taking the only path from a map node, and similar.</p>
+
+<h3>The return and the objective</h3>
+
+<figure id="fig-returns">
+  <div class="scroll">
+<!-- plot:returns -->
+<svg viewBox="0 0 560 200" role="img" aria-label="Per-run returns for random play and the network with their means">
+  <line class="ink" x1="74.8" x2="74.8" y1="154" y2="158"/>
+  <text class="muted" x="74.8" y="171" text-anchor="middle">0</text>
+  <line class="ink" x1="168.6" x2="168.6" y1="154" y2="158"/>
+  <text class="muted" x="168.6" y="171" text-anchor="middle">0.25</text>
+  <line class="ink" x1="262.5" x2="262.5" y1="154" y2="158"/>
+  <text class="muted" x="262.5" y="171" text-anchor="middle">0.5</text>
+  <line class="ink" x1="356.3" x2="356.3" y1="154" y2="158"/>
+  <text class="muted" x="356.3" y="171" text-anchor="middle">0.75</text>
+  <line class="ink" x1="450.2" x2="450.2" y1="154" y2="158"/>
+  <text class="muted" x="450.2" y="171" text-anchor="middle">1</text>
+  <line class="ink" x1="544.0" x2="544.0" y1="154" y2="158"/>
+  <text class="muted" x="544.0" y="171" text-anchor="middle">1.25</text>
+  <line class="ink" x1="56" x2="544" y1="154" y2="154"/>
+  <text x="300" y="192" text-anchor="middle">return of the run, G₀</text>
+  <text x="14" y="86" text-anchor="middle" transform="rotate(-90 14 86)"></text>
+  <text x="56" y="32">random play</text>
+  <circle class="f2" cx="75.5" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="75.5" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="76.3" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.0" cy="42.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="56.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="47.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="61.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="52.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="43.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="57.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="48.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="39.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="53.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="77.8" cy="44.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="58.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="49.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="40.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="54.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="45.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="59.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="50.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="41.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="78.5" cy="55.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="79.3" cy="46.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="79.3" cy="60.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="79.3" cy="51.0" r="2.4" opacity="0.55"/>
+  <circle class="f2" cx="80.0" cy="42.0" r="2.4" opacity="0.55"/>
+  <line class="ink" stroke-width="2" x1="76.3" x2="76.3" y1="34" y2="66"/>
+  <text x="82.3" y="44">Ĵ = 0.004</text>
+  <text x="56" y="92">network</text>
+  <circle class="f1" cx="86.8" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="86.8" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="86.8" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="110.1" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="113.1" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="113.1" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="116.8" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="116.8" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="143.8" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="143.8" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="144.6" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="146.1" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="146.1" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="146.1" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="146.1" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="146.1" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="146.1" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="165.6" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="167.1" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="102.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="116.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="107.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="121.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="112.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="103.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="117.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="108.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="99.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="113.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="104.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="118.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="109.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="100.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="114.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="105.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="119.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="110.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="101.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="115.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="541.0" cy="106.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="542.5" cy="120.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="542.5" cy="111.0" r="2.4" opacity="0.55"/>
+  <circle class="f1" cx="542.5" cy="102.0" r="2.4" opacity="0.55"/>
+  <line class="ink" stroke-width="2" x1="473.8" x2="473.8" y1="94" y2="126"/>
+  <text x="479.8" y="104">Ĵ = 1.063</text>
+</svg>
+<!-- /plot:returns -->
+  </div>
+  <figcaption><b>Figure 1.9.</b> Per-run returns \(G_0\), one dot per run, with the mean \(\hat J\) marked. Notice that the distribution is two clusters, not a bell: wins sit at 1.24, and losses spread from about 0.03 to 0.25, depending on how far the run got before it died. \(J\) is close to the win rate times 1.24, and its standard error follows from the binomial spread of wins, not from anything that happens inside a run.</figcaption>
+</figure>
+
+<div class="measured"><span class="label">Measured · the objective</span>
+  <p>Random play: \(\hat J =\) <span class="v" data-k="random.J_hat" data-f=".4f">0.0041</span> ± <span class="v" data-k="random.J_se" data-f=".4f">0.0002</span>. Network: \(\hat J =\) <span class="v" data-k="net.J_hat" data-f=".3f">1.063</span> ± <span class="v" data-k="net.J_se" data-f=".3f">0.028</span>, with standard deviation of \(G_0\) across runs <span class="v" data-k="net.G_sd" data-f=".3f">0.398</span>. The standard errors use runs as the sampling unit, as Equation \eqref{eq:mc-j} requires. The returns come from the training env's own reward bookkeeping, so they include every forced step's reward.</p>
+  <p>What it means: the quantity training raises is mostly a win rate. A win is worth 1.24 and the best loss about 0.25. A change of policy that adds one floor to every losing run moves \(J\) by 0.002 times the loss rate; a change that converts one run in a hundred from a late loss into a win moves it by about 0.01. Chapter 3 is about that trade.</p>
+</div>
+
+<h2 id="confusions">11. Common confusions</h2>
+
+<p><strong>"A step is a game step."</strong> In this project, \(t\) counts decisions. Forced steps happen between decisions and their rewards fold into the previous decision's \(r_t\). If you compute returns over game steps you get the same \(G_0\) but a different \(T\), and every per-step quantity (advantages, entropies, losses averaged over rows) changes its meaning.</p>
+
+<p><strong>"The state is what the network sees."</strong> Spinning Up warns that much deep-RL writing uses "state" for the observation <span class="cite">[<a href="#ref-6">6</a>]</span>. Here they differ, and the difference is deliberate: the simulator's state includes the draw order; the observation built from the belief view does not. A critic is allowed extra inputs; the policy is not. When this tour writes \(\pi_\theta(a \mid s)\), read the \(s\) as "the policy's input at that decision", which is \(o_t\).</p>
+
+<p><strong>"More decisions per run means more independent data."</strong> A run of several hundred decisions is one draw from \(p_\theta(\tau)\). Its decisions share a seed, a deck and an outcome. For estimating \(J\) the effective sample size is the number of runs. Decisions do help the gradient estimate, through the critic, but not as independent samples.</p>
+
+<p><strong>"Illegal actions are just low-probability actions."</strong> In a fixed-output network, an illegal action with a tiny probability can still be sampled, and its gradient still flows. Equation \eqref{eq:support} requires probability exactly zero. Spire Mentor gets that by construction: it scores only offered classes, so there is no output for an illegal action to have.</p>
+
+<p><strong>"Q-learning would do the same thing here."</strong> It would need \(Q(s, a)\) for a variable action set, a target \(\max_{a'} Q(s', a')\) over the next decision's classes, and a state that is not Markov. All three are possible, but the max over an observation-based \(Q\) is exactly where partial observability bites hardest, because the bootstrap target treats the observation as if it were the state. Optimising \(J\) directly sidesteps the bootstrap for the policy, and keeps bootstrapping only in the critic, where privileged inputs can repair the Markov property.</p>
+
+<h2 id="experiments">12. Suggested experiments</h2>
+
+<p>All commands run from the repository root on the <code>tour</code> branch. In a git worktree, prefix them with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
+
+<ol class="experiments">
+  <li><p><strong>Watch one episode.</strong> The check prints the first decisions of a random run and a network run on the same seed, then a fight decision and a card-reward decision rendered for a person and as token sections, then the panel table. <code>--quick</code> plays 20 seeds.</p>
+  <pre><code>tour/run stop-1-episode/check.py --quick --workers 3</code></pre>
+  <p>Look at the fight decision: count the hand's actions against the classes, and find the line that names the hidden top of the draw pile.</p></li>
+  <li><p><strong>Rebuild this chapter's numbers.</strong> Collect the data on more seeds, then redraw every plot and number in this page.</p>
+  <pre><code>tour/run stop-1-episode/figures.py collect --seeds 400 --workers 3
+tour/run stop-1-episode/figures.py render</code></pre>
+  <p>How much does the standard error of \(\hat J\) shrink when you double the runs? Equation \eqref{eq:mc-j} predicts a factor of \(\sqrt 2\).</p></li>
+  <li><p><strong>A smarter random player.</strong> In <code>check.py</code>, change <code>random_chooser</code> so it never ends the turn while another class is offered. Run the check again. Predict first: does the forced share go up or down, and how far does this player get?</p></li>
+</ol>
+
+<h2 id="references">References</h2>
+<ol class="refs">
+  <li id="ref-1">Sutton, R. S., and Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em>, 2nd ed. MIT Press. Chapter 3 (§3.1–3.4) and §17.3.</li>
+  <li id="ref-2">Bellman, R. (1957). A Markovian decision process. <em>Journal of Mathematics and Mechanics</em>, 6(5), 679–684.</li>
+  <li id="ref-3">Puterman, M. L. (1994). <em>Markov Decision Processes: Discrete Stochastic Dynamic Programming</em>. Wiley.</li>
+  <li id="ref-4">Kaelbling, L. P., Littman, M. L., and Cassandra, A. R. (1998). Planning and acting in partially observable stochastic domains. <em>Artificial Intelligence</em>, 101(1–2), 99–134.</li>
+  <li id="ref-5">Sutton, R. S., Precup, D., and Singh, S. (1999). Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning. <em>Artificial Intelligence</em>, 112(1–2), 181–211.</li>
+  <li id="ref-6">Achiam, J. (2018). <em>Spinning Up in Deep Reinforcement Learning</em>. OpenAI. Part 1, "Key Concepts in RL".</li>
+  <li id="ref-7">Huang, S., and Ontañón, S. (2020). A closer look at invalid action masking in policy gradient algorithms. arXiv:2006.14171.</li>
+</ol>
+</main>
+
+<footer class="chapter"><span>Start of the tour</span><span>Chapter 2: Policies →</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
