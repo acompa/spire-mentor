@@ -122,22 +122,22 @@ figure mjx-container svg { display: inline; margin: 0; }
 <header class="chapter">
   <div class="eyebrow"><span>RL tour · Chapter 8 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
   <h1>Evaluating agents</h1>
-  <p class="lede">Two networks score differently on a panel of games. This chapter shows when that difference is real, how many games it takes to know, what the games cost, and how choosing a network on the same games inflates the number you report.</p>
+  <p class="lede">To compare two agents, play both on the same seeds and count the seeds where only one of them wins. That count sets how precise the comparison is and how many games it needs. It also sets how far the best of several checkpoints overstates its own score.</p>
 </header>
 
 <nav class="contents" aria-label="Chapter contents">
   <strong>Contents</strong>
   <ol>
-    <li><a href="#s1">Why evaluation is its own problem</a></li>
+    <li><a href="#s1">An evaluation is an experiment with one bit per game</a></li>
     <li><a href="#s2">A win rate is a binomial estimate</a></li>
-    <li><a href="#s3">Paired seeds</a></li>
-    <li><a href="#s4">McNemar's test and the paired interval</a></li>
-    <li><a href="#s5">Power, detectable effect and cost</a></li>
-    <li><a href="#s6">Choosing on the panel you report</a></li>
-    <li><a href="#s7">Pre-registration and sealed panels</a></li>
-    <li><a href="#s8">Textbook against engineered</a></li>
-    <li><a href="#s9">In Spire Mentor</a></li>
-    <li><a href="#s10">Measured</a></li>
+    <li><a href="#s3">Paired seeds remove the noise both networks share</a></li>
+    <li><a href="#s4">McNemar's test uses only the seeds where the networks disagree</a></li>
+    <li><a href="#s5">Discordance sets the seeds you need and the hours they cost</a></li>
+    <li><a href="#s6">The best checkpoint looks better on the seeds that chose it</a></li>
+    <li><a href="#s7">Pre-registration fixes the analysis before the data exist</a></li>
+    <li><a href="#s8">Where a real campaign departs from the textbook</a></li>
+    <li><a href="#s9">How Spire Mentor evaluates a network</a></li>
+    <li><a href="#s10">Measured on this Mac</a></li>
     <li><a href="#s11">Common confusions</a></li>
     <li><a href="#experiments">Suggested experiments</a></li>
     <li><a href="#references">References</a></li>
@@ -145,31 +145,31 @@ figure mjx-container svg { display: inline; margin: 0; }
 </nav>
 
 <main>
-  <h2 id="s1">1. Why evaluation is its own problem</h2>
-  <p>The first seven chapters built an agent. Chapter 5's update raised the probability of actions with positive advantage, Chapter 6 corrected for stale data, and Chapter 7 started the network from a teacher. Every one of those steps ends in the same question: is the new network better than the old one? Training curves cannot answer it. The training win rate is measured on the sampling policy, on seeds the learner has partly fitted, while the network is still moving. The answer has to come from a separate measurement: play the frozen network on fresh games and count wins.</p>
-  <p>That measurement is an experiment with a sample size, and it has the problems every experiment has. In supervised learning the test set is fixed and usually large, so a model's accuracy has a small standard error and two models are compared on the same examples without anyone calling it a design choice. In reinforcement learning the test set is a set of episodes the evaluator chooses to generate, each episode is expensive, and the outcome of one episode is a single bit. A Slay the Spire 2 run takes about 700 decisions and ends in a win or a loss. A thousand runs is seven hundred thousand forward passes of a transformer to produce a thousand bits.</p>
-  <p>Deep RL research learned this slowly. Henderson et al. showed that reported gains on standard benchmarks often sat inside the spread between random seeds of the same algorithm <span class="cite">[<a href="#ref-henderson">1</a>]</span>. Agarwal et al. reanalysed published Atari results and found that conclusions drawn from point estimates over a handful of runs often reversed once intervals were drawn <span class="cite">[<a href="#ref-agarwal">2</a>]</span>. Both papers are about variance across <em>training</em> runs. This chapter is about the variance of <em>evaluating</em> one frozen network, which is the part an engineer controls with a seed list and a budget.</p>
-  <p>You know power calculations, crossover designs and CUPED. The statistics here are those. What is specific to agents is three facts. A game seed fixes the whole random environment, so two agents can play the identical game: a crossover design in which the seed is the subject. The paired design's gain can be written exactly in terms of how often the agents disagree. And the panel of seeds used to pick a checkpoint cannot also certify it, by an amount we can compute.</p>
+  <h2 id="s1">1. An evaluation is an experiment with one bit per game</h2>
+  <p>Chapters 5, 6 and 7 each changed how the network is trained. Every such change raises one question: does the new network win more often than the old one? The training curve cannot answer it. That curve averages games of the sampling policy, on seeds the learner has partly fitted, while the weights still move. The answer needs a separate measurement. You freeze the network, play it on fresh games, and count the wins.</p>
+  <p>That measurement is an experiment with a sample size. In supervised learning the test set is fixed and large, and two models are scored on the same examples. In reinforcement learning you create the test set by playing games. Each game is expensive and returns one bit. A Slay the Spire 2 run takes about 650 decisions and ends in a win or a loss. A thousand runs cost 650,000 forward passes of a transformer and return 1,000 bits.</p>
+  <p>Deep RL research learned this slowly. Henderson and colleagues showed that reported gains on standard benchmarks often sat inside the spread between random seeds of one algorithm <span class="cite">[<a href="#ref-henderson">1</a>]</span>. Agarwal and colleagues reanalysed published Atari results. Conclusions drawn from point estimates over a few runs often reversed once intervals were drawn <span class="cite">[<a href="#ref-agarwal">2</a>]</span>. Both papers study the variance across <em>training</em> runs. This chapter studies the variance of <em>evaluating</em> one frozen network. You control that variance with a seed list and a budget.</p>
+  <p>You already know power calculations, crossover designs, and CUPED. This chapter uses exactly those tools. Three facts are specific to agents. A seed fixes the game's random environment, so two agents can play the same game. The gain from pairing them on seeds has an exact formula in terms of how often they disagree. The seeds that pick a checkpoint overstate its score by an amount you can compute.</p>
 
   <h2 id="s2">2. A win rate is a binomial estimate</h2>
-  <p>Fix a policy \(\pi_\theta\) and play it greedily. Each <dfn>seed</dfn> is an integer that initialises every random number generator of the game: the map, the card rewards, the shuffle order, the enemies' moves. Draw seeds \(i = 1, \dots, n\) and let \(X_i \in \{0, 1\}\) record whether the run on seed \(i\) was won. Chapter 3's return with the win bonus is a near-copy of \(X_i\); here we use the bit itself, because the bit is the quantity the project reports.</p>
+  <p>A <dfn>seed</dfn> is an integer that initialises the game's random number generators. It fixes the map of each act and the list of fights each act offers. Card rewards, shuffles and the enemies' moves come from streams that advance as the game is played. Fix a policy \(\pi_\theta\) and play it greedily. Draw seeds \(i = 1, \dots, n\), and let \(X_i \in \{0, 1\}\) record whether the run on seed \(i\) was won. Chapter 3's return with the win bonus is close to \(X_i\). This chapter uses the bit itself, because the project reports the bit.</p>
   <div class="definition"><span class="label">Definition 8.1 · Win rate</span>
     <p>The <dfn>win rate</dfn> of a policy is \(p = \Pr(X = 1)\) for a seed drawn from the seed distribution. Its estimate on \(n\) seeds is</p>
     <div class="eq">\begin{equation} \hat p = \frac{k}{n}, \qquad k = \sum_{i=1}^{n} X_i \sim \operatorname{Binomial}(n, p). \label{eq:phat} \end{equation}</div>
   </div>
-  <p>Here \(k\) is the number of wins. The binomial law holds because seeds are drawn independently and greedy play is deterministic given the seed, so each \(X_i\) is an independent Bernoulli draw with the same \(p\). Two consequences follow at once:</p>
+  <p>Here \(k\) is the number of wins. Each \(X_i\) is a Bernoulli draw with the same \(p\), for two reasons. The design treats the seeds as independent draws, and greedy play makes the outcome a fixed function of the seed. Section 8 explains why the independence of the seeds is an assumption. Two consequences follow:</p>
   <div class="eq">\begin{equation} \mathbb{E}[\hat p] = p, \qquad \operatorname{Var}(\hat p) = \frac{p(1-p)}{n}. \label{eq:var} \end{equation}</div>
-  <p>The estimate is unbiased, and its standard deviation shrinks as \(1/\sqrt{n}\). At \(p = 0.8\) and \(n = 400\), the standard error is \(\sqrt{0.16/400} = 0.02\): two percentage points. Note what does not appear: how different the seeds are from each other. Some seeds are nearly unwinnable and some are trivial, yet Equation \eqref{eq:var} already includes that, because the marginal law of one outcome is Bernoulli whatever mixture of easy and hard seeds produced it. Section 11 returns to this, because it is the most common misreading of panel-to-panel differences.</p>
+  <p>The estimate is unbiased, and its standard deviation shrinks as \(1/\sqrt{n}\). At \(p = 0.8\) and \(n = 400\), the standard error is \(\sqrt{0.16/400} = 0.02\), which is two percentage points. The difference between easy and hard seeds does not appear in Equation \eqref{eq:var}, and it does not need to. One outcome is a Bernoulli draw whatever mix of easy and hard seeds produced it, so \(p\) already averages over that mix. Section 11 returns to this point, because it is the most common misreading of a gap between two panels.</p>
 
-  <h3>Two intervals</h3>
-  <p>A 95% <dfn>confidence interval</dfn> is a procedure that, applied to repeated samples, covers the true \(p\) 95% of the time. The familiar one replaces \(p\) by \(\hat p\) in Equation \eqref{eq:var}:</p>
+  <h3>Wilson's interval stays between 0 and 1</h3>
+  <p>A 95% <dfn>confidence interval</dfn> is a procedure that covers the true \(p\) in 95% of repeated samples. The familiar interval puts \(\hat p\) in place of \(p\) in Equation \eqref{eq:var}:</p>
   <div class="eq">\begin{equation} \hat p \pm z \sqrt{\frac{\hat p (1 - \hat p)}{n}}, \qquad z = z_{0.975} \approx 1.96. \label{eq:wald} \end{equation}</div>
-  <p>This is the <dfn>Wald interval</dfn>. It fails exactly where good agents live. At 19 wins in 20 games it gives \(0.95 \pm 0.096\), an interval that runs past 100%. At 20 of 20 it has zero width. Its coverage is poor near 0 and 1 because the variance it plugs in is estimated from the same small count it is meant to judge.</p>
-  <p>Wilson's fix (1927) is to keep the unknown \(p\) in the variance and ask which values of \(p\) are consistent with what we saw <span class="cite">[<a href="#ref-wilson">3</a>]</span>. A value \(p\) is kept if \(\hat p\) lies within \(z\) of its own standard errors of it:</p>
+  <p>This is the <dfn>Wald interval</dfn>. It fails for good agents, whose win rates sit near 1. At 19 wins in 20 games it gives \(0.95 \pm 0.096\), which runs past 100%. At 20 wins in 20 games it has zero width. The interval plugs in a variance that it estimates from the same small count it is meant to judge.</p>
+  <p>Wilson (1927) keeps the unknown \(p\) in the variance <span class="cite">[<a href="#ref-wilson">3</a>]</span>. He asks which values of \(p\) are consistent with the observed \(\hat p\). A value of \(p\) is kept if \(\hat p\) lies within \(z\) of that value's own standard errors:</p>
   <div class="eq">\begin{equation} (\hat p - p)^2 \le z^2 \, \frac{p(1-p)}{n}. \label{eq:wilson-ineq} \end{equation}</div>
-  <p>This is a quadratic inequality in \(p\). Expanding and solving for its two roots gives the <dfn>Wilson score interval</dfn>:</p>
+  <p>This is a quadratic inequality in \(p\). We expand it and take its two roots, which gives the <dfn>Wilson score interval</dfn>:</p>
   <div class="eq">\begin{equation} p \in \frac{1}{1 + z^2/n} \left[ \hat p + \frac{z^2}{2n} \pm z \sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}} \right]. \label{eq:wilson} \end{equation}</div>
-  <p>The centre is pulled from \(\hat p\) toward one half by \(z^2/2n\), roughly two extra pseudo-games split evenly, and the interval can never leave \([0, 1]\). At 20 of 20 it gives \([0.84, 1]\), which is the honest statement: twenty straight wins rule out a 70% agent but not an 85% one. The project computes exactly Equation \eqref{eq:wilson}.</p>
+  <p>The centre is \((k + z^2/2)/(n + z^2)\). It is the win rate you would get after adding \(z^2 \approx 3.84\) games, half of them wins. So the interval is centred as if about four extra games, two won and two lost, had been played. The centre moves from \(\hat p\) toward one half by \(z^2(\tfrac12 - \hat p)/(n + z^2)\). The interval never leaves \([0, 1]\). At 20 wins in 20 games it gives \([0.84, 1]\). Twenty straight wins rule out a 70% agent but not an 85% agent. The project computes Equation \eqref{eq:wilson} directly.</p>
 
   <figure class="listing">
     <pre><code>def wilson(k: int, n: int, z: float = Z95) -> tuple[float, float]:
@@ -184,9 +184,7 @@ figure mjx-container svg { display: inline; margin: 0; }
     <figcaption>sts2-pycli/python/ppo/e2e/stats.py, lines 33-41</figcaption>
   </figure>
 
-  <details class="predict"><summary>Pause and predict: the Ironclad network wins about four games in five. After 600 seeds, how wide is the 95% interval on its win rate?</summary>
-    <p>It won <span data-m="net1.k" data-f="int">482</span> of <span data-m="net1.n" data-f="int">600</span>: <span data-m="net1.p" data-f="pct1">80.3%</span>, Wilson interval <span data-m="net1.lo" data-f="pct1">77.0%</span> to <span data-m="net1.hi" data-f="pct1">83.3%</span>, a half-width of <span data-m="half_width1" data-f="pp1">3.2</span> percentage points. Equation \eqref{eq:var} predicts \(1.96\sqrt{p(1-p)/600}\), about three points at \(p = 0.8\). Six hundred games pin the rate to within roughly ±3 points, and to halve that you need four times the games.</p>
-  </details>
+  <p>On this chapter's 600 seeds, the Ironclad network won <span data-m="net1.k" data-f="int">482</span> of <span data-m="net1.n" data-f="int">600</span> games, a win rate of <span data-m="net1.p" data-f="pct1">80.3%</span>. Its Wilson interval runs from <span data-m="net1.lo" data-f="pct1">77.0%</span> to <span data-m="net1.hi" data-f="pct1">83.3%</span>, a half-width of <span data-m="half_width1" data-f="pp1">3.2</span> percentage points. Equation \eqref{eq:var} predicts \(1.96\sqrt{0.8 \times 0.2/600}\), about three points. To halve that width, you need four times the games.</p>
 
   <figure id="fig-running">
     <div class="scroll">
@@ -226,65 +224,120 @@ figure mjx-container svg { display: inline; margin: 0; }
 </svg>
 <!-- /figure:running -->
     </div>
-    <figcaption><b>Figure 8.1.</b> The running win rate \(k/n\) of the Ironclad network as seeds accumulate, with its 95% Wilson interval shaded. Notice how fast the band narrows at first and how slowly after a few hundred seeds: the width falls as \(1/\sqrt{n}\). The early wiggles are not trends, they are the band.</figcaption>
+    <figcaption><b>Figure 8.1.</b> The running win rate \(k/n\) of the Ironclad network as seeds accumulate, with its 95% Wilson interval shaded. Notice how fast the band narrows at first and how slowly it narrows after a few hundred seeds. The width falls as \(1/\sqrt{n}\). The early wiggles stay inside the band, so they are not trends.</figcaption>
   </figure>
 
-  <h2 id="s3">3. Paired seeds</h2>
-  <p>Now compare two policies, network 1 and network 2. The obvious design gives each its own \(n\) seeds. The difference of two independent binomial estimates then has variance</p>
+  <h2 id="s3">3. Paired seeds remove the noise both networks share</h2>
+  <p>Now compare two policies, network 1 and network 2. The obvious design gives each network its own \(n\) seeds. The difference of two independent binomial estimates then has variance</p>
   <div class="eq">\begin{equation} \operatorname{Var}(\hat p_1 - \hat p_2) = \frac{p_1(1-p_1) + p_2(1-p_2)}{n}. \label{eq:unpaired} \end{equation}</div>
-  <p>Here \(p_1\) and \(p_2\) are the two true win rates. With both near 0.8, this is \(0.32/n\), and its square root at \(n = 1{,}000\) is 1.8 points. A two-point gain would sit inside one standard error.</p>
-  <p>A game is different from a patient. We cannot give the same patient two treatments in the same instant, so crossover trials give them in sequence and model the carry-over. We can give the same seed to two agents with no carry-over at all: seed 170,000,000 produces the same map, the same opening offer and the same first fights for whichever network plays it. Running two simulated systems on the same random inputs so that their difference is less noisy is called <dfn>common random numbers</dfn> in the simulation literature <span class="cite">[<a href="#ref-glasserman">4</a>]</span>. For agents it means <dfn>paired seeds</dfn>: both networks play every seed, and the unit of analysis is the seed.</p>
+  <p>Here \(p_1\) and \(p_2\) are the two true win rates. With both near 0.8, the variance is \(0.32/n\). At \(n = 1{,}000\) its square root is 1.8 points, so a two-point gain would be only about one standard error.</p>
+  <p>A crossover trial gives one patient two treatments in sequence, and it has to model the carry-over between them. Seeds need no sequence. Both networks can play seed 170,000,000, and both meet the same maps and the same lists of fights. Simulation practice calls this design <dfn>common random numbers</dfn> <span class="cite">[<a href="#ref-glasserman">4</a>]</span>. It runs two systems on the same random inputs so that their difference has less noise. For agents the design is <dfn>paired seeds</dfn>. Both networks play every seed, and the unit of analysis is the seed.</p>
 
-  <figure id="fig-design">
+  <figure id="fig-design-1">
     <div class="scroll">
-      <svg viewBox="0 0 640 300" role="img" aria-label="Each seed is played by both networks; the pair of outcomes falls in one of four cells; only the two discordant cells reach McNemar's test.">
-        <defs><marker id="arr8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
-        <g color="var(--fg)">
-          <rect class="box" x="10" y="115" width="110" height="60" rx="3"/>
-          <text x="65" y="140" text-anchor="middle">seed i</text>
-          <text class="muted" x="65" y="158" text-anchor="middle">map, rewards, rolls</text>
-          <rect class="box" x="170" y="50" width="120" height="50" rx="3"/><text x="230" y="80" text-anchor="middle">network 1</text>
-          <rect class="box" x="170" y="190" width="120" height="50" rx="3"/><text x="230" y="220" text-anchor="middle">network 2</text>
-          <line class="ink" x1="120" y1="135" x2="170" y2="78" marker-end="url(#arr8)"/>
-          <line class="ink" x1="120" y1="155" x2="170" y2="212" marker-end="url(#arr8)"/>
-          <text class="muted" x="112" y="98" text-anchor="middle">same game</text>
-          <line class="ink" x1="290" y1="75" x2="355" y2="125" marker-end="url(#arr8)"/>
-          <line class="ink" x1="290" y1="215" x2="355" y2="170" marker-end="url(#arr8)"/>
-          <text class="muted" x="330" y="88" text-anchor="middle">X<tspan baseline-shift="sub" font-size="9">i</tspan></text>
-          <text class="muted" x="312" y="208" text-anchor="middle">Y<tspan baseline-shift="sub" font-size="9">i</tspan></text>
-          <rect class="box" x="360" y="100" width="70" height="45" rx="2"/><text x="395" y="120" text-anchor="middle">a</text><text class="muted" x="395" y="136" text-anchor="middle">both win</text>
-          <rect x="432" y="100" width="70" height="45" rx="2" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="467" y="120" text-anchor="middle">b</text><text class="muted" x="467" y="136" text-anchor="middle">1 only</text>
-          <rect x="360" y="147" width="70" height="45" rx="2" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="395" y="167" text-anchor="middle">c</text><text class="muted" x="395" y="183" text-anchor="middle">2 only</text>
-          <rect class="box" x="432" y="147" width="70" height="45" rx="2"/><text x="467" y="167" text-anchor="middle">d</text><text class="muted" x="467" y="183" text-anchor="middle">both lose</text>
-          <text class="muted" x="431" y="90" text-anchor="middle">2×2 table over n seeds</text>
-          <line class="l1" x1="502" y1="146" x2="555" y2="146" stroke-width="2" marker-end="url(#arr8)" style="color: var(--s1)"/>
-          <text x="590" y="132" text-anchor="middle">b, c</text>
-          <text class="muted" x="590" y="150" text-anchor="middle">McNemar,</text>
-          <text class="muted" x="590" y="166" text-anchor="middle">Δ̂ = (b − c)/n</text>
-          <text class="muted" x="431" y="232" text-anchor="middle">a and d: the seed was easy or hard;</text>
-          <text class="muted" x="431" y="248" text-anchor="middle">they cancel out of the difference</text>
-        </g>
-      </svg>
+<svg viewBox="0 0 640 290" role="img" aria-label="One seed is played by both networks, so both play the same game.">
+  <defs><marker id="arr8a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g color="var(--fg)">
+    <rect class="box" x="10" y="105" width="110" height="60" rx="3"/>
+    <text x="65" y="130" text-anchor="middle">seed i</text>
+    <text class="muted" x="65" y="148" text-anchor="middle">map, encounters</text>
+    <rect class="box" x="180" y="40" width="120" height="50" rx="3"/><text x="240" y="70" text-anchor="middle">network 1</text>
+    <rect class="box" x="180" y="180" width="120" height="50" rx="3"/><text x="240" y="210" text-anchor="middle">network 2</text>
+    <line class="ink" x1="120" y1="125" x2="180" y2="68" marker-end="url(#arr8a)"/>
+    <line class="ink" x1="120" y1="145" x2="180" y2="202" marker-end="url(#arr8a)"/>
+    <text class="muted" x="128" y="84" text-anchor="middle">same seed</text>
+    <text class="muted" x="128" y="196" text-anchor="middle">same seed</text>
+  </g>
+</svg>
     </div>
-    <figcaption><b>Figure 8.2.</b> The paired design. Every seed is played by both networks, so each seed lands in one of four cells. The difference in win rate depends only on the shaded discordant cells b and c; seeds in a and d carry information about the seed, not about which network is better.</figcaption>
+    <figcaption><b>Figure 8.2.</b> One seed, two networks. Both networks play seed \(i\), so both meet the same maps and the same lists of fights.</figcaption>
+  </figure>
+
+  <p>Each network wins or loses the game. The pair of results puts the seed in one of four cells, and over a panel of \(n\) seeds the cells hold counts.</p>
+
+  <figure id="fig-design-2">
+    <div class="scroll">
+<svg viewBox="0 0 640 290" role="img" aria-label="Each network's result on the seed lands the seed in one of four cells: both win, only network 1 wins, only network 2 wins, both lose.">
+  <defs><marker id="arr8b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g color="var(--fg)">
+    <rect class="box" x="10" y="105" width="110" height="60" rx="3"/>
+    <text x="65" y="130" text-anchor="middle">seed i</text>
+    <text class="muted" x="65" y="148" text-anchor="middle">map, encounters</text>
+    <rect class="box" x="180" y="40" width="120" height="50" rx="3"/><text x="240" y="70" text-anchor="middle">network 1</text>
+    <rect class="box" x="180" y="180" width="120" height="50" rx="3"/><text x="240" y="210" text-anchor="middle">network 2</text>
+    <line class="ink" x1="120" y1="125" x2="180" y2="68" marker-end="url(#arr8b)"/>
+    <line class="ink" x1="120" y1="145" x2="180" y2="202" marker-end="url(#arr8b)"/>
+    <text class="muted" x="128" y="84" text-anchor="middle">same seed</text>
+    <text class="muted" x="128" y="196" text-anchor="middle">same seed</text>
+    <line class="ink" x1="300" y1="65" x2="365" y2="112" marker-end="url(#arr8b)"/>
+    <line class="ink" x1="300" y1="205" x2="365" y2="160" marker-end="url(#arr8b)"/>
+    <text class="muted" x="306" y="52" text-anchor="start">X<tspan baseline-shift="sub" font-size="9">i</tspan> win or loss</text>
+    <text class="muted" x="306" y="234" text-anchor="start">Y<tspan baseline-shift="sub" font-size="9">i</tspan> win or loss</text>
+    <rect class="box" x="370" y="90" width="70" height="45" rx="2"/><text x="405" y="110" text-anchor="middle">a</text><text class="muted" x="405" y="126" text-anchor="middle">both win</text>
+    <rect x="442" y="90" width="70" height="45" rx="2" class="box"/><text x="477" y="110" text-anchor="middle">b</text><text class="muted" x="477" y="126" text-anchor="middle">1 only</text>
+    <rect x="370" y="137" width="70" height="45" rx="2" class="box"/><text x="405" y="157" text-anchor="middle">c</text><text class="muted" x="405" y="173" text-anchor="middle">2 only</text>
+    <rect class="box" x="442" y="137" width="70" height="45" rx="2"/><text x="477" y="157" text-anchor="middle">d</text><text class="muted" x="477" y="173" text-anchor="middle">both lose</text>
+    <text class="muted" x="441" y="80" text-anchor="middle">counts over n seeds</text>
+  </g>
+</svg>
+    </div>
+    <figcaption><b>Figure 8.3.</b> Figure 8.2 with the results added. Network 1's result on seed \(i\) is \(X_i\), and network 2's is \(Y_i\). Each seed lands in cell a, b, c or d.</figcaption>
+  </figure>
+
+  <p>A seed in cell a or cell d gave both networks the same result. It adds the same amount to both win rates, so it cancels from the difference. A seed in cell a or d says the seed was easy or hard. It says nothing about which network is better.</p>
+
+  <figure id="fig-design-3">
+    <div class="scroll">
+<svg viewBox="0 0 640 290" role="img" aria-label="Only the two cells where the networks disagree, b and c, reach the estimated difference and McNemar's test.">
+  <defs><marker id="arr8c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g color="var(--fg)">
+    <rect class="box" x="10" y="105" width="110" height="60" rx="3"/>
+    <text x="65" y="130" text-anchor="middle">seed i</text>
+    <text class="muted" x="65" y="148" text-anchor="middle">map, encounters</text>
+    <rect class="box" x="180" y="40" width="120" height="50" rx="3"/><text x="240" y="70" text-anchor="middle">network 1</text>
+    <rect class="box" x="180" y="180" width="120" height="50" rx="3"/><text x="240" y="210" text-anchor="middle">network 2</text>
+    <line class="ink" x1="120" y1="125" x2="180" y2="68" marker-end="url(#arr8c)"/>
+    <line class="ink" x1="120" y1="145" x2="180" y2="202" marker-end="url(#arr8c)"/>
+    <text class="muted" x="128" y="84" text-anchor="middle">same seed</text>
+    <text class="muted" x="128" y="196" text-anchor="middle">same seed</text>
+    <line class="ink" x1="300" y1="65" x2="365" y2="112" marker-end="url(#arr8c)"/>
+    <line class="ink" x1="300" y1="205" x2="365" y2="160" marker-end="url(#arr8c)"/>
+    <text class="muted" x="306" y="52" text-anchor="start">X<tspan baseline-shift="sub" font-size="9">i</tspan> win or loss</text>
+    <text class="muted" x="306" y="234" text-anchor="start">Y<tspan baseline-shift="sub" font-size="9">i</tspan> win or loss</text>
+    <rect class="box" x="370" y="90" width="70" height="45" rx="2"/><text x="405" y="110" text-anchor="middle">a</text><text class="muted" x="405" y="126" text-anchor="middle">both win</text>
+    <rect x="442" y="90" width="70" height="45" rx="2" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="477" y="110" text-anchor="middle">b</text><text class="muted" x="477" y="126" text-anchor="middle">1 only</text>
+    <rect x="370" y="137" width="70" height="45" rx="2" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="405" y="157" text-anchor="middle">c</text><text class="muted" x="405" y="173" text-anchor="middle">2 only</text>
+    <rect class="box" x="442" y="137" width="70" height="45" rx="2"/><text x="477" y="157" text-anchor="middle">d</text><text class="muted" x="477" y="173" text-anchor="middle">both lose</text>
+    <text class="muted" x="441" y="80" text-anchor="middle">counts over n seeds</text>
+    <line class="l1" x1="512" y1="136" x2="560" y2="136" stroke-width="2" marker-end="url(#arr8c)" style="color: var(--s1)"/>
+    <text x="598" y="122" text-anchor="middle">b and c</text>
+    <text class="muted" x="598" y="140" text-anchor="middle">Δ̂ = (b − c)/n</text>
+    <text class="muted" x="598" y="156" text-anchor="middle">McNemar test</text>
+    <text class="muted" x="441" y="262" text-anchor="middle">a and d say the seed was easy or hard.</text>
+    <text class="muted" x="441" y="278" text-anchor="middle">They cancel out of the difference.</text>
+  </g>
+</svg>
+    </div>
+    <figcaption><b>Figure 8.4.</b> Figure 8.3 with the last part added. Only the shaded cells b and c, where the networks disagree, reach the estimated difference \(\hat\Delta\) and McNemar's test.</figcaption>
   </figure>
 
   <h3>The variance, written out</h3>
-  <p>Let \(X_i\) and \(Y_i\) be the outcomes of networks 1 and 2 on seed \(i\), and \(D_i = X_i - Y_i \in \{-1, 0, 1\}\). The paired estimate of the difference is</p>
+  <p>Let \(X_i\) and \(Y_i\) be the outcomes of networks 1 and 2 on seed \(i\), and let \(D_i = X_i - Y_i \in \{-1, 0, 1\}\). The paired estimate of the difference is</p>
   <div class="eq">\begin{equation} \hat\Delta = \frac{1}{n} \sum_{i=1}^{n} D_i = \hat p_1 - \hat p_2 = \frac{b - c}{n}, \label{eq:delta} \end{equation}</div>
-  <p>where \(b\) counts seeds only network 1 wins and \(c\) seeds only network 2 wins. The point estimate is the same number the unpaired design would report. What changes is its variance. Because the \(D_i\) are independent across seeds,</p>
+  <p>Here \(b\) counts the seeds that only network 1 wins, and \(c\) counts the seeds that only network 2 wins. The point estimate equals the unpaired one. Its variance does not. Because the \(D_i\) are independent across seeds, we have</p>
   <div class="eq">\begin{equation} \operatorname{Var}(\hat\Delta) = \frac{\operatorname{Var}(X) + \operatorname{Var}(Y) - 2\operatorname{Cov}(X, Y)}{n}. \label{eq:pairedvar} \end{equation}</div>
-  <p>The covariance term is the whole gain. A seed that is easy for one network is usually easy for the other, so \(\operatorname{Cov}(X, Y) > 0\) and pairing subtracts it. Write the cell probabilities as \(\pi_a, \pi_b, \pi_c, \pi_d\). Then \(D = 1\) with probability \(\pi_b\), \(D = -1\) with probability \(\pi_c\), and</p>
+  <p>The covariance term holds the whole gain. A seed that is easy for one network is usually easy for the other. So \(\operatorname{Cov}(X, Y) > 0\), and pairing subtracts it. We write the cell probabilities as \(\pi_a, \pi_b, \pi_c, \pi_d\). In this chapter \(\pi_a\) to \(\pi_d\), \(\rho\), \(\hat\phi\) and the CUPED \(\theta\) keep their usual statistical meanings. They are not the tour's policy, importance ratio, critic parameters or policy parameters. Then \(D = 1\) with probability \(\pi_b\) and \(D = -1\) with probability \(\pi_c\), so</p>
   <div class="eq">\begin{equation} \operatorname{Var}(D) = \mathbb{E}[D^2] - \mathbb{E}[D]^2 = (\pi_b + \pi_c) - (\pi_b - \pi_c)^2 = \delta_d - \Delta^2. \label{eq:vard} \end{equation}</div>
   <div class="definition"><span class="label">Definition 8.2 · Discordance</span>
-    <p>The <dfn>discordance</dfn> \(\delta_d = \pi_b + \pi_c\) is the probability that the two networks disagree on a seed's outcome: one wins, the other loses. Its estimate is \((b + c)/n\). Seeds in cells b and c are the <dfn>discordant pairs</dfn>.</p>
+    <p>The <dfn>discordance</dfn> \(\delta_d = \pi_b + \pi_c\) is the probability that the two networks disagree on a seed's outcome, with one winning and the other losing. Its estimate is \((b + c)/n\). Seeds in cells b and c are the <dfn>discordant pairs</dfn>.</p>
   </div>
-  <p>Equation \eqref{eq:vard} says the precision of a paired comparison is set by how often the networks disagree, not by how often they win. (The campaign's documents call this quantity \(d\); we write \(\delta_d\) to keep \(d\) free for the "both lose" cell.) Two networks that differ in a handful of decisions per run will agree on most seeds and give a small \(\delta_d\), and a small \(\delta_d\) means a small variance. If the two outcomes were independent, \(\delta_d\) would be \(p_1(1-p_2) + p_2(1-p_1)\), and Equation \eqref{eq:vard} would reduce to Equation \eqref{eq:unpaired} up to the \(\Delta^2\) term. Pairing helps exactly when the networks disagree less often than independent coins would.</p>
+  <p>Equation \eqref{eq:vard} says that the precision of a paired comparison depends on how often the networks disagree. It does not depend on how often they win. The campaign's documents call this quantity \(d\). This chapter writes \(\delta_d\) and keeps \(d\) for the "both lose" cell. Two networks that differ in a few decisions per run agree on most seeds. They give a small \(\delta_d\), and a small \(\delta_d\) gives a small variance. If the two outcomes were independent, \(\delta_d\) would equal \(p_1(1-p_2) + p_2(1-p_1)\). Equation \eqref{eq:vard} would then reduce exactly to Equation \eqref{eq:unpaired}, because \(\delta_d - \Delta^2 = p_1(1-p_1) + p_2(1-p_2)\). Pairing helps when the networks disagree less often than independent outcomes would.</p>
 
-  <h3>The same idea as a control variate</h3>
-  <p>CUPED reduces the variance of a treatment metric \(Y\) by subtracting \(\theta (X - \mathbb{E}X)\), where \(X\) is the same user's pre-experiment metric and \(\theta = \operatorname{Cov}(X,Y)/\operatorname{Var}(X)\) <span class="cite">[<a href="#ref-cuped">5</a>]</span>. Pairing is a control variate with \(\theta = 1\): network 2's result on the same seed is the covariate, and its mean is already the other arm. When the two networks have similar variances \(\sigma^2\) and outcome correlation \(\rho\), the ratio of paired to unpaired variance is</p>
+  <h3>Pairing works like CUPED with \(\theta = 1\)</h3>
+  <p>CUPED reduces the variance of a treatment metric \(M\) by subtracting \(\theta (C - \mathbb{E}C)\) <span class="cite">[<a href="#ref-cuped">5</a>]</span>. Here \(C\) is the same user's metric from before the experiment, and \(\theta = \operatorname{Cov}(C,M)/\operatorname{Var}(C)\). Deng and colleagues do not discuss paired seeds. The comparison is this chapter's analogy. Pairing is a control variate with \(\theta = 1\), which is not CUPED's variance-minimising choice. Network 2's result on the same seed is the covariate, and its mean is already the other arm. Let the two networks' outcomes have correlation \(\rho\). The ratio of paired to unpaired variance is then</p>
   <div class="eq">\begin{equation} \frac{\operatorname{Var}_{\text{paired}}(\hat\Delta)}{\operatorname{Var}_{\text{unpaired}}(\hat\Delta)} = 1 - \frac{2\rho\,\sigma_1\sigma_2}{\sigma_1^2 + \sigma_2^2} \approx 1 - \rho, \label{eq:ratio} \end{equation}</div>
-  <p>with \(\sigma_1^2 = p_1(1-p_1)\) and \(\sigma_2^2 = p_2(1-p_2)\). For binary outcomes \(\rho\) is the phi coefficient of the 2×2 table. Read it as a design effect in reverse: \(n\) paired seeds are worth about \(n/(1-\rho)\) unpaired seeds per arm. At \(\rho = 0.5\), pairing doubles the effective sample, and so halves the games needed for a given precision. Both designs play \(2n\) runs; pairing only decides which seeds they share.</p>
+  <p>Here \(\sigma_1^2 = p_1(1-p_1)\) and \(\sigma_2^2 = p_2(1-p_2)\). For binary outcomes, \(\rho\) is the phi coefficient of the 2×2 table. The approximation holds when \(\sigma_1 \approx \sigma_2\). So \(n\) paired seeds are worth about \(n/(1-\rho)\) unpaired seeds per network. At \(\rho = 0.5\), pairing doubles the effective sample and halves the games that a given precision needs. Both designs play \(2n\) runs. Pairing decides only which seeds the two networks share.</p>
+  <p>The two published networks disagreed on <span data-m="discordant" data-f="int">142</span> of this chapter's 600 seeds. Network 1 alone won \(b =\) <span data-m="table.b" data-f="int">64</span> seeds, and network 2 alone won \(c =\) <span data-m="table.c" data-f="int">78</span>, so \(\hat\delta_d =\) <span data-m="discordance" data-f="f3">0.237</span>. Independent outcomes at these win rates would disagree on <span data-m="independence_discordance" data-f="f3">0.302</span> of the seeds. The phi coefficient is <span data-m="phi" data-f="f2">0.22</span>, and the paired variance is <span data-m="variance_ratio" data-f="f2">0.78</span> times the unpaired variance. Figure 8.5 puts that measurement on the curve of standard error against discordance.</p>
 
   <figure id="fig-se">
     <div class="scroll">
@@ -327,21 +380,17 @@ figure mjx-container svg { display: inline; margin: 0; }
 </svg>
 <!-- /figure:se -->
     </div>
-    <figcaption><b>Figure 8.3.</b> Standard error of the estimated difference at this chapter's sample size, as a function of discordance. The solid curve is the paired design, Equation \eqref{eq:vard}; the dashed line is the unpaired design with the same seeds per network, Equation \eqref{eq:unpaired}. They cross near the dotted line, where outcomes are independent. The dot is the measured discordance of the two published networks. Everything left of the crossing is what pairing buys.</figcaption>
+    <figcaption><b>Figure 8.5.</b> Standard error of the estimated difference at this chapter's sample size, against discordance. The solid curve is the paired design, Equation \eqref{eq:vard}. The dashed line is the unpaired design with the same seeds per network, Equation \eqref{eq:unpaired}. The two cross near the dotted line, where outcomes are independent. The dot is the measured discordance of the two published networks. The gap between the curves to the left of the crossing is what pairing buys.</figcaption>
   </figure>
 
-  <details class="predict"><summary>Pause and predict: on 600 shared seeds, how many seeds do the Ironclad network and the all-character network disagree on?</summary>
-    <p><span data-m="discordant" data-f="int">142</span> seeds: \(b =\) <span data-m="table.b" data-f="int">64</span> won only by the Ironclad network and \(c =\) <span data-m="table.c" data-f="int">78</span> won only by the all-character network, so \(\hat\delta_d =\) <span data-m="discordance" data-f="f3">0.237</span>. Independent outcomes at these win rates would disagree on a share of <span data-m="independence_discordance" data-f="f3">0.302</span>. The phi coefficient is <span data-m="phi" data-f="f2">0.22</span>, and the paired variance is <span data-m="variance_ratio" data-f="f2">0.78</span> times the unpaired one. Section 10 says what that means.</p>
-  </details>
-
-  <h2 id="s4">4. McNemar's test and the paired interval</h2>
-  <p>A test of "the two networks are equally good" needs a null distribution for \(b\) and \(c\). Condition on the number of discordant seeds, \(m = b + c\). Under the null \(\pi_b = \pi_c\), each discordant seed is equally likely to fall on either side, so</p>
+  <h2 id="s4">4. McNemar's test uses only the seeds where the networks disagree</h2>
+  <p>A test of "the two networks are equally good" needs a null distribution for \(b\) and \(c\). Condition on the number of discordant seeds, \(m = b + c\). Under the null hypothesis \(\pi_b = \pi_c\), each discordant seed falls on either side with probability one half. So</p>
   <div class="eq">\begin{equation} b \mid m \;\sim\; \operatorname{Binomial}\!\left(m, \tfrac{1}{2}\right) \quad \text{under } H_0 : \pi_b = \pi_c. \label{eq:mcnull} \end{equation}</div>
-  <p>The concordant seeds \(a\) and \(d\) do not appear. This is the formal version of Figure 8.2: given that the networks disagreed \(m\) times, the only evidence is how those \(m\) disagreements split. The exact two-sided p-value doubles the smaller tail:</p>
+  <p>The concordant counts \(a\) and \(d\) do not appear. This is Figure 8.4 in formal terms. Given \(m\) disagreements, the only evidence is how they split. The exact two-sided p-value doubles the smaller tail:</p>
   <div class="eq">\begin{equation} p_{\text{exact}} = \min\!\left(1,\; 2 \sum_{j=0}^{\min(b,c)} \binom{m}{j} 2^{-m}\right). \label{eq:mcexact} \end{equation}</div>
-  <p>McNemar (1947) derived the large-sample version for correlated proportions in psychology surveys <span class="cite">[<a href="#ref-mcnemar">6</a>]</span>. Its statistic, approximately \(\chi^2_1\) under the null, is</p>
+  <p>McNemar (1947) derived the large-sample version for correlated proportions in psychology surveys <span class="cite">[<a href="#ref-mcnemar">6</a>]</span>. Under the null, his statistic is approximately \(\chi^2_1\):</p>
   <div class="eq">\begin{equation} \chi^2 = \frac{(b - c)^2}{b + c}. \label{eq:mcchi} \end{equation}</div>
-  <p>Trace one case. Suppose 44 seeds are discordant and they split 30 to 14. The chi-square statistic is \(16^2/44 = 5.8\), and the exact p-value is twice the probability that 44 fair coins show 14 or fewer heads, about 0.023. Now suppose 4,000 seeds were played and the same 30 to 14 split occurred: the p-value is unchanged. The 3,956 concordant seeds add nothing to the test. They do matter to the effect size, since \(\hat\Delta = 16/n\) is 36 points at \(n = 44\) and 0.4 points at \(n = 4{,}000\).</p>
+  <p>Trace one case. Suppose 44 seeds are discordant and they split 30 to 14. The chi-square statistic is \(16^2/44 = 5.8\). The exact p-value is twice the probability that 44 fair coins show 14 or fewer heads, which is about 0.023. Now suppose you played 4,000 seeds and saw the same 30-to-14 split. The p-value does not change. The 3,956 concordant seeds add nothing to the test. They do change the effect size: \(\hat\Delta = 16/n\) is 36 points at \(n = 44\) and 0.4 points at \(n = 4{,}000\).</p>
 
   <figure class="listing">
     <pre><code>def mcnemar_exact(b: int, c: int) -> float:
@@ -354,36 +403,32 @@ figure mjx-container svg { display: inline; margin: 0; }
     <figcaption>sts2-pycli/python/ppo/e2e/stats.py, lines 44-50: Equation \eqref{eq:mcexact} line for line.</figcaption>
   </figure>
 
-  <h3>An interval for the paired difference</h3>
-  <p>A p-value says whether zero is plausible; an interval says which differences are. The Wald interval \(\hat\Delta \pm z\sqrt{(\hat\delta_d - \hat\Delta^2)/n}\) has the same faults here as for one proportion. Newcombe (1998) compared ten methods and recommended a hybrid that builds the paired interval from the two Wilson intervals of the margins <span class="cite">[<a href="#ref-newcombe">7</a>]</span>. With \((l_1, u_1)\) and \((l_2, u_2)\) the Wilson intervals of \(\hat p_1\) and \(\hat p_2\), and \(\hat\phi\) the phi coefficient of the table, his method 10 is</p>
+  <h3>Newcombe's interval adds the pairing to two Wilson intervals</h3>
+  <p>A p-value says whether zero is a plausible difference. An interval says which differences are plausible. The Wald interval \(\hat\Delta \pm z\sqrt{(\hat\delta_d - \hat\Delta^2)/n}\) has the same faults here as for one proportion. Newcombe (1998) compared ten methods. His summary recommends two profile-likelihood methods, and says that a simpler hybrid also performs well <span class="cite">[<a href="#ref-newcombe">7</a>]</span>. It builds the paired interval from the Wilson intervals of the two margins. Let \((l_1, u_1)\) and \((l_2, u_2)\) be the Wilson intervals of \(\hat p_1\) and \(\hat p_2\), and let \(\hat\phi\) be the phi coefficient of the table. His method 8 is</p>
   <div class="eq">\begin{equation} \begin{aligned} L &= \hat\Delta - \sqrt{(\hat p_1 - l_1)^2 - 2\hat\phi\,(\hat p_1 - l_1)(u_2 - \hat p_2) + (u_2 - \hat p_2)^2}, \\ U &= \hat\Delta + \sqrt{(u_1 - \hat p_1)^2 - 2\hat\phi\,(u_1 - \hat p_1)(\hat p_2 - l_2) + (\hat p_2 - l_2)^2}. \end{aligned} \label{eq:newcombe} \end{equation}</div>
-  <p>Read it as Equation \eqref{eq:pairedvar} applied to interval half-widths: each side combines the relevant half-widths of the two margins like two standard errors, and the \(-2\hat\phi\) term subtracts the covariance that pairing removes. With \(\hat\phi = 0\) it is Newcombe's interval for independent samples. The project uses this interval, and cross-checks it with a bootstrap that resamples whole seeds, never one network's result alone.</p>
+  <p>Each side combines two Wilson half-widths the way Equation \eqref{eq:pairedvar} combines two standard errors. The \(-2\hat\phi\) term subtracts the covariance that pairing removes. With \(\hat\phi = 0\), the formula is Newcombe's interval for independent samples. His method 10, the hybrid that his summary names, is method 8 with a continuity correction to \(\hat\phi\). It replaces the numerator \(ad - bc\) of \(\hat\phi\) with \(\max(ad - bc - n/2,\ 0)\) when \(ad - bc\) is positive. The project's code computes method 8 and labels it method 10. On this chapter's table the two methods give the same interval to one decimal. The project checks its method 8 interval with a bootstrap that resamples whole seeds, so both networks' results on a seed stay together.</p>
 
-  <h2 id="s5">5. Power, detectable effect and cost</h2>
-  <p>Before a comparison is run, the question is the reverse: given \(n\) seeds, what is the smallest true difference we would reliably detect? <dfn>Power</dfn> is the probability that the test rejects the null when the true difference is \(\Delta\). The <dfn>minimum detectable effect at 80% power</dfn>, MDE80, is the \(\Delta\) at which power is 0.8.</p>
-  <p>For large \(m\), \(\hat\Delta\) is approximately normal. Under the null its variance is \(\delta_d/n\) (Equation \eqref{eq:vard} with \(\Delta = 0\)); under the alternative it is \((\delta_d - \Delta^2)/n\). A two-sided test at level \(\alpha\) rejects when \(|\hat\Delta| \gt z_{1-\alpha/2}\sqrt{\delta_d/n}\). Setting the probability of that event to \(1 - \beta\) at a true \(\Delta\) and solving for \(n\) gives</p>
+  <h2 id="s5">5. Discordance sets the seeds you need and the hours they cost</h2>
+  <p>Before you run a comparison, you ask the reverse question. Given \(n\) seeds, what is the smallest true difference the test would reliably detect? <dfn>Power</dfn> is the probability that the test rejects the null when the true difference is \(\Delta\). The <dfn>minimum detectable effect at 80% power</dfn>, MDE80, is the \(\Delta\) at which the power is 0.8.</p>
+  <p>For large \(m\), \(\hat\Delta\) is approximately normal. Under the null its variance is \(\delta_d/n\), which is Equation \eqref{eq:vard} with \(\Delta = 0\). Under the alternative its variance is \((\delta_d - \Delta^2)/n\). A two-sided test at level \(\alpha\) rejects when \(|\hat\Delta| \gt z_{1-\alpha/2}\sqrt{\delta_d/n}\). We set the probability of that event to \(1 - \beta\) at a true \(\Delta\) and solve for \(n\):</p>
   <div class="eq">\begin{equation} n = \frac{\left( z_{1-\alpha/2}\sqrt{\delta_d} + z_{1-\beta}\sqrt{\delta_d - \Delta^2} \right)^2}{\Delta^2}. \label{eq:connor} \end{equation}</div>
-  <p>This is the paired-proportions sample size usually attributed to Connor (1987) <span class="cite">[<a href="#ref-connor">8</a>]</span>; I checked its form against secondary sources that implement it, not against the paper. When \(\Delta^2 \ll \delta_d\), which holds for differences of a few points against discordances of tenths, drop \(\Delta^2\) and invert:</p>
+  <p>This is the sample size for paired proportions that is usually attributed to Connor (1987) <span class="cite">[<a href="#ref-connor">8</a>]</span>. This chapter checked its form against secondary sources that implement it, not against the paper. A difference of a few points against a discordance of a few tenths gives \(\Delta^2 \ll \delta_d\). We drop \(\Delta^2\) and invert:</p>
   <div class="eq">\begin{equation} \text{MDE}_{80} = \left(z_{1-\alpha/2} + z_{0.80}\right)\sqrt{\frac{\delta_d}{n}} \approx 2.80\sqrt{\frac{\delta_d}{n}} \quad (\alpha = 0.05). \label{eq:mde} \end{equation}</div>
-  <p>Three things follow. The MDE scales with \(\sqrt{\delta_d}\), so pairing two similar networks is cheap and pairing two very different ones is not. It scales with \(1/\sqrt n\), so halving the MDE costs four times the seeds. And the unknown is \(\delta_d\), not \(p\): an experiment plan has to guess how often the candidate will disagree with the baseline. At a stricter level \(\alpha = 0.01\), the multiplier becomes \(2.576 + 0.842 = 3.42\), which costs half again as many seeds for the same MDE.</p>
-  <p>Seeds turn into hours through the length of a run. If a run takes \(L\) decisions and the machine plays \(R\) decisions per second, a paired comparison of two networks costs</p>
+  <p>Equation \eqref{eq:mde} has three consequences. The MDE grows with \(\sqrt{\delta_d}\), so a comparison of two similar networks is cheap and a comparison of two very different networks is not. The MDE shrinks as \(1/\sqrt n\), so halving it costs four times the seeds. The unknown is \(\delta_d\), not \(p\), so an experiment plan has to guess how often the candidate will disagree with the baseline. At the stricter level \(\alpha = 0.01\), the multiplier becomes \(2.576 + 0.842 = 3.42\). The same MDE then needs about 1.5 times as many seeds.</p>
+  <p>The length of a run turns seeds into hours. Let a run take \(L\) decisions, and let the machine play \(R\) decisions per second. A paired comparison of two networks then costs</p>
   <div class="eq">\begin{equation} \text{hours} = \frac{2\, n\, L}{R \cdot 3600}. \label{eq:hours} \end{equation}</div>
-  <p>Equations \eqref{eq:mde} and \eqref{eq:hours} together turn a hoped-for effect into a bill. Suppose a change should gain 2 points and you guess \(\delta_d = 0.2\). Equation \eqref{eq:mde} solved for \(n\) gives \(n = (2.80/0.02)^2 \times 0.2 = 3{,}920\) paired seeds. At \(L = 700\) and \(R = 800\), that is 1.9 hours of play. If the guess is \(\delta_d = 0.3\), it is 5,880 seeds and 2.9 hours. If the change might gain only 1 point, multiply by four.</p>
+  <p>Together, Equations \eqref{eq:mde} and \eqref{eq:hours} turn a hoped-for effect into a bill. Suppose a change should gain 2 points, and you guess \(\delta_d = 0.2\). Equation \eqref{eq:mde} solved for \(n\) gives \(n = (2.80/0.02)^2 \times 0.2 = 3{,}920\) paired seeds. At \(L = 700\) and \(R = 800\), that is 1.9 hours of play. If you guess \(\delta_d = 0.3\), you need 5,880 seeds and 2.9 hours. If the change might gain only 1 point, multiply both numbers by four.</p>
+  <p>On this Mac a run averaged <span data-m="decisions_per_run" data-f="h0">647</span> decisions. At the tour's idle-machine rate of 800 decisions per second on ten threads, which no committed measurement records, a 4,000-seed paired comparison takes <span data-m="cost.paired_seeds.4000.hours_idle10" data-f="h1">1.8</span> hours. This chapter's own run shared the machine with other jobs and measured <span data-m="rate_measured" data-f="h0">284</span> decisions per second on <span data-m="workers" data-f="int">3</span> threads. At that rate the same comparison takes <span data-m="cost.paired_seeds.4000.hours_measured" data-f="h1">5.1</span> hours.</p>
 
-  <details class="predict"><summary>Pause and predict: how many hours does a 4,000-seed paired comparison take on this Mac?</summary>
-    <p>At the measured <span data-m="decisions_per_run" data-f="h0">647</span> decisions per run and the tour's idle-machine rate of 800 decisions per second on ten threads, <span data-m="cost.paired_seeds.4000.hours_idle10" data-f="h1">1.8</span> hours. On the shared machine this chapter's run measured (<span data-m="rate_measured" data-f="h0">284</span> decisions per second on <span data-m="workers" data-f="int">3</span> threads), it would take <span data-m="cost.paired_seeds.4000.hours_measured" data-f="h1">5.1</span> hours. Throughput, not statistics, is usually what an evaluation budget runs out of.</p>
-  </details>
-
-  <h2 id="s6">6. Choosing on the panel you report</h2>
-  <p>Training produces many candidates: checkpoints every few hundred million decisions, and for each of them a raw copy and one or more exponential moving averages of the weights. The project picks one by playing all of them on the same development panel and taking the best. The best one's score on that panel is then too high. This is the <dfn>winner's curse</dfn>, and Cawley and Talbot showed in model selection that it is often as large as the differences between the methods being compared <span class="cite">[<a href="#ref-cawley">9</a>]</span>.</p>
-  <p>We can compute its size for paired seeds. Suppose \(K\) candidates all have the same true win rate \(p\) and are read on the same \(n\) seeds. Model each estimate as a shared seed effect plus a candidate-specific one:</p>
+  <h2 id="s6">6. The best checkpoint looks better on the seeds that chose it</h2>
+  <p>Training produces many candidates. A checkpoint is saved every few hundred million decisions. Each checkpoint has a raw copy and one or more exponential moving averages of its weights. The project plays all candidates on the same development panel and picks one by its score there. The best candidate's score on that panel is then too high. This effect is the <dfn>winner's curse</dfn>. Cawley and Talbot showed that in model selection it is often as large as the differences between the methods being compared <span class="cite">[<a href="#ref-cawley">9</a>]</span>.</p>
+  <p>You can compute its size for paired seeds. Suppose \(K\) candidates all have the same true win rate \(p\) and play the same \(n\) seeds. We model each estimate as a shared seed effect plus a candidate effect:</p>
   <div class="eq">\begin{equation} \hat p_k = p + \sigma\left(\sqrt{\rho}\, Z_0 + \sqrt{1-\rho}\, Z_k\right), \qquad k = 1, \dots, K, \label{eq:selmodel} \end{equation}</div>
-  <p>where \(\sigma^2 = p(1-p)/n\), \(\rho\) is the correlation between any two candidates' estimates, and \(Z_0, Z_1, \dots, Z_K\) are independent standard normals. \(Z_0\) is the panel's luck, which all candidates share; \(Z_k\) is candidate \(k\)'s own luck on the panel. Selection maximises over \(k\), and only the \(Z_k\) term varies with \(k\):</p>
+  <p>Here \(\sigma^2 = p(1-p)/n\), and \(\rho\) is the correlation between any two candidates' estimates. The \(Z_0, Z_1, \dots, Z_K\) are independent standard normals. \(Z_0\) is the panel's luck, which all candidates share. \(Z_k\) is candidate \(k\)'s own luck on the panel. Selection takes the maximum over \(k\), and only the \(Z_k\) term varies with \(k\):</p>
   <div class="eq">\begin{equation} \mathbb{E}\!\left[\max_k \hat p_k\right] - p = \sigma\sqrt{1-\rho}\; e_K, \qquad e_K = \mathbb{E}\!\left[\max_{k \le K} Z_k\right]. \label{eq:selbias} \end{equation}</div>
-  <p>Here \(e_K\) is the expected maximum of \(K\) independent standard normals: \(e_2 = 1/\sqrt\pi \approx 0.56\), \(e_3 \approx 0.85\), \(e_9 \approx 1.49\). The shared luck \(Z_0\) does not bias the selection, but it is still in the reported number. Now use the discordance. Two candidates with equal true rates have \(\operatorname{Var}(\hat p_j - \hat p_k) = 2\sigma^2(1-\rho)\) by Equation \eqref{eq:selmodel}, and \(\delta_d/n\) by Equation \eqref{eq:vard} with \(\Delta = 0\). Equating the two,</p>
+  <p>Here \(e_K\) is the expected maximum of \(K\) independent standard normals, with \(e_2 = 1/\sqrt\pi \approx 0.56\), \(e_3 \approx 0.85\), and \(e_9 \approx 1.49\). The shared luck \(Z_0\) does not bias the selection, but it is still in the reported number. Now we bring in the discordance. By Equation \eqref{eq:selmodel}, two candidates with equal true rates have \(\operatorname{Var}(\hat p_j - \hat p_k) = 2\sigma^2(1-\rho)\). By Equation \eqref{eq:vard} with \(\Delta = 0\), the same variance is \(\delta_d/n\). We set the two equal and get</p>
   <div class="eq">\begin{equation} \text{optimism} = e_K \sqrt{\frac{\delta_d}{2n}}. \label{eq:optimism} \end{equation}</div>
-  <p>The same quantity that sets the power of a paired test sets the bias of selecting on the panel. Candidates that rarely disagree, such as two weight averages of one checkpoint, give little optimism. Many candidates and a small panel give a lot. The assumptions are equal true rates, which is the worst case for the bias relative to the truth, and the same \(\rho\) for every pair. Figure 8.4 checks Equation \eqref{eq:optimism} against simulation.</p>
-  <p>The remedy is a rule from your own notes on off-policy evaluation: give each set of outcomes one role. Training data fits the parameters. <dfn>Selection evidence</dfn> chooses among candidates. <dfn>Final-evaluation evidence</dfn> supports the reported claim after selection is frozen, and it must not have touched the selection. In agent terms: one panel to pick, a different panel to report.</p>
+  <p>The discordance that sets the power of a paired test also sets the bias of selecting on the panel. Candidates that rarely disagree give little optimism. Many candidates on a small panel give a lot. The derivation assumes equal true rates, which is the worst case for the bias. It also assumes the same \(\rho\) for every pair. Figure 8.6 checks Equation \eqref{eq:optimism} against simulation.</p>
 
   <figure id="fig-selection">
     <div class="scroll">
@@ -443,40 +488,49 @@ figure mjx-container svg { display: inline; margin: 0; }
 </svg>
 <!-- /figure:selection -->
     </div>
-    <figcaption><b>Figure 8.4.</b> Expected optimism of the best of \(K\) equally good candidates read on the same seeds, at the discordance measured between the two published networks. Lines are Equation \eqref{eq:optimism}; dots are simulations of binary outcomes with that discordance. Notice that a 300-seed selection panel inflates the best of nine by over two points, while a 4,000-seed panel keeps it under one.</figcaption>
+    <figcaption><b>Figure 8.6.</b> Expected optimism of the best of \(K\) equally good candidates read on the same seeds, at the discordance measured between the two published networks. Lines are Equation \eqref{eq:optimism}. Dots are simulations of binary outcomes with that discordance. A 300-seed selection panel inflates the best of nine by over two points. A 4,000-seed panel keeps it under one point.</figcaption>
   </figure>
 
-  <details class="predict"><summary>Pause and predict: split the 600 shared seeds in half at random, pick whichever network won more on the first half, and score it on both halves. How much higher does it look on the half it was picked on?</summary>
-    <p>Averaged over 4,000 random splits, <span data-m="selection.resplit.mean_gap" data-f="pp2">0.90</span> points. The Ironclad network was picked in <span data-m="selection.resplit.share_picked_net1" data-f="pct1">14.3%</span> of splits. The gap is smaller than Equation \eqref{eq:optimism} would give for \(K = 2\) at 300 seeds (<span data-m="selection.formula.300.2" data-f="pp2">1.12</span> points) because the two networks are not equally good: when one is clearly better, selection mostly picks it for the right reason and the curse shrinks. Equation \eqref{eq:optimism} is the worst case.</p>
-  </details>
+  <p>The two published networks give a direct check with \(K = 2\). Split the 600 seeds in half at random. Pick the network that won more on the first half, and score it on both halves. Over 4,000 random splits, the chosen network looked <span data-m="selection.resplit.mean_gap" data-f="pp2">0.90</span> points better on the half that chose it. The Ironclad network was chosen in <span data-m="selection.resplit.share_picked_net1" data-f="pct1">14.3%</span> of the splits. Equation \eqref{eq:optimism} gives <span data-m="selection.formula.300.2" data-f="pp2">1.12</span> points for two candidates on 300 seeds. The measured gap is smaller. One likely reason is that the two networks are not equally good: when one network is better, selection usually picks it for the right reason, and the bias shrinks. Sampling noise on one 600-seed panel can also explain a gap this size. Equation \eqref{eq:optimism} is the worst case.</p>
+  <p>The remedy is to give each set of outcomes one role. Your notes on off-policy evaluation name three roles. Training data fits the parameters. <dfn>Selection evidence</dfn> chooses among candidates. <dfn>Final-evaluation evidence</dfn> supports the reported claim after the selection is frozen, and it must not have touched the selection. For agents, that means one panel to pick a network and a different panel to report its score.</p>
 
-  <h2 id="s7">7. Pre-registration and sealed panels</h2>
-  <p>Selection is one way to read the data in a way that flatters a result. There are many others, and most are not deliberate. Drop the seeds that errored, or count them as losses. Compare against the baseline that looks weakest. Report the variant that scored highest. Stop collecting when the p-value crosses 0.05. Each choice is defensible on its own; made after seeing the data, together they make any p-value meaningless, because the reported test was one of many that could have been reported.</p>
-  <p><dfn>Pre-registration</dfn> fixes those choices in writing before the data exist: the panels, the contrasts, the statistics, the thresholds, and what happens on a failure. Nosek and colleagues frame it as separating prediction from postdiction: a test written before the data is a prediction, and the same test written after is a description <span class="cite">[<a href="#ref-nosek">10</a>]</span>. A plan does not have to survive contact with the data unchanged. It has to record every change, when it was made, and whether the data it touches already existed. Such a record is an <dfn>amendment</dfn>.</p>
-  <p>A <dfn>sealed panel</dfn> enforces the last role in Section 6 mechanically. Its seeds are played, the results are written to a place no one reads, and only a hash of the file is published so that later tampering would show. It is read once, by the pre-registered scorer, after everything that could depend on it has been committed. The reason for "once" is the selection effect again, one level up. A test panel that is read to pick a checkpoint, then read again to pick a variant, then read to report, has become a selection panel three times over, and its number carries Equation \eqref{eq:optimism} with a \(K\) nobody counted. Nobody has to cheat for that to happen.</p>
+  <h2 id="s7">7. Pre-registration fixes the analysis before the data exist</h2>
+  <p>Selection is one of many ways to read data so that a result looks better than it is. Most of the others are not deliberate. Each of these choices is defensible on its own:</p>
+  <ul>
+    <li>Drop the seeds that errored, or count them as losses.</li>
+    <li>Compare against the baseline that looks weakest.</li>
+    <li>Report the variant that scored highest.</li>
+    <li>Stop collecting games when the p-value crosses 0.05.</li>
+  </ul>
+  <p>If you make these choices after you see the data, the reported p-value loses its meaning. The test you report was one of many tests you could have reported.</p>
+  <p><dfn>Pre-registration</dfn> fixes these choices in writing before the data exist. It names the panels, the contrasts, the statistics, the thresholds, and the action on a failure. Nosek and colleagues describe it as the split between prediction and postdiction <span class="cite">[<a href="#ref-nosek">10</a>]</span>. A test written before the data is a prediction. The same test written after the data is a description. A plan can change after the data arrive, but it has to record each change. The record says when the change was made and whether the data it touches already existed. Such a record is an <dfn>amendment</dfn>.</p>
+  <p>A <dfn>sealed panel</dfn> enforces the final-evaluation role from Section 6 mechanically. Its seeds are played, and the results go to a place nobody reads. Only a hash of the results file is published, so any later change to the file would show. The pre-registered scorer reads the panel once, after everything that could depend on it is committed. The reason for one read is the selection effect again, one level up. Suppose a test panel is read to pick a checkpoint, read again to pick a variant, and read a third time to report. It has become a selection panel three times over, and its number carries Equation \eqref{eq:optimism} with a \(K\) that nobody counted. Nobody has to cheat for that to happen.</p>
 
-  <h2 id="s8">8. Textbook against engineered</h2>
-  <p>The clean statement: draw \(n\) seeds, play both networks, count \(b\) and \(c\), test. A real campaign departs from it in six places, each for a reason.</p>
-  <p><strong>Errors are rare but not zero.</strong> A run can hit an engine error or a decision cap. Dropping those seeds silently would let a crashing candidate select its own easy panel. The campaign's rule is asymmetric: a seed errors, it is re-run once on the same binary; then a baseline error drops the seed from that contrast, but an error by the candidate counts as a candidate loss. More than 0.5% such seeds make the whole contrast invalid.</p>
-  <p><strong>One binary per comparison.</strong> Common random numbers assume the same random inputs reach both arms. A change to the simulator, even a bug fix, changes what a seed means, so a candidate on a new engine against a baseline on the old one is unpaired at best and confounded at worst. When the engine changed mid-campaign, every baseline was re-run on the new engine.</p>
-  <p><strong>Synchronisation is partial.</strong> The game draws from named random streams: one for the map of each act, one for card rewards, one for shuffles, one for enemy moves, and so on, each advanced only when that kind of event happens. The map is the same for both agents whatever they do. But once two agents diverge, for example one takes a path through a shop the other skips, a stream can be consumed differently and later draws from it differ. The pairing is strongest early in a run and weakens as play diverges. Separate streams per purpose are how simulation practice keeps common random numbers synchronised as long as possible; they cannot keep two different games identical.</p>
-  <p><strong>Evaluation is greedy; training samples.</strong> Chapter 2 explained why training samples actions. Evaluation plays the most probable action, which makes a run a deterministic function of the seed and removes a second source of noise. The number reported is the greedy policy's win rate, which is not the win rate of the policy that generated the training data.</p>
-  <p><strong>Several contrasts, one error budget.</strong> A campaign tests more than one thing. The bars are tested in a fixed sequence, each at its own level, stopping at the first failure, which bounds the familywise error. Descriptive contrasts get a Holm adjustment.</p>
-  <p><strong>The seed distribution is a choice.</strong> Every panel is a contiguous range of integers that no earlier experiment used. The implicit assumption is that the game maps any integer to a typical game, so a range is as good as a random sample. Section 10 tests that assumption on two ranges.</p>
+  <h2 id="s8">8. Where a real campaign departs from the textbook</h2>
+  <p>The textbook procedure is short. Draw \(n\) seeds, play both networks, count \(b\) and \(c\), and test. A real campaign departs from it in six places, each for a reason.</p>
+  <p><strong>Some runs never finish.</strong> A run can crash, hang, or hit a decision cap. A cap counts as a loss for the network that hit it. A network that cannot finish a fight in 1,000 decisions has not won that fight. A crash is missing data, and the seed is re-run once on the same build. A hang is booked as a timeout, which is also missing data but is not re-run. If the baseline's result is still missing, the seed leaves the contrast. If only the candidate's result is missing, the seed counts as a candidate loss. More than 0.5% of such seeds make the whole contrast invalid. The scorer's docstring explains why a timeout is missing data and not a loss. A timeout says nothing about the run, and scoring a baseline timeout as a loss would favour the candidate. The pre-registration gives no reason for treating the baseline and the candidate differently. Read as a whole, the rule decides each ambiguous case against the candidate. That reading is this chapter's, not the record's.</p>
+  <p><strong>Both networks run on one engine build.</strong> Common random numbers assume that the same random inputs reach both networks. A change to the simulator, even a bug fix, can change what a seed produces. A candidate on a new engine against a baseline on the old engine is then unpaired at best and confounded at worst. The scorer marks a contrast invalid when the two networks' engine builds differ. When the engine changed during the campaign, every baseline was played again on the new engine.</p>
+  <p><strong>The pairing weakens as the two games diverge.</strong> The engine draws from named random streams, and each stream advances only on its own kind of event. Each act's map comes from its own stream, which depends only on the seed, so both networks see the same maps. The lists of hallway fights, elites and bosses for every act are drawn when the run starts. A network's third hallway fight in an act is always the third entry of that list. Card rewards, shops, shuffles, enemy moves and unknown rooms draw from streams that advance with play. Once one network takes an extra card reward, its later draws from the reward stream differ from the other network's draws. The pairing is therefore tightest early in a run. This chapter does not measure how fast it weakens.</p>
+  <p><strong>Evaluation plays greedily, and training samples.</strong> Chapter 2 explained why training samples its actions. Evaluation plays the most probable action, so a run is a fixed function of the seed and the engine's streams are the only randomness. The reported number is the greedy policy's win rate. That is not the win rate of the policy that generated the training data.</p>
+  <p><strong>Several contrasts share one error budget.</strong> A campaign tests more than one claim. The pre-registered bars are tested in a fixed order, each at its own level, and testing stops at the first failure. That order bounds the familywise error. Descriptive contrasts get a Holm adjustment.</p>
+  <p><strong>The seed distribution is a choice.</strong> Every panel is a block of consecutive integers that no earlier experiment used. The design assumes that the game maps any integer to a typical game, so a block of integers is as good as a random sample. Section 10 checks that assumption on two blocks. Two blocks can show a gross failure but cannot confirm the assumption.</p>
 
-  <h2 id="s9">9. In Spire Mentor</h2>
+  <h2 id="s9">9. How Spire Mentor evaluates a network</h2>
+  <p>Three programs do the work. A <dfn>panel</dfn> is a named block of seeds with a flag that marks it sealed. The runner plays one checkpoint greedily on a slice of a panel, spread over a pool of worker processes. It writes one record per seed with the outcome, the number of decisions, and the act and floor where the run ended. The scorer reads two networks' records, pairs them by seed, and applies the missing-data rule from Section 8. Then it builds the 2×2 table and computes the exact McNemar p-value, Newcombe's interval and a paired bootstrap. The bootstrap resamples whole seeds 20,000 times and is a cross-check.</p>
+  <p>The record does not say why the project chose the exact McNemar test and Newcombe's interval over a z-test and a Wald interval. At the project's sample sizes the choice changes little. An earlier 400-seed evaluation printed both intervals for one contrast, scored at two ascension levels, and they agreed to within 0.03 points.</p>
+
   <div class="example"><span class="label">In Spire Mentor · the panels</span>
-    <p>The Ironclad end-to-end campaign that produced the published network wrote its pre-registration before any baseline, training or test run. It fixed its panels of seeds, all below \(2^{31}\) and checked against every earlier use in the repository. The four main ones:</p>
+    <p>The Ironclad end-to-end campaign produced the published Ironclad network. It wrote its pre-registration before any baseline, training or test run. The pre-registration fixed the campaign's panels. All seeds are below \(2^{31}\), and every panel was checked against every earlier use of seeds in the repository. These are the four main panels:</p>
     <div class="table"><table>
       <thead><tr><th>Panel</th><th>Seeds</th><th>Role</th></tr></thead>
       <tbody>
-        <tr><td>DEV-1000</td><td>160,000,000 to 160,000,999</td><td>reads every 250M decisions; early gates</td></tr>
+        <tr><td>DEV-1000</td><td>160,000,000 to 160,000,999</td><td>reads every 250M decisions, early gates</td></tr>
         <tr><td>DEV-2000</td><td>160,000,000 to 160,001,999</td><td>teacher choice, milestone reads, checkpoint selection</td></tr>
-        <tr><td>TEST (sealed)</td><td>161,000,000 to 161,003,999</td><td>baselines and the final network; read once</td></tr>
+        <tr><td>TEST (sealed)</td><td>161,000,000 to 161,003,999</td><td>baselines and the final network, read once</td></tr>
         <tr><td>SMOKE</td><td>162,000,000 to 162,000,999</td><td>determinism and identity checks only</td></tr>
       </tbody>
     </table></div>
-    <p>Selection lives on DEV and reporting on TEST: the evidence roles of Section 6. Determinism checks use their own SMOKE panel so that verifying the engine never touches a TEST seed. This chapter's measurements use two further ranges, 170,000,000 and 171,000,000 onward, that no campaign panel overlaps.</p>
+    <p>Selection uses DEV and reporting uses TEST, which are the evidence roles of Section 6. Determinism checks use their own SMOKE panel, so a check of the engine never touches a TEST seed. A fifth panel, SMOKE_SEALED, has SMOKE's seeds and TEST's sealing rules, so the sealing code can be tested without a TEST seed. This chapter's measurements use two further blocks, from 170,000,000 and from 171,000,000, that no campaign panel overlaps.</p>
   </div>
 
   <figure class="listing">
@@ -495,12 +549,13 @@ MAX_BAD_FRACTION = 0.005</code></pre>
   </figure>
 
   <div class="example"><span class="label">In Spire Mentor · the sealing</span>
-    <p>The test panel's rows were written outside every working copy, to a directory only the owner can read. The programs that played them printed only row counts, error counts and a SHA-256 hash of the file, and each hash was committed beside the pre-registration. Before the read, checking that a test run was still alive meant listing files and counting lines; printing, searching or loading a row was forbidden. One scorer read the panel once. The rule reaches into the tooling: even the runner itself looked only at each row's seed and whether it errored, and discarded the progress line that would have shown a win rate.</p>
+    <p>The test panel's records were written outside every working copy, to a directory that only the owner can read. The programs that played them printed only row counts, error counts and a SHA-256 hash of the file. Each hash was committed beside the pre-registration. Before the read, a person could check that a test run was alive only by listing files and counting lines. Printing, searching or loading a record was forbidden. The rule reached into the tooling. The runner looked only at each record's seed and whether it errored, and it discarded the progress line that would have shown a win rate. One scorer read the panel once. The scorer refuses to read TEST before the unseal time in <code>panels.py</code>.</p>
+    <p>The plan states these rules without a reason. The project's training playbook gives the nearest one. It asks you to commit the decision rule before any data exists. That commit, it says, "is what makes 'every level improved' a finding rather than a story fitted afterwards." The plan also lists a case of the bias the seal prevents. The AlphaDefect agent's reported 56.1% had been picked on 384 of its 1,000 seeds. It scored 59.1% on those 384 seeds and 54.2% on the other 616.</p>
   </div>
 
   <div class="example"><span class="label">In Spire Mentor · the bars and their power</span>
-    <p>The pre-registration named four bars before training began. The must-pass bar required the final network to beat the best earlier agent by at least 5 points with exact McNemar \(p \lt 0.01\) on the 4,000 sealed seeds. The plan computed its power: a paired standard error of 0.79 points at a guessed discordance of 0.25, which is \(\sqrt{0.25/4000}\), Equation \eqref{eq:vard}. A true gain of 5 points would pass with probability 0.51 and a true 6 points with 0.90: "a true +5pp is a coin flip by design." The guessed discordance came from eight earlier pairs of networks, at 0.71 to 0.90 times what independent outcomes would give.</p>
-    <p>The same arithmetic decided what not to run. The plan's experiments section admits an experiment only if its result can change a decision that week, and it moved several recipe comparisons to later work because their detectable effect at the affordable size, 3.1 to 5.3 points for one of them, was larger than the effect they could plausibly have, 0.45 to 2 points. Later recipe experiments were scoped at 4,000 seeds per panel, where the detectable effect is about 2 points.</p>
+    <p>The pre-registration named four bars before training began. The must-pass bar required a gain of at least 5 points over the best earlier agent without search, with exact McNemar \(p \lt 0.01\) on the 4,000 sealed seeds. The plan computed the power of that bar. At a guessed discordance of 0.25, the paired standard error is \(\sqrt{0.25/4000} = 0.79\) points by Equation \eqref{eq:vard}. A true gain of 5 points would pass with probability 0.51, and a true gain of 6 points with probability 0.90. The plan says it directly: "a true +5pp is a coin flip by design." The guessed discordance came from eight earlier pairs of networks, which disagreed at 0.71 to 0.90 times the rate of independent outcomes.</p>
+    <p>The same arithmetic decided what not to run. The plan admits an experiment only if its result can change a decision that week. It moved several recipe comparisons to later work. For one of them, the detectable effect at the affordable size was 3.1 to 5.3 points, and the plausible effect was 0.45 to 2 points. The plan sizes later recipe experiments at 4,000 seeds per panel, where the detectable effect is about 2 points. The record does not show that these experiments have run.</p>
   </div>
 
   <figure class="listing">
@@ -512,30 +567,30 @@ MAX_BAD_FRACTION = 0.005</code></pre>
 | BarR (reported) | WR(Final) | ≥ 40% (pro level); ≥ 56% also reported |
 
 - **Sequence:** Bar1 → Bar2 → Bar3, each at its own level, stopping at the first failure (familywise error ≤ 0.025 one-sided).</code></pre>
-    <figcaption>docs/experiments/2026-11-03-ironclad-e2e-v111/PREREG.md, lines 61-68. C* is the best earlier no-search agent; R1 is the shipped champion with tree search.</figcaption>
+    <figcaption>docs/experiments/2026-11-03-ironclad-e2e-v111/PREREG.md, lines 61-68. C* is the best earlier agent without search. R1 is the shipped champion with tree search.</figcaption>
   </figure>
 
   <div class="example"><span class="label">In Spire Mentor · selection, then the single read</span>
-    <p>The selection rule was written in advance too. Nine candidates (the final checkpoint and the two before it, each raw and under two weight averages) played the 2,000 development seeds. The default was fixed in advance, and a switch required a paired gain of at least 0.5 points, a threshold the plan chose by simulating the regret of different thresholds. One candidate cleared it: the 9.0-billion-decision checkpoint under the slower weight average, at 81.40% on DEV-2000, 1.2 points above the default. The plan warned to expect 1 to 2 points of optimism on DEV.</p>
-    <p>On the sealed panel, read once on 2026-11-17, that network won 3,255 of 4,000: 81.38%, Wilson interval 80.14% to 82.55%. Every bar passed; against the best earlier agent the paired difference was +69.5 points with 2,810 discordant seeds against 30. The DEV-to-TEST drop was 0.02 points, smaller than the warning. One read does not measure an expected optimism: the TEST estimate's own standard error is about 0.6 points, comparable to what Equation \eqref{eq:optimism} predicts for nine candidates that disagree on one seed in ten.</p>
+    <p>The plan wrote the selection rule in advance too. Nine candidates played the 2,000 development seeds. They were the final checkpoint and the two checkpoints before it, each in its raw form and under two weight averages. The default candidate was fixed in advance. A switch to another candidate required a paired gain of at least 0.5 points. The plan chose that threshold by simulating the regret of different thresholds. Its simulation gave a regret of 0.55 points at a 0.5-point threshold and 0.96 points at a 1.5-point threshold. One candidate cleared the threshold. It was the 9.0-billion-decision checkpoint under the slower weight average, at 81.40% on DEV-2000 and 1.2 points above the default. The plan warned to expect 1 to 2 points of optimism on DEV.</p>
+    <p>The sealed panel was read once, on 2026-11-17. That network won 3,255 of 4,000 games, which is 81.38%, with a Wilson interval of 80.14% to 82.55%. Every bar passed. Against the best earlier agent without search, the paired difference was +69.5 points, with 2,810 discordant seeds against 30. The drop from DEV to TEST was 0.02 points, smaller than the warning. One read cannot measure an expected optimism. The record gives no discordance for the nine candidates. The campaign log's comparison of the two weight averages of the stop checkpoint, \(-1.20\) points with an interval of \(-3.14\) to \(+0.74\) on 2,000 seeds, implies a discordance of about 0.2. With that value, Equation \eqref{eq:optimism} puts the worst-case optimism of nine candidates on DEV-2000 at about 1 point. The TEST estimate's own standard error is about 0.6 points, and the DEV estimate has its own noise. So a drop of 0.02 points fits both no optimism and an optimism near 1 point.</p>
   </div>
 
   <div class="example"><span class="label">In Spire Mentor · four amendments</span>
-    <p>The pre-registration's own rule: amendments only tighten a rule whose data does not yet exist, one commit each. By the end they were numbered up to 19. Four show the mechanism.</p>
+    <p>The pre-registration sets its own rule for amendments. An amendment may only tighten a rule whose data does not yet exist, and each amendment is one commit. By the end of the campaign the amendments were numbered up to 19. From Amendment 4 on, most are labelled "recorded deviation". Each of those records a change that the strict rule did not allow, together with when it was made and what data existed. These four amendments show the mechanism:</p>
     <ul>
-      <li><strong>A rule fires (Amendment 2).</strong> A side experiment had a pre-written go rule: at least +2 points with the interval's low end above zero. It read +0.4 points, interval −2.5 to +3.2. The rule said no, and the plan went ahead without it. Nobody argued that +0.4 was promising.</li>
-      <li><strong>A recorded deviation (Amendment 4).</strong> An early gate required 85% agreement with the teacher's combat actions. The student scored 0.805 while already beating the teacher by 5.4 points (McNemar \(p = 0.00016\)). The rule said fix and relaunch; the user waived it. The amendment says in plain words that the waiver was made after seeing the read.</li>
-      <li><strong>One binary (Amendment 6).</strong> The engine changed mid-training. Every baseline was re-run on the new engine on DEV and on sealed TEST, the old sealed TEST files were left unread, and readings before and after the switch were compared only through a bridge: the same checkpoint played on both engines.</li>
-      <li><strong>A switch after seeing data (Amendment 10).</strong> One weight average read 4.05 points above the other (\(p = 0.002\)), so the routine reads switched to it. The amendment re-points every older rule so that each comparison stays paired on shared seeds, instead of comparing a new variant's number with an old variant's.</li>
+      <li><strong>A rule fires (Amendment 2).</strong> A side experiment had a written go rule: a gain of at least 2 points with the interval's low end above zero. A plan change had already stopped the side experiment. Its final read was +0.4 points, with an interval of −2.5 to +3.2. The rule said no, so the champion's recipe stayed on the main run's checkpoint pair.</li>
+      <li><strong>A recorded deviation (Amendment 4).</strong> An early gate required 85% agreement with the teacher's combat actions. The student scored 0.805 while it already beat the teacher by 5.4 points, with McNemar \(p = 0.00016\). The rule said to fix the student and relaunch. The user waived the rule. The amendment states that the waiver was made after the read.</li>
+      <li><strong>One engine build (Amendment 6).</strong> The engine changed during training. Every baseline was played again on the new engine, on DEV and on sealed TEST, and the old sealed TEST files stayed unread. Readings from before and after the change were compared only through a bridge, which is the same checkpoint played on both engines.</li>
+      <li><strong>A switch after the data (Amendment 10).</strong> One weight average read 4.05 points above the other, with \(p = 0.002\), so the routine reads switched to it. The amendment re-points the older rules that read the old average. It leaves the checkpoint-selection rule, its default and the stall floors unchanged. Each comparison then stays paired on shared seeds, and no rule compares a new variant's number with an old variant's number.</li>
     </ul>
   </div>
 
-  <div class="example"><span class="label">In Spire Mentor · never compare rates across panels</span>
-    <p>The project's training playbook records that the same network, weights confirmed bit-identical, scored 43.1% on one panel and 47.2% on another, about 2.9 standard errors apart. Its rule since: compare differences within one panel, never rates across panels. Section 10 measures how far apart two panels put the same network here, and Section 11 discusses what a 2.9-sigma gap can and cannot mean.</p>
+  <div class="example"><span class="label">In Spire Mentor · differences within a panel, never rates across panels</span>
+    <p>An earlier pilot scored the same network on two 200-seed panels, each played at 11 ascension levels, which is 2,200 runs per panel. Its weights were confirmed bit-identical, and it scored 43.1% on one panel and 47.2% on the other. The pilot's note calls the gap seed-panel variance of about 2.9 standard errors. That figure treats the 2,200 runs as independent. They are not, because each seed is played 11 times, so the true standard error is larger and the gap is less surprising than 2.9 sigma suggests. Since then the playbook's rule is to compare differences within one panel and never compare rates across panels. Section 10 measures how far two panels move the same network here. Section 11 discusses what a 2.9-sigma gap can and cannot mean.</p>
   </div>
 
-  <h2 id="s10">10. Measured</h2>
-  <p>Two published networks played Ironclad at ascension 10, greedily, on the same 600 seeds: 300 from 170,000,000 upward (panel A) and 300 from 171,000,000 upward (panel B). Network 1 is <code>ironclad_e2e_d9000_ema0999</code>, trained on Ironclad only; its name matches the campaign's final network, though I did not check that the files are identical. Network 2 is <code>allchar_e2e_d4500_ema0999</code>, trained on all characters for half as many decisions.</p>
+  <h2 id="s10">10. Measured on this Mac</h2>
+  <p>Two published networks played Ironclad at ascension 10, greedily, on the same 600 seeds. Panel A is the 300 seeds from 170,000,000 upward, and panel B is the 300 seeds from 171,000,000 upward. Network 1 is <code>ironclad_e2e_d9000_ema0999</code>, trained on Ironclad only. Its name matches the campaign's final network, but this chapter did not check that the files are identical. Network 2 is <code>allchar_e2e_d4500_ema0999</code>, trained on all characters for half as many decisions.</p>
 
   <div class="measured"><span class="label">Measured · 600 paired seeds · M2 Max, <span data-m="workers" data-f="int">3</span> threads, shared machine</span>
     <div class="table"><table>
@@ -545,7 +600,7 @@ MAX_BAD_FRACTION = 0.005</code></pre>
         <tr><td>All-character (net 2)</td><td class="num"><span data-m="panel2.A.p" data-f="pct1">84.7%</span></td><td class="num"><span data-m="panel2.B.p" data-f="pct1">80.7%</span></td><td class="num"><span data-m="net2.p" data-f="pct1">82.7%</span></td><td><span data-m="net2.lo" data-f="pct1">79.4%</span> to <span data-m="net2.hi" data-f="pct1">85.5%</span></td></tr>
       </tbody>
     </table></div>
-    <p>Both networks win most games, and their intervals overlap. Overlapping single-rate intervals do not settle whether the networks differ; the paired analysis below does.</p>
+    <p>Both networks win most games, and their intervals overlap. Overlapping intervals for single rates do not settle whether the networks differ. The paired analysis below answers that question.</p>
   </div>
 
   <div class="measured"><span class="label">Measured · paired against unpaired, same 1,200 runs</span>
@@ -565,7 +620,8 @@ MAX_BAD_FRACTION = 0.005</code></pre>
         <tr><td>p-value</td><td>exact McNemar <span data-m="mcnemar_p" data-f="g2">0.28</span></td><td>two-proportion z <span data-m="unpaired_z_p" data-f="g2">0.3</span></td></tr>
       </tbody>
     </table></div>
-    <p>The paired bootstrap (20,000 resamples of whole seeds) gives <span data-m="bootstrap.0" data-f="spp1">-6.2</span> to <span data-m="bootstrap.1" data-f="spp1">+1.5</span> points, in line with Newcombe's interval. The discordance is <span data-m="discordance" data-f="f3">0.237</span> against <span data-m="independence_discordance" data-f="f3">0.302</span> for independent outcomes, and the phi coefficient is <span data-m="phi" data-f="f2">0.22</span>. So the dot in Figure 8.3 sits left of the crossing, and pairing cut the variance to <span data-m="variance_ratio" data-f="f2">0.78</span> of the unpaired design: the paired standard error is <span data-m="paired_se" data-f="pp2">1.98</span> points against <span data-m="unpaired_se" data-f="pp2">2.24</span>, which an unpaired design would match only with about <span data-m="unpaired_equivalent_extra" data-f="pct0">28%</span> more seeds. A network trained on one character and a network trained on all of them still agree on most seeds, because the same seed gives both the same map and the same encounters. Two checkpoints of one training run would sit further left; Section 9's campaign guessed 0.71 to 0.90 times independence for its pairs, and this pair measured <span data-m="discordance_over_independence" data-f="f2">0.78</span>.</p>
+    <p>Neither test finds a difference. Network 1 minus network 2 is <span data-m="diff" data-f="spp1">-2.3</span> points, and the paired interval includes zero. The paired bootstrap with 20,000 resamples of whole seeds gives <span data-m="bootstrap.0" data-f="spp1">-6.2</span> to <span data-m="bootstrap.1" data-f="spp1">+1.5</span> points, close to Newcombe's interval.</p>
+    <p>Pairing narrowed the interval by about a point. The dot in Figure 8.5 sits to the left of the crossing. Pairing cut the variance to <span data-m="variance_ratio" data-f="f2">0.78</span> of the unpaired design's variance. An unpaired design would need about <span data-m="unpaired_equivalent_extra" data-f="pct0">28%</span> more seeds to match the paired standard error. The two networks were trained differently, one on Ironclad only and one on all characters. They agree on 76% of seeds. Independent outcomes at these win rates would agree on 70%, so the shared maps and lists of fights add about 6 points of agreement. Two checkpoints of one training run should sit further to the left. The campaign log implies a discordance of about 0.2 for two weight averages of one checkpoint, about 0.65 times independence. The campaign guessed 0.71 to 0.90 times independence for its pairs, and this pair measured <span data-m="discordance_over_independence" data-f="f2">0.78</span>.</p>
   </div>
 
   <figure id="fig-slices">
@@ -625,20 +681,21 @@ MAX_BAD_FRACTION = 0.005</code></pre>
 </svg>
 <!-- /figure:slices -->
     </div>
-    <figcaption><b>Figure 8.5.</b> Each network's win rate on six disjoint 100-seed slices, three per panel, with 95% Wilson intervals. Dashed lines are the pooled rates. Notice how far the same weights move from one slice to the next, and compare that with the error bars: every slice's interval is about ±8 points wide before anything is wrong.</figcaption>
+    <figcaption><b>Figure 8.7.</b> Each network's win rate on six disjoint 100-seed slices, three per panel, with 95% Wilson intervals. Dashed lines are the pooled rates. Notice how far the same weights move from one slice to the next. Then compare that movement with the error bars. Each slice's interval reaches 6 to 8 points either side of its rate.</figcaption>
   </figure>
 
   <div class="measured"><span class="label">Measured · panel variance</span>
-    <p>Across its six 100-seed slices, the Ironclad network ranged from <span data-m="slice1.min" data-f="pct1">77.0%</span> to <span data-m="slice1.max" data-f="pct1">87.0%</span>, a spread of <span data-m="slice1.spread" data-f="pp1">10.0</span> points. The binomial standard deviation of one slice is <span data-m="slice1.sd" data-f="pp1">4.0</span> points, and the expected range of six independent draws is about 2.5 standard deviations, so luck alone predicts a spread near <span data-m="slice1.expected_range" data-f="pp1">10.1</span> points. The all-character network spread <span data-m="slice2.spread" data-f="pp1">12.0</span> points against a slice SD of <span data-m="slice2.sd" data-f="pp1">3.8</span>. Between the two 300-seed panels, network 1's rate moved <span data-m="gap1.diff" data-f="spp1">+1.3</span> points (two-proportion p = <span data-m="gap1.p" data-f="g2">0.68</span>) and network 2's <span data-m="gap2.diff" data-f="spp1">+4.0</span> (p = <span data-m="gap2.p" data-f="g2">0.2</span>). Whether those gaps look large or small, they are what binomial sampling produces, and they are why the campaign compared differences on one panel rather than rates across panels.</p>
+    <p>Across its six 100-seed slices, the Ironclad network ranged from <span data-m="slice1.min" data-f="pct1">77.0%</span> to <span data-m="slice1.max" data-f="pct1">87.0%</span>, a spread of <span data-m="slice1.spread" data-f="pp1">10.0</span> points. The binomial standard deviation of one slice is <span data-m="slice1.sd" data-f="pp1">4.0</span> points. The expected range of six independent draws is about 2.5 standard deviations, so luck alone predicts a spread near <span data-m="slice1.expected_range" data-f="pp1">10.1</span> points. The all-character network spread <span data-m="slice2.spread" data-f="pp1">12.0</span> points against a slice standard deviation of <span data-m="slice2.sd" data-f="pp1">3.8</span>.</p>
+    <p>Network 1's rate was higher on the first 300-seed panel than on the second by <span data-m="gap1.diff" data-f="pp1">1.3</span> points, with a two-proportion p of <span data-m="gap1.p" data-f="g2">0.68</span>. Network 2's rate was higher on the first panel by <span data-m="gap2.diff" data-f="pp1">4.0</span> points, with p = <span data-m="gap2.p" data-f="g2">0.2</span>. Binomial sampling alone produces gaps of this size. They are the reason the campaign compared differences on one panel and not rates across panels.</p>
   </div>
 
   <div class="measured"><span class="label">Measured · selection on the panel</span>
-    <p>Re-splitting the 600 seeds at random 4,000 times, choosing the network that won more on one half and scoring it on both, the chosen network looked <span data-m="selection.resplit.mean_gap" data-f="pp2">0.90</span> points better on its selection half. Simulation at the measured discordance (Figure 8.4) gives, for nine equally good candidates, <span data-m="selection.simulated.300.9" data-f="pp2">2.88</span> points of optimism at 300 seeds, <span data-m="selection.simulated.1000.9" data-f="pp2">1.60</span> at 1,000 and <span data-m="selection.simulated.4000.9" data-f="pp2">0.78</span> at 4,000, against <span data-m="selection.formula.300.9" data-f="pp2">2.95</span>, <span data-m="selection.formula.1000.9" data-f="pp2">1.62</span> and <span data-m="selection.formula.4000.9" data-f="pp2">0.81</span> from Equation \eqref{eq:optimism}. The simulation stands in for nine real checkpoints, which this chapter did not have; it uses the measured win rate and discordance.</p>
+    <p>Section 6 measured the bias for two real networks at <span data-m="selection.resplit.mean_gap" data-f="pp2">0.90</span> points. This chapter had no nine real checkpoints, so it simulated nine equally good candidates at the measured win rate and discordance. The simulation gives <span data-m="selection.simulated.300.9" data-f="pp2">2.88</span> points of optimism at 300 seeds, <span data-m="selection.simulated.1000.9" data-f="pp2">1.60</span> at 1,000 seeds, and <span data-m="selection.simulated.4000.9" data-f="pp2">0.78</span> at 4,000 seeds. Equation \eqref{eq:optimism} gives <span data-m="selection.formula.300.9" data-f="pp2">2.95</span>, <span data-m="selection.formula.1000.9" data-f="pp2">1.62</span> and <span data-m="selection.formula.4000.9" data-f="pp2">0.81</span> points.</p>
   </div>
 
   <h3>What experiments cost on this Mac</h3>
   <div class="measured"><span class="label">Measured · throughput · M2 Max, 12 cores, 64 GB</span>
-    <p>The 1,200 runs averaged <span data-m="decisions_per_run" data-f="h0">647</span> decisions each and took <span data-m="wall_seconds" data-f="h0">2,730</span> seconds of wall clock on <span data-m="workers" data-f="int">3</span> threads: <span data-m="rate_measured" data-f="h0">284</span> decisions per second, or <span data-m="rate_per_thread" data-f="h0">95</span> per busy thread. Other sessions were running simulations for most of the run (load average <span data-m="loadavg_before.0" data-f="h0">109</span> at the start, <span data-m="loadavg_after.0" data-f="h0">3</span> at the end on 12 cores), so this is a pessimistic figure. The tour measured 800 decisions per second on ten threads with the machine otherwise idle; the table gives both. Greedy play is forward passes only. Training also runs the learner, and the campaign's training server sustained about <span data-m="campaign_train_rate" data-f="int">10,500</span> decisions per second late in training.</p>
+    <p>The 1,200 runs averaged <span data-m="decisions_per_run" data-f="h0">647</span> decisions each. They took <span data-m="wall_seconds" data-f="h0">2,730</span> seconds of wall-clock time on <span data-m="workers" data-f="int">3</span> threads, which is <span data-m="rate_measured" data-f="h0">284</span> decisions per second, or <span data-m="rate_per_thread" data-f="h0">95</span> per busy thread. Other sessions were running simulations when the run started. The load average was <span data-m="loadavg_before.0" data-f="h0">109</span> at the start and <span data-m="loadavg_after.0" data-f="h0">3</span> at the end, on 12 cores. So the measured rate is pessimistic. The tour's earlier README gave about 800 decisions per second on ten threads. No committed measurement records that rate or the load at the time, so the idle-machine hours are unverified. The tables give both rates. Greedy play runs forward passes only. Training also runs the learner, and the campaign's training server sustained about <span data-m="campaign_train_rate" data-f="int">10,500</span> decisions per second late in training.</p>
     <div class="table"><table>
       <thead><tr><th>Greedy play</th><th class="num">Hours, idle, 10 threads</th><th class="num">Hours, as measured</th></tr></thead>
       <tbody>
@@ -707,30 +764,40 @@ MAX_BAD_FRACTION = 0.005</code></pre>
 </svg>
 <!-- /figure:cost -->
     </div>
-    <figcaption><b>Figure 8.6.</b> The detectable effect of a paired comparison against its size, for three discordances and the measured one. Numbers along the top are hours of play for both networks on this Mac at 800 decisions per second. Notice the shape: each halving of the MDE costs four times the hours, so the jump from a 4-point to a 2-point experiment is the expensive one.</figcaption>
+    <figcaption><b>Figure 8.8.</b> The detectable effect of a paired comparison against its size, for three discordances and the measured one. Numbers along the top are hours of play for both networks on this Mac at 800 decisions per second, a rate no committed measurement records. Each halving of the MDE costs four times the hours. So the step from a 4-point experiment to a 2-point experiment is the expensive one.</figcaption>
   </figure>
 
-  <p>How to use the table. Name the effect you hope for, guess the discordance from the kind of change (two checkpoints of one run: low; two different recipes: higher), read off the seed count that brings the MDE below the hoped-for effect, and read the hours. If the hours are unaffordable, the experiment cannot change a decision, and the right move is the plan's: do not run it this week.</p>
+  <p>To plan an experiment with the cost table, start from the effect you hope for. Guess the discordance from the kind of change. Two checkpoints of one run disagree rarely, and two different recipes disagree more often. Read off the seed count that brings the MDE below the hoped-for effect, then read the hours. If the hours are unaffordable, the experiment cannot change a decision. The plan's response to that case was not to run the experiment that week.</p>
 
   <h2 id="s11">11. Common confusions</h2>
-  <p><strong>"Hard seeds make panels vary more than the binomial says."</strong> They do not, if seeds are drawn independently. A panel's win count is a sum of independent Bernoulli draws whose common probability \(p\) is already the average over easy and hard seeds; Equation \eqref{eq:var} includes that heterogeneity. What heterogeneity does change is the paired comparison: it is the reason \(\operatorname{Cov}(X, Y) > 0\). A 2.9-sigma gap between two panels for identical weights is either a rare draw (two-sided \(p \approx 0.004\)), which becomes unremarkable once you count how many panel comparisons a project makes, or a sign that something else differed between the reads: the engine, the settings, or how the seed ranges map to games. Section 10's slices show what pure sampling gives.</p>
-  <p><strong>"Overlapping intervals mean no significant difference."</strong> Two single-rate intervals can overlap while the paired interval for their difference excludes zero, because pairing removes the shared seed noise that both single intervals contain. Test the difference directly.</p>
-  <p><strong>"More concordant seeds make the McNemar test stronger."</strong> The test conditions on the discordant count \(m\) (Equation \eqref{eq:mcnull}). Concordant seeds dilute the effect size \(\hat\Delta = (b-c)/n\) and narrow its interval, but they do not change the p-value for a given split of \(b\) and \(c\). Power grows with \(n\) only because \(m\) grows with \(n\).</p>
-  <p><strong>"The best checkpoint's development score is its score."</strong> It is the score of the maximum of \(K\) noisy estimates, which is biased upward by Equation \eqref{eq:optimism}. In supervised learning this is the validation-set optimism you already correct with a held-out test set; the difference in RL is that each panel read costs hours, which tempts reuse.</p>
-  <p><strong>"A Q-learning return curve is an evaluation."</strong> The training curve averages episodes of the exploring policy, on seeds the learner keeps adapting to, from a network that changes between episodes. It tells you training is alive. A claim about a policy needs that policy, frozen, on seeds that did not choose it.</p>
+  <p><strong>"Hard seeds make panels vary more than the binomial says."</strong> They do not, if each seed is played once and the seeds are drawn independently. A panel's win count is a sum of independent Bernoulli draws. Their common probability \(p\) is already the average over easy and hard seeds, so Equation \eqref{eq:var} includes that variation. The variation between seeds does change the paired comparison, because it is the reason that \(\operatorname{Cov}(X, Y) > 0\). A 2.9-sigma gap between two panels for identical weights has three explanations. It is a rare draw, with a two-sided \(p \approx 0.004\), which becomes unremarkable once you count how many panel comparisons a project makes. Or something else differed between the reads, such as the engine, the settings, or how the seed blocks map to games. Or the runs were not independent. The pilot played each seed at 11 ascension levels, so a hard seed counted 11 times, and the binomial standard error over 2,200 runs was too small. Section 10's slices show what pure sampling produces.</p>
+  <p><strong>"Overlapping intervals mean no significant difference."</strong> Two intervals for single rates can overlap while the paired interval for their difference excludes zero. Pairing removes the shared seed noise that both single intervals contain. Test the difference directly.</p>
+  <p><strong>"More concordant seeds make the McNemar test stronger."</strong> The test conditions on the discordant count \(m\), as Equation \eqref{eq:mcnull} shows. Concordant seeds dilute the effect size \(\hat\Delta = (b-c)/n\) and narrow its interval. They do not change the p-value for a given split of \(b\) and \(c\). Power grows with \(n\) only because \(m\) grows with \(n\).</p>
+  <p><strong>"The best checkpoint's development score is its score."</strong> That score is the maximum of \(K\) noisy estimates, and Equation \eqref{eq:optimism} says how far it is biased upward. In supervised learning this is the validation-set optimism that you correct with a held-out test set. The difference in RL is that each panel read costs hours, and that cost tempts you to reuse a panel.</p>
+  <p><strong>"A Q-learning return curve is an evaluation."</strong> The training curve averages episodes of the exploring policy, on seeds the learner keeps adapting to, from a network that changes between episodes. It tells you that training is alive. A claim about a policy needs that policy, frozen, on seeds that did not choose it.</p>
 
   <h2 id="experiments">Suggested experiments</h2>
-  <p>Each command runs from the repository root. In a worktree, prefix it with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
+  <p>Run each command from the repository root. In a git worktree, prefix each command with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
   <ol>
-    <li><strong>Watch the interval shrink.</strong> Run the comparison at three sizes and check that the Wilson half-width falls as \(1/\sqrt n\).
+    <li><strong>Watch the interval shrink.</strong> Run the comparison at two sizes. <code>check.py</code> plays both networks on the first N seeds of each panel and prints sections 1 to 4.
       <figure class="listing"><pre><code>tour/run stop-8-evaluation/check.py --seeds 50
-tour/run stop-8-evaluation/check.py --seeds 200</code></pre><figcaption>check.py plays both networks on the first N seeds of each panel and prints sections 1 to 4.</figcaption></figure></li>
-    <li><strong>Cost an experiment before you run it.</strong> Print the cost table alone from a short timing sample, then compute the seed count for the effect you care about with Equation \eqref{eq:mde}.
-      <figure class="listing"><pre><code>tour/run stop-8-evaluation/check.py --cost-only --workers 10</code></pre><figcaption>Run it on an idle machine; the hours scale with measured throughput.</figcaption></figure></li>
-    <li><strong>Exact power.</strong> Equation \eqref{eq:mde} is a normal approximation. Simulate the exact McNemar test at the measured discordance and \(n = 1{,}000\): draw \(m \sim \operatorname{Binomial}(n, \delta_d)\), then \(b \sim \operatorname{Binomial}(m, (\delta_d + \Delta)/2\delta_d)\), apply <code>mcnemar_exact</code>, and find the \(\Delta\) with 80% rejections. Compare it with the table.</li>
-    <li><strong>Regenerate this chapter's numbers.</strong> Play the 600 seeds again and redraw every figure and number from the new data.
+tour/run stop-8-evaluation/check.py --seeds 200</code></pre></figure>
+      The Wilson half-width at 200 seeds per panel is about half the half-width at 50.</li>
+    <li><strong>Cost an experiment before you run it.</strong> Close other simulations first, because the hours scale with measured throughput. Print the cost table from a short timing sample.
+      <figure class="listing"><pre><code>tour/run stop-8-evaluation/check.py --cost-only --workers 10</code></pre></figure>
+      Then use Equation \eqref{eq:mde} to compute the seed count for the effect you care about.</li>
+    <li><strong>Find the exact power of McNemar's test.</strong> Equation \eqref{eq:mde} is a normal approximation. Simulate the exact test at the measured discordance and \(n = 1{,}000\).
+      <ol>
+        <li>Draw \(m \sim \operatorname{Binomial}(n, \delta_d)\).</li>
+        <li>Draw \(b \sim \operatorname{Binomial}(m, (\delta_d + \Delta)/2\delta_d)\), and set \(c = m - b\).</li>
+        <li>Apply <code>mcnemar_exact(b, c)</code> and record whether \(p \lt 0.05\).</li>
+        <li>Repeat for a grid of \(\Delta\), and find the \(\Delta\) with 80% rejections.</li>
+      </ol>
+      Compare that \(\Delta\) with the 1,000-seed row of the cost table.</li>
+    <li><strong>Regenerate this chapter's numbers.</strong> Play the 600 seeds again, then redraw every figure and number from the new data.
       <figure class="listing"><pre><code>tour/run stop-8-evaluation/check.py --seeds 300 --workers 3 --save tour/stop-8-evaluation/data/runs.json
-tour/run stop-8-evaluation/figures.py</code></pre><figcaption>figures.py writes data/summary.json and rewrites the figures and measured numbers in chapter.html.</figcaption></figure></li>
+tour/run stop-8-evaluation/figures.py</code></pre></figure>
+      <code>figures.py</code> writes <code>data/summary.json</code> and rewrites the figures and measured numbers in <code>chapter.html</code>.</li>
   </ol>
 
   <h2 id="references">References</h2>
@@ -747,6 +814,7 @@ tour/run stop-8-evaluation/figures.py</code></pre><figcaption>figures.py writes 
     <li id="ref-nosek">Nosek, B. A., Ebersole, C. R., DeHaven, A. C., and Mellor, D. T. (2018). <em>The preregistration revolution</em>. Proceedings of the National Academy of Sciences, 115(11), 2600-2606.</li>
   </ol>
 </main>
+
 
 <footer class="chapter"><span>← Chapter 7: Imitation and warm starts</span><span>End of the tour</span></footer>
 
