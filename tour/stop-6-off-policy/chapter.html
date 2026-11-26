@@ -123,23 +123,23 @@ figcaption mjx-container svg { display: inline; margin: 0; }
 <header class="chapter">
   <div class="eyebrow"><span>RL tour &#183; Chapter 6 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
   <h1>Off-policy correction</h1>
-  <p class="lede">A policy-gradient update needs actions drawn from the policy it is improving, but a fast trainer always learns from actions an older network chose. Importance weights repair the mismatch one decision at a time. This chapter shows why that works when the gap is small, and why the same weights fail for whole trajectories.</p>
+  <p class="lede">Off-policy correction reweights data that one policy collected so that it averages like data from another policy. A policy-gradient trainer needs it because its rows were always played by a slightly older network than the one it trains. In Spire Mentor, each row carries one weight, the ratio of the two networks' probabilities for the action that was played. That weight is accurate for a small gap and one decision. Over a whole run of about 700 decisions, the same weights become useless.</p>
 </header>
 
 <nav class="contents" aria-label="Chapter contents">
   <strong>Contents</strong>
   <ol>
     <li><a href="#stale">Why the data is stale</a></li>
-    <li><a href="#is">Importance sampling from first principles</a></li>
-    <li><a href="#ess">Variance and effective sample size</a></li>
-    <li><a href="#horizon">Products of ratios</a></li>
-    <li><a href="#gradient">Correcting a gradient</a></li>
-    <li><a href="#clamp">Clipping and truncation</a></li>
-    <li><a href="#decoupled">Decoupled PPO</a></li>
-    <li><a href="#vtrace">V-trace and IMPALA</a></li>
-    <li><a href="#ope">The same tool as off-policy evaluation</a></li>
-    <li><a href="#spire">In Spire Mentor</a></li>
-    <li><a href="#measured">Measured</a></li>
+    <li><a href="#is">Importance sampling reweights one decision</a></li>
+    <li><a href="#ess">The weights cost samples</a></li>
+    <li><a href="#horizon">Products of ratios lose almost every sample</a></li>
+    <li><a href="#gradient">A gradient can afford only the action correction</a></li>
+    <li><a href="#clamp">A cap on the weight trades bias for variance</a></li>
+    <li><a href="#decoupled">Decoupled PPO separates correction from the trust region</a></li>
+    <li><a href="#vtrace">V-trace also corrects the critic</a></li>
+    <li><a href="#ope">Evaluation and training use the weight differently</a></li>
+    <li><a href="#spire">How Spire Mentor's trainer applies the correction</a></li>
+    <li><a href="#measured">Measurements on real play</a></li>
     <li><a href="#confusions">Common confusions</a></li>
     <li><a href="#experiments">Suggested experiments</a></li>
     <li><a href="#references">References</a></li>
@@ -148,178 +148,270 @@ figcaption mjx-container svg { display: inline; margin: 0; }
 
 <main>
   <h2 id="stale">1. Why the data is stale</h2>
-  <p>Q-learning is off-policy at no cost. Its target, \(r_t + \gamma \max_{a'} Q(s_{t+1}, a')\), asks what the best action would be, whatever action the logging policy took next. A replay buffer full of week-old transitions is still valid input. A policy gradient has no such luxury. Chapter 5 derived it as an expectation over trajectories drawn from the policy being improved:</p>
-  <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\Big[ \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t \Big]. \label{eq:pg} \end{equation}</div>
-  <p>Here \(\tau\) is a trajectory, \(\pi_\theta(a_t \mid s_t)\) the probability the current network gives action \(a_t\) in state \(s_t\), and \(\hat{A}_t\) the estimated advantage from Chapter 4. The subscript \(\tau \sim \pi_\theta\) is the whole problem. The average is only correct when the actions were sampled from \(\pi_\theta\) itself, the parameters we are about to change. A sample from another policy weights the wrong actions.</p>
-  <p>No practical trainer meets that condition exactly. Three things push the data away from the current parameters.</p>
+  <p>Q-learning needs no correction for old data. Its target, \(r_t + \gamma \max_{a'} Q(s_{t+1}, a')\), takes the best next action, whatever action the logging policy took next. So a replay buffer of week-old transitions is still valid input. A policy gradient is different. Chapter 5 derived it as an expectation over trajectories drawn from the policy being improved. With \(\gamma = 1\), as in this game, the \(\gamma^t\) factor drops:</p>
+  <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\Big[ \sum_{t=0}^{T-1} \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t \Big]. \label{eq:pg} \end{equation}</div>
+  <p>Here \(\tau\) is a trajectory, \(\pi_\theta(a_t \mid s_t)\) the probability the current network gives action \(a_t\) in state \(s_t\), and \(\hat{A}_t\) the estimated advantage from Chapter 4. The subscript \(\tau \sim \pi_\theta\) is the condition that matters. The average is correct only when \(\pi_\theta\) itself sampled the actions, with the parameters that the update is about to change. An average over another policy's actions counts each action as often as that policy chose it, not as often as \(\pi_\theta\) would.</p>
+  <p>No practical trainer meets that condition exactly. Three mechanisms make the data older than the current parameters.</p>
   <ol>
     <li><strong>Several gradient steps per batch.</strong> PPO splits one batch into minibatches and takes a step on each. After the first step, every remaining row was played by a network that no longer exists. Chapter 5's clipped ratio exists to limit this drift.</li>
     <li><strong>Asynchronous play.</strong> Simulation and learning run at the same time. While the learner computes update \(k\), the workers keep playing with the weights from before it. Their rows reach update \(k+1\) one version late.</li>
     <li><strong>Rows that wait.</strong> Some rows cannot train until later rows arrive, because their advantage needs the rest of the run. They train several updates after they were played.</li>
   </ol>
-  <p>We call the policy that generated a row the <dfn>behaviour policy</dfn> and write it \(\mu(a \mid s)\). (In some fields \(\mu\) names a mean; here it is always a policy.) The policy we want an expectation under is the <dfn>target policy</dfn>. The <dfn>staleness</dfn> of a row is the number of weight updates between the network that played it and the network being trained. Figure 6.1 shows where staleness comes from in an asynchronous trainer.</p>
+  <p>The policy that generated a row is the <dfn>behaviour policy</dfn>, written \(\mu(a \mid s)\). In this chapter \(\mu\) is always a policy, never a mean. The policy that you want an expectation under is the <dfn>target policy</dfn>. The <dfn>staleness</dfn> of a row is the number of weight updates between the network that played it and the network being trained. Figures 6.1a to 6.1c build up where staleness comes from in an asynchronous trainer.</p>
 
-  <figure id="fig-timeline">
+  <figure id="fig-timeline-a">
     <div class="scroll">
-      <svg viewBox="0 0 640 300" role="img" aria-label="Timeline of workers, serving network versions and updates, showing a row played by version 3 trained against version 4.">
-        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <svg viewBox="0 0 640 300" role="img" aria-label="Serving net and update lanes of an asynchronous trainer: each update produces new weights that serving loads.">
+        <defs><marker id="arr1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
         <g color="var(--fg)">
-          <text class="lab" x="8" y="48">workers</text>
           <text class="lab" x="8" y="98">serving net</text>
           <text class="lab" x="8" y="148">update</text>
-          <text class="lab" x="8" y="198">iterations</text>
-          <g class="l4">
-            <line x1="100" y1="44" x2="620" y2="44" stroke-dasharray="2 5" stroke-width="6"/>
-          </g>
           <rect x="100" y="80" width="170" height="28" class="f4" fill-opacity="0.35"/><text x="185" y="99" text-anchor="middle">weights v3</text>
           <rect x="270" y="80" width="180" height="28" class="f1" fill-opacity="0.35"/><text x="360" y="99" text-anchor="middle">weights v4</text>
           <rect x="450" y="80" width="170" height="28" class="f3" fill-opacity="0.35"/><text x="535" y="99" text-anchor="middle">weights v5</text>
           <rect class="box" x="190" y="130" width="80" height="28"/><text class="small" x="230" y="148" text-anchor="middle">update 3</text>
           <rect class="box" x="370" y="130" width="80" height="28"/><text class="small" x="410" y="148" text-anchor="middle">update 4</text>
           <rect class="box" x="550" y="130" width="70" height="28"/><text class="small" x="585" y="148" text-anchor="middle">update 5</text>
-          <line class="ink" x1="270" y1="130" x2="270" y2="110" marker-end="url(#arr)"/>
-          <line class="ink" x1="450" y1="130" x2="450" y2="110" marker-end="url(#arr)"/>
+          <line class="ink" x1="270" y1="130" x2="270" y2="110" marker-end="url(#arr1a)"/>
+          <line class="ink" x1="450" y1="130" x2="450" y2="110" marker-end="url(#arr1a)"/>
+          <text class="muted small" x="274" y="124">load v4</text>
+          <text class="muted small" x="454" y="124">load v5</text>
+          <line class="ink" x1="100" y1="285" x2="620" y2="285" marker-end="url(#arr1a)"/>
+          <text class="muted small" x="620" y="280" text-anchor="end">wall-clock time</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 6.1a.</b> Two lanes. The serving network holds one version of the weights at a time. Each update produces the next version, and serving loads it when the update finishes. Update 3 produces v4, and update 4 produces v5.</figcaption>
+  </figure>
+
+  <figure id="fig-timeline-b">
+    <div class="scroll">
+      <svg viewBox="0 0 640 300" role="img" aria-label="The same lanes with the iteration lane added: each iteration of rows feeds one update.">
+        <defs><marker id="arr1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <text class="lab" x="8" y="98">serving net</text>
+          <text class="lab" x="8" y="148">update</text>
+          <text class="lab" x="8" y="198">iterations</text>
+          <rect x="100" y="80" width="170" height="28" class="f4" fill-opacity="0.35"/><text x="185" y="99" text-anchor="middle">weights v3</text>
+          <rect x="270" y="80" width="180" height="28" class="f1" fill-opacity="0.35"/><text x="360" y="99" text-anchor="middle">weights v4</text>
+          <rect x="450" y="80" width="170" height="28" class="f3" fill-opacity="0.35"/><text x="535" y="99" text-anchor="middle">weights v5</text>
+          <rect class="box" x="190" y="130" width="80" height="28"/><text class="small" x="230" y="148" text-anchor="middle">update 3</text>
+          <rect class="box" x="370" y="130" width="80" height="28"/><text class="small" x="410" y="148" text-anchor="middle">update 4</text>
+          <rect class="box" x="550" y="130" width="70" height="28"/><text class="small" x="585" y="148" text-anchor="middle">update 5</text>
+          <line class="ink" x1="270" y1="130" x2="270" y2="110" marker-end="url(#arr1b)"/>
+          <line class="ink" x1="450" y1="130" x2="450" y2="110" marker-end="url(#arr1b)"/>
           <text class="muted small" x="274" y="124">load v4</text>
           <text class="muted small" x="454" y="124">load v5</text>
           <path class="ink" d="M100 180 v8 h90 v-8"/><text class="small" x="145" y="204" text-anchor="middle">iteration 3</text>
           <path class="ink" d="M190 180 v8 h180 v-8"/><text class="small" x="280" y="204" text-anchor="middle">iteration 4</text>
           <path class="ink" d="M370 180 v8 h180 v-8"/><text class="small" x="460" y="204" text-anchor="middle">iteration 5</text>
-          <line class="ink" x1="190" y1="172" x2="190" y2="160" marker-end="url(#arr)"/>
-          <line class="ink" x1="370" y1="172" x2="370" y2="160" marker-end="url(#arr)"/>
+          <line class="ink" x1="190" y1="172" x2="190" y2="160" marker-end="url(#arr1b)"/>
+          <line class="ink" x1="370" y1="172" x2="370" y2="160" marker-end="url(#arr1b)"/>
           <text class="muted small" x="194" y="170">rows of it. 3</text>
           <text class="muted small" x="374" y="170">rows of it. 4</text>
-          <circle cx="230" cy="44" r="5" class="f2"/>
-          <path class="l2" stroke-width="1.5" d="M230 50 C 230 240, 400 250, 405 160" marker-end="url(#arr)"/>
-          <text class="small" x="236" y="252">row A: played by v3 in iteration 4,</text>
-          <text class="small" x="236" y="266">trained in update 4 against v4: staleness 1</text>
-          <circle cx="320" cy="44" r="5" class="f1"/>
-          <path class="l1" stroke-width="1.5" d="M320 50 C 330 110, 395 110, 398 128" marker-end="url(#arr)"/>
-          <text class="small" x="326" y="66">row B: played by v4: staleness 0</text>
-          <line class="ink" x1="100" y1="285" x2="620" y2="285" marker-end="url(#arr)"/>
+          <line class="ink" x1="100" y1="285" x2="620" y2="285" marker-end="url(#arr1b)"/>
           <text class="muted small" x="620" y="280" text-anchor="end">wall-clock time</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figure 6.1.</b> One trainer, three lanes. Workers play continuously, and the learner picks each action with whatever weights it holds. Each iteration's rows go to an update. While that update runs, serving continues on the old weights. Row A was played early in iteration 4, before update 3 finished, so the policy that trains on it (v4, after update 3) is one version newer than the one that played it. Row B was played after the load and is fresh. Run rows that wait for their run to end (not drawn) train several iterations later.</figcaption>
+    <figcaption><b>Figure 6.1b.</b> The iteration lane is added. Each iteration collects a batch of rows and hands it to one update. Iteration 4 begins when update 3 begins, so serving still holds v3 for the first part of iteration 4.</figcaption>
   </figure>
 
-  <p>Staleness is the price of throughput. A synchronous trainer would stop all simulation during every update. The rest of this chapter is about the tool that lets us keep the throughput and still estimate Equation \eqref{eq:pg}: the importance weight.</p>
+  <figure id="fig-timeline-c">
+    <div class="scroll">
+      <svg viewBox="0 0 640 300" role="img" aria-label="The full timeline with the workers lane: row A, played by v3, trains against v4 with staleness 1. Row B, played by v4, has staleness 0.">
+        <defs><marker id="arr1c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <text class="lab" x="8" y="48">workers</text>
+          <text class="lab" x="8" y="98">serving net</text>
+          <text class="lab" x="8" y="148">update</text>
+          <text class="lab" x="8" y="198">iterations</text>
+          <g class="l4"><line x1="100" y1="44" x2="620" y2="44" stroke-dasharray="2 5" stroke-width="6"/></g>
+          <rect x="100" y="80" width="170" height="28" class="f4" fill-opacity="0.35"/><text x="185" y="99" text-anchor="middle">weights v3</text>
+          <rect x="270" y="80" width="180" height="28" class="f1" fill-opacity="0.35"/><text x="360" y="99" text-anchor="middle">weights v4</text>
+          <rect x="450" y="80" width="170" height="28" class="f3" fill-opacity="0.35"/><text x="535" y="99" text-anchor="middle">weights v5</text>
+          <rect class="box" x="190" y="130" width="80" height="28"/><text class="small" x="230" y="148" text-anchor="middle">update 3</text>
+          <rect class="box" x="370" y="130" width="80" height="28"/><text class="small" x="410" y="148" text-anchor="middle">update 4</text>
+          <rect class="box" x="550" y="130" width="70" height="28"/><text class="small" x="585" y="148" text-anchor="middle">update 5</text>
+          <line class="ink" x1="270" y1="130" x2="270" y2="110" marker-end="url(#arr1c)"/>
+          <line class="ink" x1="450" y1="130" x2="450" y2="110" marker-end="url(#arr1c)"/>
+          <text class="muted small" x="274" y="124">load v4</text>
+          <text class="muted small" x="454" y="124">load v5</text>
+          <path class="ink" d="M100 180 v8 h90 v-8"/><text class="small" x="145" y="204" text-anchor="middle">iteration 3</text>
+          <path class="ink" d="M190 180 v8 h180 v-8"/><text class="small" x="280" y="204" text-anchor="middle">iteration 4</text>
+          <path class="ink" d="M370 180 v8 h180 v-8"/><text class="small" x="460" y="204" text-anchor="middle">iteration 5</text>
+          <line class="ink" x1="190" y1="172" x2="190" y2="160" marker-end="url(#arr1c)"/>
+          <line class="ink" x1="370" y1="172" x2="370" y2="160" marker-end="url(#arr1c)"/>
+          <text class="muted small" x="194" y="170">rows of it. 3</text>
+          <text class="muted small" x="374" y="170">rows of it. 4</text>
+          <circle cx="230" cy="44" r="5" class="f2"/>
+          <path class="l2" stroke-width="1.5" d="M230 50 C 230 240, 400 250, 405 160" marker-end="url(#arr1c)"/>
+          <text class="small" x="236" y="252">row A: played by v3 in iteration 4,</text>
+          <text class="small" x="236" y="266">trained in update 4 against v4: staleness 1</text>
+          <circle cx="320" cy="44" r="5" class="f1"/>
+          <path class="l1" stroke-width="1.5" d="M320 50 C 330 110, 395 110, 398 128" marker-end="url(#arr1c)"/>
+          <text class="small" x="326" y="66">row B: played by v4: staleness 0</text>
+          <line class="ink" x1="100" y1="285" x2="620" y2="285" marker-end="url(#arr1c)"/>
+          <text class="muted small" x="620" y="280" text-anchor="end">wall-clock time</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 6.1c.</b> The workers lane is added. Workers play without pause, and every action comes from the weights that serving holds at that moment. Row A was played early in iteration 4, before update 3 finished. The update that trains on it starts from v4, one version newer than the v3 that played it. Row B was played after the load, so its staleness is 0. Rows that wait for their run to end, which are not drawn, train several iterations later.</figcaption>
+  </figure>
 
-  <h2 id="is">2. Importance sampling from first principles</h2>
-  <p>You already use importance sampling to evaluate a target policy from logged data. We rebuild it here in a form that will carry over to gradients, starting with one decision from a real game.</p>
+  <p>A synchronous trainer would have no stale rows, but it would stop all simulation during every update. An asynchronous trainer keeps the workers busy and accepts the staleness. The importance weight lets it still estimate Equation \eqref{eq:pg} from those rows.</p>
+
+  <h2 id="is">2. Importance sampling reweights one decision</h2>
+  <p>Importance sampling estimates an average under one distribution from samples drawn from another. You may know it from off-policy evaluation, where it scores a target policy from logged data. This section builds it in a form that carries over to gradients, starting with one decision from a real game.</p>
 
   <div class="example"><span class="label">In Spire Mentor &#183; one decision</span>
-    <p>Seed 170,000,000, act 1, floor 3, turn 4. The Ironclad holds four Strikes (6 damage, cost 1) and Unrelenting (14 damage, cost 2). One Corpse Slug is left, with 4 HP. Either card kills it. The game merges the four identical Strikes into one action, so there are two card choices, plus a potion and End Turn, which both networks ignore.</p>
-    <p>The published Ironclad network, call it A, plays Strike with probability 0.146 and Unrelenting with 0.854. The all-character network B says 0.506 and 0.494. A plays the run, so A is the behaviour policy \(\mu\). Suppose A samples Unrelenting. To ask what B would have done, we weight the row by \(0.494 / 0.854 = 0.58\): B takes this action less often than A, so it counts for less. If A had sampled Strike, the weight would be \(0.506 / 0.146 = 3.47\): a rare choice for A that B makes often, so it counts for more.</p>
+    <p>Seed 170,000,000, act 1, floor 3, turn 4. The Ironclad holds four Strikes (6 damage, cost 1) and Unrelenting (14 damage, cost 2). One Corpse Slug is left, with 4 HP. Either card kills it. The game merges the four identical Strikes into one action, so there are two card choices, plus a potion and End Turn, which both networks ignore. The state and the four probabilities below come from a run whose record is not committed, so treat them as unverified. The arithmetic on them is checked.</p>
+    <p>The published Ironclad network, call it A, plays Strike with probability 0.146 and Unrelenting with 0.854. The all-character network B says 0.506 and 0.494. A plays the run, so A is the behaviour policy \(\mu\). Suppose A samples Unrelenting. To ask what B would have done, you weight the row by \(0.494 / 0.854 = 0.58\). B takes this action less often than A, so the row counts for less. If A had sampled Strike, the weight would be \(0.506 / 0.146 = 3.47\). Strike is a rare choice for A that B makes often, so that row would count for more.</p>
   </div>
 
   <p>The general identity takes one line. Let \(p\) and \(q\) be two distributions over the same discrete set, and \(f\) any function. Whenever \(q(x) \gt 0\) wherever \(p(x) f(x) \neq 0\),</p>
   <div class="eq">\begin{equation} \mathbb{E}_{x \sim p}[f(x)] = \sum_x p(x)\, f(x) = \sum_x q(x)\, \frac{p(x)}{q(x)}\, f(x) = \mathbb{E}_{x \sim q}\big[w(x)\, f(x)\big], \qquad w(x) = \frac{p(x)}{q(x)}. \label{eq:is} \end{equation}</div>
-  <p>The <dfn>importance weight</dfn> \(w(x)\) converts samples from the proposal \(q\) into samples that average like the target \(p\). The condition on \(q\) is <dfn>support</dfn>: the proposal must be able to produce every outcome the target cares about. In a policy setting \(p\) is the target policy, \(q\) is \(\mu\), and for one decision the weight is the <dfn>importance ratio</dfn></p>
+  <p>The <dfn>importance weight</dfn> \(w(x)\) makes samples from the proposal \(q\) average like samples from the target \(p\). The condition on \(q\) is called <dfn>support</dfn>. The proposal must be able to produce every outcome that the target gives weight to. In a policy setting, \(p\) is the target policy and \(q\) is \(\mu\). For one decision, the weight is the <dfn>importance ratio</dfn></p>
   <div class="eq">\begin{equation} \rho_t = \frac{\pi_\theta(a_t \mid s_t)}{\mu(a_t \mid s_t)}. \label{eq:rho} \end{equation}</div>
-  <p>Two facts follow at once. First, the weight has mean one under the behaviour policy: \(\mathbb{E}_{a \sim \mu}[\rho] = \sum_a \mu(a \mid s)\, \pi(a \mid s) / \mu(a \mid s)\), which is \(\sum_a \pi(a \mid s) = 1\). In the example, A's expected weight is \(0.146 \times 3.47 + 0.854 \times 0.58 = 1.00\) (the two ignored actions have near-zero probability under both networks). Second, a softmax never assigns exactly zero, so support always holds formally. Near-zero probabilities are the practical problem. They produce huge weights, as the next section shows.</p>
+  <p>Two facts follow. First, the weight has mean one under the behaviour policy: \(\mathbb{E}_{a \sim \mu}[\rho] = \sum_a \mu(a \mid s)\, \pi(a \mid s) / \mu(a \mid s)\), which is \(\sum_a \pi(a \mid s) = 1\). In the example, A's expected weight is \(0.146 \times 3.47 + 0.854 \times 0.58 = 1.00\). The two ignored actions have near-zero probability under both networks, so they add nothing. Second, a softmax never assigns exactly zero, so support always holds in principle. In practice, near-zero probabilities cause the trouble. They produce huge weights, as Section 3 shows.</p>
   <p>Given \(n\) independent samples from \(q\), the <dfn>ordinary importance sampling</dfn> estimator is the sample mean of Equation \eqref{eq:is}:</p>
   <div class="eq">\begin{equation} \hat{I}_{\text{IS}} = \frac{1}{n} \sum_{i=1}^{n} w_i\, f(x_i). \label{eq:ois} \end{equation}</div>
-  <p>It is unbiased. Sutton and Barto call the alternative <dfn>weighted importance sampling</dfn>; in the statistics literature it is the self-normalised estimator <span class="cite">[<a href="#ref-sb">1</a>, &#167;5.5]</span>:</p>
+  <p>It is unbiased. Sutton and Barto call the alternative <dfn>weighted importance sampling</dfn> <span class="cite">[<a href="#ref-sb">1</a>, &#167;5.5]</span>. Statistics texts call it the self-normalised estimator <span class="cite">[<a href="#ref-owen">11</a>, ch. 9]</span>:</p>
   <div class="eq">\begin{equation} \hat{I}_{\text{SN}} = \frac{\sum_{i} w_i\, f(x_i)}{\sum_{i} w_i}. \label{eq:snis} \end{equation}</div>
-  <p>Dividing by \(\sum_i w_i\) instead of \(n\) introduces a bias that vanishes as \(n\) grows, and it bounds the estimate by the range of \(f\). Sutton and Barto write \(b\) for the behaviour policy and \(R_{t+1}\) for the reward we call \(r_t\); their \(\rho_{t:T-1}\) is a product of the one-step ratios we write \(\rho_t\).</p>
+  <p>Division by \(\sum_i w_i\) instead of \(n\) adds a bias that vanishes as \(n\) grows. It also keeps the estimate inside the range of \(f\). Sutton and Barto write \(b\) for the behaviour policy and \(R_{t+1}\) for the reward that this chapter calls \(r_t\). Their \(\rho_{t:T-1}\) is a product of the one-step ratios that this chapter writes \(\rho_t\).</p>
 
-  <h2 id="ess">3. Variance and effective sample size</h2>
-  <p>Unbiasedness is cheap. The cost of importance sampling is variance. Take \(f \equiv 1\), so that every estimate should equal one. The variance of a single weight is</p>
+  <h2 id="ess">3. The weights cost samples</h2>
+  <p>Importance sampling is unbiased, and it pays for that in variance. To see how much, take \(f \equiv 1\), so that every estimate should equal one. The variance of a single weight is</p>
   <div class="eq">\begin{equation} \operatorname{Var}_{q}[w] = \mathbb{E}_{q}[w^2] - 1 = \sum_x \frac{p(x)^2}{q(x)} - 1 = \chi^2(p \,\|\, q). \label{eq:chi2} \end{equation}</div>
-  <p>The right-hand side is the chi-squared divergence of \(p\) from \(q\). Unlike the KL divergence, it squares the probability ratio, so one outcome that \(p\) likes and \(q\) almost never produces dominates it. In the example, A's choice of Strike happens 15% of the time but carries weight 3.47 when it does.</p>
-  <p>A single number summarises how much a set of weights has cost. Suppose we average values \(y_i\) with common variance \(\sigma^2\) using fixed weights \(w_i\). The variance of the weighted mean is</p>
-  <div class="eq">\begin{equation} \operatorname{Var}\Big[\frac{\sum_i w_i y_i}{\sum_i w_i}\Big] = \sigma^2 \frac{\sum_i w_i^2}{\big(\sum_i w_i\big)^2} = \frac{\sigma^2}{n_{\text{eff}}}, \qquad n_{\text{eff}} = \frac{\big(\sum_i w_i\big)^2}{\sum_i w_i^2}. \label{eq:ess} \end{equation}</div>
-  <p>The <dfn>effective sample size</dfn> \(n_{\text{eff}}\) is the number of equally weighted samples that would give the same variance. This is Kish's correction for unequal survey weights <span class="cite">[<a href="#ref-kish">2</a>]</span>, the same idea as a design effect. Equal weights give \(n_{\text{eff}} = n\). One weight that dwarfs the rest gives \(n_{\text{eff}} \approx 1\), however large \(n\) is. Dividing numerator and denominator by \(n^2\) and letting \(n\) grow, the share of the sample that survives is</p>
+  <p>The right-hand side is the chi-squared divergence of \(p\) from \(q\). Unlike the KL divergence, it squares the probability ratio, so one outcome that \(p\) favours and \(q\) almost never produces can dominate it. In the example, A chooses Strike 15% of the time, and each time the row carries weight 3.47.</p>
+  <p>One number measures how much a set of weights costs. Suppose we average uncorrelated values \(y_i\) with common variance \(\sigma_y^2\) using fixed weights \(w_i\). The variance of the weighted mean is</p>
+  <div class="eq">\begin{equation} \operatorname{Var}\Big[\frac{\sum_i w_i y_i}{\sum_i w_i}\Big] = \sigma_y^2 \frac{\sum_i w_i^2}{\big(\sum_i w_i\big)^2} = \frac{\sigma_y^2}{n_{\text{eff}}}, \qquad n_{\text{eff}} = \frac{\big(\sum_i w_i\big)^2}{\sum_i w_i^2}. \label{eq:ess} \end{equation}</div>
+  <p>The <dfn>effective sample size</dfn> \(n_{\text{eff}}\) is the number of equally weighted samples that would give the same variance. It comes from Kish's correction for unequal survey weights <span class="cite">[<a href="#ref-kish">2</a>]</span>. Equal weights give \(n_{\text{eff}} = n\). One weight that dwarfs the rest gives \(n_{\text{eff}} \approx 1\), however large \(n\) is. Dividing numerator and denominator by \(n^2\) and letting \(n\) grow, the share of the sample that survives is</p>
   <div class="eq">\begin{equation} \frac{n_{\text{eff}}}{n} \;\to\; \frac{\mathbb{E}_q[w]^2}{\mathbb{E}_q[w^2]} = \frac{1}{1 + \chi^2(p \,\|\, q)}. \label{eq:essshare} \end{equation}</div>
-  <p>So the chi-squared divergence between the two policies is exactly what importance sampling pays, measured in lost samples.</p>
+  <p>So the chi-squared divergence between the two policies sets the effective sample size. For importance sampling this is a rule of thumb, not an exact variance. The weights are random and can correlate with \(f\), and Kish's setting excludes both <span class="cite">[<a href="#ref-owen">11</a>, ch. 9]</span>.</p>
 
-  <h2 id="horizon">4. Products of ratios</h2>
+  <h2 id="horizon">4. Products of ratios lose almost every sample</h2>
   <p>Off-policy evaluation of a whole run needs the probability of the whole trajectory. The environment's transitions appear in the numerator and the denominator and cancel <span class="cite">[<a href="#ref-sb">1</a>, eq. 5.3]</span>, leaving a product of one-step ratios:</p>
   <div class="eq">\begin{equation} W(\tau) = \frac{\Pr_{\pi}(\tau)}{\Pr_{\mu}(\tau)} = \frac{\prod_{t} \pi(a_t \mid s_t)\, P(s_{t+1} \mid s_t, a_t)}{\prod_{t} \mu(a_t \mid s_t)\, P(s_{t+1} \mid s_t, a_t)} = \prod_{t=0}^{T-1} \rho_t. \label{eq:traj} \end{equation}</div>
-  <p>The variance of this product grows exponentially. Suppose every state had the same divergence \(\chi^2\). Conditioning on the history and applying Equation \eqref{eq:chi2} one step at a time gives</p>
+  <p>The variance of this product grows exponentially with its length. To see why, suppose every state had the same divergence \(\chi^2\). Conditioning on the history and applying Equation \eqref{eq:chi2} one step at a time gives</p>
   <div class="eq">\begin{equation} \mathbb{E}_{\mu}\Big[\prod_{t=0}^{k-1} \rho_t^2\Big] = \big(1 + \chi^2\big)^{k}, \qquad \frac{n_{\text{eff}}}{n} \to \big(1 + \chi^2\big)^{-k}. \label{eq:prodvar} \end{equation}</div>
-  <p>Real states differ, so a second view is more useful. The log of the product is a sum, \(\log W = \sum_t \log \rho_t\). A sum of many small, roughly independent terms is close to normal, so \(W\) is close to log-normal. For a log-normal weight with \(\log W \sim \mathcal{N}(m, s^2)\), the requirement \(\mathbb{E}[W] = 1\) forces \(m = -s^2/2\), and \(\mathbb{E}[W^2] = e^{s^2}\). With \(s^2 = k\, \sigma^2\), where \(\sigma^2 = \operatorname{Var}_\mu[\log \rho]\) is the variance of one decision's log ratio,</p>
+  <p>Real states differ, so a second derivation fits real data better. The log of the product is a sum, \(\log W = \sum_t \log \rho_t\). A sum of many small, roughly independent terms is close to normal, so \(W\) is close to log-normal. For a log-normal weight with \(\log W \sim \mathcal{N}(m, s^2)\), the requirement \(\mathbb{E}[W] = 1\) forces \(m = -s^2/2\), and \(\mathbb{E}[W^2] = e^{s^2}\). With \(s^2 = k\, \sigma^2\), where \(\sigma^2 = \operatorname{Var}_\mu[\log \rho]\) is the variance of one decision's log ratio,</p>
   <div class="eq">\begin{equation} \frac{n_{\text{eff}}}{n} \approx e^{-k \sigma^2}, \qquad \sigma^2 \approx 2\, D_{\mathrm{KL}}(\mu \,\|\, \pi) \text{ for a small gap.} \label{eq:lognormal} \end{equation}</div>
-  <p>The second relation comes from a second-order expansion. Write \(\delta = \log \rho\). The constraint \(\mathbb{E}_\mu[e^{\delta}] = 1\) gives \(\mathbb{E}[\delta] \approx -\tfrac12 \mathbb{E}[\delta^2]\), and \(D_{\mathrm{KL}}(\mu \,\|\, \pi) = -\mathbb{E}_\mu[\delta] \approx \tfrac12 \operatorname{Var}[\delta]\). Equation \eqref{eq:lognormal} is the result to remember. The surviving share of a product of \(k\) ratios decays like \(e^{-2k\,\mathrm{KL}}\). A per-decision KL of 0.003 is negligible for one decision and leaves \(e^{-4.2} \approx 1.5\%\) of the sample after 700. A run of this game is about 700 decisions.</p>
+  <p>The second relation comes from a second-order expansion. Write \(z = \log \rho\). The constraint \(\mathbb{E}_\mu[e^{z}] = 1\) gives \(\mathbb{E}[z] \approx -\tfrac12 \mathbb{E}[z^2]\), and \(D_{\mathrm{KL}}(\mu \,\|\, \pi) = -\mathbb{E}_\mu[z] \approx \tfrac12 \operatorname{Var}[z]\). By Equation \eqref{eq:lognormal}, the surviving share of a product of \(k\) ratios decays like \(e^{-2k\,\mathrm{KL}}\). A per-decision KL of 0.003 costs almost nothing for one decision. After 700 decisions it leaves \(e^{-4.2} \approx 1.5\%\) of the sample, and a run of this game is about 700 decisions.</p>
 
-  <details class="predict"><summary>Pause and predict: network A plays 48 runs. Weighted towards B, how many of those runs still count?</summary>
-    <p>The per-run weights \(\prod_t \rho_t\) span <span data-k="per_eps/1/run_log10_w_range|log1">185.2</span> orders of magnitude, from 10<sup><span data-k="per_eps/1/run_log10_min|log1">&#8722;243.0</span></sup> to 10<sup><span data-k="per_eps/1/run_log10_max|log1">&#8722;57.7</span></sup>. The effective sample size is <span data-k="per_eps/1/ess_run|pct1">2.1%</span> of 48 runs, which is one run. The largest weight holds <span data-k="per_eps/1/top_run_weight_share|pct0">100%</span> of the total. Every other run contributes nothing to the estimate.</p>
-  </details>
+  <p>Section 11 measures this on real play. Network A plays 48 runs, and the target is network B. The per-run weights \(\prod_t \rho_t\) span <span data-k="per_eps/1/run_log10_w_range|log1">185.2</span> orders of magnitude, from 10<sup><span data-k="per_eps/1/run_log10_min|log1">&#8722;243.0</span></sup> to 10<sup><span data-k="per_eps/1/run_log10_max|log1">&#8722;57.7</span></sup>. The effective sample size is <span data-k="per_eps/1/ess_run|pct1">2.1%</span> of 48 runs, which is one run. The largest weight holds <span data-k="per_eps/1/top_run_weight_share|pct0">100%</span> of the total. The other 47 runs contribute nothing to the estimate.</p>
 
-  <h2 id="gradient">5. Correcting a gradient, not a value</h2>
-  <p>Off-policy evaluation estimates a number, \(J(\pi)\). A trainer needs a direction, \(\nabla_\theta J\). The tool is the same, but where it is applied changes everything.</p>
-  <p>Write Equation \eqref{eq:pg} state by state. With \(\gamma = 1\) and episodes that end, let \(d_\pi(s) = \sum_t \Pr_\pi(s_t = s)\) be the expected number of visits to \(s\) in one episode. Collecting the terms of the sum by state gives</p>
+  <h2 id="gradient">5. A gradient can afford only the action correction</h2>
+  <p>Off-policy evaluation estimates a number, \(J(\pi)\). A trainer needs a direction, \(\nabla_\theta J\). The weight is the same ratio in both cases. In a gradient, the trainer can afford to correct only one of the two places where the policy enters.</p>
+  <p>To find those two places, write Equation \eqref{eq:pg} state by state. With \(\gamma = 1\) and episodes that end, let \(d_\pi(s) = \sum_t \Pr_\pi(s_t = s)\) be the expected number of visits to \(s\) in one episode. Collecting the terms of the sum by state gives</p>
   <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \sum_s d_{\pi_\theta}(s) \sum_{a} \pi_\theta(a \mid s)\, \nabla_\theta \log \pi_\theta(a \mid s)\, A^{\pi_\theta}(s, a). \label{eq:pgstate} \end{equation}</div>
-  <p>This is the policy gradient theorem in Sutton and Barto's form <span class="cite">[<a href="#ref-sb">1</a>, &#167;13.2]</span>, with an equality because we did not normalise \(d\). Two distributions appear: the state visits \(d_{\pi_\theta}\), and the action choice \(\pi_\theta(a \mid s)\). Importance-weighting the inner sum is exact and cheap:</p>
+  <p>This is the policy gradient theorem in Sutton and Barto's form <span class="cite">[<a href="#ref-sb">1</a>, &#167;13.2]</span>, with an equality because we did not normalise \(d\). Two distributions appear. One is the state visits \(d_{\pi_\theta}\), and the other is the action choice \(\pi_\theta(a \mid s)\). An importance weight on the inner sum is exact and cheap:</p>
   <div class="eq">\begin{equation} \sum_{a} \pi_\theta(a \mid s)\, g(s,a) = \mathbb{E}_{a \sim \mu(\cdot \mid s)}\big[\rho(s,a)\, g(s,a)\big], \qquad g(s,a) = \nabla_\theta \log \pi_\theta(a \mid s)\, A^{\pi_\theta}(s,a). \label{eq:actionis} \end{equation}</div>
-  <p>It costs one ratio, with the variance of Equation \eqref{eq:chi2} for one decision. Correcting the outer sum would need \(d_{\pi_\theta}(s) / d_\mu(s)\), which in the worst case is the product of every ratio before \(s\), as in Equation \eqref{eq:traj}. Practical off-policy actor-critic methods skip that factor and use states as the behaviour policy visited them <span class="cite">[<a href="#ref-degris">3</a>]</span>:</p>
+  <p>It costs one ratio, with the variance of Equation \eqref{eq:chi2} for one decision. Correcting the outer sum would need \(d_{\pi_\theta}(s) / d_\mu(s)\), which is an expectation, over the paths that reach \(s\), of the product of every ratio before \(s\), as in Equation \eqref{eq:traj}. Practical off-policy actor-critic methods do not estimate that factor. Degris et al. instead define the objective over the states that the behaviour policy visits, and then use those states as sampled <span class="cite">[<a href="#ref-degris">3</a>]</span>:</p>
   <div class="eq">\begin{equation} \hat{g} = \frac{1}{N} \sum_{(s_t, a_t) \sim \mu} \rho_t\, \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t. \label{eq:offpg} \end{equation}</div>
-  <p>Equation \eqref{eq:offpg} is the one per-decision correction a trainer can afford. It is biased in two ways. It ignores the state-distribution shift, and \(\hat{A}_t\) comes from a critic trained on \(\mu\)'s data, so it estimates an advantage closer to \(\mu\)'s than to \(\pi_\theta\)'s. Both biases shrink as \(\pi_\theta\) approaches \(\mu\). The trust-region results of Chapter 5 bound the first: when the per-state divergence is small, \(d_{\pi_\theta}\) and \(d_\mu\) are close. That is why the correction works for data a few updates old and fails for data from a different policy.</p>
-  <p>Notice also what the weight multiplies. In evaluation the weight multiplies a return, a number fixed by what happened. Here it multiplies a score function times an advantage, and the advantage already has a baseline subtracted (Chapter 4). A large weight on a row with \(\hat{A}_t \approx 0\) does little harm. A large weight on a row with a big advantage moves the parameters a long way on the evidence of one decision.</p>
+  <p>Equation \eqref{eq:offpg} is the per-decision correction that a trainer can afford. It has two biases. It ignores the shift in the state distribution. Also, \(\hat{A}_t\) comes from a critic trained on \(\mu\)'s data, so it estimates an advantage closer to \(\mu\)'s than to \(\pi_\theta\)'s. Both biases shrink as \(\pi_\theta\) approaches \(\mu\). Chapter 5's trust-region bound does not cover the first. That bound grows with the horizon, and Chapter 5 showed it is infinite at \(\gamma = 1\). A small per-decision gap can still shift the state distribution over a 700-decision run. The trainer relies on keeping the gap small, not on a proven bound. That this bias stays tolerable is our inference from the trainer's results, not a guarantee. That is why the correction works for data a few updates old and fails for data from a different policy.</p>
+  <p>The weight also multiplies a different quantity than in evaluation. In evaluation it multiplies a return, which is a number fixed by what happened. Here it multiplies a score function times an advantage, and the advantage already has a baseline subtracted, as Chapter 4 showed. A large weight on a row with \(\hat{A}_t \approx 0\) does little harm. A large weight on a row with a big advantage moves the parameters a long way on the evidence of one decision.</p>
 
-  <h2 id="clamp">6. Clipping and truncation</h2>
+  <h2 id="clamp">6. A cap on the weight trades bias for variance</h2>
   <p>The standard remedy for heavy-tailed weights is to cap them. Replace \(\rho\) by \(\min(\rho, c)\) for a constant \(c \geq 1\). The expectation of any function under the capped weight is again a sum over actions:</p>
   <div class="eq">\begin{equation} \mathbb{E}_{a \sim \mu}\big[\min(\rho, c)\, g(s,a)\big] = \sum_a \min\big(\pi(a \mid s),\, c\, \mu(a \mid s)\big)\, g(s,a). \label{eq:clampexp} \end{equation}</div>
   <p>The cap leaves alone every action that \(\mu\) plays at least \(1/c\) times as often as \(\pi\). It cuts the others to \(c\,\mu(a \mid s)\). The <dfn>lost probability mass</dfn> in state \(s\) is</p>
   <div class="eq">\begin{equation} \ell_c(s) = 1 - \sum_a \min\big(\pi(a \mid s),\, c\, \mu(a \mid s)\big), \label{eq:lost} \end{equation}</div>
-  <p>and it measures the bias. The gradient now points towards a mix of \(\pi\) and \(\mu\) that under-weights exactly the actions \(\pi\) wants more of. In return the variance is bounded, because \(\mathbb{E}_\mu[\min(\rho,c)^2] \le c\, \mathbb{E}_\mu[\min(\rho, c)] \le c\). That is the trade: bias that grows as \(c\) shrinks, against variance that falls with it. In the worked example, a cap of 2 turns B's weight on the Strike from 3.47 into 2, and loses \(0.506 - 2 \times 0.146 = 0.21\) of B's probability for this state.</p>
-  <p>The cap can sit in two places. Clamping the weight in front of a gradient term changes which policy the gradient serves. Clamping the weights inside a product of ratios, which V-trace calls trace cutting, changes how far back credit flows. Section 8 separates the two.</p>
-  <p>Do not confuse either with PPO's clip. PPO clips the ratio \(\pi_\theta / \pi_{\text{old}}\) between the network being trained and a reference network, and it does so to stop the gradient once a step has gone far enough (Chapter 5). The importance-weight cap limits the variance of a correction for data from another policy. One limits how far we move. The other limits how much we trust old data.</p>
+  <p>and it measures the bias. The gradient now points towards a mix of \(\pi\) and \(\mu\) that under-weights exactly the actions that \(\pi\) wants more of. In return the variance is bounded, because \(\mathbb{E}_\mu[\min(\rho,c)^2] \le c\, \mathbb{E}_\mu[\min(\rho, c)] \le c\). A smaller \(c\) gives more bias and less variance. In the worked example, a cap of 2 turns B's weight on the Strike from 3.47 into 2, and loses \(0.506 - 2 \times 0.146 = 0.21\) of B's probability for this state.</p>
+  <p>The cap can sit in two places. A clamp on the weight in front of a gradient term changes which policy the gradient serves. A clamp on the weights inside a product of ratios changes how far back credit flows. The IMPALA paper likens the second kind to the "trace cutting" of Retrace <span class="cite">[<a href="#ref-impala">6</a>, <a href="#ref-retrace">8</a>]</span>. Section 8 separates the two.</p>
+  <p>Neither cap is PPO's clip. PPO clips the ratio \(\pi_\theta / \pi_{\text{old}}\) between the network being trained and a reference network. Chapter 5 showed that this clip stops the gradient once a step has gone far enough. The importance-weight cap has a different job. It limits the variance of a correction for data from another policy.</p>
 
-  <h2 id="decoupled">7. Decoupled PPO</h2>
-  <p>Standard PPO uses one old policy, \(\pi_{\text{old}}\), for two jobs. It is the behaviour policy that sampled the data, and it is the centre of the trust region. Hilton, Cobbe and Schulman pointed out that these jobs need not use the same policy <span class="cite">[<a href="#ref-hilton">4</a>]</span>. The trust region can be centred on any recent policy, which they call the <dfn>proximal policy</dfn> \(\pi_{\text{prox}}\). The behaviour policy is whatever played. In Chapter 5's notation, PPO's ratio was \(\pi_\theta / \pi_{\text{old}}\); the decoupled objective splits it into two factors:</p>
-  <div class="eq">\begin{equation} \frac{\pi_\theta(a_t \mid s_t)}{\mu(a_t \mid s_t)} = \underbrace{\frac{\pi_{\text{prox}}(a_t \mid s_t)}{\mu(a_t \mid s_t)}}_{w_t:\ \text{off-policy correction}} \cdot \underbrace{\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\text{prox}}(a_t \mid s_t)}}_{r_t:\ \text{trust region}}. \label{eq:split} \end{equation}</div>
+  <h2 id="decoupled">7. Decoupled PPO separates correction from the trust region</h2>
+  <p>Standard PPO uses one old policy, \(\pi_{\text{old}}\), for two jobs. It is the behaviour policy that sampled the data, and it is the centre of the trust region. Hilton, Cobbe and Schulman showed that the two jobs can use different policies <span class="cite">[<a href="#ref-hilton">4</a>]</span>. The trust region can be centred on any recent policy, which they call the <dfn>proximal policy</dfn> \(\pi_{\text{prox}}\). The behaviour policy is whatever played. In Chapter 5's notation, PPO's ratio was \(\pi_\theta / \pi_{\text{old}}\). The decoupled objective splits the full ratio into two factors:</p>
+  <div class="eq">\begin{equation} \frac{\pi_\theta(a_t \mid s_t)}{\mu(a_t \mid s_t)} = \underbrace{\frac{\pi_{\text{prox}}(a_t \mid s_t)}{\mu(a_t \mid s_t)}}_{w_t:\ \text{off-policy correction}} \cdot \underbrace{\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\text{prox}}(a_t \mid s_t)}}_{u_t:\ \text{trust region}}. \label{eq:split} \end{equation}</div>
   <p>Only the second factor is clipped, and only the second factor depends on \(\theta\). The first is a constant per row, computed once before the update. The objective, with this trainer's cap \(c\) on the first factor, is</p>
-  <div class="eq">\begin{equation} L(\theta) = \mathbb{E}_{(s_t,a_t) \sim \mu}\Big[ \min(w_t, c)\; \min\big( r_t \hat{A}_t,\ \operatorname{clip}(r_t, 1-\epsilon, 1+\epsilon)\, \hat{A}_t \big) \Big]. \label{eq:decoupled} \end{equation}</div>
-  <p>Here \(\epsilon\) is PPO's clip range (0.2 in this trainer). Compare with Equation \eqref{eq:offpg}. At \(\theta = \theta_{\text{prox}}\), \(r_t = 1\) and the gradient of \(r_t\) is \(\nabla_\theta \log \pi_\theta\), so the first step of Equation \eqref{eq:decoupled} is the off-policy gradient with the action correction \(\min(w_t, c)\) and target \(\pi_{\text{prox}}\). Later minibatch steps move \(\theta\) away from \(\pi_{\text{prox}}\), and the clip stops them at \(\pm\epsilon\) in ratio. Hilton et al. state the weight without a cap. The cap at \(c = 2\) is this trainer's choice, written into its plan. The trainer also applies Ye et al.'s dual clip, which bounds the surrogate from below at \(3\hat{A}_t\) when the advantage is negative <span class="cite">[<a href="#ref-ye">5</a>]</span>. Chapter 5 covers that.</p>
-  <p>Why decouple? If the clip were centred on \(\mu\), a stale row would start the update with \(r_t\) already away from one. It might sit outside the clip band before any learning happened and contribute no gradient. The plan for this trainer estimates that about 15% of rows would sit outside the band under its staleness. Centring the clip on \(\pi_{\text{prox}}\) gives every row a full trust region, and the stale part of the gap goes into \(w_t\), where it is corrected rather than ignored.</p>
+  <div class="eq">\begin{equation} L(\theta) = \mathbb{E}_{(s_t,a_t) \sim \mu}\Big[ \min(w_t, c)\; \min\big( u_t \hat{A}_t,\ \operatorname{clip}(u_t, 1-\epsilon, 1+\epsilon)\, \hat{A}_t \big) \Big]. \label{eq:decoupled} \end{equation}</div>
+  <p>Here \(\epsilon\) is PPO's clip range <span class="cite">[<a href="#ref-ppo">10</a>]</span>, 0.2 in this trainer. Compare with Equation \eqref{eq:offpg}. At \(\theta = \theta_{\text{prox}}\), \(u_t = 1\) and the gradient of \(u_t\) is \(\nabla_\theta \log \pi_\theta\), so the first step of Equation \eqref{eq:decoupled} is the off-policy gradient with the action correction \(\min(w_t, c)\) and target \(\pi_{\text{prox}}\). Later minibatch steps move \(\theta\) away from \(\pi_{\text{prox}}\), and the clip stops them at \(\pm\epsilon\) in ratio. Hilton et al. write \(r_t(\theta)\) for the ratio that this chapter calls \(u_t\), because this tour keeps \(r_t\) for the reward. Their objective has no cap on the weight. In their staleness experiments they bounded the ratio only at 100, for numerical stability <span class="cite">[<a href="#ref-hilton">4</a>, App. B]</span>. The cap at \(c = 2\) is this trainer's choice. Its plan tags the value with a literature source that is not in the public repository, so the reason cannot be checked. The trainer also applies Ye et al.'s dual clip, which bounds the surrogate from below at \(3\hat{A}_t\) when the advantage is negative <span class="cite">[<a href="#ref-ye">5</a>]</span>. Chapter 5 covers that.</p>
+  <p>Decoupling keeps stale rows in the update. Suppose instead that the clip were centred on \(\mu\). A stale row would then start the update with its ratio already away from one. The row might sit outside the clip band before any learning happened. Then it would contribute no gradient when its advantage pushes further in the direction it has already drifted, and an unclipped gradient when its advantage pushes back. The plan for this trainer estimates that about 15% of rows would sit outside the band under its staleness. A clip centred on \(\pi_{\text{prox}}\) gives every row a full trust region. The stale part of the gap goes into \(w_t\), where the weight corrects it.</p>
 
-  <figure id="fig-graph">
+  <p>Figures 6.2a to 6.2c build the loss of one row in three steps.</p>
+
+  <figure id="fig-graph-a">
     <div class="scroll">
-      <svg viewBox="0 0 640 330" role="img" aria-label="Computation graph of the decoupled PPO loss for one row.">
-        <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <svg viewBox="0 0 640 80" role="img" aria-label="Three log-probabilities of the same action: behaviour, proximal and current.">
+        <defs><marker id="arr2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
         <g color="var(--fg)">
           <rect class="box" x="10" y="20" width="180" height="50" rx="3"/><text class="small" x="100" y="40" text-anchor="middle">log &#956;(a|s)</text><text class="muted small" x="100" y="58" text-anchor="middle">stored when the row was played</text>
           <rect class="box" x="230" y="20" width="180" height="50" rx="3"/><text class="small" x="320" y="40" text-anchor="middle">log &#960;_prox(a|s)</text><text class="muted small" x="320" y="58" text-anchor="middle">pre-pass at update start</text>
           <rect class="box" x="450" y="20" width="180" height="50" rx="3"/><text class="small" x="540" y="40" text-anchor="middle">log &#960;_&#952;(a|s)</text><text class="muted small" x="540" y="58" text-anchor="middle">recomputed every minibatch</text>
-          <rect class="box" x="100" y="120" width="190" height="50" rx="3"/><text class="small" x="195" y="140" text-anchor="middle">w = min(e^(&#916;&#8321;), 2)</text><text class="muted small" x="195" y="158" text-anchor="middle">no gradient; corrects staleness</text>
-          <rect class="box" x="350" y="120" width="190" height="50" rx="3"/><text class="small" x="445" y="140" text-anchor="middle">r = e^(&#916;&#8322;)</text><text class="muted small" x="445" y="158" text-anchor="middle">carries the gradient</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 6.2a.</b> Three log-probabilities of the action that the row played. The behaviour policy's value was saved when the action was sampled. The proximal policy's value comes from one forward pass before the update. The current network's value is recomputed on every minibatch.</figcaption>
+  </figure>
+
+  <figure id="fig-graph-b">
+    <div class="scroll">
+      <svg viewBox="0 0 640 180" role="img" aria-label="The three log-probabilities combine into two ratios: the clamped weight w and the PPO ratio r.">
+        <defs><marker id="arr2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="10" y="20" width="180" height="50" rx="3"/><text class="small" x="100" y="40" text-anchor="middle">log &#956;(a|s)</text><text class="muted small" x="100" y="58" text-anchor="middle">stored when the row was played</text>
+          <rect class="box" x="230" y="20" width="180" height="50" rx="3"/><text class="small" x="320" y="40" text-anchor="middle">log &#960;_prox(a|s)</text><text class="muted small" x="320" y="58" text-anchor="middle">pre-pass at update start</text>
+          <rect class="box" x="450" y="20" width="180" height="50" rx="3"/><text class="small" x="540" y="40" text-anchor="middle">log &#960;_&#952;(a|s)</text><text class="muted small" x="540" y="58" text-anchor="middle">recomputed every minibatch</text>
+          <rect class="box" x="100" y="120" width="190" height="50" rx="3"/><text class="small" x="195" y="140" text-anchor="middle">w = min(e^(&#916;&#8321;), 2)</text><text class="muted small" x="195" y="158" text-anchor="middle">no gradient, corrects staleness</text>
+          <rect class="box" x="350" y="120" width="190" height="50" rx="3"/><text class="small" x="445" y="140" text-anchor="middle">u = e^(&#916;&#8322;)</text><text class="muted small" x="445" y="158" text-anchor="middle">carries the gradient</text>
+          <line class="ink" x1="100" y1="70" x2="170" y2="120" marker-end="url(#arr2b)"/>
+          <line class="ink" x1="320" y1="70" x2="230" y2="120" marker-end="url(#arr2b)"/>
+          <line class="ink" x1="320" y1="70" x2="420" y2="120" marker-end="url(#arr2b)"/>
+          <line class="ink" x1="540" y1="70" x2="470" y2="120" marker-end="url(#arr2b)"/>
+          <text class="muted small" x="118" y="100">&#916;&#8321; = log &#960;_prox &#8722; log &#956;</text>
+          <text class="muted small" x="460" y="100">&#916;&#8322; = log &#960;_&#952; &#8722; log &#960;_prox</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 6.2b.</b> The two differences are added. The left difference gives the weight \(w\), clamped at 2. It does not depend on \(\theta\), so it is a constant during the update. The right difference gives the PPO ratio \(r\), and only this branch carries a gradient.</figcaption>
+  </figure>
+
+  <figure id="fig-graph-c">
+    <div class="scroll">
+      <svg viewBox="0 0 640 330" role="img" aria-label="The full decoupled loss of one row: the ratio enters clipped PPO with the advantage, and the weight scales the result.">
+        <defs><marker id="arr2c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="10" y="20" width="180" height="50" rx="3"/><text class="small" x="100" y="40" text-anchor="middle">log &#956;(a|s)</text><text class="muted small" x="100" y="58" text-anchor="middle">stored when the row was played</text>
+          <rect class="box" x="230" y="20" width="180" height="50" rx="3"/><text class="small" x="320" y="40" text-anchor="middle">log &#960;_prox(a|s)</text><text class="muted small" x="320" y="58" text-anchor="middle">pre-pass at update start</text>
+          <rect class="box" x="450" y="20" width="180" height="50" rx="3"/><text class="small" x="540" y="40" text-anchor="middle">log &#960;_&#952;(a|s)</text><text class="muted small" x="540" y="58" text-anchor="middle">recomputed every minibatch</text>
+          <rect class="box" x="100" y="120" width="190" height="50" rx="3"/><text class="small" x="195" y="140" text-anchor="middle">w = min(e^(&#916;&#8321;), 2)</text><text class="muted small" x="195" y="158" text-anchor="middle">no gradient, corrects staleness</text>
+          <rect class="box" x="350" y="120" width="190" height="50" rx="3"/><text class="small" x="445" y="140" text-anchor="middle">u = e^(&#916;&#8322;)</text><text class="muted small" x="445" y="158" text-anchor="middle">carries the gradient</text>
+          <line class="ink" x1="100" y1="70" x2="170" y2="120" marker-end="url(#arr2c)"/>
+          <line class="ink" x1="320" y1="70" x2="230" y2="120" marker-end="url(#arr2c)"/>
+          <line class="ink" x1="320" y1="70" x2="420" y2="120" marker-end="url(#arr2c)"/>
+          <line class="ink" x1="540" y1="70" x2="470" y2="120" marker-end="url(#arr2c)"/>
+          <text class="muted small" x="118" y="100">&#916;&#8321; = log &#960;_prox &#8722; log &#956;</text>
+          <text class="muted small" x="460" y="100">&#916;&#8322; = log &#960;_&#952; &#8722; log &#960;_prox</text>
           <rect class="box" x="350" y="200" width="270" height="50" rx="3"/><text class="small" x="485" y="220" text-anchor="middle">surrogate = min(r&#194;, clip(r, 0.8, 1.2)&#194;)</text><text class="muted small" x="485" y="238" text-anchor="middle">dual clip: at least 3&#194; when &#194; &lt; 0</text>
           <rect class="box" x="10" y="200" width="150" height="50" rx="3"/><text class="small" x="85" y="220" text-anchor="middle">&#194; (Chapter 4)</text><text class="muted small" x="85" y="238" text-anchor="middle">advantage of this row</text>
           <rect class="box" x="170" y="275" width="300" height="45" rx="3"/><text class="small" x="320" y="302" text-anchor="middle">policy loss of the row = &#8722;w &#183; surrogate</text>
-          <line class="ink" x1="100" y1="70" x2="170" y2="120" marker-end="url(#arr2)"/>
-          <line class="ink" x1="320" y1="70" x2="230" y2="120" marker-end="url(#arr2)"/>
-          <line class="ink" x1="320" y1="70" x2="420" y2="120" marker-end="url(#arr2)"/>
-          <line class="ink" x1="540" y1="70" x2="470" y2="120" marker-end="url(#arr2)"/>
-          <text class="muted small" x="118" y="100">&#916;&#8321; = log &#960;_prox &#8722; log &#956;</text>
-          <text class="muted small" x="460" y="100">&#916;&#8322; = log &#960;_&#952; &#8722; log &#960;_prox</text>
-          <line class="ink" x1="445" y1="170" x2="445" y2="200" marker-end="url(#arr2)"/>
-          <line class="ink" x1="160" y1="225" x2="350" y2="225" marker-end="url(#arr2)"/>
-          <line class="ink" x1="195" y1="170" x2="250" y2="275" marker-end="url(#arr2)"/>
-          <line class="ink" x1="485" y1="250" x2="420" y2="275" marker-end="url(#arr2)"/>
+          <line class="ink" x1="445" y1="170" x2="445" y2="200" marker-end="url(#arr2c)"/>
+          <line class="ink" x1="160" y1="225" x2="350" y2="225" marker-end="url(#arr2c)"/>
+          <line class="ink" x1="195" y1="170" x2="250" y2="275" marker-end="url(#arr2c)"/>
+          <line class="ink" x1="485" y1="250" x2="420" y2="275" marker-end="url(#arr2c)"/>
           <text class="muted small" x="200" y="200">weight</text>
           <text class="muted small" x="458" y="190">ratio</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Figure 6.2.</b> The decoupled loss for one row. Three log-probabilities of the same action enter: the behaviour policy's (saved when the action was sampled), the proximal policy's (one forward pass before the update) and the current network's. The left branch corrects for staleness and is a constant. The right branch is ordinary clipped PPO around \(\pi_{\text{prox}}\). Only \(\log \pi_\theta\) is differentiated.</figcaption>
+    <figcaption><b>Figure 6.2c.</b> The advantage \(\hat{A}\) and the loss are added. The right branch is ordinary clipped PPO around \(\pi_{\text{prox}}\). The weight from the left branch scales its output. Only \(\log \pi_\theta\) is differentiated.</figcaption>
   </figure>
 
-  <h2 id="vtrace">8. V-trace and IMPALA</h2>
-  <p>IMPALA was the first widely used design that separated acting from learning at scale. Hundreds of actors play with whatever weights they last fetched, and send whole trajectories to a learner <span class="cite">[<a href="#ref-impala">6</a>]</span>. Its authors faced the problem of Figure 6.1 with lags of several updates, and they corrected both the policy gradient and the critic's target. Their critic target, V-trace, is an n-step target in which each TD error is weighted by truncated ratios. In this chapter's notation, with truncated weights \(\tilde\rho_t = \min(\bar\rho, \rho_t)\) and \(c_i = \min(\bar c, \rho_i)\),</p>
-  <div class="eq">\begin{equation} v_s = V_\phi(s_s) + \sum_{t=s}^{s+n-1} \gamma^{t-s} \Big( \prod_{i=s}^{t-1} c_i \Big)\, \tilde\rho_t\, \delta_t, \qquad \delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t). \label{eq:vtrace} \end{equation}</div>
-  <p>Here \(V_\phi\) is the learned critic, \(\delta_t\) the TD residual from Chapter 4, and the empty product (\(t = s\)) is one. The target can be computed backwards in one pass:</p>
-  <div class="eq">\begin{equation} v_s = V_\phi(s_s) + \tilde\rho_s\, \delta_s + \gamma\, c_s \big( v_{s+1} - V_\phi(s_{s+1}) \big). \label{eq:vtracerec} \end{equation}</div>
-  <p>When \(\mu = \pi\) and the truncation levels are at least one, every weight is one, and \(v_s\) is the ordinary n-step return. The two truncation levels do different jobs, and IMPALA's analysis makes the split exact. \(\bar\rho\) decides which value function the target converges to. In the tabular case the fixed point is the value of</p>
+  <h2 id="vtrace">8. V-trace also corrects the critic</h2>
+  <p>IMPALA separates acting from learning. Hundreds of actors play with whatever weights they last fetched, and they send trajectory segments of a fixed length to a learner <span class="cite">[<a href="#ref-impala">6</a>]</span>. Its authors had the staleness of Figure 6.1c with lags of several updates. They corrected both the policy gradient and the critic's target. Their critic target, V-trace, is an n-step target in which each TD error is weighted by truncated ratios. In this chapter's notation, with truncated weights \(\tilde\rho_t = \min(\bar\rho, \rho_t)\) and \(c_i = \min(\bar c, \rho_i)\),</p>
+  <div class="eq">\begin{equation} v_j = V_\phi(s_j) + \sum_{t=j}^{j+n-1} \gamma^{t-j} \Big( \prod_{i=j}^{t-1} c_i \Big)\, \tilde\rho_t\, \delta_t, \qquad \delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t). \label{eq:vtrace} \end{equation}</div>
+  <p>Here \(V_\phi\) is the learned critic and \(\delta_t\) is the TD residual from Chapter 4. The empty product, at \(t = j\), is one. The target can be computed backwards in one pass:</p>
+  <div class="eq">\begin{equation} v_j = V_\phi(s_j) + \tilde\rho_j\, \delta_j + \gamma\, c_j \big( v_{j+1} - V_\phi(s_{j+1}) \big). \label{eq:vtracerec} \end{equation}</div>
+  <p>When \(\mu = \pi\) and the truncation levels are at least one, every weight is one, and \(v_j\) is the ordinary n-step return. The two truncation levels do different jobs, and IMPALA's analysis makes the split exact. \(\bar\rho\) decides which value function the target converges to. In the tabular case the fixed point is the value of</p>
   <div class="eq">\begin{equation} \pi_{\bar\rho}(a \mid s) = \frac{\min\big(\bar\rho\, \mu(a \mid s),\, \pi(a \mid s)\big)}{\sum_b \min\big(\bar\rho\, \mu(b \mid s),\, \pi(b \mid s)\big)}, \label{eq:vtracefix} \end{equation}</div>
   <p>the same capped mixture as Equation \eqref{eq:clampexp}, normalised. With \(\bar\rho = \infty\) it is \(\pi\). As \(\bar\rho \to 0\) it approaches \(\mu\). The product of \(c_i\) controls only how far back a TD error reaches, and so the variance and the speed of learning, not the fixed point. The policy is updated along</p>
-  <div class="eq">\begin{equation} \tilde\rho_s\, \nabla_\theta \log \pi_\theta(a_s \mid s_s)\, \big( r_s + \gamma v_{s+1} - V_\phi(s_s) \big). \label{eq:vtracepg} \end{equation}</div>
-  <p>This is Equation \eqref{eq:offpg} with a capped weight and an advantage built from V-trace targets. IMPALA used \(\bar\rho = \bar c = 1\) and found it best among \(\bar\rho \in \{1, 10, 100\}\).</p>
-  <p>The comparison that matters for this chapter is in their ablation. They also tried a "1-step importance sampling" variant. It weights each policy-gradient term by its ratio and leaves the critic uncorrected, with no traces. With the normal small lag, it matched V-trace. When they added a replay buffer, which made the lag much larger, V-trace won on four of five tasks <span class="cite">[<a href="#ref-impala">6</a>, Table 2]</span>. The trainer in this project is close to the 1-step variant: weights on the policy term, GAE advantages from Chapter 4 with no trace correction, and a cap of 2 instead of 1. It works because its lag is small.</p>
-  <p>Why do traces need truncation at all? The product \(\prod c_i\) is a product of ratios, and Section 4 showed how products behave. Capping each factor at one makes the product shrink instead of explode. The trace still decays, and how fast it decays measures how far apart the policies are. Figure 6.7 in the measured section shows this decay for real policies.</p>
+  <div class="eq">\begin{equation} \tilde\rho_j\, \nabla_\theta \log \pi_\theta(a_j \mid s_j)\, \big( r_j + \gamma v_{j+1} - V_\phi(s_j) \big). \label{eq:vtracepg} \end{equation}</div>
+  <p>This is Equation \eqref{eq:offpg} with a capped weight and an advantage built from V-trace targets. IMPALA's analysis assumes \(\bar\rho \ge \bar c\). It used \(\bar\rho = \bar c = 1\) and found it best among \(\bar\rho \in \{1, 10, 100\}\).</p>
+  <p>IMPALA's ablation includes the method closest to this trainer. They tried a "1-step importance sampling" variant. It weights each policy-gradient term by its ratio and leaves the critic uncorrected, with no traces. With the normal small lag, it matched V-trace. When they added a replay buffer, which made the lag much larger, V-trace won on four of five tasks <span class="cite">[<a href="#ref-impala">6</a>, Table 2]</span>. The trainer in this project is close to the 1-step variant: weights on the policy term, GAE advantages from Chapter 4 with no trace correction, and a cap of 2 instead of 1. IMPALA's table suggests that this variant is adequate while the lag stays small, and Section 10 shows the trainer's lag is small. No ablation in this project tests that inference.</p>
+  <p>Traces need truncation because \(\prod c_i\) is a product of ratios, and Section 4 showed how products behave. A cap of one on each factor makes the product shrink instead of explode. The trace still decays, and how fast it decays measures how far apart the policies are. Figure 6.7 in the measured section shows this decay for real policies.</p>
 
-  <h2 id="ope">9. The same tool as off-policy evaluation, and where it differs</h2>
+  <h2 id="ope">9. Evaluation and training use the weight differently</h2>
   <p>In off-policy evaluation, inverse-propensity scoring is importance sampling with the logged propensities as \(\mu\). A doubly robust estimator is importance sampling with a model as control variate <span class="cite">[<a href="#ref-jiangli">7</a>]</span>. Both ideas reappear in policy optimisation under other names. The critic's baseline is the control variate. The clamp is weight truncation. The table puts the two uses side by side.</p>
   <div class="table">
     <table class="cmp">
@@ -336,11 +428,12 @@ figcaption mjx-container svg { display: inline; margin: 0; }
       </tbody>
     </table>
   </div>
-  <p>The last two rows are the practical difference. An evaluation has one shot, so it must be correct for any gap. A trainer takes thousands of steps and can afford a biased step, provided the bias points roughly the right way. So the trainer caps the weight, drops the state correction, and keeps the gap small by construction. Learning from someone else's logged play, such as a human's games or a teacher network's, is the off-policy evaluation regime. One ratio per decision cannot cover that gap, as Section 11 measures.</p>
+  <p>The last two rows hold the practical difference. An evaluation produces one estimate, so it must be correct for any gap. A trainer takes thousands of steps and can afford a biased step, provided the bias points roughly the right way. So the trainer caps the weight, drops the state correction, and keeps the gap small by construction. Learning from someone else's logged play, such as a human's games or a teacher network's, is the off-policy evaluation regime. One ratio per decision cannot cover that gap, as Section 11 measures.</p>
 
-  <h2 id="spire">10. In Spire Mentor</h2>
+  <h2 id="spire">10. How Spire Mentor's trainer applies the correction</h2>
+  <p>Spire Mentor's trainer uses decoupled PPO with the weight capped at 2, as in Equation \eqref{eq:decoupled}. It needs three log-probabilities for each row, and it gets them at three different times.</p>
   <div class="example"><span class="label">In Spire Mentor &#183; where \(\mu\) is recorded</span>
-    <p>The learner process holds the serving network. Each round it takes one pending decision from every environment slot, runs the network on all of them in one batch, samples one action per row from the softmax, and stores that action's log-probability with the row as <code>logp_behav</code>. This is \(\log \mu(a_t \mid s_t)\) exactly, not an estimate. Each round also records <code>version</code>, the number of weight loads so far. Staleness at training time is the current version minus the row's.</p>
+    <p>The learner process holds the serving network. Each round, it takes one pending decision from every environment slot and runs the network on all of them in one batch. It samples one action per row from the softmax. It then stores that action's log-probability with the row as <code>logp_behav</code>. This value is \(\log \mu(a_t \mid s_t)\) exactly, not an estimate. Each round also records <code>version</code>, the number of weight loads so far. The staleness of a row at training time is the current version minus the row's version.</p>
   </div>
   <figure class="listing">
     <pre><code>bad = self._bad_rows(beh)
@@ -349,7 +442,7 @@ act = torch.multinomial(probs, 1, generator=self.gen).squeeze(1)
 logp = beh.gather(1, act[:, None]).squeeze(1).cpu().numpy()</code></pre>
     <figcaption>sts2-pycli/python/ppo/e2e/learner.py, lines 1752-1755: sample an action and keep its log-probability</figcaption>
   </figure>
-  <p>Before each update, a pre-pass runs the current weights over every row once and saves \(\log \pi_{\text{prox}}(a_t \mid s_t)\). The loss then builds the two branches of Figure 6.2:</p>
+  <p>Before each update, a pre-pass runs the current weights once, with no gradient. It computes values for every row in the update's table except rows of dormant runs. For the rows that train in this update it also saves \(\log \pi_{\text{prox}}(a_t \mid s_t)\), and every epoch of the update reuses those values. The loss then builds the two branches of Figure 6.2c:</p>
   <figure class="listing">
     <pre><code># PPO, decoupled (Hilton et al. 2021) with dual clip (Ye et al. 2020).
 lpp = torch.where(pi_m, rows.lp_prox.float(), zero)
@@ -366,23 +459,23 @@ dual = cfg.dual_clip * a
 use_dual = (a &lt; 0) &amp; (surr &lt; dual)
 surr = torch.where(use_dual, dual, surr)
 pl_rows = -(w * surr) * pim</code></pre>
-    <figcaption>sts2-pycli/python/ppo/e2e/algo.py, lines 935-949: Equation (18) line by line; is_clamp = 2.0, clip = 0.2, dual_clip = 3.0</figcaption>
+    <figcaption>sts2-pycli/python/ppo/e2e/algo.py, lines 935-949: Equation \eqref{eq:decoupled} line by line. The defaults are is_clamp = 2.0, clip = 0.2 and dual_clip = 3.0.</figcaption>
   </figure>
-  <p>The mapping to this chapter's symbols: <code>lp</code> is \(\log \pi_\theta\), <code>lpp</code> is \(\log \pi_{\text{prox}}\), <code>lpb</code> is \(\log \mu\), <code>ratio</code> is \(r_t\), <code>w</code> is \(\min(w_t, 2)\), and <code>a</code> is \(\hat{A}_t\). The mask <code>pi_m</code> selects the rows the student itself played.</p>
+  <p>The code's names map to this chapter's symbols as follows. <code>lp</code> is \(\log \pi_\theta\), <code>lpp</code> is \(\log \pi_{\text{prox}}\), and <code>lpb</code> is \(\log \mu\). <code>ratio</code> is \(u_t\), <code>w</code> is \(\min(w_t, 2)\), and <code>a</code> is \(\hat{A}_t\). The mask <code>pi_m</code> selects the rows that the student itself played. The learner's own configuration calls the cap <code>is_cap</code> and passes it to the loss as <code>is_clamp</code>.</p>
   <div class="example"><span class="label">In Spire Mentor &#183; the design choices</span>
-    <p><strong>Where staleness comes from.</strong> Combat rows train in the iteration that stored them. Their only lag is the serving lag of Figure 6.1. Rows for decisions outside combat, such as card rewards and map choices, wait until the run ends, or for at most four iterations. The plan estimates their staleness at a mean of 3.7 updates and a maximum of 5. The campaign log reports fresh-row staleness of mean 0.85 to 1.0, maximum 1, after a serving change, "as expected".</p>
-    <p><strong>Choosing workers for low staleness.</strong> The pre-registration chose the number of workers by the best throughput "at staleness &#8804; 1". In the run that chose it, every configuration kept fresh staleness at most 1, and 32 workers were picked.</p>
-    <p><strong>A rejected alternative.</strong> The plan considered plain PPO without the pre-pass, which would centre the clip on \(\mu\) and save one forward pass per update. It was dropped. The plan estimated that about 15% of rows would start outside the clip band, for about 8% more speed.</p>
-    <p><strong>Data from a different policy is not corrected.</strong> Early in training, teacher networks play some fights and some run decisions, and their log-probabilities become \(\mu\) for those rows. Those rows train the critic and a supervised teacher term, but they are excluded from the PPO term: only rows the student played enter Equation (18). This is the trainer's own answer to Section 9. A teacher's policy is too far from the student's for one capped ratio.</p>
-    <p><strong>How big the weights are in practice.</strong> A comment in the learner's configuration records the weights' 1st and 99th percentiles in the production run: 0.87 and 1.10 "of real policy change at a third of the base lr". Numerical noise alone, from serving in bf16 while updating in fp32, gives 0.975 and 1.025.</p>
+    <p><strong>Where staleness comes from.</strong> Combat rows train in the iteration that stored them, so their only lag is the serving lag of Figure 6.1c. Rows for decisions outside combat, such as card rewards and map choices, wait until the run ends or until the run has sent rows for four more iterations. A run that sends no rows does not count towards those four, so a row can wait longer. The plan estimates the staleness of these rows at a mean of 3.7 updates and a maximum of 5. The campaign log reports fresh-row staleness of mean 0.85 to 1.0, maximum 1, after a serving change, "as expected".</p>
+    <p><strong>Choosing workers for low staleness.</strong> The pre-registration chose the number of workers by "the best end-to-end rate at staleness &#8804; 1". The campaign log applied it to fresh rows. In the run that applied the rule, 32 and 40 workers both kept fresh staleness at most 1. The 32-worker configuration was slightly faster and was chosen for the launch. About 1 billion decisions in, the run switched to 40 workers. The record does not say why the bar is 1 and not 2.</p>
+    <p><strong>A rejected alternative.</strong> The plan considered plain PPO without the pre-pass. That version centres the clip on \(\mu\) and saves one forward pass per update. The plan dropped it, estimating that about 15% of rows would start outside the clip band, for about 8% more speed. The plan marks the 15% as an estimate and gives the 8% as approximate. Their derivation is not in the public repository.</p>
+    <p><strong>Data from a different policy is not corrected.</strong> Early in training, teacher networks play some fights and some run decisions, and their log-probabilities become \(\mu\) for those rows. Those rows train the critic and a supervised teacher term. The PPO term excludes them, because only rows that the student played enter Equation \eqref{eq:decoupled}. The plan states this split but gives no reason for it. The likely reason is Section 9's: a teacher's policy is too far from the student's for one capped ratio.</p>
+    <p><strong>How big the weights are in practice.</strong> A comment in the learner's configuration compares two spreads of the weight, by their 1st and 99th percentiles. Real policy change, measured at a third of the base learning rate, gives 0.87 and 1.10. Rounding alone, measured at learning rate 0, gives 0.986 and 1.014. With the serving forward pass compiled, the rounding spread widens to 0.975 and 1.025. On a GPU, serving and the update both run in bf16, but the compiled serving pass rounds differently from the update's uncompiled pass.</p>
   </div>
 
-  <h2 id="measured">11. Measured</h2>
-  <p>Two experiments. The first reads the trainer's own diagnostics during a short real training run. The second makes the gap between policies large on purpose, using two published networks, to find where correction breaks.</p>
+  <h2 id="measured">11. Measurements on real play</h2>
+  <p>This section reports three measurements. The first reads the trainer's own diagnostics during a short real training run. The second uses two published networks to make the gap between policies large on purpose, and finds where correction breaks. The third estimates one network's win rate from the other network's runs, where the true answer is known.</p>
 
-  <h3>11.1 The real trainer on this Mac</h3>
+  <h3>11.1 In the real trainer the weights stay near one</h3>
   <div class="measured"><span class="label">Measured &#183; the real learner, learning-check mode, CPU &#183; M2 Max</span>
-    <p>The learner from Chapter 5 trained from scratch: 4 workers with 32 environments each, iterations of 8,192 decisions, two epochs per update, and a small 2-layer, 128-wide network. This is a substitute for the production run, which used 32 workers, iterations of 131,072 to 1,048,576 decisions and a larger network on GPUs. Over <span data-k="learner/updates|int">41</span> updates, staleness averaged <span data-k="learner/stale_mean|f2">0.10</span> updates. Its maximum was <span data-k="learner/stale_max|int">3</span>, and fresh rows never lagged by more than <span data-k="learner/fresh_max|int">1</span>. The median update had weights between <span data-k="learner/p01_median|f2">0.94</span> and <span data-k="learner/p99_median|f2">1.07</span> at the 1st and 99th percentiles. The largest weight in any update was <span data-k="learner/w_max|f2">1.59</span>, and the share of weights above the clamp was <span data-k="learner/clamped_max|pct0">0%</span> in every update.</p>
+    <p>The learner from Chapter 5 trained from scratch: 4 workers with 32 environments each, iterations of 8,192 decisions, two epochs per update, and a small 2-layer, 128-wide network. This run stands in for the production run, which launched with 32 workers and ran most of its decisions with 40, iterations of 131,072 to 1,048,576 decisions and a larger network on GPUs. Over <span data-k="learner/updates|int">41</span> updates, staleness averaged <span data-k="learner/stale_mean|f2">0.10</span> updates. Its maximum was <span data-k="learner/stale_max|int">3</span>, and fresh rows never lagged by more than <span data-k="learner/fresh_max|int">1</span>. The median update had weights between <span data-k="learner/p01_median|f2">0.94</span> and <span data-k="learner/p99_median|f2">1.07</span> at the 1st and 99th percentiles. The largest weight in any update was <span data-k="learner/w_max|f2">1.59</span>, and the share of weights above the clamp was <span data-k="learner/clamped_max|pct0">0%</span> in every update.</p>
   </div>
   <figure id="fig-learner">
     <div class="scroll">
@@ -431,17 +524,15 @@ pl_rows = -(w * surr) * pim</code></pre>
     </div>
     <figcaption><b>Figure 6.3.</b> The importance weight \(\pi_{\text{prox}} / \mu\) of the real trainer, per update. The band holds 98% of the rows and stays within a few percent of one. Even the largest weight in each update stays well below the clamp. In normal operation the correction is small and the clamp does nothing.</figcaption>
   </figure>
-  <p>So under normal operation the correction is a small reweighting and the clamp is insurance. To see what the clamp insures against, we need a bigger gap than training produces.</p>
+  <p>So in normal operation the correction is a small reweighting, and the clamp never acts. A clamp matters only for a gap larger than this training run produces. Section 11.2 creates such a gap.</p>
 
-  <h3>11.2 Two networks, a controlled gap</h3>
+  <h3>11.2 A large gap breaks the correction</h3>
   <p>The published Ironclad network A plays <span data-k="runs|int">48</span> seeds, sampling every decision from its softmax, which makes A the behaviour policy. That is <span data-k="decisions|int">32,233</span> decisions, about <span data-k="decisions_per_run|int">672</span> per run, with <span data-k="classes_mean|f2">6.33</span> legal action classes on average. At every state, the all-character network B is also asked for its probabilities. The two networks rank the same action first on <span data-k="top_agreement|pct1">81.7%</span> of A's decisions.</p>
   <p>The target policies are geometric mixtures,</p>
   <div class="eq">\[ \log \pi_\varepsilon = \operatorname{log\,softmax}\big((1-\varepsilon) \log \mu + \varepsilon \log \pi_B\big), \]</div>
-  <p>where \(\varepsilon\) is the step from A towards B. Here \(\varepsilon\) is a mixing weight, not PPO's clip range. \(\varepsilon = 1\) is B itself. The trainer's intermediate checkpoints are not published, so the mixtures stand in for "A a few updates later". They are calibrated by KL divergence. At \(\varepsilon = 0.1\), the mean per-state \(D_{\mathrm{KL}}(\mu \,\|\, \pi_\varepsilon)\) is <span data-k="per_eps/0.1/kl_mean|f4">0.0053</span>. The production run's per-update KL was about 0.0015 to 0.004, so \(\varepsilon = 0.1\) is a little more than one update of staleness. At \(\varepsilon = 1\) the mean KL is <span data-k="per_eps/1/kl_mean|f2">0.51</span>.</p>
+  <p>where \(\varepsilon\) is the step from A towards B. Here \(\varepsilon\) is a mixing weight, not PPO's clip range. \(\varepsilon = 1\) is B itself. The trainer's intermediate checkpoints are not published, so the mixtures stand in for "A a few updates later". They are calibrated by KL divergence. At \(\varepsilon = 0.1\), the mean per-state \(D_{\mathrm{KL}}(\mu \,\|\, \pi_\varepsilon)\) is <span data-k="per_eps/0.1/kl_mean|f4">0.0053</span>. The campaign log's per-update KL medians for the production run were about 0.0014 to 0.0036. They estimate \(D_{\mathrm{KL}}(\pi_{\text{prox}} \,\|\, \pi_\theta)\) at the sampled action, a different quantity. So \(\varepsilon = 0.1\) corresponds to roughly one to a few updates of staleness. This calibration is our inference. At \(\varepsilon = 1\) the mean KL is <span data-k="per_eps/1/kl_mean|f2">0.51</span>.</p>
 
-  <details class="predict"><summary>Pause and predict: at one update of staleness (&#949; = 0.1), what share of per-decision weights exceed the clamp of 2? And for B?</summary>
-    <p>At \(\varepsilon = 0.1\), <span data-k="per_eps/0.1/clamped_share|pct2">0.10%</span>, about one decision in a thousand. For B, <span data-k="per_eps/1/clamped_share|pct2">2.19%</span>. B is a very different policy, yet only about one weight in fifty exceeds the clamp. The damage is in the shape of the distribution, not in the share above 2. Most of B's weights are near one, and a few are tiny or huge.</p>
-  </details>
+  <p>At the small gap, \(\varepsilon = 0.1\), the share of per-decision weights above the clamp of 2 is <span data-k="per_eps/0.1/clamped_share|pct2">0.10%</span>, about one decision in a thousand. For B it is <span data-k="per_eps/1/clamped_share|pct2">2.19%</span>. B is a very different policy, yet only about one weight in fifty exceeds the clamp. The share above 2 does not show the problem. The shape of the distribution does. Most of B's weights are near one, and a few are tiny or huge, as Figure 6.4 shows.</p>
 
   <figure id="fig-hist">
     <div class="scroll">
@@ -484,10 +575,10 @@ pl_rows = -(w * surr) * pim</code></pre>
 </svg>
 <!-- /fig:hist -->
     </div>
-    <figcaption><b>Figure 6.4.</b> Distribution of the per-decision weight \(\rho_t\) on a log axis. At one update of staleness (&#949; = 0.1) the weights sit in a narrow peak at one, with 1st and 99th percentiles <span data-k="per_eps/0.1/w_quantiles/p01|f2">0.69</span> and <span data-k="per_eps/0.1/w_quantiles/p99|f2">1.30</span>. For B the peak is still at one, because the networks agree on most decisions. The left tail reaches below 0.001: B rejects some of A's choices outright. The right tail reaches <span data-k="per_eps/1/w_max|f0">290</span>. Bins at the plot's edges include everything beyond them, and the two central bars are cut off at 0.5.</figcaption>
+    <figcaption><b>Figure 6.4.</b> Distribution of the per-decision weight \(\rho_t\) on a log axis. At the small gap (&#949; = 0.1) the weights sit in a narrow peak at one, with 1st and 99th percentiles <span data-k="per_eps/0.1/w_quantiles/p01|f2">0.69</span> and <span data-k="per_eps/0.1/w_quantiles/p99|f2">1.30</span>. For B the peak is still at one, because the networks agree on most decisions. The left tail reaches below 0.001: B rejects some of A's choices outright. The right tail reaches <span data-k="per_eps/1/w_max|f0">290</span>. Bins at the plot's edges include everything beyond them, and the y-axis stops at 0.5, which cuts off the central bar for &#949; = 0.1.</figcaption>
   </figure>
 
-  <p>The per-decision effective sample size is <span data-k="per_eps/0.1/ess_by_horizon/1|pct1">99.0%</span> of decisions at \(\varepsilon = 0.1\) and <span data-k="per_eps/1/ess_by_horizon/1|pct1">16.7%</span> for B. Now multiply ratios. Figure 6.5 groups each run's decisions into consecutive windows of \(k\) and computes the effective sample size of the window products.</p>
+  <p>For single decisions, the effective sample size is <span data-k="per_eps/0.1/ess_by_horizon/1|pct1">99.0%</span> of decisions at \(\varepsilon = 0.1\) and <span data-k="per_eps/1/ess_by_horizon/1|pct1">16.7%</span> for B. Products of ratios lose far more. Figure 6.5 groups each run's decisions into consecutive windows of \(k\) and computes the effective sample size of the window products.</p>
 
   <figure id="fig-ess">
     <div class="scroll">
@@ -571,10 +662,10 @@ pl_rows = -(w * surr) * pim</code></pre>
 </svg>
 <!-- /fig:ess -->
     </div>
-    <figcaption><b>Figure 6.5.</b> Effective sample size, as a share of the windows, for products of \(k\) consecutive ratios. Solid lines are measured; dashed lines are the log-normal prediction \(e^{-k\sigma^2}\) of Equation \eqref{eq:lognormal}, with \(\sigma^2\) measured from single decisions. At one update of staleness (&#949; = 0.1, \(\sigma^2 =\) <span data-k="per_eps/0.1/var_log_rho|f4">0.0110</span>) a single ratio costs almost nothing. A hundred cost more than half the sample. For B, ten ratios already leave almost nothing. Measured values cannot fall below one window, which explains the flattening at the right. For B, \(\sigma^2\) is too large for the prediction to stay on the plot.</figcaption>
+    <figcaption><b>Figure 6.5.</b> Effective sample size, as a share of the windows, for products of \(k\) consecutive ratios. Solid lines are measured. Dashed lines are the log-normal prediction \(e^{-k\sigma^2}\) of Equation \eqref{eq:lognormal}, with \(\sigma^2\) measured from single decisions. At the small gap (&#949; = 0.1, \(\sigma^2 =\) <span data-k="per_eps/0.1/var_log_rho|f4">0.0110</span>) a single ratio costs almost nothing. A hundred cost more than half the sample. For B, ten ratios already leave almost nothing. Measured values cannot fall below one window, which explains the flattening at the right. For B, \(\sigma^2\) is too large for the prediction to stay on the plot.</figcaption>
   </figure>
 
-  <p>The whole-run weights are the extreme case. At \(\varepsilon = 0.1\) the effective sample size of the per-run weights is <span data-k="per_eps/0.1/ess_run|pct1">7.4%</span> of the runs. A gap of one update, harmless per decision, already discards most of the runs over about 700 decisions. For B it is <span data-k="per_eps/1/ess_run|pct1">2.1%</span>.</p>
+  <p>The whole-run weights are the extreme case. At \(\varepsilon = 0.1\) the effective sample size of the per-run weights is <span data-k="per_eps/0.1/ess_run|pct1">7.4%</span> of the runs. A gap of one update costs almost nothing per decision, but over about 700 decisions it discards most of the runs. For B it is <span data-k="per_eps/1/ess_run|pct1">2.1%</span>.</p>
 
   <figure id="fig-clamp">
     <div class="scroll">
@@ -612,7 +703,7 @@ pl_rows = -(w * surr) * pim</code></pre>
 </svg>
 <!-- /fig:clamp -->
     </div>
-    <figcaption><b>Figure 6.6.</b> The clamp's trade for target B, computed exactly from both networks' full distributions on every state A visited. The orange line is the lost probability mass \(\ell_c\) of Equation \eqref{eq:lost}, the bias. The teal line is the variance of \(\min(\rho, c)\) under \(\mu\). At the trainer's \(c = 2\), the clamp removes <span data-k="per_eps/1/caps/2/lost_mass|pct1">12.2%</span> of B's probability mass per state, and the variance is <span data-k="per_eps/1/caps/2/var|f3">0.083</span>. Without a clamp the variance is <span data-k="per_eps/1/caps/inf/var|sci">1.1 &#215; 10<sup>10</sup></span>. The two curves cross near \(c = 2\). At one update of staleness the clamp at 2 removes <span data-k="per_eps/0.1/caps/2/lost_mass|pct2">0.08%</span>, which is nothing.</figcaption>
+    <figcaption><b>Figure 6.6.</b> The clamp's trade for target B, computed exactly from both networks' full distributions on every state A visited. The orange line is the lost probability mass \(\ell_c\) of Equation \eqref{eq:lost}, the bias. The teal line is the variance of \(\min(\rho, c)\) under \(\mu\). At the trainer's \(c = 2\), the clamp removes <span data-k="per_eps/1/caps/2/lost_mass|pct1">12.2%</span> of B's probability mass per state, and the variance is <span data-k="per_eps/1/caps/2/var|f3">0.083</span>. Without a clamp the variance is <span data-k="per_eps/1/caps/inf/var|sci">1.1 &#215; 10<sup>10</sup></span>. The two curves cross between \(c = 2\) and \(c = 3\). They have different units, so the crossing does not mark an optimum. At the small gap (&#949; = 0.1) the clamp at 2 removes <span data-k="per_eps/0.1/caps/2/lost_mass|pct2">0.08%</span>, which is nothing.</figcaption>
   </figure>
 
   <figure id="fig-trace">
@@ -658,15 +749,13 @@ pl_rows = -(w * surr) * pim</code></pre>
 </svg>
 <!-- /fig:trace -->
     </div>
-    <figcaption><b>Figure 6.7.</b> The average V-trace trace \(\prod_{i} \min(1, \rho_i)\) over the \(k\) decisions after a TD error, with IMPALA's \(\bar c = 1\). At one update of staleness the trace keeps <span data-k="per_eps/0.1/trace_mean_by_horizon/10|pct0">86%</span> of a TD error's credit ten decisions back. For B it keeps <span data-k="per_eps/1/trace_mean_by_horizon/10|pct0">19%</span>. Truncated traces never explode, but between distant policies they cut credit assignment back to a few steps. V-trace then behaves almost like a one-step method.</figcaption>
+    <figcaption><b>Figure 6.7.</b> The average V-trace trace \(\prod_{i} \min(1, \rho_i)\) over the \(k\) decisions after a TD error, with IMPALA's \(\bar c = 1\). At the small gap (&#949; = 0.1) the trace keeps <span data-k="per_eps/0.1/trace_mean_by_horizon/10|pct0">86%</span> of a TD error's credit ten decisions back. For B it keeps <span data-k="per_eps/1/trace_mean_by_horizon/10|pct0">19%</span>. Truncated traces never explode, but between distant policies they cut credit assignment back to a few steps. V-trace then behaves almost like a one-step method.</figcaption>
   </figure>
 
-  <h3>11.3 Off-policy evaluation with a known answer</h3>
-  <p>Finally, the question off-policy evaluation exists to answer: what is B's win rate, estimated from A's runs alone? We know the answer, because B also played the same seeds, sampling from its own softmax.</p>
+  <h3>11.3 Off-policy evaluation misses a known answer</h3>
+  <p>The last measurement is a standard off-policy evaluation. It estimates B's win rate from A's runs alone. The true answer is known, because B also played the same seeds, sampling from its own softmax.</p>
 
-  <details class="predict"><summary>Pause and predict: A won some of its runs. What do the plain and self-normalised per-run estimators say B's win rate is?</summary>
-    <p>A won <span data-k="won_a|int">34</span> of 48 (<span data-k="ope/a_rate|pct1">70.8%</span>). B won <span data-k="won_b|int">40</span> of 48 (<span data-k="ope/truth_b_rate|pct1">83.3%</span>), the truth. The plain estimator, Equation \eqref{eq:ois} with per-run weights, says <span data-k="ope/plain|sci">1.5 &#215; 10<sup>&#8722;68</sup></span>. It is unbiased, but almost every sample of it is near zero, and the rare huge sample that would correct the mean did not occur in 48 runs. The self-normalised estimator, Equation \eqref{eq:snis}, says <span data-k="ope/snis|pct1">0.0%</span>. With one effective run, it reports that run's outcome, and that run was a loss. Using A's own win rate with no correction would have been closer.</p>
-  </details>
+  <p>A won <span data-k="won_a|int">34</span> of 48 (<span data-k="ope/a_rate|pct1">70.8%</span>). B won <span data-k="won_b|int">40</span> of 48 (<span data-k="ope/truth_b_rate|pct1">83.3%</span>), the truth. The plain estimator, Equation \eqref{eq:ois} with per-run weights, says <span data-k="ope/plain|sci">1.5 &#215; 10<sup>&#8722;68</sup></span>. It is unbiased, but almost every sample of it is near zero, and the rare huge sample that would correct the mean did not occur in 48 runs. The self-normalised estimator, Equation \eqref{eq:snis}, says <span data-k="ope/snis|pct1">0.0%</span>. With one effective run, it reports that run's outcome, and that run was a loss. A's own win rate, with no correction, is closer to the truth than either estimate.</p>
 
   <figure id="fig-runs">
     <div class="scroll">
@@ -742,26 +831,26 @@ pl_rows = -(w * surr) * pim</code></pre>
   </figure>
 
   <div class="measured"><span class="label">Measured &#183; 48 seeds of PANEL_A &#183; M2 Max &#183; what was substituted</span>
-    <p>A is <code>ironclad_e2e_d9000_ema0999</code> and B is <code>allchar_e2e_d4500_ema0999</code>, run through the simulator's Rust inference. They are not the PyTorch module the trainer serves. Both play through the simulator's peek, decide and apply loop. With greedy choices, that loop reproduces the native self-play move for move on the one seed checked. The \(\varepsilon\)-mixtures stand in for a network a few updates newer than A, calibrated by KL as described above. They are not real checkpoints. The 48 truth runs give B's win rate with a standard error of about 5 percentage points. The real-trainer numbers in 11.1 come from a short learning check with a small network, not from the production run.</p>
+    <p>A is <code>ironclad_e2e_d9000_ema0999</code> and B is <code>allchar_e2e_d4500_ema0999</code>, run through the simulator's Rust inference. They are not the PyTorch module the trainer serves. Both play through the simulator's peek, decide and apply loop. With greedy choices, that loop reproduced the native self-play move for move on the one seed checked. No record of that check is committed, so treat it as unverified. The \(\varepsilon\)-mixtures stand in for a network a few updates newer than A, calibrated by KL as described above. They are not real checkpoints. The 48 truth runs give B's win rate with a standard error of about 5 percentage points. The real-trainer numbers in 11.1 come from a short learning check with a small network, not from the production run.</p>
   </div>
 
   <h2 id="confusions">12. Common confusions</h2>
-  <p><strong>"The importance weight is what makes PPO off-policy."</strong> PPO without decoupling has no weight on the data at all. Its ratio \(\pi_\theta / \pi_{\text{old}}\) is the surrogate's variable, the thing being optimised and clipped, not a correction applied to a fixed estimate. The decoupled version adds a true correction factor, \(\pi_{\text{prox}} / \mu\), which carries no gradient.</p>
-  <p><strong>"Clamping the weight is the same as PPO's clip."</strong> They limit different things. The clip limits how far the current parameters may move from \(\pi_{\text{prox}}\) within one update. The clamp limits how much one stale row may count. A row can be inside the clip band with its weight clamped, and the reverse.</p>
-  <p><strong>"Per-decision weights are an unbiased version of per-run weights."</strong> In evaluation, the per-decision estimator of Sutton and Barto &#167;5.9 is unbiased because a reward's expectation depends only on the ratios before it <span class="cite">[<a href="#ref-sb">1</a>, eq. 5.14]</span>. The per-decision gradient of Equation \eqref{eq:offpg} is a different object. It drops the state-distribution correction entirely, and it is biased. Its bias is small only because the trainer keeps the gap small.</p>
-  <p><strong>"High agreement on the top action means the policies are close."</strong> A and B choose the same top action on about four decisions in five. Their per-run weights still span hundreds of orders of magnitude. The weight depends on the probabilities, not the ranking, and on every decision, not the typical one. From a Q-learning background this is the natural misreading: greedy agreement is what matters for a greedy policy, but importance sampling sees the whole distribution.</p>
-  <p><strong>"With enough samples, plain importance sampling always works."</strong> It is unbiased, and its variance can be finite and still useless. With \(\sigma^2\) per decision and \(T\) decisions, Equation \eqref{eq:lognormal} says you need about \(e^{T \sigma^2}\) runs before the estimate stops being decided by its largest weight. For B over 700 decisions, that number is astronomically large.</p>
+  <p><strong>"The importance weight is what makes PPO off-policy."</strong> In PPO without decoupling, one ratio \(\pi_\theta / \pi_{\text{old}}\) does two jobs. It is the importance weight from the policy that sampled the data, and it is the variable that the surrogate optimises and clips. When the data is fresh, the weight is one at the first step, so the clip does the visible work. The decoupled version splits off the stale part as a separate correction factor, \(\pi_{\text{prox}} / \mu\), which carries no gradient. The misreading is to treat the clip as the correction.</p>
+  <p><strong>"The weight clamp is the same as PPO's clip."</strong> They limit different things. The clip limits how far the current parameters may move from \(\pi_{\text{prox}}\) within one update. The clamp limits how much one stale row may count. A row can be inside the clip band with its weight clamped. A row can also be outside the band with its weight unclamped.</p>
+  <p><strong>"Per-decision weights are an unbiased version of per-run weights."</strong> In evaluation, the per-decision estimator of Precup et al. <span class="cite">[<a href="#ref-precup">9</a>]</span>, in Sutton and Barto &#167;5.9, is unbiased because a reward's expectation depends only on the ratios before it <span class="cite">[<a href="#ref-sb">1</a>, &#167;5.9]</span>. The per-decision gradient of Equation \eqref{eq:offpg} is a different object. It drops the state-distribution correction entirely, and it is biased. Its bias is small only because the trainer keeps the gap small.</p>
+  <p><strong>"High agreement on the top action means the policies are close."</strong> A and B choose the same top action on about four decisions in five. Their per-run weights still span hundreds of orders of magnitude. The weight depends on the probabilities, not the ranking, and on every decision, not the typical one. If you come from Q-learning, greedy agreement is what you check, because it is what matters for a greedy policy. Importance sampling uses the whole distribution.</p>
+  <p><strong>"With enough samples, plain importance sampling always works."</strong> It is unbiased, and its variance can be finite and still useless. With \(\sigma^2\) per decision and \(T\) decisions, Equation \eqref{eq:lognormal} says you need about \(e^{T \sigma^2}\) runs before the largest weight stops deciding the estimate. For B over 700 decisions, that number has more than a thousand digits.</p>
 
   <h2 id="experiments">13. Suggested experiments</h2>
-  <p>All commands run from the repository root of the <code>tour</code> branch. In a git worktree, prefix each with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
+  <p>Run every command from the repository root of the <code>tour</code> branch. If you work in a git worktree, put <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code> before each command.</p>
   <ol>
-    <li><strong>Reproduce the measurements.</strong> Play the runs, rebuild the data and redraw this chapter's figures and numbers:
+    <li><strong>Reproduce the measurements.</strong> Play the 48 runs, rebuild the data, and redraw the figures and numbers in this chapter. The first command took about 11 minutes on an M2 Max with 3 workers.
       <figure class="listing"><pre><code>tour/run stop-6-off-policy/figures.py play --out /tmp/runs48.npz --runs 48 --workers 3
 tour/run stop-6-off-policy/figures.py data --runs-file /tmp/runs48.npz
 tour/run stop-6-off-policy/figures.py svg</code></pre></figure>
     </li>
-    <li><strong>Test the estimator with more runs.</strong> Rerun step 1 with <code>--runs 96</code>. Equation \eqref{eq:lognormal} predicts that the per-run effective sample size for B stays at about one run. Check whether the self-normalised estimate changes from one sample of runs to the next.</li>
-    <li><strong>Score your predictions.</strong> <code>check.py</code> measures seven of this chapter's quantities and compares them with values you write in <code>predictions.toml</code>:
+    <li><strong>Test the per-run estimator with more runs.</strong> Repeat step 1 with <code>--runs 96</code>. Equation \eqref{eq:lognormal} predicts that the per-run effective sample size for B stays at about one run. Compare the self-normalised estimate of B's win rate with the 48-run value.</li>
+    <li><strong>Compare your own estimates with the measured values.</strong> Write your estimates of seven of this chapter's quantities in <code>predictions.toml</code>. Then run <code>check.py</code>, which measures the seven quantities and scores your estimates. The second command runs the arithmetic tests.
       <figure class="listing"><pre><code>tour/run stop-6-off-policy/check.py --quick
 tour/run -m pytest tour/stop-6-off-policy</code></pre></figure>
     </li>
@@ -769,7 +858,7 @@ tour/run -m pytest tour/stop-6-off-policy</code></pre></figure>
 
   <h2 id="references">References</h2>
   <ol class="refs">
-    <li id="ref-sb">Sutton, R. S., and Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em> (2nd ed.). MIT Press. &#167;5.5 (ordinary and weighted importance sampling, eqs. 5.3-5.6), &#167;5.9 (per-decision importance sampling, eq. 5.14), &#167;13.2 (the policy gradient theorem).</li>
+    <li id="ref-sb">Sutton, R. S., and Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em> (2nd ed.). MIT Press. &#167;5.5 (ordinary and weighted importance sampling), &#167;5.9 (per-decision importance sampling), &#167;13.2 (the policy gradient theorem).</li>
     <li id="ref-kish">Kish, L. (1965). <em>Survey Sampling</em>. Wiley.</li>
     <li id="ref-degris">Degris, T., White, M., and Sutton, R. S. (2012). Linear off-policy actor-critic. <em>ICML</em>. arXiv:1205.4839 as "Off-policy actor-critic".</li>
     <li id="ref-hilton">Hilton, J., Cobbe, K., and Schulman, J. (2022). Batch size-invariance for policy optimization. <em>NeurIPS</em>. arXiv:2110.00641.</li>
@@ -779,6 +868,7 @@ tour/run -m pytest tour/stop-6-off-policy</code></pre></figure>
     <li id="ref-retrace">Munos, R., Stepleton, T., Harutyunyan, A., and Bellemare, M. G. (2016). Safe and efficient off-policy reinforcement learning. <em>NeurIPS</em>. arXiv:1606.02647.</li>
     <li id="ref-precup">Precup, D., Sutton, R. S., and Singh, S. (2000). Eligibility traces for off-policy policy evaluation. <em>ICML</em>.</li>
     <li id="ref-ppo">Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. (2017). Proximal policy optimization algorithms. arXiv:1707.06347.</li>
+    <li id="ref-owen">Owen, A. B. (2013). <em>Monte Carlo theory, methods and examples</em>. Self-published, artowen.su.domains/mc. Chapter 9 (importance sampling, including the self-normalised estimator and effective sample size).</li>
   </ol>
 </main>
 
