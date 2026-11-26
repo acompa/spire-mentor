@@ -123,23 +123,23 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 <header class="chapter">
   <div class="eyebrow"><span>RL tour · Chapter 1 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
   <h1>The decision process</h1>
-  <p class="lede">Before we can train a policy we have to say what it is trained on: which situations it meets, what it may choose there, where a run of choices begins and ends, and which single number we want it to raise. This chapter builds that object, the decision process, and measures it in Spire Mentor.</p>
+  <p class="lede">A decision process is the object a policy is trained on. It says which situations the policy meets, which choices it may make in each, where a run of choices begins and ends, and which single number training raises. This chapter defines that object and then measures it in Spire Mentor.</p>
 </header>
 
 <nav class="contents" aria-label="Chapter contents">
   <strong>Contents</strong>
   <ol>
-    <li><a href="#opening">Where this chapter sits</a></li>
-    <li><a href="#game">The game in four sentences</a></li>
+    <li><a href="#opening">Reinforcement learning trains on data that its own choices produce</a></li>
+    <li><a href="#game">The game in brief</a></li>
     <li><a href="#notation">Notation for the tour</a></li>
-    <li><a href="#mdp">Markov decision processes</a></li>
-    <li><a href="#episodes">Episodes, trajectories and returns</a></li>
-    <li><a href="#objective">The objective</a></li>
-    <li><a href="#pomdp">Partial observability</a></li>
-    <li><a href="#engineered">The textbook version against the engineered one</a></li>
-    <li><a href="#spire">In Spire Mentor</a></li>
-    <li><a href="#measured">Measured</a></li>
-    <li><a href="#confusions">Common confusions</a></li>
+    <li><a href="#mdp">An MDP says what can follow each legal action</a></li>
+    <li><a href="#episodes">An episode is one run, and its return is the reward still to come</a></li>
+    <li><a href="#objective">The objective is the average return of whole runs</a></li>
+    <li><a href="#pomdp">The policy sees an observation, not the state</a></li>
+    <li><a href="#engineered">Spire Mentor's decisions are not the game's steps</a></li>
+    <li><a href="#spire">How Spire Mentor builds each decision</a></li>
+    <li><a href="#measured">Measured: what an episode looks like</a></li>
+    <li><a href="#confusions">Five common confusions</a></li>
     <li><a href="#experiments">Suggested experiments</a></li>
     <li><a href="#references">References</a></li>
   </ol>
@@ -147,28 +147,28 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 
 <main>
 
-<h2 id="opening">1. Where this chapter sits</h2>
+<h2 id="opening">1. Reinforcement learning trains on data that its own choices produce</h2>
 
-<p>In supervised learning the unit of data is a pair \((x, y)\). The pairs are drawn independently from one fixed distribution, and nothing the model predicts changes which \(x\) it sees next. Reinforcement learning breaks both halves of that. The agent's choice changes what it sees next, and the data it learns from is a sequence whose distribution depends on the very parameters being trained.</p>
+<p>In supervised learning, the unit of data is a pair \((x, y)\). The pairs come independently from one fixed distribution. Nothing that the model predicts changes which \(x\) it sees next. Reinforcement learning drops both properties. The agent's choice changes what it sees next. The data it learns from is a sequence, and the distribution of that sequence depends on the parameters that training changes.</p>
 
-<p>If you have trained a deep Q-network, you have already met the object that handles this: the Markov decision process. Q-learning uses it in a particular way. It learns \(Q^*(s, a)\), the value of the best action in each state, and acts greedily on it. The rest of this tour takes a different route. It trains a policy directly, by raising the expected total reward of whole runs. That route asks four things of the decision process that Q-learning lets you leave vague.</p>
+<p>The object that describes this setting is the Markov decision process. If you have trained a deep Q-network, you have used one. Q-learning learns \(Q^*(s, a)\), the value of the best action in each state, and acts greedily on it. This tour trains a policy directly instead. It raises the expected total reward of whole runs. That method needs four things that Q-learning lets you leave vague.</p>
 
 <ul>
-  <li><strong>What the agent sees.</strong> A DQN on Atari stacks four frames and calls the stack the state. In a card game the agent cannot see the order of its draw pile. We need a clean account of state against observation.</li>
-  <li><strong>What the agent may choose.</strong> An Atari agent has the same 18 buttons everywhere. Here the legal choices change at every step: five cards in hand now, a map with three paths later, a shop with a dozen items after that.</li>
-  <li><strong>What one step is.</strong> The game applies many actions that nobody chooses. We must decide which steps count as decisions.</li>
-  <li><strong>What one sample is.</strong> A policy-gradient method scores a whole trajectory. The sampling unit is the run, not the decision, so the length of a run matters for everything that follows.</li>
+  <li><strong>What the agent sees.</strong> A DQN on Atari stacks four frames and calls the stack the state. In a card game, the agent cannot see the order of its draw pile. You need a clear line between state and observation.</li>
+  <li><strong>What the agent may choose.</strong> An Atari agent has the same 18 buttons in every frame. In this game, the legal choices change at every step. A fight offers five cards in hand, a map offers three paths, and a shop offers a dozen items.</li>
+  <li><strong>What one step is.</strong> The game applies many actions that nobody chooses. You must decide which steps count as decisions.</li>
+  <li><strong>What one sample is.</strong> A policy-gradient method scores a whole trajectory. The sampling unit is the run, not the decision. The length of a run therefore affects every chapter after this one.</li>
 </ul>
 
-<p>Chapter 2 builds the policy that acts in this process. Chapter 3 designs the reward it is paid. Chapter 4 learns values over it, and Chapter 5 derives the gradient of the objective we define here. This chapter only builds the process and measures it.</p>
+<p>Later chapters build on this one. Chapter 2 builds the policy, Chapter 3 the reward, Chapter 4 the value functions, and Chapter 5 the gradient of the objective defined here.</p>
 
-<h2 id="game">2. The game in four sentences</h2>
+<h2 id="game">2. The game in brief</h2>
 
-<p>Slay the Spire 2 is a single-player deck-building game. You lead one character, here the Ironclad, up a branching map of 46 floors in three acts; each floor is a fight, an event, a shop, a rest site or a treasure, and each act ends with a boss. In a fight you draw five cards a turn from your deck, spend three energy to play them against enemies who show their next attack in advance, then end your turn and take the hits. Between fights you change the deck: you take a new card from a reward, buy or remove cards in a shop, upgrade one at a rest site; one death ends the run, and beating the final boss wins it. Spire Mentor plays the hard setting, Ascension 10, on game version v0.111.0, in a simulator written in Rust.</p>
+<p>Slay the Spire 2 is a single-player deck-building game. You lead one character, here the Ironclad, up a map of 46 floors in three acts. Each floor is a fight, an event, a shop, a rest site or a treasure, and each act ends with a boss. In a fight, you draw five cards a turn and spend three energy to play them. The enemies show their next attack in advance. Between fights, you change your deck: you take a card from a reward, buy or remove cards in a shop, or upgrade a card at a rest site. One death ends the run, and beating the final boss wins it. Spire Mentor plays the hard setting, Ascension 10, on game version v0.111.0, in a simulator written in Rust.</p>
 
 <h2 id="notation">3. Notation for the tour</h2>
 
-<p>All eight chapters use the symbols below and no others for these things. Where the project's code uses a different name, the chapter that meets it gives the mapping once.</p>
+<p>All eight chapters use the symbols below, and no others, for these things. Where the project's code uses a different name, the chapter that meets it gives the mapping once.</p>
 
 <div class="table notation">
 <table>
@@ -197,13 +197,13 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 </table>
 </div>
 
-<p>Two conventions need a word now. First, the reward \(r_t\) is the reward that <em>follows</em> action \(a_t\). Sutton and Barto write the same quantity \(R_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>]</span>; Spinning Up writes \(r_t\), as we do <span class="cite">[<a href="#ref-6">6</a>]</span>. Second, \(\mu\) here always means the behaviour policy and \(\lambda\) always means the GAE parameter, whatever they mean in other notes you keep.</p>
+<p>Two conventions matter from the start. First, the reward \(r_t\) is the reward that <em>follows</em> action \(a_t\). Sutton and Barto write the same quantity as \(R_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>]</span>. Spinning Up writes \(r_t\), as this tour does <span class="cite">[<a href="#ref-6">6</a>]</span>. Second, \(\mu\) always means the behaviour policy and \(\lambda\) always means the GAE parameter, even if other texts you read use them for other things.</p>
 
-<h2 id="mdp">4. Markov decision processes</h2>
+<h2 id="mdp">4. An MDP says what can follow each legal action</h2>
 
-<p>Start with one position in a fight. The Ironclad has 64 of 80 hit points and three energy. Its hand is three Strikes, a Defend and Ascender's Bane, a curse card that cannot be played. A Seapunk with 48 hit points shows that it will attack for 13. The Ironclad also carries two potions. The game will let it play any Strike at the Seapunk, play the Defend, drink either potion, or end the turn. After it chooses, the game moves to a new position: the Seapunk loses 6 hit points, or the Ironclad gains 5 block, and so on. Some of that move is random. Ending the turn, for example, draws five cards from a shuffled pile.</p>
+<p>A <dfn>Markov decision process</dfn> (MDP) is a model of choices made one after another. At each step, the agent is in a state and picks one of the actions that are legal there. The world answers with a next state and a reward, drawn from a fixed distribution that depends only on the current state and the action. Bellman introduced the model in the 1950s to study sequential decisions under uncertainty <span class="cite">[<a href="#ref-2">2</a>]</span>. Puterman's book is the standard reference for its theory <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
 
-<p>A <dfn>Markov decision process</dfn> (MDP) is the abstraction of exactly this. Bellman introduced it in the 1950s to study sequential decisions under uncertainty <span class="cite">[<a href="#ref-2">2</a>]</span>; Puterman's book is the standard reference for its theory <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
+<p>In Spire Mentor, one position in a fight is a state. Here is one. The Ironclad has 64 of 80 hit points and three energy. Its hand is three Strikes, a Defend and Ascender's Bane, which is a curse card that cannot be played. A Seapunk with 48 hit points shows that it will attack for 13. The Ironclad also carries two potions. The game lets it play any Strike at the Seapunk, play the Defend, drink either potion or end the turn. After the choice, the game moves to a new position. The Seapunk loses 6 hit points, or the Ironclad gains 5 block, and so on. Part of that move is random. Ending the turn, for example, draws five cards from a shuffled pile.</p>
 
 <div class="definition"><span class="label">Definition 1.1 · Markov decision process</span>
   <p>An MDP is a tuple</p>
@@ -211,160 +211,185 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
   <p>where \(\mathcal{S}\) is a set of <dfn>states</dfn>, \(\mathcal{A}(s)\) is the set of <dfn>legal actions</dfn> in state \(s\), \(p\) is the dynamics defined below, \(\rho_0\) is the distribution of the first state, and \(\gamma \in [0, 1]\) is the discount.</p>
 </div>
 
-<p>The <dfn>dynamics</dfn> say how the world answers an action. Following Sutton and Barto's four-argument form <span class="cite">[<a href="#ref-1">1</a>, eq. 3.2]</span>, but with our reward index:</p>
+<p>The <dfn>dynamics</dfn> \(p\) say how the world answers an action. This tour uses Sutton and Barto's four-argument form <span class="cite">[<a href="#ref-1">1</a>, eq. 3.2]</span> with its own reward index:</p>
 
 <div class="eq">\begin{equation} p(s', r \mid s, a) = \Pr\{s_{t+1} = s',\ r_t = r \mid s_t = s,\ a_t = a\}. \label{eq:dynamics} \end{equation}</div>
 
-<p>Read it as a table with one row per state-action pair. Each row is a joint distribution over the next state \(s'\) and the reward \(r\) paid on the way there. Because each row is a distribution, it sums to one over everything that can follow:</p>
+<p>Think of \(p\) as a table with one row for each state and legal action. Each row is a joint distribution over the next state \(s'\) and the reward \(r\) paid on the way there. Because each row is a distribution, it sums to one:</p>
 
 <div class="eq">\begin{equation} \sum_{s' \in \mathcal{S}} \sum_{r} p(s', r \mid s, a) = 1 \quad \text{for all } s \in \mathcal{S},\ a \in \mathcal{A}(s). \label{eq:normalise} \end{equation}</div>
 
-<p>Note the range of \(a\): only actions legal in \(s\) have a row. Sutton and Barto state this with \(\mathcal{A}(s)\) as well <span class="cite">[<a href="#ref-1">1</a>, eq. 3.3]</span>, and most deep-RL code forgets it, because Atari and MuJoCo offer every action everywhere. A card game does not. Ascender's Bane is in the hand but "play Ascender's Bane" has no row.</p>
+<p>Look at the range of \(a\) in Equation \eqref{eq:normalise}. Only actions that are legal in \(s\) have a row. Sutton and Barto also write the condition with \(\mathcal{A}(s)\) <span class="cite">[<a href="#ref-1">1</a>, eq. 3.3]</span>. Much deep-RL code ignores it, because Atari and MuJoCo offer every action in every state. A card game does not. Ascender's Bane is in the hand, but "play Ascender's Bane" has no row.</p>
 
-<p>The word <em>Markov</em> names one assumption: the dynamics need only the current state and action, not the path that led there. Written out over the whole history,</p>
+<p>The word <em>Markov</em> names one assumption. The dynamics need only the current state and action, not the path that led there. Over the whole history, the assumption reads:</p>
 
 <div class="eq">\begin{equation} \Pr\{s_{t+1}, r_t \mid s_t, a_t, s_{t-1}, a_{t-1}, \dots, s_0, a_0\} = \Pr\{s_{t+1}, r_t \mid s_t, a_t\}. \label{eq:markov} \end{equation}</div>
 
-<p>This is a statement about what we put in \(s_t\), not a fact about the world. Put the whole history in the state and Equation \eqref{eq:markov} holds trivially. In a fight, the state the simulator holds is Markov: it contains the draw pile in its true order, every enemy's move pattern and the random-number generator. Section 7 shows that the agent does not get that state.</p>
+<p>Equation \eqref{eq:markov} is a statement about what you put in \(s_t\), not a fact about the world. If the state holds the whole history, the equation holds trivially. In a fight, the state that the simulator holds is Markov. It contains the draw pile in its true order, every enemy's move pattern and the random-number generator. Section 7 shows that the agent does not get that state.</p>
 
-<p>A <dfn>policy</dfn> is a rule for choosing actions. In this tour it is a conditional distribution \(\pi_\theta(a \mid s)\) with parameters \(\theta\), the weights of a network. Chapter 2 builds it. All this chapter needs is its support. A policy may put mass only on legal actions, and must put all of its mass there:</p>
+<p>A <dfn>policy</dfn> is a rule for choosing actions. In this tour it is a conditional distribution \(\pi_\theta(a \mid s)\) whose parameters \(\theta\) are the weights of a network. Chapter 2 builds it. This chapter needs only one property of it. A policy puts probability only on legal actions, and all of its probability goes there:</p>
 
 <div class="eq">\begin{equation} \pi_\theta(a \mid s) = 0 \ \text{ for } a \notin \mathcal{A}(s), \qquad \sum_{a \in \mathcal{A}(s)} \pi_\theta(a \mid s) = 1. \label{eq:support} \end{equation}</div>
 
-<p>Equation \eqref{eq:support} is easy to write and easy to get wrong. A network with a fixed output layer gives every action a logit in every state. Practical systems then either mask illegal logits to \(-\infty\) before the softmax, or, as Spire Mentor does, never produce a logit for an illegal action at all: the network scores only the candidates the game offers. Huang and Ontañón analyse the masking approach and show that it is a valid policy gradient for the masked policy <span class="cite">[<a href="#ref-7">7</a>]</span>.</p>
+<p>A network with a fixed output layer breaks Equation \eqref{eq:support}, because it gives every action a logit in every state. Practical systems fix this in one of two ways. Some set the logits of illegal actions to \(-\infty\) before the softmax. Others never produce a logit for an illegal action. Spire Mentor does the second: its network scores only the candidates that the game offers. Huang and Ontañón analyse the first approach and show that it gives a valid policy gradient for the masked policy <span class="cite">[<a href="#ref-7">7</a>]</span>.</p>
+
+<p>Figure 1.1 shows the loop that an MDP describes. Section 7 adds parts to it.</p>
 
 <figure id="fig-1">
   <div class="scroll">
-    <svg viewBox="0 0 640 250" role="img" aria-label="Two agent-environment loops. Left, the agent receives the state. Right, the environment keeps the state hidden and emits only an observation, and the agent keeps a belief or history.">
+    <svg viewBox="0 0 640 170" role="img" aria-label="The agent-environment loop of an MDP. The agent sends an action to the environment. The environment returns the next state and a reward.">
       <defs><marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
       <g color="var(--fg)">
-        <text x="150" y="20" text-anchor="middle" font-weight="600">MDP: the agent sees the state</text>
-        <rect class="box" x="20" y="50" width="100" height="60" rx="3"/><text x="70" y="78" text-anchor="middle">Agent</text><text class="muted" x="70" y="96" text-anchor="middle">π(a | s)</text>
-        <rect class="box" x="190" y="50" width="110" height="60" rx="3"/><text x="245" y="78" text-anchor="middle">Environment</text><text class="muted" x="245" y="96" text-anchor="middle">p(s′, r | s, a)</text>
-        <line class="ink" x1="120" y1="62" x2="190" y2="62" marker-end="url(#ar1)"/><text class="muted" x="155" y="56" text-anchor="middle">aₜ</text>
-        <line class="ink" x1="190" y1="98" x2="120" y2="98" marker-end="url(#ar1)"/><text class="muted" x="155" y="118" text-anchor="middle">sₜ₊₁, rₜ</text>
-        <text class="muted" x="160" y="160" text-anchor="middle">the state carries everything</text>
-        <text class="muted" x="160" y="176" text-anchor="middle">the dynamics need</text>
-
-        <line class="grid" x1="320" y1="30" x2="320" y2="230"/>
-
-        <text x="480" y="20" text-anchor="middle" font-weight="600">POMDP: the state is hidden</text>
-        <rect class="box" x="340" y="50" width="120" height="96" rx="3"/><text x="400" y="74" text-anchor="middle">Agent</text>
-        <rect x="352" y="84" width="96" height="50" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="400" y="104" text-anchor="middle">belief bₜ</text><text class="muted" x="400" y="122" text-anchor="middle">or history hₜ</text>
-        <rect class="box" x="510" y="50" width="120" height="96" rx="3"/><text x="570" y="74" text-anchor="middle">Environment</text>
-        <rect x="522" y="84" width="96" height="50" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="570" y="104" text-anchor="middle">hidden sₜ</text><text class="muted" x="570" y="122" text-anchor="middle">draw order, RNG</text>
-        <line class="ink" x1="460" y1="62" x2="510" y2="62" marker-end="url(#ar1)"/><text class="muted" x="485" y="56" text-anchor="middle">aₜ</text>
-        <line class="ink" x1="510" y1="140" x2="460" y2="140" marker-end="url(#ar1)"/><text class="muted" x="485" y="160" text-anchor="middle">oₜ₊₁, rₜ</text>
-        <text class="muted" x="480" y="196" text-anchor="middle">π acts on what the agent keeps,</text>
-        <text class="muted" x="480" y="212" text-anchor="middle">not on the hidden state</text>
+        <rect class="box" x="120" y="40" width="140" height="70" rx="3"/><text x="190" y="68" text-anchor="middle">Agent</text><text class="muted" x="190" y="90" text-anchor="middle">π(a | s)</text>
+        <rect class="box" x="380" y="40" width="140" height="70" rx="3"/><text x="450" y="68" text-anchor="middle">Environment</text><text class="muted" x="450" y="90" text-anchor="middle">p(s′, r | s, a)</text>
+        <line class="ink" x1="260" y1="54" x2="380" y2="54" marker-end="url(#ar1)"/><text class="muted" x="320" y="46" text-anchor="middle">aₜ</text>
+        <line class="ink" x1="380" y1="98" x2="260" y2="98" marker-end="url(#ar1)"/><text class="muted" x="320" y="122" text-anchor="middle">sₜ₊₁, rₜ</text>
+        <text class="muted" x="320" y="156" text-anchor="middle">the state carries everything the dynamics need</text>
       </g>
     </svg>
   </div>
-  <figcaption><b>Figure 1.1.</b> The agent–environment loop, twice. On the left the environment hands the agent its state, so the policy can condition on everything that drives the dynamics. On the right the environment keeps its state (in this game, the order of the draw pile and the random-number generator) and emits only an observation. Notice which box the policy reads in each case: the true state on the left, the agent's own summary on the right.</figcaption>
+  <figcaption><b>Figure 1.1.</b> The loop of an MDP. The agent reads the state \(s_t\) and sends an action \(a_t\). The environment draws the next state and the reward from \(p\) and sends both back. The policy reads the same state that drives the dynamics.</figcaption>
 </figure>
 
-<h2 id="episodes">5. Episodes, trajectories and returns</h2>
+<h2 id="episodes">5. An episode is one run, and its return is the reward still to come</h2>
 
-<p>A run of the game has a first position and a last one. Tasks like this are <dfn>episodic</dfn>: interaction breaks into independent <dfn>episodes</dfn>, each starting from a draw of \(\rho_0\) and ending in a <dfn>terminal state</dfn>, after which nothing more happens <span class="cite">[<a href="#ref-1">1</a>, §3.3–3.4]</span>. The <dfn>horizon</dfn> \(T\) is the step at which the episode reaches its terminal state. In this game \(T\) is random: a run that dies on floor 3 is short, a run that beats the last boss is long.</p>
+<p>A run of the game has a first position and a last one. Tasks like this are <dfn>episodic</dfn>. Interaction breaks into independent <dfn>episodes</dfn>. Each episode starts from a draw of \(\rho_0\) and ends in a <dfn>terminal state</dfn>, after which nothing more happens <span class="cite">[<a href="#ref-1">1</a>, §3.3 and §3.4]</span>. The <dfn>horizon</dfn> \(T\) is the step at which the episode reaches its terminal state. In this game, \(T\) is random. A run that dies on floor 3 is short, and a run that beats the last boss is long.</p>
 
 <p>One episode, written down, is a <dfn>trajectory</dfn>:</p>
 
 <div class="eq">\begin{equation} \tau = (s_0, a_0, r_0, s_1, a_1, r_1, \dots, s_{T-1}, a_{T-1}, r_{T-1}, s_T). \label{eq:trajectory} \end{equation}</div>
 
-<p>There are \(T\) actions, indexed \(0\) to \(T-1\), and \(T + 1\) states. The last state \(s_T\) is terminal and has no action after it.</p>
+<p>A trajectory has \(T\) actions, indexed \(0\) to \(T-1\), and \(T + 1\) states. The last state \(s_T\) is terminal and has no action after it.</p>
 
-<p>How likely is a given trajectory? Follow it forward. The first state is drawn from \(\rho_0\). Then, at each step, the policy picks an action and the dynamics pick the next state and reward. Each draw depends only on the step before it, so the probabilities multiply:</p>
+<p>To get the probability of a trajectory, follow it forward. The first state comes from \(\rho_0\). At each step, the policy picks an action, and the dynamics pick the next state and reward. Each draw depends only on the step before it, so we multiply the probabilities:</p>
 
 <div class="eq">\begin{equation} p_\theta(\tau) = \rho_0(s_0) \prod_{t=0}^{T-1} \pi_\theta(a_t \mid s_t)\, p(s_{t+1}, r_t \mid s_t, a_t). \label{eq:traj-prob} \end{equation}</div>
 
-<p>This one line organises the whole tour. Of its three kinds of factor, only \(\pi_\theta\) depends on \(\theta\). The start distribution and the dynamics belong to the game, and we never need to know them: we only need to be able to sample from them by playing. Chapter 5 takes the logarithm of Equation \eqref{eq:traj-prob} and differentiates; the dynamics drop out because they do not depend on \(\theta\), which is why policy gradients need no model of the game.</p>
+<p>Of the three kinds of factor in Equation \eqref{eq:traj-prob}, only \(\pi_\theta\) depends on \(\theta\). The start distribution and the dynamics belong to the game. You never need to know them. You only need to sample from them, by playing. Chapter 5 takes the logarithm of Equation \eqref{eq:traj-prob} and differentiates it. The dynamics drop out because they do not depend on \(\theta\). That is why a policy gradient needs no model of the game.</p>
 
 <p>The <dfn>return</dfn> from step \(t\) is the discounted sum of the rewards that follow it:</p>
 
 <div class="definition"><span class="label">Definition 1.2 · Return</span>
   <div class="eq">\begin{equation} G_t = \sum_{k=0}^{T-t} \gamma^{k}\, r_{t+k}, \qquad r_T \equiv 0. \label{eq:return} \end{equation}</div>
-  <p>The discount \(\gamma\) weights a reward \(k\) steps ahead by \(\gamma^k\). The terminal state takes no action and earns nothing, so we set \(r_T = 0\); the last real reward is \(r_{T-1}\).</p>
+  <p>The discount \(\gamma\) multiplies a reward that is \(k\) steps ahead by \(\gamma^k\). The terminal state takes no action and earns nothing, so \(r_T = 0\). The last real reward is \(r_{T-1}\).</p>
 </div>
 
-<p>The convention \(r_T = 0\) is the same as Sutton and Barto's \(G_T = 0\) <span class="cite">[<a href="#ref-1">1</a>, §3.3]</span>. It lets the tour's formula run to \(T - t\) without inventing a reward after the end. Splitting off the first term gives the recursion that every value method is built on:</p>
+<p>The convention \(r_T = 0\) matches Sutton and Barto's \(G_T = 0\) <span class="cite">[<a href="#ref-1">1</a>, §3.3]</span>. It lets the sum run to \(T - t\) without a reward after the end. If we split off the first term of the sum, we get the recursion that every value method uses:</p>
 
 <div class="eq">\begin{equation} G_t = r_t + \gamma\, G_{t+1}, \qquad G_T = 0. \label{eq:return-rec} \end{equation}</div>
 
-<p>Check it on a short case. Take \(T = 3\), rewards \(r_0 = 0.002\), \(r_1 = 0\), \(r_2 = 1\), and \(\gamma = 1\). Then \(G_2 = 1\), \(G_1 = 0 + 1 = 1\), and \(G_0 = 0.002 + 1 = 1.002\). With \(\gamma = 1\) the return is just the total reward still to come. Sutton and Barto write the same recursion as \(G_t = R_{t+1} + \gamma G_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>, eq. 3.9]</span>; the only difference is the reward index.</p>
+<p>Here is a short case. Take \(T = 3\), rewards \(r_0 = 0.002\), \(r_1 = 0\) and \(r_2 = 1\), and \(\gamma = 1\). Then \(G_2 = 1\), \(G_1 = 0 + 1 = 1\), and \(G_0 = 0.002 + 1 = 1.002\). With \(\gamma = 1\), the return is the total reward still to come. Sutton and Barto write the same recursion as \(G_t = R_{t+1} + \gamma G_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>, eq. 3.9]</span>. Only the reward index differs.</p>
 
-<p>Why discount at all? In a <dfn>continuing task</dfn>, one with no terminal state, the undiscounted sum can be infinite, and \(\gamma &lt; 1\) keeps it finite. In an episodic task with a bounded horizon the sum is already finite, and \(\gamma = 1\) is allowed. Many episodic systems still use \(\gamma &lt; 1\) as a variance-reduction device rather than as part of the problem. Chapter 3 discusses that choice; Spire Mentor sets \(\gamma = 1\).</p>
+<p>The discount exists for tasks without an end. In a <dfn>continuing task</dfn>, which has no terminal state, the undiscounted sum can be infinite, and \(\gamma &lt; 1\) keeps it finite. In an episodic task with a bounded horizon, the sum is already finite, so \(\gamma = 1\) is allowed. Many episodic systems still use \(\gamma &lt; 1\) to reduce variance, as a training choice and not as part of the problem. Chapter 3 discusses that choice. Spire Mentor sets \(\gamma = 1\).</p>
 
-<h2 id="objective">6. The objective</h2>
+<h2 id="objective">6. The objective is the average return of whole runs</h2>
 
-<p>We want the policy whose runs earn the most. "The most" has to mean an average, because runs are random. The <dfn>objective</dfn> is the expected return from the start:</p>
+<p>The goal is the policy whose runs earn the most. Runs are random, so "the most" must mean an average. The <dfn>objective</dfn> is the expected return from the start:</p>
 
 <div class="eq">\begin{equation} J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[G_0\right] = \sum_{\tau} p_\theta(\tau)\, G_0(\tau). \label{eq:objective} \end{equation}</div>
 
-<p>The expectation is over whole trajectories drawn by playing \(\pi_\theta\) in the game: \(\rho_0\) picks the seed's starting position, the policy picks actions, and the dynamics pick what follows. The sum form makes plain that \(\theta\) enters only through \(p_\theta(\tau)\), and so only through the policy factors of Equation \eqref{eq:traj-prob}.</p>
+<p>The expectation is over whole trajectories that you get by playing \(\pi_\theta\) in the game. The distribution \(\rho_0\) picks the seed's starting position, the policy picks the actions, and the dynamics pick what follows. The sum form shows that \(\theta\) enters only through \(p_\theta(\tau)\). It therefore enters only through the policy factors of Equation \eqref{eq:traj-prob}.</p>
 
-<p>This is a different target from Q-learning's. A DQN learns \(Q^*\) by regressing toward a bootstrapped target, and the policy is whatever is greedy with respect to it; \(J\) is never written down. Here \(J\) is the thing we climb. Chapter 4 brings value functions back, but as helpers for estimating the gradient of \(J\), not as the object we learn for its own sake.</p>
+<p>Q-learning has a different target. A DQN learns \(Q^*\) by regression toward a bootstrapped target, and its policy is the greedy action under that \(Q^*\). It never writes \(J\) down. In this tour, \(J\) is the quantity that training raises. Chapter 4 brings value functions back, but only to help estimate the gradient of \(J\).</p>
 
-<p>We cannot compute the sum in Equation \eqref{eq:objective}; there are far too many trajectories. We can estimate it by playing. Play \(N\) runs with independent seeds and average their returns:</p>
+<p>The sum in Equation \eqref{eq:objective} has far too many trajectories to compute. You estimate it by playing instead. Play \(N\) runs with independent seeds and average their returns:</p>
 
 <div class="eq">\begin{equation} \hat{J} = \frac{1}{N} \sum_{i=1}^{N} G_0^{(i)}, \qquad \widehat{\mathrm{se}}(\hat{J}) = \frac{\hat\sigma_G}{\sqrt{N}}, \label{eq:mc-j} \end{equation}</div>
 
-<p>where \(G_0^{(i)}\) is the return of run \(i\) and \(\hat\sigma_G\) is the sample standard deviation of the returns. The sampling unit is the run. Decisions inside one run are not independent draws: they share a deck, a map and a fate. Counting decisions instead of runs in the denominator would shrink the standard error by roughly \(\sqrt{T}\), a design effect of several hundred. This is the same mistake as treating correlated turns of one user session as independent observations, and it has the same fix. Chapter 8 builds on this.</p>
+<p>where \(G_0^{(i)}\) is the return of run \(i\) and \(\hat\sigma_G\) is the sample standard deviation of the returns. The sampling unit is the run. Decisions inside one run are not independent draws, because they share a deck, a map and an outcome. If you counted decisions instead of runs in the denominator, the standard error would shrink by about \(\sqrt{T}\). With several hundred decisions per run, that error is large. Treating the turns of one user session as independent observations is the same mistake, with the same fix. Chapter 8 builds on this.</p>
 
-<details class="predict"><summary>Pause and predict: a won run earns 1 for the win, 0.05 for each of three bosses beaten, and 0.002 for each new floor. If the network wins about four runs in five, roughly what is \(\hat J\) for the network, and for random play?</summary>
-  <p>A won run that reaches floor 46 earns \(1 + 3 \times 0.05 + 46 \times 0.002 = 1.242\). The measured mean return of the network's won runs is <span class="v" data-k="net.G_win" data-f=".3f">1.242</span>. Its lost runs average <span class="v" data-k="net.G_loss" data-f=".3f">0.189</span>, because they collect floor and boss rewards before they die. Over <span class="v" data-k="panel.runs">200</span> seeds the network wins <span class="v" data-k="net.wins">166</span>, and \(\hat J = \) <span class="v" data-k="net.J_hat" data-f=".3f">1.063</span> with standard error <span class="v" data-k="net.J_se" data-f=".3f">0.028</span>. Random play never wins; its \(\hat J\) is <span class="v" data-k="random.J_hat" data-f=".4f">0.0041</span>, a few floors' worth of reward. The win term supplies about three quarters of the network's \(\hat J\); the floor and boss terms supply the rest, mostly through runs that die late. Chapter 3 asks whether that split is what the designers wanted.</p>
-</details>
+<p>Spire Mentor's reward makes \(\hat J\) easy to read. A won run earns 1 for the win, 0.05 for each of three bosses beaten, and 0.002 for each new floor. A won run that reaches floor 46 therefore earns \(1 + 3 \times 0.05 + 46 \times 0.002 = 1.242\). Over <span class="v" data-k="panel.runs">200</span> seeds, the published network wins <span class="v" data-k="net.wins">166</span> runs. Its won runs have a mean return of <span class="v" data-k="net.G_win" data-f=".3f">1.242</span>. Its lost runs average <span class="v" data-k="net.G_loss" data-f=".3f">0.189</span>, because they collect floor and boss rewards before they die. Together these give \(\hat J = \) <span class="v" data-k="net.J_hat" data-f=".3f">1.063</span> with a standard error of <span class="v" data-k="net.J_se" data-f=".3f">0.028</span>. Random play never wins. Its \(\hat J\) is <span class="v" data-k="random.J_hat" data-f=".4f">0.0041</span>, which is a few floors' worth of reward. The win term supplies about three quarters of the network's \(\hat J\). The floor and boss terms supply the rest, mostly through runs that die late. Chapter 3 asks whether the designers wanted that split.</p>
 
-<h2 id="pomdp">7. Partial observability</h2>
+<h2 id="pomdp">7. The policy sees an observation, not the state</h2>
 
-<p>Go back to the Seapunk fight. The simulator's state includes the order of the six cards left in the draw pile. The top three are a Strike and two Defends. A player cannot see that order, and Spire Mentor's policy is not allowed to either. It sees that the pile holds six cards and which six, as an unordered multiset. If the policy could read the order, it would learn to play as if it knew the next draw, and that skill would be worthless in the real game.</p>
+<p>A <dfn>partially observable MDP</dfn> (POMDP) is an MDP in which the agent receives an observation of the state instead of the state itself <span class="cite">[<a href="#ref-4">4</a>]</span>. The state still evolves by the same dynamics. The agent must choose from what it has seen.</p>
 
-<p>The formal object for this is the <dfn>partially observable MDP</dfn> (POMDP) <span class="cite">[<a href="#ref-4">4</a>]</span>. It adds a set of observations \(\mathcal{O}\) and an observation kernel to the MDP:</p>
+<p>Spire Mentor is a POMDP. In the Seapunk fight, the simulator's state includes the order of the six cards left in the draw pile. The top three are a Strike and two Defends. A player cannot see that order, and Spire Mentor's policy cannot see it either. The policy sees that the pile holds six cards and which six they are, as an unordered multiset. If the policy could read the order, it would learn to play as if it knew the next draw. That skill would be worthless in the real game.</p>
+
+<p>Formally, a POMDP adds a set of observations \(\mathcal{O}\) and an observation kernel to the MDP:</p>
 
 <div class="eq">\begin{equation} O(o \mid s) = \Pr\{o_t = o \mid s_t = s\}. \label{eq:obs-kernel} \end{equation}</div>
 
-<p>The state \(s_t\) still evolves by \(p\), still Markov, but the agent receives only \(o_t\). Kaelbling, Littman and Cassandra's formulation lets the observation depend on the last action as well; dropping that argument loses nothing here. The agent's information at step \(t\) is its <dfn>history</dfn>:</p>
+<p>The state \(s_t\) still evolves by \(p\) and is still Markov, but the agent receives only \(o_t\). Kaelbling, Littman and Cassandra's formulation lets the observation also depend on the last action. This chapter drops that argument because nothing here needs it. Figure 1.2 redraws the loop of Figure 1.1 with the hidden state added.</p>
+
+<figure id="fig-1b">
+  <div class="scroll">
+    <svg viewBox="0 0 640 200" role="img" aria-label="The loop of Figure 1.1, redrawn. The environment now keeps its state hidden and sends the agent an observation and a reward.">
+      <defs><marker id="ar1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <rect class="box" x="120" y="40" width="140" height="100" rx="3"/><text x="190" y="68" text-anchor="middle">Agent</text><text class="muted" x="190" y="96" text-anchor="middle">π(a | oₜ)</text>
+        <rect class="box" x="380" y="40" width="140" height="100" rx="3"/><text x="450" y="64" text-anchor="middle">Environment</text>
+        <rect x="392" y="74" width="116" height="56" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="450" y="98" text-anchor="middle">hidden sₜ</text><text class="muted" x="450" y="116" text-anchor="middle">draw order, RNG</text>
+        <line class="ink" x1="260" y1="54" x2="380" y2="54" marker-end="url(#ar1b)"/><text class="muted" x="320" y="46" text-anchor="middle">aₜ</text>
+        <line class="ink" x1="380" y1="128" x2="260" y2="128" marker-end="url(#ar1b)"/><text class="muted" x="320" y="152" text-anchor="middle">oₜ₊₁, rₜ</text>
+        <text class="muted" x="320" y="186" text-anchor="middle">the observation is all the agent receives</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 1.2.</b> The loop of Figure 1.1 with one part added: the environment keeps its state. In this game, the hidden part is the order of the draw pile and the random-number generator. The return edge now carries an observation \(o_{t+1}\) instead of the state.</figcaption>
+</figure>
+
+<p>The agent's information at step \(t\) is its <dfn>history</dfn>:</p>
 
 <div class="eq">\begin{equation} h_t = (o_0, a_0, o_1, a_1, \dots, a_{t-1}, o_t). \label{eq:history} \end{equation}</div>
 
-<p>The history is Markov by construction, because nothing the agent could know is left out, but it grows without bound. Sutton and Barto frame the agent's state as a compact function of the history, \(s^{\text{agent}}_t = f(h_t)\), updated incrementally from the last state, action and observation <span class="cite">[<a href="#ref-1">1</a>, §17.3]</span>. The classical choice of \(f\) is the <dfn>belief state</dfn>: the posterior over hidden states given the history, \(b_t(s) = \Pr\{s_t = s \mid h_t\}\). Bayes' rule updates it after action \(a\) and observation \(o\):</p>
+<p>The history is Markov by construction, because it leaves out nothing that the agent could know. It also grows without bound. Sutton and Barto therefore define the agent's state as a compact function of the history, \(s^{\text{agent}}_t = f(h_t)\), updated from the last state, action and observation <span class="cite">[<a href="#ref-1">1</a>, §17.3]</span>. The classical choice of \(f\) is the <dfn>belief state</dfn>. The belief state is the posterior over hidden states given the history, \(b_t(s) = \Pr\{s_t = s \mid h_t\}\). Bayes' rule updates it after action \(a\) and observation \(o\):</p>
 
 <div class="eq">\begin{equation} b'(s') = \frac{O(o \mid s') \sum_{s} p(s' \mid s, a)\, b(s)}{\sum_{s''} O(o \mid s'') \sum_{s} p(s'' \mid s, a)\, b(s)}, \label{eq:belief} \end{equation}</div>
 
-<p>where \(p(s' \mid s, a) = \sum_r p(s', r \mid s, a)\) is the state-transition probability. The numerator predicts where the hidden state went and weights each candidate by how well it explains the observation; the denominator normalises. This is Sutton and Barto's equation 17.10 with their joint kernel \(p(x', o \mid x, a)\) split into a transition and an observation factor.</p>
+<p>where \(p(s' \mid s, a) = \sum_r p(s', r \mid s, a)\) is the state-transition probability. The inner sum of the numerator predicts where the hidden state went. The factor \(O(o \mid s')\) weights each candidate by how well it explains the observation. The denominator makes the result sum to one. Equation \eqref{eq:belief} is Sutton and Barto's equation 17.10, with their joint kernel \(p(x', o \mid x, a)\) split into a transition factor and an observation factor.</p>
 
-<p>Equation \eqref{eq:belief} is exact and almost never computed. The hidden state of a card game is enormous, and the update needs the full dynamics. Practical agents replace the belief with a learned or hand-built summary. Spire Mentor uses a hand-built one: the game engine itself computes a <dfn>belief view</dfn> of each fight, the fight as a player could know it, with the draw pile as an unordered multiset and the random-number generator removed. The policy reads only that view.</p>
+<p>Equation \eqref{eq:belief} is exact, and agents almost never compute it. The hidden state of a card game is enormous, and the update needs the full dynamics. Practical agents replace the belief with a summary that is learned or built by hand. Spire Mentor builds it by hand. The game engine computes a <dfn>belief view</dfn> of each fight. The belief view is the fight as a player could know it. Cards whose position in the draw pile the player does not know are put in a fixed order, and the next draw is picked at random when it happens. The random-number streams are reseeded from the run's seed alone. The policy reads only the belief view. The project's plan makes this a rule: hidden state, such as the true draw order, monster moves and upcoming rooms, "feeds only the value module" (line 23 of the plan). Figure 1.3 adds this summary to the loop.</p>
 
-<p>What changes in the objective? Nothing in its form. A policy that acts on observations, \(\pi_\theta(a \mid o_t)\) or more generally \(\pi_\theta(a \mid h_t)\), still induces a distribution over trajectories of hidden states, and the trajectory probability still factorises:</p>
+<figure id="fig-1c">
+  <div class="scroll">
+    <svg viewBox="0 0 640 200" role="img" aria-label="The loop of Figure 1.2, redrawn. The agent now keeps a belief or a history, and the policy reads it.">
+      <defs><marker id="ar1c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <rect class="box" x="120" y="40" width="140" height="100" rx="3"/><text x="190" y="64" text-anchor="middle">Agent</text>
+        <rect x="132" y="74" width="116" height="56" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="190" y="98" text-anchor="middle">belief bₜ</text><text class="muted" x="190" y="116" text-anchor="middle">or history hₜ</text>
+        <rect class="box" x="380" y="40" width="140" height="100" rx="3"/><text x="450" y="64" text-anchor="middle">Environment</text>
+        <rect x="392" y="74" width="116" height="56" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="450" y="98" text-anchor="middle">hidden sₜ</text><text class="muted" x="450" y="116" text-anchor="middle">draw order, RNG</text>
+        <line class="ink" x1="260" y1="54" x2="380" y2="54" marker-end="url(#ar1c)"/><text class="muted" x="320" y="46" text-anchor="middle">aₜ</text>
+        <line class="ink" x1="380" y1="128" x2="260" y2="128" marker-end="url(#ar1c)"/><text class="muted" x="320" y="152" text-anchor="middle">oₜ₊₁, rₜ</text>
+        <text class="muted" x="320" y="186" text-anchor="middle">π acts on what the agent keeps, not on the hidden state</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 1.3.</b> The loop of Figure 1.2 with one part added: the agent keeps a summary of what it has seen. In theory the summary is the belief \(b_t\) or the history \(h_t\). In Spire Mentor it is the belief view. The policy reads the summary, never the hidden state.</figcaption>
+</figure>
+
+<p>Partial observability does not change the form of the objective. A policy that acts on observations, \(\pi_\theta(a \mid o_t)\), or more generally on histories, \(\pi_\theta(a \mid h_t)\), still induces a distribution over trajectories of hidden states. The trajectory probability still factorises:</p>
 
 <div class="eq">\begin{equation} p_\theta(\tau) = \rho_0(s_0)\, \prod_{t=0}^{T-1} O(o_t \mid s_t)\, \pi_\theta(a_t \mid h_t)\, p(s_{t+1}, r_t \mid s_t, a_t). \label{eq:pomdp-traj} \end{equation}</div>
 
-<p>Here \(\tau\) records the hidden states and the observations together. Only the policy factors depend on \(\theta\), exactly as in Equation \eqref{eq:traj-prob}. This is why the policy-gradient machinery of Chapter 5 carries over to partial observability without change. What we lose is a guarantee about the optimum: the best policy over the agent's summary may be worse than the best policy over the true state, because the summary discards information. Value functions suffer more, and in a specific way: a critic \(V_\phi\) that reads only the observation cannot be Markov in the observation. Chapter 4 shows how Spire Mentor's critic gets extra, privileged inputs that the policy never sees.</p>
+<p>Here \(\tau\) records the hidden states and the observations together. Only the policy factors depend on \(\theta\), as in Equation \eqref{eq:traj-prob}. The policy gradient of Chapter 5 therefore works under partial observability without change. What partial observability costs is a guarantee about the optimum. The best policy over the agent's summary can be worse than the best policy over the true state, because the summary discards information. Value functions are hurt more directly. A critic \(V_\phi\) that reads only the observation is not Markov in its input. Chapter 4 shows how Spire Mentor gives its critic extra, privileged inputs that the policy never sees.</p>
 
 <div class="definition"><span class="label">Definition 1.3 · State, observation, decision, episode, return in this tour</span>
-  <p>The <em>state</em> \(s_t\) is the simulator's full position, the draw order and random-number generator included. The <em>observation</em> \(o_t\) is what the policy reads: a set of tokens built from the belief view. The <em>action</em> \(a_t\) is one of the offered classes (Section 8). A <em>decision</em> is a position with at least two classes. An <em>episode</em> is one run, from its first decision to a win, a death or a cap. The <em>return</em> \(G_0\) is the run's total reward, since \(\gamma = 1\).</p>
+  <p>The <em>state</em> \(s_t\) is the simulator's full position, including the draw order and the random-number generator. The <em>observation</em> \(o_t\) is what the policy reads: a set of tokens built from the belief view. The <em>action</em> \(a_t\) is one of the offered classes (Section 8). A <em>decision</em> is a position with at least two classes. An <em>episode</em> is one run, from its first decision to a win, a death or a cap. The <em>return</em> \(G_0\) is the run's total reward, because \(\gamma = 1\).</p>
 </div>
 
-<h2 id="engineered">8. The textbook version against the engineered one</h2>
+<h2 id="engineered">8. Spire Mentor's decisions are not the game's steps</h2>
 
-<p>The definitions above are clean. A real game forces three departures, and each one changes what a "step" means.</p>
+<p>A real game forces three changes to the textbook process. Each change alters what one step means.</p>
 
-<h3>Forced steps: decisions are not game steps</h3>
+<h3>Forced steps get no decision</h3>
 
-<p>Many positions in the game offer exactly one legal action. A fight where every card in hand is unplayable offers only "end turn". A reward screen after a fight may offer only "proceed". The game still needs that action applied. Should it be a step of the MDP?</p>
+<p>A <dfn>forced step</dfn> is a game step that offers only one choice. Many positions in the game are like this. A fight in which every card in hand is unplayable offers only "end turn". A reward screen after a fight can offer only "proceed". The game still needs the action applied.</p>
 
-<p>If it is, the policy is asked to "choose" from a set of one. The choice carries no information and costs a network evaluation. Worse, it adds a step to every trajectory, lengthening the chain that reward has to travel back along. Spire Mentor calls these <dfn>forced steps</dfn> and applies them without asking the policy. A forced step makes no row in the training data.</p>
+<p>Spire Mentor applies forced steps without asking the policy, and a forced step makes no row in the training data. The project's plan states the rule: a step with one legal action or one merged class "gets no forward pass and no row", and such steps are 15.7% of combat steps (<code>docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md</code>, line 186). The plan does not give the reason. The arithmetic suggests one. A choice from a set of one has probability 1, so its row would add zero to the policy gradient and zero to the entropy. Skipping it also saves a network evaluation.</p>
 
-<p>Formally, the process the policy sees is an MDP over <em>decision points</em>, not over game steps. From a decision \(s\) and the chosen action \(a\), the game runs its own forced steps, \(f_1, f_2, \dots, f_m\), until it reaches the next position with a real choice. The transition the agent experiences composes those steps:</p>
+<p>The process that the policy sees is therefore an MDP over <em>decision points</em>, not over game steps. From a decision \(s\) and the chosen action \(a\), the game runs its own forced steps \(f_1, f_2, \dots, f_m\) until it reaches the next position with a real choice. The transition that the agent experiences combines all of those steps:</p>
 
 <div class="eq">\begin{equation} \tilde{p}(s', \tilde r \mid s, a) = \Pr\Big\{\text{next decision point} = s',\ \textstyle\sum_{j} r^{\text{game}}_j = \tilde r \ \Big|\ s, a\Big\}, \label{eq:composed} \end{equation}</div>
 
-<p>where the sum runs over the rewards of every game step between the two decision points: the chosen one and all the forced ones. Because no forced step has a choice, \(\tilde p\) does not depend on the policy, and the composed process is again an MDP, with the same objective. Sutton, Precup and Singh made this idea general: a fixed sub-policy that runs for several primitive steps turns an MDP into a semi-MDP over the points where control returns <span class="cite">[<a href="#ref-5">5</a>]</span>. Forced steps are the degenerate case, a sub-policy with nothing to choose.</p>
+<p>where the sum runs over the rewards of every game step between the two decision points, which are the chosen step and all the forced ones. No forced step involves a choice, so \(\tilde p\) does not depend on the policy. The combined process is again an MDP, with the same objective. Sutton, Precup and Singh made this idea general. A fixed sub-policy that runs for several primitive steps turns an MDP into a semi-MDP over the points where control returns <span class="cite">[<a href="#ref-5">5</a>]</span>. A forced step is the simplest case: a sub-policy with nothing to choose.</p>
 
-<p>The reward bookkeeping follows from Equation \eqref{eq:composed}. In Spire Mentor, \(r_t\) is all the reward earned on the way from decision \(t\) to decision \(t + 1\), forced steps included. So \(t\) counts decisions, \(T\) is the number of decisions in a run, and the game's own step count is larger.</p>
+<p>Equation \eqref{eq:composed} fixes the reward bookkeeping. In Spire Mentor, \(r_t\) is all the reward earned between decision \(t\) and decision \(t + 1\), including the reward of forced steps. So \(t\) counts decisions, \(T\) is the number of decisions in a run, and the game's own step count is larger. Figure 1.4 shows the mapping.</p>
 
 <figure id="fig-2">
   <div class="scroll">
-    <svg viewBox="0 0 640 270" role="img" aria-label="A row of game steps, some decisions and some forced, mapped onto a shorter row of stored decisions.">
+    <svg viewBox="0 0 640 260" role="img" aria-label="A row of game steps, some with a choice and some forced, mapped onto a shorter row of decisions. Forced steps have no decision.">
       <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
       <g color="var(--fg)">
         <text x="10" y="22" font-weight="600">game steps</text>
@@ -377,9 +402,59 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
           <rect x="460" y="34" width="84" height="54" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="502" y="56" text-anchor="middle">map path</text><text class="muted" x="502" y="74" text-anchor="middle">one node</text>
           <rect x="550" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="592" y="56" text-anchor="middle">card reward</text><text class="muted" x="592" y="74" text-anchor="middle">4 options</text>
         </g>
-        <text x="10" y="138" class="muted">merge identical actions</text>
-        <line class="ink" x1="232" y1="88" x2="232" y2="126" marker-end="url(#ar2)"/>
-        <text x="245" y="112" class="muted">3 Strikes → 1 class</text>
+        <text x="10" y="186" font-weight="600">decisions t</text>
+        <g>
+          <rect x="10" y="198" width="84" height="44" rx="3" class="box"/><text x="52" y="225" text-anchor="middle">t = 0</text>
+          <rect x="100" y="198" width="84" height="44" rx="3" class="box"/><text x="142" y="225" text-anchor="middle">t = 1</text>
+          <rect x="190" y="198" width="84" height="44" rx="3" class="box"/><text x="232" y="225" text-anchor="middle">t = 2</text>
+          <rect x="370" y="198" width="84" height="44" rx="3" class="box"/><text x="412" y="225" text-anchor="middle">t = 3</text>
+          <rect x="550" y="198" width="84" height="44" rx="3" class="box"/><text x="592" y="225" text-anchor="middle">t = 4</text>
+        </g>
+        <line class="ink" x1="52" y1="88" x2="52" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="142" y1="88" x2="142" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="232" y1="88" x2="232" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="412" y1="88" x2="412" y2="198" marker-end="url(#ar2)"/>
+        <line class="ink" x1="592" y1="88" x2="592" y2="198" marker-end="url(#ar2)"/>
+        <text x="322" y="140" text-anchor="middle" class="muted">applied, no row,</text>
+        <text x="322" y="156" text-anchor="middle" class="muted">its reward joins r₂</text>
+        <text x="502" y="140" text-anchor="middle" class="muted">applied, no row,</text>
+        <text x="502" y="156" text-anchor="middle" class="muted">its reward joins r₃</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 1.4.</b> How the game's steps become decisions. Solid boxes offer at least two options and become decisions. Dashed boxes offer one option, and the env applies them without asking the policy. The index \(t\) skips the forced steps. Each forced step's reward is added to the reward of the decision before it. The steps are schematic. Figure 1.6 shows a real run.</figcaption>
+</figure>
+
+<h3>The action is a class of identical actions</h3>
+
+<p>In the Seapunk position, three of the seven legal actions are "play a Strike at the Seapunk". They are different cards in the hand, so the game lists them separately. They lead to the same next state. Suppose that the policy scored each one and took a softmax. Then a single plan, "attack now", would be split across three outputs. Its total probability would depend on how many copies of Strike happen to be in the hand.</p>
+
+<p>Spire Mentor removes the duplicates before the policy sees them. It groups legal actions whose effects are identical into one <dfn>class</dfn>, and the policy chooses among classes. When the policy picks a class, the env plays the first member of that class, which the project calls its <dfn>representative</dfn>. Let \(\mathcal{C}(s)\) be the classes in state \(s\). Each class \(c\) is a set of legal actions. A distribution over actions gives a distribution over classes by summing:</p>
+
+<div class="eq">\begin{equation} \pi(c \mid s) = \sum_{a \in c} \pi(a \mid s), \qquad c \in \mathcal{C}(s), \quad \bigcup_{c \in \mathcal{C}(s)} c = \mathcal{A}(s). \label{eq:class-prob} \end{equation}</div>
+
+<p>Spire Mentor's network works in the other direction. It outputs one logit per class, so \(\pi_\theta(c \mid s)\) is primary and nothing has to be summed. In the rest of the tour, \(a_t\) means the chosen class and \(\mathcal{A}(s)\) means the set of classes, unless a chapter says otherwise.</p>
+
+<p>The merge is safe only if the members of a class are interchangeable. The project builds each card play's merge key from what the player can see: the card, its cost, its enchantment, its damage and block numbers, its flags, and the target. A potion's key is the potion and its target. Other actions, such as "end turn", are keyed by their position in the list, so they never merge. When the project encodes a training row, it asserts that every member of a class has the same tokens apart from its hand slot. The plan rejected an older key because that key would merge an enchanted Strike with a plain one (line 187 of the plan). Figure 1.5 redraws Figure 1.4 with the merge added.</p>
+
+<figure id="fig-2b">
+  <div class="scroll">
+    <svg viewBox="0 0 640 270" role="img" aria-label="The mapping of Figure 1.4, redrawn. At the first fight turn, seven legal actions merge into five classes before the decision is stored.">
+      <defs><marker id="ar2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <text x="10" y="22" font-weight="600">game steps</text>
+        <g>
+          <rect x="10" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="52" y="56" text-anchor="middle">Neow gift</text><text class="muted" x="52" y="74" text-anchor="middle">3 options</text>
+          <rect x="100" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="142" y="56" text-anchor="middle">map path</text><text class="muted" x="142" y="74" text-anchor="middle">3 options</text>
+          <rect x="190" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="232" y="56" text-anchor="middle">fight turn</text><text class="muted" x="232" y="74" text-anchor="middle">7 actions</text>
+          <rect x="280" y="34" width="84" height="54" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="322" y="56" text-anchor="middle">end turn</text><text class="muted" x="322" y="74" text-anchor="middle">only action</text>
+          <rect x="370" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="412" y="56" text-anchor="middle">fight turn</text><text class="muted" x="412" y="74" text-anchor="middle">4 actions</text>
+          <rect x="460" y="34" width="84" height="54" rx="3" fill="var(--surface)" stroke="var(--s4)" stroke-dasharray="4 3"/><text x="502" y="56" text-anchor="middle">map path</text><text class="muted" x="502" y="74" text-anchor="middle">one node</text>
+          <rect x="550" y="34" width="84" height="54" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="592" y="56" text-anchor="middle">card reward</text><text class="muted" x="592" y="74" text-anchor="middle">4 options</text>
+        </g>
+        <rect x="198" y="122" width="68" height="30" rx="3" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="232" y="142" text-anchor="middle">merge</text>
+        <line class="ink" x1="232" y1="88" x2="232" y2="122" marker-end="url(#ar2b)"/>
+        <text x="16" y="142" class="muted">3 Strikes → 1 class</text>
         <text x="10" y="186" font-weight="600">decisions t</text>
         <g>
           <rect x="10" y="198" width="84" height="44" rx="3" class="box"/><text x="52" y="225" text-anchor="middle">t = 0</text>
@@ -388,42 +463,35 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
           <rect x="370" y="198" width="84" height="44" rx="3" class="box"/><text x="412" y="225" text-anchor="middle">t = 3</text>
           <rect x="550" y="198" width="84" height="44" rx="3" class="box"/><text x="592" y="225" text-anchor="middle">t = 4</text>
         </g>
-        <line class="ink" x1="52" y1="88" x2="52" y2="198" marker-end="url(#ar2)"/>
-        <line class="ink" x1="142" y1="88" x2="142" y2="198" marker-end="url(#ar2)"/>
-        <line class="ink" x1="232" y1="140" x2="232" y2="198" marker-end="url(#ar2)"/>
-        <line class="ink" x1="412" y1="88" x2="412" y2="198" marker-end="url(#ar2)"/>
-        <line class="ink" x1="592" y1="88" x2="592" y2="198" marker-end="url(#ar2)"/>
-        <text x="322" y="160" text-anchor="middle" class="muted">applied, no row;</text>
-        <text x="322" y="176" text-anchor="middle" class="muted">its reward joins r₂</text>
-        <text x="502" y="160" text-anchor="middle" class="muted">applied, no row;</text>
-        <text x="502" y="176" text-anchor="middle" class="muted">its reward joins r₃</text>
+        <line class="ink" x1="52" y1="88" x2="52" y2="198" marker-end="url(#ar2b)"/>
+        <line class="ink" x1="142" y1="88" x2="142" y2="198" marker-end="url(#ar2b)"/>
+        <line class="ink" x1="232" y1="152" x2="232" y2="198" marker-end="url(#ar2b)"/>
+        <line class="ink" x1="412" y1="88" x2="412" y2="198" marker-end="url(#ar2b)"/>
+        <line class="ink" x1="592" y1="88" x2="592" y2="198" marker-end="url(#ar2b)"/>
+        <text x="322" y="140" text-anchor="middle" class="muted">applied, no row,</text>
+        <text x="322" y="156" text-anchor="middle" class="muted">its reward joins r₂</text>
+        <text x="502" y="140" text-anchor="middle" class="muted">applied, no row,</text>
+        <text x="502" y="156" text-anchor="middle" class="muted">its reward joins r₃</text>
       </g>
     </svg>
   </div>
-  <figcaption><b>Figure 1.2.</b> How the game's steps become the agent's decisions. Solid boxes offer at least two options and become decisions; dashed boxes offer one and are applied without asking the policy. At the first fight turn, seven legal actions (three identical Strikes, a Defend, two potions, end turn) merge into five classes. Notice that \(t\) skips the forced steps, and that each forced step's reward is added to the reward of the decision before it. The steps here are schematic; Figure 1.4 shows a real run.</figcaption>
+  <figcaption><b>Figure 1.5.</b> The mapping of Figure 1.4 with one part added: the merge. At the first fight turn, the game offers seven legal actions: three identical Strikes, a Defend, two potions and "end turn". They merge into five classes, and decision \(t = 2\) stores the five classes.</figcaption>
 </figure>
 
-<h3>Merged classes: the action is a class, not a button</h3>
+<h3>A cap can cut an episode off</h3>
 
-<p>In the Seapunk position, three of the seven legal actions are "play a Strike at the Seapunk". They are different cards in the hand, so the game lists them separately. They lead to the same next state. Suppose the policy scored each one and took a softmax. Then a single good idea, "attack now", would be split across three outputs, and its total probability would depend on how many copies of Strike happen to be in hand.</p>
+<p>The game engine has no turn limit. The project's schema records that "a uniform random policy in the walk ran a fight without end" (<code>docs/experiments/2026-11-03-ironclad-e2e-v111/SCHEMA.md</code>, line 855). The env therefore caps a fight at 100 turns or 1,000 decisions, and it caps a run at 6,000 decisions. A capped run counts as a loss: it gets no win reward, but it keeps the floor reward that it earned. The record does not say why a capped run is a loss instead of being dropped. One effect is clear: the policy gains nothing by stalling.</p>
 
-<p>Spire Mentor removes the duplication before the policy sees it. It groups legal actions whose effects are identical into one <dfn>class</dfn>, and the policy chooses among classes. When it picks a class, the env plays that class's first member, its <dfn>representative</dfn>. Let \(\mathcal{C}(s)\) be the classes in state \(s\), each class \(c\) a set of legal actions. A distribution over actions induces one over classes by summing:</p>
+<p>A cap is a terminal state that the game itself does not have. Strictly, a cap makes the process depend on time, because the same position is not terminal at decision 5,999 and is terminal at decision 6,000. The textbook remedy is to put the step count in the state. Spire Mentor keeps the cap rare instead. If more than 0.1% of runs hit a cap, the runbook tells the operator to look for a deadlock or a simulator exploit.</p>
 
-<div class="eq">\begin{equation} \pi(c \mid s) = \sum_{a \in c} \pi(a \mid s), \qquad c \in \mathcal{C}(s), \quad \bigcup_{c \in \mathcal{C}(s)} c = \mathcal{A}(s). \label{eq:class-prob} \end{equation}</div>
-
-<p>Spire Mentor goes the other way: its network outputs one logit per class, so \(\pi_\theta(c \mid s)\) is primary and nothing has to be summed. In the rest of the tour, \(a_t\) means the chosen class and \(\mathcal{A}(s)\) means the set of classes, unless we say otherwise. The merge is safe only if the members of a class really are interchangeable. The project merges by a key built from what the player can see (the card, its cost, enchantment, damage and block numbers, and the target), and checks that the members of a class produce byte-identical inputs to the network.</p>
-
-<h3>Caps: an episode can be cut off</h3>
-
-<p>A random policy can stall forever: it can end its turn every turn in a fight against an enemy that never kills it. The env therefore caps a fight at 100 turns or 1,000 decisions, and a run at 6,000 decisions, and scores a capped run as a loss. A cap is a terminal state that the game itself does not have. Strictly, it makes the process depend on time, since the same position is non-terminal at decision 5,999 and terminal at 6,000. The textbook remedy is to put the step count in the state. Spire Mentor instead makes the cap rare: the design treats more than 0.1% capped runs as an alarm.</p>
-
-<h2 id="spire">9. In Spire Mentor</h2>
+<h2 id="spire">9. How Spire Mentor builds each decision</h2>
 
 <div class="example"><span class="label">In Spire Mentor · one policy for the whole run</span>
-  <p>The project's other agents split the work: tree search plays the fights and a separate run policy answers the screens between them. The end-to-end agent, which the project calls Instinct, uses one network for every decision of a run. A fight turn and a card reward are both rows of one trajectory, scored by one return. The project calls this "end-to-end". It means that a card picked on floor 3 and a block played on floor 40 sit in the same trajectory, and the final win or loss is credited to both. Chapter 4 shows how the project's critic splits that credit.</p>
+  <p>The project's other agents split the work. Tree search plays the fights, and a separate run policy answers the screens between them. The end-to-end agent, which the project calls Instinct, uses one network for every decision of a run. A fight turn and a card reward are rows of one trajectory, scored by one return. A card picked on floor 3 and a block played on floor 40 therefore share the run's final win or loss.</p>
+  <p>The project's own account gives the reason for one network. With the split, the run network "never finds out what its deck is like to play", and the search plays every fight "without knowing what the run needs afterwards". Two earlier attempts to replace the search with a separately trained fight network reached 9% and 12% wins at Ascension 10 (<code>docs/site/training.html</code>, "The idea"). Chapter 4 shows how the project's critic divides the credit for a run among its decisions.</p>
 </div>
 
-<p>The env's main loop is short enough to read in full. It is the Rust port of the Python env, and the check for this chapter drives the same loop through its Python bindings.</p>
+<p>The env's main loop is short. It is the Rust port of the Python env, and this chapter's check drives the same loop through its Python bindings.</p>
 
 <figure class="listing">
 <pre><code>/// `_drive`: peek, apply the forced steps, stop at a decision or the end.
@@ -450,9 +518,9 @@ fn run_to_decision(&amp;mut self) -&gt; Step {
 <figcaption>sts2-rs/crates/sts2-e2e/src/env.rs, lines 1908-1928</figcaption>
 </figure>
 
-<p>Every position is one of three things. A <code>Forced</code> position is applied and the loop continues. A <code>Decision</code> is returned to the caller, who answers with a class index; <code>step(c)</code> then plays the representative, <code>members[c][0]</code>, and calls this loop again. A <code>Terminal</code> ends the episode. That is Figure 1.2 in code.</p>
+<p>The loop sorts every position into one of three kinds. The loop applies a <code>Forced</code> position and continues. It returns a <code>Decision</code> to the caller, who answers with a class index. Then <code>step(c)</code> plays the representative, <code>members[c][0]</code>, and calls the loop again. A <code>Terminal</code> position ends the episode. The loop is Figure 1.4 in code.</p>
 
-<p>Two rules make a position forced. Out of fights, the env first checks for a lone action, then classifies the actions, builds the merge keys and checks for a lone class:</p>
+<p>Two rules make a position forced. Outside fights, the env first checks for a lone action. If there is more than one action, it classifies the actions, builds the merge keys and checks for a lone class:</p>
 
 <figure class="listing">
 <pre><code>if actions.len() == 1 {
@@ -472,11 +540,11 @@ if members.len() == 1 {
 <figcaption>sts2-rs/crates/sts2-e2e/src/env.rs, lines 1476-1481 and 1510-1515 (abridged)</figcaption>
 </figure>
 
-<p>Fights follow the same two rules, with one twist: the merge keys come from the belief view of the fight, never from the true state. Merging on the true state would leak hidden information into the action set itself.</p>
+<p>Fights use the same two rules, with one difference. In a fight, the merge keys come from the belief view, never from the true state. Merge keys built from the true state would leak hidden information into the action set itself.</p>
 
-<h3>What the policy reads</h3>
+<h3>The policy reads a set of tokens</h3>
 
-<p>The observation \(o_t\) is not a picture of the screen. It is a set of <dfn>tokens</dfn>, each a short vector of 32 categorical ids and 210 numbers, tagged with a section that says what it describes. The project's tokenizer builds them; Chapter 2 shows how the network reads them. Here is the Seapunk decision, the network's first decision in a fight on seed 170,000,000, as a person and as the policy would see it.</p>
+<p>The observation \(o_t\) is not a picture of the screen. It is a set of <dfn>tokens</dfn>. Each token is a short vector of 32 categorical ids and 210 numbers, tagged with a section that says what the token describes. The project's tokenizer builds the tokens, and Chapter 2 shows how the network reads them. The table below shows the Seapunk decision. It is the network's first decision in a fight on seed 170,000,000.</p>
 
 <div class="table showcase">
 <table>
@@ -492,17 +560,28 @@ if members.len() == 1 {
 </table>
 </div>
 
-<p>The policy's row for this position has 28 tokens: one run-context token (RUNCTX), one for the act's boss, five pooled summaries (draw pile, discard, exhaust, deck, relics), the player's state, five hand cards, three for the draw pile's unordered contents (DRAW_UNK), two relics, two potions, one enemy, and seven option tokens, one per legal action (four plays, two potions, end turn). The true top of the draw pile, Strike, Defend, Defend, is in the simulator's state and in none of these tokens. The project has a section for it, PRIV_DRAW, but only the critic reads it.</p>
+<p>The policy's row for this position has 28 tokens:</p>
 
-<p>The first card reward of the same run makes a 19-token row: the same run context, boss and summaries, four tokens for the deck's distinct cards, two relics, two potions, three offered cards (True Grit, Unrelenting, Pommel Strike) and one token for "skip". The fight sections are gone and option sections have taken their place. One network reads both kinds of row, through the sections they share.</p>
+<ul>
+  <li>one run-context token (RUNCTX) and one token for the act's boss</li>
+  <li>five pooled summaries, for the draw pile, the discard pile, the exhaust pile, the deck and the relics</li>
+  <li>one token for the player's state and five for the cards in hand</li>
+  <li>three tokens for the unordered contents of the draw pile (DRAW_UNK)</li>
+  <li>two tokens for relics, two for potions and one for the enemy</li>
+  <li>seven option tokens, one for each legal action: four card plays, two potions and "end turn".</li>
+</ul>
 
-<h3>The decision types</h3>
+<p>The true top of the draw pile, a Strike and two Defends, is in the simulator's state and in none of these tokens. The project has a section for it, PRIV_DRAW, but only the critic reads that section.</p>
 
-<p>Every decision carries a <dfn>decision type</dfn>, set from the kinds of action it offers. Two are fight types: COMBAT_TURN (play a card, drink a potion, end the turn) and COMBAT_CHOICE (a card asks you to pick other cards, for example to exhaust). The rest are between fights: NEOW (the opening gift), MAP, CARD_REWARD, SHOP, REST, SMITH (which card to upgrade at a rest site), EVENT, BOSS_RELIC, POTION_SWAP (a full potion belt), and a handful of rarer deck operations. Whether a type is a fight type picks which of the network's two output heads, fight or between-fight, scores the options; the token sections then differ by type.</p>
+<p>The first card reward of the same run makes a row of 19 tokens. It has the same run context, boss and summaries, four tokens for the deck's distinct cards, two for relics and two for potions. It also has three tokens for the offered cards, True Grit, Unrelenting and Pommel Strike, and one token for "skip". The fight sections are gone, and option sections have taken their place. One network reads both kinds of row through the sections that they share.</p>
 
-<h3>Reward and horizon</h3>
+<h3>The decision type picks the output head</h3>
 
-<p>The pre-registration fixes the reward before training, and the code follows it:</p>
+<p>Every decision carries a <dfn>decision type</dfn>, which the env sets from the kinds of action that the decision offers. Two types are fight types. COMBAT_TURN covers playing a card, drinking a potion and ending the turn. COMBAT_CHOICE covers a card that asks you to pick other cards, for example to exhaust them. The other types are between fights: NEOW (the opening gift), MAP, CARD_REWARD, SHOP, REST, SMITH (which card to upgrade at a rest site), EVENT, BOSS_RELIC, POTION_SWAP (a full potion belt), and a few rarer deck operations. A fight type sends the options to the network's fight head, and every other type sends them to the between-fight head. The token sections then differ by type.</p>
+
+<h3>The reward is fixed before training</h3>
+
+<p>The project's pre-registration fixes the reward before training, and the code follows it:</p>
 
 <figure class="listing">
 <pre><code>Win +1.0; +0.05 per boss beaten (act 1, act 2, act-3 boss 1);
@@ -512,15 +591,13 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 <figcaption>docs/experiments/2026-11-03-ironclad-e2e-v111/PREREG.md, line 109 (wrapped)</figcaption>
 </figure>
 
-<p>With \(\gamma = 1\), Equation \eqref{eq:return} reduces to the plain sum of rewards still to come. The largest possible return is about 1.242, for a win on floor 46. Chapter 3 asks why the designers chose these numbers and what they left out.</p>
+<p>With \(\gamma = 1\), Equation \eqref{eq:return} reduces to the plain sum of the rewards still to come. The largest possible return is about 1.242, for a win on floor 46. The project explains the small terms: they "give an untrained net something to climb before it has ever won", and a win outweighs all of them together. It leaves hit points out on purpose, so that the agent can learn that ending a fight on 10 HP is fine when the next room is a rest site (<code>docs/site/training.html</code>, "Reward"). The record gives no reason for \(\gamma = 1\) and does not say how 0.05 and 0.002 were chosen. Chapter 3 returns to these choices.</p>
 
-<h2 id="measured">10. Measured</h2>
+<h2 id="measured">10. Measured: what an episode looks like</h2>
 
-<p>We played the first <span class="v" data-k="panel.runs">200</span> seeds of the tour's seed panel twice: once with a player that picks uniformly at random among the offered classes, once with the published Ironclad network, <code>ironclad_e2e_d9000_ema0999</code>, playing greedily (always its most probable class). Every run went through the env's own decision loop with each step logged. Each run's choices were then replayed in the project's training env, which reported the same number of decisions, the same end and the same floor for every one of the 400 runs, and supplied the return \(G_0\).</p>
+<p>The measurements below come from the first <span class="v" data-k="panel.runs">200</span> seeds of the tour's seed panel, each played twice. One player picks uniformly at random among the offered classes. The other is the published Ironclad network, <code>ironclad_e2e_d9000_ema0999</code>, which plays greedily and always takes its most probable class. Every run went through the env's own decision loop with each step logged. Each run's choices were then replayed in the project's training env. For every one of the 400 runs, the replay reported the same number of decisions, the same end and the same floor, and it supplied the return \(G_0\).</p>
 
-<details class="predict"><summary>Pause and predict: how many decisions does one of the network's runs take, and how many does a random run take?</summary>
-  <p>The network averages <span class="v" data-k="net.T_mean" data-f=".0f">667</span> decisions per run (median <span class="v" data-k="net.T_median" data-f=".0f">676</span>, range <span class="v" data-k="net.T_min">195</span> to <span class="v" data-k="net.T_max">956</span>). Random play averages <span class="v" data-k="random.T_mean" data-f=".1f">28.2</span> (range <span class="v" data-k="random.T_min">8</span> to <span class="v" data-k="random.T_max">66</span>). A random run is short because it dies early, not because its decisions are fewer per floor.</p>
-</details>
+<p>The two players' episodes differ in length by more than an order of magnitude. The network averages <span class="v" data-k="net.T_mean" data-f=".0f">667</span> decisions per run, with a median of <span class="v" data-k="net.T_median" data-f=".0f">676</span> and a range of <span class="v" data-k="net.T_min">195</span> to <span class="v" data-k="net.T_max">956</span>. Random play averages <span class="v" data-k="random.T_mean" data-f=".1f">28.2</span>, with a range of <span class="v" data-k="random.T_min">8</span> to <span class="v" data-k="random.T_max">66</span>. A random run is short because it dies early, not because it makes fewer decisions per floor.</p>
 
 <div class="measured"><span class="label">Measured · <span class="v" data-k="panel.runs">200</span> seeds of PANEL_A per player · M2 Max</span>
   <div class="table">
@@ -540,12 +617,12 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
     </tbody>
   </table>
   </div>
-  <p>No substitute: these are the repository's own env, merge rules and published network. The network's runs were played with the project's threaded self-play function and replayed through the logged loop; the check stops if a replay leaves its self-play run. The panel is the tour's own seed range, disjoint from the project's development, test and smoke panels, so no number here comes from a seed the published network was selected on.</p>
+  <p>No substitute was used. These numbers come from the repository's own env, merge rules and published network. The project's threaded self-play function played the network's runs, and the logged loop replayed them. The check stops if a replay diverges from its self-play run. The panel is the tour's own seed range. It does not overlap the project's development, test and smoke panels, so no number here comes from a seed on which the published network was selected.</p>
 </div>
 
-<p>Read the table one row at a time. An episode for the network is several hundred decisions, and between them the env applies about <span class="v" data-k="net.forced_per_run" data-f=".0f">49</span> forced steps the policy never sees. Most decisions happen inside fights, for both players. So most of the data a policy-gradient method collects is about playing cards, and between-fight choices, which shape the deck for the rest of the run, are a small minority of rows. That imbalance is why the project normalises advantages separately per decision type (Chapter 5).</p>
+<p>For the network, an episode is several hundred decisions. Between those decisions, the env applies about <span class="v" data-k="net.forced_per_run" data-f=".0f">49</span> forced steps that the policy never sees. For both players, most decisions happen inside fights. Most of the data that a policy-gradient method collects is therefore about playing cards. Between-fight choices shape the deck for the rest of the run, but they are a small minority of rows. Because of that imbalance, the project normalises advantages separately for each decision type (Chapter 5).</p>
 
-<p>Forced steps are a small share of the network's game steps but a larger share of random play's. The difference is mostly in fights: random play often ends a turn with cards it cannot afford to play, and when only "end turn" is legal the step is forced.</p>
+<p>Forced steps are a small share of the network's game steps and a larger share of random play's. Most of the difference comes from fights. Random play often ends a turn holding cards that it cannot afford to play. When only "end turn" is legal, the step is forced.</p>
 
 <figure id="fig-showcase">
   <div class="scroll">
@@ -1346,7 +1423,7 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 </svg>
 <!-- /plot:showcase -->
   </div>
-  <figcaption><b>Figure 1.4.</b> One episode, the network's run on seed 170,000,000: the floor at each decision, from Neow to the final boss (<span class="v" data-k="showcase.T">718</span> decisions, <span class="v" data-k="showcase.forced">37</span> forced steps). Each fight is a flat run of dots, because a fight takes dozens of decisions on one floor. The climbs between flat runs are the between-fight decisions, a handful per floor. Notice how unevenly the decisions are spread: the longest flat runs, the hardest fights, take a large share of the horizontal axis, and all of their decisions share the run's final win or loss</figcaption>
+  <figcaption><b>Figure 1.6.</b> One episode: the network's run on seed 170,000,000, with the floor at each decision, from Neow to the final boss. The run has <span class="v" data-k="showcase.T">718</span> decisions and <span class="v" data-k="showcase.forced">37</span> forced steps. Each fight is a flat row of dots, because a fight takes dozens of decisions on one floor. The climbs between the flat rows are the between-fight decisions, a few per floor. The longest flat rows are the hardest fights. They take a large share of the horizontal axis, and all of their decisions share the run's final win or loss.</figcaption>
 </figure>
 
 <figure id="fig-lengths">
@@ -1407,7 +1484,7 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 </svg>
 <!-- /plot:lengths -->
   </div>
-  <figcaption><b>Figure 1.5.</b> The horizon \(T\) is random, and its distribution depends on the policy. Histogram of decisions per run over <span class="v" data-k="panel.runs">200</span> seeds, log scale. Notice that the two players' episodes do not overlap in length: the same environment gives episodes an order of magnitude apart. The network's short runs are its losses.</figcaption>
+  <figcaption><b>Figure 1.7.</b> The horizon \(T\) is random, and its distribution depends on the policy. The histogram counts decisions per run over <span class="v" data-k="panel.runs">200</span> seeds, on a log scale. The two players' episode lengths do not overlap: the same environment gives episodes an order of magnitude apart. The network's short runs are its losses.</figcaption>
 </figure>
 
 <figure id="fig-survival">
@@ -1448,12 +1525,10 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 </svg>
 <!-- /plot:survival -->
   </div>
-  <figcaption><b>Figure 1.6.</b> Share of runs that reach each floor. Random play loses most runs in the first two or three fights; the network's curve falls slowly, and most of its losses come at the end, on the final bosses of floors 45 and 46. This curve is the reason \(T\) depends on the policy: an episode ends at death, and the policy decides when that is.</figcaption>
+  <figcaption><b>Figure 1.8.</b> The share of runs that reach each floor. Random play loses most runs in the first two or three fights. The network's curve falls slowly, and most of its losses come at the end, on the final bosses of floors 45 and 46. This curve is why \(T\) depends on the policy. An episode ends at death, and the policy decides when that happens.</figcaption>
 </figure>
 
-<details class="predict"><summary>Pause and predict: before merging, the game offers some number of legal actions at each of the network's decisions. After merging, the policy sees classes. Which is larger on average, and by how much?</summary>
-  <p>The network's decisions offer <span class="v" data-k="net.members_mean" data-f=".2f">7.19</span> legal actions on average and <span class="v" data-k="net.classes_mean" data-f=".2f">6.46</span> classes: merging shrinks the average choice by a factor of <span class="v" data-k="net.merge_ratio" data-f=".2f">1.11</span>. The median decision offers <span class="v" data-k="net.classes_median" data-f=".0f">6</span> classes. The tail is long: a shop or a late-game hand can offer thirty or more. Figure 1.7 shows the whole distribution.</p>
-</details>
+<p>Merging makes each choice smaller. The network's decisions offer <span class="v" data-k="net.members_mean" data-f=".2f">7.19</span> legal actions on average and <span class="v" data-k="net.classes_mean" data-f=".2f">6.46</span> classes. Merging divides the average choice by <span class="v" data-k="net.merge_ratio" data-f=".2f">1.11</span>. The median decision offers <span class="v" data-k="net.classes_median" data-f=".0f">6</span> classes. The tail is long: a shop or a late-game hand can offer thirty or more. Figure 1.9 shows the whole distribution.</p>
 
 <figure id="fig-classes">
   <div class="scroll">
@@ -1550,7 +1625,7 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 </svg>
 <!-- /plot:classes -->
   </div>
-  <figcaption><b>Figure 1.7.</b> The size of the choice. For every decision of the network's runs: the number of legal actions the game offered (grey) and the number of classes after merging identical ones (colour). Notice that merging shifts mass toward smaller sets, and that no decision has fewer than two classes, because a one-class position is forced. The policy's output must cover anything from two options to several dozen.</figcaption>
+  <figcaption><b>Figure 1.9.</b> The size of the choice. For every decision of the network's runs, the figure counts the legal actions that the game offered (grey) and the classes left after merging identical actions (colour). Merging moves mass toward smaller sets. No decision has fewer than two classes, because a position with one class is forced. The policy's output must handle anything from two options to several dozen.</figcaption>
 </figure>
 
 <figure id="fig-types">
@@ -1622,12 +1697,12 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 </svg>
 <!-- /plot:types -->
   </div>
-  <figcaption><b>Figure 1.8.</b> What the network's decisions are, per run, on a log scale (fight types in the first colour, between-fight types in the second). Notice the spread: about 560 fight turns per run against one Neow choice, two boss relics and about sixteen map choices. Most map moves are forced, because most map nodes have one exit. A loss averaged over all rows is dominated by fight turns.</figcaption>
+  <figcaption><b>Figure 1.10.</b> The network's decisions per run by decision type, on a log scale. Fight types use the first colour and between-fight types use the second. A run has about 560 fight turns against one Neow choice, two boss relics and about sixteen map choices. Most map moves are forced, because most map nodes have one exit. A loss averaged over all rows is dominated by fight turns.</figcaption>
 </figure>
 
-<h3>The forced steps</h3>
+<h3>Most forced steps happen inside fights</h3>
 
-<p>Which steps does the env take without asking? The table lists the network's most common forced actions per run.</p>
+<p>The table lists the network's most common forced actions per run.</p>
 
 <div class="table">
 <!-- plot:forced -->
@@ -1635,9 +1710,9 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 <!-- /plot:forced -->
 </div>
 
-<p>Of the network's forced steps, <span class="v" data-k="net.forced_fight_share" data-f="%">36.3%</span> happen inside fights. The rest are between fights: proceeding from screens with one exit, taking the only path from a map node, and similar.</p>
+<p>Of the network's forced steps, <span class="v" data-k="net.forced_fight_share" data-f="%">36.3%</span> happen inside fights. The rest happen between fights. They include proceeding from screens with one exit and taking the only path from a map node.</p>
 
-<h3>The return and the objective</h3>
+<h3>The objective is mostly a win rate</h3>
 
 <figure id="fig-returns">
   <div class="scroll">
@@ -2067,39 +2142,39 @@ a capped run is a loss; alarm above 0.1%.</code></pre>
 </svg>
 <!-- /plot:returns -->
   </div>
-  <figcaption><b>Figure 1.9.</b> Per-run returns \(G_0\), one dot per run, with the mean \(\hat J\) marked. Notice that the distribution is two clusters, not a bell: wins sit at 1.24, and losses spread from about 0.03 to 0.25, depending on how far the run got before it died. \(J\) is close to the win rate times 1.24, and its standard error follows from the binomial spread of wins, not from anything that happens inside a run.</figcaption>
+  <figcaption><b>Figure 1.11.</b> Per-run returns \(G_0\), one dot per run, with the mean \(\hat J\) marked. The returns form two clusters, not a bell curve. Wins sit at 1.24. Losses spread from about 0.03 to 0.25, depending on how far the run got before it died. \(J\) is close to the win rate times 1.24. Its standard error comes from the binomial spread of wins, not from anything that happens inside a run.</figcaption>
 </figure>
 
 <div class="measured"><span class="label">Measured · the objective</span>
-  <p>Random play: \(\hat J =\) <span class="v" data-k="random.J_hat" data-f=".4f">0.0041</span> ± <span class="v" data-k="random.J_se" data-f=".4f">0.0002</span>. Network: \(\hat J =\) <span class="v" data-k="net.J_hat" data-f=".3f">1.063</span> ± <span class="v" data-k="net.J_se" data-f=".3f">0.028</span>, with standard deviation of \(G_0\) across runs <span class="v" data-k="net.G_sd" data-f=".3f">0.398</span>. The standard errors use runs as the sampling unit, as Equation \eqref{eq:mc-j} requires. The returns come from the training env's own reward bookkeeping, so they include every forced step's reward.</p>
-  <p>What it means: the quantity training raises is mostly a win rate. A win is worth 1.24 and the best loss about 0.25. A change of policy that adds one floor to every losing run moves \(J\) by 0.002 times the loss rate; a change that converts one run in a hundred from a late loss into a win moves it by about 0.01. Chapter 3 is about that trade.</p>
+  <p>Random play: \(\hat J =\) <span class="v" data-k="random.J_hat" data-f=".4f">0.0041</span> ± <span class="v" data-k="random.J_se" data-f=".4f">0.0002</span>. Network: \(\hat J =\) <span class="v" data-k="net.J_hat" data-f=".3f">1.063</span> ± <span class="v" data-k="net.J_se" data-f=".3f">0.028</span>, with a standard deviation of \(G_0\) across runs of <span class="v" data-k="net.G_sd" data-f=".3f">0.398</span>. The standard errors use runs as the sampling unit, as Equation \eqref{eq:mc-j} requires. The returns come from the training env's own reward bookkeeping, so they include the reward of every forced step.</p>
+  <p>The quantity that training raises is mostly a win rate. A win is worth 1.24, and the best loss is worth about 0.25. A policy change that adds one floor to every losing run moves \(J\) by 0.002 times the loss rate. A change that turns one run in a hundred from a late loss into a win moves \(J\) by about 0.01. Chapter 3 is about that trade.</p>
 </div>
 
-<h2 id="confusions">11. Common confusions</h2>
+<h2 id="confusions">11. Five common confusions</h2>
 
-<p><strong>"A step is a game step."</strong> In this project, \(t\) counts decisions. Forced steps happen between decisions and their rewards fold into the previous decision's \(r_t\). If you compute returns over game steps you get the same \(G_0\) but a different \(T\), and every per-step quantity (advantages, entropies, losses averaged over rows) changes its meaning.</p>
+<p><strong>"A step is a game step."</strong> In this project, \(t\) counts decisions. Forced steps happen between decisions, and their rewards join the previous decision's \(r_t\). If you compute returns over game steps, you get the same \(G_0\) but a different \(T\). Every per-step quantity then changes its meaning, including advantages, entropies and losses averaged over rows.</p>
 
-<p><strong>"The state is what the network sees."</strong> Spinning Up warns that much deep-RL writing uses "state" for the observation <span class="cite">[<a href="#ref-6">6</a>]</span>. Here they differ, and the difference is deliberate: the simulator's state includes the draw order; the observation built from the belief view does not. A critic is allowed extra inputs; the policy is not. When this tour writes \(\pi_\theta(a \mid s)\), read the \(s\) as "the policy's input at that decision", which is \(o_t\).</p>
+<p><strong>"The state is what the network sees."</strong> Spinning Up warns that much deep-RL writing uses "state" for the observation <span class="cite">[<a href="#ref-6">6</a>]</span>. In this project the two differ on purpose. The simulator's state includes the draw order. The observation, built from the belief view, does not. A critic may have extra inputs, and the policy may not. When this tour writes \(\pi_\theta(a \mid s)\), read \(s\) as the policy's input at that decision, which is \(o_t\).</p>
 
-<p><strong>"More decisions per run means more independent data."</strong> A run of several hundred decisions is one draw from \(p_\theta(\tau)\). Its decisions share a seed, a deck and an outcome. For estimating \(J\) the effective sample size is the number of runs. Decisions do help the gradient estimate, through the critic, but not as independent samples.</p>
+<p><strong>"More decisions per run means more independent data."</strong> A run of several hundred decisions is one draw from \(p_\theta(\tau)\). Its decisions share a seed, a deck and an outcome. For estimating \(J\), the effective sample size is the number of runs. Decisions do help the gradient estimate, through the critic, but not as independent samples.</p>
 
-<p><strong>"Illegal actions are just low-probability actions."</strong> In a fixed-output network, an illegal action with a tiny probability can still be sampled, and its gradient still flows. Equation \eqref{eq:support} requires probability exactly zero. Spire Mentor gets that by construction: it scores only offered classes, so there is no output for an illegal action to have.</p>
+<p><strong>"Illegal actions are just low-probability actions."</strong> In a network with a fixed output layer, an illegal action with a tiny probability can still be sampled, and its gradient still flows. Equation \eqref{eq:support} requires a probability of exactly zero. Spire Mentor meets that requirement by construction. It scores only offered classes, so an illegal action has no output.</p>
 
-<p><strong>"Q-learning would do the same thing here."</strong> It would need \(Q(s, a)\) for a variable action set, a target \(\max_{a'} Q(s', a')\) over the next decision's classes, and a state that is not Markov. All three are possible, but the max over an observation-based \(Q\) is exactly where partial observability bites hardest, because the bootstrap target treats the observation as if it were the state. Optimising \(J\) directly sidesteps the bootstrap for the policy, and keeps bootstrapping only in the critic, where privileged inputs can repair the Markov property.</p>
+<p><strong>"Q-learning would do the same thing here."</strong> Q-learning would need \(Q(s, a)\) for a set of actions that changes size, a target \(\max_{a'} Q(s', a')\) over the next decision's classes, and a state that is not Markov. All three are possible. The trouble is the bootstrap target. It treats the observation as if it were the state, and the max over an observation-based \(Q\) is where partial observability does the most damage. When you optimise \(J\) directly, the policy needs no bootstrap target. Only the critic bootstraps, and privileged inputs can restore the Markov property for the critic.</p>
 
 <h2 id="experiments">12. Suggested experiments</h2>
 
-<p>All commands run from the repository root on the <code>tour</code> branch. In a git worktree, prefix them with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
+<p>Run every command from the repository root on the <code>tour</code> branch. If you work in a git worktree, put <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code> before each command.</p>
 
 <ol class="experiments">
-  <li><p><strong>Watch one episode.</strong> The check prints the first decisions of a random run and a network run on the same seed, then a fight decision and a card-reward decision rendered for a person and as token sections, then the panel table. <code>--quick</code> plays 20 seeds.</p>
+  <li><p><strong>Watch one episode.</strong> Run the check on 20 seeds:</p>
   <pre><code>tour/run stop-1-episode/check.py --quick --workers 3</code></pre>
-  <p>Look at the fight decision: count the hand's actions against the classes, and find the line that names the hidden top of the draw pile.</p></li>
-  <li><p><strong>Rebuild this chapter's numbers.</strong> Collect the data on more seeds, then redraw every plot and number in this page.</p>
+  <p>The check prints the first decisions of a random run and a network run on the same seed. It then prints one fight decision and one card-reward decision, each rendered for a person and as token sections, and then the panel table. In the fight decision, compare the number of actions in the hand with the number of classes. Find the line that names the hidden top of the draw pile.</p></li>
+  <li><p><strong>Rebuild this chapter's numbers.</strong> Collect data on 400 seeds, and then redraw every plot and number on this page:</p>
   <pre><code>tour/run stop-1-episode/figures.py collect --seeds 400 --workers 3
 tour/run stop-1-episode/figures.py render</code></pre>
-  <p>How much does the standard error of \(\hat J\) shrink when you double the runs? Equation \eqref{eq:mc-j} predicts a factor of \(\sqrt 2\).</p></li>
-  <li><p><strong>A smarter random player.</strong> In <code>check.py</code>, change <code>random_chooser</code> so it never ends the turn while another class is offered. Run the check again. Predict first: does the forced share go up or down, and how far does this player get?</p></li>
+  <p>Compare the new standard error of \(\hat J\) with the one on this page. Equation \eqref{eq:mc-j} says that doubling the runs divides it by \(\sqrt 2\).</p></li>
+  <li><p><strong>Try a smarter random player.</strong> In <code>check.py</code>, change <code>random_chooser</code> so that it never ends the turn while another class is offered. Run the check again. Compare the share of forced steps and the mean floor reached with the table in Section 10.</p></li>
 </ol>
 
 <h2 id="references">References</h2>
