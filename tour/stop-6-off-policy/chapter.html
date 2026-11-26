@@ -1,0 +1,797 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<title>RL Tour 6: Off-policy correction</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+
+<style>
+/* Chapter 6 only. */
+.cmp td:first-child { font-weight: 600; }
+figure svg .lab { font-size: 11px; }
+figure svg .small { font-size: 10.5px; }
+/* The shared figure rule also catches MathJax output in captions; keep that inline. */
+figcaption mjx-container svg { display: inline; margin: 0; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour &#183; Chapter 6 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Off-policy correction</h1>
+  <p class="lede">A policy-gradient update needs actions drawn from the policy it is improving, but a fast trainer always learns from actions an older network chose. Importance weights repair the mismatch one decision at a time. This chapter shows why that works when the gap is small, and why the same weights fail for whole trajectories.</p>
+</header>
+
+<nav class="contents" aria-label="Chapter contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#stale">Why the data is stale</a></li>
+    <li><a href="#is">Importance sampling from first principles</a></li>
+    <li><a href="#ess">Variance and effective sample size</a></li>
+    <li><a href="#horizon">Products of ratios</a></li>
+    <li><a href="#gradient">Correcting a gradient</a></li>
+    <li><a href="#clamp">Clipping and truncation</a></li>
+    <li><a href="#decoupled">Decoupled PPO</a></li>
+    <li><a href="#vtrace">V-trace and IMPALA</a></li>
+    <li><a href="#ope">The same tool as off-policy evaluation</a></li>
+    <li><a href="#spire">In Spire Mentor</a></li>
+    <li><a href="#measured">Measured</a></li>
+    <li><a href="#confusions">Common confusions</a></li>
+    <li><a href="#experiments">Suggested experiments</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<main>
+  <h2 id="stale">1. Why the data is stale</h2>
+  <p>Q-learning is off-policy at no cost. Its target, \(r_t + \gamma \max_{a'} Q(s_{t+1}, a')\), asks what the best action would be, whatever action the logging policy took next. A replay buffer full of week-old transitions is still valid input. A policy gradient has no such luxury. Chapter 5 derived it as an expectation over trajectories drawn from the policy being improved:</p>
+  <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\Big[ \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t \Big]. \label{eq:pg} \end{equation}</div>
+  <p>Here \(\tau\) is a trajectory, \(\pi_\theta(a_t \mid s_t)\) the probability the current network gives action \(a_t\) in state \(s_t\), and \(\hat{A}_t\) the estimated advantage from Chapter 4. The subscript \(\tau \sim \pi_\theta\) is the whole problem. The average is only correct when the actions were sampled from \(\pi_\theta\) itself, the parameters we are about to change. A sample from another policy weights the wrong actions.</p>
+  <p>No practical trainer meets that condition exactly. Three things push the data away from the current parameters.</p>
+  <ol>
+    <li><strong>Several gradient steps per batch.</strong> PPO splits one batch into minibatches and takes a step on each. After the first step, every remaining row was played by a network that no longer exists. Chapter 5's clipped ratio exists to limit this drift.</li>
+    <li><strong>Asynchronous play.</strong> Simulation and learning run at the same time. While the learner computes update \(k\), the workers keep playing with the weights from before it. Their rows reach update \(k+1\) one version late.</li>
+    <li><strong>Rows that wait.</strong> Some rows cannot train until later rows arrive, because their advantage needs the rest of the run. They train several updates after they were played.</li>
+  </ol>
+  <p>We call the policy that generated a row the <dfn>behaviour policy</dfn> and write it \(\mu(a \mid s)\). (In some fields \(\mu\) names a mean; here it is always a policy.) The policy we want an expectation under is the <dfn>target policy</dfn>. The <dfn>staleness</dfn> of a row is the number of weight updates between the network that played it and the network being trained. Figure 6.1 shows where staleness comes from in an asynchronous trainer.</p>
+
+  <figure id="fig-timeline">
+    <div class="scroll">
+      <svg viewBox="0 0 640 300" role="img" aria-label="Timeline of workers, serving network versions and updates, showing a row played by version 3 trained against version 4.">
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <text class="lab" x="8" y="48">workers</text>
+          <text class="lab" x="8" y="98">serving net</text>
+          <text class="lab" x="8" y="148">update</text>
+          <text class="lab" x="8" y="198">iterations</text>
+          <g class="l4">
+            <line x1="100" y1="44" x2="620" y2="44" stroke-dasharray="2 5" stroke-width="6"/>
+          </g>
+          <rect x="100" y="80" width="170" height="28" class="f4" fill-opacity="0.35"/><text x="185" y="99" text-anchor="middle">weights v3</text>
+          <rect x="270" y="80" width="180" height="28" class="f1" fill-opacity="0.35"/><text x="360" y="99" text-anchor="middle">weights v4</text>
+          <rect x="450" y="80" width="170" height="28" class="f3" fill-opacity="0.35"/><text x="535" y="99" text-anchor="middle">weights v5</text>
+          <rect class="box" x="190" y="130" width="80" height="28"/><text class="small" x="230" y="148" text-anchor="middle">update 3</text>
+          <rect class="box" x="370" y="130" width="80" height="28"/><text class="small" x="410" y="148" text-anchor="middle">update 4</text>
+          <rect class="box" x="550" y="130" width="70" height="28"/><text class="small" x="585" y="148" text-anchor="middle">update 5</text>
+          <line class="ink" x1="270" y1="130" x2="270" y2="110" marker-end="url(#arr)"/>
+          <line class="ink" x1="450" y1="130" x2="450" y2="110" marker-end="url(#arr)"/>
+          <text class="muted small" x="274" y="124">load v4</text>
+          <text class="muted small" x="454" y="124">load v5</text>
+          <path class="ink" d="M100 180 v8 h90 v-8"/><text class="small" x="145" y="204" text-anchor="middle">iteration 3</text>
+          <path class="ink" d="M190 180 v8 h180 v-8"/><text class="small" x="280" y="204" text-anchor="middle">iteration 4</text>
+          <path class="ink" d="M370 180 v8 h180 v-8"/><text class="small" x="460" y="204" text-anchor="middle">iteration 5</text>
+          <line class="ink" x1="190" y1="172" x2="190" y2="160" marker-end="url(#arr)"/>
+          <line class="ink" x1="370" y1="172" x2="370" y2="160" marker-end="url(#arr)"/>
+          <text class="muted small" x="194" y="170">rows of it. 3</text>
+          <text class="muted small" x="374" y="170">rows of it. 4</text>
+          <circle cx="230" cy="44" r="5" class="f2"/>
+          <path class="l2" stroke-width="1.5" d="M230 50 C 230 240, 400 250, 405 160" marker-end="url(#arr)"/>
+          <text class="small" x="236" y="252">row A: played by v3 in iteration 4,</text>
+          <text class="small" x="236" y="266">trained in update 4 against v4: staleness 1</text>
+          <circle cx="320" cy="44" r="5" class="f1"/>
+          <path class="l1" stroke-width="1.5" d="M320 50 C 330 110, 395 110, 398 128" marker-end="url(#arr)"/>
+          <text class="small" x="326" y="66">row B: played by v4: staleness 0</text>
+          <line class="ink" x1="100" y1="285" x2="620" y2="285" marker-end="url(#arr)"/>
+          <text class="muted small" x="620" y="280" text-anchor="end">wall-clock time</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 6.1.</b> One trainer, three lanes. Workers play continuously, and the learner picks each action with whatever weights it holds. Each iteration's rows go to an update. While that update runs, serving continues on the old weights. Row A was played early in iteration 4, before update 3 finished, so the policy that trains on it (v4, after update 3) is one version newer than the one that played it. Row B was played after the load and is fresh. Run rows that wait for their run to end (not drawn) train several iterations later.</figcaption>
+  </figure>
+
+  <p>Staleness is the price of throughput. A synchronous trainer would stop all simulation during every update. The rest of this chapter is about the tool that lets us keep the throughput and still estimate Equation \eqref{eq:pg}: the importance weight.</p>
+
+  <h2 id="is">2. Importance sampling from first principles</h2>
+  <p>You already use importance sampling to evaluate a target policy from logged data. We rebuild it here in a form that will carry over to gradients, starting with one decision from a real game.</p>
+
+  <div class="example"><span class="label">In Spire Mentor &#183; one decision</span>
+    <p>Seed 170,000,000, act 1, floor 3, turn 4. The Ironclad holds four Strikes (6 damage, cost 1) and Unrelenting (14 damage, cost 2). One Corpse Slug is left, with 4 HP. Either card kills it. The game merges the four identical Strikes into one action, so there are two card choices, plus a potion and End Turn, which both networks ignore.</p>
+    <p>The published Ironclad network, call it A, plays Strike with probability 0.146 and Unrelenting with 0.854. The all-character network B says 0.506 and 0.494. A plays the run, so A is the behaviour policy \(\mu\). Suppose A samples Unrelenting. To ask what B would have done, we weight the row by \(0.494 / 0.854 = 0.58\): B takes this action less often than A, so it counts for less. If A had sampled Strike, the weight would be \(0.506 / 0.146 = 3.47\): a rare choice for A that B makes often, so it counts for more.</p>
+  </div>
+
+  <p>The general identity takes one line. Let \(p\) and \(q\) be two distributions over the same discrete set, and \(f\) any function. Whenever \(q(x) \gt 0\) wherever \(p(x) f(x) \neq 0\),</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{x \sim p}[f(x)] = \sum_x p(x)\, f(x) = \sum_x q(x)\, \frac{p(x)}{q(x)}\, f(x) = \mathbb{E}_{x \sim q}\big[w(x)\, f(x)\big], \qquad w(x) = \frac{p(x)}{q(x)}. \label{eq:is} \end{equation}</div>
+  <p>The <dfn>importance weight</dfn> \(w(x)\) converts samples from the proposal \(q\) into samples that average like the target \(p\). The condition on \(q\) is <dfn>support</dfn>: the proposal must be able to produce every outcome the target cares about. In a policy setting \(p\) is the target policy, \(q\) is \(\mu\), and for one decision the weight is the <dfn>importance ratio</dfn></p>
+  <div class="eq">\begin{equation} \rho_t = \frac{\pi_\theta(a_t \mid s_t)}{\mu(a_t \mid s_t)}. \label{eq:rho} \end{equation}</div>
+  <p>Two facts follow at once. First, the weight has mean one under the behaviour policy: \(\mathbb{E}_{a \sim \mu}[\rho] = \sum_a \mu(a \mid s)\, \pi(a \mid s) / \mu(a \mid s)\), which is \(\sum_a \pi(a \mid s) = 1\). In the example, A's expected weight is \(0.146 \times 3.47 + 0.854 \times 0.58 = 1.00\) (the two ignored actions have near-zero probability under both networks). Second, a softmax never assigns exactly zero, so support always holds formally. Near-zero probabilities are the practical problem. They produce huge weights, as the next section shows.</p>
+  <p>Given \(n\) independent samples from \(q\), the <dfn>ordinary importance sampling</dfn> estimator is the sample mean of Equation \eqref{eq:is}:</p>
+  <div class="eq">\begin{equation} \hat{I}_{\text{IS}} = \frac{1}{n} \sum_{i=1}^{n} w_i\, f(x_i). \label{eq:ois} \end{equation}</div>
+  <p>It is unbiased. Sutton and Barto call the alternative <dfn>weighted importance sampling</dfn>; in the statistics literature it is the self-normalised estimator <span class="cite">[<a href="#ref-sb">1</a>, &#167;5.5]</span>:</p>
+  <div class="eq">\begin{equation} \hat{I}_{\text{SN}} = \frac{\sum_{i} w_i\, f(x_i)}{\sum_{i} w_i}. \label{eq:snis} \end{equation}</div>
+  <p>Dividing by \(\sum_i w_i\) instead of \(n\) introduces a bias that vanishes as \(n\) grows, and it bounds the estimate by the range of \(f\). Sutton and Barto write \(b\) for the behaviour policy and \(R_{t+1}\) for the reward we call \(r_t\); their \(\rho_{t:T-1}\) is a product of the one-step ratios we write \(\rho_t\).</p>
+
+  <h2 id="ess">3. Variance and effective sample size</h2>
+  <p>Unbiasedness is cheap. The cost of importance sampling is variance. Take \(f \equiv 1\), so that every estimate should equal one. The variance of a single weight is</p>
+  <div class="eq">\begin{equation} \operatorname{Var}_{q}[w] = \mathbb{E}_{q}[w^2] - 1 = \sum_x \frac{p(x)^2}{q(x)} - 1 = \chi^2(p \,\|\, q). \label{eq:chi2} \end{equation}</div>
+  <p>The right-hand side is the chi-squared divergence of \(p\) from \(q\). Unlike the KL divergence, it squares the probability ratio, so one outcome that \(p\) likes and \(q\) almost never produces dominates it. In the example, A's choice of Strike happens 15% of the time but carries weight 3.47 when it does.</p>
+  <p>A single number summarises how much a set of weights has cost. Suppose we average values \(y_i\) with common variance \(\sigma^2\) using fixed weights \(w_i\). The variance of the weighted mean is</p>
+  <div class="eq">\begin{equation} \operatorname{Var}\Big[\frac{\sum_i w_i y_i}{\sum_i w_i}\Big] = \sigma^2 \frac{\sum_i w_i^2}{\big(\sum_i w_i\big)^2} = \frac{\sigma^2}{n_{\text{eff}}}, \qquad n_{\text{eff}} = \frac{\big(\sum_i w_i\big)^2}{\sum_i w_i^2}. \label{eq:ess} \end{equation}</div>
+  <p>The <dfn>effective sample size</dfn> \(n_{\text{eff}}\) is the number of equally weighted samples that would give the same variance. This is Kish's correction for unequal survey weights <span class="cite">[<a href="#ref-kish">2</a>]</span>, the same idea as a design effect. Equal weights give \(n_{\text{eff}} = n\). One weight that dwarfs the rest gives \(n_{\text{eff}} \approx 1\), however large \(n\) is. Dividing numerator and denominator by \(n^2\) and letting \(n\) grow, the share of the sample that survives is</p>
+  <div class="eq">\begin{equation} \frac{n_{\text{eff}}}{n} \;\to\; \frac{\mathbb{E}_q[w]^2}{\mathbb{E}_q[w^2]} = \frac{1}{1 + \chi^2(p \,\|\, q)}. \label{eq:essshare} \end{equation}</div>
+  <p>So the chi-squared divergence between the two policies is exactly what importance sampling pays, measured in lost samples.</p>
+
+  <h2 id="horizon">4. Products of ratios</h2>
+  <p>Off-policy evaluation of a whole run needs the probability of the whole trajectory. The environment's transitions appear in the numerator and the denominator and cancel <span class="cite">[<a href="#ref-sb">1</a>, eq. 5.3]</span>, leaving a product of one-step ratios:</p>
+  <div class="eq">\begin{equation} W(\tau) = \frac{\Pr_{\pi}(\tau)}{\Pr_{\mu}(\tau)} = \frac{\prod_{t} \pi(a_t \mid s_t)\, P(s_{t+1} \mid s_t, a_t)}{\prod_{t} \mu(a_t \mid s_t)\, P(s_{t+1} \mid s_t, a_t)} = \prod_{t=0}^{T-1} \rho_t. \label{eq:traj} \end{equation}</div>
+  <p>The variance of this product grows exponentially. Suppose every state had the same divergence \(\chi^2\). Conditioning on the history and applying Equation \eqref{eq:chi2} one step at a time gives</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{\mu}\Big[\prod_{t=0}^{k-1} \rho_t^2\Big] = \big(1 + \chi^2\big)^{k}, \qquad \frac{n_{\text{eff}}}{n} \to \big(1 + \chi^2\big)^{-k}. \label{eq:prodvar} \end{equation}</div>
+  <p>Real states differ, so a second view is more useful. The log of the product is a sum, \(\log W = \sum_t \log \rho_t\). A sum of many small, roughly independent terms is close to normal, so \(W\) is close to log-normal. For a log-normal weight with \(\log W \sim \mathcal{N}(m, s^2)\), the requirement \(\mathbb{E}[W] = 1\) forces \(m = -s^2/2\), and \(\mathbb{E}[W^2] = e^{s^2}\). With \(s^2 = k\, \sigma^2\), where \(\sigma^2 = \operatorname{Var}_\mu[\log \rho]\) is the variance of one decision's log ratio,</p>
+  <div class="eq">\begin{equation} \frac{n_{\text{eff}}}{n} \approx e^{-k \sigma^2}, \qquad \sigma^2 \approx 2\, D_{\mathrm{KL}}(\mu \,\|\, \pi) \text{ for a small gap.} \label{eq:lognormal} \end{equation}</div>
+  <p>The second relation comes from a second-order expansion. Write \(\delta = \log \rho\). The constraint \(\mathbb{E}_\mu[e^{\delta}] = 1\) gives \(\mathbb{E}[\delta] \approx -\tfrac12 \mathbb{E}[\delta^2]\), and \(D_{\mathrm{KL}}(\mu \,\|\, \pi) = -\mathbb{E}_\mu[\delta] \approx \tfrac12 \operatorname{Var}[\delta]\). Equation \eqref{eq:lognormal} is the result to remember. The surviving share of a product of \(k\) ratios decays like \(e^{-2k\,\mathrm{KL}}\). A per-decision KL of 0.003 is negligible for one decision and leaves \(e^{-4.2} \approx 1.5\%\) of the sample after 700. A run of this game is about 700 decisions.</p>
+
+  <details class="predict"><summary>Pause and predict: network A plays 48 runs. Weighted towards B, how many of those runs still count?</summary>
+    <p>The per-run weights \(\prod_t \rho_t\) span <span data-k="per_eps/1/run_log10_w_range|log1">185.2</span> orders of magnitude, from 10<sup><span data-k="per_eps/1/run_log10_min|log1">&#8722;243.0</span></sup> to 10<sup><span data-k="per_eps/1/run_log10_max|log1">&#8722;57.7</span></sup>. The effective sample size is <span data-k="per_eps/1/ess_run|pct1">2.1%</span> of 48 runs, which is one run. The largest weight holds <span data-k="per_eps/1/top_run_weight_share|pct0">100%</span> of the total. Every other run contributes nothing to the estimate.</p>
+  </details>
+
+  <h2 id="gradient">5. Correcting a gradient, not a value</h2>
+  <p>Off-policy evaluation estimates a number, \(J(\pi)\). A trainer needs a direction, \(\nabla_\theta J\). The tool is the same, but where it is applied changes everything.</p>
+  <p>Write Equation \eqref{eq:pg} state by state. With \(\gamma = 1\) and episodes that end, let \(d_\pi(s) = \sum_t \Pr_\pi(s_t = s)\) be the expected number of visits to \(s\) in one episode. Collecting the terms of the sum by state gives</p>
+  <div class="eq">\begin{equation} \nabla_\theta J(\theta) = \sum_s d_{\pi_\theta}(s) \sum_{a} \pi_\theta(a \mid s)\, \nabla_\theta \log \pi_\theta(a \mid s)\, A^{\pi_\theta}(s, a). \label{eq:pgstate} \end{equation}</div>
+  <p>This is the policy gradient theorem in Sutton and Barto's form <span class="cite">[<a href="#ref-sb">1</a>, &#167;13.2]</span>, with an equality because we did not normalise \(d\). Two distributions appear: the state visits \(d_{\pi_\theta}\), and the action choice \(\pi_\theta(a \mid s)\). Importance-weighting the inner sum is exact and cheap:</p>
+  <div class="eq">\begin{equation} \sum_{a} \pi_\theta(a \mid s)\, g(s,a) = \mathbb{E}_{a \sim \mu(\cdot \mid s)}\big[\rho(s,a)\, g(s,a)\big], \qquad g(s,a) = \nabla_\theta \log \pi_\theta(a \mid s)\, A^{\pi_\theta}(s,a). \label{eq:actionis} \end{equation}</div>
+  <p>It costs one ratio, with the variance of Equation \eqref{eq:chi2} for one decision. Correcting the outer sum would need \(d_{\pi_\theta}(s) / d_\mu(s)\), which in the worst case is the product of every ratio before \(s\), as in Equation \eqref{eq:traj}. Practical off-policy actor-critic methods skip that factor and use states as the behaviour policy visited them <span class="cite">[<a href="#ref-degris">3</a>]</span>:</p>
+  <div class="eq">\begin{equation} \hat{g} = \frac{1}{N} \sum_{(s_t, a_t) \sim \mu} \rho_t\, \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t. \label{eq:offpg} \end{equation}</div>
+  <p>Equation \eqref{eq:offpg} is the one per-decision correction a trainer can afford. It is biased in two ways. It ignores the state-distribution shift, and \(\hat{A}_t\) comes from a critic trained on \(\mu\)'s data, so it estimates an advantage closer to \(\mu\)'s than to \(\pi_\theta\)'s. Both biases shrink as \(\pi_\theta\) approaches \(\mu\). The trust-region results of Chapter 5 bound the first: when the per-state divergence is small, \(d_{\pi_\theta}\) and \(d_\mu\) are close. That is why the correction works for data a few updates old and fails for data from a different policy.</p>
+  <p>Notice also what the weight multiplies. In evaluation the weight multiplies a return, a number fixed by what happened. Here it multiplies a score function times an advantage, and the advantage already has a baseline subtracted (Chapter 4). A large weight on a row with \(\hat{A}_t \approx 0\) does little harm. A large weight on a row with a big advantage moves the parameters a long way on the evidence of one decision.</p>
+
+  <h2 id="clamp">6. Clipping and truncation</h2>
+  <p>The standard remedy for heavy-tailed weights is to cap them. Replace \(\rho\) by \(\min(\rho, c)\) for a constant \(c \geq 1\). The expectation of any function under the capped weight is again a sum over actions:</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{a \sim \mu}\big[\min(\rho, c)\, g(s,a)\big] = \sum_a \min\big(\pi(a \mid s),\, c\, \mu(a \mid s)\big)\, g(s,a). \label{eq:clampexp} \end{equation}</div>
+  <p>The cap leaves alone every action that \(\mu\) plays at least \(1/c\) times as often as \(\pi\). It cuts the others to \(c\,\mu(a \mid s)\). The <dfn>lost probability mass</dfn> in state \(s\) is</p>
+  <div class="eq">\begin{equation} \ell_c(s) = 1 - \sum_a \min\big(\pi(a \mid s),\, c\, \mu(a \mid s)\big), \label{eq:lost} \end{equation}</div>
+  <p>and it measures the bias. The gradient now points towards a mix of \(\pi\) and \(\mu\) that under-weights exactly the actions \(\pi\) wants more of. In return the variance is bounded, because \(\mathbb{E}_\mu[\min(\rho,c)^2] \le c\, \mathbb{E}_\mu[\min(\rho, c)] \le c\). That is the trade: bias that grows as \(c\) shrinks, against variance that falls with it. In the worked example, a cap of 2 turns B's weight on the Strike from 3.47 into 2, and loses \(0.506 - 2 \times 0.146 = 0.21\) of B's probability for this state.</p>
+  <p>The cap can sit in two places. Clamping the weight in front of a gradient term changes which policy the gradient serves. Clamping the weights inside a product of ratios, which V-trace calls trace cutting, changes how far back credit flows. Section 8 separates the two.</p>
+  <p>Do not confuse either with PPO's clip. PPO clips the ratio \(\pi_\theta / \pi_{\text{old}}\) between the network being trained and a reference network, and it does so to stop the gradient once a step has gone far enough (Chapter 5). The importance-weight cap limits the variance of a correction for data from another policy. One limits how far we move. The other limits how much we trust old data.</p>
+
+  <h2 id="decoupled">7. Decoupled PPO</h2>
+  <p>Standard PPO uses one old policy, \(\pi_{\text{old}}\), for two jobs. It is the behaviour policy that sampled the data, and it is the centre of the trust region. Hilton, Cobbe and Schulman pointed out that these jobs need not use the same policy <span class="cite">[<a href="#ref-hilton">4</a>]</span>. The trust region can be centred on any recent policy, which they call the <dfn>proximal policy</dfn> \(\pi_{\text{prox}}\). The behaviour policy is whatever played. In Chapter 5's notation, PPO's ratio was \(\pi_\theta / \pi_{\text{old}}\); the decoupled objective splits it into two factors:</p>
+  <div class="eq">\begin{equation} \frac{\pi_\theta(a_t \mid s_t)}{\mu(a_t \mid s_t)} = \underbrace{\frac{\pi_{\text{prox}}(a_t \mid s_t)}{\mu(a_t \mid s_t)}}_{w_t:\ \text{off-policy correction}} \cdot \underbrace{\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\text{prox}}(a_t \mid s_t)}}_{r_t:\ \text{trust region}}. \label{eq:split} \end{equation}</div>
+  <p>Only the second factor is clipped, and only the second factor depends on \(\theta\). The first is a constant per row, computed once before the update. The objective, with this trainer's cap \(c\) on the first factor, is</p>
+  <div class="eq">\begin{equation} L(\theta) = \mathbb{E}_{(s_t,a_t) \sim \mu}\Big[ \min(w_t, c)\; \min\big( r_t \hat{A}_t,\ \operatorname{clip}(r_t, 1-\epsilon, 1+\epsilon)\, \hat{A}_t \big) \Big]. \label{eq:decoupled} \end{equation}</div>
+  <p>Here \(\epsilon\) is PPO's clip range (0.2 in this trainer). Compare with Equation \eqref{eq:offpg}. At \(\theta = \theta_{\text{prox}}\), \(r_t = 1\) and the gradient of \(r_t\) is \(\nabla_\theta \log \pi_\theta\), so the first step of Equation \eqref{eq:decoupled} is the off-policy gradient with the action correction \(\min(w_t, c)\) and target \(\pi_{\text{prox}}\). Later minibatch steps move \(\theta\) away from \(\pi_{\text{prox}}\), and the clip stops them at \(\pm\epsilon\) in ratio. Hilton et al. state the weight without a cap. The cap at \(c = 2\) is this trainer's choice, written into its plan. The trainer also applies Ye et al.'s dual clip, which bounds the surrogate from below at \(3\hat{A}_t\) when the advantage is negative <span class="cite">[<a href="#ref-ye">5</a>]</span>. Chapter 5 covers that.</p>
+  <p>Why decouple? If the clip were centred on \(\mu\), a stale row would start the update with \(r_t\) already away from one. It might sit outside the clip band before any learning happened and contribute no gradient. The plan for this trainer estimates that about 15% of rows would sit outside the band under its staleness. Centring the clip on \(\pi_{\text{prox}}\) gives every row a full trust region, and the stale part of the gap goes into \(w_t\), where it is corrected rather than ignored.</p>
+
+  <figure id="fig-graph">
+    <div class="scroll">
+      <svg viewBox="0 0 640 330" role="img" aria-label="Computation graph of the decoupled PPO loss for one row.">
+        <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="10" y="20" width="180" height="50" rx="3"/><text class="small" x="100" y="40" text-anchor="middle">log &#956;(a|s)</text><text class="muted small" x="100" y="58" text-anchor="middle">stored when the row was played</text>
+          <rect class="box" x="230" y="20" width="180" height="50" rx="3"/><text class="small" x="320" y="40" text-anchor="middle">log &#960;_prox(a|s)</text><text class="muted small" x="320" y="58" text-anchor="middle">pre-pass at update start</text>
+          <rect class="box" x="450" y="20" width="180" height="50" rx="3"/><text class="small" x="540" y="40" text-anchor="middle">log &#960;_&#952;(a|s)</text><text class="muted small" x="540" y="58" text-anchor="middle">recomputed every minibatch</text>
+          <rect class="box" x="100" y="120" width="190" height="50" rx="3"/><text class="small" x="195" y="140" text-anchor="middle">w = min(e^(&#916;&#8321;), 2)</text><text class="muted small" x="195" y="158" text-anchor="middle">no gradient; corrects staleness</text>
+          <rect class="box" x="350" y="120" width="190" height="50" rx="3"/><text class="small" x="445" y="140" text-anchor="middle">r = e^(&#916;&#8322;)</text><text class="muted small" x="445" y="158" text-anchor="middle">carries the gradient</text>
+          <rect class="box" x="350" y="200" width="270" height="50" rx="3"/><text class="small" x="485" y="220" text-anchor="middle">surrogate = min(r&#194;, clip(r, 0.8, 1.2)&#194;)</text><text class="muted small" x="485" y="238" text-anchor="middle">dual clip: at least 3&#194; when &#194; &lt; 0</text>
+          <rect class="box" x="10" y="200" width="150" height="50" rx="3"/><text class="small" x="85" y="220" text-anchor="middle">&#194; (Chapter 4)</text><text class="muted small" x="85" y="238" text-anchor="middle">advantage of this row</text>
+          <rect class="box" x="170" y="275" width="300" height="45" rx="3"/><text class="small" x="320" y="302" text-anchor="middle">policy loss of the row = &#8722;w &#183; surrogate</text>
+          <line class="ink" x1="100" y1="70" x2="170" y2="120" marker-end="url(#arr2)"/>
+          <line class="ink" x1="320" y1="70" x2="230" y2="120" marker-end="url(#arr2)"/>
+          <line class="ink" x1="320" y1="70" x2="420" y2="120" marker-end="url(#arr2)"/>
+          <line class="ink" x1="540" y1="70" x2="470" y2="120" marker-end="url(#arr2)"/>
+          <text class="muted small" x="118" y="100">&#916;&#8321; = log &#960;_prox &#8722; log &#956;</text>
+          <text class="muted small" x="460" y="100">&#916;&#8322; = log &#960;_&#952; &#8722; log &#960;_prox</text>
+          <line class="ink" x1="445" y1="170" x2="445" y2="200" marker-end="url(#arr2)"/>
+          <line class="ink" x1="160" y1="225" x2="350" y2="225" marker-end="url(#arr2)"/>
+          <line class="ink" x1="195" y1="170" x2="250" y2="275" marker-end="url(#arr2)"/>
+          <line class="ink" x1="485" y1="250" x2="420" y2="275" marker-end="url(#arr2)"/>
+          <text class="muted small" x="200" y="200">weight</text>
+          <text class="muted small" x="458" y="190">ratio</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 6.2.</b> The decoupled loss for one row. Three log-probabilities of the same action enter: the behaviour policy's (saved when the action was sampled), the proximal policy's (one forward pass before the update) and the current network's. The left branch corrects for staleness and is a constant. The right branch is ordinary clipped PPO around \(\pi_{\text{prox}}\). Only \(\log \pi_\theta\) is differentiated.</figcaption>
+  </figure>
+
+  <h2 id="vtrace">8. V-trace and IMPALA</h2>
+  <p>IMPALA was the first widely used design that separated acting from learning at scale. Hundreds of actors play with whatever weights they last fetched, and send whole trajectories to a learner <span class="cite">[<a href="#ref-impala">6</a>]</span>. Its authors faced the problem of Figure 6.1 with lags of several updates, and they corrected both the policy gradient and the critic's target. Their critic target, V-trace, is an n-step target in which each TD error is weighted by truncated ratios. In this chapter's notation, with truncated weights \(\tilde\rho_t = \min(\bar\rho, \rho_t)\) and \(c_i = \min(\bar c, \rho_i)\),</p>
+  <div class="eq">\begin{equation} v_s = V_\phi(s_s) + \sum_{t=s}^{s+n-1} \gamma^{t-s} \Big( \prod_{i=s}^{t-1} c_i \Big)\, \tilde\rho_t\, \delta_t, \qquad \delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t). \label{eq:vtrace} \end{equation}</div>
+  <p>Here \(V_\phi\) is the learned critic, \(\delta_t\) the TD residual from Chapter 4, and the empty product (\(t = s\)) is one. The target can be computed backwards in one pass:</p>
+  <div class="eq">\begin{equation} v_s = V_\phi(s_s) + \tilde\rho_s\, \delta_s + \gamma\, c_s \big( v_{s+1} - V_\phi(s_{s+1}) \big). \label{eq:vtracerec} \end{equation}</div>
+  <p>When \(\mu = \pi\) and the truncation levels are at least one, every weight is one, and \(v_s\) is the ordinary n-step return. The two truncation levels do different jobs, and IMPALA's analysis makes the split exact. \(\bar\rho\) decides which value function the target converges to. In the tabular case the fixed point is the value of</p>
+  <div class="eq">\begin{equation} \pi_{\bar\rho}(a \mid s) = \frac{\min\big(\bar\rho\, \mu(a \mid s),\, \pi(a \mid s)\big)}{\sum_b \min\big(\bar\rho\, \mu(b \mid s),\, \pi(b \mid s)\big)}, \label{eq:vtracefix} \end{equation}</div>
+  <p>the same capped mixture as Equation \eqref{eq:clampexp}, normalised. With \(\bar\rho = \infty\) it is \(\pi\). As \(\bar\rho \to 0\) it approaches \(\mu\). The product of \(c_i\) controls only how far back a TD error reaches, and so the variance and the speed of learning, not the fixed point. The policy is updated along</p>
+  <div class="eq">\begin{equation} \tilde\rho_s\, \nabla_\theta \log \pi_\theta(a_s \mid s_s)\, \big( r_s + \gamma v_{s+1} - V_\phi(s_s) \big). \label{eq:vtracepg} \end{equation}</div>
+  <p>This is Equation \eqref{eq:offpg} with a capped weight and an advantage built from V-trace targets. IMPALA used \(\bar\rho = \bar c = 1\) and found it best among \(\bar\rho \in \{1, 10, 100\}\).</p>
+  <p>The comparison that matters for this chapter is in their ablation. They also tried a "1-step importance sampling" variant. It weights each policy-gradient term by its ratio and leaves the critic uncorrected, with no traces. With the normal small lag, it matched V-trace. When they added a replay buffer, which made the lag much larger, V-trace won on four of five tasks <span class="cite">[<a href="#ref-impala">6</a>, Table 2]</span>. The trainer in this project is close to the 1-step variant: weights on the policy term, GAE advantages from Chapter 4 with no trace correction, and a cap of 2 instead of 1. It works because its lag is small.</p>
+  <p>Why do traces need truncation at all? The product \(\prod c_i\) is a product of ratios, and Section 4 showed how products behave. Capping each factor at one makes the product shrink instead of explode. The trace still decays, and how fast it decays measures how far apart the policies are. Figure 6.7 in the measured section shows this decay for real policies.</p>
+
+  <h2 id="ope">9. The same tool as off-policy evaluation, and where it differs</h2>
+  <p>In off-policy evaluation, inverse-propensity scoring is importance sampling with the logged propensities as \(\mu\). A doubly robust estimator is importance sampling with a model as control variate <span class="cite">[<a href="#ref-jiangli">7</a>]</span>. Both ideas reappear in policy optimisation under other names. The critic's baseline is the control variate. The clamp is weight truncation. The table puts the two uses side by side.</p>
+  <div class="table">
+    <table class="cmp">
+      <caption>Off-policy evaluation against off-policy correction inside a trainer.</caption>
+      <thead><tr><th></th><th>Off-policy evaluation</th><th>Correction in a trainer</th></tr></thead>
+      <tbody>
+        <tr><td>Estimand</td><td>A number: the value \(J(\pi)\) of a fixed target.</td><td>A direction: \(\nabla_\theta J\) at the current parameters, recomputed every step.</td></tr>
+        <tr><td>Weight per sample</td><td>Product over the trajectory, Equation \eqref{eq:traj}.</td><td>One ratio per decision, Equation \eqref{eq:offpg}.</td></tr>
+        <tr><td>Gap between policies</td><td>Set by the question. Often a different policy entirely.</td><td>Controlled by the trainer: one or a few updates, each held small by PPO's clip.</td></tr>
+        <tr><td>Propensities</td><td>Logged, sometimes estimated.</td><td>Exact: \(\log \mu(a \mid s)\) is saved when the action is sampled.</td></tr>
+        <tr><td>What is ignored</td><td>Nothing, if the estimator is unbiased.</td><td>The state-distribution shift, and the critic's lag.</td></tr>
+        <tr><td>Data from a very different policy</td><td>The hard case the methods exist for.</td><td>Excluded, or used only for supervised terms.</td></tr>
+        <tr><td>Cost of a bad weight</td><td>A wrong estimate.</td><td>One noisy gradient step, which later steps can undo.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The last two rows are the practical difference. An evaluation has one shot, so it must be correct for any gap. A trainer takes thousands of steps and can afford a biased step, provided the bias points roughly the right way. So the trainer caps the weight, drops the state correction, and keeps the gap small by construction. Learning from someone else's logged play, such as a human's games or a teacher network's, is the off-policy evaluation regime. One ratio per decision cannot cover that gap, as Section 11 measures.</p>
+
+  <h2 id="spire">10. In Spire Mentor</h2>
+  <div class="example"><span class="label">In Spire Mentor &#183; where \(\mu\) is recorded</span>
+    <p>The learner process holds the serving network. Each round it takes one pending decision from every environment slot, runs the network on all of them in one batch, samples one action per row from the softmax, and stores that action's log-probability with the row as <code>logp_behav</code>. This is \(\log \mu(a_t \mid s_t)\) exactly, not an estimate. Each round also records <code>version</code>, the number of weight loads so far. Staleness at training time is the current version minus the row's.</p>
+  </div>
+  <figure class="listing">
+    <pre><code>bad = self._bad_rows(beh)
+probs = beh.exp().masked_fill(bad[:, None], 1.0)
+act = torch.multinomial(probs, 1, generator=self.gen).squeeze(1)
+logp = beh.gather(1, act[:, None]).squeeze(1).cpu().numpy()</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/learner.py, lines 1752-1755: sample an action and keep its log-probability</figcaption>
+  </figure>
+  <p>Before each update, a pre-pass runs the current weights over every row once and saves \(\log \pi_{\text{prox}}(a_t \mid s_t)\). The loss then builds the two branches of Figure 6.2:</p>
+  <figure class="listing">
+    <pre><code># PPO, decoupled (Hilton et al. 2021) with dual clip (Ye et al. 2020).
+lpp = torch.where(pi_m, rows.lp_prox.float(), zero)
+lpb = torch.where(pi_m, rows.lp_behav.float(), zero)
+a = torch.where(pi_m, rows.adv.float(), zero)
+d = torch.where(pi_m, lp - lpp, zero)
+ratio = d.exp()
+w_raw = (lpp - lpb).exp()
+w = w_raw.clamp(max=cfg.is_clamp)
+s1 = ratio * a
+s2 = ratio.clamp(1.0 - cfg.clip, 1.0 + cfg.clip) * a
+surr = torch.min(s1, s2)
+dual = cfg.dual_clip * a
+use_dual = (a &lt; 0) &amp; (surr &lt; dual)
+surr = torch.where(use_dual, dual, surr)
+pl_rows = -(w * surr) * pim</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/algo.py, lines 935-949: Equation (18) line by line; is_clamp = 2.0, clip = 0.2, dual_clip = 3.0</figcaption>
+  </figure>
+  <p>The mapping to this chapter's symbols: <code>lp</code> is \(\log \pi_\theta\), <code>lpp</code> is \(\log \pi_{\text{prox}}\), <code>lpb</code> is \(\log \mu\), <code>ratio</code> is \(r_t\), <code>w</code> is \(\min(w_t, 2)\), and <code>a</code> is \(\hat{A}_t\). The mask <code>pi_m</code> selects the rows the student itself played.</p>
+  <div class="example"><span class="label">In Spire Mentor &#183; the design choices</span>
+    <p><strong>Where staleness comes from.</strong> Combat rows train in the iteration that stored them. Their only lag is the serving lag of Figure 6.1. Rows for decisions outside combat, such as card rewards and map choices, wait until the run ends, or for at most four iterations. The plan estimates their staleness at a mean of 3.7 updates and a maximum of 5. The campaign log reports fresh-row staleness of mean 0.85 to 1.0, maximum 1, after a serving change, "as expected".</p>
+    <p><strong>Choosing workers for low staleness.</strong> The pre-registration chose the number of workers by the best throughput "at staleness &#8804; 1". In the run that chose it, every configuration kept fresh staleness at most 1, and 32 workers were picked.</p>
+    <p><strong>A rejected alternative.</strong> The plan considered plain PPO without the pre-pass, which would centre the clip on \(\mu\) and save one forward pass per update. It was dropped. The plan estimated that about 15% of rows would start outside the clip band, for about 8% more speed.</p>
+    <p><strong>Data from a different policy is not corrected.</strong> Early in training, teacher networks play some fights and some run decisions, and their log-probabilities become \(\mu\) for those rows. Those rows train the critic and a supervised teacher term, but they are excluded from the PPO term: only rows the student played enter Equation (18). This is the trainer's own answer to Section 9. A teacher's policy is too far from the student's for one capped ratio.</p>
+    <p><strong>How big the weights are in practice.</strong> A comment in the learner's configuration records the weights' 1st and 99th percentiles in the production run: 0.87 and 1.10 "of real policy change at a third of the base lr". Numerical noise alone, from serving in bf16 while updating in fp32, gives 0.975 and 1.025.</p>
+  </div>
+
+  <h2 id="measured">11. Measured</h2>
+  <p>Two experiments. The first reads the trainer's own diagnostics during a short real training run. The second makes the gap between policies large on purpose, using two published networks, to find where correction breaks.</p>
+
+  <h3>11.1 The real trainer on this Mac</h3>
+  <div class="measured"><span class="label">Measured &#183; the real learner, learning-check mode, CPU &#183; M2 Max</span>
+    <p>The learner from Chapter 5 trained from scratch: 4 workers with 32 environments each, iterations of 8,192 decisions, two epochs per update, and a small 2-layer, 128-wide network. This is a substitute for the production run, which used 32 workers, iterations of 131,072 to 1,048,576 decisions and a larger network on GPUs. Over <span data-k="learner/updates|int">41</span> updates, staleness averaged <span data-k="learner/stale_mean|f2">0.10</span> updates. Its maximum was <span data-k="learner/stale_max|int">3</span>, and fresh rows never lagged by more than <span data-k="learner/fresh_max|int">1</span>. The median update had weights between <span data-k="learner/p01_median|f2">0.94</span> and <span data-k="learner/p99_median|f2">1.07</span> at the 1st and 99th percentiles. The largest weight in any update was <span data-k="learner/w_max|f2">1.59</span>, and the share of weights above the clamp was <span data-k="learner/clamped_max|pct0">0%</span> in every update.</p>
+  </div>
+  <figure id="fig-learner">
+    <div class="scroll">
+<!-- fig:learner -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Band of importance weights per update in the real learner, far below the clamp.">
+<line class="grid" x1="62" y1="252.0" x2="542" y2="252.0"/>
+<text class="muted" x="56" y="256.0" text-anchor="end">0.8</text>
+<line class="grid" x1="62" y1="216.0" x2="542" y2="216.0"/>
+<text class="muted" x="56" y="220.0" text-anchor="end">1.0</text>
+<line class="grid" x1="62" y1="180.0" x2="542" y2="180.0"/>
+<text class="muted" x="56" y="184.0" text-anchor="end">1.2</text>
+<line class="grid" x1="62" y1="144.0" x2="542" y2="144.0"/>
+<text class="muted" x="56" y="148.0" text-anchor="end">1.4</text>
+<line class="grid" x1="62" y1="108.0" x2="542" y2="108.0"/>
+<text class="muted" x="56" y="112.0" text-anchor="end">1.6</text>
+<line class="grid" x1="62" y1="72.0" x2="542" y2="72.0"/>
+<text class="muted" x="56" y="76.0" text-anchor="end">1.8</text>
+<line class="grid" x1="62" y1="36.0" x2="542" y2="36.0"/>
+<text class="muted" x="56" y="40.0" text-anchor="end">2.0</text>
+<line class="ink" x1="98.0" y1="252" x2="98.0" y2="256"/>
+<text class="muted" x="98.0" y="270" text-anchor="middle">5</text>
+<line class="ink" x1="158.0" y1="252" x2="158.0" y2="256"/>
+<text class="muted" x="158.0" y="270" text-anchor="middle">10</text>
+<line class="ink" x1="218.0" y1="252" x2="218.0" y2="256"/>
+<text class="muted" x="218.0" y="270" text-anchor="middle">15</text>
+<line class="ink" x1="278.0" y1="252" x2="278.0" y2="256"/>
+<text class="muted" x="278.0" y="270" text-anchor="middle">20</text>
+<line class="ink" x1="338.0" y1="252" x2="338.0" y2="256"/>
+<text class="muted" x="338.0" y="270" text-anchor="middle">25</text>
+<line class="ink" x1="398.0" y1="252" x2="398.0" y2="256"/>
+<text class="muted" x="398.0" y="270" text-anchor="middle">30</text>
+<line class="ink" x1="458.0" y1="252" x2="458.0" y2="256"/>
+<text class="muted" x="458.0" y="270" text-anchor="middle">35</text>
+<line class="ink" x1="518.0" y1="252" x2="518.0" y2="256"/>
+<text class="muted" x="518.0" y="270" text-anchor="middle">40</text>
+<line class="ink" x1="62" y1="252" x2="542" y2="252"/>
+<line class="ink" x1="62" y1="18" x2="62" y2="252"/>
+<text x="302" y="292" text-anchor="middle">update (iteration of 8,192 decisions)</text>
+<text x="14" y="135" text-anchor="middle" transform="rotate(-90 14 135)">importance weight &#960;_prox/&#956;</text>
+<line class="l2" stroke-dasharray="4 3" x1="62" y1="36.0" x2="542" y2="36.0"/><text class="muted" x="538" y="30.0" text-anchor="end">clamp at 2</text>
+<polygon class="f1" fill-opacity="0.25" points="62.0,216.0 74.0,211.8 86.0,212.8 98.0,213.1 110.0,213.2 122.0,212.6 134.0,213.5 146.0,211.4 158.0,213.0 170.0,212.5 182.0,212.1 194.0,204.9 206.0,213.7 218.0,207.6 230.0,205.1 242.0,212.1 254.0,207.2 266.0,209.3 278.0,205.3 290.0,207.0 302.0,200.5 314.0,202.7 326.0,202.1 338.0,195.8 350.0,197.5 362.0,200.0 374.0,189.2 386.0,198.7 398.0,198.3 410.0,199.8 422.0,203.7 434.0,198.9 446.0,200.7 458.0,196.4 470.0,193.9 482.0,199.9 494.0,201.7 506.0,199.6 518.0,202.9 530.0,198.4 542.0,194.8 542.0,234.3 530.0,232.7 518.0,232.3 506.0,230.4 494.0,229.7 482.0,232.1 470.0,235.9 458.0,228.8 446.0,235.6 434.0,238.6 422.0,225.6 410.0,233.4 398.0,229.8 386.0,232.5 374.0,244.0 362.0,234.9 350.0,236.8 338.0,234.7 326.0,228.5 314.0,226.9 302.0,225.8 290.0,233.1 278.0,229.9 266.0,223.7 254.0,221.1 242.0,219.8 230.0,219.9 218.0,223.0 206.0,218.7 194.0,217.5 182.0,217.2 170.0,217.5 158.0,217.2 146.0,217.7 134.0,222.0 122.0,221.6 110.0,223.9 98.0,220.6 86.0,219.8 74.0,217.7 62.0,216.0"/>
+<polyline class="l3" stroke-width="2" points="62.0,216.0 74.0,191.6 86.0,177.2 98.0,182.9 110.0,165.2 122.0,173.0 134.0,150.0 146.0,184.1 158.0,201.0 170.0,202.5 182.0,203.9 194.0,184.5 206.0,174.9 218.0,175.4 230.0,173.9 242.0,184.0 254.0,190.0 266.0,194.9 278.0,188.2 290.0,188.3 302.0,176.5 314.0,164.5 326.0,177.4 338.0,166.4 350.0,151.0 362.0,156.0 374.0,164.7 386.0,156.8 398.0,173.0 410.0,145.3 422.0,109.7 434.0,164.1 446.0,150.3 458.0,158.6 470.0,138.9 482.0,154.9 494.0,151.0 506.0,120.0 518.0,154.1 530.0,133.0 542.0,115.3" />
+<rect class="f1" fill-opacity="0.25" x="360" y="58" width="20" height="10"/><text x="386" y="67">1st to 99th percentile</text><line class="l3" stroke-width="2" x1="360" y1="82" x2="380" y2="82"/><text x="386" y="86">largest weight</text>
+</svg>
+<!-- /fig:learner -->
+    </div>
+    <figcaption><b>Figure 6.3.</b> The importance weight \(\pi_{\text{prox}} / \mu\) of the real trainer, per update. The band holds 98% of the rows and stays within a few percent of one. Even the largest weight in each update stays well below the clamp. In normal operation the correction is small and the clamp does nothing.</figcaption>
+  </figure>
+  <p>So under normal operation the correction is a small reweighting and the clamp is insurance. To see what the clamp insures against, we need a bigger gap than training produces.</p>
+
+  <h3>11.2 Two networks, a controlled gap</h3>
+  <p>The published Ironclad network A plays <span data-k="runs|int">48</span> seeds, sampling every decision from its softmax, which makes A the behaviour policy. That is <span data-k="decisions|int">32,233</span> decisions, about <span data-k="decisions_per_run|int">672</span> per run, with <span data-k="classes_mean|f2">6.33</span> legal action classes on average. At every state, the all-character network B is also asked for its probabilities. The two networks rank the same action first on <span data-k="top_agreement|pct1">81.7%</span> of A's decisions.</p>
+  <p>The target policies are geometric mixtures,</p>
+  <div class="eq">\[ \log \pi_\varepsilon = \operatorname{log\,softmax}\big((1-\varepsilon) \log \mu + \varepsilon \log \pi_B\big), \]</div>
+  <p>where \(\varepsilon\) is the step from A towards B. Here \(\varepsilon\) is a mixing weight, not PPO's clip range. \(\varepsilon = 1\) is B itself. The trainer's intermediate checkpoints are not published, so the mixtures stand in for "A a few updates later". They are calibrated by KL divergence. At \(\varepsilon = 0.1\), the mean per-state \(D_{\mathrm{KL}}(\mu \,\|\, \pi_\varepsilon)\) is <span data-k="per_eps/0.1/kl_mean|f4">0.0053</span>. The production run's per-update KL was about 0.0015 to 0.004, so \(\varepsilon = 0.1\) is a little more than one update of staleness. At \(\varepsilon = 1\) the mean KL is <span data-k="per_eps/1/kl_mean|f2">0.51</span>.</p>
+
+  <details class="predict"><summary>Pause and predict: at one update of staleness (&#949; = 0.1), what share of per-decision weights exceed the clamp of 2? And for B?</summary>
+    <p>At \(\varepsilon = 0.1\), <span data-k="per_eps/0.1/clamped_share|pct2">0.10%</span>, about one decision in a thousand. For B, <span data-k="per_eps/1/clamped_share|pct2">2.19%</span>. B is a very different policy, yet only about one weight in fifty exceeds the clamp. The damage is in the shape of the distribution, not in the share above 2. Most of B's weights are near one, and a few are tiny or huge.</p>
+  </details>
+
+  <figure id="fig-hist">
+    <div class="scroll">
+<!-- fig:hist -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Histogram of per-decision importance weights for the small and large gap.">
+<line class="grid" x1="62" y1="252.0" x2="542" y2="252.0"/>
+<text class="muted" x="56" y="256.0" text-anchor="end">0.0</text>
+<line class="grid" x1="62" y1="205.2" x2="542" y2="205.2"/>
+<text class="muted" x="56" y="209.2" text-anchor="end">0.1</text>
+<line class="grid" x1="62" y1="158.4" x2="542" y2="158.4"/>
+<text class="muted" x="56" y="162.4" text-anchor="end">0.2</text>
+<line class="grid" x1="62" y1="111.6" x2="542" y2="111.6"/>
+<text class="muted" x="56" y="115.6" text-anchor="end">0.3</text>
+<line class="grid" x1="62" y1="64.8" x2="542" y2="64.8"/>
+<text class="muted" x="56" y="68.8" text-anchor="end">0.4</text>
+<line class="grid" x1="62" y1="18.0" x2="542" y2="18.0"/>
+<text class="muted" x="56" y="22.0" text-anchor="end">0.5</text>
+<line class="ink" x1="62.0" y1="252" x2="62.0" y2="256"/>
+<text class="muted" x="62.0" y="270" text-anchor="middle">0.001</text>
+<line class="ink" x1="158.0" y1="252" x2="158.0" y2="256"/>
+<text class="muted" x="158.0" y="270" text-anchor="middle">0.01</text>
+<line class="ink" x1="254.0" y1="252" x2="254.0" y2="256"/>
+<text class="muted" x="254.0" y="270" text-anchor="middle">0.1</text>
+<line class="ink" x1="350.0" y1="252" x2="350.0" y2="256"/>
+<text class="muted" x="350.0" y="270" text-anchor="middle">1</text>
+<line class="ink" x1="446.0" y1="252" x2="446.0" y2="256"/>
+<text class="muted" x="446.0" y="270" text-anchor="middle">10</text>
+<line class="ink" x1="542.0" y1="252" x2="542.0" y2="256"/>
+<text class="muted" x="542.0" y="270" text-anchor="middle">100</text>
+<line class="ink" x1="62" y1="252" x2="542" y2="252"/>
+<line class="ink" x1="62" y1="18" x2="62" y2="252"/>
+<text x="302" y="292" text-anchor="middle">per-decision weight &#961; (log scale)</text>
+<text x="14" y="135" text-anchor="middle" transform="rotate(-90 14 135)">share of A's decisions</text>
+<line class="l4" stroke-dasharray="4 3" x1="378.9" y1="18" x2="378.9" y2="252"/>
+<text class="muted" x="382.9" y="28">clamp at 2</text>
+<polyline class="l1" stroke-width="2" points="62.0,252.0 71.6,252.0 71.6,252.0 81.2,252.0 81.2,252.0 90.8,252.0 90.8,252.0 100.4,252.0 100.4,252.0 110.0,252.0 110.0,252.0 119.6,252.0 119.6,252.0 129.2,252.0 129.2,252.0 138.8,252.0 138.8,252.0 148.4,252.0 148.4,252.0 158.0,252.0 158.0,252.0 167.6,252.0 167.6,252.0 177.2,252.0 177.2,252.0 186.8,252.0 186.8,252.0 196.4,252.0 196.4,252.0 206.0,252.0 206.0,252.0 215.6,252.0 215.6,252.0 225.2,252.0 225.2,252.0 234.8,252.0 234.8,252.0 244.4,252.0 244.4,252.0 254.0,252.0 254.0,252.0 263.6,252.0 263.6,252.0 273.2,252.0 273.2,251.9 282.8,251.9 282.8,251.9 292.4,251.9 292.4,251.9 302.0,251.9 302.0,251.6 311.6,251.6 311.6,251.1 321.2,251.1 321.2,250.1 330.8,250.1 330.8,247.4 340.4,247.4 340.4,18.0 350.0,18.0 350.0,39.7 359.6,39.7 359.6,247.9 369.2,247.9 369.2,250.9 378.8,250.9 378.8,251.9 388.4,251.9 388.4,251.8 398.0,251.8 398.0,251.9 407.6,251.9 407.6,252.0 417.2,252.0 417.2,252.0 426.8,252.0 426.8,252.0 436.4,252.0 436.4,252.0 446.0,252.0 446.0,252.0 455.6,252.0 455.6,252.0 465.2,252.0 465.2,252.0 474.8,252.0 474.8,252.0 484.4,252.0 484.4,252.0 494.0,252.0 494.0,252.0 503.6,252.0 503.6,252.0 513.2,252.0 513.2,252.0 522.8,252.0 522.8,252.0 532.4,252.0 532.4,252.0 542.0,252.0" />
+<line class="l1" stroke-width="2" x1="76" y1="32" x2="96" y2="32"/><text x="102" y="36">&#949; = 0.1</text>
+<polyline class="l2" stroke-width="2" points="62.0,242.8 71.6,242.8 71.6,251.5 81.2,251.5 81.2,251.5 90.8,251.5 90.8,251.4 100.4,251.4 100.4,251.4 110.0,251.4 110.0,251.4 119.6,251.4 119.6,251.4 129.2,251.4 129.2,251.3 138.8,251.3 138.8,251.3 148.4,251.3 148.4,251.3 158.0,251.3 158.0,251.2 167.6,251.2 167.6,251.1 177.2,251.1 177.2,250.7 186.8,250.7 186.8,251.0 196.4,251.0 196.4,250.9 206.0,250.9 206.0,250.8 215.6,250.8 215.6,250.5 225.2,250.5 225.2,250.2 234.8,250.2 234.8,250.0 244.4,250.0 244.4,250.2 254.0,250.2 254.0,250.1 263.6,250.1 263.6,249.0 273.2,249.0 273.2,248.4 282.8,248.4 282.8,247.5 292.4,247.5 292.4,245.1 302.0,245.1 302.0,241.9 311.6,241.9 311.6,237.4 321.2,237.4 321.2,230.1 330.8,230.1 330.8,223.7 340.4,223.7 340.4,107.8 350.0,107.8 350.0,79.8 359.6,79.8 359.6,239.9 369.2,239.9 369.2,245.8 378.8,245.8 378.8,248.7 388.4,248.7 388.4,250.0 398.0,250.0 398.0,250.5 407.6,250.5 407.6,250.9 417.2,250.9 417.2,251.3 426.8,251.3 426.8,251.5 436.4,251.5 436.4,251.7 446.0,251.7 446.0,251.9 455.6,251.9 455.6,251.8 465.2,251.8 465.2,251.9 474.8,251.9 474.8,251.9 484.4,251.9 484.4,252.0 494.0,252.0 494.0,251.9 503.6,251.9 503.6,252.0 513.2,252.0 513.2,252.0 522.8,252.0 522.8,252.0 532.4,252.0 532.4,252.0 542.0,252.0" />
+<line class="l2" stroke-width="2" x1="76" y1="48" x2="96" y2="48"/><text x="102" y="52">B itself</text>
+</svg>
+<!-- /fig:hist -->
+    </div>
+    <figcaption><b>Figure 6.4.</b> Distribution of the per-decision weight \(\rho_t\) on a log axis. At one update of staleness (&#949; = 0.1) the weights sit in a narrow peak at one, with 1st and 99th percentiles <span data-k="per_eps/0.1/w_quantiles/p01|f2">0.69</span> and <span data-k="per_eps/0.1/w_quantiles/p99|f2">1.30</span>. For B the peak is still at one, because the networks agree on most decisions. The left tail reaches below 0.001: B rejects some of A's choices outright. The right tail reaches <span data-k="per_eps/1/w_max|f0">290</span>. Bins at the plot's edges include everything beyond them, and the two central bars are cut off at 0.5.</figcaption>
+  </figure>
+
+  <p>The per-decision effective sample size is <span data-k="per_eps/0.1/ess_by_horizon/1|pct1">99.0%</span> of decisions at \(\varepsilon = 0.1\) and <span data-k="per_eps/1/ess_by_horizon/1|pct1">16.7%</span> for B. Now multiply ratios. Figure 6.5 groups each run's decisions into consecutive windows of \(k\) and computes the effective sample size of the window products.</p>
+
+  <figure id="fig-ess">
+    <div class="scroll">
+<!-- fig:ess -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Effective sample size against the number of ratios multiplied, for four gaps.">
+<line class="grid" x1="62" y1="252.0" x2="542" y2="252.0"/>
+<text class="muted" x="56" y="256.0" text-anchor="end">0%</text>
+<line class="grid" x1="62" y1="205.2" x2="542" y2="205.2"/>
+<text class="muted" x="56" y="209.2" text-anchor="end">20%</text>
+<line class="grid" x1="62" y1="158.4" x2="542" y2="158.4"/>
+<text class="muted" x="56" y="162.4" text-anchor="end">40%</text>
+<line class="grid" x1="62" y1="111.6" x2="542" y2="111.6"/>
+<text class="muted" x="56" y="115.6" text-anchor="end">60%</text>
+<line class="grid" x1="62" y1="64.8" x2="542" y2="64.8"/>
+<text class="muted" x="56" y="68.8" text-anchor="end">80%</text>
+<line class="grid" x1="62" y1="18.0" x2="542" y2="18.0"/>
+<text class="muted" x="56" y="22.0" text-anchor="end">100%</text>
+<line class="ink" x1="62.0" y1="252" x2="62.0" y2="256"/>
+<text class="muted" x="62.0" y="270" text-anchor="middle">1</text>
+<line class="ink" x1="124.8" y1="252" x2="124.8" y2="256"/>
+<text class="muted" x="124.8" y="270" text-anchor="middle">2</text>
+<line class="ink" x1="207.8" y1="252" x2="207.8" y2="256"/>
+<text class="muted" x="207.8" y="270" text-anchor="middle">5</text>
+<line class="ink" x1="270.6" y1="252" x2="270.6" y2="256"/>
+<text class="muted" x="270.6" y="270" text-anchor="middle">10</text>
+<line class="ink" x1="333.4" y1="252" x2="333.4" y2="256"/>
+<text class="muted" x="333.4" y="270" text-anchor="middle">20</text>
+<line class="ink" x1="416.4" y1="252" x2="416.4" y2="256"/>
+<text class="muted" x="416.4" y="270" text-anchor="middle">50</text>
+<line class="ink" x1="479.2" y1="252" x2="479.2" y2="256"/>
+<text class="muted" x="479.2" y="270" text-anchor="middle">100</text>
+<line class="ink" x1="542.0" y1="252" x2="542.0" y2="256"/>
+<text class="muted" x="542.0" y="270" text-anchor="middle">200</text>
+<line class="ink" x1="62" y1="252" x2="542" y2="252"/>
+<line class="ink" x1="62" y1="18" x2="62" y2="252"/>
+<text x="302" y="292" text-anchor="middle">k, number of consecutive ratios multiplied (log scale)</text>
+<text x="14" y="135" text-anchor="middle" transform="rotate(-90 14 135)">ESS, % of weights</text>
+<polyline class="l4" stroke-width="2" points="62.0,18.2 124.8,18.4 207.8,19.1 270.6,20.3 333.4,23.0 416.4,29.0 479.2,39.1 542.0,52.0" />
+<circle class="f4" cx="62.0" cy="18.2" r="3"/>
+<circle class="f4" cx="124.8" cy="18.4" r="3"/>
+<circle class="f4" cx="207.8" cy="19.1" r="3"/>
+<circle class="f4" cx="270.6" cy="20.3" r="3"/>
+<circle class="f4" cx="333.4" cy="23.0" r="3"/>
+<circle class="f4" cx="416.4" cy="29.0" r="3"/>
+<circle class="f4" cx="479.2" cy="39.1" r="3"/>
+<circle class="f4" cx="542.0" cy="52.0" r="3"/>
+<polyline class="l4" stroke-width="2" points="62.0,18.2 74.3,18.3 86.6,18.3 98.9,18.3 111.2,18.4 123.5,18.4 135.8,18.5 148.2,18.6 160.5,18.6 172.8,18.7 185.1,18.8 197.4,19.0 209.7,19.1 222.0,19.3 234.3,19.5 246.6,19.7 258.9,19.9 271.2,20.2 283.5,20.5 295.8,20.9 308.2,21.3 320.5,21.8 332.8,22.3 345.1,22.9 357.4,23.6 369.7,24.4 382.0,25.4 394.3,26.4 406.6,27.6 418.9,29.0 431.2,30.5 443.5,32.3 455.8,34.3 468.2,36.6 480.5,39.2 492.8,42.1 505.1,45.4 517.4,49.1 529.7,53.2 542.0,57.9" stroke-dasharray="5 4" stroke-opacity="0.8"/>
+<line class="l4" stroke-width="2" x1="76" y1="92.9" x2="96" y2="92.9"/><text x="102" y="96.9">&#949; = 0.03</text>
+<polyline class="l1" stroke-width="2" points="62.0,20.5 124.8,22.8 207.8,29.9 270.6,41.6 333.4,73.7 416.4,99.9 479.2,157.2 542.0,197.2" />
+<circle class="f1" cx="62.0" cy="20.5" r="3"/>
+<circle class="f1" cx="124.8" cy="22.8" r="3"/>
+<circle class="f1" cx="207.8" cy="29.9" r="3"/>
+<circle class="f1" cx="270.6" cy="41.6" r="3"/>
+<circle class="f1" cx="333.4" cy="73.7" r="3"/>
+<circle class="f1" cx="416.4" cy="99.9" r="3"/>
+<circle class="f1" cx="479.2" cy="157.2" r="3"/>
+<circle class="f1" cx="542.0" cy="197.2" r="3"/>
+<polyline class="l1" stroke-width="2" points="62.0,20.6 74.3,20.9 86.6,21.4 98.9,21.8 111.2,22.4 123.5,23.0 135.8,23.8 148.2,24.6 160.5,25.5 172.8,26.6 185.1,27.8 197.4,29.2 209.7,30.8 222.0,32.6 234.3,34.6 246.6,37.0 258.9,39.6 271.2,42.6 283.5,45.9 295.8,49.7 308.2,53.9 320.5,58.7 332.8,64.0 345.1,69.9 357.4,76.4 369.7,83.6 382.0,91.4 394.3,100.0 406.6,109.2 418.9,119.2 431.2,129.7 443.5,140.7 455.8,152.1 468.2,163.7 480.5,175.4 492.8,186.9 505.1,197.9 517.4,208.3 529.7,217.8 542.0,226.1" stroke-dasharray="5 4" stroke-opacity="0.8"/>
+<line class="l1" stroke-width="2" x1="76" y1="108.9" x2="96" y2="108.9"/><text x="102" y="112.9">&#949; = 0.1</text>
+<polyline class="l3" stroke-width="2" points="62.0,46.3 124.8,66.7 207.8,122.9 270.6,165.4 333.4,244.3 416.4,229.5 479.2,244.9 542.0,244.2" />
+<circle class="f3" cx="62.0" cy="46.3" r="3"/>
+<circle class="f3" cx="124.8" cy="66.7" r="3"/>
+<circle class="f3" cx="207.8" cy="122.9" r="3"/>
+<circle class="f3" cx="270.6" cy="165.4" r="3"/>
+<circle class="f3" cx="333.4" cy="244.3" r="3"/>
+<circle class="f3" cx="416.4" cy="229.5" r="3"/>
+<circle class="f3" cx="479.2" cy="244.9" r="3"/>
+<circle class="f3" cx="542.0" cy="244.2" r="3"/>
+<polyline class="l3" stroke-width="2" points="62.0,49.1 74.3,53.2 86.6,57.9 98.9,63.1 111.2,68.9 123.5,75.3 135.8,82.4 148.2,90.2 160.5,98.6 172.8,107.8 185.1,117.6 197.4,128.0 209.7,138.9 222.0,150.3 234.3,161.9 246.6,173.6 258.9,185.1 271.2,196.3 283.5,206.8 295.8,216.4 308.2,224.9 320.5,232.2 332.8,238.2 345.1,242.8 357.4,246.3 369.7,248.7 382.0,250.2 394.3,251.1 406.6,251.6 418.9,251.8 431.2,251.9 443.5,252.0 455.8,252.0 468.2,252.0 480.5,252.0 492.8,252.0 505.1,252.0 517.4,252.0 529.7,252.0 542.0,252.0" stroke-dasharray="5 4" stroke-opacity="0.8"/>
+<line class="l3" stroke-width="2" x1="76" y1="124.9" x2="96" y2="124.9"/><text x="102" y="128.9">&#949; = 0.3</text>
+<polyline class="l2" stroke-width="2" points="62.0,213.0 124.8,227.6 207.8,251.9 270.6,251.8 333.4,250.8 416.4,250.3 479.2,250.5 542.0,249.6" />
+<circle class="f2" cx="62.0" cy="213.0" r="3"/>
+<circle class="f2" cx="124.8" cy="227.6" r="3"/>
+<circle class="f2" cx="207.8" cy="251.9" r="3"/>
+<circle class="f2" cx="270.6" cy="251.8" r="3"/>
+<circle class="f2" cx="333.4" cy="250.8" r="3"/>
+<circle class="f2" cx="416.4" cy="250.3" r="3"/>
+<circle class="f2" cx="479.2" cy="250.5" r="3"/>
+<circle class="f2" cx="542.0" cy="249.6" r="3"/>
+<line class="l2" stroke-width="2" x1="76" y1="140.9" x2="96" y2="140.9"/><text x="102" y="144.9">B itself</text>
+</svg>
+<!-- /fig:ess -->
+    </div>
+    <figcaption><b>Figure 6.5.</b> Effective sample size, as a share of the windows, for products of \(k\) consecutive ratios. Solid lines are measured; dashed lines are the log-normal prediction \(e^{-k\sigma^2}\) of Equation \eqref{eq:lognormal}, with \(\sigma^2\) measured from single decisions. At one update of staleness (&#949; = 0.1, \(\sigma^2 =\) <span data-k="per_eps/0.1/var_log_rho|f4">0.0110</span>) a single ratio costs almost nothing. A hundred cost more than half the sample. For B, ten ratios already leave almost nothing. Measured values cannot fall below one window, which explains the flattening at the right. For B, \(\sigma^2\) is too large for the prediction to stay on the plot.</figcaption>
+  </figure>
+
+  <p>The whole-run weights are the extreme case. At \(\varepsilon = 0.1\) the effective sample size of the per-run weights is <span data-k="per_eps/0.1/ess_run|pct1">7.4%</span> of the runs. A gap of one update, harmless per decision, already discards most of the runs over about 700 decisions. For B it is <span data-k="per_eps/1/ess_run|pct1">2.1%</span>.</p>
+
+  <figure id="fig-clamp">
+    <div class="scroll">
+<!-- fig:clamp -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Bias and variance of the clamped weight against the clamp level, for target B.">
+<line class="grid" x1="62" y1="252.0" x2="542" y2="252.0"/>
+<text class="muted" x="56" y="256.0" text-anchor="end">0.01</text>
+<line class="grid" x1="62" y1="174.0" x2="542" y2="174.0"/>
+<text class="muted" x="56" y="178.0" text-anchor="end">0.1</text>
+<line class="grid" x1="62" y1="96.0" x2="542" y2="96.0"/>
+<text class="muted" x="56" y="100.0" text-anchor="end">1</text>
+<line class="grid" x1="62" y1="18.0" x2="542" y2="18.0"/>
+<text class="muted" x="56" y="22.0" text-anchor="end">10</text>
+<line class="ink" x1="62.0" y1="252" x2="62.0" y2="256"/>
+<text class="muted" x="62.0" y="270" text-anchor="middle">1</text>
+<line class="ink" x1="134.2" y1="252" x2="134.2" y2="256"/>
+<text class="muted" x="134.2" y="270" text-anchor="middle">2</text>
+<line class="ink" x1="229.8" y1="252" x2="229.8" y2="256"/>
+<text class="muted" x="229.8" y="270" text-anchor="middle">5</text>
+<line class="ink" x1="302.0" y1="252" x2="302.0" y2="256"/>
+<text class="muted" x="302.0" y="270" text-anchor="middle">10</text>
+<line class="ink" x1="416.5" y1="252" x2="416.5" y2="256"/>
+<text class="muted" x="416.5" y="270" text-anchor="middle">30</text>
+<line class="ink" x1="542.0" y1="252" x2="542.0" y2="256"/>
+<text class="muted" x="542.0" y="270" text-anchor="middle">100</text>
+<line class="ink" x1="62" y1="252" x2="542" y2="252"/>
+<line class="ink" x1="62" y1="18" x2="62" y2="252"/>
+<text x="302" y="292" text-anchor="middle">clamp level c (log scale)</text>
+<text x="14" y="135" text-anchor="middle" transform="rotate(-90 14 135)">per state, mean over A's states (log scale)</text>
+<polyline class="l2" stroke-width="2" points="62.0,155.5 85.3,160.5 104.3,163.4 134.2,167.3 176.5,171.8 229.8,177.1 302.0,183.7 416.5,193.7 542.0,204.5" />
+<polyline class="l1" stroke-width="2" points="62.0,223.6 85.3,206.3 104.3,194.9 134.2,180.3 176.5,163.5 229.8,145.3 302.0,123.8 416.5,93.0 542.0,61.1" />
+<line class="l4" stroke-dasharray="4 3" x1="134.2" y1="18" x2="134.2" y2="252"/>
+<text class="muted" x="138.2" y="28">trainer: c = 2</text>
+<line class="l2" stroke-width="2" x1="76" y1="48" x2="96" y2="48"/><text x="102" y="52">probability mass lost (bias)</text><line class="l1" stroke-width="2" x1="76" y1="64" x2="96" y2="64"/><text x="102" y="68">variance of min(&#961;, c)</text>
+</svg>
+<!-- /fig:clamp -->
+    </div>
+    <figcaption><b>Figure 6.6.</b> The clamp's trade for target B, computed exactly from both networks' full distributions on every state A visited. The orange line is the lost probability mass \(\ell_c\) of Equation \eqref{eq:lost}, the bias. The teal line is the variance of \(\min(\rho, c)\) under \(\mu\). At the trainer's \(c = 2\), the clamp removes <span data-k="per_eps/1/caps/2/lost_mass|pct1">12.2%</span> of B's probability mass per state, and the variance is <span data-k="per_eps/1/caps/2/var|f3">0.083</span>. Without a clamp the variance is <span data-k="per_eps/1/caps/inf/var|sci">1.1 &#215; 10<sup>10</sup></span>. The two curves cross near \(c = 2\). At one update of staleness the clamp at 2 removes <span data-k="per_eps/0.1/caps/2/lost_mass|pct2">0.08%</span>, which is nothing.</figcaption>
+  </figure>
+
+  <figure id="fig-trace">
+    <div class="scroll">
+<!-- fig:trace -->
+<svg viewBox="0 0 560 300" role="img" aria-label="Mean product of truncated ratios against the number of steps, for three gaps.">
+<line class="grid" x1="62" y1="252.0" x2="542" y2="252.0"/>
+<text class="muted" x="56" y="256.0" text-anchor="end">0.0001</text>
+<line class="grid" x1="62" y1="193.5" x2="542" y2="193.5"/>
+<text class="muted" x="56" y="197.5" text-anchor="end">0.001</text>
+<line class="grid" x1="62" y1="135.0" x2="542" y2="135.0"/>
+<text class="muted" x="56" y="139.0" text-anchor="end">0.01</text>
+<line class="grid" x1="62" y1="76.5" x2="542" y2="76.5"/>
+<text class="muted" x="56" y="80.5" text-anchor="end">0.1</text>
+<line class="grid" x1="62" y1="18.0" x2="542" y2="18.0"/>
+<text class="muted" x="56" y="22.0" text-anchor="end">1</text>
+<line class="ink" x1="62.0" y1="252" x2="62.0" y2="256"/>
+<text class="muted" x="62.0" y="270" text-anchor="middle">1</text>
+<line class="ink" x1="124.8" y1="252" x2="124.8" y2="256"/>
+<text class="muted" x="124.8" y="270" text-anchor="middle">2</text>
+<line class="ink" x1="207.8" y1="252" x2="207.8" y2="256"/>
+<text class="muted" x="207.8" y="270" text-anchor="middle">5</text>
+<line class="ink" x1="270.6" y1="252" x2="270.6" y2="256"/>
+<text class="muted" x="270.6" y="270" text-anchor="middle">10</text>
+<line class="ink" x1="333.4" y1="252" x2="333.4" y2="256"/>
+<text class="muted" x="333.4" y="270" text-anchor="middle">20</text>
+<line class="ink" x1="416.4" y1="252" x2="416.4" y2="256"/>
+<text class="muted" x="416.4" y="270" text-anchor="middle">50</text>
+<line class="ink" x1="479.2" y1="252" x2="479.2" y2="256"/>
+<text class="muted" x="479.2" y="270" text-anchor="middle">100</text>
+<line class="ink" x1="542.0" y1="252" x2="542.0" y2="256"/>
+<text class="muted" x="542.0" y="270" text-anchor="middle">200</text>
+<line class="ink" x1="62" y1="252" x2="542" y2="252"/>
+<line class="ink" x1="62" y1="18" x2="62" y2="252"/>
+<text x="302" y="292" text-anchor="middle">k, steps after the TD error (log scale)</text>
+<text x="14" y="135" text-anchor="middle" transform="rotate(-90 14 135)">mean of &#8719; min(1, &#961;) (log scale)</text>
+<polyline class="l1" stroke-width="2" points="62.0,18.4 124.8,18.7 207.8,19.9 270.6,21.7 333.4,25.4 416.4,36.4 479.2,54.5 542.0,89.0" />
+<line class="l1" stroke-width="2" x1="82" y1="192" x2="102" y2="192"/><text x="108" y="196">&#949; = 0.1</text>
+<polyline class="l3" stroke-width="2" points="62.0,19.1 124.8,20.3 207.8,23.6 270.6,29.1 333.4,39.8 416.4,70.6 479.2,117.0 542.0,199.1" />
+<line class="l3" stroke-width="2" x1="82" y1="208" x2="102" y2="208"/><text x="108" y="212">&#949; = 0.3</text>
+<polyline class="l2" stroke-width="2" points="62.0,22.8 124.8,27.2 207.8,40.1 270.6,59.9 333.4,96.4 416.4,196.6 479.2,252.0 542.0,252.0" />
+<line class="l2" stroke-width="2" x1="82" y1="224" x2="102" y2="224"/><text x="108" y="228">B itself</text>
+</svg>
+<!-- /fig:trace -->
+    </div>
+    <figcaption><b>Figure 6.7.</b> The average V-trace trace \(\prod_{i} \min(1, \rho_i)\) over the \(k\) decisions after a TD error, with IMPALA's \(\bar c = 1\). At one update of staleness the trace keeps <span data-k="per_eps/0.1/trace_mean_by_horizon/10|pct0">86%</span> of a TD error's credit ten decisions back. For B it keeps <span data-k="per_eps/1/trace_mean_by_horizon/10|pct0">19%</span>. Truncated traces never explode, but between distant policies they cut credit assignment back to a few steps. V-trace then behaves almost like a one-step method.</figcaption>
+  </figure>
+
+  <h3>11.3 Off-policy evaluation with a known answer</h3>
+  <p>Finally, the question off-policy evaluation exists to answer: what is B's win rate, estimated from A's runs alone? We know the answer, because B also played the same seeds, sampling from its own softmax.</p>
+
+  <details class="predict"><summary>Pause and predict: A won some of its runs. What do the plain and self-normalised per-run estimators say B's win rate is?</summary>
+    <p>A won <span data-k="won_a|int">34</span> of 48 (<span data-k="ope/a_rate|pct1">70.8%</span>). B won <span data-k="won_b|int">40</span> of 48 (<span data-k="ope/truth_b_rate|pct1">83.3%</span>), the truth. The plain estimator, Equation \eqref{eq:ois} with per-run weights, says <span data-k="ope/plain|sci">1.5 &#215; 10<sup>&#8722;68</sup></span>. It is unbiased, but almost every sample of it is near zero, and the rare huge sample that would correct the mean did not occur in 48 runs. The self-normalised estimator, Equation \eqref{eq:snis}, says <span data-k="ope/snis|pct1">0.0%</span>. With one effective run, it reports that run's outcome, and that run was a loss. Using A's own win rate with no correction would have been closer.</p>
+  </details>
+
+  <figure id="fig-runs">
+    <div class="scroll">
+<!-- fig:runs -->
+<svg viewBox="0 0 560 200" role="img" aria-label="Dot plot of per-run log weights for target B, split by whether A won.">
+<line class="ink" x1="62.0" y1="152" x2="62.0" y2="156"/><text class="muted" x="62.0" y="170" text-anchor="middle">-250</text>
+<line class="ink" x1="110.0" y1="152" x2="110.0" y2="156"/><text class="muted" x="110.0" y="170" text-anchor="middle">-225</text>
+<line class="ink" x1="158.0" y1="152" x2="158.0" y2="156"/><text class="muted" x="158.0" y="170" text-anchor="middle">-200</text>
+<line class="ink" x1="206.0" y1="152" x2="206.0" y2="156"/><text class="muted" x="206.0" y="170" text-anchor="middle">-175</text>
+<line class="ink" x1="254.0" y1="152" x2="254.0" y2="156"/><text class="muted" x="254.0" y="170" text-anchor="middle">-150</text>
+<line class="ink" x1="302.0" y1="152" x2="302.0" y2="156"/><text class="muted" x="302.0" y="170" text-anchor="middle">-125</text>
+<line class="ink" x1="350.0" y1="152" x2="350.0" y2="156"/><text class="muted" x="350.0" y="170" text-anchor="middle">-100</text>
+<line class="ink" x1="398.0" y1="152" x2="398.0" y2="156"/><text class="muted" x="398.0" y="170" text-anchor="middle">-75</text>
+<line class="ink" x1="446.0" y1="152" x2="446.0" y2="156"/><text class="muted" x="446.0" y="170" text-anchor="middle">-50</text>
+<line class="ink" x1="494.0" y1="152" x2="494.0" y2="156"/><text class="muted" x="494.0" y="170" text-anchor="middle">-25</text>
+<line class="ink" x1="542.0" y1="152" x2="542.0" y2="156"/><text class="muted" x="542.0" y="170" text-anchor="middle">0</text>
+<line class="ink" x1="62" y1="152" x2="542" y2="152"/>
+<text x="302" y="192" text-anchor="middle">log10 of the per-run weight &#8719;&#961; for target B</text>
+<text x="56" y="44" text-anchor="end">A won</text>
+<circle class="f1" cx="285.4" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="414.3" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="308.8" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="315.0" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="290.2" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="321.5" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="392.0" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="102.3" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="201.2" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="372.5" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="358.0" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="242.5" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="270.4" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="201.2" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="414.6" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="170.2" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="243.3" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="288.8" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="238.6" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="244.5" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="176.8" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="336.1" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="371.8" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="391.1" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="203.0" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="158.4" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="266.1" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="346.5" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="284.1" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="393.0" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="236.4" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="134.9" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="162.1" cy="40" r="4" fill-opacity="0.7"/>
+<circle class="f1" cx="273.3" cy="40" r="4" fill-opacity="0.7"/>
+<text x="56" y="89" text-anchor="end">A lost</text>
+<circle class="f2" cx="431.1" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="184.1" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="115.5" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="415.9" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="146.8" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="75.5" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="135.5" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="119.9" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="257.6" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="269.7" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="298.7" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="222.5" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="121.0" cy="85" r="4" fill-opacity="0.7"/>
+<circle class="f2" cx="288.3" cy="85" r="4" fill-opacity="0.7"/>
+</svg>
+<!-- /fig:runs -->
+    </div>
+    <figcaption><b>Figure 6.8.</b> The log of each run's weight \(\prod_t \rho_t\) for target B, split by whether A won the run. The runs span hundreds of orders of magnitude. The self-normalised estimate is decided by the single run furthest right. The best-weighted run is one that A lost, so the estimate is zero.</figcaption>
+  </figure>
+
+  <div class="measured"><span class="label">Measured &#183; 48 seeds of PANEL_A &#183; M2 Max &#183; what was substituted</span>
+    <p>A is <code>ironclad_e2e_d9000_ema0999</code> and B is <code>allchar_e2e_d4500_ema0999</code>, run through the simulator's Rust inference. They are not the PyTorch module the trainer serves. Both play through the simulator's peek, decide and apply loop. With greedy choices, that loop reproduces the native self-play move for move on the one seed checked. The \(\varepsilon\)-mixtures stand in for a network a few updates newer than A, calibrated by KL as described above. They are not real checkpoints. The 48 truth runs give B's win rate with a standard error of about 5 percentage points. The real-trainer numbers in 11.1 come from a short learning check with a small network, not from the production run.</p>
+  </div>
+
+  <h2 id="confusions">12. Common confusions</h2>
+  <p><strong>"The importance weight is what makes PPO off-policy."</strong> PPO without decoupling has no weight on the data at all. Its ratio \(\pi_\theta / \pi_{\text{old}}\) is the surrogate's variable, the thing being optimised and clipped, not a correction applied to a fixed estimate. The decoupled version adds a true correction factor, \(\pi_{\text{prox}} / \mu\), which carries no gradient.</p>
+  <p><strong>"Clamping the weight is the same as PPO's clip."</strong> They limit different things. The clip limits how far the current parameters may move from \(\pi_{\text{prox}}\) within one update. The clamp limits how much one stale row may count. A row can be inside the clip band with its weight clamped, and the reverse.</p>
+  <p><strong>"Per-decision weights are an unbiased version of per-run weights."</strong> In evaluation, the per-decision estimator of Sutton and Barto &#167;5.9 is unbiased because a reward's expectation depends only on the ratios before it <span class="cite">[<a href="#ref-sb">1</a>, eq. 5.14]</span>. The per-decision gradient of Equation \eqref{eq:offpg} is a different object. It drops the state-distribution correction entirely, and it is biased. Its bias is small only because the trainer keeps the gap small.</p>
+  <p><strong>"High agreement on the top action means the policies are close."</strong> A and B choose the same top action on about four decisions in five. Their per-run weights still span hundreds of orders of magnitude. The weight depends on the probabilities, not the ranking, and on every decision, not the typical one. From a Q-learning background this is the natural misreading: greedy agreement is what matters for a greedy policy, but importance sampling sees the whole distribution.</p>
+  <p><strong>"With enough samples, plain importance sampling always works."</strong> It is unbiased, and its variance can be finite and still useless. With \(\sigma^2\) per decision and \(T\) decisions, Equation \eqref{eq:lognormal} says you need about \(e^{T \sigma^2}\) runs before the estimate stops being decided by its largest weight. For B over 700 decisions, that number is astronomically large.</p>
+
+  <h2 id="experiments">13. Suggested experiments</h2>
+  <p>All commands run from the repository root of the <code>tour</code> branch. In a git worktree, prefix each with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
+  <ol>
+    <li><strong>Reproduce the measurements.</strong> Play the runs, rebuild the data and redraw this chapter's figures and numbers:
+      <figure class="listing"><pre><code>tour/run stop-6-off-policy/figures.py play --out /tmp/runs48.npz --runs 48 --workers 3
+tour/run stop-6-off-policy/figures.py data --runs-file /tmp/runs48.npz
+tour/run stop-6-off-policy/figures.py svg</code></pre></figure>
+    </li>
+    <li><strong>Test the estimator with more runs.</strong> Rerun step 1 with <code>--runs 96</code>. Equation \eqref{eq:lognormal} predicts that the per-run effective sample size for B stays at about one run. Check whether the self-normalised estimate changes from one sample of runs to the next.</li>
+    <li><strong>Score your predictions.</strong> <code>check.py</code> measures seven of this chapter's quantities and compares them with values you write in <code>predictions.toml</code>:
+      <figure class="listing"><pre><code>tour/run stop-6-off-policy/check.py --quick
+tour/run -m pytest tour/stop-6-off-policy</code></pre></figure>
+    </li>
+  </ol>
+
+  <h2 id="references">References</h2>
+  <ol class="refs">
+    <li id="ref-sb">Sutton, R. S., and Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em> (2nd ed.). MIT Press. &#167;5.5 (ordinary and weighted importance sampling, eqs. 5.3-5.6), &#167;5.9 (per-decision importance sampling, eq. 5.14), &#167;13.2 (the policy gradient theorem).</li>
+    <li id="ref-kish">Kish, L. (1965). <em>Survey Sampling</em>. Wiley.</li>
+    <li id="ref-degris">Degris, T., White, M., and Sutton, R. S. (2012). Linear off-policy actor-critic. <em>ICML</em>. arXiv:1205.4839 as "Off-policy actor-critic".</li>
+    <li id="ref-hilton">Hilton, J., Cobbe, K., and Schulman, J. (2022). Batch size-invariance for policy optimization. <em>NeurIPS</em>. arXiv:2110.00641.</li>
+    <li id="ref-ye">Ye, D., et al. (2020). Mastering complex control in MOBA games with deep reinforcement learning. <em>AAAI</em>. arXiv:1912.09729.</li>
+    <li id="ref-impala">Espeholt, L., Soyer, H., Munos, R., et al. (2018). IMPALA: Scalable distributed deep-RL with importance weighted actor-learner architectures. <em>ICML</em>. arXiv:1802.01561. &#167;4 (V-trace), Table 2, Appendix E.</li>
+    <li id="ref-jiangli">Jiang, N., and Li, L. (2016). Doubly robust off-policy value evaluation for reinforcement learning. <em>ICML</em>.</li>
+    <li id="ref-retrace">Munos, R., Stepleton, T., Harutyunyan, A., and Bellemare, M. G. (2016). Safe and efficient off-policy reinforcement learning. <em>NeurIPS</em>. arXiv:1606.02647.</li>
+    <li id="ref-precup">Precup, D., Sutton, R. S., and Singh, S. (2000). Eligibility traces for off-policy policy evaluation. <em>ICML</em>.</li>
+    <li id="ref-ppo">Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. (2017). Proximal policy optimization algorithms. arXiv:1707.06347.</li>
+  </ol>
+</main>
+
+<footer class="chapter"><span>&#8592; Chapter 5: Policy gradients and PPO</span><span>Chapter 7: Imitation and warm starts &#8594;</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
