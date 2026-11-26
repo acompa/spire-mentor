@@ -314,7 +314,7 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 
 <p>Sparse reward causes two separate problems.</p>
 
-<p><b>The learner gets no signal.</b> Suppose the current policy never wins. Then every return is zero. Chapter 5 derives the policy gradient. It weights each action's log-probability by how much better than average the return was, roughly \((G_0 - b)\,\nabla_\theta \log \pi_\theta(a_t \mid s_t)\) for a baseline \(b\). If every return is 0, every weight is 0, and the gradient is exactly zero. Minsky called the long search this causes the "plateau problem" <span class="cite">[<a href="#ref-1">1</a>, §17.4]</span>. A Q-learner has the same trouble in another form. Its targets are all \(0 + \gamma \max_{a'} Q\), so nothing anchors the values.</p>
+<p><b>The learner gets no signal.</b> Suppose the current policy never wins. Then every return is zero. Chapter 5 derives the policy gradient. It weights each action's log-probability by how much better than average the return was, roughly \((G_0 - b)\,\nabla_\theta \log \pi_\theta(a_t \mid s_t)\) for a baseline \(b\). If every return is 0 and the baseline is the average return, every weight is 0, and the gradient is exactly zero. Minsky called the long search this causes the "plateau problem" <span class="cite">[<a href="#ref-1">1</a>, §17.4]</span>. A Q-learner has the same trouble in another form. Its targets are all \(0 + \gamma \max_{a'} Q\), so nothing anchors the values.</p>
 
 <p><b>The signal is weak and far away.</b> Even when wins happen, the reward at step 700 must be credited back to step 3, where a card choice made the win possible. Every step in between adds noise. Chapter 4 shows how a critic and the λ-return trade bias for variance to deal with this. A dense reward shortens the distance between a choice and some feedback about it.</p>
 
@@ -361,7 +361,7 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 
 <div class="eq">\begin{equation} G'_0 = G_0 + \gamma^{T+1}\Phi(s_{T+1}) - \Phi(s_0). \label{eq:shaped-return} \end{equation}</div>
 
-<p>Suppose every terminal state has the same potential, conventionally 0. Then \(G'_0 = G_0 - \Phi(s_0)\). The start state does not depend on the policy. So the shaping moves every policy's expected return by the same amount, and the best policy stays the best. Figure 3.5 adds that terminal state to Figure 3.4.</p>
+<p>Suppose every terminal state has potential 0. Then \(G'_0 = G_0 - \Phi(s_0)\). With \(\gamma = 1\), any constant shared by every terminal state works as well, because it adds the same amount to every return. The start state does not depend on the policy. So the shaping moves every policy's expected return by the same amount, and the best policy stays the best. Figure 3.5 adds that terminal state to Figure 3.4.</p>
 
 <figure id="fig-5">
   <div class="scroll">
@@ -394,7 +394,7 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 <p>Two conditions made the argument work. You can apply them as a test to any reward term:</p>
 <ol>
   <li><b>Form.</b> The term must equal \(\gamma\Phi(s_{t+1}) - \Phi(s_t)\) for a single function \(\Phi\) of the state. A term that depends on the action fails. A term that depends on anything outside the state also fails.</li>
-  <li><b>Ending.</b> With \(\gamma = 1\), every terminal state must have the same potential. With \(\gamma \lt 1\) and an infinite horizon, \(\gamma^{T}\Phi\) goes to zero by itself. In an episodic problem you must still fix the terminal potential.</li>
+  <li><b>Ending.</b> With \(\gamma = 1\), every terminal state must have the same potential, and 0 is the usual choice. With \(\gamma \lt 1\) in an episodic problem, the terminal potential must be exactly 0. A shared constant \(c \ne 0\) would add \(\gamma^{T+1} c\), which depends on the episode length and so on the policy. With \(\gamma \lt 1\), an infinite horizon and a bounded \(\Phi\), the term \(\gamma^{T}\Phi\) goes to zero by itself.</li>
 </ol>
 <p>The form condition also stops an agent from farming a loop. A loop \(s \to s' \to s\) collects \(\Phi(s') - \Phi(s) + \Phi(s) - \Phi(s') = 0\) when \(\gamma = 1\) <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
 
@@ -444,9 +444,9 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 
 <div class="eq">\begin{equation} \gamma^{T} R_W \approx e^{-T(1-\gamma)} R_W. \label{eq:discount-win} \end{equation}</div>
 
-<p>The approximation uses \(\log \gamma \approx -(1-\gamma)\) for \(\gamma\) near 1. Take \(T = 678\), the median length of the network's won runs (Section 9), and \(\gamma = 0.99\). The win is then worth \(0.99^{678} \approx 0.0011\). At the start of a run, that agent would value the win less than the 0.002 reward for the next floor.</p>
+<p>The approximation uses \(\log \gamma \approx -(1-\gamma)\) for \(\gamma\) near 1. Take \(T = 678\), the median index of the last decision in the network's won runs, counted from 0 (Section 9), and \(\gamma = 0.99\). The win is then worth \(0.99^{678} \approx 0.0011\). At the start of a run, that agent would value the win less than the 0.002 reward for the next floor.</p>
 
-<p>Practitioners discount episodic tasks anyway because a shorter horizon gives a less noisy return. A return that sums 700 random rewards has more variance than one that effectively sums 100. Value methods also converge faster when the future shrinks. The price is bias. The agent now optimises a different objective from the one you care about. Chapter 4 shows that GAE's \(\lambda\) makes the same trade without changing the objective. So a system can set \(\gamma = 1\) and still control variance.</p>
+<p>Practitioners discount episodic tasks anyway because a shorter horizon gives a less noisy return. A return that sums 700 random rewards has more variance than one that effectively sums 100. Value methods also converge faster when the future shrinks. The price is bias. The agent now optimises a different objective from the one you care about. Chapter 4 shows that GAE's \(\lambda\) makes the same trade inside the advantage estimate. It biases the gradient estimate when the critic is wrong, but it leaves the objective unchanged. So a system can set \(\gamma = 1\) and still control variance.</p>
 
 <h2 id="hacking">6. The optimiser finds the cheapest way to score</h2>
 
@@ -471,7 +471,7 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 
 <p><b>The discount is 1 and λ controls the variance.</b> The textbook uses \(\gamma \lt 1\) for the reasons in Section 5. Instinct keeps the objective undiscounted, so a win is worth exactly 1.0 from every decision. It controls variance with the λ of GAE, which Chapter 4 derives.</p>
 
-<p><b>Numerical precision bounds the smallest useful reward.</b> The network trains in 16-bit bfloat for speed. Near 1.0, adjacent bfloat16 numbers are 0.0039 apart. That gap is wider than the 0.002 floor reward. A value head in bfloat16 could not tell one more floor from rounding error. The plan keeps the value output in 32-bit floats for this reason.</p>
+<p><b>Numerical precision bounds the smallest useful reward.</b> The network trains in 16-bit bfloat for speed. Adjacent bfloat16 numbers are 0.0039 apart just below 1.0 and 0.0078 apart just above it, where a won state's value of about 1.24 sits. Both gaps are wider than the 0.002 floor reward. A value head in bfloat16 could not tell one more floor from rounding error. The plan keeps the value output in 32-bit floats for this reason.</p>
 
 <h2 id="spire">8. In Spire Mentor</h2>
 
@@ -526,14 +526,14 @@ boss with 9pp less HP and won more [AD].</code></pre>
   <figcaption>docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md, line 276 (abridged, line breaks added)</figcaption>
 </figure>
 
-<p>AlphaDefect is an earlier agent for another character that the project studied. The plan's argument is the one from Section 6. The stronger AlphaDefect checkpoint reached the first boss with less HP and won more often. A term that paid for HP would have pushed against that play. The plan gives a second reason in its table of differences from AlphaDefect: "no HP term (the hybrid's suspected cap [CPPO])". The evidence behind both citations sits in a knowledge base that the public repository does not include. This chapter could not check it.</p>
+<p>AlphaDefect is another team's agent for a different character, the Defect. The plan copies its recipe and studied its checkpoints. The plan's argument is the one from Section 6. The stronger AlphaDefect checkpoint reached the first boss with less HP and won more often. A term that paid for HP would have pushed against that play. The plan gives a second reason in its table of differences from AlphaDefect: "no HP term (the hybrid's suspected cap [CPPO])". The evidence behind both citations sits in a knowledge base that the public repository does not include. This chapter could not check it.</p>
 
 <p>The record explains less of the rest of the rule. The public repository is synced from a private one, and its commits carry no reasons. Here is what the plan and code say, and what they leave open:</p>
 <ul>
-  <li><b>Stated.</b> The value output stays in 32-bit floats because "bf16 spacing at V = 1 is 0.0039 &gt; the 0.002 floor reward" (plan, line 273). Every amendment to the pre-registration repeats that the rewards did not change.</li>
+  <li><b>Stated.</b> The value output stays in 32-bit floats because "bf16 spacing at V = 1 is 0.0039 &gt; the 0.002 floor reward" (plan, line 273). The pre-registration fixes the reward rule and \(\gamma = 1\) before training. No amendment changes the reward, and Amendments 9, 11 and 12 say so explicitly.</li>
   <li><b>Inferred.</b> The final boss pays no boss bonus because its win already pays 1.0. The code states the rule but not the reason.</li>
   <li><b>Inferred.</b> The floor term continues version 1's goal that "a deeper death strictly out-scores a shallower one" (<code>sts2-pycli/python/ppo/rewards.py</code>, lines 7-8), at a much smaller weight. No document links the two.</li>
-  <li><b>Inferred.</b> \(\gamma = 1\) was already the default across the project's earlier PPO code. No document compares it with \(\gamma \lt 1\) for Instinct.</li>
+  <li><b>Inferred.</b> The reason for \(\gamma = 1\). It was already the default across the project's earlier PPO code. No document compares it with \(\gamma \lt 1\) for Instinct.</li>
   <li><b>Not recorded.</b> Why the weights are 1.0, 0.05 and 0.002, and why a capped run scores 0 like a death.</li>
 </ul>
 
@@ -559,11 +559,11 @@ boss with 9pp less HP and won more [AD].</code></pre>
 
 <div class="eq">\begin{equation} J = p\,(R_W + 0.242) + (1 - p)\, m_L. \label{eq:J-pm} \end{equation}</div>
 
-<p>Suppose a policy gives up \(\Delta p\) of win rate. Its losses must collect enough extra progress to pay for it: \((1-p)\,\Delta m_L \gt \Delta p\,(R_W + 0.242 - m_L)\). Use the network's measured values from Section 9, \(p = 0.81\) and \(m_L = 0.174\). To give up one percentage point of wins, every loss would need about 0.056 more progress. That is roughly one more boss or 28 more floors per lost run. The bonus can break a near-tie. It cannot buy a real loss of win rate.</p>
+<p>Suppose a policy gives up \(\Delta p\) of win rate. Its losses must collect enough extra progress \(\Delta m_L\) to pay for it. To first order in \(\Delta p\), that requires \((1-p)\,\Delta m_L \gt \Delta p\,(R_W + 0.242 - m_L)\). The exact condition replaces \(1-p\) with \(1-p+\Delta p\). Use the network's measured values from Section 9, \(p = 0.81\) and \(m_L = 0.174\). To give up one percentage point of wins, the losses would need about 0.056 more progress on average, or 0.053 by the exact condition. That is roughly one more boss or 28 more floors per lost run. The bonus can break a near-tie. It cannot buy a real loss of win rate.</p>
 
 <h3>Version 1 used both kinds of term</h3>
 
-<p>An earlier version of the project's PPO agent used a different reward. It shows both halves of Section 4 in one design. Its return came from a potential \(\Phi = \text{base} + \text{shape}\). The base paid graded progress and the win with equal weight, \(0.5\,F/46 + 0.5\,W\) at ascension 10. The shape term was potential-based shaping on HP fraction, upgraded cards and relics:</p>
+<p>The project's earlier PPO run policy, the one Instinct replaced (README), used a different reward. This chapter calls it version 1. It shows both halves of Section 4 in one design. Its return came from a potential \(\Phi = \text{base} + \text{shape}\). The base paid graded progress and the win with equal weight, \(0.5\,F/46 + 0.5\,W\) at ascension 10. The shape term was potential-based shaping on HP fraction, upgraded cards and relics, with the relic weight set to 0 by default:</p>
 
 <figure class="listing">
 <pre><code>def shape_value(metrics, cfg):
@@ -580,15 +580,15 @@ boss with 9pp less HP and won more [AD].</code></pre>
   <figcaption>sts2-pycli/python/ppo/rewards.py, lines 101-108 and 136-137 (abridged, type hints removed)</figcaption>
 </figure>
 
-<p>The comment <code>terminal shape = 0</code> meets the ending condition of Section 4. So the HP and upgrade terms were policy-invariant. The base was not, for the same reason that Instinct's floor term is not. The version-1 code also notes a stronger consequence of Equation \eqref{eq:qshift}. If the critic learns \(V = m - \Phi\), the shaping leaves every TD residual unchanged. Then the advantages and the gradient do not depend on the shaping coefficients at all. Shaping could act only through the critic's errors. Instinct removed the shaping and kept a smaller progress bonus.</p>
+<p>The comment <code>terminal shape = 0</code> meets the ending condition of Section 4. So the HP and upgrade terms were policy-invariant. The base was not, for the same reason that Instinct's floor term is not. The version-1 code also notes a stronger consequence of Equation \eqref{eq:qshift}. Let \(m\) be any function of the state. If the critic learns \(V = m - \Phi\), the shaping leaves every TD residual unchanged. Then the advantages and the gradient do not depend on the shaping coefficients at all. Shaping could act only through the critic's errors. Instinct has no shaping term and a smaller progress bonus.</p>
 
 <div class="table"><table>
   <thead><tr><th></th><th>Version 1</th><th>Instinct</th></tr></thead>
   <tbody>
     <tr><td>Win</td><td>0.5</td><td>1.0</td></tr>
-    <tr><td>Largest progress bonus at the end</td><td>0.5 × F/46, up to 0.5</td><td>0.002 F + 0.05 B, about 0.25</td></tr>
+    <tr><td>Largest progress bonus at the end</td><td>0.5 × F/46, about 0.5 (not clipped)</td><td>0.002 F + 0.05 B, about 0.25</td></tr>
     <tr><td>Win's share of a won run's return</td><td>about 50%</td><td>about 80%</td></tr>
-    <tr><td>Potential-based shaping</td><td>HP, upgrades and relics, with terminal Φ = 0</td><td>none</td></tr>
+    <tr><td>Potential-based shaping</td><td>HP and upgrades (relic weight 0 by default), with terminal Φ = 0</td><td>none</td></tr>
     <tr><td>Discount</td><td>γ = 1</td><td>γ = 1</td></tr>
   </tbody>
   <caption>The two reward designs. Both pay a terminal progress bonus that is not policy-invariant. Only version 1 added invariant shaping. Instinct moved weight from progress to the win.</caption>
@@ -599,7 +599,7 @@ boss with 9pp less HP and won more [AD].</code></pre>
 <p>All numbers below come from the first 300 seeds of the tour's panel A, seeds 170000000 to 170000299. Each seed was played twice. The published Ironclad network chose greedily in one run. Uniformly random choices drove the other. Runs went through the training environment, so every reward is the reward training saw. Each run passed a three-way check. The sum of its ledger, the environment's own total and Equation \eqref{eq:return-sm} applied to its floor, bosses and win agreed to within \(10^{-7}\).</p>
 
 <div class="measured"><span class="label">Measured · how the runs were played · M2 Max</span>
-  <p>The environment is the Rust port of the training environment that the rollout workers ran. The network is the published checkpoint <code>ironclad_e2e_d9000_ema0999</code>, run greedily (Chapter 2) in PyTorch on CPU, on the environment's own token rows. The tour's other chapters play the same network from its compact <code>.e2ew</code> export. That export's player has no reward code. On the first 8 seeds both versions reached the same outcome, floor and number of decisions. The 600 runs took 569 s on 3 processes.</p>
+  <p>The environment is the Rust port of the training environment that the rollout workers ran. The network is the published checkpoint <code>ironclad_e2e_d9000_ema0999</code>, run greedily (Chapter 2) in PyTorch on CPU, on the environment's own token rows. The tour's other chapters play the same network from its compact <code>.e2ew</code> export. That export's player has no reward code. Chapter 8 played that export on the same 300 seeds. On every seed both versions reached the same outcome, floor and number of decisions (<code>tour/stop-8-evaluation/data/runs.json</code>). The 600 runs took 569 s on 3 processes.</p>
 </div>
 
 <h3>Most decisions earn nothing</h3>
@@ -771,18 +771,18 @@ boss with 9pp less HP and won more [AD].</code></pre>
 <line class="l4" stroke-dasharray="4 3" x1="365.5" x2="365.5" y1="18" y2="254"/>
 <text class="muted" x="361.5" y="28" text-anchor="end">act-2 boss</text>
 <line class="l4" stroke-dasharray="4 3" x1="504.3" x2="504.3" y1="18" y2="254"/>
-<text class="muted" x="500.3" y="28" text-anchor="end">act-3 bosses</text>
+<text class="muted" x="500.3" y="45" text-anchor="end">act-3 bosses (floors 45, 46)</text>
 </svg>
 <!-- /fig:deaths -->
   </div>
   <figcaption><b>Figure 3.9.</b> The floor on which each of the network's 57 lost runs ended, with the boss floors marked. Each loss scores \(0.002 F_T + 0.05 B_T\). A death on floor 16 scores 0.032. A death on floor 46 scores 0.242. Most losses end on a boss floor, where the 0.05 terms separate one loss from another.</figcaption>
 </figure>
 
-<p>The largest return among the losing runs was 0.246. Won runs scored 1.242 in 238 runs and 1.246 in 5 runs. The 1.246 runs reached floor 48. All five held the Golden Compass relic. The project's version-1 reward code notes that this relic makes the act-2 map two rows longer. So a win on that path collects 0.004 more. The losing run that scored 0.246 also reached floor 48 and died to the final boss. The bonus is too small to matter in training. It is still a small case of Section 6. The rule pays for floors, and floors are not quite the same thing as progress.</p>
+<p>The largest return among the losing runs was 0.246. Won runs scored 1.242 in 238 runs and 1.246 in 5 runs. The 1.246 runs reached floor 48. All five held the Golden Compass relic. The project's version-1 reward code notes that this relic makes the act-2 map two rows longer. So a win on that path collects 0.004 more. The losing run that scored 0.246 also reached floor 48, the last floor of a long map, so it most likely died to the final boss. The bonus is too small to matter in training. It is still a small case of Section 6. The rule pays for floors, and floors are not quite the same thing as progress.</p>
 
 <h3>The reward does not see HP</h3>
 
-<p>Among the network's won runs, the HP left at the end varied widely. The middle 80% finished with between 28% and 85% of their maximum HP. The lowest finished with 10%. Every one of them scored the same return. The rule cannot tell a win on 5 HP from a win at full health, so the objective cannot either. If the network protects HP, it does so because HP helps it win later fights. Chapter 4 makes this concrete. The critic's value estimate, not the reward, is where HP gets a price.</p>
+<p>Among the network's won runs, the HP left at the end varied widely. The middle 80% finished with between 28% and 86% of their maximum HP. The lowest finished with 10%. Every one of them scored the same return. The rule cannot tell a win on 5 HP from a win at full health, so the objective cannot either. If the network protects HP, it does so because HP helps it win later fights. Chapter 4 makes this concrete. The critic's value estimate, not the reward, is where HP gets a price.</p>
 
 <h3>A discount would erase the win</h3>
 
@@ -825,11 +825,11 @@ boss with 9pp less HP and won more [AD].</code></pre>
   <figcaption><b>Figure 3.10.</b> The value of the +1.0 win, seen from the first decision, if Instinct used a discount \(\gamma\). The line uses the median length of the network's won runs. The band covers the 10th to 90th percentile of lengths. At \(\gamma = 0.99\) the win is worth less than one floor reward.</figcaption>
 </figure>
 
-<p>The network's won runs ended on decision 678 at the median. By Equation \eqref{eq:discount-win}, \(\gamma = 0.99\) would make the win worth 0.0011 from the first decision. \(\gamma = 0.999\) would make it worth 0.51. An effective horizon of 100 decisions covers a fraction of one act. With \(\gamma = 1\) the win is worth 1.0 from every decision. Carrying it back through 700 steps becomes the job of the critic and λ. Chapter 4 covers both.</p>
+<p>The network's won runs made 679 decisions at the median, so the last decision has index 678. By Equation \eqref{eq:discount-win}, \(\gamma = 0.99\) would make the win worth 0.0011 from the first decision. \(\gamma = 0.999\) would make it worth 0.51. An effective horizon of 100 decisions covers a fraction of one act. With \(\gamma = 1\) the win is worth 1.0 from every decision. Carrying it back through 700 steps becomes the job of the critic and λ. Chapter 4 covers both.</p>
 
 <h2 id="confusions">10. Common confusions</h2>
 
-<p><b>"The reward is the label."</b> A label says what the right output was. A reward says how good the outcome was, after the fact, and only as part of a sum over many steps. A run that won still contains bad decisions. A run that died contains good ones. The policy is a classifier, but Chapter 5 trains it on a log-likelihood weighted by returns, not on the actions as targets.</p>
+<p><b>"The reward is the label."</b> A label says what the right output was. A reward says how good the outcome was, after the fact, and only as part of a sum over many steps. A run that won still contains bad decisions. A run that died contains good ones. The policy is a classifier, but Chapter 5 trains it on a log-likelihood weighted by advantages, which come from returns, not on the actions as targets.</p>
 
 <p><b>"The return of decision \(t\) is the run's return."</b> \(G_t\) is reward-to-go. It leaves out rewards that arrived before step \(t\). With \(\gamma = 1\), \(G_t = G_0 - \sum_{k \lt t} r_k\). A choice made on floor 20 gets no credit for the floors already climbed.</p>
 
