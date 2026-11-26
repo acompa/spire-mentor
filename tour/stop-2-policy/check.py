@@ -95,11 +95,13 @@ def _init_worker(path: str) -> None:
 
 
 def play(student, seed: int, mode: str = "greedy", on_decision=None,
-         max_decisions: int = MAX_DECISIONS) -> Run:
+         max_decisions: int = MAX_DECISIONS, temperature: float = 1.0) -> Run:
     """Play `seed` from the start with `student`.
 
     `mode` "greedy" plays the top class; "sample" draws a class from the
-    softmax of the logits (temperature 1) with a generator seeded by `seed`.
+    softmax of the logits divided by `temperature` (1 = the policy as trained)
+    with a generator seeded by `seed`. The recorded top probability and
+    entropy are always those of the policy itself, at temperature 1.
     `on_decision(decision, out, rm)` sees every decision before it is applied.
     """
     import sts2_rs
@@ -126,7 +128,11 @@ def play(student, seed: int, mode: str = "greedy", on_decision=None,
             return Run(seed, mode, False, f"error: {e}", steps)
         p = softmax(out["logits"])
         greedy = int(out["class"])
-        played = greedy if mode == "greedy" else int(rng.choice(len(p), p=p))
+        if mode == "greedy":
+            played = greedy
+        else:
+            q = p if temperature == 1.0 else softmax(np.asarray(out["logits"]) / temperature)
+            played = int(rng.choice(len(q), p=q))
         if on_decision is not None:
             on_decision(d, out, rm)
         steps.append(Step(d["decision_type"], bool(d["is_combat"]), len(p),
@@ -266,13 +272,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--quick", action="store_true", help="20 seeds instead of 120")
     ap.add_argument("--seeds", type=int, help="number of PANEL_A seeds")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--net", default=NET, help="weights file in TOUR_WEIGHTS")
     args = ap.parse_args()
 
     tourlib.load_predictions(STOP)  # refuse before any slow work
     n_seeds = args.seeds or (20 if args.quick else 120)
     seeds = list(tourlib.PANEL_A[:n_seeds])
-    path = str(tourlib.weight(NET))
+    path = str(tourlib.weight(args.net))
 
     import sts2_rs
 
