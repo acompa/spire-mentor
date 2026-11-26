@@ -63,3 +63,32 @@ def test_play_matches_selfplay_on_one_seed():
     rb, y = imitation.runs(g.rows, g.chosen, [seed])
     assert len(y) == g.decisions
     assert imitation.agreement(imitation.choices(imitation.teacher_paths()[0], rb), y) == 100.0
+
+
+def test_soft_cross_entropy_is_hard_cross_entropy_for_one_hot_teacher():
+    import torch
+
+    student = torch.tensor([[2.0, 0.5, -float("inf")], [0.0, 1.0, 3.0]])
+    hard = torch.tensor([[50.0, -50.0, -float("inf")], [-50.0, -50.0, 50.0]])
+    expected = torch.nn.functional.cross_entropy(student, torch.tensor([0, 2]))
+    assert torch.isclose(imitation.soft_cross_entropy(student, hard), expected, atol=1e-5)
+
+
+def test_soft_cross_entropy_is_teacher_entropy_when_student_matches():
+    import torch
+
+    logits = torch.tensor([[1.0, 0.0, -1.0]])
+    p = torch.softmax(logits, -1)
+    entropy = -(p * p.log()).sum()
+    assert torch.isclose(imitation.soft_cross_entropy(logits, logits), entropy, atol=1e-6)
+
+
+def test_render_fills_measured_values_and_differences():
+    import figures
+
+    d = {"teacher": {"mean_floor": 45.07}, "students": {"bc100": {"mean_floor": 17.0}}}
+    html = ('<span class="v" data-k="teacher.mean_floor" data-f=".1f">?</span> '
+            '<span class="v" data-k="teacher.mean_floor - students.bc100.mean_floor" data-f="+.1f">old</span>')
+    assert figures.fill_values(html, d) == (
+        '<span class="v" data-k="teacher.mean_floor" data-f=".1f">45.1</span> '
+        '<span class="v" data-k="teacher.mean_floor - students.bc100.mean_floor" data-f="+.1f">+28.1</span>')

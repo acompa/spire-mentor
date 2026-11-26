@@ -1,0 +1,539 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<title>RL Tour 7: Imitation and Warm Starts</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+
+<style>
+/* Chapter 7 only. */
+.v { font-variant-numeric: tabular-nums; }
+/* The shared rule 'figure svg { display: block }' also catches MathJax's inline SVG in captions. */
+figure mjx-container svg { display: inline; margin-inline: 0; }
+pre.cmd { overflow-x: auto; max-width: 100%; background: var(--surface); border: 1px solid var(--rule); padding: .6rem .8rem; font: 400 .78rem/1.5 var(--mono); }
+pre.cmd code { background: none; padding: 0; font-size: inherit; }
+ol.algo { font-family: var(--sans); font-size: .95rem; padding-left: 1.4rem; }
+.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 560px) { .cols2 { grid-template-columns: 1fr; } }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 7 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Imitation and warm starts</h1>
+  <p class="lede">Copying a good player is ordinary supervised learning. When the copy plays for itself, though, each mistake takes it to states the training data never covered. This chapter shows why that costs more than the error rate suggests, how DAgger fixes it, and how a reinforcement learner uses a copy as a starting point and then lets it go.</p>
+</header>
+
+<nav class="contents" aria-label="Chapter contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#opening">Learning from a teacher</a></li>
+    <li><a href="#bc">Behaviour cloning is classification</a></li>
+    <li><a href="#compounding">Why errors compound</a></li>
+    <li><a href="#dagger">DAgger: label the learner's states</a></li>
+    <li><a href="#distill">Distillation: soft against hard labels</a></li>
+    <li><a href="#warm">Warm-starting reinforcement learning</a></li>
+    <li><a href="#engineered">The textbook version against the engineered one</a></li>
+    <li><a href="#project">In Spire Mentor</a></li>
+    <li><a href="#measured">Measured</a></li>
+    <li><a href="#confusions">Common confusions</a></li>
+    <li><a href="#experiments">Suggested experiments</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<main>
+  <h2 id="opening">1. Learning from a teacher</h2>
+
+  <p>The earlier chapters trained a policy from reward alone. Chapter 5's policy gradient raises the probability of an action in proportion to its advantage, and the advantage comes from what happened later in the run. That signal is weak. At Ascension 10, a network with random weights dies within the first few floors of almost every run. Most of its decisions get credit or blame for a death many decisions away. Reinforcement learning from scratch spends its first millions of decisions just learning to survive Act 1.</p>
+
+  <p>Often something already plays well: an older network, a search procedure, a human. Call it the <dfn>teacher</dfn>, \(\pi^*\). It gives a much stronger signal than reward does. At every state it visits, it names an action. Learning from that is supervised learning. The input is the state, the label is the teacher's action, and the loss is cross-entropy. No reward and no advantage are needed, and no runs have to end before anything is learned.</p>
+
+  <p>This chapter is about what that shortcut gets right and what it gets wrong. Behaviour cloning treats imitation as classification, and its test error looks small. Its mistakes compound, to order \(\epsilon T^2\) over a run of \(T\) decisions. DAgger brings that to order \(\epsilon T\) by labelling the learner's own states. Distillation trains on the teacher's whole distribution. Last, Spire Mentor's trainer imitates two older networks, then hands over to PPO while the pull towards the teachers fades to zero.</p>
+
+  <p>We will measure all of it on this Mac. The teacher is the published Ironclad network, which wins about four runs in five. A fresh network with the same architecture learns from 100 of the teacher's runs. It ends up picking the teacher's move on nearly three decisions in four, and it almost never wins. The gap between those two numbers is what this chapter explains.</p>
+
+  <p>This connects to the rest of the tour. Of the three ways to train a policy (imitate actions, regress outcomes, follow a policy gradient), this chapter is about the first. It is the offline-RL setting with the simplest possible estimand: the logged policy is the expert, and we want to copy it, not beat it. The data are logged by a behaviour policy \(\mu\), and here \(\mu = \pi^*\). (In statistics \(\mu\) usually names a mean; in this tour it is always the behaviour policy.) As in off-policy evaluation, the trouble starts when the policy you deploy visits states outside the support of the logged data.</p>
+
+  <h2 id="bc">2. Behaviour cloning is classification</h2>
+
+  <p>We start with one concrete decision, taken from a run the student never trained on. It is floor 1, the Ironclad has 62 HP and the starter deck: five Strikes, four Defends, Bash, and the Ascender's Bane curse. The first fight is won, and the card reward offers Tremble, True Grit and Setup Strike, or skip. The game merges identical options into <dfn>classes</dfn> (Chapter 1), so the policy chooses among four classes. The teacher picks Setup Strike, class 2, with probability 0.9998. We store one example: the tokenized state \(s\) and the label \(a^* = 2\). If the student's softmax gives class 2 a probability of 0.25, the loss on this example is \(-\log 0.25 = 1.39\), and a gradient step raises that probability. <dfn>Behaviour cloning</dfn> is this, repeated over every decision the teacher made <span class="cite">[<a href="#ref-pomerleau">1</a>, <a href="#ref-bain">2</a>]</span>. After training on 100 teacher runs, our student gives Setup Strike 0.80 at this state and Tremble 0.19, so it picks the same card.</p>
+
+  <p>Now the general statement. Let \(d^{\pi}_t(s)\) be the probability that a policy \(\pi\) is in state \(s\) at decision \(t\), and let \(d^{\pi} = \frac{1}{T}\sum_{t=0}^{T-1} d^{\pi}_t\) be the state distribution averaged over a run of \(T\) decisions, \(t = 0, \dots, T-1\). The teacher's runs give samples \(s \sim d^{\pi^*}\), each with the teacher's action \(a^*(s)\).</p>
+
+  <div class="definition"><span class="label">Definition 7.1 · Behaviour cloning</span>
+    <p>Behaviour cloning fits a policy \(\pi_\theta\) by maximum likelihood on the teacher's actions, at the teacher's states:</p>
+    <div class="eq">\begin{equation} \theta_{\text{BC}} = \arg\min_\theta \; \mathbb{E}_{s \sim d^{\pi^*}} \big[ -\log \pi_\theta\big(a^*(s) \mid s\big) \big] \label{eq:bc} \end{equation}</div>
+  </div>
+  <p>Here \(\pi_\theta(a \mid s)\) is the softmax of the logits \(z_\theta(s, a)\) over the legal classes \(\mathcal{A}(s)\), and \(a^*(s)\) is the teacher's greedy choice. Equation \eqref{eq:bc} is the cross-entropy loss of a classifier whose inputs are states drawn from the teacher's runs. Nothing in it mentions reward.</p>
+
+  <p>If the teacher is stochastic, or if we can read its probabilities, the label becomes a distribution. The loss is then the cross-entropy between two distributions, and it splits into two parts:</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{a \sim \pi^*(\cdot \mid s)}\big[-\log \pi_\theta(a \mid s)\big] = D_{\mathrm{KL}}\big(\pi^*(\cdot \mid s) \,\|\, \pi_\theta(\cdot \mid s)\big) + \mathcal{H}\big[\pi^*(\cdot \mid s)\big] \label{eq:ce-kl} \end{equation}</div>
+  <p>The left side is the expected negative log-likelihood of the teacher's action. On the right, \(D_{\mathrm{KL}}(\pi^* \,\|\, \pi_\theta) = \sum_a \pi^*(a \mid s) \log \frac{\pi^*(a \mid s)}{\pi_\theta(a \mid s)}\) is the forward KL divergence, and \(\mathcal{H}[\pi^*] = -\sum_a \pi^*(a \mid s)\log \pi^*(a \mid s)\) is the teacher's entropy. The entropy does not depend on \(\theta\), so minimising cross-entropy and minimising forward KL give the same student. Section 5 uses this, and so does Spire Mentor's trainer.</p>
+
+  <p>The classifier's test error is the quantity a supervised learner reports. For imitation, it is the probability of disagreeing with the teacher at the teacher's own states:</p>
+  <div class="eq">\begin{equation} \epsilon = \mathbb{E}_{s \sim d^{\pi^*}} \Big[ \Pr_{a \sim \pi_\theta(\cdot \mid s)}\big(a \neq a^*(s)\big) \Big] \label{eq:eps} \end{equation}</div>
+  <p>Here \(\epsilon\) is the per-decision error, measured on held-out teacher states. For a greedy student it is one minus the <dfn>agreement</dfn>, the share of decisions on which student and teacher pick the same class. Held-out has a specific meaning here. Decisions within a run are strongly correlated: the same deck, the same fight, the same HP. So the held-out set must be whole runs the student never saw, not random decisions. This is the same rule as sampling sessions rather than turns, and the old version 1 cloning code in this repository already split by run for that reason.</p>
+
+  <p>If the goal were to classify teacher states, we would be done. The goal is to play. Define a cost \(c(s, a) \in [0, 1]\) per decision. The simplest choice is \(c(s, a) = 1\) when \(a \neq a^*(s)\), so cost counts mistakes. A run's expected total cost is</p>
+  <div class="eq">\begin{equation} J(\pi) = \sum_{t=0}^{T-1} \mathbb{E}_{s \sim d^{\pi}_t}\big[ C_\pi(s) \big], \qquad C_\pi(s) = \mathbb{E}_{a \sim \pi(\cdot \mid s)}\big[c(s, a)\big] \label{eq:cost} \end{equation}</div>
+  <p>\(C_\pi(s)\) is the expected one-step cost of following \(\pi\) at \(s\). This chapter follows Ross and Bagnell <span class="cite">[<a href="#ref-ross2010">3</a>]</span> in writing costs to be minimised instead of the tour's rewards. A cost is a negated, rescaled reward, and nothing else changes. Compare Equation \eqref{eq:cost} with Equation \eqref{eq:eps}. The error is an expectation under the teacher's state distribution \(d^{\pi^*}\). The cost is an expectation under the student's own distribution \(d^{\pi_\theta}_t\). Supervised learning controls the first. We care about the second. The next section measures the distance between them.</p>
+
+  <h2 id="compounding">3. Why errors compound</h2>
+
+  <p>Picture the student playing a fight the teacher won. Early on, the states look like the teacher's, and the student mostly agrees. Suppose that at some decision it plays Bash where the teacher would play Defend, and takes 12 damage it did not need to take. (This mistake is illustrative, not one recorded below.) From then on, every state differs from the teacher's in at least one way: lower HP. Perhaps a later elite then kills it. The teacher never visited these states, so the training data have nothing to say about them. A classifier is not reliable away from its training distribution. Its error rate there is higher, and its errors take it further away still. Pomerleau met the same problem when training a network to steer a car from a person's driving. The person kept the car centred, so the network never saw how to recover once it strayed <span class="cite">[<a href="#ref-pomerleau">1</a>]</span>.</p>
+
+  <figure id="fig-shift">
+    <div class="scroll">
+      <svg viewBox="0 0 560 230" role="img" aria-label="Two trajectories leave the same start. The teacher's path stays inside the shaded band of training states. The student's path follows it, makes one mistake, leaves the band, and from then on makes further mistakes outside the band.">
+        <defs><marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <path d="M30 95 C 160 70, 300 120, 530 90 L 530 140 C 300 170, 160 120, 30 145 Z" fill="var(--accent-soft)" stroke="none"/>
+          <text class="muted" x="430" y="160" text-anchor="middle">states in the teacher's runs (training data)</text>
+          <path class="l1" stroke-width="2.5" d="M30 120 C 160 95, 300 145, 530 115"/>
+          <text x="535" y="112">teacher</text>
+          <path class="l2" stroke-width="2.5" d="M30 120 C 90 108, 130 104, 170 110 C 210 100, 240 70, 290 55 C 340 40, 400 30, 470 18"/>
+          <circle class="f2" cx="170" cy="110" r="5"/>
+          <text x="166" y="132" text-anchor="middle">first mistake</text>
+          <circle class="f2" cx="290" cy="55" r="4"/><circle class="f2" cx="380" cy="35" r="4"/><circle class="f2" cx="450" cy="22" r="4"/>
+          <text x="300" y="80" text-anchor="start">later mistakes, off the data</text>
+          <text x="475" y="20">student</text>
+          <line class="ink" x1="30" y1="205" x2="530" y2="205" marker-end="url(#arw)"/>
+          <text class="muted" x="280" y="222" text-anchor="middle">decision t →</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 7.1.</b> Distribution shift. The student is trained on states from the teacher's runs (the band). Until its first mistake, its states look like training states. After it, the student is somewhere the data never covered, where it errs more often, and each error takes it further out. Measured error on held-out teacher states sees only the band.</figcaption>
+  </figure>
+
+  <p>We now make this precise, following the derivation in Levine's CS285 lecture on imitation <span class="cite">[<a href="#ref-cs285">5</a>]</span>, which simplifies Ross and Bagnell's proof <span class="cite">[<a href="#ref-ross2010">3</a>]</span>. Assume the student errs with probability at most \(\epsilon\) at any state the teacher visits. Track two kinds of run prefixes: those where the student has made no mistake yet, and the rest.</p>
+
+  <p><b>Step 1: the state distribution is a mixture.</b> The student makes no mistake in its first \(t\) decisions with probability at least \((1-\epsilon)^t\). Along those prefixes it has done exactly what the teacher would do, so its state at \(t\) is distributed as the teacher's. Along the others it is somewhere else, with some distribution \(p^{\text{mistake}}_t\) that we know nothing about:</p>
+  <div class="eq">\begin{equation} d^{\pi_\theta}_t = (1-\epsilon)^t \, d^{\pi^*}_t + \big(1 - (1-\epsilon)^t\big)\, p^{\text{mistake}}_t \label{eq:mixture} \end{equation}</div>
+  <p>The first weight is the probability of a clean prefix. The second is everything else. (This step is a simplification. The assumption bounds the error only on average over teacher states, so \((1-\epsilon)^t\) is a heuristic weight, not a proven one. Ross and Bagnell's proof avoids it: the probability of at least one mistake in the first \(t\) decisions is at most the sum of the per-decision error rates, and after a mistake the cost is at most 1 per decision. That argument gives the same \(\epsilon T^2\).)</p>
+
+  <p><b>Step 2: how far apart are the two distributions?</b> Subtract \(d^{\pi^*}_t\) from both sides and take the total variation, the sum of absolute differences over states:</p>
+  <div class="eq">\begin{equation} \sum_s \big| d^{\pi_\theta}_t(s) - d^{\pi^*}_t(s) \big| = \big(1 - (1-\epsilon)^t\big) \sum_s \big| p^{\text{mistake}}_t(s) - d^{\pi^*}_t(s) \big| \le 2\big(1 - (1-\epsilon)^t\big) \le 2\epsilon t \label{eq:tv} \end{equation}</div>
+  <p>The middle inequality holds because two probability distributions differ by at most 2 in this norm. The last one uses \((1-\epsilon)^t \ge 1 - \epsilon t\), which follows from Bernoulli's inequality. So the gap between where the student is and where it was trained grows linearly in \(t\).</p>
+
+  <p><b>Step 3: the cost at decision \(t\).</b> At teacher states the student's expected cost is at most \(\epsilon\). Elsewhere it is at most 1, the largest possible cost. Splitting the expectation over the two distributions:</p>
+  <div class="eq">\begin{equation} \mathbb{E}_{s \sim d^{\pi_\theta}_t}\big[C_{\pi_\theta}(s)\big] \le \mathbb{E}_{s \sim d^{\pi^*}_t}\big[C_{\pi_\theta}(s)\big] + \sum_s \big| d^{\pi_\theta}_t(s) - d^{\pi^*}_t(s) \big| \cdot \max_s C_{\pi_\theta}(s) \le \epsilon + 2\epsilon t \label{eq:stepcost} \end{equation}</div>
+  <p>The first term is the error the classifier makes on its training distribution. The second is the penalty for being somewhere else. It is the distance from Equation \eqref{eq:tv} times the worst cost, 1.</p>
+
+  <p><b>Step 4: sum over the run.</b></p>
+  <div class="eq">\begin{equation} J(\pi_\theta) \le \sum_{t=0}^{T-1} (\epsilon + 2\epsilon t) = \epsilon T + \epsilon T (T-1) = \epsilon T^2 \label{eq:quadratic} \end{equation}</div>
+  <p>An expected cost of order \(\epsilon T^2\), not \(\epsilon T\). The extra factor \(T\) appears because a mistake at decision \(t\) can spoil all the decisions after it. With general costs, Ross and Bagnell prove the matching statement <span class="cite">[<a href="#ref-ross2010">3</a>]</span>: if the student's expected 0-1 loss under the teacher's distribution is \(\epsilon\), then \(J(\pi_\theta) \le J(\pi^*) + T^2 \epsilon\). They also build a small example, with \(\epsilon \le 1/T\), in which behaviour cloning pays exactly \(T^2\epsilon\). So the bound is tight: no better guarantee holds without more assumptions.</p>
+
+  <p><b>Where the bound is reached.</b> Suppose one mistake is unrecoverable: after it, every later decision costs 1. Think of a tightrope, or of a run that has taken a deck-defining wrong turn. Then the expected cost is the expected number of decisions after the first mistake:</p>
+  <div class="eq">\begin{equation} \mathbb{E}[\text{cost}] = \sum_{t=1}^{T} \Big( 1 - (1-\epsilon)^t \Big) \;\approx\; \sum_{t=1}^{T} \epsilon t = \frac{\epsilon T (T+1)}{2} \quad \text{when } \epsilon T \ll 1 \label{eq:tightrope} \end{equation}</div>
+  <p>Each term is the probability that the first mistake has happened by decision \(t\). For small \(\epsilon T\) that is about \(\epsilon t\), and the sum is quadratic in \(T\). Once \(\epsilon T\) is near 1, almost every run has gone wrong, and the cost saturates at about \(T\).</p>
+
+  <figure id="fig-bound">
+    <div class="scroll"><!-- fig:bound --><svg viewBox="0 0 560 300" role="img" aria-label="Two bounds on extra cost against the horizon T for per-step error 0.01: the linear bound stays below 7 at T = 700, the quadratic one passes 100 at T = 100."><line class="grid" x1="56" x2="544" y1="254.0" y2="254.0"/><text class="muted" x="50" y="258.0" text-anchor="end">0</text><line class="grid" x1="56" x2="544" y1="194.5" y2="194.5"/><text class="muted" x="50" y="198.5" text-anchor="end">25</text><line class="grid" x1="56" x2="544" y1="135.0" y2="135.0"/><text class="muted" x="50" y="139.0" text-anchor="end">50</text><line class="grid" x1="56" x2="544" y1="75.5" y2="75.5"/><text class="muted" x="50" y="79.5" text-anchor="end">75</text><line class="grid" x1="56" x2="544" y1="16.0" y2="16.0"/><text class="muted" x="50" y="20.0" text-anchor="end">100</text><text class="muted" x="56.0" y="270" text-anchor="middle">0</text><text class="muted" x="125.7" y="270" text-anchor="middle">100</text><text class="muted" x="195.4" y="270" text-anchor="middle">200</text><text class="muted" x="265.1" y="270" text-anchor="middle">300</text><text class="muted" x="334.9" y="270" text-anchor="middle">400</text><text class="muted" x="404.6" y="270" text-anchor="middle">500</text><text class="muted" x="474.3" y="270" text-anchor="middle">600</text><text class="muted" x="544.0" y="270" text-anchor="middle">700</text><line class="ink" x1="56" x2="544" y1="254" y2="254"/><line class="ink" x1="56" x2="56" y1="16" y2="254"/><text x="300.0" y="292" text-anchor="middle">horizon T (decisions)</text><text x="14" y="135.0" text-anchor="middle" transform="rotate(-90 14 135.0)">bound on extra cost (units)</text><path class="l1" d="M56.0 254.0 L63.0 253.8 L69.9 253.5 L76.9 253.3 L83.9 253.0 L90.9 252.8 L97.8 252.6 L104.8 252.3 L111.8 252.1 L118.7 251.9 L125.7 251.6 L132.7 251.4 L139.7 251.1 L146.6 250.9 L153.6 250.7 L160.6 250.4 L167.5 250.2 L174.5 250.0 L181.5 249.7 L188.5 249.5 L195.4 249.2 L202.4 249.0 L209.4 248.8 L216.3 248.5 L223.3 248.3 L230.3 248.1 L237.3 247.8 L244.2 247.6 L251.2 247.3 L258.2 247.1 L265.1 246.9 L272.1 246.6 L279.1 246.4 L286.1 246.1 L293.0 245.9 L300.0 245.7 L307.0 245.4 L313.9 245.2 L320.9 245.0 L327.9 244.7 L334.9 244.5 L341.8 244.2 L348.8 244.0 L355.8 243.8 L362.7 243.5 L369.7 243.3 L376.7 243.1 L383.7 242.8 L390.6 242.6 L397.6 242.3 L404.6 242.1 L411.5 241.9 L418.5 241.6 L425.5 241.4 L432.5 241.1 L439.4 240.9 L446.4 240.7 L453.4 240.4 L460.3 240.2 L467.3 240.0 L474.3 239.7 L481.3 239.5 L488.2 239.2 L495.2 239.0 L502.2 238.8 L509.1 238.5 L516.1 238.3 L523.1 238.1 L530.1 237.8 L537.0 237.6 L544.0 237.3" stroke-width="2.5"/><path class="l2" d="M56.0 254.0 L59.5 253.4 L63.0 251.6 L66.5 248.6 L69.9 244.5 L73.4 239.1 L76.9 232.6 L80.4 224.8 L83.9 215.9 L87.4 205.8 L90.9 194.5 L94.3 182.0 L97.8 168.3 L101.3 153.4 L104.8 137.4 L108.3 120.1 L111.8 101.7 L115.3 82.0 L118.7 61.2 L122.2 39.2 L125.7 16.0" stroke-width="2.5"/><text class="muted" x="133.7" y="46.0" text-anchor="start">off the chart: 4,900 at T = 700</text><text x="498.2" y="230.8" text-anchor="end">εT (DAgger)</text><text x="129.7" y="30.0" text-anchor="start">εT² (behaviour cloning)</text></svg><!-- /fig:bound --></div>
+    <figcaption><b>Figure 7.2.</b> The two bounds for a per-decision error of 1%, against the length of the run. The linear bound \(\epsilon T\) (DAgger's, Section 4) stays below 7 even at 700 decisions, the length of one of the teacher's runs here. The quadratic bound \(\epsilon T^2\) (behaviour cloning's) passes 100 at \(T = 100\), so for runs of this game's length it says nothing useful. Notice the scale of the gap, not the exact numbers: these are worst-case bounds.</figcaption>
+  </figure>
+
+  <p><b>From cost to winning.</b> Slay the Spire scores a run once, at the end, so a cost per decision is an abstraction. A simpler model says the same thing in the game's terms. Suppose a fraction \(\epsilon_f\) of decisions on the teacher's path are fatal mistakes: no recovery, the run is lost. A run of \(T\) decisions then survives with probability</p>
+  <div class="eq">\begin{equation} \Pr(\text{no fatal mistake}) = (1 - \epsilon_f)^{T} \approx e^{-\epsilon_f T} \label{eq:survival} \end{equation}</div>
+  <p>For the teacher's run length, about 660 decisions here, \(\epsilon_f = 0.5\%\) leaves \(e^{-3.3} \approx 4\%\) of runs intact. A classifier that is 99.5% right on its fatal decisions still loses almost every run. Per-decision agreement averages a few catastrophic errors in with many harmless ones, and the win rate is ruled by the catastrophic ones.</p>
+
+  <details class="predict"><summary>Pause and predict: a fresh network trained on 100 of the teacher's runs (64,000 decisions) agrees with the teacher on about 73% of held-out decisions. The teacher wins about 83% of runs. What is the student's win rate?</summary>
+    <p>Measured on 150 runs: <span class="v" data-k="students.bc100.win_rate" data-f=".1f">0.7</span>%. Its mean floor is <span class="v" data-k="students.bc100.mean_floor" data-f=".1f">17.0</span>, against the teacher's <span class="v" data-k="teacher.mean_floor" data-f=".1f">45.1</span>. Disagreeing on about a quarter of decisions is not the same as playing a quarter worse. Section 9 takes the measurement apart.</p>
+  </details>
+
+  <h2 id="dagger">4. DAgger: label the learner's states</h2>
+
+  <p>The quadratic term comes from one mismatch. The student is trained under \(d^{\pi^*}\) and evaluated under \(d^{\pi_\theta}\). The direct fix is to train under the distribution the student actually visits. That distribution depends on the student, and it changes as the student learns. Ross, Gordon and Bagnell's <dfn>DAgger</dfn> (Dataset Aggregation) handles this with a loop <span class="cite">[<a href="#ref-ross2011">4</a>]</span>:</p>
+
+  <ol class="algo">
+    <li>Train \(\hat\pi_1\) by behaviour cloning on the teacher's data \(\mathcal{D}\).</li>
+    <li>For \(i = 1, 2, \dots, N\): run the mixture policy \(\pi_i\) below and record the states it visits.</li>
+    <li>Ask the teacher what it would do in each of those states, and add the labelled states to \(\mathcal{D}\).</li>
+    <li>Train \(\hat\pi_{i+1}\) on all of \(\mathcal{D}\).</li>
+  </ol>
+
+  <p>The policy that collects data in round \(i\) mixes teacher and student:</p>
+  <div class="eq">\begin{equation} \pi_i = \beta_i \, \pi^* + (1 - \beta_i)\, \hat\pi_i \label{eq:mix} \end{equation}</div>
+  <p>With probability \(\beta_i\) the teacher acts, and otherwise the current student acts. Ross and colleagues only need the average of \(\beta_i\) to go to zero. The simplest choice, \(\beta_1 = 1\) and \(\beta_i = 0\) afterwards, is the one they report often works best. Either way, the actions taken only decide which states get visited. The labels always come from the teacher.</p>
+
+  <div class="eq">\begin{equation} \mathcal{D} \leftarrow \mathcal{D} \,\cup\, \big\{ \big(s, a^*(s)\big) \;:\; s \sim d^{\pi_i} \big\} \label{eq:aggregate} \end{equation}</div>
+  <p>The dataset grows with every round, and each round's states come from a policy close to the current student. After enough rounds, the training distribution is close to the distribution of the policy being trained. That is exactly the term Equation \eqref{eq:tv} was paying for.</p>
+
+  <figure id="fig-dagger">
+    <div class="scroll">
+      <svg viewBox="0 0 560 250" role="img" aria-label="Behaviour cloning: the teacher plays, its states and actions go to the dataset, the student trains on it. DAgger adds a loop: the student plays, the teacher labels the student's states, and those rows join the dataset.">
+        <defs><marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="20" y="30" width="120" height="46" rx="3"/><text x="80" y="58" text-anchor="middle">teacher plays</text>
+          <rect class="box" x="220" y="30" width="120" height="46" rx="3"/><text x="280" y="52" text-anchor="middle">dataset 𝒟</text><text class="muted" x="280" y="68" text-anchor="middle">(state, label)</text>
+          <rect class="box" x="420" y="30" width="120" height="46" rx="3"/><text x="480" y="52" text-anchor="middle">train student</text><text class="muted" x="480" y="68" text-anchor="middle">cross-entropy</text>
+          <line class="ink" x1="140" y1="53" x2="220" y2="53" marker-end="url(#arw2)"/><text class="muted" x="180" y="45" text-anchor="middle">s ~ d(π*), a*(s)</text>
+          <line class="ink" x1="340" y1="53" x2="420" y2="53" marker-end="url(#arw2)"/><text class="muted" x="380" y="45" text-anchor="middle">minibatches</text>
+          <rect class="box" x="420" y="170" width="120" height="46" rx="3"/><text x="480" y="197" text-anchor="middle">student plays</text>
+          <rect class="box" x="220" y="170" width="120" height="46" rx="3"/><text x="280" y="192" text-anchor="middle">teacher labels</text><text class="muted" x="280" y="208" text-anchor="middle">a*(s) at each s</text>
+          <line class="l2" stroke-width="2" x1="480" y1="76" x2="480" y2="170" marker-end="url(#arw2)" color="var(--s2)"/><text x="488" y="128">π̂ᵢ</text>
+          <line class="l2" stroke-width="2" x1="420" y1="193" x2="340" y2="193" marker-end="url(#arw2)" color="var(--s2)"/><text class="muted" x="380" y="186" text-anchor="middle">s ~ d(π̂ᵢ)</text>
+          <line class="l2" stroke-width="2" x1="280" y1="170" x2="280" y2="76" marker-end="url(#arw2)" color="var(--s2)"/><text x="288" y="128">new rows</text>
+          <text class="muted" x="20" y="120">behaviour cloning:</text><text class="muted" x="20" y="136">the top row only</text>
+          <text x="20" y="190" fill="var(--s2)" style="fill:var(--s2)">DAgger: add the</text><text x="20" y="206" style="fill:var(--s2)">loop, repeat</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 7.3.</b> Where the labels come from. In behaviour cloning (top row) both the states and the labels come from the teacher's own runs. DAgger (orange loop) keeps the teacher as the labeller but takes the states from the student's runs. The student's mistakes become training examples, at the very states the mistakes lead to.</figcaption>
+  </figure>
+
+  <p><b>Why the bound becomes linear.</b> We need one tool: the <dfn>performance difference lemma</dfn>, in the finite-horizon cost form Ross, Gordon and Bagnell use to prove their Theorem 2.2 <span class="cite">[<a href="#ref-ross2011">4</a>]</span>. It swaps the student in for the teacher one decision at a time and adds up the changes. Let \(Q^{\pi^*}_t(s, a)\) be the expected cost-to-go when we take \(a\) at \(s\) at decision \(t\) and follow the teacher afterwards, and let \(V^{\pi^*}_t(s) = Q^{\pi^*}_t(s, a^*(s))\). Then, for a deterministic student,</p>
+  <div class="eq">\begin{equation} J(\hat\pi) - J(\pi^*) = \sum_{t=0}^{T-1} \mathbb{E}_{s \sim d^{\hat\pi}_t} \Big[ Q^{\pi^*}_t\big(s, \hat\pi(s)\big) - V^{\pi^*}_t(s) \Big] \label{eq:pdl} \end{equation}</div>
+  <p>Read it decision by decision. At each state the student actually reaches, ask how much worse it is to take the student's action once and then hand over to the teacher. The terms add up exactly, because the sum telescopes: each step's "then follow the teacher" cancels the next step's baseline. The expectation is under the student's own distribution, \(d^{\hat\pi}_t\). The bracket is the teacher's advantage of the student's action, written for costs, and it is zero wherever the two agree.</p>
+
+  <p>Now assume a wrong action can raise the teacher's cost-to-go by at most \(u\): \(Q^{\pi^*}_t(s, a) - V^{\pi^*}_t(s) \le u\) for all \(s\), \(a\) and \(t\). Then</p>
+  <div class="eq">\begin{equation} J(\hat\pi) - J(\pi^*) \le u \sum_{t=0}^{T-1} \Pr_{s \sim d^{\hat\pi}_t}\big(\hat\pi(s) \neq a^*(s)\big) = u \, T \, \epsilon_{\text{own}} \label{eq:linear} \end{equation}</div>
+  <p>Here \(\epsilon_{\text{own}}\) is the disagreement rate measured at the student's own states. This is the quantity DAgger trains on. Ross, Gordon and Bagnell prove the DAgger version (their Theorem 3.2) <span class="cite">[<a href="#ref-ross2011">4</a>]</span>. If the training loss is a strongly convex, bounded surrogate for the 0-1 loss, \(\beta_i\) decays at least geometrically, each round has unlimited samples and there are enough rounds (of order \(uT\)), then at least one of the trained policies \(\hat\pi_1, \dots, \hat\pi_N\) satisfies \(J(\hat\pi) \le J(\pi^*) + u T \epsilon_N + O(1)\). Here \(\epsilon_N\) is the error of the best single policy in hindsight on the states the learners visited. The guarantee is for some policy in the sequence, not necessarily the last one, so in practice one keeps the best on validation runs. Their finite-sample versions have the same form. Two numbers now decide everything: the error on the learner's own states, and \(u\), how recoverable a single mistake is. In a game where one bad card choice can doom a run, \(u\) is large, and even the linear bound is loose.</p>
+
+  <p>The price of DAgger is the teacher. It must be available to label arbitrary states during training, not just to have played once. A human teacher makes that expensive. A teacher network makes it nearly free, which is why DAgger-style relabelling is the default when the teacher is a model.</p>
+
+  <h2 id="distill">5. Distillation: soft against hard labels</h2>
+
+  <p>A network teacher offers more than its choice. Three floors after the Setup Strike decision, the same run reaches another card reward: Shockwave, Restlessness or Ultimate Strike, or skip. The teacher gives Shockwave 0.86, skip 0.14, and the two other cards less than one in ten million. A hard label keeps only "Shockwave". It throws away the fact that skipping was a reasonable second choice and that both other cards were firmly ruled out. Our 100-run student spreads its probability almost evenly (0.25, 0.25, 0.32, 0.18) and picks Ultimate Strike, a card the teacher all but forbids. <dfn>Distillation</dfn> trains the student on the teacher's whole distribution <span class="cite">[<a href="#ref-hinton">6</a>]</span>. The loss is the cross-entropy of Equation \eqref{eq:ce-kl}, which equals the forward KL up to a constant.</p>
+
+  <p>The gradient shows what changes. For one state, with the softmax over legal classes and any target distribution \(q\),</p>
+  <div class="eq">\begin{equation} \frac{\partial}{\partial z_\theta(s, a)} \Big( -\sum_{a' \in \mathcal{A}(s)} q(a') \log \pi_\theta(a' \mid s) \Big) = \pi_\theta(a \mid s) - q(a) \label{eq:grad} \end{equation}</div>
+  <p>For hard labels \(q\) is one-hot on \(a^*\). The gradient pushes the chosen class's logit up until its probability reaches 1, and pushes every other class down equally. For soft labels \(q = \pi^*(\cdot \mid s)\). The gradient is zero exactly when the student matches the teacher. It keeps the runner-up above the clear blunder, and a confident teacher pushes harder than an unsure one. Every example carries information about all the classes, not just one.</p>
+
+  <p>Hinton, Vinyals and Dean also soften the teacher with a temperature \(\tau\) <span class="cite">[<a href="#ref-hinton">6</a>]</span>:</p>
+  <div class="eq">\begin{equation} q_\tau(a \mid s) = \frac{\exp\big(z^*(s, a)/\tau\big)}{\sum_{a' \in \mathcal{A}(s)} \exp\big(z^*(s, a')/\tau\big)} \label{eq:temp} \end{equation}</div>
+  <p>Here \(z^*\) are the teacher's logits. With \(\tau > 1\) the small probabilities grow, so the student also learns the ranking among the unlikely classes. With \(\tau = 1\) we recover the teacher's own policy. Rusu and colleagues compared distillation losses for Atari policies, all trained on the teacher's own play: a hard-label negative log-likelihood, a squared error on Q-values, and a KL divergence with a temperature. The KL loss gave the best students <span class="cite">[<a href="#ref-rusu">7</a>]</span>. Their teacher was a Q-network, and the best temperature was low, \(\tau = 0.01\), which sharpens Q-values into a peaked distribution rather than softening one. The temperature is a knob for the teacher's scale, not a fixed rule. The same idea runs language-model post-training: distilling a large model into a small one with token-level KL is this loss, with tokens as actions.</p>
+
+  <p>Soft labels change what is learned at each state. They do not change which states are seen. A student distilled on the teacher's runs still meets distribution shift when it plays. The two fixes combine: run the student, and score its states with the teacher's full distribution. Agarwal and colleagues call this on-policy distillation for language models and draw the connection to DAgger explicitly <span class="cite">[<a href="#ref-agarwal">8</a>]</span>. Spire Mentor's trainer does the same thing during reinforcement learning, as Section 8 shows.</p>
+
+  <h2 id="warm">6. Warm-starting reinforcement learning</h2>
+
+  <p>Imitation alone can at best match the teacher. To beat it we need the reward again. A <dfn>warm start</dfn> uses a clone as the initial policy for reinforcement learning, so that PPO begins from a player that already survives into later floors and sees informative states. AlphaGo is the best-known example. A policy network trained by supervised learning on expert moves predicted the expert's move 57% of the time. Policy-gradient self-play started from it, and the resulting reinforcement-learning policy won more than 80% of games against the supervised one <span class="cite">[<a href="#ref-alphago">9</a>]</span>. (The full system still used the supervised policy to guide its search, because there it worked better.)</p>
+
+  <p>A plain warm start copies the weights and then runs PPO. In practice the clone degrades at the start of RL. Its critic has not learned anything yet, so its first advantages are noise, and nothing holds the policy near what it learned. The usual remedy keeps the teacher in the loss for a while. <dfn>Kickstarting</dfn> adds a distillation term to the reinforcement-learning loss, computed on the student's own states, with a weight that should reach zero <span class="cite">[<a href="#ref-kickstart">10</a>]</span>. In the tour's notation, the objective the policy update minimises is</p>
+  <div class="eq">\begin{equation} L(\theta) = L^{\text{PPO}}(\theta) + \lambda_{\text{KS}}(n) \; \mathbb{E}_{s \sim d^{\pi_\theta}} \Big[ D_{\mathrm{KL}}\big(\pi^*(\cdot \mid s) \,\|\, \pi_\theta(\cdot \mid s)\big) \Big] \label{eq:kickstart} \end{equation}</div>
+  <p>Here \(L^{\text{PPO}}\) is Chapter 5's clipped surrogate loss (with its value and entropy terms), \(n\) counts decisions of training, and \(\lambda_{\text{KS}}(n) \ge 0\) is the weight on the pull towards the teacher. The expectation runs over the student's own states. So the teacher term is on-policy distillation: DAgger's labels, delivered as a soft target inside the RL update. Schmitt and colleagues use the cross-entropy instead of the KL. By Equation \eqref{eq:ce-kl} the two differ only by the teacher's entropy, which has no gradient.</p>
+
+  <p><b>Why fade the teacher out?</b> Look at the objective with a fixed \(\lambda\). The policy it rewards is not the best policy. It is a compromise between reward and closeness to the teacher. The compromise is easiest to see for a single state and the reverse KL. Choose the distribution \(\pi\) over actions to maximise \(\sum_a \pi(a) Q(a) - \lambda D_{\mathrm{KL}}(\pi \,\|\, \pi^*)\), subject to \(\sum_a \pi(a) = 1\). Setting the derivative of the Lagrangian to zero gives</p>
+  <div class="eq">\begin{equation} \pi_\lambda(a) = \frac{\pi^*(a) \, \exp\big(Q(a)/\lambda\big)}{\sum_{a'} \pi^*(a') \exp\big(Q(a')/\lambda\big)} \label{eq:tilt} \end{equation}</div>
+  <p>The regularised optimum is the teacher's policy tilted by \(\exp(Q/\lambda)\), where \(Q(a)\) is the action's value. If the teacher gives an action almost no probability, a fixed \(\lambda\) keeps that action unlikely, however good it is. Only as \(\lambda \to 0\) does \(\pi_\lambda\) become the greedy policy on \(Q\). The project's term is the forward KL of Equation \eqref{eq:kickstart}, which has no closed form like this one. Its effect points the same way: it charges the student for giving low probability to whatever the teacher likes. Schmitt and colleagues saw this directly: with a constant weight their agents plateaued near the teacher's score, while weights that fell linearly to zero did clearly better <span class="cite">[<a href="#ref-kickstart">10</a>]</span>. A teacher that wins 12% of runs is the right anchor at the start and the wrong one later. So the weight goes to zero, and from then on the student optimises reward alone.</p>
+
+  <p><b>What can go wrong.</b> Four failure modes recur, and Spire Mentor's plan guards against each.</p>
+  <ul>
+    <li><b>Value collapse.</b> The critic starts empty, so early advantages are noise, and PPO's first updates can undo the clone. The guard is to train the critic first, while the teacher acts and the policy is frozen.</li>
+    <li><b>Off-policy rows.</b> When the teacher acts, those rows were not generated by \(\pi_\theta\). PPO's ratio \(\rho_t\) assumes \(\mu \approx \pi_\theta\) (Chapter 6). Teacher-acted rows can feed the imitation term and the critic, but should not feed the policy gradient.</li>
+    <li><b>Low entropy.</b> A clone trained on hard labels is overconfident. Most of its probability sits on one class, so PPO samples few alternatives and explores little. An entropy bonus would push the other way, against the teacher term, so the two have to be scheduled together.</li>
+    <li><b>Leaning on the teacher.</b> A warm start can hide a broken RL algorithm: the clone looks fine for a while, whether or not PPO works. The guard is to show, separately, that the algorithm learns from random weights.</li>
+  </ul>
+
+  <h2 id="engineered">7. The textbook version against the engineered one</h2>
+
+  <p>The clean statements above make assumptions that real systems drop.</p>
+
+  <p><b>The teacher is not the goal.</b> In Sections 2 to 4 the teacher defines success, and cost counts disagreements. In practice the teacher is a stepping stone, and we judge the student by reward. Agreement then becomes a diagnostic. It is useful early, when it shows that the student learned from the teacher, and misleading late, when a student that beats the teacher <em>should</em> disagree with it.</p>
+
+  <p><b>The teacher cannot always label every state.</b> DAgger assumes a labeller for arbitrary states. A human cannot label millions of them. A network teacher can, but only if it can read the student's states, and teachers built for an older representation may not.</p>
+
+  <p><b>Soft labels, not hard ones.</b> The bound in Section 3 counts 0-1 mistakes. Production imitation uses KL to the teacher's distribution, which also penalises a student that is right but overconfident, or that ranks the alternatives wrongly. In this chapter's measurement we use hard labels for the main students, the classic form of behaviour cloning, and test soft labels separately.</p>
+
+  <p><b>Imitation and RL at once, not in sequence.</b> The textbook story is "clone, then fine-tune". Kickstarting runs both losses together and slides the weight from one to the other. The student acts from early on, so the imitation term is computed on the student's own states. That makes it DAgger-like without a separate relabelling loop. It also costs a guarantee. Czarnecki and colleagues show that distillation on the student's own trajectories is not the gradient of any objective, and that once reward is added the student can oscillate instead of converging <span class="cite">[<a href="#ref-czarnecki">11</a>]</span>. Fading the teacher is one way out. AlphaStar took another: it kept a KL term towards its supervised policy for the whole of training, as a regulariser for exploration rather than a warm start <span class="cite">[<a href="#ref-alphastar">12</a>]</span>.</p>
+
+
+  <h2 id="project">8. In Spire Mentor</h2>
+
+  <div class="example"><span class="label">In Spire Mentor · the warm start</span>
+    <p>The end-to-end Ironclad network (the transformer of Chapter 2) did not start from random weights. Its campaign began from two older networks that played without search: a combat network and a run network, together winning about 12% of runs at Ascension 10 on the project's development seeds. They were the teachers. Training then went through four phases, each defined by a count of decisions \(n\):</p>
+  </div>
+
+  <div class="table"><table>
+    <thead><tr><th>Phase</th><th>Decisions</th><th>Who acts</th><th>Loss</th></tr></thead>
+    <tbody>
+      <tr><td>V-warm</td><td>first 3 updates</td><td>teachers</td><td>critic only</td></tr>
+      <tr><td>U0</td><td>0 to 80M</td><td>teachers with probability \(\beta_{\text{act}}\), falling from 1 to 0; drawn per fight and per act, so no fight mixes the two players</td><td>cross-entropy to the teacher on all rows; PPO on student-acted rows only; critic on all</td></tr>
+      <tr><td>U1</td><td>80M to 500M</td><td>student</td><td>PPO plus \(\lambda_{\text{KS}} \cdot D_{\mathrm{KL}}(\pi^* \,\|\, \pi_\theta)\), with \(\lambda_{\text{KS}}\) falling from 1 to 0</td></tr>
+      <tr><td>U2</td><td>500M to the end (about 9B)</td><td>student</td><td>PPO</td></tr>
+    </tbody>
+    <caption>The warm-start phases of the training plan, section 7. U0's actor mixing is DAgger's mixture policy, Equation \eqref{eq:mix}, with \(\beta\) on a schedule. U1 is kickstarting, Equation \eqref{eq:kickstart}.</caption>
+  </table></div>
+
+  <p>Map each phase onto this chapter.</p>
+  <ul>
+    <li><b>V-warm</b> is the guard against value collapse. The policy stays frozen while the critic learns the teachers' returns, so that the first advantages PPO sees mean something.</li>
+    <li><b>U0</b> is DAgger with a schedule. At the start the teachers play everything, which is behaviour cloning. As \(\beta_{\text{act}}\) falls, more fights and acts are played by the student, and the teachers still score every row. The imitation loss uses all rows. The policy gradient uses only the rows the student played, which keeps PPO's importance ratio near one.</li>
+    <li><b>U1</b> is kickstarting. The student plays everything, and the teacher term is a forward KL on the student's own states, weighted by \(\lambda_{\text{KS}}\).</li>
+    <li><b>U2</b> is plain PPO.</li>
+  </ul>
+
+  <p>The two schedules are piecewise linear in the decision count:</p>
+  <div class="eq">\begin{equation} \beta_{\text{act}}(n) = 1 - \min\!\Big(1, \frac{n}{n_{U0}}\Big), \qquad \lambda_{\text{KS}}(n) = 1 - \mathrm{clip}\Big(\frac{n - n_{U0}}{n_{\text{KS}} - n_{U0}},\, 0,\, 1\Big) \label{eq:schedules} \end{equation}</div>
+  <p>Here \(n_{U0} = 8 \times 10^7\) decisions ends U0 and \(n_{\text{KS}} = 5 \times 10^8\) ends the teacher term. The teacher stops acting at 80M decisions, and its pull reaches zero at 500M.</p>
+
+  <figure class="listing">
+    <pre><code>def beta_act(decisions: int, cfg: ScheduleCfg = DEFAULT) -> float:
+    """Teacher acting probability: 1 → 0 linearly over decisions [0, u0_end]."""
+    return 1.0 - _clamp01(decisions / cfg.u0_end)
+
+
+def lam_ks(
+    decisions: int, cfg: ScheduleCfg = DEFAULT, *, hold: bool = False, offset: int = 0
+) -> float:
+    """Kickstarting weight: 1 until u0_end, then linear to 0 at ks_end, on the KS clock.
+
+    ``hold`` keeps it at 1 (a failed learning check). ``offset`` shifts the ramp
+    to start later (`Clocks.pass_learning_check`).
+    """
+    if hold:
+        return 1.0
+    d = decisions - offset
+    return 1.0 - _clamp01((d - cfg.u0_end) / (cfg.ks_end - cfg.u0_end))</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/schedules.py, lines 299-315</figcaption>
+  </figure>
+
+  <p>Note <code>hold</code>. If the random-init learning check fails (below), the teacher's weight stays at 1, because RL alone has not been shown to work. Note also <code>offset</code>: the ramp starts only once that check has passed. Inside the PPO loss the teacher term looks like this:</p>
+
+  <figure class="listing">
+    <pre><code># Teacher term: λ_KS · KL(π_T ‖ π_S) on trained rows with a teacher.
+ks_w = torch.where(v_m, rows.ks.float(), zero)
+if rows.teacher is not None:
+    ...
+    tp = rows.teacher.float()
+    t_fin = torch.where(cmask, torch.isfinite(tp), torch.ones_like(cmask)).all(-1)
+    t_ok = (ks_w > 0) & t_fin
+    p_t = torch.where(cmask & t_ok[:, None], tp, torch.zeros_like(tp))
+    ce_rows = -(p_t * lp_all).sum(-1)
+    kl_rows = (torch.xlogy(p_t, p_t) - p_t * lp_all).sum(-1)
+...
+ks_rows = ks_w * kl_rows * tkf</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/algo.py, lines 958-975 (abridged)</figcaption>
+  </figure>
+
+  <p>Read it against Equations \eqref{eq:ce-kl} and \eqref{eq:kickstart}. <code>p_t</code> is \(\pi^*(\cdot \mid s)\), restricted to the row's legal classes by <code>cmask</code>. <code>lp_all</code> is \(\log \pi_\theta(\cdot \mid s)\). <code>ce_rows</code> is the cross-entropy and <code>kl_rows</code> the KL. Their difference, <code>xlogy(p_t, p_t)</code> summed, is minus the teacher's entropy, as Equation \eqref{eq:ce-kl} says. <code>ks_w</code> is \(\lambda_{\text{KS}}\) for that row's decision type. The plan gives a type with no teacher (the potion swap) a weight of zero. A row whose teacher probabilities are missing or not finite is dropped from the term and counted, rather than letting a NaN into the loss.</p>
+
+  <div class="example"><span class="label">In Spire Mentor · two guards, and one gate that was waived</span>
+    <p><b>The learning check.</b> Before launch and at every restart, a network with random weights, no teacher and \(\lambda_{\text{KS}} = 0\) trains for 15 minutes at Ascension 10. It passes if the mean floor of its last 10,000 finished runs beats its first 10,000 by at least one floor. Random play reaches about floor 2.7. On the training machine the check went from floor 1.96 to floor 14.58 in 7.1 million decisions. This is the guard against "leaning on the teacher": the RL algorithm learns on its own, so whatever the warm start gives is a head start, not a crutch.</p>
+    <p><b>Entropy is gated by the teacher.</b> The entropy bonus of a decision type stays at zero while that type's \(\lambda_{\text{KS}}\) is above 0.3, which happens at 374M decisions. Then it decays. The two forces are not allowed to fight: while the teacher pulls towards its distribution, nothing pushes the student towards uniform.</p>
+    <p><b>The K2 gate.</b> At about 100M decisions the plan checked that the warm start had worked. The student had to come within 8 percentage points of the teacher pair's win rate, and agree with the teachers on at least 85% of combat decisions and 75% of run decisions. At the read, the student won 16.9% of 1,000 development seeds against the teachers' 11.5% on the same seeds, a paired gain of 5.4 points. A paired test on those seeds (McNemar's, the subject of Chapter 8) gives \(p = 0.00016\). Run agreement was 0.879. Combat agreement was 0.805, below the 0.85 bar. The project's owner waived that bar and recorded the deviation. The bar stood in for "the student learned from the teacher", and a student that already outplays its teacher has learned from it. Agreement had stopped measuring what it was meant to measure, which is the point of Section 7.</p>
+  </div>
+
+  <p>The rest of the campaign shows why the teacher was faded out. The student reached 27.8% at 500M decisions, when \(\lambda_{\text{KS}}\) hit zero, and 43.6% at 750M, with nothing pulling it back towards a 12% player. The published network used in this chapter is that student after about 9 billion decisions.</p>
+
+  <p>The project's first generation of agents also started from behaviour cloning. Its Ironclad clone matched its teacher's choice on 81% of decisions and won 33.2% of runs, against the teacher's 38.7%. PPO took the clone from there.</p>
+
+  <h2 id="measured">9. Measured</h2>
+
+  <p>The theory makes three predictions that can be checked in this game. A behaviour-cloned student should agree with the teacher on most decisions and still lose almost every run. Its agreement should be lower on its own states than on the teacher's, at the same point in a run. And labelling the student's own states should help more than its agreement suggests.</p>
+
+  <div class="measured"><span class="label">Measured · 150 seeds of PANEL_A · M2 Max</span>
+    <p><b>Setup.</b> The teacher, \(\pi^*\), is the published end-to-end Ironclad network after about 9 billion decisions of training. It played 100 runs on training seeds, giving <span class="v" data-k="rows.teacher_train.100" data-f=".0f">64253</span> decisions. Hard-label students were trained on the first 25, 50 and 100 of those runs, a fresh network each time, with the teacher's architecture (about 6 million parameters) and six passes of cross-entropy. Two soft-label students were trained the same way on the teacher's full distribution, Equation \eqref{eq:ce-kl}, on 25 and 50 runs. Agreement on teacher states uses <span class="v" data-k="rows.heldout" data-f=".0f">6823</span> decisions from 10 held-out teacher runs. The DAgger student is one round: the 100-run student played 50 more seeds, the teacher labelled all <span class="v" data-k="rows.dagger" data-f=".0f">8101</span> decisions it reached, and a fresh network trained on the union. Every policy played the same 150 evaluation seeds at Ascension 10, greedily.</p>
+    <p><b>Substitutions.</b> (1) The teacher is the published network, not the two older networks the trainer imitated, because it reads the same inputs as the student and runs on this machine. (2) The main students learn from the teacher's chosen move (hard labels); the trainer used the KL to the full distribution. Soft labels are tested separately. (3) Scale: 64,000 decisions of imitation here, 80 million in the trainer's U0 phase. (4) No reinforcement learning follows: this measures imitation alone. (5) DAgger is not part of the project; the round here is built from the same pieces. (6) Tensors are copied to the GPU with blocking copies; the trainer's non-blocking copy gave intermittent NaN losses on this machine.</p>
+  </div>
+
+  <div class="table"><table>
+    <thead><tr><th>Policy</th><th>Held-out agreement %</th><th>Early held-out %</th><th>Own-state agreement %</th><th>Clear mistakes %</th><th>Win %</th><th>Mean floor</th><th>Decisions per run</th></tr></thead>
+    <tbody>
+      <tr><td>BC, 25 runs</td><td><span class="v" data-k="students.bc025.heldout_agreement" data-f=".1f">64.4</span></td><td><span class="v" data-k="students.bc025.heldout_early_agreement" data-f=".1f">73.6</span></td><td><span class="v" data-k="students.bc025.own_agreement" data-f=".1f">64.1</span></td><td><span class="v" data-k="students.bc025.own_clear_mistake_rate" data-f=".1f">29.9</span></td><td><span class="v" data-k="students.bc025.win_rate" data-f=".1f">0.7</span></td><td><span class="v" data-k="students.bc025.mean_floor" data-f=".1f">9.2</span></td><td><span class="v" data-k="students.bc025.decisions_per_run" data-f=".0f">112</span></td></tr>
+      <tr><td>BC, 50 runs</td><td><span class="v" data-k="students.bc050.heldout_agreement" data-f=".1f">67.9</span></td><td><span class="v" data-k="students.bc050.heldout_early_agreement" data-f=".1f">77.1</span></td><td><span class="v" data-k="students.bc050.own_agreement" data-f=".1f">70.1</span></td><td><span class="v" data-k="students.bc050.own_clear_mistake_rate" data-f=".1f">23.5</span></td><td><span class="v" data-k="students.bc050.win_rate" data-f=".1f">0.7</span></td><td><span class="v" data-k="students.bc050.mean_floor" data-f=".1f">13.2</span></td><td><span class="v" data-k="students.bc050.decisions_per_run" data-f=".0f">150</span></td></tr>
+      <tr><td>BC, 100 runs</td><td><span class="v" data-k="students.bc100.heldout_agreement" data-f=".1f">72.8</span></td><td><span class="v" data-k="students.bc100.heldout_early_agreement" data-f=".1f">81.0</span></td><td><span class="v" data-k="students.bc100.own_agreement" data-f=".1f">73.8</span></td><td><span class="v" data-k="students.bc100.own_clear_mistake_rate" data-f=".1f">19.1</span></td><td><span class="v" data-k="students.bc100.win_rate" data-f=".1f">0.7</span></td><td><span class="v" data-k="students.bc100.mean_floor" data-f=".1f">17.0</span></td><td><span class="v" data-k="students.bc100.decisions_per_run" data-f=".0f">198</span></td></tr>
+      <tr><td>DAgger (100 runs + 1 round)</td><td><span class="v" data-k="students.dagger.heldout_agreement" data-f=".1f">72.8</span></td><td><span class="v" data-k="students.dagger.heldout_early_agreement" data-f=".1f">79.2</span></td><td><span class="v" data-k="students.dagger.own_agreement" data-f=".1f">75.3</span></td><td><span class="v" data-k="students.dagger.own_clear_mistake_rate" data-f=".1f">17.5</span></td><td><span class="v" data-k="students.dagger.win_rate" data-f=".1f">2.0</span></td><td><span class="v" data-k="students.dagger.mean_floor" data-f=".1f">20.9</span></td><td><span class="v" data-k="students.dagger.decisions_per_run" data-f=".0f">248</span></td></tr>
+      <tr><td>soft labels, 25 runs</td><td><span class="v" data-k="students.soft025.heldout_agreement" data-f=".1f">64.1</span></td><td><span class="v" data-k="students.soft025.heldout_early_agreement" data-f=".1f">72.5</span></td><td><span class="v" data-k="students.soft025.own_agreement" data-f=".1f">65.2</span></td><td><span class="v" data-k="students.soft025.own_clear_mistake_rate" data-f=".1f">28.9</span></td><td><span class="v" data-k="students.soft025.win_rate" data-f=".1f">0.7</span></td><td><span class="v" data-k="students.soft025.mean_floor" data-f=".1f">10.0</span></td><td><span class="v" data-k="students.soft025.decisions_per_run" data-f=".0f">124</span></td></tr>
+      <tr><td>soft labels, 50 runs</td><td><span class="v" data-k="students.soft050.heldout_agreement" data-f=".1f">68.3</span></td><td><span class="v" data-k="students.soft050.heldout_early_agreement" data-f=".1f">77.7</span></td><td><span class="v" data-k="students.soft050.own_agreement" data-f=".1f">71.0</span></td><td><span class="v" data-k="students.soft050.own_clear_mistake_rate" data-f=".1f">22.3</span></td><td><span class="v" data-k="students.soft050.win_rate" data-f=".1f">1.3</span></td><td><span class="v" data-k="students.soft050.mean_floor" data-f=".1f">14.2</span></td><td><span class="v" data-k="students.soft050.decisions_per_run" data-f=".0f">161</span></td></tr>
+      <tr><td>teacher</td><td></td><td></td><td></td><td></td><td><span class="v" data-k="teacher.win_rate" data-f=".1f">82.7</span></td><td><span class="v" data-k="teacher.mean_floor" data-f=".1f">45.1</span></td><td><span class="v" data-k="teacher.decisions_per_run" data-f=".0f">663</span></td></tr>
+    </tbody>
+    <caption>Table 7.1. Agreement is the share of decisions where the student's greedy class equals the teacher's. Held-out: on teacher runs no student trained on. Early held-out: the same, restricted to the first \(k\) decisions of each run, \(k\) being that student's mean decisions per run. Own-state: on the student's own runs, against what the teacher would pick there. Clear mistakes: share of the student's own decisions where the teacher gives the student's choice less than 5%. Win rate and floor over the 150 evaluation seeds.</caption>
+  </table></div>
+
+  <p><b>Agreement does not predict winning.</b> The 100-run student agrees with the teacher on <span class="v" data-k="students.bc100.heldout_agreement" data-f=".1f">72.8</span>% of held-out decisions. It won <span class="v" data-k="derived.wins.bc100" data-f=".0f">1</span> of 150 runs; the teacher won <span class="v" data-k="derived.wins.teacher" data-f=".0f">124</span>. More data raised agreement by about 4 points per doubling and the mean floor by <span class="v" data-k="derived.floor_gain.bc100_vs_bc050.mean" data-f=".1f">3.8</span> (standard error <span class="v" data-k="derived.floor_gain.bc100_vs_bc050.se" data-f=".1f">0.9</span>, paired by seed) from 50 to 100 runs. Wins did not move at all.</p>
+
+  <p>The disagreements are not near-misses. The teacher is confident: on held-out states its top class has mean probability <span class="v" data-k="teacher_on_heldout.mean_p_top" data-f=".2f">0.93</span>, and on <span class="v" data-k="teacher_on_heldout.share_p_top_over_90pct" data-f=".0f">80</span>% of decisions it is above 0.9. Where the 100-run student disagrees, the teacher gives the student's choice <span class="v" data-k="students.bc100.heldout_p_teacher_on_student_when_differ" data-f=".2f">0.08</span> on average. On <span class="v" data-k="students.bc100.own_clear_mistake_rate" data-f=".1f">19.1</span>% of its own decisions the student picks something the teacher rates below 5%. The Ultimate Strike pick of Section 5 is one of these.</p>
+
+  <p>Equation \eqref{eq:survival} turns this into a rate. Solve \(e^{-\epsilon_f T} = \text{win}_{\text{student}} / \text{win}_{\text{teacher}}\) with \(T\) = <span class="v" data-k="teacher.decisions_per_run" data-f=".0f">663</span> decisions, the teacher's run length. The answer is \(\epsilon_f \approx\) <span class="v" data-k="derived.eps_f_pct" data-f=".2f">0.73</span>%, one fatal mistake per <span class="v" data-k="derived.decisions_per_fatal" data-f=".0f">138</span> decisions. The student makes a clear mistake about <span class="v" data-k="derived.clear_per_fatal" data-f=".0f">26</span> times as often. So most clear mistakes are survivable, and a small share of them, which agreement cannot single out, decide the run. This is a model, not a measurement of which mistakes were fatal: it assumes fatal mistakes are independent and spread evenly along the run.</p>
+
+  <figure id="fig-survival">
+    <div class="scroll"><!-- fig:survival --><svg viewBox="0 0 560 300" role="img" aria-label="Share of 150 PANEL_A runs still going at each floor, for the teacher, the 25- and 100-run students and the DAgger student."><line class="grid" x1="56" x2="544" y1="254.0" y2="254.0"/><text class="muted" x="50" y="258.0" text-anchor="end">0</text><line class="grid" x1="56" x2="544" y1="194.5" y2="194.5"/><text class="muted" x="50" y="198.5" text-anchor="end">25</text><line class="grid" x1="56" x2="544" y1="135.0" y2="135.0"/><text class="muted" x="50" y="139.0" text-anchor="end">50</text><line class="grid" x1="56" x2="544" y1="75.5" y2="75.5"/><text class="muted" x="50" y="79.5" text-anchor="end">75</text><line class="grid" x1="56" x2="544" y1="16.0" y2="16.0"/><text class="muted" x="50" y="20.0" text-anchor="end">100</text><text class="muted" x="56.0" y="270" text-anchor="middle">0</text><text class="muted" x="153.6" y="270" text-anchor="middle">10</text><text class="muted" x="251.2" y="270" text-anchor="middle">20</text><text class="muted" x="348.8" y="270" text-anchor="middle">30</text><text class="muted" x="446.4" y="270" text-anchor="middle">40</text><text class="muted" x="544.0" y="270" text-anchor="middle">50</text><line class="ink" x1="56" x2="544" y1="254" y2="254"/><line class="ink" x1="56" x2="56" y1="16" y2="254"/><text x="300.0" y="292" text-anchor="middle">floor</text><text x="14" y="135.0" text-anchor="middle" transform="rotate(-90 14 135.0)">runs still going (%)</text><path class="l4" d="M56.0 16.0 L65.8 16.0 L75.5 16.0 L85.3 16.0 L95.0 16.0 L104.8 16.0 L114.6 16.0 L124.3 16.0 L134.1 16.0 L143.8 16.0 L153.6 16.0 L163.4 16.0 L173.1 16.0 L182.9 16.0 L192.6 16.0 L202.4 16.0 L212.2 16.0 L221.9 19.2 L231.7 19.2 L241.4 19.2 L251.2 19.2 L261.0 19.2 L270.7 19.2 L280.5 20.8 L290.2 20.8 L300.0 20.8 L309.8 20.8 L319.5 22.3 L329.3 22.3 L339.0 22.3 L348.8 22.3 L358.6 22.3 L368.3 25.5 L378.1 25.5 L387.8 25.5 L397.6 25.5 L407.4 25.5 L417.1 25.5 L426.9 25.5 L436.6 25.5 L446.4 25.5 L456.2 25.5 L465.9 25.5 L475.7 27.1 L485.4 28.7 L495.2 28.7 L505.0 36.6 L514.7 249.2 L524.5 249.2 L534.2 254.0 L544.0 254.0" stroke-width="2.5"/><text x="348.8" y="14.3" text-anchor="start">teacher</text><path class="l3" d="M56.0 16.0 L65.8 16.0 L75.5 16.0 L85.3 22.3 L95.0 25.5 L104.8 33.5 L114.6 52.5 L124.3 103.3 L134.1 133.4 L143.8 152.5 L153.6 152.5 L163.4 174.7 L173.1 193.7 L182.9 201.6 L192.6 215.9 L202.4 230.2 L212.2 230.2 L221.9 249.2 L231.7 249.2 L241.4 249.2 L251.2 249.2 L261.0 249.2 L270.7 249.2 L280.5 249.2 L290.2 250.8 L300.0 250.8 L309.8 250.8 L319.5 252.4 L329.3 252.4 L339.0 252.4 L348.8 252.4 L358.6 252.4 L368.3 252.4 L378.1 252.4 L387.8 252.4 L397.6 252.4 L407.4 252.4 L417.1 252.4 L426.9 252.4 L436.6 252.4 L446.4 252.4 L456.2 252.4 L465.9 252.4 L475.7 252.4 L485.4 252.4 L495.2 252.4 L505.0 252.4 L514.7 254.0 L524.5 254.0 L534.2 254.0 L544.0 254.0" stroke-width="2" stroke-dasharray="4 3"/><text x="126.1" y="133.4" text-anchor="end">bc025</text><path class="l1" d="M56.0 16.0 L65.8 16.0 L75.5 16.0 L85.3 16.0 L95.0 16.0 L104.8 17.6 L114.6 17.6 L124.3 25.5 L134.1 36.6 L143.8 60.4 L153.6 60.4 L163.4 73.1 L173.1 79.5 L182.9 92.2 L192.6 104.9 L202.4 123.9 L212.2 123.9 L221.9 196.9 L231.7 196.9 L241.4 196.9 L251.2 196.9 L261.0 196.9 L270.7 198.5 L280.5 201.6 L290.2 203.2 L300.0 203.2 L309.8 211.2 L319.5 214.3 L329.3 217.5 L339.0 225.4 L348.8 231.8 L358.6 231.8 L368.3 241.3 L378.1 241.3 L387.8 241.3 L397.6 241.3 L407.4 241.3 L417.1 241.3 L426.9 241.3 L436.6 241.3 L446.4 241.3 L456.2 241.3 L465.9 242.9 L475.7 242.9 L485.4 242.9 L495.2 242.9 L505.0 247.7 L514.7 254.0 L524.5 254.0 L534.2 254.0 L544.0 254.0" stroke-width="2.5"/><text x="270.7" y="212.5" text-anchor="start">bc100</text><path class="l2" d="M56.0 16.0 L65.8 16.0 L75.5 16.0 L85.3 16.0 L95.0 16.0 L104.8 16.0 L114.6 16.0 L124.3 23.9 L134.1 30.3 L143.8 43.0 L153.6 43.0 L163.4 57.3 L173.1 62.0 L182.9 63.6 L192.6 74.7 L202.4 81.1 L212.2 81.1 L221.9 155.6 L231.7 155.6 L241.4 155.6 L251.2 155.6 L261.0 155.6 L270.7 155.6 L280.5 160.4 L290.2 163.6 L300.0 163.6 L309.8 171.5 L319.5 176.3 L329.3 182.6 L339.0 188.9 L348.8 195.3 L358.6 195.3 L368.3 233.4 L378.1 233.4 L387.8 233.4 L397.6 233.4 L407.4 233.4 L417.1 233.4 L426.9 235.0 L436.6 235.0 L446.4 235.0 L456.2 235.0 L465.9 235.0 L475.7 235.0 L485.4 236.5 L495.2 236.5 L505.0 241.3 L514.7 254.0 L524.5 254.0 L534.2 254.0 L544.0 254.0" stroke-width="2.5"/><text x="270.7" y="147.6" text-anchor="start">DAgger</text></svg><!-- /fig:survival --></div>
+    <figcaption><b>Figure 7.4.</b> Share of the 150 evaluation runs still going at each floor. The teacher's curve stays near the top until the final floors. The students' curves fall from the first floors, and each doubling of data moves the curve right without changing its shape. Notice that the 100-run student loses about half its runs by floor 16, a point the teacher passes in <span class="v" data-k="derived.past_floor_17.teacher" data-f=".0f">99</span>% of runs.</figcaption>
+  </figure>
+
+  <details class="predict"><summary>Pause and predict: overall, the 100-run student agrees with the teacher more on its own states (<span class="v" data-k="students.bc100.own_agreement" data-f=".1f">73.8</span>%) than on the teacher's held-out runs (<span class="v" data-k="students.bc100.heldout_agreement" data-f=".1f">72.8</span>%). Does that refute distribution shift?</summary>
+    <p>No. The two averages cover different parts of a run. The student's runs end after about <span class="v" data-k="students.bc100.decisions_per_run" data-f=".0f">198</span> decisions, so its own-state average is dominated by the opening floors, where decisions are easiest to agree on. The teacher's runs go on to about <span class="v" data-k="teacher.decisions_per_run" data-f=".0f">663</span> decisions, into later floors where agreement is lower. Compare like with like. Restricted to the first <span class="v" data-k="students.bc100.decisions_per_run" data-f=".0f">198</span> decisions of each held-out run, agreement is <span class="v" data-k="students.bc100.heldout_early_agreement" data-f=".1f">81.0</span>%, higher than the <span class="v" data-k="students.bc100.own_agreement" data-f=".1f">73.8</span>% on the student's own states. Figure 7.5 makes the comparison decision by decision.</p>
+  </details>
+
+  <figure id="fig-along">
+    <div class="scroll"><!-- fig:along --><svg viewBox="0 0 560 300" role="img" aria-label="Agreement of the 100-run student with the teacher by decision index, on teacher states and on the student's own states."><line class="grid" x1="56" x2="544" y1="254.0" y2="254.0"/><text class="muted" x="50" y="258.0" text-anchor="end">50</text><line class="grid" x1="56" x2="544" y1="206.4" y2="206.4"/><text class="muted" x="50" y="210.4" text-anchor="end">60</text><line class="grid" x1="56" x2="544" y1="158.8" y2="158.8"/><text class="muted" x="50" y="162.8" text-anchor="end">70</text><line class="grid" x1="56" x2="544" y1="111.2" y2="111.2"/><text class="muted" x="50" y="115.2" text-anchor="end">80</text><line class="grid" x1="56" x2="544" y1="63.6" y2="63.6"/><text class="muted" x="50" y="67.6" text-anchor="end">90</text><line class="grid" x1="56" x2="544" y1="16.0" y2="16.0"/><text class="muted" x="50" y="20.0" text-anchor="end">100</text><text class="muted" x="56.0" y="270" text-anchor="middle">0</text><text class="muted" x="125.7" y="270" text-anchor="middle">100</text><text class="muted" x="195.4" y="270" text-anchor="middle">200</text><text class="muted" x="265.1" y="270" text-anchor="middle">300</text><text class="muted" x="334.9" y="270" text-anchor="middle">400</text><text class="muted" x="404.6" y="270" text-anchor="middle">500</text><text class="muted" x="474.3" y="270" text-anchor="middle">600</text><text class="muted" x="544.0" y="270" text-anchor="middle">700</text><line class="ink" x1="56" x2="544" y1="254" y2="254"/><line class="ink" x1="56" x2="56" y1="16" y2="254"/><text x="300.0" y="292" text-anchor="middle">decision index in the run</text><text x="14" y="135.0" text-anchor="middle" transform="rotate(-90 14 135.0)">agreement with teacher (%)</text><path class="l1" d="M73.4 78.8 L108.3 110.2 L143.1 107.4 L178.0 133.1 L212.9 148.3 L247.7 143.6 L282.6 153.6 L317.4 144.0 L352.3 157.7 L387.1 166.2 L422.0 164.1 L456.9 165.1 L491.7 194.1 L526.6 160.6" stroke-width="2"/><circle class="f1" cx="73.4" cy="78.8" r="3.5"/><circle class="f1" cx="108.3" cy="110.2" r="3.5"/><circle class="f1" cx="143.1" cy="107.4" r="3.5"/><circle class="f1" cx="178.0" cy="133.1" r="3.5"/><circle class="f1" cx="212.9" cy="148.3" r="3.5"/><circle class="f1" cx="247.7" cy="143.6" r="3.5"/><circle class="f1" cx="282.6" cy="153.6" r="3.5"/><circle class="f1" cx="317.4" cy="144.0" r="3.5"/><circle class="f1" cx="352.3" cy="157.7" r="3.5"/><circle class="f1" cx="387.1" cy="166.2" r="3.5"/><circle class="f1" cx="422.0" cy="164.1" r="3.5"/><circle class="f1" cx="456.9" cy="165.1" r="3.5"/><circle class="f1" cx="491.7" cy="194.1" r="3.5"/><circle class="f1" cx="526.6" cy="160.6" r="3.5"/><path class="l2" d="M73.4 89.7 L108.3 138.1 L143.1 152.9 L178.0 160.9 L212.9 168.0 L247.7 188.7 L282.6 190.6 L317.4 176.9 L352.3 172.1 L387.1 213.8 L422.0 187.3 L456.9 147.4 L491.7 177.0 L526.6 132.7" stroke-width="2"/><circle class="f2" cx="73.4" cy="89.7" r="3.5"/><circle class="f2" cx="108.3" cy="138.1" r="3.5"/><circle class="f2" cx="143.1" cy="152.9" r="3.5"/><circle class="f2" cx="178.0" cy="160.9" r="3.5"/><circle class="f2" cx="212.9" cy="168.0" r="3.5"/><circle class="f2" cx="247.7" cy="188.7" r="3.5"/><circle class="f2" cx="282.6" cy="190.6" r="3.5"/><circle class="f2" cx="317.4" cy="176.9" r="3.5"/><circle class="f2" cx="352.3" cy="172.1" r="3.5"/><circle class="f2" cx="387.1" cy="213.8" r="3.5"/><circle class="f2" cx="422.0" cy="187.3" r="3.5"/><circle class="f2" cx="456.9" cy="147.4" r="3.5"/><circle class="f2" cx="491.7" cy="177.0" r="3.5"/><circle class="f2" cx="526.6" cy="132.7" r="3.5"/><text x="147.1" y="95.4" text-anchor="start">teacher's states (held out)</text><text x="247.7" y="210.7" text-anchor="middle">student's own states</text></svg><!-- /fig:along --></div>
+    <figcaption><b>Figure 7.5.</b> Agreement of the 100-run student with the teacher, in bins of 50 decisions along a run, on held-out teacher states and on the student's own states. Bins with fewer than 100 decisions are left out. Both curves fall, because later decisions are harder. Notice the gap at the same decision index: from about decision 50 on, the student agrees less on its own states, by 5 to 10 points in most bins. That gap is \(\epsilon\) under \(d^{\pi_\theta}\) exceeding \(\epsilon\) under \(d^{\pi^*}\), the mismatch of Equation \eqref{eq:tv}. The own-state bins past decision 400 hold only the runs the student survived, so they are noisy.</figcaption>
+  </figure>
+
+  <details class="predict"><summary>Pause and predict: the DAgger student trained on the same 100 teacher runs plus one round of <span class="v" data-k="rows.dagger" data-f=".0f">8101</span> teacher-labelled rows from the student's own play. Its held-out agreement is <span class="v" data-k="students.dagger.heldout_agreement" data-f=".1f">72.8</span>%, the same as the 100-run student's. Did it play better?</summary>
+    <p>Yes, by more than its agreement shows. On the same 150 seeds its mean floor is <span class="v" data-k="students.dagger.mean_floor" data-f=".1f">20.9</span> against <span class="v" data-k="students.bc100.mean_floor" data-f=".1f">17.0</span>, a paired gain of <span class="v" data-k="derived.floor_gain.dagger_vs_bc100.mean" data-f=".1f">3.9</span> floors (standard error <span class="v" data-k="derived.floor_gain.dagger_vs_bc100.se" data-f=".1f">0.9</span>). It reaches floor 17 in <span class="v" data-k="derived.past_floor_17.dagger" data-f=".0f">41</span>% of runs against <span class="v" data-k="derived.past_floor_17.bc100" data-f=".0f">24</span>%. Its agreement on its own states rose to <span class="v" data-k="students.dagger.own_agreement" data-f=".1f">75.3</span>%, and its clear-mistake rate fell to <span class="v" data-k="students.dagger.own_clear_mistake_rate" data-f=".1f">17.5</span>%. Held-out agreement could not see this, because the new rows teach the states the teacher never visits. It won <span class="v" data-k="derived.wins.dagger" data-f=".0f">3</span> runs against <span class="v" data-k="derived.wins.bc100" data-f=".0f">1</span>, too few to tell apart.</p>
+  </details>
+
+  <p><b>One DAgger round, with a confound.</b> The round added <span class="v" data-k="rows.dagger" data-f=".0f">8101</span> rows to <span class="v" data-k="rows.teacher_train.100" data-f=".0f">64253</span>, <span class="v" data-k="derived.dagger_extra_pct" data-f=".0f">13</span>% more data. Doubling the teacher's data bought about 4 floors each time: <span class="v" data-k="derived.floor_gain.bc100_vs_bc050.mean" data-f=".1f">3.8</span> from 50 to 100 runs. If floors grow with the logarithm of the data, as these three students suggest, <span class="v" data-k="derived.dagger_extra_pct" data-f=".0f">13</span>% more teacher rows is <span class="v" data-k="derived.dagger_extra_doublings" data-f=".2f">0.17</span> of a doubling, worth about <span class="v" data-k="derived.floors_if_teacher_rows" data-f=".1f">0.6</span> floors. The DAgger rows bought <span class="v" data-k="derived.floor_gain.dagger_vs_bc100.mean" data-f=".1f">3.9</span>. That comparison suggests the location of the new rows, not their number, did most of the work, which is what Section 4 predicts. It is not a controlled test: the control would add the same number of rows from fresh teacher runs.</p>
+
+  <figure id="fig-datacurve">
+    <div class="scroll"><!-- fig:datacurve --><svg viewBox="0 0 560 300" role="img" aria-label="Held-out agreement against the number of teacher runs on a log scale, for students trained on the teacher's chosen move and on its full distribution: the two nearly coincide."><line class="grid" x1="56" x2="544" y1="254.0" y2="254.0"/><text class="muted" x="50" y="258.0" text-anchor="end">60</text><line class="grid" x1="56" x2="544" y1="194.5" y2="194.5"/><text class="muted" x="50" y="198.5" text-anchor="end">65</text><line class="grid" x1="56" x2="544" y1="135.0" y2="135.0"/><text class="muted" x="50" y="139.0" text-anchor="end">70</text><line class="grid" x1="56" x2="544" y1="75.5" y2="75.5"/><text class="muted" x="50" y="79.5" text-anchor="end">75</text><line class="grid" x1="56" x2="544" y1="16.0" y2="16.0"/><text class="muted" x="50" y="20.0" text-anchor="end">80</text><text class="muted" x="116.8" y="270" text-anchor="middle">25</text><text class="muted" x="305.6" y="270" text-anchor="middle">50</text><text class="muted" x="494.3" y="270" text-anchor="middle">100</text><line class="ink" x1="56" x2="544" y1="254" y2="254"/><line class="ink" x1="56" x2="56" y1="16" y2="254"/><text x="300.0" y="292" text-anchor="middle">teacher runs in the training set (log scale)</text><text x="14" y="135.0" text-anchor="middle" transform="rotate(-90 14 135.0)">held-out agreement (%)</text><path class="l1" d="M116.8 202.2 L305.6 159.6 L494.3 102.1" stroke-width="2"/><circle class="f1" cx="116.8" cy="202.2" r="3.5"/><circle class="f1" cx="305.6" cy="159.6" r="3.5"/><circle class="f1" cx="494.3" cy="102.1" r="3.5"/><path class="l2" d="M116.8 204.8 L305.6 155.6" stroke-width="2" stroke-dasharray="5 3"/><circle class="f2" cx="116.8" cy="204.8" r="3"/><circle class="f2" cx="305.6" cy="155.6" r="3"/><text x="486.3" y="92.1" text-anchor="end">hard labels</text><text x="295.6" y="143.6" text-anchor="end">soft labels</text></svg><!-- /fig:datacurve --></div>
+    <figcaption><b>Figure 7.6.</b> Held-out agreement against the number of teacher runs in the training set, for hard labels (the teacher's chosen class) and soft labels (its full distribution). The horizontal axis is logarithmic, so each tick doubles the data, and agreement rises by about 4 points per doubling. Notice that the two curves nearly coincide: the soft-label points sit on the hard-label line.</figcaption>
+  </figure>
+
+  <p><b>Soft labels barely help here.</b> At 25 runs the soft-label student agrees on <span class="v" data-k="students.soft025.heldout_agreement" data-f=".1f">64.1</span>% against <span class="v" data-k="students.bc025.heldout_agreement" data-f=".1f">64.4</span>%; at 50 runs, <span class="v" data-k="students.soft050.heldout_agreement" data-f=".1f">68.3</span>% against <span class="v" data-k="students.bc050.heldout_agreement" data-f=".1f">67.9</span>%. Mean floor rose slightly: <span class="v" data-k="derived.floor_gain.soft025_vs_bc025.mean" data-f=".1f">0.8</span> floors (standard error <span class="v" data-k="derived.floor_gain.soft025_vs_bc025.se" data-f=".1f">0.3</span>) at 25 runs and <span class="v" data-k="derived.floor_gain.soft050_vs_bc050.mean" data-f=".1f">1.0</span> (<span class="v" data-k="derived.floor_gain.soft050_vs_bc050.se" data-f=".1f">0.6</span>) at 50. Equation \eqref{eq:grad} explains the small effect. Soft labels add information only where the teacher spreads its probability. This teacher's mean entropy is <span class="v" data-k="teacher_on_heldout.mean_entropy_nats" data-f=".2f">0.17</span> nats per decision, and on most decisions its distribution is nearly one-hot, so the soft target is nearly the hard one. The Shockwave decision, with its 0.14 on skip, is the exception rather than the rule. A teacher with more spread, such as a search procedure's visit counts, would give soft labels more to carry.</p>
+
+  <p><b>What the measurements show, and do not.</b> They show the gap between agreement and winning, the agreement gap on the student's own states at the same point in a run, and a large floor gain from one round of labels on the student's states. They do not show the quadratic law itself: that would need a family of students with controlled \(\epsilon\) and runs of controlled length. Each number comes from one training seed per student; a different seed would move agreement by an amount not measured here. The win counts below five are too small to compare.</p>
+
+  <h2 id="confusions">10. Common confusions</h2>
+
+  <p><b>"73% agreement means the student plays 73% as well."</b> Agreement is an average over decisions, and the outcome of a run is ruled by the few decisions that end it. Equation \eqref{eq:survival} shows how a small rate of fatal mistakes compounds over hundreds of decisions. A student can disagree mostly on harmless choices and still lose, or disagree on a quarter of decisions and still win if those choices were close calls.</p>
+
+  <p><b>"A held-out test set measures distribution shift."</b> It does not. Held-out runs are still the teacher's runs, so they are drawn from \(d^{\pi^*}\). They measure how well the classifier generalises across seeds, not how it does on the states it will reach itself. Only the student's own runs, labelled by the teacher, measure \(\epsilon\) under \(d^{\pi_\theta}\).</p>
+
+  <p><b>"DAgger is just more data."</b> One DAgger round adds rows, so some of any gain may come from the size of the dataset alone. The claim of DAgger is narrower: the new rows come from the learner's distribution, which is where the cost is incurred. Separating the two needs a control that adds the same number of teacher rows. Section 9's single round has no such control.</p>
+
+  <p><b>"Agreement should keep rising during reinforcement learning."</b> Only while the teacher is better. Once the student outplays it, the student should disagree where the teacher is wrong. Spire Mentor's K2 read is the example: combat agreement missed its bar while the win rate beat the teacher's by 5.4 points.</p>
+
+  <h2 id="experiments">11. Suggested experiments</h2>
+
+  <p>Run these from the repository root. <code>TOUR_VENV</code> points at a checkout with the simulator's Python environment, and <code>TOUR_WEIGHTS</code> at the published weights. Each command uses at most three game processes.</p>
+
+  <ol>
+    <li><p><b>Reproduce the measurements.</b> Build the datasets and students, then measure and redraw the figures:</p>
+<pre class="cmd"><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-7-imitation/prepare.py --workers 3
+TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-7-imitation/figures.py measure
+TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-7-imitation/figures.py render</code></pre>
+    <p>Everything is greedy and seeded, so the tables should match. Predict first: if you change the training seed in <code>fresh_student</code>, how much do held-out agreement and win rate move?</p></li>
+    <li><p><b>Soft labels with more data.</b> Set <code>SOFT = (25, 50, 100)</code> in <code>figures.py</code> and run <code>figures.py measure</code> again. Does the soft-label student on 100 runs keep its lead in agreement, and does that lead show up as more floors?</p></li>
+    <li><p><b>Predict, then score.</b> <code>check.py</code> measures the four hard-label students and scores your guesses in <code>predictions.toml</code> against them. It is optional, but it makes the Section 3 prediction concrete:</p>
+<pre class="cmd"><code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-7-imitation/check.py --workers 3</code></pre>
+    <p><code>check.py --quick --workers 3</code> runs a tiny plan end to end without preparation. Its numbers only show that the pipeline works.</p></li>
+  </ol>
+
+  <h2 id="references">12. References</h2>
+  <ol class="refs">
+    <li id="ref-pomerleau">Pomerleau, D. A. (1990). Rapidly adapting artificial neural networks for autonomous navigation. <em>Advances in Neural Information Processing Systems 3</em>.</li>
+    <li id="ref-bain">Bain, M., &amp; Sammut, C. (1999). A framework for behavioural cloning. In K. Furukawa, D. Michie &amp; S. Muggleton (Eds.), <em>Machine Intelligence 15: Intelligent Agents</em> (pp. 103-129). Oxford University Press.</li>
+    <li id="ref-ross2010">Ross, S., &amp; Bagnell, J. A. (2010). Efficient reductions for imitation learning. <em>Proceedings of AISTATS 2010</em>, PMLR 9, 661-668. Theorem 2.1; proof and tight example in the supplementary material.</li>
+    <li id="ref-ross2011">Ross, S., Gordon, G. J., &amp; Bagnell, J. A. (2011). A reduction of imitation learning and structured prediction to no-regret online learning. <em>Proceedings of AISTATS 2011</em>, PMLR 15, 627-635. Algorithm 3.1 and Theorems 2.2 and 3.2.</li>
+    <li id="ref-cs285">Levine, S. CS 285 (Deep Reinforcement Learning, UC Berkeley), Lecture 2: Imitation learning. Recorded lecture, Part 2 (2023), and slides (2026), which write the horizon as \(H\).</li>
+    <li id="ref-hinton">Hinton, G., Vinyals, O., &amp; Dean, J. (2015). Distilling the knowledge in a neural network. arXiv:1503.02531 (NIPS 2014 Deep Learning Workshop).</li>
+    <li id="ref-rusu">Rusu, A. A., Colmenarejo, S. G., Gülçehre, Ç., Desjardins, G., Kirkpatrick, J., Pascanu, R., Mnih, V., Kavukcuoglu, K., &amp; Hadsell, R. (2016). Policy distillation. <em>ICLR 2016</em>. arXiv:1511.06295.</li>
+    <li id="ref-agarwal">Agarwal, R., Vieillard, N., Zhou, Y., Stanczyk, P., Ramos, S., Geist, M., &amp; Bachem, O. (2024). On-policy distillation of language models: Learning from self-generated mistakes. <em>ICLR 2024</em>. arXiv:2306.13649.</li>
+    <li id="ref-alphago">Silver, D., Huang, A., Maddison, C. J., et al. (2016). Mastering the game of Go with deep neural networks and tree search. <em>Nature</em> 529, 484-489.</li>
+    <li id="ref-kickstart">Schmitt, S., Hudson, J. J., Zidek, A., Osindero, S., Doersch, C., Czarnecki, W. M., Leibo, J. Z., Küttler, H., Zisserman, A., Simonyan, K., &amp; Eslami, S. M. A. (2018). Kickstarting deep reinforcement learning. arXiv:1803.03835.</li>
+    <li id="ref-czarnecki">Czarnecki, W. M., Pascanu, R., Osindero, S., Jayakumar, S. M., Świrszcz, G., &amp; Jaderberg, M. (2019). Distilling policy distillation. <em>Proceedings of AISTATS 2019</em>, PMLR 89, 1331-1340.</li>
+    <li id="ref-alphastar">Vinyals, O., Babuschkin, I., Czarnecki, W. M., et al. (2019). Grandmaster level in StarCraft II using multi-agent reinforcement learning. <em>Nature</em> 575, 350-354.</li>
+  </ol>
+</main>
+
+<footer class="chapter"><span>← Chapter 6: Off-policy correction</span><span>Chapter 8: Evaluating agents →</span></footer>
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>

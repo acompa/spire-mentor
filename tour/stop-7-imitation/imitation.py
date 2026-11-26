@@ -194,9 +194,11 @@ def fresh_student(seed: int = 0):
 
 
 def train(rb: dict, y: np.ndarray, out: Path, *, epochs: float, batch: int = 256,
-          lr: float = 3e-4, seed: int = 0, log=print) -> None:
+          lr: float = 3e-4, seed: int = 0, soft: bool = False, log=print) -> None:
     """Behaviour cloning: minimise the cross-entropy between the student's
-    policy and the teacher's chosen class, over `epochs` passes of `rb`.
+    policy and the teacher's chosen class (hard labels), or with `soft` the
+    teacher's whole distribution over classes (distillation, the teacher's
+    logits computed per batch), over `epochs` passes of `rb`.
     Writes `out.pt` (checkpoint, for torch) and `out.e2ew` (what Rust plays)."""
     import torch
 
@@ -206,6 +208,7 @@ def train(rb: dict, y: np.ndarray, out: Path, *, epochs: float, batch: int = 256
     dev = device()
     net, tcfg = fresh_student(seed)
     net.to(dev).train()
+    teacher = N.load_checkpoint(teacher_paths()[0])[0].to(dev).eval() if soft else None
     opt = torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=0.01)
     n = len(y)
     steps = max(1, round(epochs * n / batch))
@@ -222,8 +225,11 @@ def train(rb: dict, y: np.ndarray, out: Path, *, epochs: float, batch: int = 256
         idx = order[at:at + batch]
         at += batch
         b = _to(N.to_batch(N.select_rows(rb, idx), "cpu"), dev)
-        loss = torch.nn.functional.cross_entropy(
-            net.policy(b), torch.as_tensor(y[idx], device=dev))
+        logits = net.policy(b)
+        if teacher is None:
+            loss = torch.nn.functional.cross_entropy(logits, torch.as_tensor(y[idx], device=dev))
+        else:
+            loss = soft_cross_entropy(logits, teacher_logits(teacher, b))
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
@@ -237,6 +243,23 @@ def train(rb: dict, y: np.ndarray, out: Path, *, epochs: float, batch: int = 256
     N.save_checkpoint(out.with_suffix(".pt"), net,
                       stamps=dict(tcfg["stamps"], variant="tour-bc-student"))
     export_weights(str(out.with_suffix(".pt")), str(out.with_suffix(".e2ew")))
+
+
+def teacher_logits(teacher, b):
+    import torch
+
+    with torch.no_grad():
+        return teacher.policy(b)
+
+
+def soft_cross_entropy(student_logits, teacher_logits):
+    """Mean over rows of H(p_T, p_S) = -sum_a p_T(a) log p_S(a). Classes off a
+    row are -inf in both; their p_T is 0, so they are dropped, not 0 * -inf."""
+    import torch
+
+    p_t = torch.softmax(teacher_logits.float(), -1)
+    logp_s = torch.log_softmax(student_logits.float(), -1)
+    return -(p_t * torch.where(p_t > 0, logp_s, torch.zeros_like(logp_s))).sum(-1).mean()
 
 
 # ── the plan of one preparation ───────────────────────────────────────────
