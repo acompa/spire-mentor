@@ -1,0 +1,43 @@
+# Rough sample values for dry runs (TOUR_DEV=1). Not answers.
+
+[start_value]
+question = "The critic's value at the first decision of a run, averaged over the runs"
+unit = "return (reward units)"
+guess = 0.8
+low = 0.6
+high = 1.0
+
+[boss_won_dv]
+question = "Median change in V_run across a won act 1 or act 2 boss fight (run row after minus run row before)"
+unit = "return (reward units)"
+guess = 0.05
+low = -0.05
+high = 0.2
+
+[elite_minus_ordinary_dv]
+question = "Mean change in V_run across elite fights minus the same mean across ordinary (monster) fights"
+unit = "return (reward units)"
+guess = -0.02
+low = -0.1
+high = 0.05
+
+[win_rate_at_half]
+question = "Share of decisions with critic value between 0.4 and 0.6 that belong to runs that were won"
+unit = "fraction 0-1"
+guess = 0.4
+low = 0.2
+high = 0.6
+
+[weight_20_later]
+question = "With lambda 0.95, the weight a surprise 20 decisions later gets in this decision's advantage"
+unit = "fraction 0-1"
+guess = 0.3
+low = 0.2
+high = 0.5
+
+[explained_in_fights]
+question = "Inside fights, the share of the variance of return-to-go that the critic's value explains"
+unit = "fraction (1 = perfect, 0 = no better than a constant)"
+guess = 0.5
+low = 0.2
+high = 0.8
