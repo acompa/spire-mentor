@@ -10,8 +10,9 @@ tour/run stop-6-off-policy/figures.py data --runs-file /tmp/runs48.npz
 tour/run stop-6-off-policy/figures.py svg
 ```
 
-Optional: score your own predictions of seven of the chapter's quantities
-(fill in `predictions.toml` first), and run the arithmetic tests:
+To score your own estimates of seven of the chapter's quantities, fill in
+`predictions.toml`, then run `check.py`. The second command runs the
+arithmetic tests:
 
 ```bash
 tour/run stop-6-off-policy/check.py --quick
