@@ -25,7 +25,6 @@ import tourlib
 
 STOP = Path(__file__).resolve().parent
 NET = "ironclad_e2e_d9000_ema0999.pt"
-EPS = 1e-9
 
 
 # ── the reward rule, as the env's constants ─────────────────────────────────
@@ -152,7 +151,7 @@ def play(seed: int, choose) -> Run:
         ledger=ledger,
         hp=int(end.current_hp),
         max_hp=int(end.max_hp),
-        relics=[str(r) for r in end.relics()] if callable(end.relics) else [str(r) for r in end.relics],
+        relics=list(end.relics()),
     )
 
 
@@ -326,7 +325,6 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  dies in the final boss fight (a won run minus the win): {best_loss:.3f}")
     print(f"\n{len(net_runs) + len(rnd_runs) + 1} runs in {time.time() - t0:.0f} s; "
           "every ledger matched the env's total and the rule.")
-
 
 
 if __name__ == "__main__":
