@@ -1,0 +1,45 @@
+# Stop 7 predictions. For each entry, write a guess and an 80% interval
+# (low <= guess <= high). The check refuses to run while any value is blank.
+# "The student" is the one trained on the largest teacher dataset.
+
+[heldout_agreement]
+question = "On teacher states from runs it never trained on, how often does the student pick the teacher's move?"
+unit = "percent of decisions"
+guess = ""
+low = ""
+high = ""
+
+[own_state_agreement]
+question = "On the states the student reaches when it plays itself, how often would the teacher pick the same move?"
+unit = "percent of decisions"
+guess = ""
+low = ""
+high = ""
+
+[student_mean_floor]
+question = "The student's mean floor reached on PANEL_A (the run ends at death or at the win)."
+unit = "floor"
+guess = ""
+low = ""
+high = ""
+
+[student_win_rate]
+question = "The student's win rate on PANEL_A."
+unit = "percent of runs"
+guess = ""
+low = ""
+high = ""
+
+[agreement_gain_from_doubling]
+question = "Held-out agreement of the student minus that of the student trained on half as many teacher runs."
+unit = "percentage points"
+guess = ""
+low = ""
+high = ""
+
+[dagger_floor_change]
+question = "Mean floor of the DAgger student minus the student's mean floor, on the same PANEL_A seeds."
+unit = "floors"
+guess = ""
+low = ""
+high = ""
