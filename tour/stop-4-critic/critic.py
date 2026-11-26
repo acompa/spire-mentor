@@ -51,6 +51,8 @@ class Trace:
     value: np.ndarray  # float64
     v_combat: np.ndarray
     v_run: np.ndarray
+    #: The training value with every PRIV token removed (only with `no_priv=True`).
+    value_nopriv: np.ndarray | None = None
 
     def __len__(self) -> int:
         return len(self.value)
@@ -78,6 +80,20 @@ class Trace:
 _NET = None
 
 
+def _no_priv() -> dict[str, np.ndarray]:
+    """A row's PRIV fields, emptied: the value module then reads the honest tokens only."""
+    from ppo.e2e import tokens as TK
+
+    return {
+        "pcat": np.zeros((0, TK.N_CAT), np.int16),
+        "pcont": np.zeros((0, TK.N_CONT), np.float16),
+        "psec": np.zeros(0, np.int8),
+        "ppool_tok": np.zeros(0, np.uint16),
+        "ppool_vid": np.zeros(0, np.uint16),
+        "ppool_w": np.zeros(0, np.float16),
+    }
+
+
 def _net(ckpt: str):
     global _NET
     if _NET is None:
@@ -90,15 +106,18 @@ def _net(ckpt: str):
     return _NET
 
 
-def trace_run(seed: int, ckpt: str) -> Trace:
+def trace_run(seed: int, ckpt: str, no_priv: bool = False) -> Trace:
     """Play `seed` greedily with the checkpoint and read both value heads at
-    every decision.
+    every decision. With `no_priv`, also read the value a second time with the
+    row's PRIV tokens removed; the policy logits do not read them.
 
     The rows come from the Rust training env (`RsE2EEnv`, what the rollout
     workers use) with ``priv_=True``, so each row carries the privileged
     (PRIV) tokens the critic was trained on. `E2ENet.forward` feeds them to
     the value module only.
     """
+    import dataclasses
+
     import torch
     from ppo.e2e import contracts as C
     from ppo.e2e import net as N
@@ -116,6 +135,11 @@ def trace_run(seed: int, ckpt: str) -> Trace:
             tk = d.tok
             out = net.forward(N.to_batch(TK.row_batch([tk], run_uid=[0], t=[d.row]), "cpu"))
             kind, idx = d.unit
+            v_np = float("nan")
+            if no_priv:
+                bare = dataclasses.replace(tk, **_no_priv())
+                rb = TK.row_batch([bare], run_uid=[0], t=[d.row])
+                v_np = float(net.forward(N.to_batch(rb, "cpu")).value[0])
             rows.append(
                 (
                     d.is_combat,
@@ -128,6 +152,7 @@ def trace_run(seed: int, ckpt: str) -> Trace:
                     float(out.value[0]),
                     float(out.v_combat[0]),
                     float(out.v_run[0]),
+                    v_np,
                 )
             )
             d = env.step(int(out.logits[0].argmax()))
@@ -150,6 +175,7 @@ def trace_run(seed: int, ckpt: str) -> Trace:
         value=np.asarray(cols[7], np.float64),
         v_combat=np.asarray(cols[8], np.float64),
         v_run=np.asarray(cols[9], np.float64),
+        value_nopriv=np.asarray(cols[10], np.float64) if no_priv else None,
     )
 
 
