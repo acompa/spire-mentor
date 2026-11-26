@@ -112,7 +112,6 @@ footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(
 </style>
 <style>
 /* Chapter 3 only. */
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .6rem 1.4rem; font-family: var(--sans); font-size: .92rem; }
 .verdict { font-family: var(--sans); font-weight: 600; }
 /* The shared rule makes every figure svg a block, including MathJax output in captions. */
 figure mjx-container svg { display: inline; margin: 0; max-width: none; }
@@ -121,263 +120,362 @@ figure mjx-container svg { display: inline; margin: 0; max-width: none; }
 <header class="chapter">
   <div class="eyebrow"><span>RL tour · Chapter 3 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
   <h1>Reward and return</h1>
-  <p class="lede">In supervised learning someone hands you the target. In reinforcement learning you write one number per step and the learner maximises their sum. This chapter is about that number: what it must contain, what it may leave out, when you can add hints to it without changing the answer, and what Spire Mentor's agent is actually paid for.</p>
+  <p class="lede">A reward is a number the environment gives the agent after each action. The return is the sum of those numbers from one step to the end of the episode. Training makes the expected return as large as it can. This chapter covers what the reward must contain and which extra terms leave the best policy unchanged. It then covers what a discount does to a long episode and what Spire Mentor's agent is paid for.</p>
 </header>
 
 <nav class="contents" aria-label="Chapter contents">
   <strong>Contents</strong>
   <ol>
-    <li><a href="#opening">Where the target comes from</a></li>
-    <li><a href="#hypothesis">The reward hypothesis and the return</a></li>
-    <li><a href="#sparse">Sparse and dense reward</a></li>
-    <li><a href="#shaping">Shaping, and the potential-based result</a></li>
-    <li><a href="#discount">Discounting and the effective horizon</a></li>
-    <li><a href="#hacking">When the optimiser finds another way</a></li>
-    <li><a href="#engineered">The textbook against the engineered version</a></li>
+    <li><a href="#opening">A person writes the reward</a></li>
+    <li><a href="#hypothesis">The return adds the rewards up</a></li>
+    <li><a href="#sparse">Sparse reward gives the learner little to follow</a></li>
+    <li><a href="#shaping">Potential-based shaping keeps the best policy</a></li>
+    <li><a href="#discount">A discount shortens the horizon</a></li>
+    <li><a href="#hacking">The optimiser finds the cheapest way to score</a></li>
+    <li><a href="#engineered">Real systems bend the textbook version</a></li>
     <li><a href="#spire">In Spire Mentor</a></li>
     <li><a href="#measured">Measured</a></li>
     <li><a href="#confusions">Common confusions</a></li>
-    <li><a href="#experiments">Suggested experiments</a></li>
+    <li><a href="#experiments">Run the experiments</a></li>
     <li><a href="#references">References</a></li>
   </ol>
 </nav>
 
 <main>
 
-<h2 id="opening">1. Where the target comes from</h2>
+<h2 id="opening">1. A person writes the reward</h2>
 
-<p>When you fit a classifier, each example carries a label and the loss says how far the prediction is from it. When you fit a Q-network, the target is \(r_t + \gamma \max_{a'} Q(s_{t+1}, a')\): part of it is your own network's guess, and part of it, \(r_t\), comes from outside. Chapter 1 set up the decision process. This chapter is about that outside part, the reward, and the sum built from it, the return.</p>
+<p>A <dfn>reward</dfn> is a scalar the environment returns after each action. It grades the outcome of that step. It does not say which action was right. A label in supervised learning tells you the correct output for one example. A reward only tells you how good the result was, after the fact.</p>
 
-<p>Two things make the reward different from a label. First, it grades outcomes, not actions. Nobody tells the agent which card to play; the environment only says, after the fact, how much the step was worth. Second, a person wrote it. The game of Slay the Spire 2 produces facts: you reached floor 31, you beat the act-2 boss, you have 12 HP left, you won. None of those is a reward until a designer writes a rule that turns some of them into numbers. Every later chapter optimises whatever that rule says, including its mistakes.</p>
+<p>You already use rewards when you train a Q-network. The target is \(r_t + \gamma \max_{a'} Q(s_{t+1}, a')\). Your network supplies the second term. The environment supplies \(r_t\). This chapter is about \(r_t\) and the sum built from it. Chapter 1 set up the decision process that produces it.</p>
 
-<p>We use one example throughout. Spire Mentor's agent, Instinct, plays an Ironclad run at ascension 10: a climb of 46 floors across three acts, about 650 to 700 decisions long, ending in a win or a death. Its designer wrote this rule before training started:</p>
+<p>A game does not produce rewards by itself. Slay the Spire 2 produces facts. You reached floor 31. You beat the act-2 boss. You have 12 HP left. You did not win. A designer writes a rule that turns some of those facts into numbers. Every later chapter optimises whatever that rule says, including its mistakes.</p>
+
+<p>The worked example is Instinct, Spire Mentor's end-to-end agent. It plays an Ironclad run at ascension 10. A run climbs 46 floors across three acts. It takes about 650 to 700 decisions and ends in a win or a death. The designer fixed this rule before training started:</p>
 
 <div class="table"><table>
   <thead><tr><th>Event</th><th class="num">Reward</th></tr></thead>
   <tbody>
     <tr><td>Win the run</td><td class="num">+1.0</td></tr>
-    <tr><td>Beat a boss, except the one whose defeat ends the run</td><td class="num">+0.05 each</td></tr>
-    <tr><td>Reach a floor not reached before</td><td class="num">+0.002 each</td></tr>
-    <tr><td>Die, or hit a turn or decision cap</td><td class="num">0</td></tr>
-    <tr><td>HP, gold, cards, relics, upgrades, elites fought</td><td class="num">nothing</td></tr>
+    <tr><td>Beat a boss, except the boss whose defeat ends the run</td><td class="num">+0.05 each</td></tr>
+    <tr><td>Reach a floor that the run has not reached before</td><td class="num">+0.002 each</td></tr>
+    <tr><td>Die, or hit a turn cap or a decision cap</td><td class="num">0</td></tr>
+    <tr><td>HP, gold, cards, relics, upgrades and elites fought</td><td class="num">nothing</td></tr>
   </tbody>
   <caption>Instinct's reward rule. The discount is \(\gamma = 1\).</caption>
 </table></div>
 
-<p>By the end of the chapter you should be able to compute any run's return in your head, say which parts of this rule are harmless hints and which change what the agent is asked to do, and say what it means that HP earns nothing.</p>
-
-<h2 id="hypothesis">2. The reward hypothesis and the return</h2>
-
-<p>Sutton and Barto put the founding assumption of the field in one sentence, which they call the <dfn>reward hypothesis</dfn>: all of what we mean by goals can be thought of as maximising the expected value of the cumulative sum of a scalar signal <span class="cite">[<a href="#ref-1">1</a>, §3.2]</span>. It is a modelling choice, not a theorem. It says a goal can always be written as a number per step, added up.</p>
-
-<p>Four different things in this repository are loosely called "reward", and this chapter keeps them apart:</p>
+<p>Figure 3.1 shows the first two parts of the pipeline. Facts go in. The reward function turns some of them into a number per step.</p>
 
 <figure id="fig-1">
   <div class="scroll">
-    <svg viewBox="0 0 640 250" role="img" aria-label="Outcome facts flow into the reward function, which emits r_t; the rewards add up to the return. A critic and a learned reward model are separate.">
+    <svg viewBox="0 0 640 150" role="img" aria-label="Outcome facts flow into the reward function, which emits one reward per step.">
       <defs><marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
       <g color="var(--fg)">
-        <rect class="box" x="10" y="40" width="150" height="92" rx="3"/>
-        <text x="85" y="60" text-anchor="middle" font-weight="600">1. Outcome facts</text>
-        <text class="muted" x="85" y="80" text-anchor="middle">floor 31, act-2 boss</text>
-        <text class="muted" x="85" y="96" text-anchor="middle">beaten, 12 HP left,</text>
-        <text class="muted" x="85" y="112" text-anchor="middle">won: no</text>
-        <rect class="box" x="235" y="40" width="150" height="92" rx="3" stroke-width="2"/>
-        <text x="310" y="60" text-anchor="middle" font-weight="600">2. Reward function</text>
-        <text class="muted" x="310" y="80" text-anchor="middle">written by a person</text>
-        <text class="muted" x="310" y="96" text-anchor="middle">0.002 per floor,</text>
-        <text class="muted" x="310" y="112" text-anchor="middle">0.05 per boss, 1 per win</text>
-        <rect class="box" x="460" y="40" width="170" height="92" rx="3"/>
-        <text x="545" y="60" text-anchor="middle" font-weight="600">Return G₀</text>
-        <text class="muted" x="545" y="80" text-anchor="middle">sum of every rₜ</text>
-        <text class="muted" x="545" y="96" text-anchor="middle">in the run: the number</text>
-        <text class="muted" x="545" y="112" text-anchor="middle">training maximises</text>
-        <line class="ink" x1="160" y1="86" x2="235" y2="86" marker-end="url(#ar1)"/>
-        <text class="muted" x="197" y="78" text-anchor="middle">facts</text>
-        <line class="ink" x1="385" y1="86" x2="460" y2="86" marker-end="url(#ar1)"/>
-        <text class="muted" x="422" y="78" text-anchor="middle">rₜ</text>
-        <rect class="box" x="235" y="172" width="180" height="58" rx="3" stroke-dasharray="4 3"/>
-        <text x="325" y="194" text-anchor="middle" font-weight="600">3. Value estimate V(s)</text>
-        <text class="muted" x="325" y="214" text-anchor="middle">a guess at future G: Ch. 4</text>
-        <rect class="box" x="450" y="172" width="180" height="58" rx="3" stroke-dasharray="4 3"/>
-        <text x="540" y="194" text-anchor="middle" font-weight="600">4. Learned reward model</text>
-        <text class="muted" x="540" y="214" text-anchor="middle">Instinct has none</text>
-        <line class="ink" x1="545" y1="132" x2="360" y2="172" marker-end="url(#ar1)"/>
-        <text class="muted" x="420" y="150" text-anchor="end">regression target</text>
+        <rect class="box" x="10" y="30" width="150" height="92" rx="3"/>
+        <text x="85" y="50" text-anchor="middle" font-weight="600">Outcome facts</text>
+        <text class="muted" x="85" y="70" text-anchor="middle">floor 31, act-2 boss</text>
+        <text class="muted" x="85" y="86" text-anchor="middle">beaten, 12 HP left,</text>
+        <text class="muted" x="85" y="102" text-anchor="middle">won: no</text>
+        <rect class="box" x="235" y="30" width="150" height="92" rx="3" stroke-width="2"/>
+        <text x="310" y="50" text-anchor="middle" font-weight="600">Reward function</text>
+        <text class="muted" x="310" y="70" text-anchor="middle">written by a person</text>
+        <text class="muted" x="310" y="86" text-anchor="middle">0.002 per floor,</text>
+        <text class="muted" x="310" y="102" text-anchor="middle">0.05 per boss, 1 per win</text>
+        <line class="ink" x1="160" y1="76" x2="235" y2="76" marker-end="url(#ar1)"/>
+        <text class="muted" x="197" y="68" text-anchor="middle">facts</text>
+        <line class="ink" x1="385" y1="76" x2="455" y2="76" marker-end="url(#ar1)"/>
+        <text class="muted" x="420" y="68" text-anchor="middle">rₜ</text>
       </g>
     </svg>
   </div>
-  <figcaption><b>Figure 3.1.</b> Facts are inputs; the reward function turns some of them into \(r_t\); the return adds the \(r_t\) up. The HP fact in the left box never reaches the right box, because the rule has no term for it. A value estimate (Chapter 4) predicts the return; a learned reward model, as in RLHF, would replace box 2 with a network. Instinct uses boxes 1, 2 and 3 only.</figcaption>
+  <figcaption><b>Figure 3.1.</b> The reward function reads facts about the game and emits one reward \(r_t\) per step. HP is one of the facts, but the rule has no term for it, so HP never reaches \(r_t\).</figcaption>
 </figure>
 
-<p>The <dfn>return</dfn> from step \(t\) is the sum of the rewards from that step on, each weighted by a power of the discount \(\gamma\):</p>
+<h2 id="hypothesis">2. The return adds the rewards up</h2>
+
+<p>Sutton and Barto state the founding assumption of the field in one sentence. They call it the <dfn>reward hypothesis</dfn>. Any goal can be expressed as maximising the expected value of the cumulative sum of a scalar signal <span class="cite">[<a href="#ref-1">1</a>, §3.2]</span>. It is a modelling choice, not a theorem.</p>
+
+<p>The <dfn>return</dfn> from step \(t\) is that cumulative sum. It adds the rewards from step \(t\) to the end of the episode, and weights each by a power of the discount \(\gamma\):</p>
 
 <div class="definition"><span class="label">Definition 3.1 · Return</span>
   <div class="eq">\begin{equation} G_t = \sum_{k=0}^{T-t} \gamma^{k}\, r_{t+k} \label{eq:return} \end{equation}</div>
-  <p>\(r_t\) is the reward that follows action \(a_t\), \(T\) is the last step of the episode, and \(0 \le \gamma \le 1\) is the discount. Sutton and Barto write the same reward as \(R_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>, §3.3]</span>; we index it by the action it follows.</p>
+  <p>\(r_t\) is the reward that follows action \(a_t\). \(T\) is the last step of the episode. \(\gamma\) lies between 0 and 1. Sutton and Barto write the same reward as \(R_{t+1}\) <span class="cite">[<a href="#ref-1">1</a>, §3.3]</span>. This tour indexes it by the action it follows.</p>
 </div>
 
-<p>Rewards earned before step \(t\) are not in \(G_t\). The return is a <dfn>reward-to-go</dfn>: what is still to come from here. Splitting off the first term gives the recursion that every value method in Chapter 4 is built on:</p>
-
-<div class="eq">\begin{equation} G_t = r_t + \gamma\, G_{t+1}, \qquad G_{T+1} = 0. \label{eq:recursion} \end{equation}</div>
-
-<p>The return of one run is a random variable: the deck you are offered, the enemies you meet and, during training, the actions you sample all vary. What training maximises is its expectation under the policy, the objective Chapter 1 named:</p>
-
-<div class="eq">\begin{equation} J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[ G_0 \right]. \label{eq:objective} \end{equation}</div>
-
-<p>\(\tau\) is a whole trajectory from the first decision to the end, drawn by playing the policy \(\pi_\theta\) in the game. Note where the expectation sits. A reviewer once caught a Bellman equation with the expectation missing; here it matters as much. Instinct is not asked to make one run score high. It is asked to make the average over runs score high.</p>
-
-<h3>Tracing one run by hand</h3>
-
-<p>Take a run that walks onto floor 1, then floor 2 and onwards, beats the act-1 boss on floor 16, and dies on floor 18. With \(\gamma = 1\):</p>
-<ul>
-  <li>18 new floors at 0.002 each: 0.036.</li>
-  <li>one boss at 0.05: 0.05.</li>
-  <li>no win: 0.</li>
-</ul>
-<p>The return is \(G_0 = 0.086\). It does not matter whether the run died at full HP or at 1 HP, after two elites or none, with a strong deck or a weak one. Because the rule pays only for changes in three counters, the whole sum collapses to the counters' final values. Write \(F(s)\) for the highest floor reached so far, \(B(s)\) for the bosses paid so far and \(W\) for 1 on a win and 0 otherwise. The rule is</p>
-
-<div class="eq">\begin{equation} r_t = R_F\,\big[F(s_{t+1}) - F(s_t)\big] + R_B\,\big[B(s_{t+1}) - B(s_t)\big] + R_W\, W\,\mathbb{1}[t = T], \label{eq:rule} \end{equation}</div>
-
-<p>with \(R_F = 0.002\), \(R_B = 0.05\) and \(R_W = 1\). Summing Equation \eqref{eq:rule} over a run with \(\gamma = 1\), the brackets cancel in pairs, and since every run starts on floor 0 with no bosses beaten:</p>
-
-<div class="eq">\begin{equation} G_0 = R_F\, F_T + R_B\, B_T + R_W\, W. \label{eq:return-sm} \end{equation}</div>
-
-<p>\(F_T\) and \(B_T\) are the counters at the end. Taking the expectation of Equation \eqref{eq:return-sm} splits the objective into three parts you can read off a results table:</p>
-
-<div class="eq">\begin{equation} J(\theta) = R_W \Pr_{\pi_\theta}(\text{win}) + R_B\, \mathbb{E}_{\pi_\theta}[B_T] + R_F\, \mathbb{E}_{\pi_\theta}[F_T]. \label{eq:J-decomp} \end{equation}</div>
-
-<p>So "maximise the return" here means "maximise the win rate, plus small credit for how far you got". How small is a question for the <a href="#measured">Measured</a> section.</p>
-
-<details class="predict"><summary>Pause and predict: what is the largest return a losing run can have?</summary>
-  <p>A loss has \(W = 0\), so it scores \(R_F F_T + R_B B_T\). The most a loss can collect is to die in the very last fight, the act-3 second boss on floor 46. By then it has beaten three bosses that pay (act 1, act 2, act-3 first boss) and reached 46 floors: \(0.002 \times 46 + 0.05 \times 3 = 0.242\). The run that wins that same fight scores 1.242. On the rare maps that run two floors longer the figures are 0.246 and 1.246; the <a href="#measured">Measured</a> section shows both.</p>
-</details>
-
-<h2 id="sparse">3. Sparse and dense reward</h2>
-
-<p>A reward is <dfn>sparse</dfn> when almost every step pays zero and the signal arrives only at rare events; it is <dfn>dense</dfn> when most steps carry information. A win-only rule for Slay the Spire is as sparse as it gets: one nonzero reward in about 700 steps, and only in runs that win.</p>
-
-<p>Sparsity hurts in two ways, and it is worth separating them.</p>
-
-<p><b>No signal at all.</b> If the current policy never reaches the reward, every return is zero and there is nothing to learn from. Chapter 5 derives the policy gradient; for now it is enough to know that it weights each action's log-probability by how much better than average the return turned out, roughly \((G_0 - b)\,\nabla_\theta \log \pi_\theta(a_t \mid s_t)\) for some baseline \(b\). If every run returns 0, every weight is 0 and the gradient is exactly zero. Minsky called the long wandering this causes the "plateau problem" <span class="cite">[<a href="#ref-1">1</a>, §17.4]</span>. A Q-learner has the same trouble in a different form: its targets are all \(0 + \gamma \max_{a'} Q\), so nothing anchors the values.</p>
-
-<p><b>A weak signal far away.</b> Even when wins happen, the one reward at step 700 has to be credited back to step 3, where a card choice made the win possible. Every step in between adds noise. Chapter 4 shows how a critic and the λ-return trade bias for variance to make this work. Dense rewards shorten the distance between a choice and some feedback about it.</p>
-
-<p>Dense rewards cost something too. Each extra term is a claim by the designer about what progress looks like, and the agent will optimise the claim, not the intent behind it. Sutton and Barto put the risk plainly: rewarding a chess agent for taking pieces may teach it to take pieces and lose the game <span class="cite">[<a href="#ref-1">1</a>, §3.2]</span>. The next section answers when you can add dense terms with no such risk.</p>
-
-<h2 id="shaping">4. Shaping, and the potential-based result</h2>
-
-<p><dfn>Reward shaping</dfn> means adding a term \(\tilde r_t\) to the reward the task already has, to give the learner earlier hints. The name comes from Skinner's animal training, where an experimenter rewards closer and closer approximations of a behaviour <span class="cite">[<a href="#ref-1">1</a>, §14.3, §17.4]</span>. The question is what the shaped problem's best policy has to do with the original problem's best policy.</p>
-
-<p>In general nothing. Ng, Harada and Russell showed in 1999 that there is one family of shaping terms that is always safe, and essentially only one <span class="cite">[<a href="#ref-2">2</a>]</span>. Pick any function of the state, a <dfn>potential</dfn> \(\Phi(s)\), and pay the discounted change in it:</p>
-
-<div class="definition"><span class="label">Definition 3.2 · Potential-based shaping</span>
-  <div class="eq">\begin{equation} \tilde r_t = \gamma\, \Phi(s_{t+1}) - \Phi(s_t). \label{eq:pbrs} \end{equation}</div>
-  <p>\(\Phi\) can be any real-valued function of the state: distance to a goal, a heuristic score, a guess at the value. The learner sees \(r_t + \tilde r_t\) instead of \(r_t\). This is the form quoted from Ng et al. in <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
-</div>
-
-<p>Here is why it is safe, derived for the case this chapter needs. Sum the shaping term along one episode from step 0, discounting step \(t\) by \(\gamma^t\) as the return does:</p>
-
-<div class="eq">\begin{equation} \sum_{t=0}^{T} \gamma^{t} \tilde r_t = \sum_{t=0}^{T} \Big( \gamma^{t+1} \Phi(s_{t+1}) - \gamma^{t} \Phi(s_t) \Big) = \gamma^{T+1}\, \Phi(s_{T+1}) - \Phi(s_0). \label{eq:telescope} \end{equation}</div>
-
-<p>Every intermediate potential appears once with a plus sign and once with a minus sign, so the sum telescopes to the potential of the final state, discounted, minus the potential of the start. \(s_{T+1}\) is the terminal state the last action leads to. Figure 3.2 draws this.</p>
+<p>Figure 3.2 adds the return to the pipeline.</p>
 
 <figure id="fig-2">
   <div class="scroll">
-    <svg viewBox="0 0 640 230" role="img" aria-label="A row of states with potentials; each shaping reward is the difference between neighbours; the inner terms cancel, leaving the last minus the first.">
+    <svg viewBox="0 0 640 150" role="img" aria-label="Outcome facts flow into the reward function, which emits r_t. The rewards add up to the return.">
       <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
       <g color="var(--fg)">
-        <g>
-          <circle cx="60" cy="70" r="26" class="box"/><text x="60" y="66" text-anchor="middle">s₀</text><text class="muted" x="60" y="82" text-anchor="middle">Φ = 0</text>
-          <circle cx="200" cy="70" r="26" class="box"/><text x="200" y="66" text-anchor="middle">s₁</text><text class="muted" x="200" y="82" text-anchor="middle">Φ = 0.004</text>
-          <circle cx="340" cy="70" r="26" class="box"/><text x="340" y="66" text-anchor="middle">s₂</text><text class="muted" x="340" y="82" text-anchor="middle">Φ = 0.004</text>
-          <circle cx="480" cy="70" r="26" class="box"/><text x="480" y="66" text-anchor="middle">s₃</text><text class="muted" x="480" y="82" text-anchor="middle">Φ = 0.006</text>
-          <rect x="565" y="44" width="56" height="52" rx="3" class="box" stroke-width="2"/><text x="593" y="66" text-anchor="middle">end</text><text class="muted" x="593" y="82" text-anchor="middle">Φ = ?</text>
-        </g>
-        <line class="ink" x1="86" y1="70" x2="174" y2="70" marker-end="url(#ar2)"/><text class="f1" x="130" y="58" text-anchor="middle">+0.004</text>
-        <line class="ink" x1="226" y1="70" x2="314" y2="70" marker-end="url(#ar2)"/><text class="f1" x="270" y="58" text-anchor="middle">0</text>
-        <line class="ink" x1="366" y1="70" x2="454" y2="70" marker-end="url(#ar2)"/><text class="f1" x="410" y="58" text-anchor="middle">+0.002</text>
-        <line class="ink" x1="506" y1="70" x2="565" y2="70" marker-end="url(#ar2)"/><text class="f1" x="560" y="30" text-anchor="middle">Φ(end) − 0.006</text>
-        <text x="20" y="140">Sum of the arrows: (0.004 − 0) + (0.004 − 0.004) + (0.006 − 0.004)</text><text x="20" y="158">    + (Φ(end) − 0.006) = Φ(end) − Φ(s₀)</text>
-        <text class="f2" x="20" y="186">If Φ(end) = 0 for every ending, every run gets the same −Φ(s₀): best policy unchanged.</text>
-        <text class="f3" x="20" y="210">If Φ(end) depends on how the run ended, the ending is paid: objective changed.</text>
+        <rect class="box" x="10" y="30" width="150" height="92" rx="3"/>
+        <text x="85" y="50" text-anchor="middle" font-weight="600">Outcome facts</text>
+        <text class="muted" x="85" y="70" text-anchor="middle">floor 31, act-2 boss</text>
+        <text class="muted" x="85" y="86" text-anchor="middle">beaten, 12 HP left,</text>
+        <text class="muted" x="85" y="102" text-anchor="middle">won: no</text>
+        <rect class="box" x="235" y="30" width="150" height="92" rx="3"/>
+        <text x="310" y="50" text-anchor="middle" font-weight="600">Reward function</text>
+        <text class="muted" x="310" y="70" text-anchor="middle">written by a person</text>
+        <text class="muted" x="310" y="86" text-anchor="middle">0.002 per floor,</text>
+        <text class="muted" x="310" y="102" text-anchor="middle">0.05 per boss, 1 per win</text>
+        <rect class="box" x="460" y="30" width="170" height="92" rx="3" stroke-width="2"/>
+        <text x="545" y="50" text-anchor="middle" font-weight="600">Return G₀</text>
+        <text class="muted" x="545" y="70" text-anchor="middle">sum of every rₜ</text>
+        <text class="muted" x="545" y="86" text-anchor="middle">in the run, the number</text>
+        <text class="muted" x="545" y="102" text-anchor="middle">training maximises</text>
+        <line class="ink" x1="160" y1="76" x2="235" y2="76" marker-end="url(#ar2)"/>
+        <text class="muted" x="197" y="68" text-anchor="middle">facts</text>
+        <line class="ink" x1="385" y1="76" x2="460" y2="76" marker-end="url(#ar2)"/>
+        <text class="muted" x="422" y="68" text-anchor="middle">rₜ</text>
       </g>
     </svg>
   </div>
-  <figcaption><b>Figure 3.2.</b> Potential-based shaping with \(\gamma = 1\), on four states of a run with \(\Phi = 0.002 \times\) floor. Each arrow carries \(\Phi(s_{t+1}) - \Phi(s_t)\). Whatever path the run takes, the arrows sum to the last potential minus the first. Notice the box on the right: whether the trick is safe depends entirely on what potential the ending gets.</figcaption>
+  <figcaption><b>Figure 3.2.</b> The return \(G_0\) adds every \(r_t\) in the run. With \(\gamma = 1\) it is a plain sum.</figcaption>
+</figure>
+
+<p>Rewards earned before step \(t\) are not in \(G_t\). The return is a <dfn>reward-to-go</dfn>. Split off the first term and you get the recursion that Chapter 4 builds every value method on:</p>
+
+<div class="eq">\begin{equation} G_t = r_t + \gamma\, G_{t+1}, \qquad G_{T+1} = 0. \label{eq:recursion} \end{equation}</div>
+
+<p>The return of one run is a random variable. The cards you are offered vary, and so do the enemies and, during training, the sampled actions. Training maximises the expected return under the policy. Chapter 1 named this the objective:</p>
+
+<div class="eq">\begin{equation} J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}\!\left[ G_0 \right]. \label{eq:objective} \end{equation}</div>
+
+<p>\(\tau\) is one whole run, drawn by playing the policy \(\pi_\theta\) in the game. Instinct is not asked to make one run score high. It is asked to make the average over runs score high.</p>
+
+<p>Figure 3.3 adds the last part. A value estimate \(V_\phi(s)\) predicts the return from a state. It learns by regression on observed returns. Chapter 4 covers it. Some systems, such as RLHF, also replace the hand-written reward function with a learned reward model. Instinct has no learned reward model.</p>
+
+<figure id="fig-3">
+  <div class="scroll">
+    <svg viewBox="0 0 640 250" role="img" aria-label="The pipeline from facts to reward to return, with a value estimate that learns by regression on the return.">
+      <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <rect class="box" x="10" y="30" width="150" height="92" rx="3"/>
+        <text x="85" y="50" text-anchor="middle" font-weight="600">Outcome facts</text>
+        <text class="muted" x="85" y="70" text-anchor="middle">floor 31, act-2 boss</text>
+        <text class="muted" x="85" y="86" text-anchor="middle">beaten, 12 HP left,</text>
+        <text class="muted" x="85" y="102" text-anchor="middle">won: no</text>
+        <rect class="box" x="235" y="30" width="150" height="92" rx="3"/>
+        <text x="310" y="50" text-anchor="middle" font-weight="600">Reward function</text>
+        <text class="muted" x="310" y="70" text-anchor="middle">written by a person</text>
+        <text class="muted" x="310" y="86" text-anchor="middle">0.002 per floor,</text>
+        <text class="muted" x="310" y="102" text-anchor="middle">0.05 per boss, 1 per win</text>
+        <rect class="box" x="460" y="30" width="170" height="92" rx="3"/>
+        <text x="545" y="50" text-anchor="middle" font-weight="600">Return G₀</text>
+        <text class="muted" x="545" y="70" text-anchor="middle">sum of every rₜ</text>
+        <text class="muted" x="545" y="86" text-anchor="middle">in the run, the number</text>
+        <text class="muted" x="545" y="102" text-anchor="middle">training maximises</text>
+        <line class="ink" x1="160" y1="76" x2="235" y2="76" marker-end="url(#ar3)"/>
+        <text class="muted" x="197" y="68" text-anchor="middle">facts</text>
+        <line class="ink" x1="385" y1="76" x2="460" y2="76" marker-end="url(#ar3)"/>
+        <text class="muted" x="422" y="68" text-anchor="middle">rₜ</text>
+        <rect class="box" x="400" y="170" width="200" height="58" rx="3" stroke-width="2"/>
+        <text x="500" y="192" text-anchor="middle" font-weight="600">Value estimate V(s)</text>
+        <text class="muted" x="500" y="212" text-anchor="middle">predicts G from a state: Ch. 4</text>
+        <line class="ink" x1="545" y1="122" x2="515" y2="170" marker-end="url(#ar3)"/>
+        <text class="muted" x="540" y="152" text-anchor="start">regression target</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 3.3.</b> The value estimate learns to predict the return. It never sees the reward rule, only the returns the rule produced. Instinct uses these four parts and nothing else.</figcaption>
+</figure>
+
+<h3>One run, by hand</h3>
+
+<p>Take a run that reaches floors 1 through 18, beats the act-1 boss on floor 16 and dies on floor 18. With \(\gamma = 1\) the return adds three amounts:</p>
+<ul>
+  <li>18 new floors at 0.002 each, which is 0.036.</li>
+  <li>One boss at 0.05, which is 0.05.</li>
+  <li>No win, which is 0.</li>
+</ul>
+<p>The return is \(G_0 = 0.086\). HP at death does not change it, and neither do the elites fought or the strength of the deck.</p>
+
+<p>The sum depends only on three counters at the end of the run. Write \(F(s)\) for the highest floor reached so far, \(B(s)\) for the number of bosses paid so far, and \(W\) for 1 on a win and 0 otherwise. The rule pays the change in each counter:</p>
+
+<div class="eq">\begin{equation} r_t = R_F\,\big[F(s_{t+1}) - F(s_t)\big] + R_B\,\big[B(s_{t+1}) - B(s_t)\big] + R_W\, W\,\mathbb{1}[t = T], \label{eq:rule} \end{equation}</div>
+
+<p>with \(R_F = 0.002\), \(R_B = 0.05\) and \(R_W = 1\). Now we sum Equation \eqref{eq:rule} over a run with \(\gamma = 1\). Each bracket cancels against the next one. Every run starts on floor 0 with no bosses paid, so only the final counters remain:</p>
+
+<div class="eq">\begin{equation} G_0 = R_F\, F_T + R_B\, B_T + R_W\, W. \label{eq:return-sm} \end{equation}</div>
+
+<p>\(F_T\) and \(B_T\) are the counters at the end. Take the expectation of Equation \eqref{eq:return-sm} and the objective splits into three parts that you can read off a results table:</p>
+
+<div class="eq">\begin{equation} J(\theta) = R_W \Pr_{\pi_\theta}(\text{win}) + R_B\, \mathbb{E}_{\pi_\theta}[B_T] + R_F\, \mathbb{E}_{\pi_\theta}[F_T]. \label{eq:J-decomp} \end{equation}</div>
+
+<p>So "maximise the return" means "maximise the win rate, plus small credit for how far the run got". The <a href="#measured">Measured</a> section shows how small.</p>
+
+<p>Equation \eqref{eq:return-sm} also gives the largest return a losing run can have. A loss has \(W = 0\). The best it can do is die in the last fight, the second act-3 boss on floor 46. By then it has reached 46 floors and beaten three bosses that pay. Its return is \(0.002 \times 46 + 0.05 \times 3 = 0.242\). The run that wins the same fight scores 1.242. Some maps run two floors longer. On those maps the two figures are 0.246 and 1.246.</p>
+
+<h2 id="sparse">3. Sparse reward gives the learner little to follow</h2>
+
+<p>A reward is <dfn>sparse</dfn> when almost every step pays zero and the signal comes only at rare events. A reward is <dfn>dense</dfn> when most steps carry some signal. A win-only rule for Slay the Spire is very sparse. A winning run gets one nonzero reward in about 700 steps. A losing run gets none.</p>
+
+<p>Sparse reward causes two separate problems.</p>
+
+<p><b>The learner gets no signal.</b> Suppose the current policy never wins. Then every return is zero. Chapter 5 derives the policy gradient. It weights each action's log-probability by how much better than average the return was, roughly \((G_0 - b)\,\nabla_\theta \log \pi_\theta(a_t \mid s_t)\) for a baseline \(b\). If every return is 0 and the baseline is the average return, every weight is 0, and the gradient is exactly zero. Minsky called the long search this causes the "plateau problem" <span class="cite">[<a href="#ref-1">1</a>, §17.4]</span>. A Q-learner has the same trouble in another form. Its targets are all \(0 + \gamma \max_{a'} Q\), so nothing anchors the values.</p>
+
+<p><b>The signal is weak and far away.</b> Even when wins happen, the reward at step 700 must be credited back to step 3, where a card choice made the win possible. Every step in between adds noise. Chapter 4 shows how a critic and the λ-return trade bias for variance to deal with this. A dense reward shortens the distance between a choice and some feedback about it.</p>
+
+<p>Dense rewards have a cost. Each extra term is the designer's claim about what progress looks like. The agent optimises the claim, not the intent behind it. Sutton and Barto give a chess example. An agent rewarded for taking pieces may learn to take pieces and lose the game <span class="cite">[<a href="#ref-1">1</a>, §3.2]</span>. The next section answers when you can add dense terms without that risk.</p>
+
+<h2 id="shaping">4. Potential-based shaping keeps the best policy</h2>
+
+<p><dfn>Reward shaping</dfn> adds an extra term \(\tilde r_t\) to the task's reward, to give the learner earlier hints. The name comes from Skinner's animal training, in which the trainer rewards closer and closer approximations of a behaviour <span class="cite">[<a href="#ref-1">1</a>, §14.3, §17.4]</span>. In general, a shaping term can change which policy is best.</p>
+
+<p>In 1999 Ng, Harada and Russell found the family of shaping terms that never changes the best policy <span class="cite">[<a href="#ref-2">2</a>]</span>. Pick any function of the state, called a <dfn>potential</dfn> \(\Phi(s)\). Pay the discounted change in it:</p>
+
+<div class="definition"><span class="label">Definition 3.2 · Potential-based shaping</span>
+  <div class="eq">\begin{equation} \tilde r_t = \gamma\, \Phi(s_{t+1}) - \Phi(s_t). \label{eq:pbrs} \end{equation}</div>
+  <p>\(\Phi\) can be any real-valued function of the state, such as a distance to a goal, a heuristic score or a guess at the value. The learner sees \(r_t + \tilde r_t\) instead of \(r_t\). This is the form that <span class="cite">[<a href="#ref-3">3</a>]</span> quotes from Ng et al.</p>
+</div>
+
+<p>To see why this form is safe, we sum the shaping term along one episode from step 0. We discount step \(t\) by \(\gamma^t\), as the return does:</p>
+
+<div class="eq">\begin{equation} \sum_{t=0}^{T} \gamma^{t} \tilde r_t = \sum_{t=0}^{T} \Big( \gamma^{t+1} \Phi(s_{t+1}) - \gamma^{t} \Phi(s_t) \Big) = \gamma^{T+1}\, \Phi(s_{T+1}) - \Phi(s_0). \label{eq:telescope} \end{equation}</div>
+
+<p>Each potential between the first and the last appears once with a plus sign and once with a minus sign. The sum telescopes to the discounted potential of the final state minus the potential of the start. \(s_{T+1}\) is the terminal state that the last action leads to. Figure 3.4 draws the cancellation for \(\gamma = 1\), with \(\Phi\) equal to 0.002 times the floor.</p>
+
+<figure id="fig-4">
+  <div class="scroll">
+    <svg viewBox="0 0 640 150" role="img" aria-label="Four states with potentials. Each shaping reward is the difference between neighbours. The inner terms cancel, leaving the last potential minus the first.">
+      <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <circle cx="60" cy="60" r="30" class="box"/><text x="60" y="56" text-anchor="middle">s₀</text><text class="muted" font-size="10.5" x="60" y="72" text-anchor="middle">Φ = 0</text>
+        <circle cx="200" cy="60" r="30" class="box"/><text x="200" y="56" text-anchor="middle">s₁</text><text class="muted" font-size="10.5" x="200" y="72" text-anchor="middle">Φ = 0.004</text>
+        <circle cx="340" cy="60" r="30" class="box"/><text x="340" y="56" text-anchor="middle">s₂</text><text class="muted" font-size="10.5" x="340" y="72" text-anchor="middle">Φ = 0.004</text>
+        <circle cx="480" cy="60" r="30" class="box"/><text x="480" y="56" text-anchor="middle">s₃</text><text class="muted" font-size="10.5" x="480" y="72" text-anchor="middle">Φ = 0.006</text>
+        <line class="ink" x1="90" y1="60" x2="170" y2="60" marker-end="url(#ar4)"/><text class="f1" x="130" y="48" text-anchor="middle">+0.004</text>
+        <line class="ink" x1="230" y1="60" x2="310" y2="60" marker-end="url(#ar4)"/><text class="f1" x="270" y="48" text-anchor="middle">0</text>
+        <line class="ink" x1="370" y1="60" x2="450" y2="60" marker-end="url(#ar4)"/><text class="f1" x="410" y="48" text-anchor="middle">+0.002</text>
+        <text x="20" y="120">Sum of the arrows: (0.004 − 0) + (0.004 − 0.004) + (0.006 − 0.004)</text>
+        <text x="20" y="138">    = 0.006 − 0 = Φ(s₃) − Φ(s₀)</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 3.4.</b> Each arrow carries \(\Phi(s_{t+1}) - \Phi(s_t)\). The middle potentials cancel. Whatever path the run takes, the arrows sum to the last potential minus the first.</figcaption>
 </figure>
 
 <p>Add Equation \eqref{eq:telescope} to the unshaped return. The shaped return from the start is</p>
 
 <div class="eq">\begin{equation} G'_0 = G_0 + \gamma^{T+1}\Phi(s_{T+1}) - \Phi(s_0). \label{eq:shaped-return} \end{equation}</div>
 
-<p>If the potential of every terminal state is the same constant, conventionally 0, then \(G'_0 = G_0 - \Phi(s_0)\). The start state does not depend on the policy, so every policy's expected return moves by the same amount, and the ranking of policies, and so the best one, is unchanged. The same argument from any state \(s\) instead of \(s_0\) gives the value functions of the shaped problem:</p>
+<p>Suppose every terminal state has potential 0. Then \(G'_0 = G_0 - \Phi(s_0)\). With \(\gamma = 1\), any constant shared by every terminal state works as well, because it adds the same amount to every return. The start state does not depend on the policy. So the shaping moves every policy's expected return by the same amount, and the best policy stays the best. Figure 3.5 adds that terminal state to Figure 3.4.</p>
+
+<figure id="fig-5">
+  <div class="scroll">
+    <svg viewBox="0 0 640 160" role="img" aria-label="The same four states, followed by an end state whose potential is 0. The sum is minus the start potential for every run.">
+      <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <circle cx="60" cy="60" r="30" class="box"/><text x="60" y="56" text-anchor="middle">s₀</text><text class="muted" font-size="10.5" x="60" y="72" text-anchor="middle">Φ = 0</text>
+        <circle cx="200" cy="60" r="30" class="box"/><text x="200" y="56" text-anchor="middle">s₁</text><text class="muted" font-size="10.5" x="200" y="72" text-anchor="middle">Φ = 0.004</text>
+        <circle cx="340" cy="60" r="30" class="box"/><text x="340" y="56" text-anchor="middle">s₂</text><text class="muted" font-size="10.5" x="340" y="72" text-anchor="middle">Φ = 0.004</text>
+        <circle cx="480" cy="60" r="30" class="box"/><text x="480" y="56" text-anchor="middle">s₃</text><text class="muted" font-size="10.5" x="480" y="72" text-anchor="middle">Φ = 0.006</text>
+        <rect x="565" y="34" width="60" height="52" rx="3" class="box" stroke-width="2"/><text x="595" y="56" text-anchor="middle">end</text><text class="muted" x="595" y="72" text-anchor="middle">Φ = 0</text>
+        <line class="ink" x1="90" y1="60" x2="170" y2="60" marker-end="url(#ar5)"/><text class="f1" x="130" y="48" text-anchor="middle">+0.004</text>
+        <line class="ink" x1="230" y1="60" x2="310" y2="60" marker-end="url(#ar5)"/><text class="f1" x="270" y="48" text-anchor="middle">0</text>
+        <line class="ink" x1="370" y1="60" x2="450" y2="60" marker-end="url(#ar5)"/><text class="f1" x="410" y="48" text-anchor="middle">+0.002</text>
+        <line class="ink" x1="510" y1="60" x2="565" y2="60" marker-end="url(#ar5)"/><text class="f1" x="535" y="48" text-anchor="middle">−0.006</text>
+        <text x="20" y="120">Sum of the arrows: Φ(end) − Φ(s₀) = 0 − 0 = 0</text>
+        <text class="f2" x="20" y="142">Every run ends at Φ = 0, so every run gets the same −Φ(s₀). The best policy is unchanged.</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 3.5.</b> The last arrow takes back everything the earlier arrows paid. The shaping only moved reward earlier in the run. It added nothing to the total.</figcaption>
+</figure>
+
+<p>The same argument works from any state \(s\) instead of \(s_0\). It gives the value functions of the shaped problem:</p>
 
 <div class="eq">\begin{equation} V'^{\pi}(s) = V^{\pi}(s) - \Phi(s), \qquad Q'^{\pi}(s, a) = Q^{\pi}(s, a) - \Phi(s). \label{eq:qshift} \end{equation}</div>
 
-<p>For a Q-learner this is the cleanest way to see it. Every action in state \(s\) has its value moved by the same \(\Phi(s)\), so \(\arg\max_a Q'(s,a) = \arg\max_a Q(s,a)\). Wiewiora proved the learning-dynamics version in 2003: a Q-learner that receives potential-based shaping makes exactly the same updates as one without shaping whose Q-table starts at \(Q_0(s,a) + \Phi(s)\) <span class="cite">[<a href="#ref-3">3</a>]</span>. Shaping of this kind is a prior on the value function written into the reward. That is also why it helps only through learning speed: it changes where the learner starts, not where it ends.</p>
+<p>For a Q-learner this is the clearest view. Every action in state \(s\) has its value moved by the same \(\Phi(s)\), so \(\arg\max_a Q'(s,a) = \arg\max_a Q(s,a)\). Wiewiora proved a stronger result in 2003. A Q-learner that receives potential-based shaping makes the same updates as a Q-learner without shaping whose Q-table starts at \(Q_0(s,a) + \Phi(s)\) <span class="cite">[<a href="#ref-3">3</a>]</span>. Potential-based shaping is a prior on the value function, written into the reward. It changes where learning starts, not where it ends. So it can only change the speed of learning.</p>
 
-<p>Two conditions did the work, and both are worth stating as a test you can apply to any reward term:</p>
+<p>Two conditions made the argument work. You can apply them as a test to any reward term:</p>
 <ol>
-  <li><b>Form.</b> The term must be \(\gamma\Phi(s_{t+1}) - \Phi(s_t)\) for a single function \(\Phi\) of the state. A term that depends on the action, or on anything outside the state, fails.</li>
-  <li><b>Ending.</b> With \(\gamma = 1\), every terminal state must have the same potential. With \(\gamma \lt 1\) and an infinite horizon, \(\gamma^{T}\Phi\) vanishes on its own; in an episodic problem the terminal potential must still be fixed.</li>
+  <li><b>Form.</b> The term must equal \(\gamma\Phi(s_{t+1}) - \Phi(s_t)\) for a single function \(\Phi\) of the state. A term that depends on the action fails. A term that depends on anything outside the state also fails.</li>
+  <li><b>Ending.</b> With \(\gamma = 1\), every terminal state must have the same potential, and 0 is the usual choice. With \(\gamma \lt 1\) in an episodic problem, the terminal potential must be exactly 0. A shared constant \(c \ne 0\) would add \(\gamma^{T+1} c\), which depends on the episode length and so on the policy. With \(\gamma \lt 1\), an infinite horizon and a bounded \(\Phi\), the term \(\gamma^{T}\Phi\) goes to zero by itself.</li>
 </ol>
-<p>The form condition also rules out reward for cycling. Going round a loop \(s \to s' \to s\) collects \(\Phi(s') - \Phi(s) + \Phi(s) - \Phi(s') = 0\) when \(\gamma = 1\), so no loop can be farmed for shaping reward <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
+<p>The form condition also stops an agent from farming a loop. A loop \(s \to s' \to s\) collects \(\Phi(s') - \Phi(s) + \Phi(s) - \Phi(s') = 0\) when \(\gamma = 1\) <span class="cite">[<a href="#ref-3">3</a>]</span>.</p>
 
-<h2 id="discount">5. Discounting and the effective horizon</h2>
+<p>Figure 3.6 breaks the ending condition. It redraws Figure 3.5 with two possible endings whose potentials differ. Section 8 shows that Instinct's floor term looks like this.</p>
 
-<p>Equation \eqref{eq:return} weights a reward \(k\) steps ahead by \(\gamma^k\). There are three ways to read \(\gamma\), and in practice the third matters most.</p>
+<figure id="fig-6">
+  <div class="scroll">
+    <svg viewBox="0 0 640 200" role="img" aria-label="The same states, now with two possible endings whose potentials differ. The sum differs by ending, so the ending is paid.">
+      <defs><marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g color="var(--fg)">
+        <circle cx="60" cy="70" r="30" class="box"/><text x="60" y="66" text-anchor="middle">s₀</text><text class="muted" font-size="10.5" x="60" y="82" text-anchor="middle">Φ = 0</text>
+        <circle cx="200" cy="70" r="30" class="box"/><text x="200" y="66" text-anchor="middle">s₁</text><text class="muted" font-size="10.5" x="200" y="82" text-anchor="middle">Φ = 0.004</text>
+        <circle cx="340" cy="70" r="30" class="box"/><text x="340" y="66" text-anchor="middle">s₂</text><text class="muted" font-size="10.5" x="340" y="82" text-anchor="middle">Φ = 0.004</text>
+        <circle cx="460" cy="70" r="30" class="box"/><text x="460" y="66" text-anchor="middle">s₃</text><text class="muted" font-size="10.5" x="460" y="82" text-anchor="middle">Φ = 0.006</text>
+        <rect x="545" y="14" width="88" height="46" rx="3" class="box" stroke-width="2"/><text x="589" y="33" text-anchor="middle">win, floor 46</text><text class="muted" x="589" y="50" text-anchor="middle">Φ = 0.092</text>
+        <rect x="545" y="84" width="88" height="46" rx="3" class="box" stroke-width="2"/><text x="589" y="103" text-anchor="middle">die, floor 18</text><text class="muted" x="589" y="120" text-anchor="middle">Φ = 0.036</text>
+        <line class="ink" x1="90" y1="70" x2="170" y2="70" marker-end="url(#ar6)"/><text class="f1" x="130" y="58" text-anchor="middle">+0.004</text>
+        <line class="ink" x1="230" y1="70" x2="310" y2="70" marker-end="url(#ar6)"/><text class="f1" x="270" y="58" text-anchor="middle">0</text>
+        <line class="ink" x1="370" y1="70" x2="430" y2="70" marker-end="url(#ar6)"/><text class="f1" x="400" y="58" text-anchor="middle">+0.002</text>
+        <line class="ink" x1="490" y1="64" x2="545" y2="40" marker-end="url(#ar6)"/>
+        <line class="ink" x1="490" y1="76" x2="545" y2="104" marker-end="url(#ar6)"/>
+        <text x="20" y="160">Win: sum = 0.092 − 0 = 0.092.   Death on floor 18: sum = 0.036 − 0 = 0.036.</text>
+        <text class="f3" x="20" y="182">The terminal potential depends on the ending, so the ending is paid. The objective has changed.</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption><b>Figure 3.6.</b> If \(\Phi\) keeps its value at the end, the shaping total equals the final potential. A run that ends higher collects more, so the shaping now rewards a kind of ending.</figcaption>
+</figure>
 
-<p><b>As a preference.</b> A reward now is worth more than the same reward later, as with interest rates. Sutton and Barto introduce it this way: with \(\gamma = 0\) the agent is myopic, and as \(\gamma \to 1\) it becomes farsighted <span class="cite">[<a href="#ref-1">1</a>, §3.3]</span>.</p>
+<h2 id="discount">5. A discount shortens the horizon</h2>
 
-<p><b>As a chance of stopping.</b> Suppose that after each step the episode is cut off with probability \(1 - \gamma\), independently. The step \(k\) reward is collected only if the episode survives \(k\) cuts, which happens with probability \(\gamma^k\). The expected undiscounted sum is then</p>
+<p>Equation \eqref{eq:return} weights a reward \(k\) steps ahead by \(\gamma^k\). There are three ways to read \(\gamma\). In practice the third matters most.</p>
+
+<p><b>As a preference for sooner reward.</b> A reward now is worth more than the same reward later, as with interest. Sutton and Barto introduce it this way. With \(\gamma = 0\) the agent cares only about the next reward. As \(\gamma\) approaches 1, the agent weights the future more <span class="cite">[<a href="#ref-1">1</a>, §3.3]</span>.</p>
+
+<p><b>As a chance of stopping.</b> Suppose that after each step the episode is cut off with probability \(1 - \gamma\), independently. The reward at step \(k\) is collected only if the episode survives \(k\) cuts. That happens with probability \(\gamma^k\). The expected undiscounted sum is then</p>
 
 <div class="eq">\begin{equation} \mathbb{E}\Big[ \sum_{k \ge 0} \mathbb{1}[\text{alive after } k \text{ steps}]\, r_{t+k} \Big] = \sum_{k \ge 0} \gamma^{k}\, r_{t+k}. \label{eq:survival} \end{equation}</div>
 
-<p>So discounting is the same as playing an undiscounted game with a hidden death state reached at rate \(1-\gamma\) per step.</p>
+<p>Discounting is the same as playing an undiscounted game with a hidden death that arrives at rate \(1-\gamma\) per step.</p>
 
-<p><b>As a horizon.</b> Summing the weights tells you how far ahead the objective effectively looks:</p>
+<p><b>As a horizon.</b> The sum of the weights tells you how far ahead the objective looks:</p>
 
 <div class="eq">\begin{equation} \sum_{k=0}^{\infty} \gamma^{k} = \frac{1}{1-\gamma}. \label{eq:horizon} \end{equation}</div>
 
-<p>This is the <dfn>effective horizon</dfn>: \(\gamma = 0.99\) looks about 100 steps ahead and \(\gamma = 0.999\) about 1,000. Rewards much farther than that barely register. Seen from the first decision of a run that wins at step \(T\), the win is worth</p>
+<p>This is the <dfn>effective horizon</dfn>. With \(\gamma = 0.99\) it is about 100 steps. With \(\gamma = 0.999\) it is about 1,000. Rewards much farther away than the horizon barely count. Seen from the first decision of a run that wins at step \(T\), the win is worth</p>
 
-<div class="eq">\begin{equation} \gamma^{T} R_W \approx e^{-T(1-\gamma)} R_W, \label{eq:discount-win} \end{equation}</div>
+<div class="eq">\begin{equation} \gamma^{T} R_W \approx e^{-T(1-\gamma)} R_W. \label{eq:discount-win} \end{equation}</div>
 
-<p>where the approximation uses \(\log \gamma \approx -(1-\gamma)\) for \(\gamma\) near 1. With \(T = 678\), the median length of the network's won runs (Section 9), and \(\gamma = 0.99\), that is \(0.99^{678} \approx 0.0011\). An agent with that discount, at the start of a run, would value a win less than the floor reward for the next floor.</p>
+<p>The approximation uses \(\log \gamma \approx -(1-\gamma)\) for \(\gamma\) near 1. Take \(T = 678\), the median index of the last decision in the network's won runs, counted from 0 (Section 9), and \(\gamma = 0.99\). The win is then worth \(0.99^{678} \approx 0.0011\). At the start of a run, that agent would value the win less than the 0.002 reward for the next floor.</p>
 
-<p>Why discount at all, then, in an episodic task that always ends? Mostly for the third reason disguised as the first: a shorter horizon means less noise in the return. A return that sums 700 random rewards has more variance than one that effectively sums 100. Value methods also converge faster when the future is shrunk. The price is bias: the agent now optimises a different objective from the one you care about. Chapter 4 shows that GAE's \(\lambda\) offers the same trade without changing the objective, which is why a system can set \(\gamma = 1\) and still control variance.</p>
+<p>Practitioners discount episodic tasks anyway because a shorter horizon gives a less noisy return. A return that sums 700 random rewards has more variance than one that effectively sums 100. Value methods also converge faster when the future shrinks. The price is bias. The agent now optimises a different objective from the one you care about. Chapter 4 shows that GAE's \(\lambda\) makes the same trade inside the advantage estimate. It biases the gradient estimate when the critic is wrong, but it leaves the objective unchanged. So a system can set \(\gamma = 1\) and still control variance.</p>
 
-<h2 id="hacking">6. When the optimiser finds another way</h2>
+<h2 id="hacking">6. The optimiser finds the cheapest way to score</h2>
 
-<p>A reward function is a proxy for what the designer wants. An optimiser pushes on the proxy until it finds the cheapest way to raise it, and the cheapest way is sometimes not the intended one. Amodei and coauthors call this <dfn>reward hacking</dfn> and list the ways it arises <span class="cite">[<a href="#ref-4">4</a>, §4]</span>. Three of them apply to game agents:</p>
+<p>A reward function stands in for what the designer wants. An optimiser pushes on it until it finds the cheapest way to raise it. Sometimes that way is not the intended one. Amodei and coauthors call this <dfn>reward hacking</dfn> and list the ways it arises <span class="cite">[<a href="#ref-4">4</a>, §4]</span>. Three of them apply to game agents:</p>
 <ul>
-  <li><b>Partially observed goals.</b> The reward measures something the designer can see instead of the goal itself. Their example is a cleaning robot paid for not seeing messes, which learns to close its eyes.</li>
-  <li><b>Goodhart's law.</b> A quantity that tracks the goal under normal play stops tracking it once it is optimised directly: when a metric is used as a target, it ceases to be a good metric <span class="cite">[<a href="#ref-4">4</a>, §4]</span>.</li>
+  <li><b>Partially observed goals.</b> The reward measures what the designer can see, not the goal itself. Their example is a cleaning robot paid for not seeing messes. It learns to close its eyes.</li>
+  <li><b>Goodhart's law.</b> A quantity that tracks the goal under normal play stops tracking it once it is optimised directly. In their words, "when a metric is used as a target, it ceases to be a good metric" <span class="cite">[<a href="#ref-4">4</a>, §4]</span>.</li>
   <li><b>Complicated systems.</b> The more ways the agent can act, the more likely some sequence exploits a gap in how the reward is computed.</li>
 </ul>
 
-<p>Two things follow for reward design. First, every term you add is a new surface to exploit; a sparse reward that pays only for the true goal has the fewest. Second, if you add terms, prefer ones you can prove harmless (potential-based ones) and make sure the counters cannot be pumped. A floor counter that paid for every floor change, rather than for new highs, could be farmed by any mechanic that moves you back and forth. A counter on the maximum is a potential and pays nothing for a loop.</p>
+<p>For reward design, this has two consequences. First, every term you add is one more thing to exploit. A sparse reward that pays only for the true goal gives the fewest. Second, when you add terms, prefer potential-based ones, and make sure no counter can be pumped. A floor counter that paid for every floor change could be farmed by any mechanic that moves the run back and forth. A counter on the highest floor reached is a potential, and a loop earns nothing from it.</p>
 
-<p>There is a subtler version that does not need a bug. Suppose a term pays for something that usually comes with winning, such as keeping HP high. If the strongest play sometimes spends HP to win more often, the term pushes the agent away from that play. The agent is not cheating. It is doing what it was paid to do, and the designer paid for the wrong thing.</p>
+<p>A subtler case needs no bug. Suppose a term pays for something that usually comes with winning, such as high HP. Suppose also that the strongest play sometimes spends HP to win more often. The term then pushes the agent away from the strongest play. The agent is not cheating. It does what it is paid to do, and the designer paid for the wrong thing.</p>
 
-<h2 id="engineered">7. The textbook against the engineered version</h2>
+<h2 id="engineered">7. Real systems bend the textbook version</h2>
 
-<p>The clean statement is: reward is \(r(s_t, a_t, s_{t+1})\), one number per step; return is Equation \eqref{eq:return}; maximise \(J\). Real systems depart from it in four ways, and Instinct shows all four.</p>
+<p>The textbook version is simple. The reward is \(r(s_t, a_t, s_{t+1})\), one number per step. The return is Equation \eqref{eq:return}. Training maximises \(J\). Real systems depart from it in four ways, and Instinct shows all four.</p>
 
-<p><b>Rewards attach to stored decisions, not to every engine step.</b> The game engine takes many steps the agent never sees: forced moves with one legal action, animations, a fight's end. Chapter 1 called these forced steps. Reward that accrues during them is held in a pending sum and credited to the most recent decision the agent did make. The total is unchanged; only the bookkeeping moves. The implementation checks that the per-decision rewards sum exactly to the run's total.</p>
+<p><b>Rewards attach to stored decisions, not to every engine step.</b> The game engine takes many steps that the agent never sees, such as forced moves with one legal action and the end of a fight. Chapter 1 called these forced steps. Reward that arrives during them goes into a pending sum. The environment credits the pending sum to the most recent decision that the agent did make. The total does not change. Only the bookkeeping moves. The implementation checks that the per-decision rewards add up to the run's total.</p>
 
-<p><b>The reward is pre-registered.</b> In research practice the reward is tuned by trial and error until the agent does what the designer wanted <span class="cite">[<a href="#ref-1">1</a>, §17.4]</span>. That makes the final result partly a product of the designer's search. Instinct's designer fixed the rule in a pre-registration before training, together with the caps and the evaluation seeds, so it could not be adjusted after seeing results. Chapter 8 returns to why.</p>
+<p><b>The reward is pre-registered.</b> In research practice designers often tune the reward by trial and error until the agent behaves as they want <span class="cite">[<a href="#ref-1">1</a>, §17.4]</span>. The final result then partly reflects the designer's search. Instinct's designer fixed the rule in a pre-registration before training, together with the caps and the evaluation seeds. Chapter 8 explains why that matters.</p>
 
-<p><b>\(\gamma = 1\), with variance controlled elsewhere.</b> The textbook uses \(\gamma \lt 1\) for both reasons in Section 5. Instinct keeps the objective undiscounted, so a win is worth exactly 1.0 from every decision, and handles variance with the λ of GAE, which Chapter 4 derives.</p>
+<p><b>The discount is 1 and λ controls the variance.</b> The textbook uses \(\gamma \lt 1\) for the reasons in Section 5. Instinct keeps the objective undiscounted, so a win is worth exactly 1.0 from every decision. It controls variance with the λ of GAE, which Chapter 4 derives.</p>
 
-<p><b>Numerical precision bounds how small a reward can be.</b> The network trains in 16-bit bfloat for speed. Near a value of 1.0, adjacent bfloat16 numbers are 0.0039 apart, wider than the 0.002 floor reward, so a value head in bf16 could not tell "reached one more floor" from rounding. The plan keeps the value projection in 32-bit floats for exactly this reason. Small reward terms are a design constraint on the numerics, not just on the agent.</p>
+<p><b>Numerical precision bounds the smallest useful reward.</b> The network trains in 16-bit bfloat for speed. Adjacent bfloat16 numbers are 0.0039 apart just below 1.0 and 0.0078 apart just above it, where a won state's value of about 1.24 sits. Both gaps are wider than the 0.002 floor reward. A value head in bfloat16 could not tell one more floor from rounding error. The plan keeps the value output in 32-bit floats for this reason.</p>
 
 <h2 id="spire">8. In Spire Mentor</h2>
 
-<div class="example"><span class="label">In Spire Mentor · the rule in code</span>
-  <p>The training environment holds the whole reward function as three constants, the same numbers in its Python version and its Rust port:</p>
-</div>
+<p>The training environment holds the whole reward function in three constants. Its Python version and its Rust port use the same numbers.</p>
 
 <figure class="listing">
 <pre><code># ── reward (PREREG-0 "Reward") ──────────────────
@@ -387,7 +485,7 @@ R_FLOOR = 0.002</code></pre>
   <figcaption>sts2-pycli/python/ppo/e2e/env.py, lines 115-119</figcaption>
 </figure>
 
-<p>Floors are paid against a high-water mark, the counter \(F(s)\) of Equation \eqref{eq:rule}. Reward collects in a pending sum and is credited to the last stored decision; reward before the first decision would go to an "unassigned" bucket, which for a run from the start is always zero:</p>
+<p>The environment pays floors against a high-water mark, the counter \(F(s)\) of Equation \eqref{eq:rule}. Reward collects in <code>_pending_r</code>, and <code>_assign_pending</code> credits it to the last stored decision. Reward before the first decision would go to <code>unassigned_reward</code>. For a run from the start, that bucket is always zero.</p>
 
 <figure class="listing">
 <pre><code>def _accrue_floors(self) -> None:
@@ -409,7 +507,7 @@ def _assign_pending(self) -> float:
   <figcaption>sts2-pycli/python/ppo/e2e/env.py, lines 1431-1446</figcaption>
 </figure>
 
-<p>The boss bonus is paid when a boss fight is won, unless that win also ends the run. The final boss pays only the win:</p>
+<p>The environment pays the boss bonus when the agent wins a boss fight, unless that win also ends the run. The final boss pays only the win.</p>
 
 <figure class="listing">
 <pre><code>if won and f.room == "boss" and not (rm.is_over() and rm.player_won):
@@ -418,7 +516,7 @@ def _assign_pending(self) -> float:
   <figcaption>sts2-pycli/python/ppo/e2e/env.py, lines 1598-1600</figcaption>
 </figure>
 
-<p>The plan's own statement of the rule adds the reason for what it leaves out:</p>
+<p>The plan states the rule and gives one reason for what it leaves out:</p>
 
 <figure class="listing">
 <pre><code>**Reward (pre-registered):** win +1.0; +0.05 per boss beaten (act 1,
@@ -428,33 +526,44 @@ boss with 9pp less HP and won more [AD].</code></pre>
   <figcaption>docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md, line 276 (abridged, line breaks added)</figcaption>
 </figure>
 
-<p>AlphaDefect is an earlier agent for another character that this project studied. The argument is the one from Section 6: its better version arrived at the first boss with less HP and won more often, so a term paying for HP would have pushed against the better play. The data behind that claim is in a knowledge base the public repository does not include, so we could not check it.</p>
+<p>AlphaDefect is another team's agent for a different character, the Defect. The plan copies its recipe and studied its checkpoints. The plan's argument is the one from Section 6. The stronger AlphaDefect checkpoint reached the first boss with less HP and won more often. A term that paid for HP would have pushed against that play. The plan gives a second reason in its table of differences from AlphaDefect: "no HP term (the hybrid's suspected cap [CPPO])". The evidence behind both citations sits in a knowledge base that the public repository does not include. This chapter could not check it.</p>
 
-<h3>Testing the floor and boss terms against the potential-based condition</h3>
+<p>The record explains less of the rest of the rule. The public repository is synced from a private one, and its commits carry no reasons. Here is what the plan and code say, and what they leave open:</p>
+<ul>
+  <li><b>Stated.</b> The value output stays in 32-bit floats because "bf16 spacing at V = 1 is 0.0039 &gt; the 0.002 floor reward" (plan, line 273). The pre-registration fixes the reward rule and \(\gamma = 1\) before training. No amendment changes the reward, and Amendments 9, 11 and 12 say so explicitly.</li>
+  <li><b>Inferred.</b> The final boss pays no boss bonus because its win already pays 1.0. The code states the rule but not the reason.</li>
+  <li><b>Inferred.</b> The floor term continues version 1's goal that "a deeper death strictly out-scores a shallower one" (<code>sts2-pycli/python/ppo/rewards.py</code>, lines 7-8), at a much smaller weight. No document links the two.</li>
+  <li><b>Inferred.</b> The reason for \(\gamma = 1\). It was already the default across the project's earlier PPO code. No document compares it with \(\gamma \lt 1\) for Instinct.</li>
+  <li><b>Not recorded.</b> Why the weights are 1.0, 0.05 and 0.002, and why a capped run scores 0 like a death.</li>
+</ul>
 
-<p>Now apply the two-part test from Section 4. Take the floor term, \(R_F[F(s_{t+1}) - F(s_t)]\), and try the potential \(\Phi_F(s) = R_F\,F(s)\) with \(\gamma = 1\):</p>
+<h3>The floor and boss terms fail the ending condition</h3>
+
+<p>Apply the two-part test from Section 4. Take the floor term, \(R_F[F(s_{t+1}) - F(s_t)]\). Try the potential \(\Phi_F(s) = R_F\,F(s)\) with \(\gamma = 1\):</p>
 
 <div class="eq">\begin{equation} \gamma\,\Phi_F(s_{t+1}) - \Phi_F(s_t) = R_F\,F(s_{t+1}) - R_F\,F(s_t) = R_F\big[F(s_{t+1}) - F(s_t)\big]. \label{eq:floor-form} \end{equation}</div>
 
-<p><span class="verdict">The form condition holds.</span> The floor term is exactly the change in a potential, because it pays the change in a high-water mark. The boss term passes the same way with \(\Phi_B(s) = R_B\,B(s)\). This is why neither can be farmed by looping.</p>
+<p><span class="verdict">The floor term passes the form condition.</span> It pays the change in a high-water mark, and a high-water mark is a function of the state. The boss term passes the same way with \(\Phi_B(s) = R_B\,B(s)\). Neither term can be farmed by a loop.</p>
 
-<p>The ending condition is where they fail. At the terminal state the counters keep their final values, so \(\Phi_F(s_{T+1}) = R_F F_T\), which is 0.036 for a death on floor 18 and 0.092 for a win on floor 46. The terminal potential depends on how the run went. Split the floor term into a part that passes and a part that does not. Define \(\hat\Phi_F\) equal to \(\Phi_F\) everywhere except the terminal state, where it is 0. Then for every step</p>
+<p><span class="verdict">Both terms fail the ending condition.</span> At the terminal state the counters keep their final values. So \(\Phi_F(s_{T+1}) = R_F F_T\). That is 0.036 for a death on floor 18 and 0.092 for a win on floor 46. The terminal potential depends on how the run went. This is the case in Figure 3.6.</p>
 
-<div class="eq">\begin{equation} R_F\big[F(s_{t+1}) - F(s_t)\big] = \underbrace{\hat\Phi_F(s_{t+1}) - \hat\Phi_F(s_t)}_{\text{potential-based, safe}} \; + \; \underbrace{\mathbb{1}[t = T]\; R_F\,F_T}_{\text{terminal progress bonus}}. \label{eq:floor-split} \end{equation}</div>
+<p>The floor term splits into a part that passes and a part that does not. We define \(\hat\Phi_F\) to equal \(\Phi_F\) everywhere except at the terminal state, where \(\hat\Phi_F = 0\). Then for every step</p>
 
-<p>On a non-final step the indicator is 0 and \(\hat\Phi_F = \Phi_F\), so the two sides agree. On the final step the left side is \(R_F[F_T - F(s_T)]\), and the right side is \(0 - R_F F(s_T) + R_F F_T\), the same thing. By Equation \eqref{eq:telescope} the first part sums to \(-\hat\Phi_F(s_0) = 0\) over every run. All of the floor term's effect on the return comes from the second part, a bonus paid at the end in proportion to how far the run got. The same split applies to the boss term.</p>
+<div class="eq">\begin{equation} R_F\big[F(s_{t+1}) - F(s_t)\big] = \underbrace{\hat\Phi_F(s_{t+1}) - \hat\Phi_F(s_t)}_{\text{potential-based}} \; + \; \underbrace{\mathbb{1}[t = T]\; R_F\,F_T}_{\text{terminal progress bonus}}. \label{eq:floor-split} \end{equation}</div>
 
-<p><span class="verdict">So the verdict: the floor and boss terms have potential-based form but violate the terminal condition. They are not policy-invariant shaping. Their net effect is a terminal reward for progress, \(R_F F_T + R_B B_T\), added to the win.</span> That is just Equation \eqref{eq:return-sm} read differently. It is also a deliberate design: the plan calls them reward, not shaping, and the designer wanted a death on floor 40 to score above a death on floor 5.</p>
+<p>We check both cases. On a step before the last, the indicator is 0 and \(\hat\Phi_F = \Phi_F\), so the two sides agree. On the last step, the left side is \(R_F[F_T - F(s_T)]\). The right side is \(0 - R_F F(s_T) + R_F F_T\), which is the same. By Equation \eqref{eq:telescope}, the first part sums to \(-\hat\Phi_F(s_0) = 0\) over every run. So the floor term changes the return only through the second part. That part is a bonus at the end of the run, proportional to how far the run got. The boss term splits the same way.</p>
 
-<p>Does the progress bonus change which policy is best? It can, and Equation \eqref{eq:J-decomp} says how much it takes. Write \(p\) for the win probability and \(m_L\) for the mean progress bonus of the runs a policy loses. Every win collects the same progress (0.242 on a standard map), so</p>
+<p><span class="verdict">The floor and boss terms are not policy-invariant shaping. Their net effect is a terminal reward for progress, \(R_F F_T + R_B B_T\), added to the win.</span> That is Equation \eqref{eq:return-sm} read another way. The plan calls these terms reward, not shaping. The result is that a death on floor 40 scores above a death on floor 5, which matches version 1's stated goal.</p>
+
+<p>The progress bonus can change which policy is best. Equation \eqref{eq:J-decomp} says how much it takes. Write \(p\) for the win probability and \(m_L\) for the mean progress bonus of the runs the policy loses. Every win on a standard map collects the same progress, 0.242. So</p>
 
 <div class="eq">\begin{equation} J = p\,(R_W + 0.242) + (1 - p)\, m_L. \label{eq:J-pm} \end{equation}</div>
 
-<p>A policy that gives up \(\Delta p\) of win rate is preferred only if its losses collect enough extra progress to pay for it: \((1-p)\,\Delta m_L \gt \Delta p\,(R_W + 0.242 - m_L)\). With the network's measured \(p\) and \(m_L\) (below), giving up one percentage point of wins would need every loss to gain about \(0.056\) in progress, roughly one more boss or 28 more floors per lost run. The bonus can tip near-ties. It cannot buy a meaningful loss of win rate.</p>
+<p>Suppose a policy gives up \(\Delta p\) of win rate. Its losses must collect enough extra progress \(\Delta m_L\) to pay for it. To first order in \(\Delta p\), that requires \((1-p)\,\Delta m_L \gt \Delta p\,(R_W + 0.242 - m_L)\). The exact condition replaces \(1-p\) with \(1-p+\Delta p\). Use the network's measured values from Section 9, \(p = 0.81\) and \(m_L = 0.174\). To give up one percentage point of wins, the losses would need about 0.056 more progress on average, or 0.053 by the exact condition. That is roughly one more boss or 28 more floors per lost run. The bonus can break a near-tie. It cannot buy a real loss of win rate.</p>
 
-<h3>The contrast: version 1's shaping</h3>
+<h3>Version 1 used both kinds of term</h3>
 
-<p>An earlier version of the project's PPO agent used a different reward, and the contrast shows both halves of Section 4 in one design. Its return was built from a potential \(\Phi = \text{base} + \text{shape}\). The base paid graded progress and the win, half and half: \(0.5\,F/46 + 0.5\,W\) at ascension 10. The shape term was potential-based shaping on HP fraction, upgraded cards and relics:</p>
+<p>The project's earlier PPO run policy, the one Instinct replaced (README), used a different reward. This chapter calls it version 1. It shows both halves of Section 4 in one design. Its return came from a potential \(\Phi = \text{base} + \text{shape}\). The base paid graded progress and the win with equal weight, \(0.5\,F/46 + 0.5\,W\) at ascension 10. The shape term was potential-based shaping on HP fraction, upgraded cards and relics, with the relic weight set to 0 by default:</p>
 
 <figure class="listing">
 <pre><code>def shape_value(metrics, cfg):
@@ -468,34 +577,34 @@ boss with 9pp less HP and won more [AD].</code></pre>
 ...
     total = [b + s for b, s in zip(base, shape)] + [final_base]  # terminal shape = 0
     return [total[t + 1] - total[t] for t in range(len(step_metrics))], final_base</code></pre>
-  <figcaption>sts2-pycli/python/ppo/rewards.py, lines 101-108 and 136-137 (abridged; type hints removed)</figcaption>
+  <figcaption>sts2-pycli/python/ppo/rewards.py, lines 101-108 and 136-137 (abridged, type hints removed)</figcaption>
 </figure>
 
-<p>The comment "terminal shape = 0" is the ending condition of Section 4, met on purpose: the HP and upgrade terms were policy-invariant. The base was not, for the same reason Instinct's floor term is not. Version 1's author also noted the stronger consequence of Equation \eqref{eq:qshift}: if the critic learns \(V = m - \Phi\), every TD residual is unchanged by the shaping, so the advantages, and therefore the gradient, do not depend on the shaping coefficients at all. Shaping could only act through the critic's errors. Instinct removed the shaping and kept a smaller progress bonus:</p>
+<p>The comment <code>terminal shape = 0</code> meets the ending condition of Section 4. So the HP and upgrade terms were policy-invariant. The base was not, for the same reason that Instinct's floor term is not. The version-1 code also notes a stronger consequence of Equation \eqref{eq:qshift}. Let \(m\) be any function of the state. If the critic learns \(V = m - \Phi\), the shaping leaves every TD residual unchanged. Then the advantages and the gradient do not depend on the shaping coefficients at all. Shaping could act only through the critic's errors. Instinct has no shaping term and a smaller progress bonus.</p>
 
 <div class="table"><table>
   <thead><tr><th></th><th>Version 1</th><th>Instinct</th></tr></thead>
   <tbody>
     <tr><td>Win</td><td>0.5</td><td>1.0</td></tr>
-    <tr><td>Progress at the end (most a run can get)</td><td>0.5 × F/46, up to 0.5</td><td>0.002 F + 0.05 B, up to about 0.25</td></tr>
+    <tr><td>Largest progress bonus at the end</td><td>0.5 × F/46, about 0.5 (not clipped)</td><td>0.002 F + 0.05 B, about 0.25</td></tr>
     <tr><td>Win's share of a won run's return</td><td>about 50%</td><td>about 80%</td></tr>
-    <tr><td>Potential-based shaping</td><td>HP, upgrades, relics (terminal Φ = 0)</td><td>none</td></tr>
+    <tr><td>Potential-based shaping</td><td>HP and upgrades (relic weight 0 by default), with terminal Φ = 0</td><td>none</td></tr>
     <tr><td>Discount</td><td>γ = 1</td><td>γ = 1</td></tr>
   </tbody>
-  <caption>The two reward designs. Both use a terminal progress bonus that is not policy-invariant; only version 1 added invariant shaping. Instinct moved weight from progress to the win.</caption>
+  <caption>The two reward designs. Both pay a terminal progress bonus that is not policy-invariant. Only version 1 added invariant shaping. Instinct moved weight from progress to the win.</caption>
 </table></div>
 
 <h2 id="measured">9. Measured</h2>
 
-<p>Everything below comes from playing the first 300 seeds of the tour's panel A (seeds 170000000 to 170000299) twice: once with the published Ironclad network choosing greedily, once with uniformly random choices. Runs went through the training environment, so every reward is the one training saw. Each run passed a three-way check: the sum of its ledger, the environment's own total and Equation \eqref{eq:return-sm} applied to its floor, bosses and win all agreed to \(10^{-7}\).</p>
+<p>All numbers below come from the first 300 seeds of the tour's panel A, seeds 170000000 to 170000299. Each seed was played twice. The published Ironclad network chose greedily in one run. Uniformly random choices drove the other. Runs went through the training environment, so every reward is the reward training saw. Each run passed a three-way check. The sum of its ledger, the environment's own total and Equation \eqref{eq:return-sm} applied to its floor, bosses and win agreed to within \(10^{-7}\).</p>
 
 <div class="measured"><span class="label">Measured · how the runs were played · M2 Max</span>
-  <p>The environment is the Rust port of the training environment that the rollout workers ran. The network is the published checkpoint <code>ironclad_e2e_d9000_ema0999</code>, run greedily (Chapter 2) in PyTorch on CPU on the environment's own token rows. The tour's other chapters play the same network from its compact <code>.e2ew</code> export, whose player has no reward code. On the first 8 seeds both versions reached the same outcome, floor and number of decisions. 600 runs took 569 s on 3 processes.</p>
+  <p>The environment is the Rust port of the training environment that the rollout workers ran. The network is the published checkpoint <code>ironclad_e2e_d9000_ema0999</code>, run greedily (Chapter 2) in PyTorch on CPU, on the environment's own token rows. The tour's other chapters play the same network from its compact <code>.e2ew</code> export. That export's player has no reward code. Chapter 8 played that export on the same 300 seeds. On every seed both versions reached the same outcome, floor and number of decisions (<code>tour/stop-8-evaluation/data/runs.json</code>). The 600 runs took 569 s on 3 processes.</p>
 </div>
 
-<h3>One run's ledger</h3>
+<h3>Most decisions earn nothing</h3>
 
-<figure id="fig-3">
+<figure id="fig-7">
   <div class="scroll">
 <!-- fig:ledger -->
 <svg viewBox="0 0 560 300" role="img" aria-label="Return so far against decision number for three runs.">
@@ -539,18 +648,16 @@ boss with 9pp less HP and won more [AD].</code></pre>
 </svg>
 <!-- /fig:ledger -->
   </div>
-  <figcaption><b>Figure 3.3.</b> Return so far against decision number for three runs, with the win bonus left out so the small terms are visible. Each step up is a reward: 0.002 for a floor, 0.05 for a boss. Notice how flat the lines are between floors, dozens of decisions inside one fight earning nothing, and that the network's won run (teal) gets its 1.0 in one jump at the very end. The random run stops in the first act.</figcaption>
+  <figcaption><b>Figure 3.7.</b> Return so far against decision number for three runs. The win bonus is left out so that the small terms show. Each step up is a reward, 0.002 for a floor or 0.05 for a boss. The lines stay flat for dozens of decisions inside each fight. The network's won run, in teal, gets its 1.0 in one jump at the very end. The random run stops in the first act.</figcaption>
 </figure>
 
-<p>The network's run on seed 170000000 is the clean case. It made 718 decisions. Reward arrived on 47 of them; on the other 671 the reward was exactly zero. The 0.05 boss rewards arrived at floors 16 and 31, and the act-3 first boss paid together with the step onto floor 46, because both happened before the next stored decision. The win arrived on the last row and brought the return to 1.242, which is Equation \eqref{eq:return-sm} with \(F_T = 46\), \(B_T = 3\), \(W = 1\).</p>
+<p>The network's run on seed 170000000 made 718 decisions. Reward arrived on 47 of them. The other 671 got exactly zero. The 0.05 boss rewards arrived at floors 16 and 31. The first act-3 boss paid on the same decision as the step onto floor 46, because both happened before the next stored decision. The win arrived on the last decision and brought the return to 1.242. That is Equation \eqref{eq:return-sm} with \(F_T = 46\), \(B_T = 3\) and \(W = 1\).</p>
 
-<details class="predict"><summary>Pause and predict: what share of the network's mean return comes from the win bonus?</summary>
-  <p>78%. The network won 243 of 300 runs, so the win term contributes 0.810 of a mean return of 1.039. Floors add 0.089 and bosses 0.140. Most of what the agent is paid is the win.</p>
-</details>
+<h3>The win supplies most of the return</h3>
 
-<h3>Where the return comes from</h3>
+<p>The network won 243 of 300 runs. The win term contributed 0.810 of a mean return of 1.039, or 78%. Floors added 0.089 and bosses 0.140.</p>
 
-<figure id="fig-4">
+<figure id="fig-8">
   <div class="scroll">
 <!-- fig:parts -->
 <svg viewBox="0 0 560 300" role="img" aria-label="Mean return split into floors, bosses and win, for the network and random play.">
@@ -582,7 +689,7 @@ boss with 9pp less HP and won more [AD].</code></pre>
 </svg>
 <!-- /fig:parts -->
   </div>
-  <figcaption><b>Figure 3.4.</b> Mean return per run, split into the floor, boss and win terms of Equation \eqref{eq:J-decomp}. The random bar is a sliver: random play never won and never beat a boss. Notice how little of the network's bar the progress terms take.</figcaption>
+  <figcaption><b>Figure 3.8.</b> Mean return per run, split into the floor, boss and win terms of Equation \eqref{eq:J-decomp}. The random bar is a sliver. Random play never won and never beat a boss.</figcaption>
 </figure>
 
 <div class="table"><table>
@@ -596,31 +703,31 @@ boss with 9pp less HP and won more [AD].</code></pre>
     <tr><td>  from the win</td><td class="num">0.810</td><td class="num">0</td></tr>
     <tr><td>Median floor reached</td><td class="num">46</td><td class="num">1</td></tr>
     <tr><td>Median decisions per run</td><td class="num">665</td><td class="num">25</td></tr>
-    <tr><td>Share of decisions that carry nonzero reward</td><td class="num">7.0%</td><td class="num">7.0%</td></tr>
+    <tr><td>Share of decisions with nonzero reward</td><td class="num">7.0%</td><td class="num">7.0%</td></tr>
   </tbody>
   <caption>The network and random play on the same 300 seeds. The mean return is the sample estimate \(\hat J\) of Equation \eqref{eq:objective}.</caption>
 </table></div>
 
-<p>Two readings. First, for this network the objective is nearly "win rate plus a constant": the progress terms add 0.229 on average, most of it from runs that win and therefore collect the same 0.242. Second, even with the floor term the reward is sparse: 7.0% of the network's decisions carry any reward at all.</p>
+<p>For this network the objective is close to "win rate plus a constant". The progress terms add 0.229 on average. Most of that comes from runs that win, and every standard win collects the same 0.242. The reward is also sparse even with the floor term. Only 7.0% of the network's decisions carry any reward.</p>
 
-<h3>Sparse against dense, on the random policy</h3>
+<h3>A win-only reward gives random play nothing</h3>
 
-<p>Section 3 claimed that a win-only reward gives a random policy nothing to learn from. We can score the same random runs under both rules without replaying them, since the return depends only on the end counters:</p>
+<p>Section 3 claimed that a win-only reward gives a random policy nothing to learn from. The return depends only on the final counters. So you can score the same random runs under both rules without replaying them.</p>
 
 <div class="table"><table>
   <thead><tr><th>Rule, random play</th><th class="num">Mean return</th><th class="num">Std. dev.</th><th class="num">Runs with nonzero return</th></tr></thead>
   <tbody>
-    <tr><td>Win only (sparse)</td><td class="num">0</td><td class="num">0</td><td class="num">0 of 300</td></tr>
+    <tr><td>Win only</td><td class="num">0</td><td class="num">0</td><td class="num">0 of 300</td></tr>
     <tr><td>Instinct's rule</td><td class="num">0.0038</td><td class="num">0.0026</td><td class="num">300 of 300</td></tr>
   </tbody>
-  <caption>The same 300 random runs, rescored. With the win-only rule every return is zero and a policy gradient from these runs is exactly zero.</caption>
+  <caption>The same 300 random runs, rescored. Under the win-only rule every return is zero, so a policy gradient from these runs is exactly zero.</caption>
 </table></div>
 
-<p>Under the win-only rule, a random policy produces 300 returns of exactly zero. Under Instinct's rule the returns differ from run to run, because some random runs climb a few floors further than others, so a gradient exists. It is a weak one: a standard deviation of 0.0026 against a win worth 1.0. In practice Instinct did not start from random play. Chapter 7 covers the imitation stage that produced a policy which already wins, which is what makes a mostly sparse reward workable.</p>
+<p>Under the win-only rule, random play produces 300 returns of exactly zero. Under Instinct's rule the returns differ, because some random runs climb a few floors further than others. So a gradient exists. It is weak, with a standard deviation of 0.0026 against a win worth 1.0. Instinct did not start from random play. Chapter 7 covers the imitation stage that produced a policy that already wins. That warm start is what makes a mostly sparse reward workable.</p>
 
-<h3>Where losses end</h3>
+<h3>Losses end at the bosses</h3>
 
-<figure id="fig-5">
+<figure id="fig-9">
   <div class="scroll">
 <!-- fig:deaths -->
 <svg viewBox="0 0 560 300" role="img" aria-label="Histogram of the floor on which the network's lost runs ended.">
@@ -664,22 +771,22 @@ boss with 9pp less HP and won more [AD].</code></pre>
 <line class="l4" stroke-dasharray="4 3" x1="365.5" x2="365.5" y1="18" y2="254"/>
 <text class="muted" x="361.5" y="28" text-anchor="end">act-2 boss</text>
 <line class="l4" stroke-dasharray="4 3" x1="504.3" x2="504.3" y1="18" y2="254"/>
-<text class="muted" x="500.3" y="28" text-anchor="end">act-3 bosses</text>
+<text class="muted" x="500.3" y="45" text-anchor="end">act-3 bosses (floors 45, 46)</text>
 </svg>
 <!-- /fig:deaths -->
   </div>
-  <figcaption><b>Figure 3.5.</b> The floor on which each of the network's 57 lost runs ended, with the boss floors marked. Each loss scores \(0.002 F_T + 0.05 B_T\); a bar at floor 16 scores 0.032, a bar at floor 46 scores 0.242. Notice that the losses cluster on the boss floors: the bosses are where this network's runs end, and where the 0.05 terms separate one loss from another.</figcaption>
+  <figcaption><b>Figure 3.9.</b> The floor on which each of the network's 57 lost runs ended, with the boss floors marked. Each loss scores \(0.002 F_T + 0.05 B_T\). A death on floor 16 scores 0.032. A death on floor 46 scores 0.242. Most losses end on a boss floor, where the 0.05 terms separate one loss from another.</figcaption>
 </figure>
 
-<p>The largest return among the losing runs we played was 0.246. Won runs scored 1.242 (238 runs) or 1.246 (5 runs). The 1.246 runs reached floor 48. All five held the Golden Compass relic, which the project's version-1 reward code notes makes the act-2 map two rows longer, so a win on that path collects 0.004 more. The losing run that scored 0.246 also reached floor 48 and died to the final boss. The progress bonus therefore pays slightly more for a win on a long map. At this size it cannot matter to training, but it is a small example of Section 6: the rule pays for floors, and floors are not quite the same thing as progress.</p>
+<p>The largest return among the losing runs was 0.246. Won runs scored 1.242 in 238 runs and 1.246 in 5 runs. The 1.246 runs reached floor 48. All five held the Golden Compass relic. The project's version-1 reward code notes that this relic makes the act-2 map two rows longer. So a win on that path collects 0.004 more. The losing run that scored 0.246 also reached floor 48, the last floor of a long map, so it most likely died to the final boss. The bonus is too small to matter in training. It is still a small case of Section 6. The rule pays for floors, and floors are not quite the same thing as progress.</p>
 
-<h3>What the reward does not see</h3>
+<h3>The reward does not see HP</h3>
 
-<p>Among the network's won runs, the HP left at the end ranged widely: the middle 80% finished with between 28% and 85% of their maximum HP, and the lowest with 10%. Every one of them scored the same return. The rule cannot tell a win on 5 HP from a win at full health, and so neither can the objective. If the network protects HP, it does so because HP helps it win later fights, not because HP is paid. Chapter 4 makes that concrete: the critic's value estimate, not the reward, is where HP gets a price.</p>
+<p>Among the network's won runs, the HP left at the end varied widely. The middle 80% finished with between 28% and 86% of their maximum HP. The lowest finished with 10%. Every one of them scored the same return. The rule cannot tell a win on 5 HP from a win at full health, so the objective cannot either. If the network protects HP, it does so because HP helps it win later fights. Chapter 4 makes this concrete. The critic's value estimate, not the reward, is where HP gets a price.</p>
 
-<h3>The discount, on real run lengths</h3>
+<h3>A discount would erase the win</h3>
 
-<figure id="fig-6">
+<figure id="fig-10">
   <div class="scroll">
 <!-- fig:discount -->
 <svg viewBox="0 0 560 300" role="img" aria-label="Discounted value of the win at the first decision, as a function of gamma.">
@@ -715,47 +822,49 @@ boss with 9pp less HP and won more [AD].</code></pre>
 </svg>
 <!-- /fig:discount -->
   </div>
-  <figcaption><b>Figure 3.6.</b> What the +1.0 win would be worth from the first decision if Instinct used a discount \(\gamma\), on the measured lengths of the network's won runs: the line is the median run, the band the 10th to 90th percentile. Notice how quickly it collapses: at \(\gamma = 0.99\) the win is worth less than one floor reward.</figcaption>
+  <figcaption><b>Figure 3.10.</b> The value of the +1.0 win, seen from the first decision, if Instinct used a discount \(\gamma\). The line uses the median length of the network's won runs. The band covers the 10th to 90th percentile of lengths. At \(\gamma = 0.99\) the win is worth less than one floor reward.</figcaption>
 </figure>
 
-<p>The network's won runs ended on row 678 at the median. By Equation \eqref{eq:discount-win}, \(\gamma = 0.99\) would make the win worth 0.0011 from the first decision, and \(\gamma = 0.999\) would make it 0.51. An effective horizon of 100 decisions is a fraction of one act. With \(\gamma = 1\) the win is worth 1.0 from every decision, and the hard job of carrying it back through 700 steps moves to the critic and λ, which is the subject of Chapter 4.</p>
+<p>The network's won runs made 679 decisions at the median, so the last decision has index 678. By Equation \eqref{eq:discount-win}, \(\gamma = 0.99\) would make the win worth 0.0011 from the first decision. \(\gamma = 0.999\) would make it worth 0.51. An effective horizon of 100 decisions covers a fraction of one act. With \(\gamma = 1\) the win is worth 1.0 from every decision. Carrying it back through 700 steps becomes the job of the critic and λ. Chapter 4 covers both.</p>
 
 <h2 id="confusions">10. Common confusions</h2>
 
-<p><b>"The reward is the label."</b> In supervised learning the label says what the right output was. The reward says how good the outcome was, after the fact, and only as a sum over many steps. A run that won still contains bad decisions; a run that died contains good ones. The policy is a classifier, but it is trained on a weighted log-likelihood whose weights come from returns (Chapter 5), not on the actions as targets.</p>
+<p><b>"The reward is the label."</b> A label says what the right output was. A reward says how good the outcome was, after the fact, and only as part of a sum over many steps. A run that won still contains bad decisions. A run that died contains good ones. The policy is a classifier, but Chapter 5 trains it on a log-likelihood weighted by advantages, which come from returns, not on the actions as targets.</p>
 
-<p><b>"The return of decision \(t\) is the run's return."</b> \(G_t\) is reward-to-go. Rewards that arrived before step \(t\) are not part of it, and with \(\gamma = 1\), \(G_t = G_0 - \sum_{k \lt t} r_k\). The floors already climbed when you make a choice on floor 20 are not credited to that choice.</p>
+<p><b>"The return of decision \(t\) is the run's return."</b> \(G_t\) is reward-to-go. It leaves out rewards that arrived before step \(t\). With \(\gamma = 1\), \(G_t = G_0 - \sum_{k \lt t} r_k\). A choice made on floor 20 gets no credit for the floors already climbed.</p>
 
-<p><b>"A small dense term is just shaping, so it cannot change the optimum."</b> Only potential-based terms with a fixed terminal potential are safe. Instinct's floor term has the right form and still changes the objective, because its potential at the end depends on the run. "Small" is not the test; Equation \eqref{eq:shaped-return} is.</p>
+<p><b>"A small dense term is just shaping, so it cannot change the optimum."</b> Only potential-based terms with a fixed terminal potential are safe. Instinct's floor term has the right form and still changes the objective, because its potential at the end depends on the run. Size is not the test. Equation \eqref{eq:shaped-return} is.</p>
 
-<p><b>"γ is a property of the game."</b> It is a choice in the objective. A Q-learning habit is to treat \(\gamma = 0.99\) as a default. In a 700-step episode that default turns a win into a rounding error at the start of the run. Instinct sets \(\gamma = 1\) and controls variance with λ instead.</p>
+<p><b>"γ is a property of the game."</b> The discount is a choice in the objective. Q-learning code often treats \(\gamma = 0.99\) as a default. In a 700-step episode, that default turns a win into a rounding error at the start of the run. Instinct sets \(\gamma = 1\) and controls variance with λ.</p>
 
-<p><b>"If HP earns nothing, the agent ignores HP."</b> It ignores HP as a goal, not as a means. A Q-learner already knows this pattern: \(Q(s,a)\) can be high for an action with zero immediate reward because of what it leads to. HP is part of the state, the value of states with more HP is higher when HP helps win, and the policy learns to protect it to exactly the extent it helps.</p>
+<p><b>"If HP earns nothing, the agent ignores HP."</b> The agent ignores HP as a goal, not as a means. You know this pattern from Q-learning. \(Q(s,a)\) can be high for an action with zero immediate reward because of what the action leads to. HP is part of the state. When HP helps the agent win, states with more HP have higher value. The policy learns to protect HP to exactly the extent that HP helps.</p>
 
-<h2 id="experiments">11. Suggested experiments</h2>
+<h2 id="experiments">11. Run the experiments</h2>
 
-<p>All commands run from the repository root of a tour worktree, with the simulator's environment from the main checkout:</p>
+<p>Run every command from the root of a tour worktree. Before the first command, set the simulator's environment in your shell:</p>
 
 <figure class="listing">
 <pre><code>export TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code></pre>
-  <figcaption>set once per shell</figcaption>
+  <figcaption>Set once per shell.</figcaption>
 </figure>
 
 <ol>
-  <li><p><b>Print a reward ledger and the panel breakdown.</b> Plays one run with its ledger, then the panel with the network and with random play, and prints Table 9 and the hypothetical runs. <code>--quick</code> plays 24 seeds per policy instead of 300.</p>
-    <figure class="listing"><pre><code>tour/run stop-3-reward/check.py --quick</code></pre><figcaption>about a minute with --quick; the default 300 seeds take several minutes</figcaption></figure></li>
-  <li><p><b>Rescore the saved runs under other rules.</b> Win only, floors only, and the saved ledgers discounted by a γ you choose. Try 0.99 and 0.9999 and compare with Figure 3.6.</p>
-    <figure class="listing"><pre><code>tour/run stop-3-reward/figures.py rescore --gamma 0.99</code></pre><figcaption>reads chapter_data.json; plays nothing</figcaption></figure></li>
-  <li><p><b>Regenerate this chapter's data and figures.</b> Replays both policies on 300 seeds, rewrites <code>chapter_data.json</code>, then redraws Figures 3.3 to 3.6 inside this page.</p>
+  <li><p><b>Print a reward ledger and the panel breakdown.</b> Run <code>check.py</code>. With <code>--quick</code> it plays 24 seeds per policy instead of 300. You see one run's ledger, the mean return of each policy split by term, and the scores of three hypothetical runs.</p>
+    <figure class="listing"><pre><code>tour/run stop-3-reward/check.py --quick</code></pre><figcaption>The last line reports whether every ledger matched the environment's total and the rule.</figcaption></figure></li>
+  <li><p><b>Rescore the saved runs under other rules.</b> Run <code>figures.py rescore</code> with a discount of your choice. It prints the mean return under the win-only rule, the floors-only rule and the full rule, and the discounted returns of the three saved ledgers. Compare the result for 0.99 and 0.9999 with Figure 3.10.</p>
+    <figure class="listing"><pre><code>tour/run stop-3-reward/figures.py rescore --gamma 0.99</code></pre><figcaption>Reads chapter_data.json. Plays no runs.</figcaption></figure></li>
+  <li><p><b>Regenerate the data and the figures.</b> Run <code>collect</code> to replay both policies on 300 seeds and rewrite <code>chapter_data.json</code>. Then run <code>render</code> to redraw Figures 3.7 to 3.10 inside this page.</p>
     <figure class="listing"><pre><code>tour/run stop-3-reward/figures.py collect
-tour/run stop-3-reward/figures.py render</code></pre><figcaption>collect uses 3 processes</figcaption></figure></li>
-  <li><p><b>Check the bookkeeping.</b> The tests play real runs and assert that the ledger, the environment's total and Equation \eqref{eq:return-sm} agree.</p>
-    <figure class="listing"><pre><code>tour/run -m pytest tour/stop-3-reward</code></pre><figcaption>8 tests</figcaption></figure></li>
+tour/run stop-3-reward/figures.py render</code></pre><figcaption>collect uses 3 processes.</figcaption></figure></li>
+  <li><p><b>Check the bookkeeping.</b> Run the stop's tests. They play real runs and assert that the ledger, the environment's total and Equation \eqref{eq:return-sm} agree.</p>
+    <figure class="listing"><pre><code>tour/run -m pytest tour/stop-3-reward</code></pre><figcaption>Expect 8 passed.</figcaption></figure></li>
 </ol>
+
+<p>Chapter 4 picks up where this chapter stops. It shows how a critic learns to predict these returns, and how λ carries the win back through 700 decisions.</p>
 
 <h2 id="references">References</h2>
 <ol class="refs">
-  <li id="ref-1">Sutton, R. S., &amp; Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em> (2nd ed.). MIT Press. §3.2 Goals and rewards; §3.3 Returns and episodes; §14.3 and §17.4 Designing reward signals.</li>
+  <li id="ref-1">Sutton, R. S., &amp; Barto, A. G. (2018). <em>Reinforcement Learning: An Introduction</em> (2nd ed.). MIT Press. §3.2 Goals and rewards. §3.3 Returns and episodes. §14.3 Instrumental conditioning. §17.4 Designing reward signals.</li>
   <li id="ref-2">Ng, A. Y., Harada, D., &amp; Russell, S. (1999). Policy invariance under reward transformations: Theory and application to reward shaping. In <em>Proceedings of the Sixteenth International Conference on Machine Learning</em> (pp. 278-287). Morgan Kaufmann.</li>
   <li id="ref-3">Wiewiora, E. (2003). Potential-based shaping and Q-value initialization are equivalent. <em>Journal of Artificial Intelligence Research</em>, 19, 205-208.</li>
   <li id="ref-4">Amodei, D., Olah, C., Steinhardt, J., Christiano, P., Schulman, J., &amp; Mané, D. (2016). Concrete problems in AI safety. arXiv:1606.06565.</li>
@@ -764,6 +873,7 @@ tour/run stop-3-reward/figures.py render</code></pre><figcaption>collect uses 3 
 </main>
 
 <footer class="chapter"><span>← Chapter 2: Policies</span><span>Chapter 4: Value functions and advantage →</span></footer>
+
 
 <script>
 window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };

@@ -208,9 +208,9 @@ def fig_deaths(d) -> str:
     bw = (x(1) - x(0)) * 0.8
     for f, k in sorted(c.items()):
         p.append(f'<rect class="f2" x="{x(f) - bw / 2:.1f}" y="{y(k):.1f}" width="{bw:.1f}" height="{y(0) - y(k):.1f}"/>')
-    for f, lab in ((16, "act-1 boss"), (31, "act-2 boss"), (45, "act-3 bosses")):
+    for f, lab, dy in ((16, "act-1 boss", 10), (31, "act-2 boss", 10), (45, "act-3 bosses (floors 45, 46)", 27)):
         p.append(f'<line class="l4" stroke-dasharray="4 3" x1="{x(f):.1f}" x2="{x(f):.1f}" y1="{MT}" y2="{H - MB}"/>')
-        p.append(f'<text class="muted" x="{x(f) - 4:.1f}" y="{MT + 10}" text-anchor="end">{lab}</text>')
+        p.append(f'<text class="muted" x="{x(f) - 4:.1f}" y="{MT + dy}" text-anchor="end">{lab}</text>')
     return svg(p, "Histogram of the floor on which the network's lost runs ended.")
 
 
@@ -263,7 +263,7 @@ def stats(d) -> dict:
             out[pol]["won_ret"] = Counter(round(r["ret"], 3) for r in won).most_common()
             out[pol]["won_floor"] = Counter(r["floor"] for r in won).most_common()
             out[pol]["won_hp_frac"] = statistics.median(r["hp"] / r["max_hp"] for r in won)
-            out[pol]["won_hp_frac_q"] = sorted(round(r["hp"] / r["max_hp"], 2) for r in won)[:: max(1, len(won) // 10)]
+            out[pol]["won_hp_frac_q"] = [round(q, 3) for q in statistics.quantiles((r["hp"] / r["max_hp"] for r in won), n=10, method="inclusive")]
             out[pol]["win_last_row_median"] = statistics.median(r["last_reward_row"] for r in won)
             out[pol]["long_map_relics"] = [r["relics"] for r in won if r["relics"]][:5]
         lost = [r for r in rs if not r["won"]]
