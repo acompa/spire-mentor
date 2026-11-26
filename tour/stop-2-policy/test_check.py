@@ -56,3 +56,11 @@ def test_sampled_play_is_reproducible(student):
     a = check.play(student, seed, "sample", max_decisions=150)
     b = check.play(student, seed, "sample", max_decisions=150)
     assert [s.played for s in a.steps] == [s.played for s in b.steps]
+
+
+def test_low_temperature_sampling_is_greedy(student):
+    """As T -> 0 the tempered softmax puts all its mass on the top logit."""
+    seed = tourlib.PANEL_A[1]
+    greedy = check.play(student, seed, "greedy", max_decisions=120)
+    cold = check.play(student, seed, "sample", max_decisions=120, temperature=1e-3)
+    assert [s.played for s in cold.steps] == [s.played for s in greedy.steps]
