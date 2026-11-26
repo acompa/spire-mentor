@@ -104,7 +104,7 @@ a size that fits this Mac, twice at once:
 
 About 75 minutes. Line numbers are on this branch.
 
-1. `docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md`, lines 260-276 (§6).
+1. `docs/plans/2026-11-02-ironclad-e2e-ppo-v0111.md`, lines 260-274 (§6).
    Read the Objective, Batches, KL control, Entropy and Optimizer rows. Look
    for: the clip (0.2), how many decisions one iteration collects, and when
    the KL limit is switched on.
@@ -161,10 +161,11 @@ about 700 decisions, and the plan says random play reaches floor 2.7.
 TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-5-ppo-update/check.py
 ```
 
-About 14 minutes. It starts two learners (4 rollout workers and 2 update
+About 12 minutes. It starts two learners (4 rollout workers and 2 update
 threads each), so close other heavy work first: throughput depends on free
-cores. `--quick` runs each arm for about a minute; it checks the plumbing
-and does not learn. `--keep DIR` keeps each learner's directory
+cores. `--quick` takes about 90 seconds, with 2,048-decision iterations and
+100-run windows. Use it to check the plumbing: its numbers are too noisy to
+score against. `--keep DIR` keeps each learner's directory
 (`stats.jsonl` has every statistic the learner logs per iteration).
 
 ### What the check runs instead of the full learning check
@@ -175,7 +176,7 @@ repository's own. What changes is size, because this Mac has no CUDA GPU:
 | Setting | Plan | Here | Why |
 | --- | --- | --- | --- |
 | Device | CUDA, bf16 | CPU, fp32 | MPS fails inside the learner (the sampler's `torch.multinomial` and the token densifier) |
-| Network | 6 layers × 256 | 2 layers × 128 (`SMALL_NET`) | The full net updates at about a tenth of the speed on a CPU |
+| Network | 6 layers × 256 | 2 layers × 128 (`SMALL_NET`) | On this CPU the full net took about three times as long per update, and serving slowed too |
 | Decisions per iteration | 131,072 | 8,192 | Enough iterations in 11 minutes to see a trend |
 | Minibatch | 8,192 rows (24 strata) | 1,024 rows (8 strata) | Keeps several optimiser steps per epoch |
 | Windows | 10,000 runs | 1,000 runs | Fewer runs finish in 11 minutes |
@@ -210,8 +211,11 @@ Each arm prints one row per iteration:
   exploring.
 - `EV`: the critic's explained variance on combat rows. It starts near or
   below zero and should rise as the critic learns.
-- `dec/s`: collection throughput in that iteration. The table's last line
-  gives the throughput over the whole run.
+- `dec/s`: collection throughput in that iteration. The scored
+  `decisions_per_second` is the whole run's, start-up included.
+
+In the unclipped arm the band is [1 - 10⁶, 1 + 10⁶], so its `clip%` counts
+rows whose ratio grew past a million.
 
 Questions to ask of the output: Did the floor rise in the clipped arm? Did
 the unclipped arm's KL differ from the clipped arm's by a small factor or a

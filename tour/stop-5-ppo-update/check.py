@@ -11,8 +11,8 @@ by PPO on its own play. Two arms run side by side:
 Each arm logs one row per iteration. This script prints them as tables and
 scores your predictions.
 
-    tour/run stop-5-ppo-update/check.py            # about 14 minutes
-    tour/run stop-5-ppo-update/check.py --quick    # about 2 minutes, plumbing only
+    tour/run stop-5-ppo-update/check.py            # about 12 minutes
+    tour/run stop-5-ppo-update/check.py --quick    # about 90 seconds, plumbing only
 """
 
 from __future__ import annotations
@@ -289,7 +289,7 @@ def main() -> None:
     else:
         root = Path(tempfile.mkdtemp(prefix="tour-stop5-"))
     print(
-        f"Training {len(arms)} arms side by side for about {size.wall_s // 60 + 2} minutes"
+        f"Training {len(arms)} arms side by side for about {size.wall_s // 60 + 1} minutes"
         f" ({size.workers} workers and {size.threads} update threads each).\n"
         f"Logs: {root}",
         flush=True,
