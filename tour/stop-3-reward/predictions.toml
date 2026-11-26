@@ -1,0 +1,52 @@
+# Stop 3: reward and return. Fill in guess, low and high for each entry
+# (low <= guess <= high, an 80% interval). The check refuses to run while any
+# value is blank. Returns are in reward units: a win alone is worth 1.0.
+
+[won_run_return]
+question = "The return of a run the network wins (the median over its wins)"
+unit = "reward"
+guess = ""
+low = ""
+high = ""
+
+[death_floor_20_return]
+question = "The return of a run that dies on floor 20, after beating the act-1 boss"
+unit = "reward"
+guess = ""
+low = ""
+high = ""
+
+[death_floor_40_return]
+question = "The return of a run that dies on floor 40, after beating the act-1 and act-2 bosses"
+unit = "reward"
+guess = ""
+low = ""
+high = ""
+
+[largest_losing_return]
+question = "The largest return a losing run can have"
+unit = "reward"
+guess = ""
+low = ""
+high = ""
+
+[net_mean_return]
+question = "The network's mean return over the panel"
+unit = "reward"
+guess = ""
+low = ""
+high = ""
+
+[net_win_share]
+question = "The share of the network's mean return that comes from the win bonus"
+unit = "fraction"
+guess = ""
+low = ""
+high = ""
+
+[random_mean_return]
+question = "Mean return for random play over the same seeds"
+unit = "reward"
+guess = ""
+low = ""
+high = ""
