@@ -14,7 +14,9 @@ experiments would cost on this Mac.
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,14 +31,13 @@ from ppo.e2e.stats import (
     wilson,
 )
 
-STOP = Path(__file__).resolve().parent
 ARM1 = "ironclad_e2e_d9000_ema0999"
 ARM2 = "allchar_e2e_d4500_ema0999"
 
 DEFAULT_PER_PANEL = 200
 QUICK_PER_PANEL = 30
 COST_SAMPLE = 20
-SLICES_PER_PANEL = 2
+SLICE_SIZE = 100
 COST_SEEDS = (300, 1_000, 4_000)
 COST_DISCORDANCE = (0.10, 0.20, 0.30)
 #: The one-sided normal quantile for 80% power.
@@ -89,10 +90,9 @@ def unpaired_se(t: PairedTable) -> float:
     return math.sqrt((t.p1 * (1 - t.p1) + t.p2 * (1 - t.p2)) / t.n)
 
 
-def slice_rates(wins: list[bool], n_slices: int) -> list[float]:
-    """Win rate on each of `n_slices` equal, consecutive, disjoint slices."""
-    size = len(wins) // n_slices
-    return [sum(wins[i * size:(i + 1) * size]) / size for i in range(n_slices)]
+def slice_rates(wins: list[bool], size: int) -> list[float]:
+    """Win rate on each consecutive, disjoint slice of `size` seeds (a short tail is dropped)."""
+    return [sum(wins[i:i + size]) / size for i in range(0, len(wins) - size + 1, size)]
 
 
 def hours_for(n_paired: int, decisions_per_run: float, rate: float, arms: int = 2) -> float:
@@ -110,21 +110,39 @@ class Arm:
     wins: dict[str, list[bool]]  # panel name -> one result per seed, in seed order
     decisions: int
     errors: int
+    runs: list[dict]  # one record per run: panel, seed, won, decisions, seconds
+
+
+def _timed_selfplay(student, seed: int) -> tuple[dict, float]:
+    import sts2_rs
+
+    t0 = time.perf_counter()
+    out = sts2_rs.e2e_selfplay(student, seed)
+    return out, time.perf_counter() - t0
 
 
 def play(name: str, panels: dict[str, range], workers: int) -> tuple[Arm, float]:
+    """`sts2_rs.e2e_selfplay` (greedy, whole run) over each panel's seeds, timing every run."""
+    from concurrent.futures import ThreadPoolExecutor
+
     import sts2_rs
 
     student = sts2_rs.E2eStudent(str(tourlib.weight(name + ".e2ew")))
     wins: dict[str, list[bool]] = {}
+    records: list[dict] = []
     decisions = errors = 0
     t0 = time.perf_counter()
-    for panel, seeds in panels.items():
-        runs = tourlib.selfplay_many(student, seeds, workers=workers)
-        wins[panel] = [bool(r["won"]) for r in runs]
-        decisions += sum(r["decisions"] for r in runs)
-        errors += sum(r["outcome"] in ("error", "stopped") for r in runs)
-    return Arm(name, wins, decisions, errors), time.perf_counter() - t0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for panel, seeds in panels.items():
+            done = list(pool.map(lambda s: _timed_selfplay(student, s), seeds))
+            wins[panel] = [bool(r["won"]) for r, _ in done]
+            for seed, (r, secs) in zip(seeds, done, strict=True):
+                records.append({"panel": panel, "seed": seed, "won": bool(r["won"]),
+                                "outcome": r["outcome"], "decisions": r["decisions"],
+                                "floor": r.get("floor"), "seconds": round(secs, 4)})
+                decisions += r["decisions"]
+                errors += r["outcome"] in ("error", "stopped")
+    return Arm(name, wins, decisions, errors, records), time.perf_counter() - t0
 
 
 # ------------------------------------------------------------------ printing
@@ -171,11 +189,11 @@ def print_paired(t: PairedTable) -> None:
 
 
 def print_slices(arms: list[Arm]) -> dict[str, float]:
-    print(f"\n3. Panel variance: each network on {SLICES_PER_PANEL} disjoint slices per panel")
+    size = min(SLICE_SIZE, min(len(ws) for ws in arms[0].wins.values()))
+    print(f"\n3. Panel variance: each network on disjoint {size}-seed slices of each panel")
     spreads = {}
     for arm in arms:
-        rates = [r for ws in arm.wins.values() for r in slice_rates(ws, SLICES_PER_PANEL)]
-        size = len(next(iter(arm.wins.values()))) // SLICES_PER_PANEL
+        rates = [r for ws in arm.wins.values() for r in slice_rates(ws, size)]
         p = sum(rates) / len(rates)
         spreads[arm.name] = max(rates) - min(rates)
         print(f"  {arm.name:<28} slices of {size}: " + "  ".join(pct(r) for r in rates)
@@ -184,10 +202,15 @@ def print_slices(arms: list[Arm]) -> dict[str, float]:
     return spreads
 
 
+COST_DECISIONS = (10_000_000, 100_000_000, 1_000_000_000)
+
+
 def print_cost(decisions_per_run: float, rate: float, workers: int,
                discordances: list[float], p_typical: float) -> None:
     print(f"\n4. Cost on this Mac: {rate:,.0f} decisions/s on {workers} threads,"
           f" {decisions_per_run:,.0f} decisions per run, 2 networks per seed")
+    for n in COST_DECISIONS:
+        print(f"  {n:>13,} decisions: {n / rate / 3600:8.1f} hours")
     head = "  ".join(f"MDE80 d={d:.2f}" for d in discordances)
     print(f"  {'paired seeds':>12}  {'hours':>6}  {head}  unpaired MDE80 (p={p_typical:.2f})")
     for n in COST_SEEDS:
@@ -195,7 +218,7 @@ def print_cost(decisions_per_run: float, rate: float, workers: int,
         print(f"  {n:>12,}  {hours_for(n, decisions_per_run, rate):>6.2f}  {mdes}"
               f"  {100 * mde80_unpaired(n, p_typical):>8.1f} pp")
     print("  MDE80: smallest true difference a two-sided 5% McNemar test finds 80% of the time"
-          " (normal approximation; see README).")
+          " (normal approximation; see chapter.html, section 4).")
 
 
 # --------------------------------------------------------------------- main
@@ -208,9 +231,9 @@ def main() -> None:
                     help=f"time {COST_SAMPLE} seeds per network and print only the cost table")
     ap.add_argument("--seeds", type=int, help="seeds per panel (overrides the default)")
     ap.add_argument("--workers", type=int, default=10, help="threads (default 10)")
+    ap.add_argument("--save", type=Path, help="write every run's result and timing to this JSON file")
     args = ap.parse_args()
 
-    tourlib.load_predictions(STOP)  # the gate: refuse before any slow work (the cost table answers two)
     if args.cost_only:
         n = args.seeds or COST_SAMPLE
         arms, secs = zip(*(play(name, {"A": tourlib.PANEL_A[:n]}, args.workers) for name in (ARM1, ARM2)))
@@ -221,11 +244,11 @@ def main() -> None:
         return
 
     per_panel = args.seeds or (QUICK_PER_PANEL if args.quick else DEFAULT_PER_PANEL)
-    per_panel -= per_panel % SLICES_PER_PANEL
     panels = {"A": tourlib.PANEL_A[:per_panel], "B": tourlib.PANEL_B[:per_panel]}
     print(f"Playing {ARM1} and {ARM2} greedily on the same {2 * per_panel} seeds"
           f" ({per_panel} from each panel), {args.workers} threads.")
 
+    load_before = os.getloadavg()
     played = [play(name, panels, args.workers) for name in (ARM1, ARM2)]
     arms = [a for a, _ in played]
     secs = sum(s for _, s in played)
@@ -239,23 +262,23 @@ def main() -> None:
         (w1, w2) for p in panels for w1, w2 in zip(arms[0].wins[p], arms[1].wins[p], strict=True)
     ])
     print_paired(t)
-    spreads = print_slices(arms)
+    print_slices(arms)
 
     rate = decisions / secs
-    per_run = decisions / runs
-    d = t.discordance
-    print_cost(per_run, rate, args.workers, sorted({*COST_DISCORDANCE, round(d, 3)}), (t.p1 + t.p2) / 2)
+    print_cost(decisions / runs, rate, args.workers, sorted({*COST_DISCORDANCE, round(t.discordance, 3)}),
+               (t.p1 + t.p2) / 2)
 
-    pooled1 = [w for ws in arms[0].wins.values() for w in ws]
-    lo, hi = wilson(sum(pooled1), len(pooled1))
-    tourlib.score(STOP, {
-        "ci_half_width": 100 * (hi - lo) / 2,
-        "discordant_seeds": t.b + t.c,
-        "win_rate_difference": 100 * t.diff,
-        "slice_spread": 100 * spreads[ARM1],
-        "mde_at_1000": 100 * mde80(1_000, d),
-        "hours_for_4000": hours_for(4_000, per_run, rate),
-    })
+    if args.save:
+        args.save.write_text(json.dumps({
+            "arms": [ARM1, ARM2],
+            "panels": {p: [r.start, r.stop] for p, r in panels.items()},
+            "workers": args.workers,
+            "wall_seconds": {a.name: round(s, 2) for a, s in played},
+            "loadavg_before": load_before,
+            "loadavg_after": os.getloadavg(),
+            "runs": {a.name: a.runs for a in arms},
+        }, indent=1) + "\n", encoding="utf-8")
+        print(f"\nsaved {args.save}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,764 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<meta charset="utf-8">
+<title>RL Tour 8: Evaluating agents</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+<style>
+/* Chapter 8 additions. */
+.m { font-variant-numeric: tabular-nums; }
+table.cells td.num { min-width: 5ch; }
+.callout-num { font-family: var(--sans); font-weight: 600; }
+/* The shared `figure svg` rule would make MathJax's own SVGs in captions block-level. */
+figure mjx-container svg { display: inline; margin: 0; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 8 of 8</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Evaluating agents</h1>
+  <p class="lede">Two networks score differently on a panel of games. This chapter shows when that difference is real, how many games it takes to know, what the games cost, and how choosing a network on the same games inflates the number you report.</p>
+</header>
+
+<nav class="contents" aria-label="Chapter contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#s1">Why evaluation is its own problem</a></li>
+    <li><a href="#s2">A win rate is a binomial estimate</a></li>
+    <li><a href="#s3">Paired seeds</a></li>
+    <li><a href="#s4">McNemar's test and the paired interval</a></li>
+    <li><a href="#s5">Power, detectable effect and cost</a></li>
+    <li><a href="#s6">Choosing on the panel you report</a></li>
+    <li><a href="#s7">Pre-registration and sealed panels</a></li>
+    <li><a href="#s8">Textbook against engineered</a></li>
+    <li><a href="#s9">In Spire Mentor</a></li>
+    <li><a href="#s10">Measured</a></li>
+    <li><a href="#s11">Common confusions</a></li>
+    <li><a href="#experiments">Suggested experiments</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<main>
+  <h2 id="s1">1. Why evaluation is its own problem</h2>
+  <p>The first seven chapters built an agent. Chapter 5's update raised the probability of actions with positive advantage, Chapter 6 corrected for stale data, and Chapter 7 started the network from a teacher. Every one of those steps ends in the same question: is the new network better than the old one? Training curves cannot answer it. The training win rate is measured on the sampling policy, on seeds the learner has partly fitted, while the network is still moving. The answer has to come from a separate measurement: play the frozen network on fresh games and count wins.</p>
+  <p>That measurement is an experiment with a sample size, and it has the problems every experiment has. In supervised learning the test set is fixed and usually large, so a model's accuracy has a small standard error and two models are compared on the same examples without anyone calling it a design choice. In reinforcement learning the test set is a set of episodes the evaluator chooses to generate, each episode is expensive, and the outcome of one episode is a single bit. A Slay the Spire 2 run takes about 700 decisions and ends in a win or a loss. A thousand runs is seven hundred thousand forward passes of a transformer to produce a thousand bits.</p>
+  <p>Deep RL research learned this slowly. Henderson et al. showed that reported gains on standard benchmarks often sat inside the spread between random seeds of the same algorithm <span class="cite">[<a href="#ref-henderson">1</a>]</span>. Agarwal et al. reanalysed published Atari results and found that conclusions drawn from point estimates over a handful of runs often reversed once intervals were drawn <span class="cite">[<a href="#ref-agarwal">2</a>]</span>. Both papers are about variance across <em>training</em> runs. This chapter is about the variance of <em>evaluating</em> one frozen network, which is the part an engineer controls with a seed list and a budget.</p>
+  <p>You know power calculations, crossover designs and CUPED. The statistics here are those. What is specific to agents is three facts. A game seed fixes the whole random environment, so two agents can play the identical game: a crossover design in which the seed is the subject. The paired design's gain can be written exactly in terms of how often the agents disagree. And the panel of seeds used to pick a checkpoint cannot also certify it, by an amount we can compute.</p>
+
+  <h2 id="s2">2. A win rate is a binomial estimate</h2>
+  <p>Fix a policy \(\pi_\theta\) and play it greedily. Each <dfn>seed</dfn> is an integer that initialises every random number generator of the game: the map, the card rewards, the shuffle order, the enemies' moves. Draw seeds \(i = 1, \dots, n\) and let \(X_i \in \{0, 1\}\) record whether the run on seed \(i\) was won. Chapter 3's return with the win bonus is a near-copy of \(X_i\); here we use the bit itself, because the bit is the quantity the project reports.</p>
+  <div class="definition"><span class="label">Definition 8.1 · Win rate</span>
+    <p>The <dfn>win rate</dfn> of a policy is \(p = \Pr(X = 1)\) for a seed drawn from the seed distribution. Its estimate on \(n\) seeds is</p>
+    <div class="eq">\begin{equation} \hat p = \frac{k}{n}, \qquad k = \sum_{i=1}^{n} X_i \sim \operatorname{Binomial}(n, p). \label{eq:phat} \end{equation}</div>
+  </div>
+  <p>Here \(k\) is the number of wins. The binomial law holds because seeds are drawn independently and greedy play is deterministic given the seed, so each \(X_i\) is an independent Bernoulli draw with the same \(p\). Two consequences follow at once:</p>
+  <div class="eq">\begin{equation} \mathbb{E}[\hat p] = p, \qquad \operatorname{Var}(\hat p) = \frac{p(1-p)}{n}. \label{eq:var} \end{equation}</div>
+  <p>The estimate is unbiased, and its standard deviation shrinks as \(1/\sqrt{n}\). At \(p = 0.8\) and \(n = 400\), the standard error is \(\sqrt{0.16/400} = 0.02\): two percentage points. Note what does not appear: how different the seeds are from each other. Some seeds are nearly unwinnable and some are trivial, yet Equation \eqref{eq:var} already includes that, because the marginal law of one outcome is Bernoulli whatever mixture of easy and hard seeds produced it. Section 11 returns to this, because it is the most common misreading of panel-to-panel differences.</p>
+
+  <h3>Two intervals</h3>
+  <p>A 95% <dfn>confidence interval</dfn> is a procedure that, applied to repeated samples, covers the true \(p\) 95% of the time. The familiar one replaces \(p\) by \(\hat p\) in Equation \eqref{eq:var}:</p>
+  <div class="eq">\begin{equation} \hat p \pm z \sqrt{\frac{\hat p (1 - \hat p)}{n}}, \qquad z = z_{0.975} \approx 1.96. \label{eq:wald} \end{equation}</div>
+  <p>This is the <dfn>Wald interval</dfn>. It fails exactly where good agents live. At 19 wins in 20 games it gives \(0.95 \pm 0.096\), an interval that runs past 100%. At 20 of 20 it has zero width. Its coverage is poor near 0 and 1 because the variance it plugs in is estimated from the same small count it is meant to judge.</p>
+  <p>Wilson's fix (1927) is to keep the unknown \(p\) in the variance and ask which values of \(p\) are consistent with what we saw <span class="cite">[<a href="#ref-wilson">3</a>]</span>. A value \(p\) is kept if \(\hat p\) lies within \(z\) of its own standard errors of it:</p>
+  <div class="eq">\begin{equation} (\hat p - p)^2 \le z^2 \, \frac{p(1-p)}{n}. \label{eq:wilson-ineq} \end{equation}</div>
+  <p>This is a quadratic inequality in \(p\). Expanding and solving for its two roots gives the <dfn>Wilson score interval</dfn>:</p>
+  <div class="eq">\begin{equation} p \in \frac{1}{1 + z^2/n} \left[ \hat p + \frac{z^2}{2n} \pm z \sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}} \right]. \label{eq:wilson} \end{equation}</div>
+  <p>The centre is pulled from \(\hat p\) toward one half by \(z^2/2n\), roughly two extra pseudo-games split evenly, and the interval can never leave \([0, 1]\). At 20 of 20 it gives \([0.84, 1]\), which is the honest statement: twenty straight wins rule out a 70% agent but not an 85% one. The project computes exactly Equation \eqref{eq:wilson}.</p>
+
+  <figure class="listing">
+    <pre><code>def wilson(k: int, n: int, z: float = Z95) -> tuple[float, float]:
+    """Wilson score interval (no continuity correction); (nan, nan) when n == 0."""
+    if n == 0:
+        return (math.nan, math.nan)
+    p = k / n
+    den = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / den
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return (centre - half, centre + half)</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/stats.py, lines 33-41</figcaption>
+  </figure>
+
+  <details class="predict"><summary>Pause and predict: the Ironclad network wins about four games in five. After 600 seeds, how wide is the 95% interval on its win rate?</summary>
+    <p>It won <span data-m="net1.k" data-f="int">482</span> of <span data-m="net1.n" data-f="int">600</span>: <span data-m="net1.p" data-f="pct1">80.3%</span>, Wilson interval <span data-m="net1.lo" data-f="pct1">77.0%</span> to <span data-m="net1.hi" data-f="pct1">83.3%</span>, a half-width of <span data-m="half_width1" data-f="pp1">3.2</span> percentage points. Equation \eqref{eq:var} predicts \(1.96\sqrt{p(1-p)/600}\), about three points at \(p = 0.8\). Six hundred games pin the rate to within roughly ±3 points, and to halve that you need four times the games.</p>
+  </details>
+
+  <figure id="fig-running">
+    <div class="scroll">
+<!-- figure:running -->
+<svg viewBox="0 0 640 330" role="img" aria-label="Running win rate of the Ironclad network with its 95% Wilson band">
+<line class="grid" x1="62" x2="616" y1="278.0" y2="278.0"/>
+<text class="muted" x="54" y="282.0" text-anchor="end">50%</text>
+<line class="grid" x1="62" x2="616" y1="226.8" y2="226.8"/>
+<text class="muted" x="54" y="230.8" text-anchor="end">60%</text>
+<line class="grid" x1="62" x2="616" y1="175.6" y2="175.6"/>
+<text class="muted" x="54" y="179.6" text-anchor="end">70%</text>
+<line class="grid" x1="62" x2="616" y1="124.4" y2="124.4"/>
+<text class="muted" x="54" y="128.4" text-anchor="end">80%</text>
+<line class="grid" x1="62" x2="616" y1="73.2" y2="73.2"/>
+<text class="muted" x="54" y="77.2" text-anchor="end">90%</text>
+<line class="grid" x1="62" x2="616" y1="22.0" y2="22.0"/>
+<text class="muted" x="54" y="26.0" text-anchor="end">100%</text>
+<text class="muted" x="62.0" y="296" text-anchor="middle">0</text>
+<text class="muted" x="154.3" y="296" text-anchor="middle">100</text>
+<text class="muted" x="246.7" y="296" text-anchor="middle">200</text>
+<text class="muted" x="339.0" y="296" text-anchor="middle">300</text>
+<text class="muted" x="431.3" y="296" text-anchor="middle">400</text>
+<text class="muted" x="523.7" y="296" text-anchor="middle">500</text>
+<text class="muted" x="616.0" y="296" text-anchor="middle">600</text>
+<line class="ink" x1="62" x2="616" y1="278" y2="278"/>
+<line class="ink" x1="62" x2="62" y1="22" y2="278"/>
+<text x="339" y="320" text-anchor="middle">seeds played (n)</text>
+<text x="14" y="150" text-anchor="middle" transform="rotate(-90 14 150)">win rate</text>
+<path class="f1" d="M66.6 341.7 L67.5 310.5 L68.5 284.7 L69.4 263.1 L70.3 244.7 L71.2 228.9 L72.2 215.2 L73.1 251.4 L74.0 238.2 L74.9 226.5 L75.8 216.0 L76.8 206.4 L77.7 197.8 L78.6 189.9 L79.5 182.7 L80.5 176.1 L81.4 199.3 L82.3 192.7 L83.2 186.5 L84.2 180.7 L85.1 175.4 L86.0 193.7 L86.9 188.3 L87.9 183.2 L88.8 198.9 L89.7 193.8 L90.6 189.1 L91.5 184.6 L92.5 180.3 L93.4 193.6 L94.3 189.3 L95.2 185.3 L96.2 181.4 L97.1 177.7 L98.0 189.3 L98.9 185.6 L99.9 182.1 L100.8 178.7 L101.7 189.0 L102.6 185.6 L103.5 182.4 L104.5 179.3 L105.4 188.6 L106.3 185.5 L107.2 182.6 L108.2 179.7 L109.1 176.9 L110.0 185.3 L110.9 182.6 L111.9 179.9 L112.8 177.3 L113.7 174.8 L114.6 182.5 L115.6 180.0 L116.5 177.5 L117.4 175.2 L118.3 172.9 L119.2 180.0 L120.2 177.7 L121.1 175.5 L122.0 182.1 L122.9 179.9 L123.9 177.7 L124.8 184.0 L125.7 181.9 L126.6 187.8 L127.6 185.7 L128.5 183.6 L129.4 181.6 L130.3 179.6 L131.2 177.7 L132.2 175.8 L133.1 181.3 L134.0 179.5 L134.9 177.6 L135.9 182.9 L136.8 188.0 L137.7 186.1 L138.6 184.3 L139.6 189.2 L140.5 187.3 L141.4 185.6 L142.3 183.8 L143.3 182.1 L144.2 186.7 L145.1 185.1 L146.0 183.4 L146.9 187.8 L147.9 186.2 L148.8 184.6 L149.7 183.0 L150.6 181.4 L151.6 179.9 L152.5 178.4 L153.4 176.9 L154.3 175.5 L155.3 174.1 L156.2 172.7 L157.1 171.3 L158.0 170.0 L158.9 168.7 L159.9 167.4 L160.8 166.1 L161.7 164.9 L162.6 163.6 L163.6 162.4 L164.5 161.2 L165.4 160.1 L166.3 158.9 L167.3 157.8 L168.2 156.7 L169.1 155.6 L170.0 154.5 L171.0 153.5 L171.9 152.4 L172.8 151.4 L173.7 150.4 L174.6 149.4 L175.6 148.4 L176.5 147.5 L177.4 146.5 L178.3 145.6 L179.3 144.7 L180.2 143.8 L181.1 142.9 L182.0 142.0 L183.0 145.5 L183.9 144.6 L184.8 148.0 L185.7 151.4 L186.7 150.5 L187.6 149.6 L188.5 148.7 L189.4 147.8 L190.3 147.0 L191.3 146.1 L192.2 145.3 L193.1 144.5 L194.0 143.6 L195.0 142.8 L195.9 146.0 L196.8 149.1 L197.7 148.2 L198.7 147.4 L199.6 146.6 L200.5 145.8 L201.4 145.1 L202.3 144.3 L203.3 143.5 L204.2 142.8 L205.1 145.7 L206.0 144.9 L207.0 147.8 L207.9 150.6 L208.8 149.8 L209.7 149.1 L210.7 148.3 L211.6 147.6 L212.5 146.8 L213.4 146.1 L214.4 145.4 L215.3 144.7 L216.2 147.4 L217.1 146.7 L218.0 146.0 L219.0 148.6 L219.9 147.9 L220.8 150.4 L221.7 149.7 L222.7 149.0 L223.6 148.3 L224.5 147.6 L225.4 147.0 L226.4 146.3 L227.3 145.6 L228.2 145.0 L229.1 147.4 L230.0 146.8 L231.0 146.1 L231.9 145.5 L232.8 144.8 L233.7 144.2 L234.7 143.6 L235.6 143.0 L236.5 142.3 L237.4 144.7 L238.4 144.1 L239.3 143.5 L240.2 142.9 L241.1 142.3 L242.1 141.7 L243.0 141.1 L243.9 140.5 L244.8 139.9 L245.7 139.4 L246.7 138.8 L247.6 138.3 L248.5 137.7 L249.4 137.2 L250.4 136.6 L251.3 136.1 L252.2 135.6 L253.1 135.0 L254.1 134.5 L255.0 134.0 L255.9 133.5 L256.8 135.6 L257.7 135.1 L258.7 137.3 L259.6 136.7 L260.5 136.2 L261.4 135.7 L262.4 137.8 L263.3 137.3 L264.2 136.8 L265.1 136.3 L266.1 138.3 L267.0 137.8 L267.9 137.3 L268.8 136.8 L269.8 136.3 L270.7 135.8 L271.6 135.4 L272.5 134.9 L273.4 134.4 L274.4 133.9 L275.3 135.9 L276.2 135.4 L277.1 135.0 L278.1 134.5 L279.0 136.4 L279.9 138.3 L280.8 137.8 L281.8 137.4 L282.7 139.3 L283.6 138.8 L284.5 138.3 L285.4 140.2 L286.4 139.7 L287.3 141.5 L288.2 141.0 L289.1 142.8 L290.1 144.6 L291.0 144.1 L291.9 143.7 L292.8 143.2 L293.8 142.7 L294.7 144.5 L295.6 144.0 L296.5 143.5 L297.4 143.1 L298.4 144.8 L299.3 144.3 L300.2 143.9 L301.1 143.4 L302.1 145.1 L303.0 146.7 L303.9 148.4 L304.8 147.9 L305.8 149.6 L306.7 149.1 L307.6 148.6 L308.5 148.2 L309.5 149.8 L310.4 151.4 L311.3 150.9 L312.2 150.4 L313.1 150.0 L314.1 149.5 L315.0 149.1 L315.9 148.6 L316.8 148.2 L317.8 147.8 L318.7 149.3 L319.6 148.9 L320.5 148.4 L321.5 148.0 L322.4 147.6 L323.3 147.1 L324.2 148.7 L325.1 148.2 L326.1 147.8 L327.0 147.4 L327.9 147.0 L328.8 146.5 L329.8 146.1 L330.7 145.7 L331.6 145.3 L332.5 144.9 L333.5 144.5 L334.4 144.1 L335.3 143.7 L336.2 143.3 L337.2 142.9 L338.1 142.5 L339.0 144.0 L339.9 143.6 L340.8 143.2 L341.8 142.8 L342.7 144.2 L343.6 145.6 L344.5 145.2 L345.5 144.9 L346.4 144.5 L347.3 144.1 L348.2 143.7 L349.2 143.3 L350.1 143.0 L351.0 144.3 L351.9 144.0 L352.9 143.6 L353.8 143.2 L354.7 142.8 L355.6 142.5 L356.5 142.1 L357.5 141.7 L358.4 141.4 L359.3 141.0 L360.2 140.7 L361.2 142.0 L362.1 141.7 L363.0 141.3 L363.9 140.9 L364.9 140.6 L365.8 140.2 L366.7 141.6 L367.6 141.2 L368.5 140.9 L369.5 140.5 L370.4 140.2 L371.3 139.8 L372.2 139.5 L373.2 139.2 L374.1 138.8 L375.0 138.5 L375.9 139.8 L376.9 139.4 L377.8 139.1 L378.7 138.8 L379.6 138.4 L380.5 139.7 L381.5 139.4 L382.4 139.1 L383.3 140.3 L384.2 141.6 L385.2 141.2 L386.1 140.9 L387.0 140.6 L387.9 141.8 L388.9 141.5 L389.8 141.1 L390.7 142.4 L391.6 142.0 L392.6 141.7 L393.5 141.4 L394.4 142.6 L395.3 142.3 L396.2 141.9 L397.2 141.6 L398.1 141.3 L399.0 141.0 L399.9 140.7 L400.9 140.3 L401.8 140.0 L402.7 139.7 L403.6 139.4 L404.6 139.1 L405.5 138.8 L406.4 138.5 L407.3 138.2 L408.2 137.9 L409.2 137.6 L410.1 137.3 L411.0 137.0 L411.9 136.7 L412.9 136.4 L413.8 136.1 L414.7 135.8 L415.6 135.5 L416.6 136.7 L417.5 137.8 L418.4 137.5 L419.3 137.2 L420.3 138.4 L421.2 138.1 L422.1 137.8 L423.0 137.5 L423.9 137.2 L424.9 138.3 L425.8 138.0 L426.7 137.7 L427.6 137.5 L428.6 137.2 L429.5 136.9 L430.4 138.0 L431.3 137.7 L432.3 137.4 L433.2 137.1 L434.1 136.9 L435.0 136.6 L436.0 137.7 L436.9 137.4 L437.8 138.5 L438.7 138.2 L439.6 137.9 L440.6 137.6 L441.5 138.7 L442.4 138.4 L443.3 138.1 L444.3 139.2 L445.2 138.9 L446.1 138.6 L447.0 139.7 L448.0 139.4 L448.9 139.1 L449.8 138.9 L450.7 138.6 L451.6 138.3 L452.6 138.0 L453.5 137.8 L454.4 137.5 L455.3 138.5 L456.3 138.3 L457.2 138.0 L458.1 137.7 L459.0 137.5 L460.0 137.2 L460.9 137.0 L461.8 136.7 L462.7 136.4 L463.6 136.2 L464.6 137.2 L465.5 136.9 L466.4 136.7 L467.3 136.4 L468.3 136.2 L469.2 135.9 L470.1 135.7 L471.0 135.4 L472.0 135.2 L472.9 136.1 L473.8 135.9 L474.7 135.6 L475.7 136.6 L476.6 136.4 L477.5 136.1 L478.4 135.9 L479.3 135.6 L480.3 136.6 L481.2 137.5 L482.1 137.3 L483.0 137.1 L484.0 136.8 L484.9 136.6 L485.8 137.5 L486.7 137.3 L487.7 137.0 L488.6 138.0 L489.5 137.7 L490.4 137.5 L491.4 138.4 L492.3 138.2 L493.2 137.9 L494.1 138.8 L495.0 138.6 L496.0 138.4 L496.9 139.3 L497.8 139.0 L498.7 138.8 L499.7 139.7 L500.6 139.4 L501.5 140.3 L502.4 141.2 L503.4 141.0 L504.3 140.8 L505.2 140.5 L506.1 140.3 L507.0 140.0 L508.0 140.9 L508.9 141.8 L509.8 141.6 L510.7 141.3 L511.7 142.2 L512.6 142.0 L513.5 141.7 L514.4 141.5 L515.4 141.2 L516.3 141.0 L517.2 140.8 L518.1 140.5 L519.0 140.3 L520.0 140.1 L520.9 140.9 L521.8 140.7 L522.7 140.5 L523.7 140.2 L524.6 140.0 L525.5 139.8 L526.4 139.6 L527.4 139.3 L528.3 140.2 L529.2 139.9 L530.1 140.8 L531.1 140.6 L532.0 140.3 L532.9 141.2 L533.8 140.9 L534.7 140.7 L535.7 140.5 L536.6 140.3 L537.5 141.1 L538.4 140.9 L539.4 140.6 L540.3 140.4 L541.2 140.2 L542.1 140.0 L543.1 139.8 L544.0 139.5 L544.9 139.3 L545.8 139.1 L546.8 139.9 L547.7 139.7 L548.6 140.5 L549.5 140.3 L550.4 141.1 L551.4 141.9 L552.3 141.7 L553.2 141.5 L554.1 142.2 L555.1 142.0 L556.0 142.8 L556.9 143.6 L557.8 143.4 L558.8 143.2 L559.7 142.9 L560.6 142.7 L561.5 143.5 L562.4 144.3 L563.4 145.1 L564.3 144.8 L565.2 144.6 L566.1 144.4 L567.1 144.2 L568.0 144.0 L568.9 143.8 L569.8 143.5 L570.8 143.3 L571.7 143.1 L572.6 142.9 L573.5 142.7 L574.5 142.5 L575.4 142.3 L576.3 142.0 L577.2 141.8 L578.1 141.6 L579.1 141.4 L580.0 141.2 L580.9 141.0 L581.8 140.8 L582.8 140.6 L583.7 140.4 L584.6 140.2 L585.5 140.0 L586.5 140.7 L587.4 140.5 L588.3 140.3 L589.2 140.1 L590.1 139.9 L591.1 139.7 L592.0 140.5 L592.9 141.2 L593.8 141.0 L594.8 141.7 L595.7 141.5 L596.6 141.3 L597.5 141.1 L598.5 140.9 L599.4 140.7 L600.3 141.5 L601.2 142.2 L602.1 142.0 L603.1 141.8 L604.0 141.6 L604.9 141.4 L605.8 141.2 L606.8 141.0 L607.7 141.7 L608.6 141.5 L609.5 141.3 L610.5 141.1 L611.4 140.9 L612.3 140.7 L613.2 140.5 L614.2 140.3 L615.1 140.1 L616.0 139.9 L616.0 107.4 L615.1 107.6 L614.2 107.7 L613.2 107.9 L612.3 108.0 L611.4 108.1 L610.5 108.3 L609.5 108.4 L608.6 108.6 L607.7 108.7 L606.8 108.1 L605.8 108.2 L604.9 108.4 L604.0 108.5 L603.1 108.7 L602.1 108.8 L601.2 109.0 L600.3 108.3 L599.4 107.6 L598.5 107.8 L597.5 107.9 L596.6 108.1 L595.7 108.2 L594.8 108.4 L593.8 107.7 L592.9 107.9 L592.0 107.2 L591.1 106.5 L590.1 106.7 L589.2 106.8 L588.3 107.0 L587.4 107.1 L586.5 107.3 L585.5 106.6 L584.6 106.7 L583.7 106.9 L582.8 107.0 L581.8 107.2 L580.9 107.3 L580.0 107.5 L579.1 107.7 L578.1 107.8 L577.2 108.0 L576.3 108.1 L575.4 108.3 L574.5 108.4 L573.5 108.6 L572.6 108.8 L571.7 108.9 L570.8 109.1 L569.8 109.2 L568.9 109.4 L568.0 109.6 L567.1 109.7 L566.1 109.9 L565.2 110.1 L564.3 110.2 L563.4 110.4 L562.4 109.7 L561.5 109.0 L560.6 108.2 L559.7 108.4 L558.8 108.6 L557.8 108.7 L556.9 108.9 L556.0 108.2 L555.1 107.4 L554.1 107.6 L553.2 106.9 L552.3 107.0 L551.4 107.2 L550.4 106.5 L549.5 105.7 L548.6 105.9 L547.7 105.1 L546.8 105.3 L545.8 104.6 L544.9 104.7 L544.0 104.9 L543.1 105.0 L542.1 105.2 L541.2 105.4 L540.3 105.5 L539.4 105.7 L538.4 105.9 L537.5 106.0 L536.6 105.3 L535.7 105.4 L534.7 105.6 L533.8 105.8 L532.9 105.9 L532.0 105.2 L531.1 105.3 L530.1 105.5 L529.2 104.7 L528.3 104.9 L527.4 104.1 L526.4 104.3 L525.5 104.5 L524.6 104.6 L523.7 104.8 L522.7 105.0 L521.8 105.1 L520.9 105.3 L520.0 104.5 L519.0 104.7 L518.1 104.9 L517.2 105.0 L516.3 105.2 L515.4 105.4 L514.4 105.6 L513.5 105.7 L512.6 105.9 L511.7 106.1 L510.7 105.3 L509.8 105.5 L508.9 105.6 L508.0 104.8 L507.0 104.0 L506.1 104.2 L505.2 104.4 L504.3 104.5 L503.4 104.7 L502.4 104.9 L501.5 104.1 L500.6 103.3 L499.7 103.4 L498.7 102.6 L497.8 102.8 L496.9 103.0 L496.0 102.1 L495.0 102.3 L494.1 102.5 L493.2 101.6 L492.3 101.8 L491.4 102.0 L490.4 101.2 L489.5 101.3 L488.6 101.5 L487.7 100.7 L486.7 100.8 L485.8 101.0 L484.9 100.2 L484.0 100.3 L483.0 100.5 L482.1 100.7 L481.2 100.9 L480.3 100.0 L479.3 99.1 L478.4 99.3 L477.5 99.5 L476.6 99.7 L475.7 99.8 L474.7 99.0 L473.8 99.1 L472.9 99.3 L472.0 98.4 L471.0 98.6 L470.1 98.8 L469.2 99.0 L468.3 99.1 L467.3 99.3 L466.4 99.5 L465.5 99.7 L464.6 99.9 L463.6 99.0 L462.7 99.1 L461.8 99.3 L460.9 99.5 L460.0 99.7 L459.0 99.9 L458.1 100.1 L457.2 100.2 L456.3 100.4 L455.3 100.6 L454.4 99.7 L453.5 99.9 L452.6 100.1 L451.6 100.3 L450.7 100.5 L449.8 100.6 L448.9 100.8 L448.0 101.0 L447.0 101.2 L446.1 100.3 L445.2 100.5 L444.3 100.7 L443.3 99.7 L442.4 99.9 L441.5 100.1 L440.6 99.2 L439.6 99.4 L438.7 99.6 L437.8 99.8 L436.9 98.8 L436.0 99.0 L435.0 98.0 L434.1 98.2 L433.2 98.4 L432.3 98.6 L431.3 98.8 L430.4 99.0 L429.5 98.0 L428.6 98.2 L427.6 98.4 L426.7 98.6 L425.8 98.8 L424.9 99.0 L423.9 98.0 L423.0 98.2 L422.1 98.4 L421.2 98.6 L420.3 98.8 L419.3 97.8 L418.4 98.0 L417.5 98.2 L416.6 97.2 L415.6 96.2 L414.7 96.4 L413.8 96.6 L412.9 96.8 L411.9 97.0 L411.0 97.2 L410.1 97.4 L409.2 97.6 L408.2 97.8 L407.3 98.0 L406.4 98.2 L405.5 98.4 L404.6 98.6 L403.6 98.8 L402.7 99.1 L401.8 99.3 L400.9 99.5 L399.9 99.7 L399.0 99.9 L398.1 100.1 L397.2 100.4 L396.2 100.6 L395.3 100.8 L394.4 101.0 L393.5 100.0 L392.6 100.2 L391.6 100.4 L390.7 100.6 L389.8 99.5 L388.9 99.8 L387.9 100.0 L387.0 98.9 L386.1 99.1 L385.2 99.3 L384.2 99.6 L383.3 98.5 L382.4 97.3 L381.5 97.6 L380.5 97.8 L379.6 96.7 L378.7 96.9 L377.8 97.1 L376.9 97.3 L375.9 97.6 L375.0 96.4 L374.1 96.7 L373.2 96.9 L372.2 97.1 L371.3 97.3 L370.4 97.6 L369.5 97.8 L368.5 98.0 L367.6 98.3 L366.7 98.5 L365.8 97.3 L364.9 97.6 L363.9 97.8 L363.0 98.0 L362.1 98.3 L361.2 98.5 L360.2 97.3 L359.3 97.6 L358.4 97.8 L357.5 98.1 L356.5 98.3 L355.6 98.5 L354.7 98.8 L353.8 99.0 L352.9 99.3 L351.9 99.5 L351.0 99.8 L350.1 98.6 L349.2 98.8 L348.2 99.1 L347.3 99.3 L346.4 99.6 L345.5 99.8 L344.5 100.1 L343.6 100.4 L342.7 99.1 L341.8 97.8 L340.8 98.1 L339.9 98.4 L339.0 98.6 L338.1 97.3 L337.2 97.6 L336.2 97.9 L335.3 98.1 L334.4 98.4 L333.5 98.6 L332.5 98.9 L331.6 99.2 L330.7 99.5 L329.8 99.7 L328.8 100.0 L327.9 100.3 L327.0 100.6 L326.1 100.8 L325.1 101.1 L324.2 101.4 L323.3 100.1 L322.4 100.3 L321.5 100.6 L320.5 100.9 L319.6 101.2 L318.7 101.5 L317.8 100.1 L316.8 100.4 L315.9 100.7 L315.0 101.0 L314.1 101.3 L313.1 101.6 L312.2 101.9 L311.3 102.2 L310.4 102.5 L309.5 101.1 L308.5 99.7 L307.6 100.0 L306.7 100.3 L305.8 100.6 L304.8 99.1 L303.9 99.5 L303.0 98.0 L302.1 96.5 L301.1 95.1 L300.2 95.4 L299.3 95.7 L298.4 96.0 L297.4 94.5 L296.5 94.8 L295.6 95.0 L294.7 95.3 L293.8 93.8 L292.8 94.1 L291.9 94.4 L291.0 94.7 L290.1 95.0 L289.1 93.5 L288.2 91.9 L287.3 92.2 L286.4 90.7 L285.4 91.0 L284.5 89.4 L283.6 89.7 L282.7 90.0 L281.8 88.4 L280.8 88.6 L279.9 88.9 L279.0 87.3 L278.1 85.7 L277.1 86.0 L276.2 86.2 L275.3 86.5 L274.4 84.9 L273.4 85.2 L272.5 85.4 L271.6 85.7 L270.7 86.0 L269.8 86.3 L268.8 86.6 L267.9 86.9 L267.0 87.2 L266.1 87.5 L265.1 85.8 L264.2 86.1 L263.3 86.4 L262.4 86.7 L261.4 84.9 L260.5 85.2 L259.6 85.5 L258.7 85.8 L257.7 84.0 L256.8 84.3 L255.9 82.5 L255.0 82.8 L254.1 83.1 L253.1 83.4 L252.2 83.7 L251.3 84.0 L250.4 84.4 L249.4 84.7 L248.5 85.0 L247.6 85.3 L246.7 85.6 L245.7 86.0 L244.8 86.3 L243.9 86.6 L243.0 87.0 L242.1 87.3 L241.1 87.6 L240.2 88.0 L239.3 88.3 L238.4 88.7 L237.4 89.1 L236.5 87.1 L235.6 87.4 L234.7 87.8 L233.7 88.2 L232.8 88.5 L231.9 88.9 L231.0 89.3 L230.0 89.6 L229.1 90.0 L228.2 88.0 L227.3 88.3 L226.4 88.7 L225.4 89.1 L224.5 89.5 L223.6 89.9 L222.7 90.3 L221.7 90.7 L220.8 91.1 L219.9 88.9 L219.0 89.4 L218.0 87.2 L217.1 87.6 L216.2 88.0 L215.3 85.7 L214.4 86.1 L213.4 86.5 L212.5 86.9 L211.6 87.3 L210.7 87.8 L209.7 88.2 L208.8 88.6 L207.9 89.0 L207.0 86.7 L206.0 84.3 L205.1 84.8 L204.2 82.4 L203.3 82.8 L202.3 83.2 L201.4 83.6 L200.5 84.0 L199.6 84.4 L198.7 84.9 L197.7 85.3 L196.8 85.8 L195.9 83.2 L195.0 80.7 L194.0 81.1 L193.1 81.5 L192.2 82.0 L191.3 82.4 L190.3 82.9 L189.4 83.3 L188.5 83.8 L187.6 84.2 L186.7 84.7 L185.7 85.2 L184.8 82.5 L183.9 79.7 L183.0 80.2 L182.0 77.4 L181.1 77.8 L180.2 78.3 L179.3 78.7 L178.3 79.2 L177.4 79.6 L176.5 80.1 L175.6 80.6 L174.6 81.1 L173.7 81.6 L172.8 82.1 L171.9 82.6 L171.0 83.2 L170.0 83.7 L169.1 84.2 L168.2 84.8 L167.3 85.4 L166.3 85.9 L165.4 86.5 L164.5 87.1 L163.6 87.7 L162.6 88.4 L161.7 89.0 L160.8 89.6 L159.9 90.3 L158.9 91.0 L158.0 91.7 L157.1 92.3 L156.2 93.1 L155.3 93.8 L154.3 94.5 L153.4 95.3 L152.5 96.1 L151.6 96.8 L150.6 97.7 L149.7 98.5 L148.8 99.3 L147.9 100.2 L146.9 101.1 L146.0 97.3 L145.1 98.1 L144.2 99.0 L143.3 95.1 L142.3 96.0 L141.4 96.9 L140.5 97.8 L139.6 98.7 L138.6 94.6 L137.7 95.5 L136.8 96.5 L135.9 92.2 L134.9 87.9 L134.0 88.8 L133.1 89.7 L132.2 85.2 L131.2 86.1 L130.3 87.0 L129.4 87.9 L128.5 88.8 L127.6 89.8 L126.6 90.8 L125.7 85.9 L124.8 86.9 L123.9 81.9 L122.9 82.9 L122.0 83.8 L121.1 78.7 L120.2 79.6 L119.2 80.5 L118.3 75.1 L117.4 76.1 L116.5 77.0 L115.6 78.0 L114.6 79.0 L113.7 73.2 L112.8 74.2 L111.9 75.2 L110.9 76.2 L110.0 77.3 L109.1 71.0 L108.2 72.0 L107.2 73.1 L106.3 74.2 L105.4 75.3 L104.5 68.5 L103.5 69.6 L102.6 70.7 L101.7 71.9 L100.8 64.6 L99.9 65.6 L98.9 66.8 L98.0 68.0 L97.1 60.1 L96.2 61.2 L95.2 62.3 L94.3 63.5 L93.4 64.7 L92.5 56.1 L91.5 57.1 L90.6 58.3 L89.7 59.6 L88.8 60.9 L87.9 51.2 L86.9 52.3 L86.0 53.5 L85.1 43.3 L84.2 44.2 L83.2 45.2 L82.3 46.3 L81.4 47.5 L80.5 36.3 L79.5 37.0 L78.6 37.9 L77.7 38.8 L76.8 39.9 L75.8 41.1 L74.9 42.5 L74.0 44.1 L73.1 46.0 L72.2 30.3 L71.2 31.2 L70.3 32.2 L69.4 33.5 L68.5 35.1 L67.5 37.4 L66.6 40.5 Z" opacity="0.18" stroke="none"/>
+<path class="l1" d="M66.6 124.4 L67.5 107.3 L68.5 95.1 L69.4 86.0 L70.3 78.9 L71.2 73.2 L72.2 68.5 L73.1 107.3 L74.0 100.8 L74.9 95.1 L75.8 90.3 L76.8 86.0 L77.7 82.2 L78.6 78.9 L79.5 75.9 L80.5 73.2 L81.4 95.1 L82.3 91.8 L83.2 88.8 L84.2 86.0 L85.1 83.4 L86.0 100.8 L86.9 97.9 L87.9 95.1 L88.8 110.3 L89.7 107.3 L90.6 104.6 L91.5 102.0 L92.5 99.6 L93.4 112.4 L94.3 109.8 L95.2 107.3 L96.2 105.0 L97.1 102.8 L98.0 113.9 L98.9 111.6 L99.9 109.4 L100.8 107.3 L101.7 117.3 L102.6 115.1 L103.5 113.0 L104.5 111.0 L105.4 120.0 L106.3 118.0 L107.2 116.0 L108.2 114.2 L109.1 112.4 L110.0 120.5 L110.9 118.6 L111.9 116.8 L112.8 115.1 L113.7 113.4 L114.6 120.8 L115.6 119.1 L116.5 117.5 L117.4 115.9 L118.3 114.3 L119.2 121.1 L120.2 119.5 L121.1 118.0 L122.0 124.4 L122.9 122.8 L123.9 121.3 L124.8 127.4 L125.7 125.9 L126.6 131.7 L127.6 130.2 L128.5 128.7 L129.4 127.2 L130.3 125.8 L131.2 124.4 L132.2 123.1 L133.1 128.4 L134.0 127.0 L134.9 125.7 L135.9 130.8 L136.8 135.8 L137.7 134.4 L138.6 133.0 L139.6 137.8 L140.5 136.4 L141.4 135.1 L142.3 133.8 L143.3 132.5 L144.2 137.1 L145.1 135.8 L146.0 134.5 L146.9 138.9 L147.9 137.6 L148.8 136.4 L149.7 135.2 L150.6 134.0 L151.6 132.8 L152.5 131.7 L153.4 130.6 L154.3 129.5 L155.3 128.5 L156.2 127.4 L157.1 126.4 L158.0 125.4 L158.9 124.4 L159.9 123.4 L160.8 122.5 L161.7 121.6 L162.6 120.6 L163.6 119.7 L164.5 118.9 L165.4 118.0 L166.3 117.2 L167.3 116.3 L168.2 115.5 L169.1 114.7 L170.0 113.9 L171.0 113.1 L171.9 112.4 L172.8 111.6 L173.7 110.9 L174.6 110.1 L175.6 109.4 L176.5 108.7 L177.4 108.0 L178.3 107.3 L179.3 106.7 L180.2 106.0 L181.1 105.3 L182.0 104.7 L183.0 108.0 L183.9 107.3 L184.8 110.5 L185.7 113.7 L186.7 113.0 L187.6 112.4 L188.5 111.7 L189.4 111.0 L190.3 110.4 L191.3 109.8 L192.2 109.1 L193.1 108.5 L194.0 107.9 L195.0 107.3 L195.9 110.3 L196.8 113.2 L197.7 112.6 L198.7 111.9 L199.6 111.3 L200.5 110.7 L201.4 110.2 L202.3 109.6 L203.3 109.0 L204.2 108.4 L205.1 111.2 L206.0 110.6 L207.0 113.3 L207.9 116.0 L208.8 115.4 L209.7 114.8 L210.7 114.2 L211.6 113.7 L212.5 113.1 L213.4 112.5 L214.4 112.0 L215.3 111.4 L216.2 114.0 L217.1 113.4 L218.0 112.9 L219.0 115.4 L219.9 114.8 L220.8 117.3 L221.7 116.7 L222.7 116.2 L223.6 115.6 L224.5 115.1 L225.4 114.6 L226.4 114.0 L227.3 113.5 L228.2 113.0 L229.1 115.3 L230.0 114.8 L231.0 114.3 L231.9 113.8 L232.8 113.3 L233.7 112.8 L234.7 112.4 L235.6 111.9 L236.5 111.4 L237.4 113.6 L238.4 113.1 L239.3 112.7 L240.2 112.2 L241.1 111.7 L242.1 111.3 L243.0 110.8 L243.9 110.4 L244.8 109.9 L245.7 109.5 L246.7 109.0 L247.6 108.6 L248.5 108.2 L249.4 107.8 L250.4 107.3 L251.3 106.9 L252.2 106.5 L253.1 106.1 L254.1 105.7 L255.0 105.3 L255.9 104.9 L256.8 106.9 L257.7 106.5 L258.7 108.5 L259.6 108.1 L260.5 107.7 L261.4 107.3 L262.4 109.3 L263.3 108.9 L264.2 108.5 L265.1 108.1 L266.1 110.0 L267.0 109.6 L267.9 109.2 L268.8 108.9 L269.8 108.5 L270.7 108.1 L271.6 107.7 L272.5 107.3 L273.4 107.0 L274.4 106.6 L275.3 108.4 L276.2 108.1 L277.1 107.7 L278.1 107.3 L279.0 109.1 L279.9 110.9 L280.8 110.6 L281.8 110.2 L282.7 112.0 L283.6 111.6 L284.5 111.2 L285.4 113.0 L286.4 112.6 L287.3 114.3 L288.2 114.0 L289.1 115.7 L290.1 117.4 L291.0 117.0 L291.9 116.6 L292.8 116.2 L293.8 115.8 L294.7 117.5 L295.6 117.1 L296.5 116.7 L297.4 116.4 L298.4 118.0 L299.3 117.6 L300.2 117.3 L301.1 116.9 L302.1 118.5 L303.0 120.1 L303.9 121.7 L304.8 121.3 L305.8 122.8 L306.7 122.5 L307.6 122.1 L308.5 121.7 L309.5 123.3 L310.4 124.8 L311.3 124.4 L312.2 124.0 L313.1 123.6 L314.1 123.3 L315.0 122.9 L315.9 122.5 L316.8 122.2 L317.8 121.8 L318.7 123.3 L319.6 122.9 L320.5 122.6 L321.5 122.2 L322.4 121.9 L323.3 121.5 L324.2 123.0 L325.1 122.6 L326.1 122.3 L327.0 121.9 L327.9 121.6 L328.8 121.2 L329.8 120.9 L330.7 120.5 L331.6 120.2 L332.5 119.9 L333.5 119.5 L334.4 119.2 L335.3 118.9 L336.2 118.5 L337.2 118.2 L338.1 117.9 L339.0 119.3 L339.9 119.0 L340.8 118.6 L341.8 118.3 L342.7 119.7 L343.6 121.0 L344.5 120.7 L345.5 120.4 L346.4 120.1 L347.3 119.8 L348.2 119.4 L349.2 119.1 L350.1 118.8 L351.0 120.1 L351.9 119.8 L352.9 119.5 L353.8 119.2 L354.7 118.9 L355.6 118.6 L356.5 118.3 L357.5 118.0 L358.4 117.7 L359.3 117.4 L360.2 117.1 L361.2 118.4 L362.1 118.1 L363.0 117.8 L363.9 117.5 L364.9 117.2 L365.8 116.9 L366.7 118.2 L367.6 117.9 L368.5 117.6 L369.5 117.3 L370.4 117.0 L371.3 116.8 L372.2 116.5 L373.2 116.2 L374.1 115.9 L375.0 115.6 L375.9 116.9 L376.9 116.6 L377.8 116.3 L378.7 116.0 L379.6 115.8 L380.5 117.0 L381.5 116.7 L382.4 116.4 L383.3 117.6 L384.2 118.8 L385.2 118.5 L386.1 118.3 L387.0 118.0 L387.9 119.2 L388.9 118.9 L389.8 118.6 L390.7 119.8 L391.6 119.5 L392.6 119.3 L393.5 119.0 L394.4 120.1 L395.3 119.9 L396.2 119.6 L397.2 119.3 L398.1 119.1 L399.0 118.8 L399.9 118.5 L400.9 118.3 L401.8 118.0 L402.7 117.7 L403.6 117.5 L404.6 117.2 L405.5 117.0 L406.4 116.7 L407.3 116.5 L408.2 116.2 L409.2 116.0 L410.1 115.7 L411.0 115.5 L411.9 115.2 L412.9 115.0 L413.8 114.7 L414.7 114.5 L415.6 114.2 L416.6 115.3 L417.5 116.4 L418.4 116.2 L419.3 115.9 L420.3 117.0 L421.2 116.8 L422.1 116.5 L423.0 116.3 L423.9 116.0 L424.9 117.1 L425.8 116.9 L426.7 116.6 L427.6 116.4 L428.6 116.1 L429.5 115.9 L430.4 117.0 L431.3 116.7 L432.3 116.5 L433.2 116.2 L434.1 116.0 L435.0 115.8 L436.0 116.8 L436.9 116.6 L437.8 117.6 L438.7 117.4 L439.6 117.1 L440.6 116.9 L441.5 117.9 L442.4 117.7 L443.3 117.5 L444.3 118.5 L445.2 118.2 L446.1 118.0 L447.0 119.0 L448.0 118.8 L448.9 118.5 L449.8 118.3 L450.7 118.1 L451.6 117.8 L452.6 117.6 L453.5 117.4 L454.4 117.2 L455.3 118.2 L456.3 117.9 L457.2 117.7 L458.1 117.5 L459.0 117.3 L460.0 117.0 L460.9 116.8 L461.8 116.6 L462.7 116.4 L463.6 116.2 L464.6 117.1 L465.5 116.9 L466.4 116.7 L467.3 116.5 L468.3 116.3 L469.2 116.0 L470.1 115.8 L471.0 115.6 L472.0 115.4 L472.9 116.3 L473.8 116.1 L474.7 115.9 L475.7 116.9 L476.6 116.6 L477.5 116.4 L478.4 116.2 L479.3 116.0 L480.3 116.9 L481.2 117.9 L482.1 117.6 L483.0 117.4 L484.0 117.2 L484.9 117.0 L485.8 117.9 L486.7 117.7 L487.7 117.5 L488.6 118.4 L489.5 118.2 L490.4 118.0 L491.4 118.9 L492.3 118.7 L493.2 118.5 L494.1 119.4 L495.0 119.2 L496.0 119.0 L496.9 119.8 L497.8 119.6 L498.7 119.4 L499.7 120.3 L500.6 120.1 L501.5 121.0 L502.4 121.8 L503.4 121.6 L504.3 121.4 L505.2 121.2 L506.1 121.0 L507.0 120.8 L508.0 121.6 L508.9 122.5 L509.8 122.3 L510.7 122.1 L511.7 122.9 L512.6 122.7 L513.5 122.5 L514.4 122.3 L515.4 122.1 L516.3 121.9 L517.2 121.7 L518.1 121.5 L519.0 121.3 L520.0 121.1 L520.9 121.9 L521.8 121.7 L522.7 121.5 L523.7 121.3 L524.6 121.1 L525.5 120.9 L526.4 120.7 L527.4 120.5 L528.3 121.4 L529.2 121.2 L530.1 122.0 L531.1 121.8 L532.0 121.6 L532.9 122.4 L533.8 122.2 L534.7 122.0 L535.7 121.8 L536.6 121.6 L537.5 122.4 L538.4 122.2 L539.4 122.0 L540.3 121.8 L541.2 121.6 L542.1 121.4 L543.1 121.3 L544.0 121.1 L544.9 120.9 L545.8 120.7 L546.8 121.5 L547.7 121.3 L548.6 122.1 L549.5 121.9 L550.4 122.7 L551.4 123.4 L552.3 123.2 L553.2 123.1 L554.1 123.8 L555.1 123.6 L556.0 124.4 L556.9 125.2 L557.8 125.0 L558.8 124.8 L559.7 124.6 L560.6 124.4 L561.5 125.2 L562.4 125.9 L563.4 126.7 L564.3 126.5 L565.2 126.3 L566.1 126.1 L567.1 125.9 L568.0 125.7 L568.9 125.5 L569.8 125.3 L570.8 125.1 L571.7 125.0 L572.6 124.8 L573.5 124.6 L574.5 124.4 L575.4 124.2 L576.3 124.0 L577.2 123.8 L578.1 123.7 L579.1 123.5 L580.0 123.3 L580.9 123.1 L581.8 122.9 L582.8 122.8 L583.7 122.6 L584.6 122.4 L585.5 122.2 L586.5 123.0 L587.4 122.8 L588.3 122.6 L589.2 122.4 L590.1 122.3 L591.1 122.1 L592.0 122.8 L592.9 123.5 L593.8 123.3 L594.8 124.0 L595.7 123.9 L596.6 123.7 L597.5 123.5 L598.5 123.3 L599.4 123.2 L600.3 123.9 L601.2 124.6 L602.1 124.4 L603.1 124.2 L604.0 124.1 L604.9 123.9 L605.8 123.7 L606.8 123.5 L607.7 124.2 L608.6 124.1 L609.5 123.9 L610.5 123.7 L611.4 123.5 L612.3 123.4 L613.2 123.2 L614.2 123.0 L615.1 122.9 L616.0 122.7" stroke-width="1.8"/>
+<path class="l4" d="M62.0 122.7 L616.0 122.7" stroke-width="1" stroke-dasharray="4 4"/>
+<text class="muted" x="616.0" y="114.7" text-anchor="end">final estimate 80.3%</text>
+<line class="l1" x1="76" x2="94" y1="240" y2="240" stroke-width="2"/>
+<text x="102" y="244">running estimate k/n</text>
+<circle class="f1" cx="85" cy="258" r="4"/>
+<text x="102" y="262">95% Wilson interval (shaded)</text>
+</svg>
+<!-- /figure:running -->
+    </div>
+    <figcaption><b>Figure 8.1.</b> The running win rate \(k/n\) of the Ironclad network as seeds accumulate, with its 95% Wilson interval shaded. Notice how fast the band narrows at first and how slowly after a few hundred seeds: the width falls as \(1/\sqrt{n}\). The early wiggles are not trends, they are the band.</figcaption>
+  </figure>
+
+  <h2 id="s3">3. Paired seeds</h2>
+  <p>Now compare two policies, network 1 and network 2. The obvious design gives each its own \(n\) seeds. The difference of two independent binomial estimates then has variance</p>
+  <div class="eq">\begin{equation} \operatorname{Var}(\hat p_1 - \hat p_2) = \frac{p_1(1-p_1) + p_2(1-p_2)}{n}. \label{eq:unpaired} \end{equation}</div>
+  <p>Here \(p_1\) and \(p_2\) are the two true win rates. With both near 0.8, this is \(0.32/n\), and its square root at \(n = 1{,}000\) is 1.8 points. A two-point gain would sit inside one standard error.</p>
+  <p>A game is different from a patient. We cannot give the same patient two treatments in the same instant, so crossover trials give them in sequence and model the carry-over. We can give the same seed to two agents with no carry-over at all: seed 170,000,000 produces the same map, the same opening offer and the same first fights for whichever network plays it. Running two simulated systems on the same random inputs so that their difference is less noisy is called <dfn>common random numbers</dfn> in the simulation literature <span class="cite">[<a href="#ref-glasserman">4</a>]</span>. For agents it means <dfn>paired seeds</dfn>: both networks play every seed, and the unit of analysis is the seed.</p>
+
+  <figure id="fig-design">
+    <div class="scroll">
+      <svg viewBox="0 0 640 300" role="img" aria-label="Each seed is played by both networks; the pair of outcomes falls in one of four cells; only the two discordant cells reach McNemar's test.">
+        <defs><marker id="arr8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+        <g color="var(--fg)">
+          <rect class="box" x="10" y="115" width="110" height="60" rx="3"/>
+          <text x="65" y="140" text-anchor="middle">seed i</text>
+          <text class="muted" x="65" y="158" text-anchor="middle">map, rewards, rolls</text>
+          <rect class="box" x="170" y="50" width="120" height="50" rx="3"/><text x="230" y="80" text-anchor="middle">network 1</text>
+          <rect class="box" x="170" y="190" width="120" height="50" rx="3"/><text x="230" y="220" text-anchor="middle">network 2</text>
+          <line class="ink" x1="120" y1="135" x2="170" y2="78" marker-end="url(#arr8)"/>
+          <line class="ink" x1="120" y1="155" x2="170" y2="212" marker-end="url(#arr8)"/>
+          <text class="muted" x="112" y="98" text-anchor="middle">same game</text>
+          <line class="ink" x1="290" y1="75" x2="355" y2="125" marker-end="url(#arr8)"/>
+          <line class="ink" x1="290" y1="215" x2="355" y2="170" marker-end="url(#arr8)"/>
+          <text class="muted" x="330" y="88" text-anchor="middle">X<tspan baseline-shift="sub" font-size="9">i</tspan></text>
+          <text class="muted" x="312" y="208" text-anchor="middle">Y<tspan baseline-shift="sub" font-size="9">i</tspan></text>
+          <rect class="box" x="360" y="100" width="70" height="45" rx="2"/><text x="395" y="120" text-anchor="middle">a</text><text class="muted" x="395" y="136" text-anchor="middle">both win</text>
+          <rect x="432" y="100" width="70" height="45" rx="2" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="467" y="120" text-anchor="middle">b</text><text class="muted" x="467" y="136" text-anchor="middle">1 only</text>
+          <rect x="360" y="147" width="70" height="45" rx="2" fill="var(--accent-soft)" stroke="var(--s1)"/><text x="395" y="167" text-anchor="middle">c</text><text class="muted" x="395" y="183" text-anchor="middle">2 only</text>
+          <rect class="box" x="432" y="147" width="70" height="45" rx="2"/><text x="467" y="167" text-anchor="middle">d</text><text class="muted" x="467" y="183" text-anchor="middle">both lose</text>
+          <text class="muted" x="431" y="90" text-anchor="middle">2×2 table over n seeds</text>
+          <line class="l1" x1="502" y1="146" x2="555" y2="146" stroke-width="2" marker-end="url(#arr8)" style="color: var(--s1)"/>
+          <text x="590" y="132" text-anchor="middle">b, c</text>
+          <text class="muted" x="590" y="150" text-anchor="middle">McNemar,</text>
+          <text class="muted" x="590" y="166" text-anchor="middle">Δ̂ = (b − c)/n</text>
+          <text class="muted" x="431" y="232" text-anchor="middle">a and d: the seed was easy or hard;</text>
+          <text class="muted" x="431" y="248" text-anchor="middle">they cancel out of the difference</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Figure 8.2.</b> The paired design. Every seed is played by both networks, so each seed lands in one of four cells. The difference in win rate depends only on the shaded discordant cells b and c; seeds in a and d carry information about the seed, not about which network is better.</figcaption>
+  </figure>
+
+  <h3>The variance, written out</h3>
+  <p>Let \(X_i\) and \(Y_i\) be the outcomes of networks 1 and 2 on seed \(i\), and \(D_i = X_i - Y_i \in \{-1, 0, 1\}\). The paired estimate of the difference is</p>
+  <div class="eq">\begin{equation} \hat\Delta = \frac{1}{n} \sum_{i=1}^{n} D_i = \hat p_1 - \hat p_2 = \frac{b - c}{n}, \label{eq:delta} \end{equation}</div>
+  <p>where \(b\) counts seeds only network 1 wins and \(c\) seeds only network 2 wins. The point estimate is the same number the unpaired design would report. What changes is its variance. Because the \(D_i\) are independent across seeds,</p>
+  <div class="eq">\begin{equation} \operatorname{Var}(\hat\Delta) = \frac{\operatorname{Var}(X) + \operatorname{Var}(Y) - 2\operatorname{Cov}(X, Y)}{n}. \label{eq:pairedvar} \end{equation}</div>
+  <p>The covariance term is the whole gain. A seed that is easy for one network is usually easy for the other, so \(\operatorname{Cov}(X, Y) > 0\) and pairing subtracts it. Write the cell probabilities as \(\pi_a, \pi_b, \pi_c, \pi_d\). Then \(D = 1\) with probability \(\pi_b\), \(D = -1\) with probability \(\pi_c\), and</p>
+  <div class="eq">\begin{equation} \operatorname{Var}(D) = \mathbb{E}[D^2] - \mathbb{E}[D]^2 = (\pi_b + \pi_c) - (\pi_b - \pi_c)^2 = \delta_d - \Delta^2. \label{eq:vard} \end{equation}</div>
+  <div class="definition"><span class="label">Definition 8.2 · Discordance</span>
+    <p>The <dfn>discordance</dfn> \(\delta_d = \pi_b + \pi_c\) is the probability that the two networks disagree on a seed's outcome: one wins, the other loses. Its estimate is \((b + c)/n\). Seeds in cells b and c are the <dfn>discordant pairs</dfn>.</p>
+  </div>
+  <p>Equation \eqref{eq:vard} says the precision of a paired comparison is set by how often the networks disagree, not by how often they win. (The campaign's documents call this quantity \(d\); we write \(\delta_d\) to keep \(d\) free for the "both lose" cell.) Two networks that differ in a handful of decisions per run will agree on most seeds and give a small \(\delta_d\), and a small \(\delta_d\) means a small variance. If the two outcomes were independent, \(\delta_d\) would be \(p_1(1-p_2) + p_2(1-p_1)\), and Equation \eqref{eq:vard} would reduce to Equation \eqref{eq:unpaired} up to the \(\Delta^2\) term. Pairing helps exactly when the networks disagree less often than independent coins would.</p>
+
+  <h3>The same idea as a control variate</h3>
+  <p>CUPED reduces the variance of a treatment metric \(Y\) by subtracting \(\theta (X - \mathbb{E}X)\), where \(X\) is the same user's pre-experiment metric and \(\theta = \operatorname{Cov}(X,Y)/\operatorname{Var}(X)\) <span class="cite">[<a href="#ref-cuped">5</a>]</span>. Pairing is a control variate with \(\theta = 1\): network 2's result on the same seed is the covariate, and its mean is already the other arm. When the two networks have similar variances \(\sigma^2\) and outcome correlation \(\rho\), the ratio of paired to unpaired variance is</p>
+  <div class="eq">\begin{equation} \frac{\operatorname{Var}_{\text{paired}}(\hat\Delta)}{\operatorname{Var}_{\text{unpaired}}(\hat\Delta)} = 1 - \frac{2\rho\,\sigma_1\sigma_2}{\sigma_1^2 + \sigma_2^2} \approx 1 - \rho, \label{eq:ratio} \end{equation}</div>
+  <p>with \(\sigma_1^2 = p_1(1-p_1)\) and \(\sigma_2^2 = p_2(1-p_2)\). For binary outcomes \(\rho\) is the phi coefficient of the 2×2 table. Read it as a design effect in reverse: \(n\) paired seeds are worth about \(n/(1-\rho)\) unpaired seeds per arm. At \(\rho = 0.5\), pairing doubles the effective sample, and so halves the games needed for a given precision. Both designs play \(2n\) runs; pairing only decides which seeds they share.</p>
+
+  <figure id="fig-se">
+    <div class="scroll">
+<!-- figure:se -->
+<svg viewBox="0 0 640 330" role="img" aria-label="Standard error of the difference against discordance">
+<line class="grid" x1="62" x2="616" y1="278.0" y2="278.0"/>
+<text class="muted" x="54" y="282.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="616" y1="238.0" y2="238.0"/>
+<text class="muted" x="54" y="242.0" text-anchor="end">0.5</text>
+<line class="grid" x1="62" x2="616" y1="198.0" y2="198.0"/>
+<text class="muted" x="54" y="202.0" text-anchor="end">1</text>
+<line class="grid" x1="62" x2="616" y1="158.0" y2="158.0"/>
+<text class="muted" x="54" y="162.0" text-anchor="end">1.5</text>
+<line class="grid" x1="62" x2="616" y1="118.0" y2="118.0"/>
+<text class="muted" x="54" y="122.0" text-anchor="end">2</text>
+<line class="grid" x1="62" x2="616" y1="78.0" y2="78.0"/>
+<text class="muted" x="54" y="82.0" text-anchor="end">2.5</text>
+<line class="grid" x1="62" x2="616" y1="38.0" y2="38.0"/>
+<text class="muted" x="54" y="42.0" text-anchor="end">3</text>
+<text class="muted" x="62.0" y="296" text-anchor="middle">0.0</text>
+<text class="muted" x="172.8" y="296" text-anchor="middle">0.1</text>
+<text class="muted" x="283.6" y="296" text-anchor="middle">0.2</text>
+<text class="muted" x="394.4" y="296" text-anchor="middle">0.3</text>
+<text class="muted" x="505.2" y="296" text-anchor="middle">0.4</text>
+<text class="muted" x="616.0" y="296" text-anchor="middle">0.5</text>
+<line class="ink" x1="62" x2="616" y1="278" y2="278"/>
+<line class="ink" x1="62" x2="62" y1="22" y2="278"/>
+<text x="339" y="320" text-anchor="middle">discordance d (share of seeds where the networks disagree)</text>
+<text x="14" y="150" text-anchor="middle" transform="rotate(-90 14 150)">SE of the difference (pp)</text>
+<path class="l1" d="M62.7 274.7 L65.5 261.3 L68.3 254.6 L71.1 249.5 L73.8 245.1 L76.6 241.3 L79.4 237.8 L82.2 234.6 L85.0 231.6 L87.7 228.8 L90.5 226.2 L93.3 223.6 L96.1 221.2 L98.9 218.9 L101.6 216.7 L104.4 214.6 L107.2 212.5 L110.0 210.5 L112.8 208.5 L115.5 206.6 L118.3 204.8 L121.1 203.0 L123.9 201.2 L126.7 199.5 L129.4 197.8 L132.2 196.1 L135.0 194.5 L137.8 192.9 L140.6 191.4 L143.3 189.8 L146.1 188.3 L148.9 186.9 L151.7 185.4 L154.5 184.0 L157.2 182.5 L160.0 181.2 L162.8 179.8 L165.6 178.4 L168.4 177.1 L171.1 175.8 L173.9 174.5 L176.7 173.2 L179.5 171.9 L182.3 170.7 L185.0 169.4 L187.8 168.2 L190.6 167.0 L193.4 165.8 L196.2 164.6 L199.0 163.4 L201.7 162.3 L204.5 161.1 L207.3 160.0 L210.1 158.9 L212.9 157.7 L215.6 156.6 L218.4 155.5 L221.2 154.4 L224.0 153.4 L226.8 152.3 L229.5 151.2 L232.3 150.2 L235.1 149.1 L237.9 148.1 L240.7 147.1 L243.4 146.1 L246.2 145.0 L249.0 144.0 L251.8 143.0 L254.6 142.1 L257.3 141.1 L260.1 140.1 L262.9 139.1 L265.7 138.2 L268.5 137.2 L271.2 136.3 L274.0 135.3 L276.8 134.4 L279.6 133.5 L282.4 132.5 L285.1 131.6 L287.9 130.7 L290.7 129.8 L293.5 128.9 L296.3 128.0 L299.0 127.1 L301.8 126.2 L304.6 125.4 L307.4 124.5 L310.2 123.6 L312.9 122.8 L315.7 121.9 L318.5 121.0 L321.3 120.2 L324.1 119.3 L326.8 118.5 L329.6 117.7 L332.4 116.8 L335.2 116.0 L338.0 115.2 L340.7 114.4 L343.5 113.5 L346.3 112.7 L349.1 111.9 L351.9 111.1 L354.6 110.3 L357.4 109.5 L360.2 108.7 L363.0 107.9 L365.8 107.2 L368.6 106.4 L371.3 105.6 L374.1 104.8 L376.9 104.1 L379.7 103.3 L382.5 102.5 L385.2 101.8 L388.0 101.0 L390.8 100.3 L393.6 99.5 L396.4 98.8 L399.1 98.0 L401.9 97.3 L404.7 96.5 L407.5 95.8 L410.3 95.1 L413.0 94.3 L415.8 93.6 L418.6 92.9 L421.4 92.2 L424.2 91.4 L426.9 90.7 L429.7 90.0 L432.5 89.3 L435.3 88.6 L438.1 87.9 L440.8 87.2 L443.6 86.5 L446.4 85.8 L449.2 85.1 L452.0 84.4 L454.7 83.7 L457.5 83.0 L460.3 82.3 L463.1 81.6 L465.9 81.0 L468.6 80.3 L471.4 79.6 L474.2 78.9 L477.0 78.3 L479.8 77.6 L482.5 76.9 L485.3 76.3 L488.1 75.6 L490.9 74.9 L493.7 74.3 L496.4 73.6 L499.2 73.0 L502.0 72.3 L504.8 71.7 L507.6 71.0 L510.3 70.4 L513.1 69.7 L515.9 69.1 L518.7 68.5 L521.5 67.8 L524.2 67.2 L527.0 66.6 L529.8 65.9 L532.6 65.3 L535.4 64.7 L538.2 64.0 L540.9 63.4 L543.7 62.8 L546.5 62.2 L549.3 61.5 L552.1 60.9 L554.8 60.3 L557.6 59.7 L560.4 59.1 L563.2 58.5 L566.0 57.9 L568.7 57.3 L571.5 56.7 L574.3 56.1 L577.1 55.5 L579.9 54.9 L582.6 54.3 L585.4 53.7 L588.2 53.1 L591.0 52.5 L593.8 51.9 L596.5 51.3 L599.3 50.7 L602.1 50.1 L604.9 49.5 L607.7 48.9 L610.4 48.3 L613.2 47.8 L616.0 47.2" stroke-width="2"/>
+<path class="l2" d="M62.0 98.7 L616.0 98.7" stroke-width="2" stroke-dasharray="6 4"/>
+<path class="l4" d="M396.4 278.0 L396.4 22.0" stroke-width="1" stroke-dasharray="2 4"/>
+<text class="muted" x="401.4" y="266.0" text-anchor="start">independent outcomes</text>
+<circle class="f1" cx="324.2" cy="119.3" r="5"/>
+<text x="316.2" y="111.3" text-anchor="end">measured: d = 0.237</text>
+<line class="l1" x1="76" x2="94" y1="30" y2="30" stroke-width="2"/>
+<text x="102" y="34">paired, n = 600 seeds</text>
+<line class="l2" x1="76" x2="94" y1="48" y2="48" stroke-width="2"/>
+<text x="102" y="52">unpaired, n = 600 per network</text>
+</svg>
+<!-- /figure:se -->
+    </div>
+    <figcaption><b>Figure 8.3.</b> Standard error of the estimated difference at this chapter's sample size, as a function of discordance. The solid curve is the paired design, Equation \eqref{eq:vard}; the dashed line is the unpaired design with the same seeds per network, Equation \eqref{eq:unpaired}. They cross near the dotted line, where outcomes are independent. The dot is the measured discordance of the two published networks. Everything left of the crossing is what pairing buys.</figcaption>
+  </figure>
+
+  <details class="predict"><summary>Pause and predict: on 600 shared seeds, how many seeds do the Ironclad network and the all-character network disagree on?</summary>
+    <p><span data-m="discordant" data-f="int">142</span> seeds: \(b =\) <span data-m="table.b" data-f="int">64</span> won only by the Ironclad network and \(c =\) <span data-m="table.c" data-f="int">78</span> won only by the all-character network, so \(\hat\delta_d =\) <span data-m="discordance" data-f="f3">0.237</span>. Independent outcomes at these win rates would disagree on a share of <span data-m="independence_discordance" data-f="f3">0.302</span>. The phi coefficient is <span data-m="phi" data-f="f2">0.22</span>, and the paired variance is <span data-m="variance_ratio" data-f="f2">0.78</span> times the unpaired one. Section 10 says what that means.</p>
+  </details>
+
+  <h2 id="s4">4. McNemar's test and the paired interval</h2>
+  <p>A test of "the two networks are equally good" needs a null distribution for \(b\) and \(c\). Condition on the number of discordant seeds, \(m = b + c\). Under the null \(\pi_b = \pi_c\), each discordant seed is equally likely to fall on either side, so</p>
+  <div class="eq">\begin{equation} b \mid m \;\sim\; \operatorname{Binomial}\!\left(m, \tfrac{1}{2}\right) \quad \text{under } H_0 : \pi_b = \pi_c. \label{eq:mcnull} \end{equation}</div>
+  <p>The concordant seeds \(a\) and \(d\) do not appear. This is the formal version of Figure 8.2: given that the networks disagreed \(m\) times, the only evidence is how those \(m\) disagreements split. The exact two-sided p-value doubles the smaller tail:</p>
+  <div class="eq">\begin{equation} p_{\text{exact}} = \min\!\left(1,\; 2 \sum_{j=0}^{\min(b,c)} \binom{m}{j} 2^{-m}\right). \label{eq:mcexact} \end{equation}</div>
+  <p>McNemar (1947) derived the large-sample version for correlated proportions in psychology surveys <span class="cite">[<a href="#ref-mcnemar">6</a>]</span>. Its statistic, approximately \(\chi^2_1\) under the null, is</p>
+  <div class="eq">\begin{equation} \chi^2 = \frac{(b - c)^2}{b + c}. \label{eq:mcchi} \end{equation}</div>
+  <p>Trace one case. Suppose 44 seeds are discordant and they split 30 to 14. The chi-square statistic is \(16^2/44 = 5.8\), and the exact p-value is twice the probability that 44 fair coins show 14 or fewer heads, about 0.023. Now suppose 4,000 seeds were played and the same 30 to 14 split occurred: the p-value is unchanged. The 3,956 concordant seeds add nothing to the test. They do matter to the effect size, since \(\hat\Delta = 16/n\) is 36 points at \(n = 44\) and 0.4 points at \(n = 4{,}000\).</p>
+
+  <figure class="listing">
+    <pre><code>def mcnemar_exact(b: int, c: int) -> float:
+    """Exact two-sided McNemar p: 2 * P(X <= min(b, c)), X ~ Binom(b + c, 1/2), capped at 1."""
+    m = b + c
+    if m == 0:
+        return 1.0
+    tail = sum(math.comb(m, i) for i in range(min(b, c) + 1)) / 2**m
+    return min(1.0, 2 * tail)</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/stats.py, lines 44-50: Equation \eqref{eq:mcexact} line for line.</figcaption>
+  </figure>
+
+  <h3>An interval for the paired difference</h3>
+  <p>A p-value says whether zero is plausible; an interval says which differences are. The Wald interval \(\hat\Delta \pm z\sqrt{(\hat\delta_d - \hat\Delta^2)/n}\) has the same faults here as for one proportion. Newcombe (1998) compared ten methods and recommended a hybrid that builds the paired interval from the two Wilson intervals of the margins <span class="cite">[<a href="#ref-newcombe">7</a>]</span>. With \((l_1, u_1)\) and \((l_2, u_2)\) the Wilson intervals of \(\hat p_1\) and \(\hat p_2\), and \(\hat\phi\) the phi coefficient of the table, his method 10 is</p>
+  <div class="eq">\begin{equation} \begin{aligned} L &= \hat\Delta - \sqrt{(\hat p_1 - l_1)^2 - 2\hat\phi\,(\hat p_1 - l_1)(u_2 - \hat p_2) + (u_2 - \hat p_2)^2}, \\ U &= \hat\Delta + \sqrt{(u_1 - \hat p_1)^2 - 2\hat\phi\,(u_1 - \hat p_1)(\hat p_2 - l_2) + (\hat p_2 - l_2)^2}. \end{aligned} \label{eq:newcombe} \end{equation}</div>
+  <p>Read it as Equation \eqref{eq:pairedvar} applied to interval half-widths: each side combines the relevant half-widths of the two margins like two standard errors, and the \(-2\hat\phi\) term subtracts the covariance that pairing removes. With \(\hat\phi = 0\) it is Newcombe's interval for independent samples. The project uses this interval, and cross-checks it with a bootstrap that resamples whole seeds, never one network's result alone.</p>
+
+  <h2 id="s5">5. Power, detectable effect and cost</h2>
+  <p>Before a comparison is run, the question is the reverse: given \(n\) seeds, what is the smallest true difference we would reliably detect? <dfn>Power</dfn> is the probability that the test rejects the null when the true difference is \(\Delta\). The <dfn>minimum detectable effect at 80% power</dfn>, MDE80, is the \(\Delta\) at which power is 0.8.</p>
+  <p>For large \(m\), \(\hat\Delta\) is approximately normal. Under the null its variance is \(\delta_d/n\) (Equation \eqref{eq:vard} with \(\Delta = 0\)); under the alternative it is \((\delta_d - \Delta^2)/n\). A two-sided test at level \(\alpha\) rejects when \(|\hat\Delta| \gt z_{1-\alpha/2}\sqrt{\delta_d/n}\). Setting the probability of that event to \(1 - \beta\) at a true \(\Delta\) and solving for \(n\) gives</p>
+  <div class="eq">\begin{equation} n = \frac{\left( z_{1-\alpha/2}\sqrt{\delta_d} + z_{1-\beta}\sqrt{\delta_d - \Delta^2} \right)^2}{\Delta^2}. \label{eq:connor} \end{equation}</div>
+  <p>This is the paired-proportions sample size usually attributed to Connor (1987) <span class="cite">[<a href="#ref-connor">8</a>]</span>; I checked its form against secondary sources that implement it, not against the paper. When \(\Delta^2 \ll \delta_d\), which holds for differences of a few points against discordances of tenths, drop \(\Delta^2\) and invert:</p>
+  <div class="eq">\begin{equation} \text{MDE}_{80} = \left(z_{1-\alpha/2} + z_{0.80}\right)\sqrt{\frac{\delta_d}{n}} \approx 2.80\sqrt{\frac{\delta_d}{n}} \quad (\alpha = 0.05). \label{eq:mde} \end{equation}</div>
+  <p>Three things follow. The MDE scales with \(\sqrt{\delta_d}\), so pairing two similar networks is cheap and pairing two very different ones is not. It scales with \(1/\sqrt n\), so halving the MDE costs four times the seeds. And the unknown is \(\delta_d\), not \(p\): an experiment plan has to guess how often the candidate will disagree with the baseline. At a stricter level \(\alpha = 0.01\), the multiplier becomes \(2.576 + 0.842 = 3.42\), which costs half again as many seeds for the same MDE.</p>
+  <p>Seeds turn into hours through the length of a run. If a run takes \(L\) decisions and the machine plays \(R\) decisions per second, a paired comparison of two networks costs</p>
+  <div class="eq">\begin{equation} \text{hours} = \frac{2\, n\, L}{R \cdot 3600}. \label{eq:hours} \end{equation}</div>
+  <p>Equations \eqref{eq:mde} and \eqref{eq:hours} together turn a hoped-for effect into a bill. Suppose a change should gain 2 points and you guess \(\delta_d = 0.2\). Equation \eqref{eq:mde} solved for \(n\) gives \(n = (2.80/0.02)^2 \times 0.2 = 3{,}920\) paired seeds. At \(L = 700\) and \(R = 800\), that is 1.9 hours of play. If the guess is \(\delta_d = 0.3\), it is 5,880 seeds and 2.9 hours. If the change might gain only 1 point, multiply by four.</p>
+
+  <details class="predict"><summary>Pause and predict: how many hours does a 4,000-seed paired comparison take on this Mac?</summary>
+    <p>At the measured <span data-m="decisions_per_run" data-f="h0">647</span> decisions per run and the tour's idle-machine rate of 800 decisions per second on ten threads, <span data-m="cost.paired_seeds.4000.hours_idle10" data-f="h1">1.8</span> hours. On the shared machine this chapter's run measured (<span data-m="rate_measured" data-f="h0">284</span> decisions per second on <span data-m="workers" data-f="int">3</span> threads), it would take <span data-m="cost.paired_seeds.4000.hours_measured" data-f="h1">5.1</span> hours. Throughput, not statistics, is usually what an evaluation budget runs out of.</p>
+  </details>
+
+  <h2 id="s6">6. Choosing on the panel you report</h2>
+  <p>Training produces many candidates: checkpoints every few hundred million decisions, and for each of them a raw copy and one or more exponential moving averages of the weights. The project picks one by playing all of them on the same development panel and taking the best. The best one's score on that panel is then too high. This is the <dfn>winner's curse</dfn>, and Cawley and Talbot showed in model selection that it is often as large as the differences between the methods being compared <span class="cite">[<a href="#ref-cawley">9</a>]</span>.</p>
+  <p>We can compute its size for paired seeds. Suppose \(K\) candidates all have the same true win rate \(p\) and are read on the same \(n\) seeds. Model each estimate as a shared seed effect plus a candidate-specific one:</p>
+  <div class="eq">\begin{equation} \hat p_k = p + \sigma\left(\sqrt{\rho}\, Z_0 + \sqrt{1-\rho}\, Z_k\right), \qquad k = 1, \dots, K, \label{eq:selmodel} \end{equation}</div>
+  <p>where \(\sigma^2 = p(1-p)/n\), \(\rho\) is the correlation between any two candidates' estimates, and \(Z_0, Z_1, \dots, Z_K\) are independent standard normals. \(Z_0\) is the panel's luck, which all candidates share; \(Z_k\) is candidate \(k\)'s own luck on the panel. Selection maximises over \(k\), and only the \(Z_k\) term varies with \(k\):</p>
+  <div class="eq">\begin{equation} \mathbb{E}\!\left[\max_k \hat p_k\right] - p = \sigma\sqrt{1-\rho}\; e_K, \qquad e_K = \mathbb{E}\!\left[\max_{k \le K} Z_k\right]. \label{eq:selbias} \end{equation}</div>
+  <p>Here \(e_K\) is the expected maximum of \(K\) independent standard normals: \(e_2 = 1/\sqrt\pi \approx 0.56\), \(e_3 \approx 0.85\), \(e_9 \approx 1.49\). The shared luck \(Z_0\) does not bias the selection, but it is still in the reported number. Now use the discordance. Two candidates with equal true rates have \(\operatorname{Var}(\hat p_j - \hat p_k) = 2\sigma^2(1-\rho)\) by Equation \eqref{eq:selmodel}, and \(\delta_d/n\) by Equation \eqref{eq:vard} with \(\Delta = 0\). Equating the two,</p>
+  <div class="eq">\begin{equation} \text{optimism} = e_K \sqrt{\frac{\delta_d}{2n}}. \label{eq:optimism} \end{equation}</div>
+  <p>The same quantity that sets the power of a paired test sets the bias of selecting on the panel. Candidates that rarely disagree, such as two weight averages of one checkpoint, give little optimism. Many candidates and a small panel give a lot. The assumptions are equal true rates, which is the worst case for the bias relative to the truth, and the same \(\rho\) for every pair. Figure 8.4 checks Equation \eqref{eq:optimism} against simulation.</p>
+  <p>The remedy is a rule from your own notes on off-policy evaluation: give each set of outcomes one role. Training data fits the parameters. <dfn>Selection evidence</dfn> chooses among candidates. <dfn>Final-evaluation evidence</dfn> supports the reported claim after selection is frozen, and it must not have touched the selection. In agent terms: one panel to pick, a different panel to report.</p>
+
+  <figure id="fig-selection">
+    <div class="scroll">
+<!-- figure:selection -->
+<svg viewBox="0 0 640 330" role="img" aria-label="Selection optimism against the number of candidates">
+<line class="grid" x1="62" x2="616" y1="278.0" y2="278.0"/>
+<text class="muted" x="54" y="282.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="616" y1="235.3" y2="235.3"/>
+<text class="muted" x="54" y="239.3" text-anchor="end">0.5</text>
+<line class="grid" x1="62" x2="616" y1="192.7" y2="192.7"/>
+<text class="muted" x="54" y="196.7" text-anchor="end">1</text>
+<line class="grid" x1="62" x2="616" y1="150.0" y2="150.0"/>
+<text class="muted" x="54" y="154.0" text-anchor="end">1.5</text>
+<line class="grid" x1="62" x2="616" y1="107.3" y2="107.3"/>
+<text class="muted" x="54" y="111.3" text-anchor="end">2</text>
+<line class="grid" x1="62" x2="616" y1="64.7" y2="64.7"/>
+<text class="muted" x="54" y="68.7" text-anchor="end">2.5</text>
+<line class="grid" x1="62" x2="616" y1="22.0" y2="22.0"/>
+<text class="muted" x="54" y="26.0" text-anchor="end">3</text>
+<text class="muted" x="62.0" y="296" text-anchor="middle">1</text>
+<text class="muted" x="123.6" y="296" text-anchor="middle">2</text>
+<text class="muted" x="185.1" y="296" text-anchor="middle">3</text>
+<text class="muted" x="246.7" y="296" text-anchor="middle">4</text>
+<text class="muted" x="308.2" y="296" text-anchor="middle">5</text>
+<text class="muted" x="369.8" y="296" text-anchor="middle">6</text>
+<text class="muted" x="431.3" y="296" text-anchor="middle">7</text>
+<text class="muted" x="492.9" y="296" text-anchor="middle">8</text>
+<text class="muted" x="554.4" y="296" text-anchor="middle">9</text>
+<text class="muted" x="616.0" y="296" text-anchor="middle">10</text>
+<line class="ink" x1="62" x2="616" y1="278" y2="278"/>
+<line class="ink" x1="62" x2="62" y1="22" y2="278"/>
+<text x="339" y="320" text-anchor="middle">candidates compared on the same seeds (K)</text>
+<text x="14" y="150" text-anchor="middle" transform="rotate(-90 14 150)">optimism of the best (pp)</text>
+<path class="l2" d="M62.0 278.0 L123.6 182.4 L185.1 134.6 L246.7 103.5 L308.2 80.9 L369.8 63.2 L431.3 48.8 L492.9 36.7 L554.4 26.3 L616.0 17.2" stroke-width="2"/>
+<circle class="f2" cx="123.6" cy="181.1" r="3.5"/>
+<circle class="f2" cx="185.1" cy="134.5" r="3.5"/>
+<circle class="f2" cx="308.2" cy="85.1" r="3.5"/>
+<circle class="f2" cx="554.4" cy="32.5" r="3.5"/>
+<path class="l1" d="M62.0 278.0 L123.6 225.6 L185.1 199.4 L246.7 182.4 L308.2 170.0 L369.8 160.4 L431.3 152.5 L492.9 145.9 L554.4 140.2 L616.0 135.2" stroke-width="2"/>
+<circle class="f1" cx="123.6" cy="227.9" r="3.5"/>
+<circle class="f1" cx="185.1" cy="198.9" r="3.5"/>
+<circle class="f1" cx="308.2" cy="172.1" r="3.5"/>
+<circle class="f1" cx="554.4" cy="141.9" r="3.5"/>
+<path class="l3" d="M62.0 278.0 L123.6 251.8 L185.1 238.7 L246.7 230.2 L308.2 224.0 L369.8 219.2 L431.3 215.2 L492.9 211.9 L554.4 209.1 L616.0 206.6" stroke-width="2"/>
+<circle class="f3" cx="123.6" cy="249.7" r="3.5"/>
+<circle class="f3" cx="185.1" cy="235.7" r="3.5"/>
+<circle class="f3" cx="308.2" cy="222.5" r="3.5"/>
+<circle class="f3" cx="554.4" cy="211.1" r="3.5"/>
+<line class="l2" x1="76" x2="94" y1="30" y2="30" stroke-width="2"/>
+<text x="102" y="34">300 seeds</text>
+<line class="l1" x1="76" x2="94" y1="48" y2="48" stroke-width="2"/>
+<text x="102" y="52">1,000 seeds</text>
+<line class="l3" x1="76" x2="94" y1="66" y2="66" stroke-width="2"/>
+<text x="102" y="70">4,000 seeds</text>
+<circle class="f4" cx="85" cy="84" r="4"/>
+<text x="102" y="88">dots: simulation</text>
+</svg>
+<!-- /figure:selection -->
+    </div>
+    <figcaption><b>Figure 8.4.</b> Expected optimism of the best of \(K\) equally good candidates read on the same seeds, at the discordance measured between the two published networks. Lines are Equation \eqref{eq:optimism}; dots are simulations of binary outcomes with that discordance. Notice that a 300-seed selection panel inflates the best of nine by over two points, while a 4,000-seed panel keeps it under one.</figcaption>
+  </figure>
+
+  <details class="predict"><summary>Pause and predict: split the 600 shared seeds in half at random, pick whichever network won more on the first half, and score it on both halves. How much higher does it look on the half it was picked on?</summary>
+    <p>Averaged over 4,000 random splits, <span data-m="selection.resplit.mean_gap" data-f="pp2">0.90</span> points. The Ironclad network was picked in <span data-m="selection.resplit.share_picked_net1" data-f="pct1">14.3%</span> of splits. The gap is smaller than Equation \eqref{eq:optimism} would give for \(K = 2\) at 300 seeds (<span data-m="selection.formula.300.2" data-f="pp2">1.12</span> points) because the two networks are not equally good: when one is clearly better, selection mostly picks it for the right reason and the curse shrinks. Equation \eqref{eq:optimism} is the worst case.</p>
+  </details>
+
+  <h2 id="s7">7. Pre-registration and sealed panels</h2>
+  <p>Selection is one way to read the data in a way that flatters a result. There are many others, and most are not deliberate. Drop the seeds that errored, or count them as losses. Compare against the baseline that looks weakest. Report the variant that scored highest. Stop collecting when the p-value crosses 0.05. Each choice is defensible on its own; made after seeing the data, together they make any p-value meaningless, because the reported test was one of many that could have been reported.</p>
+  <p><dfn>Pre-registration</dfn> fixes those choices in writing before the data exist: the panels, the contrasts, the statistics, the thresholds, and what happens on a failure. Nosek and colleagues frame it as separating prediction from postdiction: a test written before the data is a prediction, and the same test written after is a description <span class="cite">[<a href="#ref-nosek">10</a>]</span>. A plan does not have to survive contact with the data unchanged. It has to record every change, when it was made, and whether the data it touches already existed. Such a record is an <dfn>amendment</dfn>.</p>
+  <p>A <dfn>sealed panel</dfn> enforces the last role in Section 6 mechanically. Its seeds are played, the results are written to a place no one reads, and only a hash of the file is published so that later tampering would show. It is read once, by the pre-registered scorer, after everything that could depend on it has been committed. The reason for "once" is the selection effect again, one level up. A test panel that is read to pick a checkpoint, then read again to pick a variant, then read to report, has become a selection panel three times over, and its number carries Equation \eqref{eq:optimism} with a \(K\) nobody counted. Nobody has to cheat for that to happen.</p>
+
+  <h2 id="s8">8. Textbook against engineered</h2>
+  <p>The clean statement: draw \(n\) seeds, play both networks, count \(b\) and \(c\), test. A real campaign departs from it in six places, each for a reason.</p>
+  <p><strong>Errors are rare but not zero.</strong> A run can hit an engine error or a decision cap. Dropping those seeds silently would let a crashing candidate select its own easy panel. The campaign's rule is asymmetric: a seed errors, it is re-run once on the same binary; then a baseline error drops the seed from that contrast, but an error by the candidate counts as a candidate loss. More than 0.5% such seeds make the whole contrast invalid.</p>
+  <p><strong>One binary per comparison.</strong> Common random numbers assume the same random inputs reach both arms. A change to the simulator, even a bug fix, changes what a seed means, so a candidate on a new engine against a baseline on the old one is unpaired at best and confounded at worst. When the engine changed mid-campaign, every baseline was re-run on the new engine.</p>
+  <p><strong>Synchronisation is partial.</strong> The game draws from named random streams: one for the map of each act, one for card rewards, one for shuffles, one for enemy moves, and so on, each advanced only when that kind of event happens. The map is the same for both agents whatever they do. But once two agents diverge, for example one takes a path through a shop the other skips, a stream can be consumed differently and later draws from it differ. The pairing is strongest early in a run and weakens as play diverges. Separate streams per purpose are how simulation practice keeps common random numbers synchronised as long as possible; they cannot keep two different games identical.</p>
+  <p><strong>Evaluation is greedy; training samples.</strong> Chapter 2 explained why training samples actions. Evaluation plays the most probable action, which makes a run a deterministic function of the seed and removes a second source of noise. The number reported is the greedy policy's win rate, which is not the win rate of the policy that generated the training data.</p>
+  <p><strong>Several contrasts, one error budget.</strong> A campaign tests more than one thing. The bars are tested in a fixed sequence, each at its own level, stopping at the first failure, which bounds the familywise error. Descriptive contrasts get a Holm adjustment.</p>
+  <p><strong>The seed distribution is a choice.</strong> Every panel is a contiguous range of integers that no earlier experiment used. The implicit assumption is that the game maps any integer to a typical game, so a range is as good as a random sample. Section 10 tests that assumption on two ranges.</p>
+
+  <h2 id="s9">9. In Spire Mentor</h2>
+  <div class="example"><span class="label">In Spire Mentor · the panels</span>
+    <p>The Ironclad end-to-end campaign that produced the published network wrote its pre-registration before any baseline, training or test run. It fixed its panels of seeds, all below \(2^{31}\) and checked against every earlier use in the repository. The four main ones:</p>
+    <div class="table"><table>
+      <thead><tr><th>Panel</th><th>Seeds</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td>DEV-1000</td><td>160,000,000 to 160,000,999</td><td>reads every 250M decisions; early gates</td></tr>
+        <tr><td>DEV-2000</td><td>160,000,000 to 160,001,999</td><td>teacher choice, milestone reads, checkpoint selection</td></tr>
+        <tr><td>TEST (sealed)</td><td>161,000,000 to 161,003,999</td><td>baselines and the final network; read once</td></tr>
+        <tr><td>SMOKE</td><td>162,000,000 to 162,000,999</td><td>determinism and identity checks only</td></tr>
+      </tbody>
+    </table></div>
+    <p>Selection lives on DEV and reporting on TEST: the evidence roles of Section 6. Determinism checks use their own SMOKE panel so that verifying the engine never touches a TEST seed. This chapter's measurements use two further ranges, 170,000,000 and 171,000,000 onward, that no campaign panel overlaps.</p>
+  </div>
+
+  <figure class="listing">
+    <pre><code>DEV_1000 = Panel("DEV-1000", 160_000_000, 1_000)
+DEV_2000 = Panel("DEV-2000", 160_000_000, 2_000)
+TEST = Panel("TEST", 161_000_000, 4_000, sealed=True)
+SMOKE = Panel("SMOKE", 162_000_000, 1_000)
+...
+#: P4: nobody reads `evals/TEST/` before Thu Nov 12, 09:00 CET (08:00 UTC); was Mon Nov 9 until
+#: PREREG Amendment 5 moved the end of training by 72 h.
+UNSEAL_AT = dt.datetime(2026, 11, 12, 8, 0, tzinfo=dt.UTC)
+
+#: P2: more than 0.5% such seeds (20 of TEST's 4,000) make a contrast INVALID.
+MAX_BAD_FRACTION = 0.005</code></pre>
+    <figcaption>sts2-pycli/python/ppo/e2e/panels.py, lines 48-51 and 80-85. The seal has a date in code, and the error rule is a constant.</figcaption>
+  </figure>
+
+  <div class="example"><span class="label">In Spire Mentor · the sealing</span>
+    <p>The test panel's rows were written outside every working copy, to a directory only the owner can read. The programs that played them printed only row counts, error counts and a SHA-256 hash of the file, and each hash was committed beside the pre-registration. Before the read, checking that a test run was still alive meant listing files and counting lines; printing, searching or loading a row was forbidden. One scorer read the panel once. The rule reaches into the tooling: even the runner itself looked only at each row's seed and whether it errored, and discarded the progress line that would have shown a win rate.</p>
+  </div>
+
+  <div class="example"><span class="label">In Spire Mentor · the bars and their power</span>
+    <p>The pre-registration named four bars before training began. The must-pass bar required the final network to beat the best earlier agent by at least 5 points with exact McNemar \(p \lt 0.01\) on the 4,000 sealed seeds. The plan computed its power: a paired standard error of 0.79 points at a guessed discordance of 0.25, which is \(\sqrt{0.25/4000}\), Equation \eqref{eq:vard}. A true gain of 5 points would pass with probability 0.51 and a true 6 points with 0.90: "a true +5pp is a coin flip by design." The guessed discordance came from eight earlier pairs of networks, at 0.71 to 0.90 times what independent outcomes would give.</p>
+    <p>The same arithmetic decided what not to run. The plan's experiments section admits an experiment only if its result can change a decision that week, and it moved several recipe comparisons to later work because their detectable effect at the affordable size, 3.1 to 5.3 points for one of them, was larger than the effect they could plausibly have, 0.45 to 2 points. Later recipe experiments were scoped at 4,000 seeds per panel, where the detectable effect is about 2 points.</p>
+  </div>
+
+  <figure class="listing">
+    <pre><code>| Bar | Contrast | Rule |
+|---|---|---|
+| Bar1 (must) | Final − C* | Δ ≥ +5pp and exact two-sided McNemar p &lt; 0.01 |
+| Bar2 (should) | Final − R1, as served | 95% Newcombe paired CI low end ≥ −3pp |
+| Bar3 (stretch) | Final − R1 | Δ ≥ +3pp and exact two-sided McNemar p &lt; 0.01 → deployment candidate (§13) |
+| BarR (reported) | WR(Final) | ≥ 40% (pro level); ≥ 56% also reported |
+
+- **Sequence:** Bar1 → Bar2 → Bar3, each at its own level, stopping at the first failure (familywise error ≤ 0.025 one-sided).</code></pre>
+    <figcaption>docs/experiments/2026-11-03-ironclad-e2e-v111/PREREG.md, lines 61-68. C* is the best earlier no-search agent; R1 is the shipped champion with tree search.</figcaption>
+  </figure>
+
+  <div class="example"><span class="label">In Spire Mentor · selection, then the single read</span>
+    <p>The selection rule was written in advance too. Nine candidates (the final checkpoint and the two before it, each raw and under two weight averages) played the 2,000 development seeds. The default was fixed in advance, and a switch required a paired gain of at least 0.5 points, a threshold the plan chose by simulating the regret of different thresholds. One candidate cleared it: the 9.0-billion-decision checkpoint under the slower weight average, at 81.40% on DEV-2000, 1.2 points above the default. The plan warned to expect 1 to 2 points of optimism on DEV.</p>
+    <p>On the sealed panel, read once on 2026-11-17, that network won 3,255 of 4,000: 81.38%, Wilson interval 80.14% to 82.55%. Every bar passed; against the best earlier agent the paired difference was +69.5 points with 2,810 discordant seeds against 30. The DEV-to-TEST drop was 0.02 points, smaller than the warning. One read does not measure an expected optimism: the TEST estimate's own standard error is about 0.6 points, comparable to what Equation \eqref{eq:optimism} predicts for nine candidates that disagree on one seed in ten.</p>
+  </div>
+
+  <div class="example"><span class="label">In Spire Mentor · four amendments</span>
+    <p>The pre-registration's own rule: amendments only tighten a rule whose data does not yet exist, one commit each. By the end they were numbered up to 19. Four show the mechanism.</p>
+    <ul>
+      <li><strong>A rule fires (Amendment 2).</strong> A side experiment had a pre-written go rule: at least +2 points with the interval's low end above zero. It read +0.4 points, interval −2.5 to +3.2. The rule said no, and the plan went ahead without it. Nobody argued that +0.4 was promising.</li>
+      <li><strong>A recorded deviation (Amendment 4).</strong> An early gate required 85% agreement with the teacher's combat actions. The student scored 0.805 while already beating the teacher by 5.4 points (McNemar \(p = 0.00016\)). The rule said fix and relaunch; the user waived it. The amendment says in plain words that the waiver was made after seeing the read.</li>
+      <li><strong>One binary (Amendment 6).</strong> The engine changed mid-training. Every baseline was re-run on the new engine on DEV and on sealed TEST, the old sealed TEST files were left unread, and readings before and after the switch were compared only through a bridge: the same checkpoint played on both engines.</li>
+      <li><strong>A switch after seeing data (Amendment 10).</strong> One weight average read 4.05 points above the other (\(p = 0.002\)), so the routine reads switched to it. The amendment re-points every older rule so that each comparison stays paired on shared seeds, instead of comparing a new variant's number with an old variant's.</li>
+    </ul>
+  </div>
+
+  <div class="example"><span class="label">In Spire Mentor · never compare rates across panels</span>
+    <p>The project's training playbook records that the same network, weights confirmed bit-identical, scored 43.1% on one panel and 47.2% on another, about 2.9 standard errors apart. Its rule since: compare differences within one panel, never rates across panels. Section 10 measures how far apart two panels put the same network here, and Section 11 discusses what a 2.9-sigma gap can and cannot mean.</p>
+  </div>
+
+  <h2 id="s10">10. Measured</h2>
+  <p>Two published networks played Ironclad at ascension 10, greedily, on the same 600 seeds: 300 from 170,000,000 upward (panel A) and 300 from 171,000,000 upward (panel B). Network 1 is <code>ironclad_e2e_d9000_ema0999</code>, trained on Ironclad only; its name matches the campaign's final network, though I did not check that the files are identical. Network 2 is <code>allchar_e2e_d4500_ema0999</code>, trained on all characters for half as many decisions.</p>
+
+  <div class="measured"><span class="label">Measured · 600 paired seeds · M2 Max, <span data-m="workers" data-f="int">3</span> threads, shared machine</span>
+    <div class="table"><table>
+      <thead><tr><th>Network</th><th class="num">Panel A</th><th class="num">Panel B</th><th class="num">Pooled</th><th>95% Wilson interval</th></tr></thead>
+      <tbody>
+        <tr><td>Ironclad (net 1)</td><td class="num"><span data-m="panel1.A.p" data-f="pct1">81.0%</span></td><td class="num"><span data-m="panel1.B.p" data-f="pct1">79.7%</span></td><td class="num"><span data-m="net1.p" data-f="pct1">80.3%</span></td><td><span data-m="net1.lo" data-f="pct1">77.0%</span> to <span data-m="net1.hi" data-f="pct1">83.3%</span></td></tr>
+        <tr><td>All-character (net 2)</td><td class="num"><span data-m="panel2.A.p" data-f="pct1">84.7%</span></td><td class="num"><span data-m="panel2.B.p" data-f="pct1">80.7%</span></td><td class="num"><span data-m="net2.p" data-f="pct1">82.7%</span></td><td><span data-m="net2.lo" data-f="pct1">79.4%</span> to <span data-m="net2.hi" data-f="pct1">85.5%</span></td></tr>
+      </tbody>
+    </table></div>
+    <p>Both networks win most games, and their intervals overlap. Overlapping single-rate intervals do not settle whether the networks differ; the paired analysis below does.</p>
+  </div>
+
+  <div class="measured"><span class="label">Measured · paired against unpaired, same 1,200 runs</span>
+    <div class="table"><table class="cells">
+      <thead><tr><th></th><th class="num">net 2 wins</th><th class="num">net 2 loses</th></tr></thead>
+      <tbody>
+        <tr><th>net 1 wins</th><td class="num">a = <span data-m="table.a" data-f="int">418</span></td><td class="num">b = <span data-m="table.b" data-f="int">64</span></td></tr>
+        <tr><th>net 1 loses</th><td class="num">c = <span data-m="table.c" data-f="int">78</span></td><td class="num">d = <span data-m="table.d" data-f="int">40</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="table"><table>
+      <thead><tr><th></th><th>Paired (same seeds)</th><th>Unpaired analysis of the same data</th></tr></thead>
+      <tbody>
+        <tr><td>Difference, net 1 − net 2</td><td colspan="2"><span data-m="diff" data-f="spp1">-2.3</span> points</td></tr>
+        <tr><td>Standard error</td><td><span data-m="paired_se" data-f="pp2">1.98</span> points</td><td><span data-m="unpaired_se" data-f="pp2">2.24</span> points</td></tr>
+        <tr><td>95% interval</td><td>Newcombe: <span data-m="newcombe_paired.0" data-f="spp1">-6.2</span> to <span data-m="newcombe_paired.1" data-f="spp1">+1.6</span></td><td>Newcombe: <span data-m="newcombe_unpaired.0" data-f="spp1">-6.7</span> to <span data-m="newcombe_unpaired.1" data-f="spp1">+2.1</span></td></tr>
+        <tr><td>p-value</td><td>exact McNemar <span data-m="mcnemar_p" data-f="g2">0.28</span></td><td>two-proportion z <span data-m="unpaired_z_p" data-f="g2">0.3</span></td></tr>
+      </tbody>
+    </table></div>
+    <p>The paired bootstrap (20,000 resamples of whole seeds) gives <span data-m="bootstrap.0" data-f="spp1">-6.2</span> to <span data-m="bootstrap.1" data-f="spp1">+1.5</span> points, in line with Newcombe's interval. The discordance is <span data-m="discordance" data-f="f3">0.237</span> against <span data-m="independence_discordance" data-f="f3">0.302</span> for independent outcomes, and the phi coefficient is <span data-m="phi" data-f="f2">0.22</span>. So the dot in Figure 8.3 sits left of the crossing, and pairing cut the variance to <span data-m="variance_ratio" data-f="f2">0.78</span> of the unpaired design: the paired standard error is <span data-m="paired_se" data-f="pp2">1.98</span> points against <span data-m="unpaired_se" data-f="pp2">2.24</span>, which an unpaired design would match only with about <span data-m="unpaired_equivalent_extra" data-f="pct0">28%</span> more seeds. A network trained on one character and a network trained on all of them still agree on most seeds, because the same seed gives both the same map and the same encounters. Two checkpoints of one training run would sit further left; Section 9's campaign guessed 0.71 to 0.90 times independence for its pairs, and this pair measured <span data-m="discordance_over_independence" data-f="f2">0.78</span>.</p>
+  </div>
+
+  <figure id="fig-slices">
+    <div class="scroll">
+<!-- figure:slices -->
+<svg viewBox="0 0 640 330" role="img" aria-label="Win rate on disjoint 100-seed slices, both networks">
+<line class="grid" x1="62" x2="616" y1="278.0" y2="278.0"/>
+<text class="muted" x="54" y="282.0" text-anchor="end">60%</text>
+<line class="grid" x1="62" x2="616" y1="214.0" y2="214.0"/>
+<text class="muted" x="54" y="218.0" text-anchor="end">70%</text>
+<line class="grid" x1="62" x2="616" y1="150.0" y2="150.0"/>
+<text class="muted" x="54" y="154.0" text-anchor="end">80%</text>
+<line class="grid" x1="62" x2="616" y1="86.0" y2="86.0"/>
+<text class="muted" x="54" y="90.0" text-anchor="end">90%</text>
+<line class="grid" x1="62" x2="616" y1="22.0" y2="22.0"/>
+<text class="muted" x="54" y="26.0" text-anchor="end">100%</text>
+<text class="muted" x="115.6" y="296" text-anchor="middle">A1</text>
+<text class="muted" x="205.0" y="296" text-anchor="middle">A2</text>
+<text class="muted" x="294.3" y="296" text-anchor="middle">A3</text>
+<text class="muted" x="383.7" y="296" text-anchor="middle">B1</text>
+<text class="muted" x="473.0" y="296" text-anchor="middle">B2</text>
+<text class="muted" x="562.4" y="296" text-anchor="middle">B3</text>
+<line class="ink" x1="62" x2="616" y1="278" y2="278"/>
+<line class="ink" x1="62" x2="62" y1="22" y2="278"/>
+<text x="339" y="320" text-anchor="middle">100-seed slice (A1-A3 from PANEL_A, B1-B3 from PANEL_B)</text>
+<text x="14" y="150" text-anchor="middle" transform="rotate(-90 14 150)">win rate</text>
+<line class="l1" x1="104.9" x2="104.9" y1="213.9" y2="112.7" stroke-width="1.6"/>
+<circle class="f1" cx="104.9" cy="156.4" r="4"/>
+<line class="l1" x1="194.2" x2="194.2" y1="156.3" y2="71.6" stroke-width="1.6"/>
+<circle class="f1" cx="194.2" cy="105.2" r="4"/>
+<line class="l1" x1="283.6" x2="283.6" y1="227.8" y2="123.4" stroke-width="1.6"/>
+<circle class="f1" cx="283.6" cy="169.2" r="4"/>
+<line class="l1" x1="373.0" x2="373.0" y1="185.5" y2="91.7" stroke-width="1.6"/>
+<circle class="f1" cx="373.0" cy="130.8" r="4"/>
+<line class="l1" x1="462.3" x2="462.3" y1="227.8" y2="123.4" stroke-width="1.6"/>
+<circle class="f1" cx="462.3" cy="169.2" r="4"/>
+<line class="l1" x1="551.7" x2="551.7" y1="213.9" y2="112.7" stroke-width="1.6"/>
+<circle class="f1" cx="551.7" cy="156.4" r="4"/>
+<line class="l2" x1="126.3" x2="126.3" y1="141.2" y2="62.0" stroke-width="1.6"/>
+<circle class="f2" cx="126.3" cy="92.4" r="4"/>
+<line class="l2" x1="215.7" x2="215.7" y1="192.7" y2="96.9" stroke-width="1.6"/>
+<circle class="f2" cx="215.7" cy="137.2" r="4"/>
+<line class="l2" x1="305.0" x2="305.0" y1="185.5" y2="91.7" stroke-width="1.6"/>
+<circle class="f2" cx="305.0" cy="130.8" r="4"/>
+<line class="l2" x1="394.4" x2="394.4" y1="185.5" y2="91.7" stroke-width="1.6"/>
+<circle class="f2" cx="394.4" cy="130.8" r="4"/>
+<line class="l2" x1="483.8" x2="483.8" y1="192.7" y2="96.9" stroke-width="1.6"/>
+<circle class="f2" cx="483.8" cy="137.2" r="4"/>
+<line class="l2" x1="573.1" x2="573.1" y1="227.8" y2="123.4" stroke-width="1.6"/>
+<circle class="f2" cx="573.1" cy="169.2" r="4"/>
+<path class="l1" d="M62.0 147.9 L616.0 147.9" stroke-width="1" stroke-dasharray="4 4"/>
+<path class="l2" d="M62.0 132.9 L616.0 132.9" stroke-width="1" stroke-dasharray="4 4"/>
+<circle class="f1" cx="85" cy="244" r="4"/>
+<text x="102" y="248">Ironclad network (net 1)</text>
+<circle class="f2" cx="85" cy="262" r="4"/>
+<text x="102" y="266">all-character network (net 2)</text>
+</svg>
+<!-- /figure:slices -->
+    </div>
+    <figcaption><b>Figure 8.5.</b> Each network's win rate on six disjoint 100-seed slices, three per panel, with 95% Wilson intervals. Dashed lines are the pooled rates. Notice how far the same weights move from one slice to the next, and compare that with the error bars: every slice's interval is about ±8 points wide before anything is wrong.</figcaption>
+  </figure>
+
+  <div class="measured"><span class="label">Measured · panel variance</span>
+    <p>Across its six 100-seed slices, the Ironclad network ranged from <span data-m="slice1.min" data-f="pct1">77.0%</span> to <span data-m="slice1.max" data-f="pct1">87.0%</span>, a spread of <span data-m="slice1.spread" data-f="pp1">10.0</span> points. The binomial standard deviation of one slice is <span data-m="slice1.sd" data-f="pp1">4.0</span> points, and the expected range of six independent draws is about 2.5 standard deviations, so luck alone predicts a spread near <span data-m="slice1.expected_range" data-f="pp1">10.1</span> points. The all-character network spread <span data-m="slice2.spread" data-f="pp1">12.0</span> points against a slice SD of <span data-m="slice2.sd" data-f="pp1">3.8</span>. Between the two 300-seed panels, network 1's rate moved <span data-m="gap1.diff" data-f="spp1">+1.3</span> points (two-proportion p = <span data-m="gap1.p" data-f="g2">0.68</span>) and network 2's <span data-m="gap2.diff" data-f="spp1">+4.0</span> (p = <span data-m="gap2.p" data-f="g2">0.2</span>). Whether those gaps look large or small, they are what binomial sampling produces, and they are why the campaign compared differences on one panel rather than rates across panels.</p>
+  </div>
+
+  <div class="measured"><span class="label">Measured · selection on the panel</span>
+    <p>Re-splitting the 600 seeds at random 4,000 times, choosing the network that won more on one half and scoring it on both, the chosen network looked <span data-m="selection.resplit.mean_gap" data-f="pp2">0.90</span> points better on its selection half. Simulation at the measured discordance (Figure 8.4) gives, for nine equally good candidates, <span data-m="selection.simulated.300.9" data-f="pp2">2.88</span> points of optimism at 300 seeds, <span data-m="selection.simulated.1000.9" data-f="pp2">1.60</span> at 1,000 and <span data-m="selection.simulated.4000.9" data-f="pp2">0.78</span> at 4,000, against <span data-m="selection.formula.300.9" data-f="pp2">2.95</span>, <span data-m="selection.formula.1000.9" data-f="pp2">1.62</span> and <span data-m="selection.formula.4000.9" data-f="pp2">0.81</span> from Equation \eqref{eq:optimism}. The simulation stands in for nine real checkpoints, which this chapter did not have; it uses the measured win rate and discordance.</p>
+  </div>
+
+  <h3>What experiments cost on this Mac</h3>
+  <div class="measured"><span class="label">Measured · throughput · M2 Max, 12 cores, 64 GB</span>
+    <p>The 1,200 runs averaged <span data-m="decisions_per_run" data-f="h0">647</span> decisions each and took <span data-m="wall_seconds" data-f="h0">2,730</span> seconds of wall clock on <span data-m="workers" data-f="int">3</span> threads: <span data-m="rate_measured" data-f="h0">284</span> decisions per second, or <span data-m="rate_per_thread" data-f="h0">95</span> per busy thread. Other sessions were running simulations for most of the run (load average <span data-m="loadavg_before.0" data-f="h0">109</span> at the start, <span data-m="loadavg_after.0" data-f="h0">3</span> at the end on 12 cores), so this is a pessimistic figure. The tour measured 800 decisions per second on ten threads with the machine otherwise idle; the table gives both. Greedy play is forward passes only. Training also runs the learner, and the campaign's training server sustained about <span data-m="campaign_train_rate" data-f="int">10,500</span> decisions per second late in training.</p>
+    <div class="table"><table>
+      <thead><tr><th>Greedy play</th><th class="num">Hours, idle, 10 threads</th><th class="num">Hours, as measured</th></tr></thead>
+      <tbody>
+        <tr><td>10 million decisions</td><td class="num"><span data-m="cost.decisions.10000000.hours_idle10" data-f="h1">3.5</span></td><td class="num"><span data-m="cost.decisions.10000000.hours_measured" data-f="h1">9.8</span></td></tr>
+        <tr><td>100 million decisions</td><td class="num"><span data-m="cost.decisions.100000000.hours_idle10" data-f="h0">35</span></td><td class="num"><span data-m="cost.decisions.100000000.hours_measured" data-f="h0">98</span></td></tr>
+        <tr><td>1 billion decisions</td><td class="num"><span data-m="cost.decisions.1000000000.hours_idle10" data-f="h0">347</span></td><td class="num"><span data-m="cost.decisions.1000000000.hours_measured" data-f="h0">976</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="table"><table>
+      <thead><tr><th>Paired seeds (2 networks)</th><th class="num">Hours, idle</th><th class="num">Hours, measured</th><th class="num">MDE80, δ = 0.10</th><th class="num">δ = 0.20</th><th class="num">δ = 0.30</th><th class="num">δ measured</th><th class="num">Unpaired MDE80</th></tr></thead>
+      <tbody>
+        <tr><td>300</td><td class="num"><span data-m="cost.paired_seeds.300.hours_idle10" data-f="h1">0.1</span></td><td class="num"><span data-m="cost.paired_seeds.300.hours_measured" data-f="h1">0.4</span></td><td class="num"><span data-m="cost.paired_seeds.300.mde80.d10" data-f="pp1">5.1</span></td><td class="num"><span data-m="cost.paired_seeds.300.mde80.d20" data-f="pp1">7.2</span></td><td class="num"><span data-m="cost.paired_seeds.300.mde80.d30" data-f="pp1">8.9</span></td><td class="num"><span data-m="cost.paired_seeds.300.mde80_d" data-f="pp1">7.9</span></td><td class="num"><span data-m="cost.paired_seeds.300.mde80_unpaired" data-f="pp1">8.9</span></td></tr>
+        <tr><td>1,000</td><td class="num"><span data-m="cost.paired_seeds.1000.hours_idle10" data-f="h1">0.4</span></td><td class="num"><span data-m="cost.paired_seeds.1000.hours_measured" data-f="h1">1.3</span></td><td class="num"><span data-m="cost.paired_seeds.1000.mde80.d10" data-f="pp1">2.8</span></td><td class="num"><span data-m="cost.paired_seeds.1000.mde80.d20" data-f="pp1">4.0</span></td><td class="num"><span data-m="cost.paired_seeds.1000.mde80.d30" data-f="pp1">4.9</span></td><td class="num"><span data-m="cost.paired_seeds.1000.mde80_d" data-f="pp1">4.3</span></td><td class="num"><span data-m="cost.paired_seeds.1000.mde80_unpaired" data-f="pp1">4.9</span></td></tr>
+        <tr><td>4,000</td><td class="num"><span data-m="cost.paired_seeds.4000.hours_idle10" data-f="h1">1.8</span></td><td class="num"><span data-m="cost.paired_seeds.4000.hours_measured" data-f="h1">5.1</span></td><td class="num"><span data-m="cost.paired_seeds.4000.mde80.d10" data-f="pp1">1.4</span></td><td class="num"><span data-m="cost.paired_seeds.4000.mde80.d20" data-f="pp1">2.0</span></td><td class="num"><span data-m="cost.paired_seeds.4000.mde80.d30" data-f="pp1">2.4</span></td><td class="num"><span data-m="cost.paired_seeds.4000.mde80_d" data-f="pp1">2.2</span></td><td class="num"><span data-m="cost.paired_seeds.4000.mde80_unpaired" data-f="pp1">2.4</span></td></tr>
+      </tbody>
+      <caption>MDE80 in percentage points: Equation \eqref{eq:mde} at a two-sided 5% level. δ is the discordance \(\delta_d\). "Unpaired" gives each network its own seeds at the measured mean win rate. Hours from Equation \eqref{eq:hours} at the measured decisions per run.</caption>
+    </table></div>
+  </div>
+
+  <figure id="fig-cost">
+    <div class="scroll">
+<!-- figure:cost -->
+<svg viewBox="0 0 640 360" role="img" aria-label="Minimum detectable effect against paired seeds, with hours of play">
+<line class="grid" x1="62" x2="616" y1="308.0" y2="308.0"/>
+<text class="muted" x="54" y="312.0" text-anchor="end">0</text>
+<line class="grid" x1="62" x2="616" y1="247.0" y2="247.0"/>
+<text class="muted" x="54" y="251.0" text-anchor="end">4</text>
+<line class="grid" x1="62" x2="616" y1="186.0" y2="186.0"/>
+<text class="muted" x="54" y="190.0" text-anchor="end">8</text>
+<line class="grid" x1="62" x2="616" y1="125.0" y2="125.0"/>
+<text class="muted" x="54" y="129.0" text-anchor="end">12</text>
+<line class="grid" x1="62" x2="616" y1="64.0" y2="64.0"/>
+<text class="muted" x="54" y="68.0" text-anchor="end">16</text>
+<text class="muted" x="62.0" y="326" text-anchor="middle">100</text>
+<text class="muted" x="194.2" y="326" text-anchor="middle">300</text>
+<text class="muted" x="339.0" y="326" text-anchor="middle">1,000</text>
+<text class="muted" x="505.8" y="326" text-anchor="middle">4,000</text>
+<text class="muted" x="616.0" y="326" text-anchor="middle">10,000</text>
+<line class="ink" x1="62" x2="616" y1="308" y2="308"/>
+<line class="ink" x1="62" x2="62" y1="64" y2="308"/>
+<text x="339" y="350" text-anchor="middle">paired seeds (log scale)</text>
+<text x="14" y="186" text-anchor="middle" transform="rotate(-90 14 186)">MDE80 (pp)</text>
+<text class="muted" x="339" y="16" text-anchor="middle">hours of play, both networks, idle Mac at 800 decisions/s</text>
+<text x="62.0" y="38" text-anchor="middle">0.045 h</text>
+<line class="grid" x1="62.0" x2="62.0" y1="44" y2="308"/>
+<text x="194.2" y="38" text-anchor="middle">0.13 h</text>
+<line class="grid" x1="194.2" x2="194.2" y1="44" y2="308"/>
+<text x="339.0" y="38" text-anchor="middle">0.45 h</text>
+<line class="grid" x1="339.0" x2="339.0" y1="44" y2="308"/>
+<text x="505.8" y="38" text-anchor="middle">1.8 h</text>
+<line class="grid" x1="505.8" x2="505.8" y1="44" y2="308"/>
+<text x="616.0" y="38" text-anchor="middle">4.5 h</text>
+<line class="grid" x1="616.0" x2="616.0" y1="44" y2="308"/>
+<path class="l3" d="M62.0 172.9 L67.6 175.5 L73.2 178.6 L78.8 181.5 L84.4 184.7 L90.0 187.6 L95.6 190.4 L101.2 193.0 L106.8 195.8 L112.4 198.1 L118.0 200.9 L123.6 203.1 L129.2 205.6 L134.7 208.1 L140.3 210.2 L145.9 212.5 L151.5 214.8 L157.1 216.9 L162.7 219.1 L168.3 221.2 L173.9 223.1 L179.5 225.0 L185.1 227.0 L190.7 228.8 L196.3 230.6 L201.9 232.4 L207.5 234.2 L213.1 235.9 L218.7 237.5 L224.3 239.1 L229.9 240.7 L235.5 242.2 L241.1 243.8 L246.7 245.3 L252.3 246.7 L257.9 248.1 L263.5 249.5 L269.1 250.9 L274.6 252.1 L280.2 253.4 L285.8 254.7 L291.4 255.9 L297.0 257.1 L302.6 258.3 L308.2 259.4 L313.8 260.6 L319.4 261.6 L325.0 262.7 L330.6 263.7 L336.2 264.8 L341.8 265.8 L347.4 266.7 L353.0 267.7 L358.6 268.6 L364.2 269.5 L369.8 270.4 L375.4 271.3 L381.0 272.1 L386.6 272.9 L392.2 273.7 L397.8 274.5 L403.4 275.3 L408.9 276.0 L414.5 276.8 L420.1 277.5 L425.7 278.2 L431.3 278.9 L436.9 279.6 L442.5 280.2 L448.1 280.9 L453.7 281.5 L459.3 282.1 L464.9 282.7 L470.5 283.3 L476.1 283.8 L481.7 284.4 L487.3 284.9 L492.9 285.5 L498.5 286.0 L504.1 286.5 L509.7 287.0 L515.3 287.5 L520.9 287.9 L526.5 288.4 L532.1 288.8 L537.7 289.3 L543.3 289.7 L548.8 290.1 L554.4 290.5 L560.0 291.0 L565.6 291.3 L571.2 291.7 L576.8 292.1 L582.4 292.5 L588.0 292.8 L593.6 293.2 L599.2 293.5 L604.8 293.8 L610.4 294.2 L616.0 294.5" stroke-width="2"/>
+<path class="l1" d="M62.0 116.9 L67.6 120.6 L73.2 125.0 L78.8 129.0 L84.4 133.6 L90.0 137.8 L95.6 141.7 L101.2 145.4 L106.8 149.3 L112.4 152.5 L118.0 156.5 L123.6 159.7 L129.2 163.2 L134.7 166.8 L140.3 169.7 L145.9 172.9 L151.5 176.2 L157.1 179.2 L162.7 182.3 L168.3 185.2 L173.9 187.9 L179.5 190.6 L185.1 193.4 L190.7 196.0 L196.3 198.6 L201.9 201.0 L207.5 203.6 L213.1 206.0 L218.7 208.3 L224.3 210.6 L229.9 212.8 L235.5 215.0 L241.1 217.2 L246.7 219.3 L252.3 221.3 L257.9 223.3 L263.5 225.2 L269.1 227.2 L274.6 229.0 L280.2 230.8 L285.8 232.6 L291.4 234.3 L297.0 236.0 L302.6 237.7 L308.2 239.3 L313.8 240.9 L319.4 242.4 L325.0 244.0 L330.6 245.4 L336.2 246.9 L341.8 248.3 L347.4 249.6 L353.0 251.0 L358.6 252.3 L364.2 253.6 L369.8 254.8 L375.4 256.1 L381.0 257.2 L386.6 258.4 L392.2 259.5 L397.8 260.7 L403.4 261.8 L408.9 262.8 L414.5 263.9 L420.1 264.9 L425.7 265.9 L431.3 266.8 L436.9 267.8 L442.5 268.7 L448.1 269.6 L453.7 270.5 L459.3 271.4 L464.9 272.2 L470.5 273.0 L476.1 273.8 L481.7 274.6 L487.3 275.4 L492.9 276.1 L498.5 276.9 L504.1 277.6 L509.7 278.3 L515.3 279.0 L520.9 279.6 L526.5 280.3 L532.1 280.9 L537.7 281.5 L543.3 282.1 L548.8 282.7 L554.4 283.3 L560.0 283.9 L565.6 284.4 L571.2 285.0 L576.8 285.5 L582.4 286.0 L588.0 286.5 L593.6 287.0 L599.2 287.5 L604.8 288.0 L610.4 288.4 L616.0 288.9" stroke-width="2"/>
+<path class="l2" d="M62.0 74.0 L67.6 78.5 L73.2 83.9 L78.8 88.8 L84.4 94.4 L90.0 99.5 L95.6 104.3 L101.2 108.8 L106.8 113.7 L112.4 117.6 L118.0 122.4 L123.6 126.4 L129.2 130.6 L134.7 135.0 L140.3 138.7 L145.9 142.5 L151.5 146.5 L157.1 150.2 L162.7 154.0 L168.3 157.6 L173.9 160.9 L179.5 164.2 L185.1 167.7 L190.7 170.8 L196.3 174.0 L201.9 177.0 L207.5 180.1 L213.1 183.1 L218.7 185.8 L224.3 188.7 L229.9 191.4 L235.5 194.1 L241.1 196.8 L246.7 199.4 L252.3 201.9 L257.9 204.3 L263.5 206.6 L269.1 209.0 L274.6 211.2 L280.2 213.5 L285.8 215.6 L291.4 217.8 L297.0 219.9 L302.6 221.9 L308.2 223.9 L313.8 225.8 L319.4 227.7 L325.0 229.6 L330.6 231.3 L336.2 233.1 L341.8 234.8 L347.4 236.5 L353.0 238.2 L358.6 239.8 L364.2 241.3 L369.8 242.9 L375.4 244.4 L381.0 245.8 L386.6 247.3 L392.2 248.7 L397.8 250.0 L403.4 251.4 L408.9 252.7 L414.5 253.9 L420.1 255.2 L425.7 256.4 L431.3 257.6 L436.9 258.7 L442.5 259.9 L448.1 261.0 L453.7 262.1 L459.3 263.1 L464.9 264.2 L470.5 265.2 L476.1 266.1 L481.7 267.1 L487.3 268.0 L492.9 269.0 L498.5 269.9 L504.1 270.7 L509.7 271.6 L515.3 272.4 L520.9 273.2 L526.5 274.0 L532.1 274.8 L537.7 275.6 L543.3 276.3 L548.8 277.1 L554.4 277.8 L560.0 278.5 L565.6 279.1 L571.2 279.8 L576.8 280.5 L582.4 281.1 L588.0 281.7 L593.6 282.3 L599.2 282.9 L604.8 283.5 L610.4 284.0 L616.0 284.6" stroke-width="2"/>
+<path class="l4" d="M62.0 100.2 L67.6 104.2 L73.2 108.9 L78.8 113.3 L84.4 118.3 L90.0 122.8 L95.6 127.1 L101.2 131.1 L106.8 135.4 L112.4 138.9 L118.0 143.2 L123.6 146.7 L129.2 150.4 L134.7 154.4 L140.3 157.6 L145.9 161.0 L151.5 164.6 L157.1 167.9 L162.7 171.2 L168.3 174.4 L173.9 177.3 L179.5 180.3 L185.1 183.3 L190.7 186.2 L196.3 189.0 L201.9 191.6 L207.5 194.4 L213.1 197.1 L218.7 199.5 L224.3 202.1 L229.9 204.5 L235.5 206.8 L241.1 209.2 L246.7 211.5 L252.3 213.7 L257.9 215.9 L263.5 218.0 L269.1 220.1 L274.6 222.1 L280.2 224.1 L285.8 226.0 L291.4 227.9 L297.0 229.7 L302.6 231.5 L308.2 233.3 L313.8 235.0 L319.4 236.7 L325.0 238.3 L330.6 239.9 L336.2 241.5 L341.8 243.0 L347.4 244.5 L353.0 246.0 L358.6 247.4 L364.2 248.8 L369.8 250.2 L375.4 251.5 L381.0 252.8 L386.6 254.0 L392.2 255.3 L397.8 256.5 L403.4 257.7 L408.9 258.8 L414.5 260.0 L420.1 261.1 L425.7 262.2 L431.3 263.2 L436.9 264.3 L442.5 265.3 L448.1 266.2 L453.7 267.2 L459.3 268.1 L464.9 269.1 L470.5 269.9 L476.1 270.8 L481.7 271.7 L487.3 272.5 L492.9 273.3 L498.5 274.1 L504.1 274.9 L509.7 275.7 L515.3 276.4 L520.9 277.1 L526.5 277.8 L532.1 278.5 L537.7 279.2 L543.3 279.9 L548.8 280.5 L554.4 281.2 L560.0 281.8 L565.6 282.4 L571.2 283.0 L576.8 283.5 L582.4 284.1 L588.0 284.7 L593.6 285.2 L599.2 285.7 L604.8 286.2 L610.4 286.7 L616.0 287.2" stroke-width="1.5" stroke-dasharray="5 4"/>
+<line class="l3" x1="446" x2="464" y1="74" y2="74" stroke-width="2"/>
+<text x="472" y="78">δ = 0.10</text>
+<line class="l1" x1="446" x2="464" y1="92" y2="92" stroke-width="2"/>
+<text x="472" y="96">δ = 0.20</text>
+<line class="l2" x1="446" x2="464" y1="110" y2="110" stroke-width="2"/>
+<text x="472" y="114">δ = 0.30</text>
+<line class="l4" x1="446" x2="464" y1="128" y2="128" stroke-width="2"/>
+<text x="472" y="132">δ = 0.237 (measured)</text>
+</svg>
+<!-- /figure:cost -->
+    </div>
+    <figcaption><b>Figure 8.6.</b> The detectable effect of a paired comparison against its size, for three discordances and the measured one. Numbers along the top are hours of play for both networks on this Mac at 800 decisions per second. Notice the shape: each halving of the MDE costs four times the hours, so the jump from a 4-point to a 2-point experiment is the expensive one.</figcaption>
+  </figure>
+
+  <p>How to use the table. Name the effect you hope for, guess the discordance from the kind of change (two checkpoints of one run: low; two different recipes: higher), read off the seed count that brings the MDE below the hoped-for effect, and read the hours. If the hours are unaffordable, the experiment cannot change a decision, and the right move is the plan's: do not run it this week.</p>
+
+  <h2 id="s11">11. Common confusions</h2>
+  <p><strong>"Hard seeds make panels vary more than the binomial says."</strong> They do not, if seeds are drawn independently. A panel's win count is a sum of independent Bernoulli draws whose common probability \(p\) is already the average over easy and hard seeds; Equation \eqref{eq:var} includes that heterogeneity. What heterogeneity does change is the paired comparison: it is the reason \(\operatorname{Cov}(X, Y) > 0\). A 2.9-sigma gap between two panels for identical weights is either a rare draw (two-sided \(p \approx 0.004\)), which becomes unremarkable once you count how many panel comparisons a project makes, or a sign that something else differed between the reads: the engine, the settings, or how the seed ranges map to games. Section 10's slices show what pure sampling gives.</p>
+  <p><strong>"Overlapping intervals mean no significant difference."</strong> Two single-rate intervals can overlap while the paired interval for their difference excludes zero, because pairing removes the shared seed noise that both single intervals contain. Test the difference directly.</p>
+  <p><strong>"More concordant seeds make the McNemar test stronger."</strong> The test conditions on the discordant count \(m\) (Equation \eqref{eq:mcnull}). Concordant seeds dilute the effect size \(\hat\Delta = (b-c)/n\) and narrow its interval, but they do not change the p-value for a given split of \(b\) and \(c\). Power grows with \(n\) only because \(m\) grows with \(n\).</p>
+  <p><strong>"The best checkpoint's development score is its score."</strong> It is the score of the maximum of \(K\) noisy estimates, which is biased upward by Equation \eqref{eq:optimism}. In supervised learning this is the validation-set optimism you already correct with a held-out test set; the difference in RL is that each panel read costs hours, which tempts reuse.</p>
+  <p><strong>"A Q-learning return curve is an evaluation."</strong> The training curve averages episodes of the exploring policy, on seeds the learner keeps adapting to, from a network that changes between episodes. It tells you training is alive. A claim about a policy needs that policy, frozen, on seeds that did not choose it.</p>
+
+  <h2 id="experiments">Suggested experiments</h2>
+  <p>Each command runs from the repository root. In a worktree, prefix it with <code>TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights</code>.</p>
+  <ol>
+    <li><strong>Watch the interval shrink.</strong> Run the comparison at three sizes and check that the Wilson half-width falls as \(1/\sqrt n\).
+      <figure class="listing"><pre><code>tour/run stop-8-evaluation/check.py --seeds 50
+tour/run stop-8-evaluation/check.py --seeds 200</code></pre><figcaption>check.py plays both networks on the first N seeds of each panel and prints sections 1 to 4.</figcaption></figure></li>
+    <li><strong>Cost an experiment before you run it.</strong> Print the cost table alone from a short timing sample, then compute the seed count for the effect you care about with Equation \eqref{eq:mde}.
+      <figure class="listing"><pre><code>tour/run stop-8-evaluation/check.py --cost-only --workers 10</code></pre><figcaption>Run it on an idle machine; the hours scale with measured throughput.</figcaption></figure></li>
+    <li><strong>Exact power.</strong> Equation \eqref{eq:mde} is a normal approximation. Simulate the exact McNemar test at the measured discordance and \(n = 1{,}000\): draw \(m \sim \operatorname{Binomial}(n, \delta_d)\), then \(b \sim \operatorname{Binomial}(m, (\delta_d + \Delta)/2\delta_d)\), apply <code>mcnemar_exact</code>, and find the \(\Delta\) with 80% rejections. Compare it with the table.</li>
+    <li><strong>Regenerate this chapter's numbers.</strong> Play the 600 seeds again and redraw every figure and number from the new data.
+      <figure class="listing"><pre><code>tour/run stop-8-evaluation/check.py --seeds 300 --workers 3 --save tour/stop-8-evaluation/data/runs.json
+tour/run stop-8-evaluation/figures.py</code></pre><figcaption>figures.py writes data/summary.json and rewrites the figures and measured numbers in chapter.html.</figcaption></figure></li>
+  </ol>
+
+  <h2 id="references">References</h2>
+  <ol class="refs">
+    <li id="ref-henderson">Henderson, P., Islam, R., Bachman, P., Pineau, J., Precup, D., and Meger, D. (2018). <em>Deep reinforcement learning that matters</em>. Proceedings of the AAAI Conference on Artificial Intelligence, 32(1), 3207-3214. arXiv:1709.06560.</li>
+    <li id="ref-agarwal">Agarwal, R., Schwarzer, M., Castro, P. S., Courville, A., and Bellemare, M. G. (2021). <em>Deep reinforcement learning at the edge of the statistical precipice</em>. Advances in Neural Information Processing Systems 34. arXiv:2108.13264.</li>
+    <li id="ref-wilson">Wilson, E. B. (1927). <em>Probable inference, the law of succession, and statistical inference</em>. Journal of the American Statistical Association, 22(158), 209-212.</li>
+    <li id="ref-glasserman">Glasserman, P., and Yao, D. D. (1992). <em>Some guidelines and guarantees for common random numbers</em>. Management Science, 38(6), 884-908.</li>
+    <li id="ref-cuped">Deng, A., Xu, Y., Kohavi, R., and Walker, T. (2013). <em>Improving the sensitivity of online controlled experiments by utilizing pre-experiment data</em>. Proceedings of WSDM 2013, 123-132.</li>
+    <li id="ref-mcnemar">McNemar, Q. (1947). <em>Note on the sampling error of the difference between correlated proportions or percentages</em>. Psychometrika, 12(2), 153-157.</li>
+    <li id="ref-newcombe">Newcombe, R. G. (1998). <em>Improved confidence intervals for the difference between binomial proportions based on paired data</em>. Statistics in Medicine, 17(22), 2635-2650.</li>
+    <li id="ref-connor">Connor, R. J. (1987). <em>Sample size for testing differences in proportions for the paired-sample design</em>. Biometrics, 43(1), 207-211.</li>
+    <li id="ref-cawley">Cawley, G. C., and Talbot, N. L. C. (2010). <em>On over-fitting in model selection and subsequent selection bias in performance evaluation</em>. Journal of Machine Learning Research, 11, 2079-2107.</li>
+    <li id="ref-nosek">Nosek, B. A., Ebersole, C. R., DeHaven, A. C., and Mellor, D. T. (2018). <em>The preregistration revolution</em>. Proceedings of the National Academy of Sciences, 115(11), 2600-2606.</li>
+  </ol>
+</main>
+
+<footer class="chapter"><span>← Chapter 7: Imitation and warm starts</span><span>End of the tour</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
