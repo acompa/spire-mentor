@@ -1,0 +1,53 @@
+# Stop 5: the PPO update. Fill in guess, low and high for each entry
+# (low <= guess <= high, an 80% interval). The check refuses to run while any
+# value is blank. "Clipped arm" is the learning check as the learner runs it;
+# "unclipped arm" removes the clip and takes bigger steps (see the README).
+
+[floor_start]
+question = "Mean floor reached by the first runs of the clipped arm (the learning check's first window), from random weights"
+unit = "floor"
+guess = ""
+low = ""
+high = ""
+
+[floor_end]
+question = "Mean floor reached by the last runs of the clipped arm (the learning check's last window)"
+unit = "floor"
+guess = ""
+low = ""
+high = ""
+
+[kl_per_update]
+question = "Typical KL divergence between the policy before and after one update, clipped arm (median over policy iterations)"
+unit = "nats"
+guess = ""
+low = ""
+high = ""
+
+[clip_fraction]
+question = "Share of policy rows whose probability ratio left [0.8, 1.2] during the update, clipped arm (median over policy iterations)"
+unit = "fraction"
+guess = ""
+low = ""
+high = ""
+
+[entropy_change]
+question = "Change in normalised policy entropy from the first policy iteration to the last three, clipped arm (negative = the policy got more decided)"
+unit = "fraction of max entropy"
+guess = ""
+low = ""
+high = ""
+
+[decisions_per_second]
+question = "Training throughput of the clipped arm: decisions stored per second of wall time, while the other arm runs beside it"
+unit = "decisions/s"
+guess = ""
+low = ""
+high = ""
+
+[unclipped_kl_per_update]
+question = "Typical KL between the policy before and after one update in the unclipped arm (no clip, 10x learning rate, 4 epochs)"
+unit = "nats"
+guess = ""
+low = ""
+high = ""

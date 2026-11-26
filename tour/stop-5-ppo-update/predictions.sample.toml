@@ -1,0 +1,50 @@
+# Sample values: deliberately rough guesses for TOUR_DEV=1 dry runs. Not answers.
+
+[floor_start]
+question = "Mean floor reached by the first runs of the clipped arm (the learning check's first window), from random weights"
+unit = "floor"
+guess = 3
+low = 1
+high = 6
+
+[floor_end]
+question = "Mean floor reached by the last runs of the clipped arm (the learning check's last window)"
+unit = "floor"
+guess = 4
+low = 2
+high = 10
+
+[kl_per_update]
+question = "Typical KL divergence between the policy before and after one update, clipped arm (median over policy iterations)"
+unit = "nats"
+guess = 0.01
+low = 0.001
+high = 0.05
+
+[clip_fraction]
+question = "Share of policy rows whose probability ratio left [0.8, 1.2] during the update, clipped arm (median over policy iterations)"
+unit = "fraction"
+guess = 0.05
+low = 0.0
+high = 0.2
+
+[entropy_change]
+question = "Change in normalised policy entropy from the first policy iteration to the last three, clipped arm (negative = the policy got more decided)"
+unit = "fraction of max entropy"
+guess = -0.05
+low = -0.3
+high = 0.0
+
+[decisions_per_second]
+question = "Training throughput of the clipped arm: decisions stored per second of wall time, while the other arm runs beside it"
+unit = "decisions/s"
+guess = 500
+low = 100
+high = 3000
+
+[unclipped_kl_per_update]
+question = "Typical KL between the policy before and after one update in the unclipped arm (no clip, 10x learning rate, 4 epochs)"
+unit = "nats"
+guess = 0.1
+low = 0.01
+high = 1.0
