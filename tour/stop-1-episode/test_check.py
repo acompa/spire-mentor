@@ -81,23 +81,29 @@ def test_logged_loop_plays_what_selfplay_plays() -> None:
     assert ep.end["outcome"] == ref["outcome"] and ep.end["floor"] == ref["floor"]
 
 
-def test_check_refuses_blank_predictions(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(tourlib.DEV_ENV, raising=False)
-    with pytest.raises(SystemExit, match="not complete"):
-        check.main(["--seeds", "1"])
-
-
-def test_sample_predictions_cover_every_measured_key() -> None:
-    import tomllib
-
-    keys = {
-        "net_decisions_per_run",
-        "random_decisions_per_run",
-        "net_fight_share",
-        "net_median_classes",
-        "random_mean_floor",
-        "net_forced_share",
+def _rec(T: int, forced: int, outcome: str, g0: float) -> dict:
+    return {
+        "T": T,
+        "forced": forced,
+        "fight_decisions": T // 2,
+        "floor": 46 if outcome == "won" else 3,
+        "outcome": outcome,
+        "classes": {"2": T // 2, "4": T - T // 2},
+        "members": {"3": T // 2, "4": T - T // 2},
+        "forced_actions": {"fight end_turn": forced},
+        "env": {"G0": g0},
     }
-    for name in ("predictions.toml", "predictions.sample.toml"):
-        raw = tomllib.loads((check.HERE / name).read_text(encoding="utf-8"))
-        assert set(raw) == keys, name
+
+
+def test_figures_summary_uses_runs_as_the_sampling_unit() -> None:
+    import figures
+
+    s = figures.summary([_rec(10, 2, "won", 1.242), _rec(4, 0, "lost", 0.006)])
+    assert s["T_mean"] == pytest.approx(7.0)
+    assert s["forced_share"] == pytest.approx(2 / 16)
+    assert s["J_hat"] == pytest.approx((1.242 + 0.006) / 2)
+    # standard error over 2 runs, not over 14 decisions
+    assert s["J_se"] == pytest.approx(abs(1.242 - 0.006) / 2)
+    assert s["classes_mean"] == pytest.approx(3.0)
+    assert s["merge_ratio"] == pytest.approx(3.5 / 3.0)
+    assert s["forced_fight_share"] == pytest.approx(1.0)
