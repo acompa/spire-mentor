@@ -13,7 +13,7 @@ Two players:
   loop with the same choices. The replay must end where the self-play ended.
 
     tour/run stop-1-episode/check.py            # default panel
-    tour/run stop-1-episode/check.py --quick    # about two minutes
+    tour/run stop-1-episode/check.py --quick    # 20 seeds
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ class Step:
     floor: int | None
     action: Any = None  # the run-action dict that was applied
     text: str = ""  # the choice in words (only when `play(words=True)`)
+    n_members: int = 1  # legal actions behind the classes (before merging)
 
 
 @dataclass
@@ -118,6 +119,7 @@ def play(
                 int(d["floor"]),
                 a["action"],
                 text,
+                sum(len(k["actions"]) for k in d["classes"]),
             )
         )
         drv.apply(rm, a["action"], a["kind"])
@@ -358,8 +360,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
     n = args.seeds or (20 if args.quick else 200)
 
-    tourlib.load_predictions(HERE)  # refuse to run before the predictions exist
-
     import sts2_rs
 
     student = sts2_rs.E2eStudent(str(tourlib.weight(NET)))
@@ -396,17 +396,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     print_summary("Network", ns)
     print(f"\ntime: random panel {t1 - t0:.0f}s, network panel {t2 - t1:.0f}s")
 
-    tourlib.score(
-        HERE,
-        {
-            "net_decisions_per_run": ns["decisions_per_run"],
-            "random_decisions_per_run": rs["decisions_per_run"],
-            "net_fight_share": ns["combat_share"],
-            "net_median_classes": ns["median_classes"],
-            "random_mean_floor": rs["mean_floor"],
-            "net_forced_share": ns["forced_share"],
-        },
-    )
     return 0
 
 
