@@ -105,7 +105,7 @@ About 60 to 90 minutes. Paths are from the repository root.
 ## Predict
 
 Fill in `predictions.toml`: a guess and an 80% interval for each. The check
-plays 150 seeds of `PANEL_A` with the published Ironclad network
+plays 120 seeds of `PANEL_A` with the published Ironclad network
 (`ironclad_e2e_d9000_ema0999`).
 
 | Key | Quantity | Unit |
@@ -118,7 +118,7 @@ plays 150 seeds of `PANEL_A` with the published Ironclad network
 | `share_seeds_disagree` | Share of seeds where one way wins and the other loses. | fraction of seeds, 0 to 1 |
 
 The last one is a share rather than a count so that `--quick` (20 seeds) and
-the default (150) score the same quantity. The check prints the counts too.
+the default (120) score the same quantity. The check prints the counts too.
 
 Hints for thinking, not answers: a median hides the tail, so the median can
 be high while a fair share of decisions is uncertain. A run has several
@@ -134,11 +134,13 @@ From the repository root (in a git worktree, add `TOUR_VENV` and
 tour/run stop-2-policy/check.py
 ```
 
-About 10 minutes on an M2 Max with 4 processes. `--quick` plays 20 seeds and
+Under 15 minutes on an M2 Max with 4 processes, less when nothing else is
+running. `--quick` plays 20 seeds and
 takes about 2 minutes. `--seeds N` and `--workers K` change the size and the
 parallelism.
 
-Tests (a few minutes; they play three whole runs both ways):
+Tests (about two minutes; three seeds are played to the end twice, once
+through this stop's loop and once through `e2e_selfplay`):
 
 ```bash
 tour/run -m pytest tour/stop-2-policy
@@ -159,7 +161,7 @@ the logits, `E2ePeek.class_action` names the class's action, and
    first fight decision with at least three classes, and the first card
    reward. Each line is a class with its logit, its probability and a
    readable action.
-2. **Part 2** collects the probabilities at every decision of the 150 greedy
+2. **Part 2** collects the probabilities at every decision of the 120 greedy
    runs and prints the medians, the share above 0.9, and a table by decision
    type: count, mean number of classes, median top probability, share above
    0.9, mean entropy in nats, and mean entropy divided by log(n classes).
@@ -192,7 +194,7 @@ it shows what sampling does to a finished policy, not what training saw.
   that way is better. The sampled-differs share times the decisions per run
   gives roughly how many off-greedy actions a sampled run takes.
 - Win rates on a few hundred seeds have wide error bars. Stop 8 covers when a
-  difference is real; for now, a difference of a few points on 150 seeds is
+  difference is real; for now, a difference of a few points on 120 seeds is
   within noise.
 
 ## Note prompt

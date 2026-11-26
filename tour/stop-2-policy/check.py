@@ -264,13 +264,13 @@ def print_types(by_type: dict[str, list[Step]]) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--quick", action="store_true", help="20 seeds instead of 150")
+    ap.add_argument("--quick", action="store_true", help="20 seeds instead of 120")
     ap.add_argument("--seeds", type=int, help="number of PANEL_A seeds")
     ap.add_argument("--workers", type=int, default=4)
     args = ap.parse_args()
 
     tourlib.load_predictions(STOP)  # refuse before any slow work
-    n_seeds = args.seeds or (20 if args.quick else 150)
+    n_seeds = args.seeds or (20 if args.quick else 120)
     seeds = list(tourlib.PANEL_A[:n_seeds])
     path = str(tourlib.weight(NET))
 
