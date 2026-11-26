@@ -354,7 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--quick", action="store_true", help="20 seeds instead of the default")
     ap.add_argument("--seeds", type=int, default=None, help="seeds from PANEL_A (default 200)")
-    ap.add_argument("--workers", type=int, default=8, help="threads for network self-play")
+    ap.add_argument("--workers", type=int, default=10, help="threads for network self-play")
     args = ap.parse_args(argv)
     n = args.seeds or (20 if args.quick else 200)
 

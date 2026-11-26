@@ -113,8 +113,12 @@ as `tour/README.md` shows):
 tour/run stop-1-episode/check.py
 ```
 
-It takes about 5 minutes on ten threads. `--quick` plays 20 seeds instead of
-200 (under a minute). `--workers N` sets the threads for the network's runs.
+On an idle M2 Max with ten threads (the default) it should take about four
+minutes: the network's 200 runs are about 140,000 decisions at roughly 800
+per second, plus a replay of each. On a machine shared with other heavy jobs
+it has taken 14 minutes on four threads. `--quick` plays 20 seeds instead of
+200 (under a minute on four threads). `--workers N` sets the threads for the
+network's runs.
 
 What it does:
 
