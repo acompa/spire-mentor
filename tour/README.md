@@ -1,44 +1,47 @@
-# Guided tour
+# RL tour
 
-Eight stops through the reinforcement-learning ideas in this repository's
-end-to-end PPO agent ("Instinct"). Each stop teaches one idea by having you
-predict a number and then measure it.
+Eight chapters on the fundamental ideas of reinforcement learning. Each
+chapter teaches one concept with equations, diagrams and measurements, and
+uses this repository's end-to-end PPO agent ("Instinct") as its worked
+example.
 
 This directory exists only on the `tour` branch of this fork. Nothing outside
 `tour/` differs from upstream.
 
-## How a stop works
+## Chapters
 
-1. **Read** the stop's `README.md`. It names the question, and the files and
-   line ranges to read. It never states a result.
-2. **Predict.** Fill in the stop's `predictions.toml`: a guess and an 80%
-   interval for each quantity. The check refuses to run while any value is
-   blank.
-3. **Run** the check. It measures each quantity, prints it beside your
-   prediction, and appends the rows to the stop's `scorecard.jsonl`.
-4. **Write the note.** Each README ends with a note prompt. Answer it in your
-   own words in your wiki. The stop is done when the note exists.
+Each chapter is one HTML file. Open it in a browser, for example
+`open tour/stop-1-episode/chapter.html`. The page loads MathJax and its fonts
+from the network, and has a light and a dark theme.
 
-Agents build and run the checks. The predictions and the notes are yours.
-
-## Stops
-
-| Stop | Idea | Question |
+| Chapter | Concept | What it covers |
 | --- | --- | --- |
-| [1](stop-1-episode/) | State, action, episode, return | What is one decision, and what is one episode? |
-| [2](stop-2-policy/) | Policy as a network | What does the network output, and what does greedy play discard? |
-| [3](stop-3-reward/) | Reward and return | Which number does training maximise? |
-| [4](stop-4-critic/) | Critic and advantage | How does a result at the end of a run score one card play? |
-| [5](stop-5-ppo-update/) | The PPO update | What does one update change, and what limits the change? |
-| [6](stop-6-off-policy/) | Where on-policy bends | How is data from an older policy corrected? |
-| [7](stop-7-imitation/) | Imitation, then RL | Why does a clone that mostly agrees with its teacher win less? |
-| [8](stop-8-evaluation/) | Evaluation discipline | When is a difference between two policies real? |
+| [1](stop-1-episode/chapter.html) | The decision process | MDPs, partial observability, state-dependent action sets, episodes, the objective |
+| [2](stop-2-policy/chapter.html) | Policies | A policy as a distribution, the softmax over legal actions, entropy, sampling against greedy play |
+| [3](stop-3-reward/chapter.html) | Reward and return | Sparse and dense reward, potential-based shaping, discounting, misspecified reward |
+| [4](stop-4-critic/chapter.html) | Value functions and advantage | V, Q and A, Bellman equations, Monte Carlo against TD targets, GAE |
+| [5](stop-5-ppo-update/chapter.html) | Policy gradients and PPO | The policy gradient theorem, baselines, trust regions, the clipped objective, diagnostics |
+| [6](stop-6-off-policy/chapter.html) | Off-policy correction | Importance sampling, effective sample size, truncation, V-trace |
+| [7](stop-7-imitation/chapter.html) | Imitation and warm starts | Behaviour cloning, compounding error, DAgger, distillation, warm-starting RL |
+| [8](stop-8-evaluation/chapter.html) | Evaluating agents | Binomial intervals, paired seeds, McNemar's test, power, selection bias, pre-registration |
 
-Do them in order. Later stops assume the earlier notes.
+Read them in order. Each chapter refers back to the ones before it, and all
+eight share one notation.
+
+## What a chapter's directory holds
+
+- `chapter.html`: the chapter.
+- `README.md`: the commands that reproduce the chapter's measurements.
+- `check.py`: the chapter's main experiment.
+- `figures.py` and a JSON data file: the script that collects the data behind
+  the plots, and the data it collected.
+- `predictions.toml`, in chapters 2, 4, 5, 6 and 7: optional practice. Fill it
+  in and `check.py` scores your guesses against its measurements. Set
+  `TOUR_DEV=1` to run on the sample predictions instead.
 
 ## Setup
 
-Done once in the main checkout (`~/git/spire-mentor`):
+Do this once in the main checkout (`~/git/spire-mentor`):
 
 ```bash
 brew install rustup just
@@ -50,10 +53,12 @@ gh release download weights-2026-11-23 --repo tfriedel/spire-mentor --dir ../wei
 The weights are release assets; `just fetch-weights` needs a manifest that the
 public repository does not ship.
 
-## Running a check
+## Running an experiment
+
+Run from the repository root:
 
 ```bash
-tour/run stop-1-episode/check.py
+tour/run stop-1-episode/check.py --quick
 ```
 
 `tour/run` uses the simulator's Python environment and puts `tour/` and
@@ -61,32 +66,13 @@ tour/run stop-1-episode/check.py
 main checkout:
 
 ```bash
-TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-1-episode/check.py
+TOUR_VENV=~/git/spire-mentor/sts2-pycli TOUR_WEIGHTS=~/git/spire-mentor/weights tour/run stop-1-episode/check.py --quick
 ```
 
-## Conventions for every stop
+Run a chapter's tests with `tour/run -m pytest tour/stop-1-episode`.
 
-- **Files.** `README.md`, `predictions.toml` (blank), `predictions.sample.toml`
-  (filled, for dry runs), `check.py`, and `test_check.py` for any logic worth
-  a test.
-- **Prediction gate.** `check.py` calls `tourlib.load_predictions` before any
-  slow work and `tourlib.score` at the end. `TOUR_DEV=1` runs on the sample
-  predictions and marks the scores as a dry run.
-- **No spoilers.** READMEs, sample predictions and committed files state no
-  measured result. Sample guesses are deliberately rough.
-- **Seeds.** Use `tourlib.PANEL_A` and `tourlib.PANEL_B`. They overlap none of
-  the campaign's panels.
-- **Time.** The default check finishes in 15 minutes or less on an M2 Max. A
-  `--quick` flag finishes in about two. One greedy run takes about 6 s on one
-  thread, and `tourlib.selfplay_many` plays about 800 decisions per second on
-  ten threads.
-- **Upstream code first.** A check calls the repository's own functions where
-  they exist, so it measures the real mechanism. Where a check must substitute
-  something smaller, the README says what and why.
-- **Scope.** A stop changes files only inside its own directory.
-
-## Measured on 2026-11-25
+## Smoke test
 
 The published Ironclad network (`ironclad_e2e_d9000_ema0999`) won 18 of the
-first 20 seeds of `PANEL_A` on an M2 Max. This is the tour's smoke test, not
-a stop's answer.
+first 20 seeds of `tourlib.PANEL_A` on an M2 Max on 2026-11-25. A fresh setup
+should reproduce that.
