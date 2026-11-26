@@ -86,7 +86,10 @@ QUICK = Size(
 ARMS: dict[str, dict] = {
     "clipped": {"clip": 0.2, "epochs": 2, "lr_scale": 1.0},
     "unclipped": {"clip": 1e6, "epochs": 4, "lr_scale": 10.0},
+    # Not run by default: the unclipped arm's step with the clip back on.
+    "clipped_fast": {"clip": 0.2, "epochs": 4, "lr_scale": 10.0},
 }
+DEFAULT_ARMS = ["clipped", "unclipped"]
 
 
 def learner_argv(arm: str, size: Size, save_dir: Path, seed: int) -> list[str]:
@@ -275,6 +278,9 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0, help="the learners' seed")
     ap.add_argument("--workers", type=int, help="rollout workers per arm")
     ap.add_argument("--keep", type=Path, help="keep the learners' save directories here")
+    ap.add_argument(
+        "--arms", default=",".join(DEFAULT_ARMS), help=f"comma-separated, from {sorted(ARMS)}"
+    )
     args = ap.parse_args()
 
     tourlib.load_predictions(STOP)  # refuse before any slow work
@@ -282,7 +288,10 @@ def main() -> None:
     size = QUICK if args.quick else DEFAULT
     if args.workers:
         size = Size(**{**size.__dict__, "workers": args.workers})
-    arms = list(ARMS)
+    arms = [a for a in args.arms.split(",") if a]
+    unknown = sorted(set(arms) - set(ARMS))
+    if unknown:
+        raise SystemExit(f"unknown arms {unknown}; choose from {sorted(ARMS)}")
     if args.keep:
         args.keep.mkdir(parents=True, exist_ok=False)
         root = args.keep
@@ -314,6 +323,8 @@ def main() -> None:
             f" verdict pass={verdict.get('pass')}\n"
         )
 
+    if not {"clipped", "unclipped"} <= set(sums):
+        return  # the predictions compare the two default arms
     c, u = sums["clipped"], sums["unclipped"]
     tourlib.score(
         STOP,
