@@ -2,16 +2,16 @@
 
 The chapter is [chapter.html](chapter.html).
 
-Rerun its measurements from the fork's root (a worktree needs `TOUR_VENV`
-pointing at a checkout with a built `sts2-pycli/.venv`):
+Rerun its measurements from the fork's root. In a worktree, point `TOUR_VENV`
+at a checkout that has a built `sts2-pycli/.venv`:
 
 ```bash
 TOUR_DEV=1 TOUR_VENV=~/git/spire-mentor/sts2-pycli tour/run stop-5-ppo-update/check.py --keep /tmp/stop5
 ```
 
-- `--quick`: short iterations; checks the plumbing.
-- `--arms clipped_fast`: the clipped objective at ten times the learning rate and four epochs.
-- `--seed N`, `--workers N`: the learners' seed and rollout workers per arm.
+- `--quick` runs short iterations to check the plumbing.
+- `--arms clipped_fast` runs the clipped objective at ten times the learning rate and four epochs.
+- `--seed N` and `--workers N` set the learners' seed and the rollout workers per arm.
 
 Redraw the figures from the kept runs:
 

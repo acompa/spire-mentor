@@ -277,7 +277,7 @@ def fig_flow(stage: int) -> str:
         if label:
             out.append(label)
     if stage >= 4:
-        # The new weights go back to the workers.
+        # The new weights go back to the acting network.
         out.append('<line class="ink" x1="320" y1="202" x2="320" y2="290"/>')
         out.append(f'<path class="ink" d="M320 290 L630 290 L630 6 L100 6 L100 20" fill="none" stroke-dasharray="4 4" {arrow}/>')
         out.append('<text class="muted small" x="470" y="310" text-anchor="middle">new weights replace the acting network between inference batches</text>')
