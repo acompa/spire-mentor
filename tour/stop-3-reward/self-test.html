@@ -1,0 +1,289 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<meta charset="utf-8">
+<title>RL Tour 3: Self-test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+<style>
+/* Self-test only. */
+ol.questions { padding-left: 1.6rem; margin: 0; }
+ol.questions > li + li { margin-top: 2rem; }
+ol.questions > li > * + * { margin-top: .7rem; }
+.src { font-family: var(--sans); font-size: .88em; color: var(--muted); }
+
+/* A long worked line gets its own scrolling row so the page never scrolls sideways on a phone. */
+.eq-inline { display: block; margin: .35rem 0; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 3 · Self-test</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Reward and return: self-test</h1>
+  <p class="lede">Answer each question from memory and in writing before you open any answer. Come back in a few days and answer them again.</p>
+  <p class="lede">The questions cover <a href="chapter.html">Chapter 3: Reward and return</a>.</p>
+</header>
+
+<main>
+
+<h2 id="recall">Recall questions</h2>
+
+<ol class="questions">
+
+<li>
+  <p>A reward and a supervised-learning label are both numbers attached to an example. What does a label tell you that a reward does not? Why can a won run still contain bad decisions?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>A label gives the correct output for an example. A reward only grades how a step turned out, after the fact, and says nothing about which action would have been right. A reward is also one part of a sum over many steps, so a single number at the end of a run covers hundreds of decisions. A run that won can contain bad decisions, and a run that died can contain good ones. Chapter 5 trains the policy on a log-likelihood weighted by advantages, which come from returns, not on the chosen actions as targets.</p>
+    <p class="src">(Sections 1 and 10)</p>
+  </details>
+</li>
+
+<li>
+  <p>Instinct's per-step reward is the change in two counters plus a win term, Equation (4) in the chapter. Explain why, with \(\gamma = 1\), the return of a whole run depends only on the counters at the end. Then say what the expected return splits into.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>Each step pays <span class="eq eq-inline">\[R_F[F(s_{t+1}) - F(s_t)] + R_B[B(s_{t+1}) - B(s_t)],\]</span> plus \(R_W W\) on the last step. When you add these with \(\gamma = 1\), each bracket cancels against the next one, so only the last counter value minus the first remains. Every run starts on floor 0 with no bosses paid, so \(G_0 = R_F F_T + R_B B_T + R_W W\). Taking the expectation gives <span class="eq eq-inline">\[J(\theta) = R_W \Pr(\text{win}) + R_B\,\mathbb{E}[B_T] + R_F\,\mathbb{E}[F_T].\]</span> In words, maximising the return means maximising the win rate, with a little credit for how far the run got.</p>
+    <p class="src">(Section 2)</p>
+  </details>
+</li>
+
+<li>
+  <p>Why is the return also called the reward-to-go? A decision made on floor 20: what credit does \(G_t\) give it for the floors the run already climbed?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>\(G_t\) sums only the rewards from step \(t\) to the end of the episode. Rewards earned before step \(t\) are left out. With \(\gamma = 1\), \(G_t = G_0 - \sum_{k \lt t} r_k\), so the floor-20 decision gets no credit for the floors already climbed. Splitting off the first term gives the recursion \(G_t = r_t + \gamma G_{t+1}\) with \(G_{T+1} = 0\), which the value methods of Chapter 4 build on.</p>
+    <p class="src">(Sections 2 and 10)</p>
+  </details>
+</li>
+
+<li>
+  <p>A sparse reward causes two separate problems. Name both. For the first one, explain why the policy gradient is exactly zero when a random policy plays under a win-only rule, and say what the 300 rescored random runs showed.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The first problem is that the learner gets no signal. The policy gradient weights each action's log-probability by roughly \(G_0 - b\). If the policy never wins, every return is 0, the average-return baseline is 0, every weight is 0, and the gradient is exactly zero. The 300 random runs rescored under the win-only rule all had return 0. Under Instinct's rule all 300 had a nonzero return, with mean 0.0038 and standard deviation 0.0026, so a gradient exists but is weak next to a win worth 1.0. The second problem is that the signal is weak and far away: the reward at step 700 has to be credited back to an early card choice, and every step in between adds noise.</p>
+    <p class="src">(Sections 3 and 9)</p>
+  </details>
+</li>
+
+<li>
+  <p>Potential-based shaping pays \(\tilde r_t = \gamma\Phi(s_{t+1}) - \Phi(s_t)\). Walk through why this keeps the best policy the best. What did Wiewiora add, and what does that say shaping can and cannot change?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>Summed along an episode with discount \(\gamma^t\), the shaping terms telescope: every middle potential appears once with a plus and once with a minus. The total is \(\gamma^{T+1}\Phi(s_{T+1}) - \Phi(s_0)\). If every terminal state has potential 0, the shaped return is \(G_0 - \Phi(s_0)\). The start state does not depend on the policy, so every policy's expected return moves by the same amount. Wiewiora showed that a Q-learner with potential-based shaping makes the same updates as one without shaping whose Q-table starts at \(Q_0(s,a) + \Phi(s)\). Shaping is a prior on the value function. It changes where learning starts, not where it ends, so it can only change the speed of learning.</p>
+    <p class="src">(Section 4)</p>
+  </details>
+</li>
+
+<li>
+  <p>The chapter gives a two-part test for any reward term. State both conditions. Why must the terminal potential be exactly 0 when \(\gamma \lt 1\), when a shared constant is enough with \(\gamma = 1\)?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The form condition: the term must equal \(\gamma\Phi(s_{t+1}) - \Phi(s_t)\) for one function \(\Phi\) of the state. A term that depends on the action, or on anything outside the state, fails. The ending condition: with \(\gamma = 1\), every terminal state must have the same potential. With \(\gamma = 1\) a shared constant adds the same amount to every return. With \(\gamma \lt 1\) a constant \(c \ne 0\) adds \(\gamma^{T+1} c\), which depends on the episode length and so on the policy. The form condition also stops loop farming: with \(\gamma = 1\), a loop \(s \to s' \to s\) collects 0.</p>
+    <p class="src">(Section 4)</p>
+  </details>
+</li>
+
+<li>
+  <p>The chapter reads the discount \(\gamma\) three ways. Give all three. For the third, what is the effective horizon at \(\gamma = 0.99\), and what would that discount do to Instinct's win seen from the first decision?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>First, as a preference for sooner reward, as with interest. Second, as a chance of stopping: if the episode is cut off with probability \(1 - \gamma\) after each step, the expected undiscounted sum equals the discounted sum. Third, as a horizon: the weights sum to \(1/(1-\gamma)\), about 100 steps at \(\gamma = 0.99\). With \(T = 678\), the median index of the last decision in the network's won runs, the win is worth \(0.99^{678} \approx 0.0011\) from the first decision. That is less than one 0.002 floor reward. At \(\gamma = 0.999\) it would be worth 0.51.</p>
+    <p class="src">(Sections 5 and 9)</p>
+  </details>
+</li>
+
+<li>
+  <p>Practitioners often discount episodic tasks anyway. What do they gain and what do they pay? How does Instinct get the gain without paying that price?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>A shorter horizon gives a less noisy return. A sum of 700 random rewards has more variance than one that effectively sums 100, and value methods converge faster. The price is bias: the agent optimises a different objective from the one you care about. Instinct keeps \(\gamma = 1\), so a win is worth exactly 1.0 from every decision. It controls variance with the λ of GAE instead. λ biases the gradient estimate when the critic is wrong, but it leaves the objective unchanged.</p>
+    <p class="src">(Sections 5 and 7)</p>
+  </details>
+</li>
+
+<li>
+  <p>What is reward hacking? Use it to explain why Instinct pays nothing for HP, and say what evidence the plan cites.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>Reward hacking is when the optimiser finds a cheap way to raise the reward that is not what the designer intended. It does not need a bug. Under Goodhart's law, a quantity that tracks the goal in normal play stops tracking it once it is optimised directly. HP usually comes with winning, but the strongest play sometimes spends HP to win more often, so an HP term would push the agent away from that play. The plan cites AlphaDefect: its stronger checkpoint entered the act-1 boss with 9pp less HP and won more. The plan also lists "the hybrid's suspected cap" as a second reason. The chapter could not check either citation, because the evidence sits in a knowledge base outside the public repository.</p>
+    <p class="src">(Sections 6 and 8)</p>
+  </details>
+</li>
+
+<li>
+  <p>Instinct departs from the textbook setup in four ways. Pick two of these and explain each: rewards that arrive during forced steps, and the reason the value output stays in 32-bit floats.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The engine takes forced steps that the agent never sees, such as moves with one legal action and the end of a fight. Reward from those steps collects in <code>_pending_r</code>, and <code>_assign_pending</code> credits it to the most recent stored decision. The run's total stays the same. Only the bookkeeping moves. For precision: adjacent bfloat16 numbers are 0.0039 apart just below 1.0 and 0.0078 apart just above it, where a won state's value of about 1.24 sits. Both gaps are wider than the 0.002 floor reward, so a bfloat16 value head could not tell one more floor from rounding error. The other two departures are the pre-registered reward and \(\gamma = 1\) with λ for variance.</p>
+    <p class="src">(Sections 7 and 8)</p>
+  </details>
+</li>
+
+<li>
+  <p>The floor term pays the change in a high-water mark. Which of the two shaping conditions does it pass, which does it fail, and what is its net effect on the return?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>It passes the form condition. With \(\Phi_F(s) = R_F F(s)\) and \(\gamma = 1\), the term is exactly \(\Phi_F(s_{t+1}) - \Phi_F(s_t)\), and a high-water mark is a function of the state, so no loop can farm it. It fails the ending condition. At the terminal state the counter keeps its final value, so the terminal potential is 0.036 for a death on floor 18 and 0.092 for a win on floor 46. Splitting the term shows a potential-based part that sums to 0 plus a terminal bonus \(R_F F_T\). The boss term behaves the same way. The net effect is a terminal reward for progress, \(R_F F_T + R_B B_T\), added to the win, which can change which policy is best.</p>
+    <p class="src">(Sections 4 and 8)</p>
+  </details>
+</li>
+
+<li>
+  <p>What did the measured runs show about where the network's return comes from, and about HP? Then answer the confusion "if HP earns nothing, the agent ignores HP".</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The network won 243 of 300 runs. Of its mean return of 1.039, the win supplied 0.810, or 78%, bosses 0.140 and floors 0.089. Only 7.0% of its decisions carried any reward. Won runs ended with anywhere from 10% of maximum HP up, the middle 80% between 28% and 86%, and every one scored the same return. The agent ignores HP as a goal, not as a means. HP is part of the state, and when HP helps the agent win, states with more HP have higher value. The critic's value estimate, not the reward, is where HP gets a price.</p>
+    <p class="src">(Sections 9 and 10)</p>
+  </details>
+</li>
+
+</ol>
+
+<h2 id="calc">Calculations</h2>
+
+<ol class="questions">
+
+<li>
+  <p>A run reaches floors 1 through 18, beats the act-1 boss on floor 16, and dies on floor 18. Use \(R_F = 0.002\), \(R_B = 0.05\), \(R_W = 1\) and \(\gamma = 1\). Compute \(G_0\). Then split the floor part into the potential-based part and the terminal progress bonus, and give the value of each.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The counters at the end are \(F_T = 18\), \(B_T = 1\) and \(W = 0\).</p>
+    <p><span class="eq eq-inline">\[G_0 = 0.002 \times 18 + 0.05 \times 1 + 1 \times 0 = 0.036 + 0.05 + 0 = 0.086.\]</span></p>
+    <p>The potential-based part uses \(\hat\Phi_F\), which is 0 at the terminal state and 0 at the start. It telescopes to \(\hat\Phi_F(s_{T+1}) - \hat\Phi_F(s_0) = 0 - 0 = 0\).</p>
+    <p>The terminal progress bonus is \(R_F F_T = 0.002 \times 18 = 0.036\). It carries the whole floor part of the return.</p>
+    <p>HP at death, elites fought, and deck strength do not change any of these numbers.</p>
+    <p class="src">(Sections 2 and 8)</p>
+  </details>
+</li>
+
+<li>
+  <p>Use the network's measured values \(p = 0.81\) and \(m_L = 0.174\), and the 0.242 progress every standard win collects. A policy gives up one percentage point of win rate, \(\Delta p = 0.01\). How much extra progress \(\Delta m_L\) per lost run must it collect to break even, to first order and by the exact condition? Convert the first-order answer to floors.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>Start from <span class="eq eq-inline">\[J = p\,(R_W + 0.242) + (1-p)\,m_L.\]</span> Break-even to first order needs <span class="eq eq-inline">\[(1-p)\,\Delta m_L = \Delta p\,(R_W + 0.242 - m_L).\]</span></p>
+    <p>The right side is <span class="eq eq-inline">\[0.01 \times (1.242 - 0.174) = 0.01 \times 1.068 = 0.01068.\]</span></p>
+    <p>First order: \(\Delta m_L = 0.01068 / 0.19 \approx 0.056\).</p>
+    <p>Exact: replace \(1 - p\) with \(1 - p + \Delta p = 0.20\), so \(\Delta m_L = 0.01068 / 0.20 \approx 0.053\).</p>
+    <p>In floors: \(0.056 / 0.002 = 28\) more floors per lost run, or roughly one more boss at 0.05. The progress bonus can break a near-tie between policies, but it cannot pay for a real loss of win rate.</p>
+    <p class="src">(Section 8)</p>
+  </details>
+</li>
+
+</ol>
+
+<h2 id="note">For your note</h2>
+
+<p>These three questions have no answers on this page. Use them to tie this chapter to the ones before it.</p>
+<ol>
+  <li>Chapter 1 described the decision process and its forced steps. How does crediting reward to the last stored decision change what that process looks like from the agent's side?</li>
+  <li>Chapter 1 named the objective \(J(\theta)\). Now that you can write it as win rate plus progress terms, which parts of it does a single greedy run from Chapter 2 tell you about, and which does it not?</li>
+  <li>The Q-learning target \(r_t + \gamma \max_{a'} Q(s_{t+1}, a')\) uses both the reward and the discount from this chapter. What would change in that target, and in what it learns, if you used Instinct's reward rule and \(\gamma = 1\)?</li>
+</ol>
+
+</main>
+
+<footer class="chapter"><a href="chapter.html">← Back to Chapter 3: Reward and return</a><span>Self-test</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
