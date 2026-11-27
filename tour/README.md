@@ -31,8 +31,8 @@ all share one notation.
 ## What a chapter's directory holds
 
 - `chapter.html`: the chapter.
-- `self-test.html`, in chapters 1 to 8: recall questions and two short
-  calculations on the chapter, with each answer folded under its question.
+- `self-test.html`: recall questions and two short calculations on the
+  chapter, with each answer folded under its question.
   Answer in writing from memory before you open an answer.
 - `README.md`: the commands that reproduce the chapter's measurements.
 - `check.py`: the chapter's main experiment.
