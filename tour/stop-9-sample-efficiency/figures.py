@@ -67,13 +67,13 @@ EVENTS = [  # (decisions B, short label, log line)
 DOUBLINGS = [  # before, after: (decisions per update, probe_kl median, decisions/s), log line
     {"name": "Amendment 14", "at": 5.2876, "line": 243,
      "before": (131_374, 0.0030, 9_297), "after": (262_437, 0.0043, 9_818),
-     "step_pp": 3.70, "step_line": 245},
+     "step_pp": 3.50, "step_line": 246},
     {"name": "Amendment 15", "at": 6.0876, "line": 257,
      "before": (262_445, 0.0035, 9_257), "after": (524_586, 0.0043, 10_318),
      "step_pp": 3.90, "step_line": 260},
     {"name": "Amendment 16", "at": 7.2685, "line": 277,
      "before": (524_586, 0.0043, 10_251), "after": (1_048_899, 0.0046, 10_479),
-     "step_pp": 0.30, "step_line": 284},
+     "step_pp": 1.10, "step_line": 284},
 ]
 #: Amendment 16's smoke gives no "before" probe_kl; the before value is Amendment 15's smoke median.
 #: Its before rate, 10,251/s, is the log's "(was 10,251)" on line 277.
@@ -131,7 +131,8 @@ def toy_floor(rng) -> dict:
         for b in (1, 2, 4, 8, 16):
             tr = run(lambda t: alpha, lambda t: b, 1500)
             pred = alpha / (2 * b) * float(np.sum(sig2 / (2 - alpha * h)))
-            pts.append({"alpha": alpha, "B": b, "measured": float(tr[-500:].mean()), "predicted": pred})
+            pts.append({"alpha": alpha, "B": b, "measured": float(tr[-500:].mean()), "predicted": pred,
+                        "small_step": alpha * float(sig2.sum()) / (4 * b)})
 
     # A schedule like the campaign's, in steps: constant, halve alpha, double B twice.
     seg = 600
@@ -245,9 +246,19 @@ def toy_seeds() -> dict:
     late = {k: first_cross(v, MILESTONES[1]) for k, v in curves.items()}
     auc = {k: v.mean(1) for k, v in curves.items()}
 
+    def ranks(x):
+        """Ranks with ties given their average rank."""
+        x = np.asarray(x)
+        order = np.argsort(x, kind="stable")
+        r = np.empty(len(x))
+        r[order] = np.arange(len(x), dtype=float)
+        for v in np.unique(x):
+            m = x == v
+            r[m] = r[m].mean()
+        return r
+
     def spearman(x, y):
-        rx, ry = np.argsort(np.argsort(x)), np.argsort(np.argsort(y))
-        return float(np.corrcoef(rx, ry)[0, 1])
+        return float(np.corrcoef(ranks(x), ranks(y))[0, 1])
 
     rng = np.random.default_rng(11)
     true_better = "B" if np.mean(late["B"]) < np.mean(late["A"]) else "A"
@@ -257,8 +268,9 @@ def toy_seeds() -> dict:
         ia = rng.integers(0, seeds, (reps, n))
         ib = rng.integers(0, seeds, (reps, n))
         ma, mb = late["A"][ia].mean(1), late["B"][ib].mean(1)
-        pick_b = mb < ma
-        wrong[str(n)] = float(np.mean(pick_b != (true_better == "B")))
+        # A tie (equal mean decisions) is settled by a coin flip, so it counts half.
+        miss = np.where(mb == ma, 0.5, (mb < ma) != (true_better == "B"))
+        wrong[str(n)] = float(np.mean(miss))
     # Several identical arms, one test each at level 0.05: chance of at least one false alarm.
     fw = {str(k): 1 - 0.95 ** k for k in (1, 2, 4, 8)}
     show = 12
@@ -413,7 +425,7 @@ def fig_ddr(s):
                           f'height="{pl.y(0) - pl.y(v):.1f}" opacity="0.8"/>')
             pl.text(x + dx, v, f"{v:.0f}", "", "middle", dy=-5, size=11)
         pl.text(x, 0, d["name"], "", "middle", dy=18)
-        pl.text(x, 0, f"next level step {d['step_pp']:+.1f} pp", "muted", "middle", dy=34, size=11)
+        pl.text(x, 0, f"level step {d['step_pp']:+.1f} pp", "muted", "middle", dy=34, size=11)
     pl.legend([("f4", "before the doubling"), ("f1", "after")], x0=pl.l + 14, y0=pl.t + 10)
     return pl.svg()
 
@@ -428,7 +440,7 @@ def fig_floor(s):
     pl.line([(x, x * f["tr_sigma"] / 4) for x in xs], "l4", 1.5, "5 4")
     for p in f["grid"]:
         pl.dot(p["alpha"] / p["B"], p["measured"], "f1", 3.2)
-    pl.legend([("f1", "measured: 4 learning rates × 5 batch sizes"), ("l4", "α tr(Σ) / 4B")], y0=pl.t + 10)
+    pl.legend([("f1", "measured: 4 learning rates × 5 batch sizes"), ("l4", "α tr(Σ) / 4B, the small-step limit")], y0=pl.t + 10)
     return pl.svg()
 
 
