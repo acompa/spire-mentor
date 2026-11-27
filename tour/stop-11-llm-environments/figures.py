@@ -410,7 +410,7 @@ def env_stage(k):
     if k >= 6:
         b += _box(450, 300, 170, 50, ["Verifier", "v = grade(x, " + sub("s", "T") + ")"], n(6))
         b += _arrow(605, 222, 605, 298, n(6), "final " + sub("s", "T"), 599, 290, "end", k=k)
-        b += _arrow(450, 325, 172, 325, n(6), "reward " + sub("r", "T") + " = v", 311, 318, k=k)
+        b += _arrow(450, 325, 172, 325, n(6), "reward " + sub("r", "T−1") + " = v", 311, 318, k=k)
         b.append('<text class="muted" x="20" y="329">to the trainer</text>')
     h = 300 if k < 6 else 360
     return f'<svg viewBox="0 0 640 {h}" role="img" aria-label="Environment for a language-model agent, stage {k} of 6">' + "".join(b) + "</svg>"
