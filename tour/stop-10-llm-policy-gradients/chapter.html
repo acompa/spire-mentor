@@ -146,7 +146,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <h2 id="opening">1. From game decisions to tokens</h2>
 
-<p>Chapters 1 to 8 trained one agent, Spire Mentor's Instinct, on one game. A run lasts about 667 decisions, and each decision offers about seven legal options. Rewards arrive along the way: 0.002 for each floor climbed, 0.05 for each boss and 1 for a win (<a href="../stop-3-reward/chapter.html">chapter 3</a>). A critic learns the value of each state (<a href="../stop-4-critic/chapter.html">chapter 4</a>), and PPO turns the critic's advantages into a weight update (<a href="../stop-5-ppo-update/chapter.html">chapter 5</a>).</p>
+<p>Chapters 1 to 8 trained one agent, Spire Mentor's Instinct, on one game. A run lasts about 667 decisions, and each decision offers about seven legal options. Rewards arrive along the way: 0.002 for each floor climbed, 0.05 for each of the three bosses that pay out and 1 for a win (<a href="../stop-3-reward/chapter.html">chapter 3</a>). A critic learns the value of each state (<a href="../stop-4-critic/chapter.html">chapter 4</a>), and PPO turns the critic's advantages into a weight update (<a href="../stop-5-ppo-update/chapter.html">chapter 5</a>).</p>
 
 <p>Reinforcement learning on a language model uses the same theorem with different proportions. The agent picks a token from its whole vocabulary at every step. An episode is one answer to one prompt. The reward usually arrives once, when a program checks the finished answer. And the environment is often only a list of prompts with known answers.</p>
 
@@ -172,7 +172,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
   </tbody>
 </table></div>
 
-<p>The DeepSeekMath paper writes \(q\) for the prompt, \(o_i\) for the \(i\)-th output and \(r_{i,t}(\theta)\) for the probability ratio <span class="cite">[<a href="#ref-dsmath">1</a>]</span>. This chapter writes \(x\), \(y^{(i)}\) and \(\rho_{i,t}\), the tour's importance ratio from chapters 5 and 6.</p>
+<p>The DeepSeekMath paper writes \(q\) for the prompt and \(o_i\) for the \(i\)-th output, and it writes the probability ratio out in full <span class="cite">[<a href="#ref-dsmath">1</a>]</span>. DAPO abbreviates the ratio as \(r_{i,t}(\theta)\) <span class="cite">[<a href="#ref-dapo">7</a>]</span>. This chapter writes \(x\), \(y^{(i)}\) and \(\rho_{i,t}\), the tour's importance ratio from chapters 5 and 6.</p>
 
 <h2 id="mdp">2. Text generation as a decision process</h2>
 
@@ -264,15 +264,15 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <div class="definition"><span class="label">Definition 10.1 · RLVR</span>
 <p><dfn>Reinforcement learning with verifiable rewards</dfn> (RLVR) trains a language model on prompts whose answers a program can check. The reward is the program's output. Lambert et al. introduced the term in the Tülu 3 report <span class="cite">[<a href="#ref-tulu">5</a>, §6]</span>, with the objective</p>
-<div class="eq">\begin{equation} \max_\theta\; \mathbb{E}_{x \sim \mathcal{D},\, y \sim \pi_\theta(\cdot\mid x)}\Big[ v(x, y) - \beta_{\mathrm{KL}}\, \mathrm{KL}\big( \pi_\theta(\cdot \mid x) \,\big\|\, \pi_{\mathrm{ref}}(\cdot \mid x) \big) \Big]. \label{eq:rlvr} \end{equation}</div>
+<div class="eq">\begin{equation} \max_\theta\; \mathbb{E}_{x \sim \mathcal{D},\, y \sim \pi_\theta(\cdot\mid x)}\Big[ v(x, y) - \beta_{\mathrm{KL}}\, D_{\mathrm{KL}}\big( \pi_\theta(\cdot \mid x) \,\big\|\, \pi_{\mathrm{ref}}(\cdot \mid x) \big) \Big]. \label{eq:rlvr} \end{equation}</div>
 <p>In Tülu 3, \(v(x,y)\) is 10 when the answer is correct and 0 otherwise.</p>
 </div>
 
 <p>A <dfn>verifier</dfn> is a function of the prompt and the completion that a program computes without learned parameters. Tülu 3 uses three kinds. For GSM8K and MATH problems, it extracts the final answer and checks for an exact match with the reference. For instruction-following prompts, it checks the stated constraints, such as a word count or a required format. The training set held about 30,000 prompts: 7,473 from GSM8K, 7,500 from MATH and 14,973 instruction-following prompts. The authors set the reward of 10 after pilot experiments and did not tune it further <span class="cite">[<a href="#ref-tulu">5</a>]</span>.</p>
 
-<p>Tülu 3 trained RLVR with PPO and a value model, which it initialised from a general reward model. The report places RLVR next to earlier methods that also learn from checked answers, such as STaR, TRICE and VinePPO. The new part was the name and the use of a binary check inside an otherwise standard RL loop.</p>
+<p>Tülu 3 trained RLVR with PPO and a value model, which it initialised from a general reward model. The report places RLVR next to earlier methods that also learn from checked answers, such as STaR, TRICE and VinePPO. VinePPO had already used binary correctness rewards for math inside a PPO-based method. Tülu 3 named the approach, ran it fully online in a standard PPO loop, and extended it beyond math to instruction-following constraints <span class="cite">[<a href="#ref-tulu">5</a>]</span>.</p>
 
-<p>A learned reward model is not a verifier. Classic RLHF trains a reward model on human preferences and lets the policy optimise against it. The DeepSeek-R1 authors used rule-based rewards for accuracy and format, and they say they avoided neural reward models because the policy can learn to exploit them <span class="cite">[<a href="#ref-r1">2</a>]</span>. Chapter 11 covers what makes a verifier hard to exploit.</p>
+<p>A learned reward model is not a verifier. Classic RLHF trains a reward model on human preferences and lets the policy optimise against it. For reasoning tasks, the DeepSeek-R1 authors used rule-based rewards for accuracy and format, and they say they avoided neural reward models because the policy can learn to exploit them <span class="cite">[<a href="#ref-r1">2</a>]</span>. Chapter 11 covers what makes a verifier hard to exploit.</p>
 
 <p>For the gradient, RLVR changes two things. The reward takes only a few values, usually two, so one number \(p_x\) summarises the whole reward distribution for a prompt. And the reward has no measurement noise. All the variance in Equation \eqref{eq:px} comes from sampling the completions.</p>
 
@@ -286,7 +286,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <h3>RLOO: the leave-one-out baseline</h3>
 
-<p>Kool, van Hoof and Welling proposed the <dfn>leave-one-out baseline</dfn> for sampled sequences <span class="cite">[<a href="#ref-kool">3</a>]</span>. Ahmadian et al. brought it to language-model training under the name RLOO, REINFORCE leave-one-out <span class="cite">[<a href="#ref-rloo">4</a>, §2.3]</span>. Draw \(y^{(1)}, \dots, y^{(n)}\) independently from \(\pi_\theta(\cdot\mid x)\), and give each completion the mean reward of the other \(n-1\) as its baseline:</p>
+<p>The <dfn>leave-one-out baseline</dfn> gives each of several samples the mean reward of the others. Kool, van Hoof and Welling stated it for REINFORCE with multiple samples and applied it to sampled sequences. Their later paper credits the idea of a baseline built from the other samples to VIMCO <span class="cite">[<a href="#ref-kool">3</a>, <a href="#ref-kool20">11</a>, Eq. 23]</span>. Ahmadian et al. brought it to language-model training under the name RLOO, REINFORCE leave-one-out <span class="cite">[<a href="#ref-rloo">4</a>, §2.3]</span>. Draw \(y^{(1)}, \dots, y^{(n)}\) independently from \(\pi_\theta(\cdot\mid x)\), and give each completion the mean reward of the other \(n-1\) as its baseline:</p>
 
 <div class="eq">\begin{equation} \hat g_{\mathrm{RLOO}} = \frac{1}{n} \sum_{i=1}^{n} \Big( R_i - \frac{1}{n-1} \sum_{j \ne i} R_j \Big)\, \nabla_\theta \log \pi_\theta\big(y^{(i)} \mid x\big). \label{eq:rloo} \end{equation}</div>
 
@@ -300,13 +300,13 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <div class="eq">\begin{equation} \hat g_{\mathrm{RLOO}} = \frac{1}{n-1} \sum_{i=1}^{n} \big( R_i - \bar R \big)\, \nabla_\theta \log \pi_\theta\big(y^{(i)} \mid x\big). \label{eq:rloo-mean} \end{equation}</div>
 
-<p>Kool et al. give both forms <span class="cite">[<a href="#ref-kool">3</a>]</span>. Equation \eqref{eq:rloo-mean} shows what goes wrong if you subtract the group mean and divide by \(n\) instead of \(n-1\). That estimator is \(\frac{n-1}{n}\,\hat g_{\mathrm{RLOO}}\), so its expectation is \(\frac{n-1}{n}\nabla_\theta\, p_x\). The direction is right and the scale is short by a factor that depends only on \(n\): one half at \(n = 2\), and 0.94 at \(n = 16\). Liu et al. state the same relation between the two <span class="cite">[<a href="#ref-drgrpo">6</a>, App. A]</span>.</p>
+<p>The authors' poster gives both forms <span class="cite">[<a href="#ref-kool">3</a>]</span>. Equation \eqref{eq:rloo-mean} shows what goes wrong if you subtract the group mean and divide by \(n\) instead of \(n-1\). That estimator is \(\frac{n-1}{n}\,\hat g_{\mathrm{RLOO}}\), so its expectation is \(\frac{n-1}{n}\nabla_\theta\, p_x\). The direction is right and the scale is short by a factor that depends only on \(n\): one half at \(n = 2\), and 0.94 at \(n = 16\). Liu et al. state the same relation between the two <span class="cite">[<a href="#ref-drgrpo">6</a>, App. A]</span>.</p>
 
 <p>Back to the worked example with 16 samples instead of 4. Suppose one of the 16 is correct. RLOO gives the correct completion a weight of \(1 - 0 = 1\). Each wrong completion's baseline is \(\frac{1}{15}\), so each gets a weight of \(-\frac{1}{15} \approx -0.067\). The wrong answers now push their own probabilities down, a little each.</p>
 
 <h3>GRPO: group-normalised advantages</h3>
 
-<p>Shao et al. introduced <dfn>Group Relative Policy Optimization</dfn> (GRPO) in the DeepSeekMath paper <span class="cite">[<a href="#ref-dsmath">1</a>]</span>, and the DeepSeek-R1 paper made it the standard method for training reasoning models <span class="cite">[<a href="#ref-r1">2</a>]</span>. GRPO keeps PPO's clipped loss from chapter 5 and replaces the critic with a group statistic. The three figures below build one GRPO step.</p>
+<p>Shao et al. introduced <dfn>Group Relative Policy Optimization</dfn> (GRPO) in the DeepSeekMath paper <span class="cite">[<a href="#ref-dsmath">1</a>]</span>, and the DeepSeek-R1 paper used it to train DeepSeek-R1-Zero and DeepSeek-R1 <span class="cite">[<a href="#ref-r1">2</a>]</span>. GRPO keeps PPO's clipped loss from chapter 5 and replaces the critic with a group statistic. The three figures below build one GRPO step.</p>
 
 <figure id="fig-grpo1">
   <div class="scroll"><svg viewBox="0 0 640 256" role="img" aria-label="GRPO data flow, stage 1"><defs><marker id="arr10-grpo1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="10" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="50.0" y="137.0" text-anchor="middle">prompt x</text><rect class="box" x="115" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="155.0" y="129.5" text-anchor="middle">π_θ</text><text class="muted" x="155.0" y="144.5" text-anchor="middle">(old copy)</text><line class="ink" x1="90" y1="133" x2="113" y2="133" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="20" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="42.0" text-anchor="middle">y⁽¹⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="38" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="76" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="98.0" text-anchor="middle">y⁽²⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="94" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="132" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="154.0" text-anchor="middle">y⁽³⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="150" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="188" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="210.0" text-anchor="middle">y⁽⁴⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="206" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><text class="muted" x="280" y="245" text-anchor="middle">n = 4 completions</text></g></svg></div>
@@ -361,7 +361,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 <p>The finite group adds two more effects. When every completion in a group gets the same reward, \(s_R = 0\) and the advantages are \(0/0\). Implementations add a small constant to the denominator, so the group contributes zero gradient. And at \(n = 2\), with the population standard deviation, GRPO is exactly RLOO. The only informative group is one correct and one wrong, where \(\bar R = 0.5\), \(s_R = 0.5\) and the advantages are \(\pm 1\). RLOO gives \(1 - 0 = 1\) and \(0 - 1 = -1\). The cited papers do not say whether \(s_R\) uses the population or the sample standard deviation, so this identity is unverified for any specific implementation. With the sample standard deviation the advantages at \(n = 2\) are \(\pm 0.71\) instead.</p>
 
 <div class="example"><span class="label">Worked example · the same groups under RLOO and GRPO</span>
-<p>Take a group of 16 with one correct completion. Then \(\bar R = \frac{1}{16}\) and \(s_R = \sqrt{15}/16 \approx 0.242\). GRPO gives the correct completion an advantage of \(0.9375 / 0.242 \approx +3.87\) and each wrong one \(-0.0625/0.242 \approx -0.258\). RLOO gave \(+1\) and \(-0.067\).</p>
+<p>Take a group of 16 with one correct completion. Then \(\bar R = \frac{1}{16}\) and \(s_R = \sqrt{15}/16 \approx 0.242\), using the population standard deviation as in Section 9's toy. GRPO gives the correct completion an advantage of \(0.9375 / 0.242 \approx +3.87\) and each wrong one \(-0.0625/0.242 \approx -0.258\). RLOO gave \(+1\) and \(-0.067\).</p>
 <p>Now take a group of 16 with eight correct. GRPO gives \(\pm 1\). RLOO gives \(1 - \frac{7}{15} \approx +0.53\) and \(0 - \frac{8}{15} \approx -0.53\).</p>
 <p>Relative to RLOO, GRPO multiplies the first group by 3.87 and the second by 1.88. The rare success weighs about twice as much under GRPO as it does under RLOO.</p>
 </div>
@@ -384,7 +384,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <p>In the third form, \(L\) is a constant that does not depend on the batch, such as the generation budget. Trace two wrong completions with the same advantage, \(-0.5\), one 100 tokens long and one 1,000 tokens long. Under the per-completion average, each token of the short one gets a weight of \(-0.005\) and each token of the long one \(-0.0005\). The long wrong answer is pushed down ten times more gently per token. For correct answers it goes the other way, and short ones get the larger push per token.</p>
 
-<p>Liu et al. call this the <dfn>response-level length bias</dfn> <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>. They report that under GRPO the length of incorrect responses keeps growing during training, and that their fix, Dr. GRPO, removes the growth. Dr. GRPO drops both the per-completion length and the standard deviation from Equation \eqref{eq:grpo} and divides by a constant instead. Their Table 2 lists open-source PPO implementations, including those in trl, OpenRLHF and verl, whose losses also carry the per-completion length normalisation. DAPO uses the per-token average, which gives every token in the batch the same weight <span class="cite">[<a href="#ref-dapo">7</a>]</span>. Lambert's RLHF book compares the aggregation choices in a section of its own <span class="cite">[<a href="#ref-lambert">10</a>]</span>.</p>
+<p>Liu et al. call this the <dfn>response-level length bias</dfn> <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>. They report that under GRPO the length of incorrect responses keeps growing during training, and that their fix, Dr. GRPO, removes the growth. Dr. GRPO drops both the per-completion length and the standard deviation from Equation \eqref{eq:grpo} and divides by a constant instead. Their Table 2 lists open-source PPO implementations whose losses normalise by response length. Their Listing 1 gives OpenRLHF as an example that divides each completion by its own length, and trl and verl as examples that divide by the number of tokens in the batch. DAPO uses the per-token average, which gives every token in the batch the same weight <span class="cite">[<a href="#ref-dapo">7</a>]</span>. Lambert's RLHF book compares the aggregation choices in a section of its own <span class="cite">[<a href="#ref-lambert">10</a>]</span>.</p>
 
 <h3>Difficulty bias from the standard deviation</h3>
 
@@ -400,7 +400,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <h3>Entropy collapse</h3>
 
-<p>Chapter 5 introduced the entropy of the policy as a measure of how much it still explores. Under GRPO on language models, entropy falls fast. Cui et al. measured it across many training runs <span class="cite">[<a href="#ref-cui">8</a>]</span>. In their runs, 73% of the entropy drop and 76% of the performance gain happened in the first 200 of 2,400 steps. They fit performance against entropy with \(\text{performance} = -a\, e^{H} + b\), which means that once entropy is used up, the fitted performance stops improving. They trace the mechanism to the update itself. A policy-gradient step lowers entropy when the tokens the policy already likes also get positive advantages, so the two are positively correlated.</p>
+<p><a href="../stop-2-policy/chapter.html">Chapter 2</a> defined the entropy of the policy as a measure of how much it still explores, and chapter 5 added it to the loss as a bonus. Under GRPO on language models, entropy falls fast. Cui et al. measured it across many training runs <span class="cite">[<a href="#ref-cui">8</a>]</span>. In their runs, 73% of the entropy drop and 76% of the performance gain happened in the first 200 of 2,400 steps. They fit performance against entropy with \(\text{performance} = -a\, e^{\mathcal{H}} + b\), which means that once entropy is used up, the fitted performance stops improving. They trace the mechanism to the update itself. A policy-gradient step lowers entropy when the tokens the policy already likes also get positive advantages, so the two are positively correlated.</p>
 
 <p>The usual fixes from chapter 5 did not work well there. An entropy bonus was sensitive to its weight, and at 0.01 entropy exploded. A KL penalty to the reference hurt performance. Cui et al. propose instead to clip or penalise the updates of the few tokens with the highest covariance between probability and advantage <span class="cite">[<a href="#ref-cui">8</a>]</span>.</p>
 
@@ -410,7 +410,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <h3>Stale samples</h3>
 
-<p>Generating long completions is slow, so practitioners take several gradient steps per batch of samples. DeepSeek-R1 generated 8,192 completions per rollout, split them into 16 minibatches and took one pass over them <span class="cite">[<a href="#ref-r1">2</a>]</span>. DAPO also took 16 gradient steps per rollout <span class="cite">[<a href="#ref-dapo">7</a>]</span>. After the first minibatch, \(\pi_\theta\) differs from \(\pi_{\mathrm{old}}\), the ratios move away from 1, and the clip in Equation \eqref{eq:grpo} starts to act. That is chapter 5's reason for the clip, back in a new setting.</p>
+<p>Generating long completions is slow, so practitioners take several gradient steps per batch of samples. DeepSeek-R1-Zero's training generated 8,192 completions per rollout, split them into 16 minibatches and took one pass over them <span class="cite">[<a href="#ref-r1">2</a>]</span>. DAPO also took 16 gradient steps per rollout <span class="cite">[<a href="#ref-dapo">7</a>]</span>. After the first minibatch, \(\pi_\theta\) differs from \(\pi_{\mathrm{old}}\), the ratios move away from 1, and the clip in Equation \eqref{eq:grpo} can act. That is chapter 5's reason for the clip, back in a new setting. How often the clip acts depends on \(\epsilon\). DAPO's lower bound is 0.2. The first RL stage of DeepSeek-R1 set \(\epsilon = 10\), and the paper says a lower value truncated the gradients of many tokens and hurt performance <span class="cite">[<a href="#ref-r1">2</a>, §3.2.1]</span>.</p>
 
 <p>Asynchronous training goes further. One set of GPUs generates completions while another trains, so the samples come from a policy one or more updates old. <a href="../stop-6-off-policy/chapter.html">Chapter 6</a> covers the correction. Noukhovitch et al. measured how much staleness each method tolerates <span class="cite">[<a href="#ref-async">9</a>]</span>. Performance fell as the generating policy fell further behind. Online DPO held up best, and PPO and RLOO degraded more. Larger policies tolerated stale samples better. Generating one step behind matched synchronous training and was about 40% faster for an 8-billion-parameter model on an instruction-following task.</p>
 
@@ -424,7 +424,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <div class="table"><table>
   <caption>Training details stated in the cited papers. A blank means the detail was not one of the points this chapter took from that paper.</caption>
-  <thead><tr><th>Detail</th><th>DeepSeekMath GRPO [1]</th><th>DeepSeek-R1 [2]</th><th>DAPO [7]</th></tr></thead>
+  <thead><tr><th>Detail</th><th>DeepSeekMath GRPO [1]</th><th>DeepSeek-R1-Zero [2]</th><th>DAPO [7]</th></tr></thead>
   <tbody>
     <tr><td>Completions per prompt</td><td>64</td><td>16</td><td>16</td></tr>
     <tr><td>Batch</td><td>1,024</td><td>32 prompts, 512 completions</td><td>512 prompts, 8,192 completions</td></tr>
@@ -438,14 +438,14 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
   </tbody>
 </table></div>
 
-<p>The DeepSeek-R1 run lasted 10,400 steps <span class="cite">[<a href="#ref-r1">2</a>]</span>.</p>
+<p>The DeepSeek-R1-Zero run lasted 10,400 steps <span class="cite">[<a href="#ref-r1">2</a>]</span>.</p>
 
 <p>The papers change the textbook version in four ways.</p>
 
 <ul>
-  <li><b>The KL penalty shrinks or disappears.</b> DAPO removes it, and Liu et al. set \(\beta_{\mathrm{KL}} = 0\) for rule-based verifiers <span class="cite">[<a href="#ref-dapo">7</a>, <a href="#ref-drgrpo">6</a>]</span>. DeepSeek-R1 keeps a small weight but moves the reference forward every 400 steps, so the penalty limits drift over 400 steps rather than over the whole run.</li>
+  <li><b>The KL penalty shrinks or disappears.</b> DAPO removes it, and Liu et al. set \(\beta_{\mathrm{KL}} = 0\) for rule-based verifiers <span class="cite">[<a href="#ref-dapo">7</a>, <a href="#ref-drgrpo">6</a>]</span>. DeepSeek-R1-Zero keeps a small weight but moves the reference forward every 400 steps, so the penalty limits drift over 400 steps rather than over the whole run.</li>
   <li><b>Truncated completions get special handling.</b> A completion cut off at the length budget has no final answer, so the verifier scores it wrong even if the reasoning was on track. Tülu 3 gives a reward of −10 to completions without EOS <span class="cite">[<a href="#ref-tulu">5</a>]</span>. DAPO masks truncated completions out of the loss and adds a length penalty that grows near the budget <span class="cite">[<a href="#ref-dapo">7</a>]</span>.</li>
-  <li><b>One pass over each rollout.</b> None of the three runs reuses a rollout for multiple epochs, unlike Spire Mentor's two epochs in chapter 5.</li>
+  <li><b>One pass over each rollout.</b> None of the three runs reuses a rollout for multiple epochs, unlike Spire Mentor's launch setting of two epochs (chapter 5), which the campaign later cut to one.</li>
   <li><b>Loss aggregation varies by library.</b> The three forms of Equation \eqref{eq:agg} are all in use, and Dr. GRPO's Table 2 shows that a library's default may not match the paper you are reproducing <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>.</li>
 </ul>
 
@@ -463,7 +463,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 <p>Two of this chapter's mechanisms have direct counterparts in the project. Spire Mentor normalises advantages separately for each decision type, which reweights the types against each other, as GRPO's per-prompt \(s_R\) reweights prompts (chapter 5, Section 11). And its rollouts run ahead of the learner, which makes samples stale. Chapter 6's decoupled PPO caps the importance weight at 2 for that reason. That is the same problem that asynchronous RL for language models has to solve.</p>
 </div>
 
-<p>The project's entropy bonus, with weights of 0.01 and 0.0125 (chapter 5), is the fix that Cui et al. found fragile for language models. The difference is not a contradiction. Spire Mentor's action sets have about seven options, while a vocabulary has far more, and an entropy bonus spreads probability over all of them.</p>
+<p>The project's entropy bonus starts at weights of 0.01 and 0.0125, which decay to 0.002 and 0.006 (chapters 2 and 5). That is the fix Cui et al. found fragile for language models. The project's bonus also differs in form. It uses the entropy normalised per decision type, and it raises the weight when entropy stays low (chapter 2). A likely reason the bonus works here, not tested in this chapter or in the cited sources, is the size of the action set. Spire Mentor's decisions have about seven options, while a vocabulary has far more, and an entropy bonus spreads probability over all of them.</p>
 
 <h2 id="measured">9. Measured: gradient noise against group size</h2>
 
@@ -495,23 +495,23 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
   <thead><tr><th class="num">\(n\)</th><th class="num">Inverse SNR, no baseline</th><th class="num">Inverse SNR, RLOO</th><th class="num">Inverse SNR, GRPO</th><th class="num">Scale, group mean</th><th class="num">Scale, GRPO</th><th class="num">Cosine, GRPO</th><th class="num">No signal</th></tr></thead>
   <tbody>
     <tr><td class="num">2</td><td class="num">12.07</td><td class="num">8.56</td><td class="num">8.56</td><td class="num">0.50</td><td class="num">1.00</td><td class="num">1.000</td><td class="num">0.73</td></tr>
-    <tr><td class="num">4</td><td class="num">6.09</td><td class="num">2.80</td><td class="num">2.83</td><td class="num">0.75</td><td class="num">1.64</td><td class="num">1.000</td><td class="num">0.51</td></tr>
-    <tr><td class="num">8</td><td class="num">3.05</td><td class="num">1.20</td><td class="num">1.28</td><td class="num">0.87</td><td class="num">1.97</td><td class="num">0.998</td><td class="num">0.33</td></tr>
+    <tr><td class="num">4</td><td class="num">6.09</td><td class="num">2.80</td><td class="num">2.83</td><td class="num">0.75</td><td class="num">1.64</td><td class="num">1.000</td><td class="num">0.50</td></tr>
+    <tr><td class="num">8</td><td class="num">3.04</td><td class="num">1.20</td><td class="num">1.28</td><td class="num">0.87</td><td class="num">1.97</td><td class="num">0.998</td><td class="num">0.33</td></tr>
     <tr><td class="num">16</td><td class="num">1.53</td><td class="num">0.55</td><td class="num">0.64</td><td class="num">0.94</td><td class="num">2.13</td><td class="num">0.992</td><td class="num">0.20</td></tr>
     <tr><td class="num">32</td><td class="num">0.76</td><td class="num">0.27</td><td class="num">0.32</td><td class="num">0.97</td><td class="num">2.21</td><td class="num">0.986</td><td class="num">0.10</td></tr>
-    <tr><td class="num">64</td><td class="num">0.38</td><td class="num">0.13</td><td class="num">0.16</td><td class="num">0.99</td><td class="num">2.24</td><td class="num">0.982</td><td class="num">0.04</td></tr>
+    <tr><td class="num">64</td><td class="num">0.38</td><td class="num">0.13</td><td class="num">0.16</td><td class="num">0.98</td><td class="num">2.24</td><td class="num">0.982</td><td class="num">0.04</td></tr>
   </tbody>
 </table></div>
 
 <p><b>The baseline cuts noise, and more so in larger groups.</b> At \(n = 2\), RLOO's inverse SNR is 1.4 times lower than no baseline. At \(n = 64\) it is 2.9 times lower. The leave-one-out baseline at \(n = 2\) is a single other sample, a noisy estimate of \(p_x\). At \(n = 64\) it is the mean of 63 samples.</p>
 
-<p><b>The group mean is RLOO scaled down.</b> Its inverse SNR matches RLOO's at every \(n\), and its measured scale is 0.50, 0.75, 0.87, 0.94, 0.97 and 0.99, which is \(\frac{n-1}{n}\) to two decimals. That confirms Equation \eqref{eq:rloo-mean}.</p>
+<p><b>The group mean is RLOO scaled down.</b> Its inverse SNR matches RLOO's at every \(n\), and its measured scale is 0.50, 0.75, 0.87, 0.94, 0.97 and 0.98, within 0.002 of \(\frac{n-1}{n}\). That confirms Equation \eqref{eq:rloo-mean}.</p>
 
 <p><b>GRPO changes direction and scale.</b> At \(n = 2\) its scale is 1.00 and its cosine 1.000, as the identity with RLOO predicts. As \(n\) grows, \(s_R\) approaches \(\sigma_x\) and the mean approaches the oracle gradient of Equation \eqref{eq:arcsin}. The cosine falls to 0.982 at \(n = 64\), on the way to the oracle value of 0.978, an angle of about 12°. The scale rises to 2.24 because the division by \(s_R\) multiplies every prompt's contribution by between 2 and 5.9 in this toy. GRPO is also slightly noisier than RLOO, because \(s_R\) is itself estimated from the group.</p>
 
-<p><b>Per completion, larger groups get more out of each sample.</b> Without a baseline, inverse SNR times \(n\) stays at about 24.4 for every \(n\). Doubling the completions halves the variance and nothing more. With RLOO the same product falls from 17.1 at \(n = 2\) to 11.2 at \(n = 4\), 9.6 at \(n = 8\) and 8.4 at \(n = 64\). Most of the gain comes by \(n = 8\). Beyond that, each extra completion is worth about as much as a completion of a new prompt would be. This toy cannot say how that trade-off looks on a real model, where new prompts also add diversity and each completion costs thousands of tokens.</p>
+<p><b>Per completion, larger groups get more out of each sample.</b> Without a baseline, inverse SNR times \(n\) stays between 24.1 and 24.4 for every \(n\). Doubling the completions halves the variance and nothing more. With RLOO the same product falls from 17.1 at \(n = 2\) to 11.2 at \(n = 4\), 9.6 at \(n = 8\) and 8.4 at \(n = 64\). Most of the gain comes by \(n = 8\). Beyond that, each extra completion adds little. The toy does not measure the alternative, which is to spend the same completions on new prompts. It also cannot say how that trade-off looks on a real model, where new prompts also add diversity and each completion costs thousands of tokens.</p>
 
-<p>The 12° tilt is small on this toy because its success rates are spread evenly. A dataset in which most prompts sit near 0 or 1 would tilt the direction further, by Figure 10.8.</p>
+<p>The size of the tilt depends on the success rates in the dataset. This chapter measured only the eight rates listed above.</p>
 
 <div class="measured"><span class="label">Measured · from the cited paper</span>
 <p>DAPO's Table 1 adds its changes to GRPO one at a time and reports accuracy on AIME 2024, averaged over 32 samples, for a Qwen2.5-32B base model <span class="cite">[<a href="#ref-dapo">7</a>]</span>.</p>
@@ -530,7 +530,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 <p>Each row includes the changes above it. The changes are cumulative, so a row's gain is measured on top of the earlier changes, not alone. The largest single steps are the treatment of truncated completions (+6) and dynamic sampling (+8). The paper reports that DAPO reached 50 in half the training steps that DeepSeek-R1-Zero-Qwen-32B used.</p>
 </div>
 
-<p>The DeepSeek-R1 paper reports that GRPO with rule-based rewards raised its base model's AIME 2024 pass@1 from 15.6% to 77.9% <span class="cite">[<a href="#ref-r1">2</a>]</span>. That is the figure in the version this chapter opened, which revised an earlier version's 71.0%.</p>
+<p>The DeepSeek-R1 paper reports that GRPO with rule-based rewards raised DeepSeek-R1-Zero's AIME 2024 pass@1 from 15.6% at the start of training to 77.9% <span class="cite">[<a href="#ref-r1">2</a>]</span>. That is the figure in the version this chapter opened, which revised an earlier version's 71.0%.</p>
 
 <h2 id="confusions">10. Common confusions</h2>
 
@@ -553,25 +553,26 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 <figure class="listing"><pre><code>uv run --no-project --with numpy python3 tour/stop-10-llm-policy-gradients/figures.py run
 uv run --no-project --with numpy python3 tour/stop-10-llm-policy-gradients/figures.py render</code></pre></figure>
   <p>The first command prints one line per group size and rewrites <code>figures.json</code>. The second redraws Figures 10.8 to 10.10 in <code>chapter.html</code>. The numbers should match the table in Section 9.</p></li>
-  <li><p><b>Remove the difficulty bias.</b> In <code>figures.py</code>, set every entry of <code>P_TARGET</code> to <code>0.5</code>. Run both commands again. All prompts now have the same \(\sigma_x\), so GRPO's weights are all equal and its cosine in Figure 10.10 should stay at 1. Then set <code>P_TARGET</code> to values between 0.01 and 0.05 and between 0.95 and 0.99, and check that the cosine falls further than 0.978.</p></li>
+  <li><p><b>Remove the difficulty bias.</b> In <code>figures.py</code>, set every entry of <code>P_TARGET</code> to <code>0.5</code>. Run both commands again. All prompts now have the same \(\sigma_x\), so Equation \eqref{eq:arcsin} gives them equal weights. Check whether GRPO's cosine in Figure 10.10 stays at 1. Then put four prompts at 0.5 and four between 0.01 and 0.03, run both commands again, and compare GRPO's cosine with the 0.982 it reached at \(n = 64\) on the original rates.</p></li>
   <li><p><b>Try the sample standard deviation.</b> In <code>advantages()</code>, change <code>R.std(1, keepdims=True)</code> to <code>R.std(1, ddof=1, keepdims=True)</code>. Run the first command again. At \(n = 2\), GRPO's scale should fall from 1.00 to about 0.71, and it no longer equals RLOO.</p></li>
   <li><p><b>Compare at equal compute.</b> Print inverse SNR times \(n\), which is the noise per completion generated:</p>
 <figure class="listing"><pre><code>python3 -c "import json; d = json.load(open('tour/stop-10-llm-policy-gradients/figures.json')); [print(r['n'], round(r['n'] * r['none']['inv_snr'], 1), round(r['n'] * r['loo']['inv_snr'], 1)) for r in d['rows']]"</code></pre></figure>
-  <p>The no-baseline column should stay near 24.4 and the RLOO column should fall from 17.1 to 8.4.</p></li>
+  <p>The no-baseline column should stay between 24.1 and 24.4 and the RLOO column should fall from 17.1 to 8.4.</p></li>
 </ol>
 
 <h2 id="references">References</h2>
 <ol class="refs">
   <li id="ref-dsmath">Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y. K., Wu, Y., and Guo, D. (2024). DeepSeekMath: Pushing the limits of mathematical reasoning in open language models. arXiv:2402.03300. §4.1.2 (GRPO with outcome supervision), the unified view of RFT and GRPO, Appendix A.1.5.</li>
-  <li id="ref-r1">DeepSeek-AI (2025). DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning. arXiv:2501.12948, version 2. GRPO training details and Appendix A.3.</li>
-  <li id="ref-kool">Kool, W., van Hoof, H., and Welling, M. (2019). Buy 4 REINFORCE samples, get a baseline for free! ICLR 2019 Workshop on Deep Reinforcement Learning Meets Structured Prediction. This chapter used the authors' poster, which states the estimator in both forms.</li>
+  <li id="ref-r1">DeepSeek-AI (2025). DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning. arXiv:2501.12948, version 2. §2 (DeepSeek-R1-Zero training details and AIME results), §3.2.1 (first RL stage of DeepSeek-R1) and Appendix A.3.</li>
+  <li id="ref-kool">Kool, W., van Hoof, H., and Welling, M. (2019). Buy 4 REINFORCE samples, get a baseline for free! ICLR 2019 Workshop on Deep Reinforcement Learning Meets Structured Prediction. The paper itself could not be opened. This chapter used the authors' poster, which states the estimator in both forms.</li>
   <li id="ref-rloo">Ahmadian, A., Cremer, C., Gallé, M., Fadaee, M., Kreutzer, J., Pietquin, O., Üstün, A., and Hooker, S. (2024). Back to basics: Revisiting REINFORCE style optimization for learning from human feedback in LLMs. arXiv:2402.14740.</li>
   <li id="ref-tulu">Lambert, N., Morrison, J., Pyatkin, V., Huang, S., Ivison, H., Brahman, F., et al. (2024). Tülu 3: Pushing frontiers in open language model post-training. arXiv:2411.15124. §6 (RLVR).</li>
-  <li id="ref-drgrpo">Liu, Z., Chen, C., Li, W., Qi, P., Pang, T., Du, C., Lee, W. S., and Lin, M. (2025). Understanding R1-Zero-like training: A critical perspective. arXiv:2503.20783.</li>
+  <li id="ref-drgrpo">Liu, Z., Chen, C., Li, W., Qi, P., Pang, T., Du, C., Lee, W. S., and Lin, M. (2025). Understanding R1-Zero-like training: A critical perspective. COLM 2025. arXiv:2503.20783.</li>
   <li id="ref-dapo">Yu, Q., et al. (2025). DAPO: An open-source LLM reinforcement learning system at scale. arXiv:2503.14476.</li>
   <li id="ref-cui">Cui, G., et al. (2025). The entropy mechanism of reinforcement learning for reasoning language models. arXiv:2505.22617.</li>
   <li id="ref-async">Noukhovitch, M., Huang, S., Xhonneux, S., Hosseini, A., Agarwal, R., and Courville, A. (2025). Asynchronous RLHF: Faster and more efficient off-policy RL for language models. ICLR 2025. arXiv:2410.18252.</li>
-  <li id="ref-lambert">Lambert, N. <em>Reinforcement Learning from Human Feedback</em>. Online book, chapter "Reinforcement learning", rlhfbook.com/c/11-policy-gradients.html.</li>
+  <li id="ref-lambert">Lambert, N. <em>Reinforcement Learning from Human Feedback</em>. Online book, chapter "Reinforcement learning", rlhfbook.com/c/11-policy-gradients.html. Accessed November 2026.</li>
+  <li id="ref-kool20">Kool, W., van Hoof, H., and Welling, M. (2020). Estimating gradients for discrete random variables by sampling without replacement. ICLR 2020. arXiv:2002.06043. Eq. 23 states the leave-one-out estimator, its unbiasedness, and its origin in VIMCO.</li>
 </ol>
 </main>
 
