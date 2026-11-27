@@ -1,0 +1,282 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<meta charset="utf-8">
+<title>RL Tour 9: Self-test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+
+<style>
+/* Self-test only. */
+ol.questions { padding-left: 1.6rem; }
+ol.questions > li + li { margin-top: 1.8rem; }
+ol.questions > li > * + * { margin-top: .6rem; }
+details.answer { border-left: 3px solid var(--accent); background: var(--surface); padding: .6rem 1rem; }
+details.answer > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.answer[open] > summary { margin-bottom: .6rem; }
+details.answer > * + * { margin-top: .6rem; }
+.source { font-family: var(--sans); font-size: .88rem; color: var(--muted); }
+
+/* A long worked line gets its own scrolling row so the page never scrolls sideways on a phone. */
+.eq-inline { display: block; margin: .35rem 0; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 9 · Self-test</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Sample efficiency: self-test</h1>
+  <p class="lede">Write each answer from memory before you open it. Come back in a few days and answer the questions again.</p>
+  <p class="source">Questions on <a href="chapter.html">Chapter 9, Sample efficiency</a>. The chapter keeps three kinds of statement apart: what the campaign record states, what the chapter infers and labels as inference, and toy results that are not Spire Mentor. The answers below keep them apart the same way.</p>
+</header>
+
+<main>
+
+<h2 id="recall">Recall</h2>
+
+<ol class="questions">
+
+<li>
+<p>Name the three quantities that "sample efficiency" can mean. For the switch from two epochs to one, say which of them the record measured, which one the chapter only infers, and which comparison the campaign cannot settle.</p>
+<details class="answer"><summary>Answer</summary>
+<p>The three are learning per decision (decisions to a milestone), learning per second (wall-clock time to that milestone) and seeds per conclusion (independent runs needed before you can say one recipe beats another). The record measured the throughput side: about 43% more decisions per second after the switch. That the switch raised the decisions needed to reach a milestone is an inference, because \(q\) was never measured. Whether it shortened the wall-clock time depends on whether \(q\) was below 0.41, and the campaign cannot tell. <span class="source">(Sections 1 and 13)</span></p>
+</details>
+</li>
+
+<li>
+<p>Define decisions to milestone, \(D^\star\). Why does the choice of milestone decide which of runs A and B in Figure 9.1b looks more efficient, and what does the area under the curve trade away to avoid that choice?</p>
+<details class="answer"><summary>Answer</summary>
+<p>\(D^\star(S^\star)\) is the smallest \(D\) at which the score \(S(D)\) reaches \(S^\star\). It says nothing about the run after the milestone. Run B climbs faster and reaches 60% at 190 thousand decisions, against 440 thousand for run A, but B levels off and never reaches 80%. At 60% B wins, and at 80% A wins. The AUC averages \(S(D)\) over a budget \(D_{\max}\), so it rewards early learning and the late level together, but it hides the trade between them and depends on \(D_{\max}\). A long budget favours A's plateau and a short one favours B's start, so you report the budget with any AUC. <span class="source">(Section 2)</span></p>
+</details>
+</li>
+
+<li>
+<p>Write the wall-clock time to a milestone in terms of \(D^\star\) and \(R\). Why do methods that reuse data often fail to save time, and what kind of simulator favours spending more decisions instead?</p>
+<details class="answer"><summary>Answer</summary>
+<p>\(w^\star = D^\star / R\). Reuse, from a replay buffer or extra epochs, lowers \(D^\star\), but each decision then costs more computation, so \(R\) usually falls too. The quotient can go either way. In Figure 9.1c run A plays three decisions in the time B plays one, and its curve compressed against seconds reaches 60% first, reversing the ranking by decisions. A fast, cheap simulator such as Spire Mentor's favours more decisions and less computation on each one. <span class="source">(Section 3)</span></p>
+</details>
+</li>
+
+<li>
+<p>DQN can reuse a transition from a policy 250 thousand updates old. Why is that fair for Q-learning but not for a policy gradient? What does the second moment of the importance ratio say about the price of old data?</p>
+<details class="answer"><summary>Answer</summary>
+<p>Q-learning's target <span class="eq eq-inline">\[r + \gamma \max_{a'} Q(s', a')\]</span> depends on the environment and the current Q-function, not on the policy that chose \(a\). The policy gradient is an expectation over the states the current policy visits and the actions it takes, so data from an older policy \(\mu\) estimates a different expectation. The ratio \(\rho\) corrects the actions but not the state distribution. Its second moment is bounded below by the exponential of the KL:</p>
+<p><span class="eq eq-inline">\[\mathbb{E}_{\mu}[\rho^2] = \mathbb{E}_{\pi_\theta}[\rho] \ge \exp\big(D_{\mathrm{KL}}(\pi_\theta \,\|\, \mu)\big).\]</span></p>
+<p>The step uses Jensen's inequality on \(\exp\). So the variance grows at least exponentially as the policies drift apart. PPO's compromise is to use one batch from the current policy for \(E\) epochs and then discard it. <span class="source">(Section 4)</span></p>
+</details>
+</li>
+
+<li>
+<p>Give the two reasons a second epoch is worth less than the first. Then explain why the condition <span class="eq eq-inline">\[D^\star(1)/D^\star(2) > t(2)/t(1)\]</span> needs no assumption about \(\Delta J\).</p>
+<details class="answer"><summary>Answer</summary>
+<p>First, the policy has already moved on the first pass, so the clip zeroes the gradient on more rows. Second, the second pass fits the same \(B\) samples again, including their noise. The condition in decisions follows from \(w^\star = I^\star t\) with \(I^\star = D^\star / B\): both arms use the same \(B\), so it cancels, and two epochs win in time exactly when the ratio of decisions exceeds the ratio of iteration times. Only the link <span class="eq eq-inline">\[D^\star(1)/D^\star(2) \approx 1 + q\]</span> assumes that \(\Delta J\) per update stays roughly constant. <span class="source">(Section 5)</span></p>
+</details>
+</li>
+
+<li>
+<p>After the epoch switch, the network at 885 million decisions read 41.3% against 30.9% for the pinned network from before the switch. What does that comparison show, and what two things stop it from measuring the value of the second epoch?</p>
+<details class="answer"><summary>Answer</summary>
+<p>It shows the run kept learning after the switch. It does not show what \(E = 2\) would have done over the same 335 million decisions, because no \(E = 2\) arm ran alongside. The teacher KL term also reached zero at 500 million decisions, 51 million before the switch, so any before-and-after reading mixes the two changes. Nobody measured \(q\) for this network. <span class="source">(Section 5)</span></p>
+</details>
+</li>
+
+<li>
+<p>State in words what the noise scale \(B_{\text{noise}}\) and the critical batch size mean. What happens to progress per decision when you double the batch well below it and well above it? What does the chapter infer from the random-weight learning checks about the critical batch, and why is that only an inference?</p>
+<details class="answer"><summary>Answer</summary>
+<p>\(B_{\text{noise}}\) compares the gradient noise of one sample to the size of the true gradient, and <span class="eq eq-inline">\[B_{\text{simple}} = \mathrm{tr}(\Sigma)/|g|^2\]</span> approximates it without the Hessian. At the critical batch you pay twice the minimum in both updates and decisions. Well below it, doubling the batch doubles the progress per step, so progress per decision is unchanged and you need half the updates, but only with the learning rate re-tuned. Well above it, each step already gets nearly \(\Delta L_{\max}\), and doubling wastes decisions. The checks gained 10.5 to 13.2 floors whether they took 25, 54 or 426 updates. The chapter's own reading, which it labels as inference, puts the critical batch at the start of training between 16 thousand and 131 thousand decisions. The checks were built to pass or fail, not to compare batches. Each is one seed on a different machine under a wall-clock cap, the learning rate was not re-tuned, and the floor gain saturates. <span class="source">(Sections 6 and 11)</span></p>
+</details>
+</li>
+
+<li>
+<p>Why does a constant learning rate leave a noise floor, and why do halving \(\alpha\) and doubling \(B\) have the same effect on it? What did the toy quadratic show, and what is the difference between the two changes in cost?</p>
+<details class="answer"><summary>Answer</summary>
+<p>Near the minimum the noise keeps the parameters spread out, and the expected excess loss settles at \(\alpha\,\mathrm{tr}(\Sigma)/4B\). It depends on \(\alpha\) and \(B\) only through \(\alpha/B\). On the 50-dimensional quadratic, a toy and not Spire Mentor, the floor in the schedule went 5.35, 2.59, 1.29, 0.64, so each change halved it and bought half the absolute improvement of the one before. Doubling the batch did what halving the learning rate did, but it spent twice the decisions per step. The small-step formula sat below every measurement, by 7.1% to 7.3% at \(\alpha = 0.4\), and the exact discrete-step formula matched within 4.7%. <span class="source">(Sections 6 and 12)</span></p>
+</details>
+</li>
+
+<li>
+<p>What is the data-to-divergence ratio, and what remedy did Beukman et al. prescribe for a PPO plateau? Describe how Spire Mentor's three doublings followed that remedy, and what the record states happened to KL, DDR, throughput and level.</p>
+<details class="answer"><summary>Answer</summary>
+<p>DDR is the decisions in one update divided by the KL between the policy after the update and the one that collected the data. Beukman et al. treat the sequence of PPO updates as an optimiser of its own, which plateaus when its step is too large for its noise. Their remedy is more samples per update with the minibatch and learning rate fixed. Each doubling kept the minibatch at 8,192 rows, one epoch and the same learning rate. The median <code>probe_kl</code> rose by factors of 1.43, 1.23 and 1.07, so DDR rose by 1.39, 1.63 and 1.87. Throughput rose slightly each time. The first two doublings were followed by level steps of +3.50 and +3.90 points, and the third by +1.10, p 0.51, which the reads could not separate from no change. <span class="source">(Sections 6 and 11)</span></p>
+</details>
+</li>
+
+<li>
+<p>The record does not say why the third doubling bought nothing. What two explanations does the chapter offer, and how does it label them? What is the status of the "1.7 million decisions" useful batch size?</p>
+<details class="answer"><summary>Answer</summary>
+<p>Both explanations are the chapter's inference. First, the third doubling raised DDR the most, so if outer-loop noise had still been the limit it should have helped the most. That it did not suggests the remaining gap was no longer set by update noise, while the anneal, which shrinks the step, still helped. Second, by analogy with the noise floor, each halving of update noise buys less than the last, but that alone does not explain a drop from 3.9 points to 1.1. The 1.7 million figure comes from the project's training page. The campaign log and the plan do not record how it was measured, so the chapter treats it as unverified. If it held, the third doubling to 1.05 million was still below it, and the noise model would not explain the result. <span class="source">(Section 11)</span></p>
+</details>
+</li>
+
+<li>
+<p>Search at play time differs from the other levers on \(D^\star\) in one way. What is it? For restarts from failure states and for stale data, name the cost the chapter gives.</p>
+<details class="answer"><summary>Answer</summary>
+<p>Search leaves the learning curve unchanged and lowers the level the curve has to reach, and you pay its computation in every game. Jones found on Hex that each extra factor of ten in training computation could replace about fifteen times as much test-time computation. Restarts and curricula put decisions where the gradient carries signal, but the training distribution then differs from evaluation, so the policy can overfit the restart states. Stale data raises learning per decision the way replay does, at the price of the ratio's variance, or the bias of a clamped ratio. <span class="source">(Section 7)</span></p>
+</details>
+</li>
+
+<li>
+<p>What did Henderson et al. and Colas et al. show with copies of one configuration? Why is stopping two arms early and keeping the leader risky, and what does the chapter say to do instead? Why do several arms need a correction?</p>
+<details class="answer"><summary>Answer</summary>
+<p>Henderson et al. split ten identical TRPO trials into two groups of five and a t-test called them different, \(p = 0.0016\). Colas et al. found \(p = 0.031\) between two copies of the same DDPG code with five seeds each. Curves cross, as in Figure 9.1b. In the bandit toy, which is not Spire Mentor, the rank correlation between decisions to 0.5 and to 0.9 was only 0.23 and 0.38. If you compare early, pre-register the early milestone as the endpoint. With \(K\) equal arms each tested at \(\alpha_{\text{test}}\), the chance of at least one false positive is at most <span class="eq eq-inline">\[1 - (1 - \alpha_{\text{test}})^K\]</span>, 18.5% for four arms at 0.05. Bonferroni tests each arm at \(\alpha_{\text{test}}/K\). <span class="source">(Sections 8 and 12)</span></p>
+</details>
+</li>
+
+</ol>
+
+<h2 id="calculations">Calculations</h2>
+
+<ol class="questions" start="13">
+
+<li>
+<p>At \(E = 2\) one iteration of 131,072 decisions took 20.3 s. After the switch to \(E = 1\) the rate was about 9,100 decisions per second. Compute \(t(1)\), the ratio \(t(2)/t(1)\), and the smallest \(q\) for which two epochs win per second. Then use the toy bandit's ratios \(D^\star(1)/D^\star(2)\) of 1.91, 1.52 and 1.19 at learning rates 2, 4 and 8 to say where two epochs would win against that ratio. What does that comparison tell you about Spire Mentor's \(q\)?</p>
+<details class="answer"><summary>Answer</summary>
+<p><span class="eq eq-inline">\[t(1) = \frac{131{,}072}{9{,}100} = 14.4 \text{ s}\]</span></p>
+<p><span class="eq eq-inline">\[\frac{t(2)}{t(1)} = \frac{20.3}{14.4} = 1.41\]</span></p>
+<p><span class="eq eq-inline">\[1 + q > 1.41 \iff q > 0.41\]</span></p>
+<p>In the toy, 1.91 and 1.52 exceed 1.41, so two epochs win per second at learning rates 2 and 4. At 8, 1.19 is below 1.41, so one epoch wins. That only shows how the break-even is used. The toy is not Spire Mentor, and it says nothing about the value of \(q\) for Spire Mentor's network, which nobody measured. <span class="source">(Sections 5 and 12)</span></p>
+</details>
+</li>
+
+<li>
+<p>In the seeds toy, arm B reached the 0.9 milestone in 30,927 decisions on average and arm A in 32,220, with a seed-to-seed standard deviation of about 890. Compute \(\Delta^\star/\sigma_\star\), then the normal-approximation chance of picking the wrong arm with one seed and with three seeds per arm. Use \(\Phi(-1.03) \approx 0.15\) and \(\Phi(-1.78) \approx 0.038\).</p>
+<details class="answer"><summary>Answer</summary>
+<p><span class="eq eq-inline">\[\Delta^\star = 32{,}220 - 30{,}927 = 1{,}293\]</span></p>
+<p><span class="eq eq-inline">\[\frac{\Delta^\star}{\sigma_\star} = \frac{1{,}293}{890} = 1.45\]</span></p>
+<p><span class="eq eq-inline">\[n = 1: \quad \Phi\!\left(-1.45\sqrt{1/2}\right) = \Phi(-1.03) \approx 0.15\]</span></p>
+<p><span class="eq eq-inline">\[n = 3: \quad \Phi\!\left(-1.45\sqrt{3/2}\right) = \Phi(-1.78) \approx 0.038\]</span></p>
+<p>The resampled toy picked wrong 16% of the time with one seed and 4.0% with three, close to the formula's 15% and 3.8%. This is a toy whose seeds vary by about 3% of \(D^\star\). Deep-RL seeds can be heavy-tailed or bimodal, which makes small-sample tests fire more often than their nominal level. <span class="source">(Sections 8 and 12)</span></p>
+</details>
+</li>
+
+</ol>
+
+<h2 id="note">For your note</h2>
+
+<p>These questions have no answers here. Use them to connect this chapter to the earlier ones.</p>
+
+<ol>
+  <li>Chapter 5 rejected a replay buffer for PPO, and chapter 6 measured lost effective sample size. How does this chapter's second-moment bound connect those two results, and where does Spire Mentor's handling of stale run-level rows fit?</li>
+  <li>Chapter 7 covered the teacher and the warm start. Why does the teacher phase make the campaign's \(D^\star\) values unusable as a measure of the final recipe from random weights?</li>
+  <li>Chapter 8 sized an evaluation of one fixed network. What changes when the thing being compared is a training run, and how would you size the seeds for question C3 in Section 9's table?</li>
+</ol>
+
+</main>
+
+<footer class="chapter"><span><a href="chapter.html">← Back to Chapter 9</a></span><span>RL tour · Self-test 9</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
