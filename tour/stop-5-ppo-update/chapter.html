@@ -433,7 +433,7 @@ figure mjx-container svg { display: inline; margin-inline: 0; }
 
 <div class="eq">\begin{equation} k_1 = -\log \rho, \qquad k_3 = (\rho - 1) - \log \rho . \label{eq:kl-est} \end{equation}</div>
 
-<p>Both are unbiased for \(D_{\mathrm{KL}}(\pi_{\text{old}} \,\|\, \pi_{\text{new}})\). The expectation of \(-\log\rho\) under \(\pi_{\text{old}}\) is the KL by definition. And since \(\mathbb{E}_{\pi_{\text{old}}}[\rho - 1] = \sum_a \pi_{\text{new}}(a\mid s) - 1 = 0\), \(k_3\) adds a control variate with mean zero, which is the baseline idea again. On a single row \(k_1\) can be negative, but \(k_3\) cannot, because \(x - 1 - \log x \ge 0\). Spinning Up logs the mean of \(k_1\) as "approx KL" <span class="cite">[<a href="#ref-spinup">11</a>]</span>. Spire Mentor logs the mean of \(k_3\), and also the exact KL on a fixed probe of rows. The names \(k_1\) and \(k_3\) come from a blog post by Schulman, which this chapter could not retrieve to check.</p>
+<p>Both are unbiased for \(D_{\mathrm{KL}}(\pi_{\text{old}} \,\|\, \pi_{\text{new}})\). The expectation of \(-\log\rho\) under \(\pi_{\text{old}}\) is the KL by definition. And since \(\mathbb{E}_{\pi_{\text{old}}}[\rho - 1] = \sum_a \pi_{\text{new}}(a\mid s) - 1 = 0\), \(k_3\) adds a control variate with mean zero, which is the baseline idea again. On a single row \(k_1\) can be negative, but \(k_3\) cannot, because \(x - 1 - \log x \ge 0\). Spinning Up logs the mean of \(k_1\) as "approx KL" <span class="cite">[<a href="#ref-spinup">11</a>]</span>. Spire Mentor logs the mean of \(k_3\), and also the exact KL on a fixed probe of rows. The names \(k_1\) and \(k_3\) come from a note by Schulman <span class="cite">[<a href="#ref-klapprox">14</a>]</span>, which builds \(k_3\) the same way, by adding \(\rho - 1\) to \(k_1\).</p>
 
 <p>The PPO paper's Figure 2 shows the clipped objective peaking at a KL of about 0.02 on its first Hopper update <span class="cite">[<a href="#ref-ppo">7</a>]</span>, and common targets are 0.01 to 0.02 nats per update. A KL far below that means the learning rate, not the clip, limits the step. A KL near 1 nat or above means the policy changed so much that the batch no longer describes it, and in that range the estimators fail first. Because \(k_3\) grows like \(\rho\) when ratios are large, a huge approximate KL can be an error of the estimator as well as a sign of a bad update.</p>
 
@@ -691,6 +691,7 @@ python3 tour/stop-5-ppo-update/figures.py extract /tmp/stop5-seed1 &amp;&amp; py
   <li id="ref-spinup">Achiam, J. (2018). <em>Spinning Up in Deep Reinforcement Learning</em>. OpenAI. Part 3, "Intro to policy optimization", and the PPO algorithm page.</li>
   <li id="ref-engstrom">Engstrom, L., Ilyas, A., Santurkar, S., Tsipras, D., Janoos, F., Rudolph, L., and Madry, A. (2020). Implementation matters in deep policy gradients: a case study on PPO and TRPO. <em>ICLR</em>. arXiv:2005.12729.</li>
   <li id="ref-gae">Schulman, J., Moritz, P., Levine, S., Jordan, M., and Abbeel, P. (2016). High-dimensional continuous control using generalized advantage estimation. <em>ICLR</em>. arXiv:1506.02438.</li>
+  <li id="ref-klapprox">Schulman, J. (2020). Approximating KL divergence. Blog post, 7 March 2020. joschu.net/blog/kl-approx.html.</li>
 </ol>
 </main>
 

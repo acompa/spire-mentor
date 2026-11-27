@@ -1,0 +1,280 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<meta charset="utf-8">
+<title>RL Tour 7: Self-test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+
+<style>
+/* Self-test only. */
+.instructions { font-family: var(--sans); font-size: .95rem; border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .7rem 1rem; }
+.instructions > * + * { margin-top: .4rem; }
+.q { margin-top: 1.6rem; }
+.q > .qnum { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: .25rem; }
+.q > details { margin-top: .6rem; }
+.q > details > * + * { margin-top: .5rem; }
+.q > details ol { padding-left: 1.3rem; }
+.src { font-family: var(--sans); font-size: .85em; color: var(--muted); }
+ol.note { padding-left: 1.4rem; }
+
+/* A long worked line gets its own scrolling row so the page never scrolls sideways on a phone. */
+.eq-inline { display: block; margin: .35rem 0; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 7 · Self-test</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Imitation and warm starts: self-test</h1>
+  <p class="lede">Twelve recall questions and two calculations on <a href="chapter.html">Chapter 7, Imitation and warm starts</a>.</p>
+</header>
+
+<main>
+  <div class="instructions">
+    <p>Answer each question from memory and in writing before you open its answer.</p>
+    <p>Come back in a few days and do the whole page again.</p>
+  </div>
+
+  <h2 id="recall">Recall</h2>
+
+  <div class="q"><span class="qnum">Question 1</span>
+    <p>At the start of training, why does copying a teacher give a stronger learning signal than reward does? Use the Ascension 10 example from the chapter.</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>Imitation is supervised learning: the state is the input, the teacher's action is the label, and the loss is cross-entropy. Every decision gets its own label right away, so no run has to end before the student learns something. Chapter 5's policy gradient raises an action's probability in proportion to its advantage, and the advantage depends on what happened later in the run. At Ascension 10 a network with random weights dies within the first few floors of almost every run. Most of its decisions then get credit or blame for a death many decisions later, and RL from random weights spends its first millions of decisions learning to survive Act 1. <span class="src">(Section 1)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 2</span>
+    <p>The per-decision error \(\epsilon\) and the run cost \(J(\pi)\) are both expectations over states. Which state distribution does each one use, and why does the difference matter? Also, why must the held-out set hold whole runs and not random decisions?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>\(\epsilon\) is an expectation under the teacher's state distribution \(d^{\pi^*}\). \(J(\pi)\) is an expectation under the student's own distribution \(d^{\pi_\theta}_t\). Supervised learning controls \(\epsilon\), but the student pays \(J\) when it plays, so a low test error does not bound the cost of play on its own. The held-out set must hold whole runs because decisions within a run share the deck, the fight and the HP, so they are strongly correlated. Random decisions from training runs would leak that shared context into the test set. <span class="src">(Section 2)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 3</span>
+    <p>When the student trains on the teacher's full distribution, why does minimising cross-entropy give the same student as minimising the forward KL \(D_{\mathrm{KL}}(\pi^* \,\|\, \pi_\theta)\)? Where does Spire Mentor's trainer code show this identity?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>The cross-entropy splits into the forward KL plus the teacher's entropy, \(\mathcal{H}[\pi^*(\cdot \mid s)]\). The entropy does not depend on \(\theta\), so it has zero gradient, and both losses have the same minimiser. In the trainer, <code>ce_rows</code> is the cross-entropy and <code>kl_rows</code> is the KL. They differ by the sum of <code>xlogy(p_t, p_t)</code>, which is minus the teacher's entropy. For the same reason, in U0 the teacher term at \(\lambda_{\text{KS}} = 1\) has the same gradient as cross-entropy to the teacher. <span class="src">(Sections 2 and 8)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 4</span>
+    <p>In the sketch of the \(\epsilon T^2\) bound, what does Step 2 bound, and which inequality does it use? Where does the extra factor of \(T\) come from?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>Step 1 writes the student's state distribution at decision \(t\) as a mixture: weight \((1-\epsilon)^t\) on the teacher's distribution for a clean prefix, and the rest on an unknown \(p^{\text{mistake}}_t\). Step 2 bounds the L1 distance between \(d^{\pi_\theta}_t\) and \(d^{\pi^*}_t\) by \(2(1-(1-\epsilon)^t) \le 2\epsilon t\), using Bernoulli's inequality \((1-\epsilon)^t \ge 1 - \epsilon t\). So the distance grows linearly in \(t\). Step 3 bounds the cost at decision \(t\) by \(\epsilon + 2\epsilon t\): the training error plus the distance times the worst cost, 1. Step 4 sums over the run, \(\epsilon T + \epsilon T(T-1) = \epsilon T^2\). The extra \(T\) appears because a mistake at decision \(t\) can spoil every decision after it. <span class="src">(Section 3)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 5</span>
+    <p>Describe one round of DAgger. Who supplies the labels, what does \(\beta_i\) control, and why is behaviour cloning the first round?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>Each round runs the mixture policy \(\pi_i = \beta_i \pi^* + (1-\beta_i)\hat\pi_i\) and records the states it visits. The teacher labels each of those states with \(a^*(s)\), the labelled states join \(\mathcal{D}\), and the next student \(\hat\pi_{i+1}\) trains on all of \(\mathcal{D}\). \(\beta_i\) is the probability that the teacher acts, so it decides only which states are visited. The labels always come from the teacher. With \(\beta_1 = 1\) the teacher plays the whole first round, so its states and actions are the dataset, which is behaviour cloning. Over rounds the training distribution moves close to the student's own, which drives down the L1 distance that Step 2 of Section 3 bounds. <span class="src">(Section 4)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 6</span>
+    <p>DAgger's bound is \(u\,T\,\epsilon_{\text{own}}\). What is \(u\), why is this bound linear in \(T\), and why is it still loose in Slay the Spire? What does DAgger need from the teacher that behaviour cloning does not?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>The performance difference lemma writes \(J(\hat\pi) - J(\pi^*)\) as a sum over decisions of the teacher's advantage of the student's action, taken under the student's own state distribution \(d^{\hat\pi}_t\). The bracket is zero wherever the two agree. \(u\) bounds how much one wrong action raises the teacher's cost-to-go. Each term is then at most \(u\) times the disagreement rate on the student's own states, which gives \(u\,T\,\epsilon_{\text{own}}\), and DAgger trains on exactly those states. The bound is loose in this game because one bad card choice can lose a run, so \(u\) is large. DAgger needs a teacher that can label arbitrary states, which costs a network one forward pass but is expensive for a human. <span class="src">(Section 4)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 7</span>
+    <p>At the Shockwave card reward, what does a hard label throw away? What does the gradient of the loss say soft labels change, and why did soft labels barely help in the measurements?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>The teacher gives Shockwave 0.86, skip 0.14, and each of the other two cards less than one in ten million. A hard label keeps only "Shockwave". It loses two facts: skip was a reasonable second choice, and the other two cards were firmly ruled out. The 100-run student spread its probability almost evenly and picked Ultimate Strike. The gradient with respect to a logit is \(\pi_\theta(a \mid s) - q(a)\). With \(q = \pi^*(\cdot \mid s)\) it is zero exactly when the student matches the teacher, so every example carries information about all the classes. The measured teacher has a mean entropy of 0.17 nats per decision, so its distribution is nearly one-hot on most decisions and the soft target is nearly the hard one. Soft-label agreement was 64.1% against 64.4% at 25 runs and 68.3% against 67.9% at 50 runs. <span class="src">(Sections 5 and 9)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 8</span>
+    <p>Why does the kickstarting weight \(\lambda_{\text{KS}}\) fall to zero instead of staying fixed? Use the single-state result for a fixed weight.</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>With a fixed \(\lambda\), the objective rewards a compromise between reward and closeness to the teacher. For one state with the reverse KL, the optimum is \(\pi_\lambda(a) \propto \pi^*(a)\exp(Q(a)/\lambda)\), the teacher's policy reweighted by the action values. If the teacher gives an action almost no probability, a fixed \(\lambda\) keeps that action unlikely however good it is. Only as \(\lambda \to 0\) does \(\pi_\lambda\) become greedy on \(Q\). The project's forward-KL term has no closed form but has the same effect. Schmitt and colleagues saw agents with a constant weight stop improving near the teacher's score. Spire Mentor's teachers win 12% of runs, so staying close to them helps early and holds the student back later. <span class="src">(Section 6)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 9</span>
+    <p>In phase U0 the teachers score every row, but the PPO loss uses only student-acted rows. Before that, V-warm trains only the critic. Give a reason for each choice, and say whether the training plan states it or the chapter supplies it.</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>The plan gives no reason for either. For the PPO restriction, the chapter points to Chapter 6: a teacher-acted row was not sampled from \(\pi_\theta\), so its importance ratio can be far from 1, and PPO's ratio assumes \(\mu \approx \pi_\theta\). Teacher-acted rows can still train the teacher term and the critic. For V-warm, the chapter uses Section 6's first failure mode, value collapse. An untrained critic gives noisy advantages, and PPO's first updates could undo the clone. So for the first 3 updates the critic learns the returns of the teachers' play while the policy stays frozen. <span class="src">(Sections 6 and 8)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 10</span>
+    <p>At the K2 gate, combat agreement was 0.805 against a bar of 0.85, and the project's owner waived the bar. Why was the waiver reasonable, and what general point about agreement does it show?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>The bar stood for "the student learned from the teacher", and the student already outplayed the teachers. It won 16.9% of 1,000 development seeds against the teachers' 11.5% on the same seeds, a paired gain of 5.4 points, with McNemar's \(p = 0.00016\). A control ran the teachers through the same evaluation code and measured 12.1%, so the evaluation code did not explain the lead. The general point is that the teacher is not the goal, so agreement is only a diagnostic. Agreement should rise only while the teacher is better, and a student that beats the teacher should disagree where the teacher is wrong. <span class="src">(Sections 7, 8 and 10)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 11</span>
+    <p>The 100-run student agrees with the teacher more on its own states (73.8%) than on held-out teacher runs (72.8%). Why does that not show an absence of distribution shift? And why can't a held-out test set measure the shift?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>The two averages cover different parts of a run. The student's runs end after about 198 decisions, so its own-state average comes mostly from the opening floors, where agreement is easiest. The teacher's runs last about 663 decisions and reach later floors. Restricted to the first 198 decisions of each held-out run, agreement is 81.0%, higher than 73.8%. Figure 7.5 shows that from decision 50 to 550 the student agrees 3 to 10 points less on its own states at the same decision index. Held-out runs are still the teacher's runs, drawn from \(d^{\pi^*}\), so they measure generalisation across seeds. Only the student's own runs, labelled by the teacher, measure \(\epsilon\) under \(d^{\pi_\theta}\). <span class="src">(Sections 9 and 10)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Question 12</span>
+    <p>The DAgger student has the same held-out agreement as the 100-run student but reaches more floors. Why can held-out agreement not show the gain, and why does the result not fully rule out "DAgger is just more data"?</p>
+    <details class="predict"><summary>Answer</summary>
+      <p>Both students agree on 72.8% of held-out decisions, but the DAgger student's mean floor is 20.9 against 17.0, a paired gain of 3.9 floors with a standard error of 0.9. Held-out agreement cannot show the gain because the new rows cover states that the teacher never visits. The round added 8101 rows to 64253, 13% more data. If floors grow with the logarithm of the data, that is 0.17 of a doubling, worth about 0.6 floors, far less than 3.9. So the location of the rows probably caused most of the gain. It is not a controlled test, though. The control would add the same number of rows from new teacher runs. <span class="src">(Sections 9 and 10)</span></p>
+    </details>
+  </div>
+
+  <h2 id="calculations">Calculations</h2>
+
+  <div class="q"><span class="qnum">Calculation 1</span>
+    <p>(a) Use the survival model, <span class="eq eq-inline">\[\Pr(\text{no fatal mistake}) = (1-\epsilon_f)^T \approx e^{-\epsilon_f T}.\]</span> With \(\epsilon_f = 0.5\%\) and runs of about 660 decisions, what share of runs survives?</p>
+    <p>(b) Now run the model backwards on Section 9's result. The 100-run student won 1 run and the teacher won 124, and \(T = 663\). Solve \(e^{-\epsilon_f T} = 1/124\) for \(\epsilon_f\), and convert it to decisions per fatal mistake. Use \(\ln 124 \approx 4.82\).</p>
+    <details class="predict"><summary>Answer</summary>
+      <ol>
+        <li>(a) \(\epsilon_f T = 0.005 \times 660 = 3.3\).</li>
+        <li>\(e^{-3.3} \approx 0.04\), so about 4% of runs survive. A classifier that avoids a fatal mistake on 99.5% of decisions still loses almost every run.</li>
+        <li>(b) Take logs: \(\epsilon_f T = \ln 124 \approx 4.82\).</li>
+        <li>\(\epsilon_f \approx 4.82 / 663 \approx 0.0073\), or 0.73%.</li>
+        <li>\(1 / 0.0073 \approx 138\) decisions per fatal mistake.</li>
+      </ol>
+      <p>The student makes a clear mistake on 19.1% of its decisions, about 26 times as often as a fatal one, so most clear mistakes are survivable. The model assumes that fatal mistakes are independent and spread evenly along the run. <span class="src">(Sections 3 and 9)</span></p>
+    </details>
+  </div>
+
+  <div class="q"><span class="qnum">Calculation 2</span>
+    <p>The schedules are \(\beta_{\text{act}}(n) = 1 - \min(1, n/n_{U0})\) and <span class="eq eq-inline">\[\lambda_{\text{KS}}(n) = 1 - \mathrm{clip}\big((n - n_{U0})/(n_{\text{KS}} - n_{U0}), 0, 1\big),\]</span> with \(n_{U0} = 8 \times 10^7\) and \(n_{\text{KS}} = 5 \times 10^8\). Compute both values at \(n = 40\)M and at \(n = 374\)M decisions. What happens to the entropy bonus at the second point?</p>
+    <details class="predict"><summary>Answer</summary>
+      <ol>
+        <li>At 40M: \(\beta_{\text{act}} = 1 - 40/80 = 0.5\).</li>
+        <li>At 40M: \((40 - 80)/(500 - 80)\) is negative, so the clip gives 0 and \(\lambda_{\text{KS}} = 1\).</li>
+        <li>At 374M: \(374/80 > 1\), so \(\beta_{\text{act}} = 1 - 1 = 0\).</li>
+        <li>At 374M: <span class="eq eq-inline">\[(374 - 80)/(500 - 80) = 294/420 = 0.7,\]</span> so \(\lambda_{\text{KS}} = 1 - 0.7 = 0.3\).</li>
+      </ol>
+      <p>At 40M a teacher plays half the fights and acts, and the teacher term is at full weight. At 374M the student plays everything and the teacher weight has dropped to 0.3. A decision type's entropy bonus is zero while its \(\lambda_{\text{KS}}\) is above 0.3, so the bonus turns on here and then decays geometrically until 4 billion decisions. <span class="src">(Section 8)</span></p>
+    </details>
+  </div>
+
+  <h2 id="note">For your note</h2>
+  <p>Use these three questions to connect this chapter to the earlier ones. They have no answer key.</p>
+  <ol class="note">
+    <li>The kickstarting loss of Section 6 adds a teacher term to \(L^{\text{PPO}}\). How does that term change what one PPO update does, compared with Chapter 5's clipped surrogate alone?</li>
+    <li>Chapter 6 used the behaviour policy \(\mu\) and the ratio \(\rho_t\) to correct for off-policy data. How do teacher-acted rows in U0, and the behaviour log-probabilities stored on them, fit that picture?</li>
+    <li>The label in behaviour cloning is a class, and the game merges identical options into classes (Chapter 1). How could class merging affect agreement, and the K2 difference about applying a class's first member?</li>
+  </ol>
+</main>
+
+<footer class="chapter"><span><a href="chapter.html">← Back to Chapter 7: Imitation and warm starts</a></span><span>RL tour self-test</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>

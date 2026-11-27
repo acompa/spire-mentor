@@ -1,0 +1,278 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<meta charset="utf-8">
+<title>RL Tour 4: Self-test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+<style>
+/* Self-test page: questions numbered in headings, answers folded. */
+.qnote { font-family: var(--sans); font-size: .9rem; color: var(--muted); }
+.answer-table td.num, .answer-table th.num { text-align: right; }
+
+/* A long worked line gets its own scrolling row so the page never scrolls sideways on a phone. */
+.eq-inline { display: block; margin: .35rem 0; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 4 · Self-test</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Value functions and advantage: self-test</h1>
+  <p class="lede">Answer each question from memory, in writing, before you open its answer. Come back in a few days and answer them again without looking at the first attempt.</p>
+</header>
+
+<nav class="contents" aria-label="Self-test contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#recall">Recall questions</a></li>
+    <li><a href="#calculations">Two calculations</a></li>
+    <li><a href="#note">For your note</a></li>
+    <li><a href="chapter.html">Back to Chapter 4</a></li>
+  </ol>
+</nav>
+
+<main>
+  <h2 id="recall">Recall questions</h2>
+
+  <h3>Question 1. Why the final reward can't score the elite choice</h3>
+  <p>At the floor 11 fork, Instinct takes the elite path and wins the fight. Why is the reward that eventually arrives a poor score for that one map choice? What does an actor-critic method judge the choice against instead, and how does its learned function differ from the one in Q-learning?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The elite fight pays only its floor, and the relic it gives pays off hundreds of decisions later. If you score the choice with the final +1 or 0, it shares that number with the next 500 decisions, including a bad card draw on floor 40, so its score is mostly noise from the other decisions. An actor-critic method judges each decision against a learned prediction of the return instead of the final outcome. Unlike Q-learning, it learns \(V\), which depends on the state alone, and it predicts the return of the current policy, so no \(\max\) appears. Its job is a low-variance estimate of the advantage. (Section 1)</p>
+  </details>
+
+  <h3>Question 2. What a positive advantage tells you</h3>
+  <p>Write \(A^\pi(s, a)\) in terms of \(Q^\pi\) and \(V^\pi\). Why is its mean over the policy's own actions zero? Given that, what does \(A^\pi(s, \text{left}) &gt; 0\) at the elite fork actually say, and why can the same action's advantage turn negative as the policy improves?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>\(A^\pi(s, a) = Q^\pi(s, a) - V^\pi(s)\). Averaging \(Q^\pi\) over \(\pi(a \mid s)\) gives back \(V^\pi(s)\), so the average of \(A^\pi\) under the policy is \(V^\pi(s) - V^\pi(s) = 0\). So a positive advantage at the fork means that taking the elite beats this policy's usual mix of left and right. It says nothing about whether the action is good in absolute terms. As the policy improves, its average in that state rises, so an action that beat a weak policy's average can fall below a strong policy's average. (Sections 2 and 12)</p>
+  </details>
+
+  <h3>Question 3. Prediction versus control</h3>
+  <p>The Bellman expectation equation for \(Q^\pi\) and the equation behind DQN differ by one operator. Which one, and what job does each equation describe? Name the three parts of DQN that the actor-critic split removes, and say why learning \(V(s)\) rather than \(Q(s, a)\) matters in Slay the Spire.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>DQN's equation has \(\max_{a'} Q^*(s_{t+1}, a')\), and the Bellman expectation equation has \(V^\pi(s_{t+1})\) with no max. The optimality equation describes the best policy and supports control, which means acting by arg max. The expectation equations describe one given policy, which is prediction, or policy evaluation, and the critic only evaluates the current actor. The split removes maximisation bias, replay of data from old policies, and one network output per legal action. One output per state matters because \(\mathcal{A}(s)\) changes size from one decision to the next. (Section 3)</p>
+  </details>
+
+  <h3>Question 4. The critic is regression with a twist</h3>
+  <p>The critic minimises a squared error \(\mathcal{L}_V(\phi)\) against a target \(y_t\). If \(y_t\) is an unbiased sample of \(G_t\), what does the minimiser converge to, and why? Name the two ways this differs from ordinary supervised regression, and say what a semi-gradient update does about the second one.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The minimiser is \(V^\pi\), for the same reason that a least-squares regressor converges to the conditional mean of its label. First, nobody gives you the labels. You build them from the trajectories that the current policy just played. Second, some labels contain the critic's own predictions, so a label moves when \(\phi\) moves. A semi-gradient update treats such a label as a constant when it takes the gradient. In this chapter's critic, the frozen copy is the set of values that the critic computes once at the start of each update, which does the job of DQN's target network. (Section 4)</p>
+  </details>
+
+  <h3>Question 5. Where the Monte Carlo variance comes from</h3>
+  <p>Using the telescoping sum, explain why the Monte Carlo target's error has large variance early in a 670-decision run. What does the TD target keep from that sum, what does it put in place of the rest, and which of the two problems shrinks as the critic improves?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>With the true \(V^\pi\), \(G_t - V^\pi(s_t) = \sum_{l=0}^{T-t} \gamma^l \delta^\pi_{t+l}\), so the Monte Carlo error is one TD residual per remaining step. Each residual has mean zero given everything before it, so the residuals are uncorrelated and the variance is the sum of the per-step variances. Early in a run that sum has several hundred terms. The TD target keeps only the first term and replaces the rest with \(\gamma\,(V_\phi(s_{t+1}) - V^\pi(s_{t+1}))\), the critic's error at the next state. The mean of that error is a bias that shrinks as the critic improves, while the Monte Carlo variance does not shrink. (Section 5)</p>
+  </details>
+
+  <h3>Question 6. Why weight by the advantage and not the return</h3>
+  <p>Show in one line why subtracting a baseline \(b(s)\) from the weight \(\Psi_t\) leaves the expected gradient unchanged. What may the baseline depend on? Then say what goes wrong in a won run if you weight every decision by its return.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p><span class="eq eq-inline">\[\mathbb{E}_{a \sim \pi_\theta}[\nabla_\theta \log \pi_\theta(a \mid s)\, b(s)] = b(s) \sum_a \nabla_\theta \pi_\theta(a \mid s) = b(s)\, \nabla_\theta 1 = 0,\]</span> using \(\pi \nabla \log \pi = \nabla \pi\). The baseline can depend on anything except the action \(a\). It acts as a control variate, which keeps the mean and lowers the variance. In a won run every decision gets a return between 1.0 and about 1.24, good or bad, so weighting by the return reinforces every action in that run. The advantage removes what the state already predicted and keeps what the action changed. (Section 6)</p>
+  </details>
+
+  <h3>Question 7. What γ and λ each cost</h3>
+  <p>The confusion "λ is another discount factor" mixes up two parameters. What does a \(\gamma &lt; 1\) do to the gradient that a \(\lambda &lt; 1\) does not? Why does Spire Mentor still use \(\lambda &lt; 1\) with \(\gamma = 1\)? And what did the λ sweep in Section 11 show about where 0.95 and 0.97 sit?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>A \(\gamma &lt; 1\) changes the objective, so it biases the gradient even with a perfect critic. A \(\lambda &lt; 1\) biases the gradient only to the extent that the critic is wrong, and with an exact critic every \(\lambda\) gives an unbiased advantage. With \(\gamma = 1\), \(\lambda\) does all the variance reduction. The sweep showed the standard deviation of \(\hat{A}_t\) growing slowly up to about \(\lambda = 0.75\) and fast after it, and the project's values sit just before the curve turns up, at about half the Monte Carlo spread. The plot shows only the variance side. Measuring the bias side needs a training run for each \(\lambda\). (Sections 7, 11 and 12)</p>
+  </details>
+
+  <h3>Question 8. Does a privileged critic bias the gradient?</h3>
+  <p>The critic reads hidden state that the policy never sees, such as the draw pile order. Give the argument that this adds no bias when the critic is used as a baseline. What is the other half of the question, what did Baisero and Amato show, and which part of the chapter's claim about Spire Mentor's \(V(o_t, s_t)\) is the chapter's own inference?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The policy's action distribution depends only on \(o_t\), so a baseline \(b(o_t, s_t)\) comes out of the sum over actions and the term is \(b(o_t, s_t)\, \nabla_\theta \sum_a \pi_\theta(a \mid o_t) = 0\). As a baseline, the hidden state adds only explanatory power, so a bad draw no longer shows up as a negative residual on the card played before it. The other half concerns the critic's target. Baisero and Amato showed that \(V(s_t)\) alone is in general biased, and that \(V(h_t, s_t)\) keeps the gradient unbiased. That the argument carries over to \(V(o_t, s_t)\), with \(o_t\) in place of the history, is the chapter's inference, not the paper's result. (Section 8)</p>
+  </details>
+
+  <h3>Question 9. How Spire Mentor departs from the textbook recipe</h3>
+  <p>Pick three of the five changes Spire Mentor makes to the textbook recipe. For each, say what it does and what reason, if any, the plan or the chapter gives.</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>Any three of these five count.</p>
+    <ul>
+      <li>Training collects 131,072 decisions per iteration rather than whole runs. A run still in progress at the cut bootstraps from \(V_\phi\) of the next state.</li>
+      <li>The update computes the targets once, from the critic's values before the update, so each update solves a fixed regression problem.</li>
+      <li>The plan deletes value clipping and uses the plain squared error with coefficient 0.5. It does not record why.</li>
+      <li>Each decision type keeps its own running mean and standard deviation for advantage normalisation. The plan gives no reason. The chapter infers scale, since the one-step spread is 0.019 for combat decisions and 0.051 for run decisions.</li>
+      <li>Combat and between-fight decisions get separate value heads and separate \(\lambda\) values. The two chains are joined, so a fight's result flows into the run's value.</li>
+    </ul>
+    <p>(Section 9)</p>
+  </details>
+
+  <h3>Question 10. The two chains</h3>
+  <p>Describe how the combat chain and the run chain link decisions. Where does a fight's last residual land, and what does the indicator \(\mathbf{1}[\cdot]\) in the combat recursion do? Why do act 3's two bosses form one combat chain?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The combat chain links each combat decision to the next stored decision of the same run. The run chain links run decisions to each other and skips over fights, so one of its residuals spans a whole fight and sums the reward it paid. A fight's last decision has a run decision as its successor, so its residual uses that decision's \(V_{\text{run}}\), and every card play is scored partly by what the fight did to the run's value. The indicator restarts the combat recursion at each fight, because a combat advantage continues backward only into another combat decision. The map step between act 3's bosses is forced and never stored, so the first boss's last decision has the second boss's first decision as its successor. When each boss is scored alone, a won first boss gets a mean residual of \(-0.62\). (Section 10)</p>
+  </details>
+
+  <h3>Question 11. What the critic says about elites</h3>
+  <p>Write the run chain's TD residual \(\delta_{\text{elite}}\) across an elite fight. How does it score the map decision before the elite without waiting for the end of the run? What did the 200-run measurement find for elites against ordinary monster fights, and why are boss bars negative partly by construction?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p><span class="eq eq-inline">\[\delta_{\text{elite}} = R_{\text{fight}} + V_\phi^{\text{r}}(s_{\text{after}}) - V_\phi^{\text{r}}(s_{\text{before}}),\]</span> and with \(R_{\text{fight}} \approx 0\) it is the change in the run critic's value across the fight. That residual is the first term of the map decision's advantage. Across 1,382 elite fights the run's value rose by 0.005 on average, and across ordinary monster fights it fell by 0.012, so the critic values an elite at +0.017 beyond an ordinary fight, after the HP it costs. Elites lowered the value only below half HP. The boss bonus is paid during the fight, so it is no longer in the future value. With the bonus added back, the residual across a boss is close to zero. (Sections 10 and 11)</p>
+  </details>
+
+  <h3>Question 12. Reading explained variance</h3>
+  <p>With privileged tokens the critic explains 0.248 of the return's variance inside fights and 0.191 between fights. Why is a low number like that not a sign of a broken critic? What does the "PRIV removed" column measure, and what does it not measure?</p>
+  <details class="predict"><summary>Answer</summary>
+    <p>The label is the return to the end of the run, which depends on fights the map has not generated yet. Even a perfect estimate of the expected return leaves that luck unexplained, so explained variance has a ceiling well below one. The signs to worry about are explained variance that falls during training or a critic wrong in one direction across its range. "PRIV removed" is the trained critic given an input it never saw in training, which drops to 0.047 inside fights and \(-0.135\) between fights. Its drop is an upper bound on how much this critic relies on the privileged tokens. It does not measure what a critic trained without them could learn. (Sections 11 and 12)</p>
+  </details>
+
+  <h2 id="calculations">Two calculations</h2>
+
+  <h3>Calculation 1. GAE backward through the end of an elite fight</h3>
+  <p>These are the last four decisions of the elite fight on seed 170000000, with \(\lambda = 0.95\), \(\gamma = 1\) and \(r_t = 0\) on every row. Decision 112 is the fight's last decision, and its chain stops at the map. Compute \(\delta_t\) and \(\hat{A}_t\) for decisions 112, 111, 110 and 109.</p>
+  <div class="table"><table>
+    <thead><tr><th>decision</th><th class="num">\(V(s_t)\)</th><th class="num">\(V(s_{t+1})\)</th></tr></thead>
+    <tbody>
+      <tr><td>109</td><td class="num">1.12347</td><td class="num">1.12168</td></tr>
+      <tr><td>110</td><td class="num">1.12168</td><td class="num">1.12141</td></tr>
+      <tr><td>111</td><td class="num">1.12141</td><td class="num">1.12204</td></tr>
+      <tr><td>112</td><td class="num">1.12204</td><td class="num">1.11865</td></tr>
+    </tbody>
+  </table></div>
+  <details class="predict"><summary>Answer</summary>
+    <p>Use \(\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)\) and \(\hat{A}_t = \delta_t + \gamma\lambda\, \hat{A}_{t+1}\), starting from the last row.</p>
+    <ol>
+      <li>Decision 112: <span class="eq eq-inline">\[\delta = 1.11865 - 1.12204 = -0.00339.\]</span> The chain stops at the map, so \(\hat{A} = -0.00339\).</li>
+      <li>Decision 111: <span class="eq eq-inline">\[\delta = 1.12204 - 1.12141 = 0.00063.\]</span> <span class="eq eq-inline">\[\hat{A} = 0.00063 + 0.95 \times (-0.00339) = -0.00259.\]</span></li>
+      <li>Decision 110: <span class="eq eq-inline">\[\delta = 1.12141 - 1.12168 = -0.00027.\]</span> <span class="eq eq-inline">\[\hat{A} = -0.00027 + 0.95 \times (-0.00259) = -0.00273.\]</span></li>
+      <li>Decision 109: <span class="eq eq-inline">\[\delta = 1.12168 - 1.12347 = -0.00179.\]</span> <span class="eq eq-inline">\[\hat{A} = -0.00179 + 0.95 \times (-0.00273) = -0.00438.\]</span></li>
+    </ol>
+    <p>All four advantages are slightly negative because each one includes the last residual. The map after the fight was worth a little less than the critic predicted at the fight's end. The repository's vectorised function gives the same values. (Section 7)</p>
+  </details>
+
+  <h3>Calculation 2. How far ahead GAE looks</h3>
+  <p>With \(\gamma = 1\), the weight on a TD residual \(l\) steps after a decision is \(\lambda^l\). At \(\lambda = 0.95\), what weight does a residual 20 decisions later get? How many steps does it take for the weight to halve at \(\lambda = 0.95\) and at \(\lambda = 0.97\)? Use \(\ln 2 \approx 0.693\), \(\ln(1/0.95) \approx 0.0513\) and \(\ln(1/0.97) \approx 0.0305\).</p>
+  <details class="predict"><summary>Answer</summary>
+    <ol>
+      <li>Square repeatedly: \(0.95^2 = 0.9025\), \(0.95^4 = 0.8145\), \(0.95^5 = 0.8145 \times 0.95 = 0.7738\), \(0.95^{10} = 0.5987\), \(0.95^{20} = 0.3585\).</li>
+      <li>The weight halves every \(\ln 2 / \ln(1/\lambda)\) steps. At 0.95 that is \(0.693 / 0.0513 \approx 13.5\), about 14 steps.</li>
+      <li>At 0.97 it is \(0.693 / 0.0305 \approx 22.7\), about 23 steps.</li>
+    </ol>
+    <p>So at 0.95 a residual near the end of a 25-decision fight still keeps more than a quarter of its size. The run chain's 0.97 looks further ahead, which the chapter suggests fits a run with only about 78 run decisions whose consequences arrive slowly. (Sections 7 and 10)</p>
+  </details>
+
+  <h2 id="note">For your note</h2>
+  <p>These have no answers. Use them to write your half-page note on the chapter.</p>
+  <ol>
+    <li>Chapter 3 set \(\gamma = 1\) and paid almost all of the reward at the end of the run. How does that choice make the critic and \(\lambda\) carry the whole job of credit assignment in this chapter?</li>
+    <li>Chapter 1 separated the observation \(o_t\) from the full state \(s_t\). Where in this chapter does that split decide what a network may read, and what would break if the policy could read \(s_t\)?</li>
+    <li>Chapter 2 described one transformer over a set of tokens. Why does adding the critic as a separate value block that reads the trunk's stream and the privileged tokens leave Instinct's play unchanged, and what does the repository test check to confirm it?</li>
+  </ol>
+</main>
+
+<footer class="chapter"><span><a href="chapter.html">← Chapter 4: Value functions and advantage</a></span><span>RL tour · Self-test 4</span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>

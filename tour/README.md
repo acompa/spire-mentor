@@ -1,6 +1,6 @@
 # RL tour
 
-Eight chapters on the fundamental ideas of reinforcement learning. Each
+Chapters on the fundamental ideas of reinforcement learning. Each
 chapter teaches one concept with equations, diagrams and measurements, and
 uses this repository's end-to-end PPO agent ("Instinct") as its worked
 example.
@@ -25,12 +25,15 @@ from the network, and has a light and a dark theme.
 | [7](stop-7-imitation/chapter.html) | Imitation and warm starts | Behaviour cloning, compounding error, DAgger, distillation, warm-starting RL |
 | [8](stop-8-evaluation/chapter.html) | Evaluating agents | Binomial intervals, paired seeds, McNemar's test, power, selection bias, pre-registration |
 
-Read them in order. Each chapter refers back to the ones before it, and all
-eight share one notation.
+Read them in order. Each chapter refers back to the ones before it, and they
+all share one notation.
 
 ## What a chapter's directory holds
 
 - `chapter.html`: the chapter.
+- `self-test.html`: recall questions and two short calculations on the
+  chapter, with each answer folded under its question.
+  Answer in writing from memory before you open an answer.
 - `README.md`: the commands that reproduce the chapter's measurements.
 - `check.py`: the chapter's main experiment.
 - `figures.py` and a JSON data file: the script that collects the data behind
