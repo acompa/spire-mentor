@@ -24,6 +24,7 @@ from the network, and has a light and a dark theme.
 | [6](stop-6-off-policy/chapter.html) | Off-policy correction | Importance sampling, effective sample size, truncation, V-trace |
 | [7](stop-7-imitation/chapter.html) | Imitation and warm starts | Behaviour cloning, compounding error, DAgger, distillation, warm-starting RL |
 | [8](stop-8-evaluation/chapter.html) | Evaluating agents | Binomial intervals, paired seeds, McNemar's test, power, selection bias, pre-registration |
+| [9](stop-9-sample-efficiency/chapter.html) | Sample efficiency | Learning per decision against learning per second, update epochs, batch size and gradient noise, comparing training runs, stating a hypothesis |
 
 Read them in order. Each chapter refers back to the ones before it, and all
 eight share one notation.
