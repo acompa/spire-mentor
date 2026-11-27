@@ -44,9 +44,6 @@ COST_DISCORDANCE = (0.10, 0.20, 0.30)
 Z80 = 0.8416212335729143
 
 
-# ---------------------------------------------------------------- statistics
-
-
 def mde80(n: int, discordance: float) -> float:
     """Smallest true paired difference a two-sided 5% McNemar test detects with
     80% power on `n` paired seeds, by the normal approximation:
@@ -101,9 +98,6 @@ def hours_for(n_paired: int, decisions_per_run: float, rate: float, arms: int = 
     return n_paired * arms * decisions_per_run / rate / 3600
 
 
-# ------------------------------------------------------------------ playing
-
-
 @dataclass
 class Arm:
     name: str
@@ -143,9 +137,6 @@ def play(name: str, panels: dict[str, range], workers: int) -> tuple[Arm, float]
                 decisions += r["decisions"]
                 errors += r["outcome"] in ("error", "stopped")
     return Arm(name, wins, decisions, errors, records), time.perf_counter() - t0
-
-
-# ------------------------------------------------------------------ printing
 
 
 def pct(x: float) -> str:
@@ -219,9 +210,6 @@ def print_cost(decisions_per_run: float, rate: float, workers: int,
               f"  {100 * mde80_unpaired(n, p_typical):>8.1f} pp")
     print("  MDE80: smallest true difference a two-sided 5% McNemar test finds 80% of the time"
           " (normal approximation; see chapter.html, section 4).")
-
-
-# --------------------------------------------------------------------- main
 
 
 def main() -> None:
