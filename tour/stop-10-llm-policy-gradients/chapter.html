@@ -1,0 +1,592 @@
+<!--
+  Shared shell for the eight tour chapters. Copy this file to
+  tour/stop-N-slug/chapter.html, keep everything from the top through the end of
+  <style> and the two <script> blocks at the bottom unchanged, and replace the
+  sample content inside <main>. Add chapter-specific rules only in a second
+  <style> block placed after the shared one. No <!doctype>, <html>, <head> or
+  <body> tags: the artifact host adds them, and browsers accept the file as is.
+-->
+<meta charset="utf-8">
+<title>RL Tour 10: Policy gradients on language models</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 68-character reading column; figures, tables and code may run wider inside their own scroll boxes. */
+:root {
+  --bg: #fbfcfd; --surface: #f1f4f7; --rule: #d5dce3;
+  --fg: #16212b; --muted: #55636f;
+  --accent: #0b6b74; --accent-soft: #dff0f1;
+  --example: #7a4a0c; --example-soft: #f8eedc;
+  --s1: #0b6b74; --s2: #b4541a; --s3: #5b4bb0; --s4: #6a7681;
+  --good: #1f7a3d; --bad: #b3261e;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #10171d; --surface: #18222b; --rule: #2b3945;
+  --fg: #e3e9ee; --muted: #9aa8b4;
+  --accent: #5cc3cc; --accent-soft: #12343a;
+  --example: #e2b06a; --example-soft: #33270f;
+  --s1: #5cc3cc; --s2: #f0955a; --s3: #a99cf0; --s4: #8b98a4;
+  --good: #6fcf8d; --bad: #f28b82; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2rem 4rem; }
+main, header.chapter, nav.contents, footer.chapter { max-width: 68ch; margin-inline: auto; }
+main > * + * { margin-top: 1.1rem; }
+p, li { margin: 0; } li + li { margin-top: .35rem; }
+a { color: var(--accent); } a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.chapter { display: flex; flex-direction: column; gap: .6rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--rule); }
+.eyebrow { font-family: var(--sans); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+h1 { font-family: var(--sans); font-weight: 600; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+h2 { font-family: var(--sans); font-weight: 600; font-size: 1.45rem; line-height: 1.25; margin: 2.6rem 0 0; text-wrap: balance; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 1.12rem; margin: 1.8rem 0 0; }
+#theme-toggle { font: 500 .78rem var(--sans); color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: .3rem .6rem; cursor: pointer; }
+
+nav.contents { font-family: var(--sans); font-size: .92rem; margin-top: 1.2rem; }
+nav.contents ol { margin: .4rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+@media (max-width: 560px) { nav.contents ol { columns: 1; } }
+
+/* A term being defined for the first time. */
+dfn { font-style: normal; font-weight: 600; }
+/* Definition: the formal statement of a concept. Use sparingly, one per concept. */
+.definition { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8rem 1rem; }
+.definition > .label, .example > .label, .measured > .label { font: 600 .78rem var(--sans); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+.definition > .label { color: var(--accent); }
+/* In Spire Mentor: how the project instantiates the concept just taught. */
+.example { border-left: 3px solid var(--example); background: var(--example-soft); padding: .8rem 1rem; }
+.example > .label { color: var(--example); }
+/* Measured: a number or plot produced by running the stop's script on the M2 Max. */
+.measured { border: 1px solid var(--rule); background: var(--surface); padding: .8rem 1rem; }
+.measured > .label { color: var(--muted); }
+.definition > * + *, .example > * + *, .measured > * + * { margin-top: .7rem; }
+
+/* Display math is written as \begin{equation}...\end{equation} and numbered by MathJax. */
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .2rem; }
+mjx-container { color: var(--fg); }
+
+figure { margin: 1.6rem 0 0; }
+figure > .scroll { overflow-x: auto; }
+figure svg { display: block; max-width: 100%; height: auto; margin-inline: auto; font-family: var(--sans); }
+figcaption { font-family: var(--sans); font-size: .88rem; color: var(--muted); margin-top: .5rem; }
+figcaption b { color: var(--fg); font-weight: 600; }
+/* SVG helpers: every drawn colour comes from a token. */
+svg text { fill: var(--fg); font-size: 12px; } svg .muted { fill: var(--muted); }
+svg .ink { stroke: var(--fg); fill: none; } svg .grid { stroke: var(--rule); fill: none; }
+svg .box { fill: var(--surface); stroke: var(--fg); }
+svg .l1 { stroke: var(--s1); fill: none; } svg .l2 { stroke: var(--s2); fill: none; } svg .l3 { stroke: var(--s3); fill: none; } svg .l4 { stroke: var(--s4); fill: none; }
+svg .f1 { fill: var(--s1); } svg .f2 { fill: var(--s2); } svg .f3 { fill: var(--s3); } svg .f4 { fill: var(--s4); }
+
+.table { overflow-x: auto; }
+table { border-collapse: collapse; font-family: var(--sans); font-size: .9rem; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: left; padding: .4rem .7rem .4rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; } td.num, th.num { text-align: right; }
+caption { caption-side: bottom; text-align: left; font-size: .88rem; color: var(--muted); padding-top: .5rem; }
+
+code { font-family: var(--mono); font-size: .86em; background: var(--surface); padding: .05em .3em; border-radius: 3px; }
+/* Code excerpt: at most 20 lines, with the source path and lines in the caption. */
+.listing { margin: 1.4rem 0 0; }
+.listing pre { margin: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: .8rem 1rem; font: 400 .82rem/1.5 var(--mono); }
+.listing pre code { background: none; padding: 0; font-size: inherit; }
+.listing figcaption { font-family: var(--mono); font-size: .78rem; }
+
+/* Pause and predict: the question is visible, the answer opens on click. */
+details.predict { border: 1px dashed var(--accent); padding: .7rem 1rem; }
+details.predict > summary { font-family: var(--sans); font-weight: 500; cursor: pointer; }
+details.predict[open] > summary { margin-bottom: .6rem; }
+details.predict > * + * { margin-top: .6rem; }
+
+.refs { font-family: var(--sans); font-size: .9rem; padding-left: 1.6rem; }
+.cite { font-family: var(--sans); font-size: .82em; }
+footer.chapter { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: .9rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; color: var(--muted); }
+</style>
+
+<style>
+/* Chapter 10 only. */
+.kv td:first-child { white-space: nowrap; }
+/* The shared rule `figure svg` would make MathJax's SVG output in captions a centred block. */
+figure mjx-container svg { display: inline; margin-inline: 0; }
+</style>
+
+<header class="chapter">
+  <div class="eyebrow"><span>RL tour · Chapter 10 of 11</span><button id="theme-toggle" type="button">Dark mode</button></div>
+  <h1>Policy gradients on language models</h1>
+  <p class="lede">A language model that writes an answer is a policy that picks one token at a time. This chapter carries chapter 5's policy gradient over to that setting. It derives the two baselines that recent reasoning-model papers use in place of a critic, RLOO and GRPO, and measures what each one does to the noise and the direction of the gradient.</p>
+</header>
+
+<nav class="contents" aria-label="Chapter contents">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#opening">From game decisions to tokens</a></li>
+    <li><a href="#mdp">Text generation as a decision process</a></li>
+    <li><a href="#seq-pg">The policy gradient for a completion</a></li>
+    <li><a href="#rlvr">RLVR: rewards from a verifier</a></li>
+    <li><a href="#baselines">Baselines without a critic</a></li>
+    <li><a href="#issues">Known problems and their fixes</a></li>
+    <li><a href="#engineered">What real implementations add</a></li>
+    <li><a href="#spire">In Spire Mentor</a></li>
+    <li><a href="#measured">Measured: gradient noise against group size</a></li>
+    <li><a href="#confusions">Common confusions</a></li>
+    <li><a href="#experiments">Suggested experiments</a></li>
+    <li><a href="#references">References</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h2 id="opening">1. From game decisions to tokens</h2>
+
+<p>Chapters 1 to 8 trained one agent, Spire Mentor's Instinct, on one game. A run lasts about 667 decisions, and each decision offers about seven legal options. Rewards arrive along the way: 0.002 for each floor climbed, 0.05 for each boss and 1 for a win (<a href="../stop-3-reward/chapter.html">chapter 3</a>). A critic learns the value of each state (<a href="../stop-4-critic/chapter.html">chapter 4</a>), and PPO turns the critic's advantages into a weight update (<a href="../stop-5-ppo-update/chapter.html">chapter 5</a>).</p>
+
+<p>Reinforcement learning on a language model uses the same theorem with different proportions. The agent picks a token from its whole vocabulary at every step. An episode is one answer to one prompt. The reward usually arrives once, when a program checks the finished answer. And the environment is often only a list of prompts with known answers.</p>
+
+<p>Those differences explain the design choices in recent papers. Most of them drop the critic. Instead they sample several answers to the same prompt and use the other answers' rewards as the baseline. This chapter derives those estimators from chapter 5, measures their noise on a toy problem, and goes through the problems that later papers found with them.</p>
+
+<p>Two neighbouring chapters own related topics. <a href="../stop-9-sample-efficiency/chapter.html">Chapter 9</a> covers sample efficiency in general. <a href="../stop-11-llm-environments/chapter.html">Chapter 11</a> covers environments for language-model agents: how verifiers are built, and how a policy learns to exploit a weak one. This chapter uses both only where the gradient needs them.</p>
+
+<h3>Symbols added in this chapter</h3>
+
+<div class="table"><table class="kv">
+  <thead><tr><th>Symbol</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>\(x\), \(\mathcal{D}\)</td><td>A prompt, and the dataset of prompts it is drawn from.</td></tr>
+    <tr><td>\(y\), \(y_t\), \(\lvert y\rvert\)</td><td>A completion, its token at position \(t\), and its length in tokens.</td></tr>
+    <tr><td>\(v(x, y)\)</td><td>The verifier's reward for completion \(y\) on prompt \(x\).</td></tr>
+    <tr><td>\(n\)</td><td>Group size, the number of completions sampled per prompt. Papers write \(G\), which this tour uses for the return.</td></tr>
+    <tr><td>\(y^{(i)}\), \(R_i\)</td><td>The \(i\)-th completion in a group, and its reward \(v(x, y^{(i)})\).</td></tr>
+    <tr><td>\(p_x\)</td><td>The policy's success rate on prompt \(x\), the probability that \(v(x,y) = 1\).</td></tr>
+    <tr><td>\(\bar R\), \(s_R\)</td><td>The mean and the standard deviation of the rewards in one group.</td></tr>
+    <tr><td>\(\pi_{\mathrm{ref}}\)</td><td>The reference policy, a frozen copy of the model from before training.</td></tr>
+    <tr><td>\(\beta_{\mathrm{KL}}\)</td><td>The weight on the KL penalty to \(\pi_{\mathrm{ref}}\). Papers write \(\beta\), which this tour uses for the entropy weight.</td></tr>
+    <tr><td>\(\epsilon_{\mathrm{low}}\), \(\epsilon_{\mathrm{high}}\)</td><td>Separate lower and upper clip ranges, where one \(\epsilon\) was used before.</td></tr>
+  </tbody>
+</table></div>
+
+<p>The DeepSeekMath paper writes \(q\) for the prompt, \(o_i\) for the \(i\)-th output and \(r_{i,t}(\theta)\) for the probability ratio <span class="cite">[<a href="#ref-dsmath">1</a>]</span>. This chapter writes \(x\), \(y^{(i)}\) and \(\rho_{i,t}\), the tour's importance ratio from chapters 5 and 6.</p>
+
+<h2 id="mdp">2. Text generation as a decision process</h2>
+
+<p><a href="../stop-1-episode/chapter.html">Chapter 1</a> defined a decision process by its states, actions, transitions, rewards and the end of an episode. Here is each part for a model that answers one prompt.</p>
+
+<ul>
+  <li><b>State.</b> The first state is the prompt, \(s_0 = x\). After \(t\) tokens the state is \(s_t = (x, y_{\lt t})\), the prompt followed by everything written so far.</li>
+  <li><b>Action.</b> One token \(y_t\). The legal action set \(\mathcal{A}(s)\) is the whole vocabulary, the same at every state.</li>
+  <li><b>Transition.</b> Append the token. Nothing random happens, so \(s_{t+1} = (x, y_{\le t})\).</li>
+  <li><b>End of the episode.</b> The model writes the end-of-sequence token, EOS, or reaches the length budget.</li>
+  <li><b>Reward.</b> Zero after every token, then \(v(x, y)\) once the completion ends. The discount is \(\gamma = 1\).</li>
+  <li><b>Start state.</b> A prompt drawn from the dataset \(\mathcal{D}\).</li>
+</ul>
+
+<p>The policy is the language model itself. Its last layer gives one logit per vocabulary entry, and a softmax turns the logits into \(\pi_\theta(y_t \mid x, y_{\lt t})\). That is the same construction as Instinct's softmax over legal options in <a href="../stop-2-policy/chapter.html">chapter 2</a>, with a much larger and fixed action set. Liu et al. write down the same decision process for reasoning models <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>. The three figures below build it one part at a time.</p>
+
+<figure id="fig-mdp1">
+  <div class="scroll"><svg viewBox="0 0 640 236" role="img" aria-label="Token-level decision process, stage 1"><defs><marker id="arr10-mdp1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="20" y="30" width="120" height="46" rx="3" stroke-width="1"/><text x="80.0" y="49.5" text-anchor="middle">prompt x</text><text class="muted" x="80.0" y="64.5" text-anchor="middle">“What is 17 × 24?”</text><text class="muted" x="80" y="20" text-anchor="middle">state s₀ = x</text><rect class="box" x="150" y="150" width="150" height="40" rx="3" stroke-width="1"/><text x="225.0" y="174.0" text-anchor="middle">π_θ(y_t | x, y_&lt;t)</text><line class="ink" x1="110" y1="76" x2="190" y2="150" stroke-width="1.3" marker-end="url(#arr10-mdp1)"/><rect class="l1" x="150" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="181.0" y="49.5" text-anchor="middle">y₀</text><text x="181.0" y="64.5" text-anchor="middle">17</text><line class="ink" x1="240" y1="150" x2="181" y2="78" stroke-width="1.3" marker-end="url(#arr10-mdp1)"/><text class="muted" x="225" y="222" text-anchor="middle">one action = one token, sampled from the whole vocabulary</text></g></svg></div>
+  <figcaption><b>Figure 10.1.</b> One step. The state is the prompt. The policy samples one token from its distribution over the vocabulary, here "17".</figcaption>
+</figure>
+
+<figure id="fig-mdp2">
+  <div class="scroll"><svg viewBox="0 0 640 236" role="img" aria-label="Token-level decision process, stage 2"><defs><marker id="arr10-mdp2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="20" y="30" width="120" height="46" rx="3" stroke-width="1"/><text x="80.0" y="49.5" text-anchor="middle">prompt x</text><text class="muted" x="80.0" y="64.5" text-anchor="middle">“What is 17 × 24?”</text><text class="muted" x="80" y="20" text-anchor="middle">state s₀ = x</text><rect class="box" x="150" y="150" width="150" height="40" rx="3" stroke-width="1"/><text x="225.0" y="174.0" text-anchor="middle">π_θ(y_t | x, y_&lt;t)</text><line class="ink" x1="110" y1="76" x2="190" y2="150" stroke-width="1.3" marker-end="url(#arr10-mdp2)"/><rect class="l1" x="150" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="181.0" y="49.5" text-anchor="middle">y₀</text><text x="181.0" y="64.5" text-anchor="middle">17</text><rect class="l1" x="220" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="251.0" y="49.5" text-anchor="middle">y₁</text><text x="251.0" y="64.5" text-anchor="middle"> ×</text><rect class="l1" x="290" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="321.0" y="49.5" text-anchor="middle">y₂</text><text x="321.0" y="64.5" text-anchor="middle"> 24</text><rect class="l1" x="360" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="391.0" y="49.5" text-anchor="middle">y₃</text><text x="391.0" y="64.5" text-anchor="middle"> =</text><rect class="l1" x="430" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="461.0" y="49.5" text-anchor="middle">y₄</text><text x="461.0" y="64.5" text-anchor="middle"> 408</text><rect class="l1" x="500" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="531.0" y="49.5" text-anchor="middle">y₅</text><text x="531.0" y="64.5" text-anchor="middle">EOS</text><line class="ink" x1="240" y1="150" x2="181" y2="78" stroke-width="1.3" marker-end="url(#arr10-mdp2)"/><path class="ink" d="M150 88 V96 H568 V88" stroke-width="1"/><text class="muted" x="359" y="112" text-anchor="middle">episode = one completion y, ends at EOS or the length budget</text><text class="muted" x="320" y="166" text-anchor="start">transition: append the token,</text><text class="muted" x="320" y="182" text-anchor="start">s_t+1 = (x, y_≤t), deterministic</text></g></svg></div>
+  <figcaption><b>Figure 10.2.</b> The same step repeated. Each token joins the state, and the next token is sampled from the longer state. The episode is the whole completion, and it ends when the policy samples EOS.</figcaption>
+</figure>
+
+<figure id="fig-mdp3">
+  <div class="scroll"><svg viewBox="0 0 640 268" role="img" aria-label="Token-level decision process, stage 3"><defs><marker id="arr10-mdp3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="20" y="30" width="120" height="46" rx="3" stroke-width="1"/><text x="80.0" y="49.5" text-anchor="middle">prompt x</text><text class="muted" x="80.0" y="64.5" text-anchor="middle">“What is 17 × 24?”</text><text class="muted" x="80" y="20" text-anchor="middle">state s₀ = x</text><rect class="box" x="150" y="150" width="150" height="40" rx="3" stroke-width="1"/><text x="225.0" y="174.0" text-anchor="middle">π_θ(y_t | x, y_&lt;t)</text><line class="ink" x1="110" y1="76" x2="190" y2="150" stroke-width="1.3" marker-end="url(#arr10-mdp3)"/><rect class="l1" x="150" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="181.0" y="49.5" text-anchor="middle">y₀</text><text x="181.0" y="64.5" text-anchor="middle">17</text><rect class="l1" x="220" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="251.0" y="49.5" text-anchor="middle">y₁</text><text x="251.0" y="64.5" text-anchor="middle"> ×</text><rect class="l1" x="290" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="321.0" y="49.5" text-anchor="middle">y₂</text><text x="321.0" y="64.5" text-anchor="middle"> 24</text><rect class="l1" x="360" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="391.0" y="49.5" text-anchor="middle">y₃</text><text x="391.0" y="64.5" text-anchor="middle"> =</text><rect class="l1" x="430" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="461.0" y="49.5" text-anchor="middle">y₄</text><text x="461.0" y="64.5" text-anchor="middle"> 408</text><rect class="l1" x="500" y="30" width="62" height="46" rx="3" stroke-width="2"/><text class="muted" x="531.0" y="49.5" text-anchor="middle">y₅</text><text x="531.0" y="64.5" text-anchor="middle">EOS</text><line class="ink" x1="240" y1="150" x2="181" y2="78" stroke-width="1.3" marker-end="url(#arr10-mdp3)"/><path class="ink" d="M150 88 V96 H568 V88" stroke-width="1"/><text class="muted" x="359" y="112" text-anchor="middle">episode = one completion y, ends at EOS or the length budget</text><text class="muted" x="320" y="166" text-anchor="start">transition: append the token,</text><text class="muted" x="320" y="182" text-anchor="start">s_t+1 = (x, y_≤t), deterministic</text><text class="muted" x="181" y="18" text-anchor="middle">r = 0</text><text class="muted" x="251" y="18" text-anchor="middle">r = 0</text><text class="muted" x="321" y="18" text-anchor="middle">r = 0</text><text class="muted" x="391" y="18" text-anchor="middle">r = 0</text><text class="muted" x="461" y="18" text-anchor="middle">r = 0</text><rect class="box" x="490" y="210" width="130" height="44" rx="3" stroke-width="1"/><text x="555.0" y="228.5" text-anchor="middle">verifier v(x, y)</text><text class="muted" x="555.0" y="243.5" text-anchor="middle">408 = 408, so 1</text><line class="ink" x1="555" y1="78" x2="555" y2="208" stroke-width="1.3" marker-end="url(#arr10-mdp3)"/><text x="555" y="18" text-anchor="middle">r = v(x, y)</text></g></svg></div>
+  <figcaption><b>Figure 10.3.</b> The reward. Every token earns zero. When the completion ends, a verifier compares the extracted answer with the known one and returns 1 or 0. Notice that the reward attaches to the whole completion, not to the token "408".</figcaption>
+</figure>
+
+<p>Two features of this process are unusual next to Spire Mentor. First, the transition is deterministic and known, so the state is exactly the history of actions. Ahmadian et al. point out a consequence. You can treat the whole completion as one action and the problem as a contextual bandit, with the prompt as the context <span class="cite">[<a href="#ref-rloo">4</a>]</span>. Second, every token before the end earns zero reward. Section 3 shows what that does to the gradient.</p>
+
+<div class="table"><table>
+  <caption>The three kinds of episode in this chapter. The Spire Mentor numbers come from chapters 1 and 3.</caption>
+  <thead><tr><th></th><th>Spire Mentor run</th><th>One completion</th><th>Agent trajectory</th></tr></thead>
+  <tbody>
+    <tr><td>Episode</td><td>One run, about 667 decisions</td><td>One answer, \(\lvert y\rvert\) tokens</td><td>Several turns of model text and tool output</td></tr>
+    <tr><td>Action set</td><td>About 7 legal options, different in each state</td><td>The whole vocabulary, the same in each state</td><td>The whole vocabulary, on the model's turns</td></tr>
+    <tr><td>Transition</td><td>The game simulator, random</td><td>Append the token, deterministic</td><td>Append the token. Tool results come from the environment.</td></tr>
+    <tr><td>Reward</td><td>Per floor, per boss and per win</td><td>\(v(x, y)\) once at the end</td><td>Usually once at the end</td></tr>
+    <tr><td>Start state</td><td>A new run</td><td>A prompt from \(\mathcal{D}\)</td><td>A task from a task set</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Agent trajectories</h3>
+
+<p>An agent that calls tools writes some tokens and reads others. The model writes a tool call. The environment runs it and appends the result to the context. The model reads the result and writes again. The tool's output becomes part of the state, but the policy did not sample it, so it is not an action. The log-probability of the trajectory therefore sums only over the tokens the model wrote, and the loss masks out every token the environment wrote.</p>
+
+<figure id="fig-agent">
+  <div class="scroll"><svg viewBox="0 0 640 226" role="img" aria-label="Agent trajectory with masked tool tokens"><defs><marker id="arr10-agent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="20" y="40" width="90" height="46" rx="3" stroke-width="1"/><text x="65.0" y="67.0" text-anchor="middle">prompt x</text><rect class="l1" x="115" y="40" width="120" height="46" rx="3" stroke-width="2"/><text x="175.0" y="67.0" text-anchor="middle">model: call</text><rect class="l4" x="240" y="40" width="120" height="46" rx="3" stroke-width="2" stroke-dasharray="4 3"/><text x="300.0" y="67.0" text-anchor="middle">tool output</text><rect class="l1" x="365" y="40" width="120" height="46" rx="3" stroke-width="2"/><text x="425.0" y="67.0" text-anchor="middle">model: call</text><rect class="l4" x="490" y="40" width="60" height="46" rx="3" stroke-width="2" stroke-dasharray="4 3"/><text x="520.0" y="67.0" text-anchor="middle">tool</text><rect class="l1" x="555" y="40" width="70" height="46" rx="3" stroke-width="2"/><text x="590.0" y="67.0" text-anchor="middle">answer</text><line class="l1" x1="120" y1="110" x2="150" y2="110" stroke-width="2"/><text x="158" y="114" text-anchor="start">tokens the model wrote: actions, in the loss</text><line class="l4" x1="120" y1="134" x2="150" y2="134" stroke-width="2" stroke-dasharray="4 3"/><text x="158" y="138" text-anchor="start">tokens the environment wrote: part of the state, masked from the loss</text><rect class="box" x="470" y="170" width="150" height="40" rx="3" stroke-width="1"/><text x="545.0" y="194.0" text-anchor="middle">verifier v(x, trajectory)</text><line class="ink" x1="590" y1="88" x2="560" y2="168" stroke-width="1.3" marker-end="url(#arr10-agent)"/><text class="muted" x="20" y="200" text-anchor="start">one episode = several turns</text></g></svg></div>
+  <figcaption><b>Figure 10.4.</b> A two-turn agent trajectory. Solid boxes are tokens the policy sampled. Dashed boxes are tokens the environment appended. Both kinds condition later tokens, but only the solid ones carry a log-probability into the gradient. Chapter 11 covers what the environment returns and how to score the trajectory.</figcaption>
+</figure>
+
+<p>Two things change against a single completion. The transition is no longer deterministic, because a tool can return different results. And the episode can be long, with many model turns, which brings back the credit-assignment problem that Spire Mentor's critic exists to solve. The rest of this chapter uses single completions, where the published methods were developed.</p>
+
+<h2 id="seq-pg">3. The policy gradient for a completion</h2>
+
+<p>The probability of a completion is a product of next-token probabilities. Taking the log turns the product into a sum:</p>
+
+<div class="eq">\begin{equation} \log \pi_\theta(y \mid x) = \sum_{t=0}^{\lvert y\rvert - 1} \log \pi_\theta\big(y_t \mid x, y_{\lt t}\big). \label{eq:seqlogp} \end{equation}</div>
+
+<p>Compare it with chapter 5's trajectory log-probability. There, \(\log p_\theta(\tau)\) also held the start-state term and one transition term per step. Neither depends on \(\theta\), so both dropped out of the gradient. Here the start-state term is \(\log \mathcal{D}(x)\) and every transition has probability 1, so Equation \eqref{eq:seqlogp} is all that remains.</p>
+
+<p>The objective is the expected reward over prompts and completions:</p>
+
+<div class="eq">\begin{equation} J(\theta) = \mathbb{E}_{x \sim \mathcal{D}}\, \mathbb{E}_{y \sim \pi_\theta(\cdot \mid x)}\big[ v(x, y) \big]. \label{eq:J} \end{equation}</div>
+
+<p>We take the gradient the way chapter 5 did. For one prompt, write the inner expectation as a sum over completions and use \(\nabla \pi = \pi\, \nabla \log \pi\):</p>
+
+<div class="eq">\begin{equation} \nabla_\theta J(\theta) = \mathbb{E}_{x}\, \mathbb{E}_{y \sim \pi_\theta}\big[ v(x, y)\, \nabla_\theta \log \pi_\theta(y \mid x) \big] = \mathbb{E}_{x}\, \mathbb{E}_{y}\Big[ \sum_{t} \nabla_\theta \log \pi_\theta(y_t \mid x, y_{\lt t})\; v(x, y) \Big]. \label{eq:seqpg} \end{equation}</div>
+
+<p>The second form is chapter 5's per-step theorem with every step's weight equal to \(v(x,y)\). In chapter 5 the weight on step \(t\) was the return from that step, \(G_t = \sum_{k \ge t} r_k\). Here all reward sits at the end and \(\gamma = 1\), so \(G_t = v(x, y)\) for every \(t\). <b>Every token in a completion gets the same weight.</b> The estimator cannot tell a decisive token from filler within one completion. It learns which tokens matter only by averaging over many completions, where a token that tends to appear in correct answers collects more positive weight than one that does not.</p>
+
+<p>With a reward of 0 or 1, the inner expectation is the success rate, \(\mathbb{E}_y[v(x,y)] = p_x\). So the gradient for one prompt is the gradient of its success rate:</p>
+
+<div class="eq">\begin{equation} \nabla_\theta\, p_x = \mathbb{E}_{y \sim \pi_\theta(\cdot\mid x)}\big[ v(x,y)\, \nabla_\theta \log \pi_\theta(y \mid x) \big]. \label{eq:px} \end{equation}</div>
+
+<h3>Without a baseline, this is fine-tuning on correct answers</h3>
+
+<p>Estimate Equation \eqref{eq:px} with \(n\) samples and no baseline. Wrong answers have \(v = 0\) and drop out. What remains is \(\frac{1}{n}\sum_{i:\,R_i = 1} \nabla_\theta \log \pi_\theta(y^{(i)} \mid x)\), the gradient of the log-likelihood of the correct samples. That is supervised fine-tuning on the model's own correct answers, drawn fresh from the current policy. DeepSeekMath calls this Online RFT and writes its gradient coefficient as 1 for a correct sample and 0 for a wrong one <span class="cite">[<a href="#ref-dsmath">1</a>]</span>.</p>
+
+<div class="example"><span class="label">Worked example · one prompt, four samples</span>
+<p>The prompt is "What is 17 × 24?". The policy answers correctly a quarter of the time, so \(p_x = 0.25\). You sample four completions. One says 408 and three give wrong numbers. Without a baseline, the estimate raises the log-probability of the one correct completion with weight \(\frac{1}{4}\) and does nothing with the three wrong ones. If none of the four had been correct, the estimate would be zero.</p>
+<p>The estimate is unbiased, but most of its information comes from whether a correct sample happened to appear. A baseline lets the wrong answers carry information too.</p>
+</div>
+
+<h2 id="rlvr">4. RLVR: rewards from a verifier</h2>
+
+<div class="definition"><span class="label">Definition 10.1 · RLVR</span>
+<p><dfn>Reinforcement learning with verifiable rewards</dfn> (RLVR) trains a language model on prompts whose answers a program can check. The reward is the program's output. Lambert et al. introduced the term in the Tülu 3 report <span class="cite">[<a href="#ref-tulu">5</a>, §6]</span>, with the objective</p>
+<div class="eq">\begin{equation} \max_\theta\; \mathbb{E}_{x \sim \mathcal{D},\, y \sim \pi_\theta(\cdot\mid x)}\Big[ v(x, y) - \beta_{\mathrm{KL}}\, \mathrm{KL}\big( \pi_\theta(\cdot \mid x) \,\big\|\, \pi_{\mathrm{ref}}(\cdot \mid x) \big) \Big]. \label{eq:rlvr} \end{equation}</div>
+<p>In Tülu 3, \(v(x,y)\) is 10 when the answer is correct and 0 otherwise.</p>
+</div>
+
+<p>A <dfn>verifier</dfn> is a function of the prompt and the completion that a program computes without learned parameters. Tülu 3 uses three kinds. For GSM8K and MATH problems, it extracts the final answer and checks for an exact match with the reference. For instruction-following prompts, it checks the stated constraints, such as a word count or a required format. The training set held about 30,000 prompts: 7,473 from GSM8K, 7,500 from MATH and 14,973 instruction-following prompts. The authors set the reward of 10 after pilot experiments and did not tune it further <span class="cite">[<a href="#ref-tulu">5</a>]</span>.</p>
+
+<p>Tülu 3 trained RLVR with PPO and a value model, which it initialised from a general reward model. The report places RLVR next to earlier methods that also learn from checked answers, such as STaR, TRICE and VinePPO. The new part was the name and the use of a binary check inside an otherwise standard RL loop.</p>
+
+<p>A learned reward model is not a verifier. Classic RLHF trains a reward model on human preferences and lets the policy optimise against it. The DeepSeek-R1 authors used rule-based rewards for accuracy and format, and they say they avoided neural reward models because the policy can learn to exploit them <span class="cite">[<a href="#ref-r1">2</a>]</span>. Chapter 11 covers what makes a verifier hard to exploit.</p>
+
+<p>For the gradient, RLVR changes two things. The reward takes only a few values, usually two, so one number \(p_x\) summarises the whole reward distribution for a prompt. And the reward has no measurement noise. All the variance in Equation \eqref{eq:px} comes from sampling the completions.</p>
+
+<h2 id="baselines">5. Baselines without a critic</h2>
+
+<p>Chapter 5 showed that any baseline that does not depend on the action leaves the gradient unbiased. Here the action is the whole completion. For any \(b(x)\) that does not depend on \(y\),</p>
+
+<div class="eq">\begin{equation} \mathbb{E}_{y \sim \pi_\theta(\cdot\mid x)}\big[ b(x)\, \nabla_\theta \log \pi_\theta(y \mid x) \big] = b(x)\, \nabla_\theta \sum_y \pi_\theta(y \mid x) = b(x)\, \nabla_\theta 1 = 0. \label{eq:bzero} \end{equation}</div>
+
+<p>The natural baseline is the prompt's value, \(V^\pi(x) = p_x\). Chapter 4 would learn it with a critic. With a prompt dataset there is a cheaper option. Sample \(n\) completions for the same prompt, and let each one's baseline come from the others.</p>
+
+<h3>RLOO: the leave-one-out baseline</h3>
+
+<p>Kool, van Hoof and Welling proposed the <dfn>leave-one-out baseline</dfn> for sampled sequences <span class="cite">[<a href="#ref-kool">3</a>]</span>. Ahmadian et al. brought it to language-model training under the name RLOO, REINFORCE leave-one-out <span class="cite">[<a href="#ref-rloo">4</a>, §2.3]</span>. Draw \(y^{(1)}, \dots, y^{(n)}\) independently from \(\pi_\theta(\cdot\mid x)\), and give each completion the mean reward of the other \(n-1\) as its baseline:</p>
+
+<div class="eq">\begin{equation} \hat g_{\mathrm{RLOO}} = \frac{1}{n} \sum_{i=1}^{n} \Big( R_i - \frac{1}{n-1} \sum_{j \ne i} R_j \Big)\, \nabla_\theta \log \pi_\theta\big(y^{(i)} \mid x\big). \label{eq:rloo} \end{equation}</div>
+
+<p>We show it is unbiased. Call the baseline of sample \(i\) \(b_i\). It is a function of \(y^{(j)}\) for \(j \ne i\) only. The samples are independent given \(x\), so \(b_i\) is independent of \(y^{(i)}\), and the expectation of the product splits:</p>
+
+<div class="eq">\begin{equation} \mathbb{E}\big[ b_i\, \nabla_\theta \log \pi_\theta(y^{(i)} \mid x) \big] = \mathbb{E}[b_i]\; \mathbb{E}\big[ \nabla_\theta \log \pi_\theta(y^{(i)} \mid x) \big] = \mathbb{E}[b_i] \cdot 0 = 0. \label{eq:loo-unbiased} \end{equation}</div>
+
+<p>The second factor is zero by Equation \eqref{eq:bzero} with \(b = 1\). Only the \(R_i\) term of each weight is left, and each of the \(n\) samples contributes \(\nabla_\theta\, p_x\) by Equation \eqref{eq:px}. So \(\mathbb{E}[\hat g_{\mathrm{RLOO}}] = \nabla_\theta\, p_x\) exactly, for any \(n \ge 2\).</p>
+
+<p>The weight on sample \(i\) can also be written with the group mean \(\bar R = \frac{1}{n}\sum_j R_j\). Since \(\sum_{j\ne i} R_j = n\bar R - R_i\), we get \(R_i - b_i = \frac{n}{n-1}(R_i - \bar R)\), and</p>
+
+<div class="eq">\begin{equation} \hat g_{\mathrm{RLOO}} = \frac{1}{n-1} \sum_{i=1}^{n} \big( R_i - \bar R \big)\, \nabla_\theta \log \pi_\theta\big(y^{(i)} \mid x\big). \label{eq:rloo-mean} \end{equation}</div>
+
+<p>Kool et al. give both forms <span class="cite">[<a href="#ref-kool">3</a>]</span>. Equation \eqref{eq:rloo-mean} shows what goes wrong if you subtract the group mean and divide by \(n\) instead of \(n-1\). That estimator is \(\frac{n-1}{n}\,\hat g_{\mathrm{RLOO}}\), so its expectation is \(\frac{n-1}{n}\nabla_\theta\, p_x\). The direction is right and the scale is short by a factor that depends only on \(n\): one half at \(n = 2\), and 0.94 at \(n = 16\). Liu et al. state the same relation between the two <span class="cite">[<a href="#ref-drgrpo">6</a>, App. A]</span>.</p>
+
+<p>Back to the worked example with 16 samples instead of 4. Suppose one of the 16 is correct. RLOO gives the correct completion a weight of \(1 - 0 = 1\). Each wrong completion's baseline is \(\frac{1}{15}\), so each gets a weight of \(-\frac{1}{15} \approx -0.067\). The wrong answers now push their own probabilities down, a little each.</p>
+
+<h3>GRPO: group-normalised advantages</h3>
+
+<p>Shao et al. introduced <dfn>Group Relative Policy Optimization</dfn> (GRPO) in the DeepSeekMath paper <span class="cite">[<a href="#ref-dsmath">1</a>]</span>, and the DeepSeek-R1 paper made it the standard method for training reasoning models <span class="cite">[<a href="#ref-r1">2</a>]</span>. GRPO keeps PPO's clipped loss from chapter 5 and replaces the critic with a group statistic. The three figures below build one GRPO step.</p>
+
+<figure id="fig-grpo1">
+  <div class="scroll"><svg viewBox="0 0 640 256" role="img" aria-label="GRPO data flow, stage 1"><defs><marker id="arr10-grpo1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="10" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="50.0" y="137.0" text-anchor="middle">prompt x</text><rect class="box" x="115" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="155.0" y="129.5" text-anchor="middle">π_θ</text><text class="muted" x="155.0" y="144.5" text-anchor="middle">(old copy)</text><line class="ink" x1="90" y1="133" x2="113" y2="133" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="20" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="42.0" text-anchor="middle">y⁽¹⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="38" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="76" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="98.0" text-anchor="middle">y⁽²⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="94" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="132" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="154.0" text-anchor="middle">y⁽³⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="150" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><rect class="l1" x="230" y="188" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="210.0" text-anchor="middle">y⁽⁴⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="206" stroke-width="1.3" marker-end="url(#arr10-grpo1)"/><text class="muted" x="280" y="245" text-anchor="middle">n = 4 completions</text></g></svg></div>
+  <figcaption><b>Figure 10.5.</b> Sampling. The policy, frozen as \(\pi_{\mathrm{old}}\) for this step, writes \(n\) completions for the same prompt.</figcaption>
+</figure>
+
+<figure id="fig-grpo2">
+  <div class="scroll"><svg viewBox="0 0 640 256" role="img" aria-label="GRPO data flow, stage 2"><defs><marker id="arr10-grpo2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="10" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="50.0" y="137.0" text-anchor="middle">prompt x</text><rect class="box" x="115" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="155.0" y="129.5" text-anchor="middle">π_θ</text><text class="muted" x="155.0" y="144.5" text-anchor="middle">(old copy)</text><line class="ink" x1="90" y1="133" x2="113" y2="133" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><rect class="l1" x="230" y="20" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="42.0" text-anchor="middle">y⁽¹⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="38" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><rect class="l1" x="230" y="76" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="98.0" text-anchor="middle">y⁽²⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="94" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><rect class="l1" x="230" y="132" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="154.0" text-anchor="middle">y⁽³⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="150" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><rect class="l1" x="230" y="188" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="210.0" text-anchor="middle">y⁽⁴⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="206" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><text class="muted" x="280" y="245" text-anchor="middle">n = 4 completions</text><text class="muted" x="395" y="12" text-anchor="middle">verifier</text><line class="ink" x1="330" y1="38" x2="368" y2="38" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><text x="395" y="42" text-anchor="middle">R₁ = 1</text><line class="ink" x1="330" y1="94" x2="368" y2="94" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><text x="395" y="98" text-anchor="middle">R₂ = 0</text><line class="ink" x1="330" y1="150" x2="368" y2="150" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><text x="395" y="154" text-anchor="middle">R₃ = 0</text><line class="ink" x1="330" y1="206" x2="368" y2="206" stroke-width="1.3" marker-end="url(#arr10-grpo2)"/><text x="395" y="210" text-anchor="middle">R₄ = 1</text></g></svg></div>
+  <figcaption><b>Figure 10.6.</b> Scoring. The verifier gives each completion a reward. Here two of the four are correct.</figcaption>
+</figure>
+
+<figure id="fig-grpo3">
+  <div class="scroll"><svg viewBox="0 0 640 320" role="img" aria-label="GRPO data flow, stage 3"><defs><marker id="arr10-grpo3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><g color="var(--fg)"><rect class="box" x="10" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="50.0" y="137.0" text-anchor="middle">prompt x</text><rect class="box" x="115" y="110" width="80" height="46" rx="3" stroke-width="1"/><text x="155.0" y="129.5" text-anchor="middle">π_θ</text><text class="muted" x="155.0" y="144.5" text-anchor="middle">(old copy)</text><line class="ink" x1="90" y1="133" x2="113" y2="133" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><rect class="l1" x="230" y="20" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="42.0" text-anchor="middle">y⁽¹⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="38" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><rect class="l1" x="230" y="76" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="98.0" text-anchor="middle">y⁽²⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="94" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><rect class="l1" x="230" y="132" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="154.0" text-anchor="middle">y⁽³⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="150" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><rect class="l1" x="230" y="188" width="100" height="36" rx="3" stroke-width="2"/><text x="280.0" y="210.0" text-anchor="middle">y⁽⁴⁾</text><line class="ink" x1="195" y1="133" x2="228" y2="206" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text class="muted" x="280" y="245" text-anchor="middle">n = 4 completions</text><text class="muted" x="395" y="12" text-anchor="middle">verifier</text><line class="ink" x1="330" y1="38" x2="368" y2="38" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="395" y="42" text-anchor="middle">R₁ = 1</text><line class="ink" x1="330" y1="94" x2="368" y2="94" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="395" y="98" text-anchor="middle">R₂ = 0</text><line class="ink" x1="330" y1="150" x2="368" y2="150" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="395" y="154" text-anchor="middle">R₃ = 0</text><line class="ink" x1="330" y1="206" x2="368" y2="206" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="395" y="210" text-anchor="middle">R₄ = 1</text><rect class="box" x="430" y="20" width="70" height="204" rx="3" stroke-width="1"/><text x="465.0" y="111.0" text-anchor="middle">group</text><text class="muted" x="465.0" y="126.0" text-anchor="middle">mean 0.5</text><text class="muted" x="465.0" y="141.0" text-anchor="middle">std 0.5</text><line class="ink" x1="500" y1="38" x2="532" y2="38" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="575" y="42" text-anchor="middle">Â₁ = +1</text><line class="ink" x1="500" y1="94" x2="532" y2="94" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="575" y="98" text-anchor="middle">Â₂ = −1</text><line class="ink" x1="500" y1="150" x2="532" y2="150" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="575" y="154" text-anchor="middle">Â₃ = −1</text><line class="ink" x1="500" y1="206" x2="532" y2="206" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text x="575" y="210" text-anchor="middle">Â₄ = +1</text><rect class="box" x="150" y="268" width="420" height="40" rx="3" stroke-width="1"/><text x="360.0" y="292.0" text-anchor="middle">clipped loss on every token of y⁽ⁱ⁾ with Âᵢ, minus β_KL · KL(π_θ ‖ π_ref)</text><line class="ink" x1="575" y1="228" x2="545" y2="266" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><line class="ink" x1="150" y1="288" x2="140" y2="158" stroke-width="1.3" marker-end="url(#arr10-grpo3)"/><text class="muted" x="60" y="300" text-anchor="middle">update π_θ</text><text class="muted" x="60" y="210" text-anchor="middle">no critic</text></g></svg></div>
+  <figcaption><b>Figure 10.7.</b> The update. The group's mean and standard deviation turn rewards into advantages. Every token of completion \(i\) gets the same advantage \(\hat A_i\), and the clipped loss with a KL penalty to \(\pi_{\mathrm{ref}}\) updates the policy. Notice what is missing next to chapter 5's learner: no value network, no GAE and no value loss.</figcaption>
+</figure>
+
+<p>GRPO's advantage for completion \(i\) is its reward standardised within the group <span class="cite">[<a href="#ref-dsmath">1</a>, §4.1.2]</span>:</p>
+
+<div class="eq">\begin{equation} \hat A_{i} = \frac{R_i - \bar R}{s_R}, \qquad s_R = \operatorname{std}(R_1, \dots, R_n), \label{eq:grpo-adv} \end{equation}</div>
+
+<p>and the objective, in this tour's symbols, is</p>
+
+<div class="eq">\begin{equation} \begin{aligned} J_{\mathrm{GRPO}}(\theta) = \mathbb{E}\bigg[ \frac{1}{n}\sum_{i=1}^{n} \frac{1}{\lvert y^{(i)}\rvert} \sum_{t=0}^{\lvert y^{(i)}\rvert-1} \Big( &\min\big( \rho_{i,t}\, \hat A_i,\; \operatorname{clip}(\rho_{i,t}, 1-\epsilon, 1+\epsilon)\, \hat A_i \big) \\ &- \beta_{\mathrm{KL}}\, \hat D_{i,t} \Big) \bigg]. \end{aligned} \label{eq:grpo} \end{equation}</div>
+
+<p>The ratio is \(\rho_{i,t} = \pi_\theta(y^{(i)}_t \mid x, y^{(i)}_{\lt t}) \,/\, \pi_{\mathrm{old}}(y^{(i)}_t \mid x, y^{(i)}_{\lt t})\), as in chapter 5. The expectation is over prompts \(x \sim \mathcal{D}\) and groups of completions drawn from \(\pi_{\mathrm{old}}\). The term \(\hat D_{i,t}\) is a per-token estimate of the KL divergence from \(\pi_\theta\) to \(\pi_{\mathrm{ref}}\). DeepSeekMath uses</p>
+
+<div class="eq">\begin{equation} \hat D_{i,t} = \frac{\pi_{\mathrm{ref}}(y^{(i)}_t \mid \cdot)}{\pi_\theta(y^{(i)}_t \mid \cdot)} - \log \frac{\pi_{\mathrm{ref}}(y^{(i)}_t \mid \cdot)}{\pi_\theta(y^{(i)}_t \mid \cdot)} - 1, \label{eq:k3} \end{equation}</div>
+
+<p>where the dot stands for the state \((x, y^{(i)}_{\lt t})\). The estimate is never negative because \(u - \log u - 1 \ge 0\) for every \(u > 0\), and its expectation under \(\pi_\theta\) is the KL divergence. DeepSeekMath adds the KL term to the loss. PPO set-ups for RLHF more often subtract a KL penalty from the reward, and the paper notes the difference <span class="cite">[<a href="#ref-dsmath">1</a>]</span>.</p>
+
+<p>Read against chapter 5, Equation \eqref{eq:grpo} is PPO's clipped surrogate with three changes. The advantage comes from Equation \eqref{eq:grpo-adv} instead of GAE. The loss averages over tokens within each completion and then over completions. And a KL penalty to a frozen reference replaces the value loss in the combined objective. DeepSeekMath trained with 64 samples per question, a learning rate of \(10^{-6}\), \(\beta_{\mathrm{KL}} = 0.04\), a maximum length of 1,024 tokens and a batch of 1,024. It took a single gradient step per batch of samples <span class="cite">[<a href="#ref-dsmath">1</a>]</span>. With one step, \(\pi_{\mathrm{old}} = \pi_\theta\) when the gradient is taken, every ratio is 1, and the clip has no effect. The paper's appendix notes that the min and the clip can be dropped in that case <span class="cite">[<a href="#ref-dsmath">1</a>, App. A.1.5]</span>.</p>
+
+<h3>What the normalisation does to bias and scale</h3>
+
+<p>Equation \eqref{eq:grpo-adv} does two things, and they have different effects.</p>
+
+<p><b>Subtracting the group mean</b> is the mean-centred estimator from the RLOO subsection. Its expectation is \(\frac{n-1}{n}\) times the true gradient. The direction is unbiased and the scale is slightly short.</p>
+
+<p><b>Dividing by \(s_R\)</b> rescales each prompt's contribution by a factor that differs between prompts. To see the effect, replace the sample statistic by the quantity it estimates. For a reward of 0 or 1, the standard deviation is \(\sigma_x = \sqrt{p_x(1 - p_x)}\). With that oracle value in place of \(s_R\), and with \(n\) large enough that the \(\frac{n-1}{n}\) factor is close to 1, the expected contribution of prompt \(x\) is</p>
+
+<div class="eq">\begin{equation} \mathbb{E}\big[ \hat A_i\, \nabla_\theta \log \pi_\theta(y^{(i)}\mid x) \big] \approx \frac{\nabla_\theta\, p_x}{\sqrt{p_x(1-p_x)}} = \nabla_\theta \Big( 2 \arcsin \sqrt{p_x} \Big). \label{eq:arcsin} \end{equation}</div>
+
+<p>The last step is the chain rule. The derivative of \(2\arcsin\sqrt{p}\) with respect to \(p\) is \(1/\sqrt{p(1-p)}\). So under this idealisation, GRPO ascends \(\sum_x 2\arcsin\sqrt{p_x}\) instead of the success rate \(\sum_x p_x\). The derivation is this chapter's, not a result stated in the cited papers. It is an approximation, because the real \(s_R\) is estimated from the same samples it divides.</p>
+
+<figure id="fig-weight">
+  <div class="scroll"><!-- figure:weight --><svg viewBox="0 0 640 270" role="img" aria-label="Weight that dividing by the group standard deviation gives a prompt, against its success rate"><line class="grid" x1="70.0" y1="226.0" x2="590.0" y2="226.0"/><text class="muted" x="64.0" y="230.0" text-anchor="end">0</text><line class="grid" x1="70.0" y1="191.0" x2="590.0" y2="191.0"/><text class="muted" x="64.0" y="195.0" text-anchor="end">1</text><line class="grid" x1="70.0" y1="156.0" x2="590.0" y2="156.0"/><text class="muted" x="64.0" y="160.0" text-anchor="end">2</text><line class="grid" x1="70.0" y1="121.0" x2="590.0" y2="121.0"/><text class="muted" x="64.0" y="125.0" text-anchor="end">3</text><line class="grid" x1="70.0" y1="86.0" x2="590.0" y2="86.0"/><text class="muted" x="64.0" y="90.0" text-anchor="end">4</text><line class="grid" x1="70.0" y1="51.0" x2="590.0" y2="51.0"/><text class="muted" x="64.0" y="55.0" text-anchor="end">5</text><line class="grid" x1="70.0" y1="16.0" x2="590.0" y2="16.0"/><text class="muted" x="64.0" y="20.0" text-anchor="end">6</text><line class="ink" x1="70.0" y1="226.0" x2="70.0" y2="230.0"/><text class="muted" x="70.0" y="243.0" text-anchor="middle">0</text><line class="ink" x1="174.0" y1="226.0" x2="174.0" y2="230.0"/><text class="muted" x="174.0" y="243.0" text-anchor="middle">0.2</text><line class="ink" x1="278.0" y1="226.0" x2="278.0" y2="230.0"/><text class="muted" x="278.0" y="243.0" text-anchor="middle">0.4</text><line class="ink" x1="382.0" y1="226.0" x2="382.0" y2="230.0"/><text class="muted" x="382.0" y="243.0" text-anchor="middle">0.6</text><line class="ink" x1="486.0" y1="226.0" x2="486.0" y2="230.0"/><text class="muted" x="486.0" y="243.0" text-anchor="middle">0.8</text><line class="ink" x1="590.0" y1="226.0" x2="590.0" y2="230.0"/><text class="muted" x="590.0" y="243.0" text-anchor="middle">1</text><line class="ink" x1="70.0" y1="226.0" x2="590.0" y2="226.0"/><line class="ink" x1="70.0" y1="16.0" x2="70.0" y2="226.0"/><text x="330.0" y="260.0" text-anchor="middle">success rate of the prompt, p</text><text x="24.0" y="121.0" text-anchor="middle" transform="rotate(-90 24.0 121.0)">weight on the prompt</text><path class="l2" d="M84.3 12.0 L85.6 20.8 L86.9 28.6 L88.2 35.6 L89.5 41.8 L90.8 47.4 L92.1 52.5 L93.4 57.2 L94.7 61.5 L96.0 65.4 L97.3 69.1 L98.6 72.5 L99.9 75.7 L101.2 78.6 L102.5 81.4 L103.8 84.0 L105.1 86.5 L106.4 88.8 L107.7 91.0 L109.0 93.1 L110.3 95.1 L111.6 97.0 L112.9 98.8 L114.2 100.5 L115.5 102.1 L116.8 103.7 L118.1 105.2 L119.4 106.6 L120.7 108.0 L122.0 109.3 L123.3 110.6 L124.6 111.8 L125.9 113.0 L127.2 114.1 L128.5 115.2 L129.8 116.3 L131.1 117.3 L132.4 118.3 L133.7 119.2 L135.0 120.2 L136.3 121.1 L137.6 121.9 L138.9 122.8 L140.2 123.6 L141.5 124.4 L142.8 125.1 L144.1 125.9 L145.4 126.6 L146.7 127.3 L148.0 128.0 L149.3 128.6 L150.6 129.3 L151.9 129.9 L153.2 130.5 L154.5 131.1 L155.8 131.7 L157.1 132.3 L158.4 132.8 L159.7 133.4 L161.0 133.9 L162.3 134.4 L163.6 134.9 L164.9 135.4 L166.2 135.9 L167.5 136.3 L168.8 136.8 L170.1 137.2 L171.4 137.7 L172.7 138.1 L174.0 138.5 L175.3 138.9 L176.6 139.3 L177.9 139.7 L179.2 140.1 L180.5 140.4 L181.8 140.8 L183.1 141.2 L184.4 141.5 L185.7 141.9 L187.0 142.2 L188.3 142.5 L189.6 142.8 L190.9 143.1 L192.2 143.5 L193.5 143.8 L194.8 144.0 L196.1 144.3 L197.4 144.6 L198.7 144.9 L200.0 145.2 L201.3 145.4 L202.6 145.7 L203.9 146.0 L205.2 146.2 L206.5 146.5 L207.8 146.7 L209.1 146.9 L210.4 147.2 L211.7 147.4 L213.0 147.6 L214.3 147.8 L215.6 148.0 L216.9 148.3 L218.2 148.5 L219.5 148.7 L220.8 148.9 L222.1 149.1 L223.4 149.3 L224.7 149.4 L226.0 149.6 L227.3 149.8 L228.6 150.0 L229.9 150.2 L231.2 150.3 L232.5 150.5 L233.8 150.7 L235.1 150.8 L236.4 151.0 L237.7 151.1 L239.0 151.3 L240.3 151.4 L241.6 151.6 L242.9 151.7 L244.2 151.8 L245.5 152.0 L246.8 152.1 L248.1 152.2 L249.4 152.4 L250.7 152.5 L252.0 152.6 L253.3 152.7 L254.6 152.9 L255.9 153.0 L257.2 153.1 L258.5 153.2 L259.8 153.3 L261.1 153.4 L262.4 153.5 L263.7 153.6 L265.0 153.7 L266.3 153.8 L267.6 153.9 L268.9 154.0 L270.2 154.1 L271.5 154.2 L272.8 154.2 L274.1 154.3 L275.4 154.4 L276.7 154.5 L278.0 154.6 L279.3 154.6 L280.6 154.7 L281.9 154.8 L283.2 154.8 L284.5 154.9 L285.8 155.0 L287.1 155.0 L288.4 155.1 L289.7 155.1 L291.0 155.2 L292.3 155.3 L293.6 155.3 L294.9 155.4 L296.2 155.4 L297.5 155.4 L298.8 155.5 L300.1 155.5 L301.4 155.6 L302.7 155.6 L304.0 155.6 L305.3 155.7 L306.6 155.7 L307.9 155.7 L309.2 155.8 L310.5 155.8 L311.8 155.8 L313.1 155.9 L314.4 155.9 L315.7 155.9 L317.0 155.9 L318.3 155.9 L319.6 155.9 L320.9 156.0 L322.2 156.0 L323.5 156.0 L324.8 156.0 L326.1 156.0 L327.4 156.0 L328.7 156.0 L330.0 156.0 L331.3 156.0 L332.6 156.0 L333.9 156.0 L335.2 156.0 L336.5 156.0 L337.8 156.0 L339.1 156.0 L340.4 155.9 L341.7 155.9 L343.0 155.9 L344.3 155.9 L345.6 155.9 L346.9 155.9 L348.2 155.8 L349.5 155.8 L350.8 155.8 L352.1 155.7 L353.4 155.7 L354.7 155.7 L356.0 155.6 L357.3 155.6 L358.6 155.6 L359.9 155.5 L361.2 155.5 L362.5 155.4 L363.8 155.4 L365.1 155.4 L366.4 155.3 L367.7 155.3 L369.0 155.2 L370.3 155.1 L371.6 155.1 L372.9 155.0 L374.2 155.0 L375.5 154.9 L376.8 154.8 L378.1 154.8 L379.4 154.7 L380.7 154.6 L382.0 154.6 L383.3 154.5 L384.6 154.4 L385.9 154.3 L387.2 154.2 L388.5 154.2 L389.8 154.1 L391.1 154.0 L392.4 153.9 L393.7 153.8 L395.0 153.7 L396.3 153.6 L397.6 153.5 L398.9 153.4 L400.2 153.3 L401.5 153.2 L402.8 153.1 L404.1 153.0 L405.4 152.9 L406.7 152.7 L408.0 152.6 L409.3 152.5 L410.6 152.4 L411.9 152.2 L413.2 152.1 L414.5 152.0 L415.8 151.8 L417.1 151.7 L418.4 151.6 L419.7 151.4 L421.0 151.3 L422.3 151.1 L423.6 151.0 L424.9 150.8 L426.2 150.7 L427.5 150.5 L428.8 150.3 L430.1 150.2 L431.4 150.0 L432.7 149.8 L434.0 149.6 L435.3 149.4 L436.6 149.3 L437.9 149.1 L439.2 148.9 L440.5 148.7 L441.8 148.5 L443.1 148.3 L444.4 148.0 L445.7 147.8 L447.0 147.6 L448.3 147.4 L449.6 147.2 L450.9 146.9 L452.2 146.7 L453.5 146.5 L454.8 146.2 L456.1 146.0 L457.4 145.7 L458.7 145.4 L460.0 145.2 L461.3 144.9 L462.6 144.6 L463.9 144.3 L465.2 144.0 L466.5 143.8 L467.8 143.5 L469.1 143.1 L470.4 142.8 L471.7 142.5 L473.0 142.2 L474.3 141.9 L475.6 141.5 L476.9 141.2 L478.2 140.8 L479.5 140.4 L480.8 140.1 L482.1 139.7 L483.4 139.3 L484.7 138.9 L486.0 138.5 L487.3 138.1 L488.6 137.7 L489.9 137.2 L491.2 136.8 L492.5 136.3 L493.8 135.9 L495.1 135.4 L496.4 134.9 L497.7 134.4 L499.0 133.9 L500.3 133.4 L501.6 132.8 L502.9 132.3 L504.2 131.7 L505.5 131.1 L506.8 130.5 L508.1 129.9 L509.4 129.3 L510.7 128.6 L512.0 128.0 L513.3 127.3 L514.6 126.6 L515.9 125.9 L517.2 125.1 L518.5 124.4 L519.8 123.6 L521.1 122.8 L522.4 121.9 L523.7 121.1 L525.0 120.2 L526.3 119.2 L527.6 118.3 L528.9 117.3 L530.2 116.3 L531.5 115.2 L532.8 114.1 L534.1 113.0 L535.4 111.8 L536.7 110.6 L538.0 109.3 L539.3 108.0 L540.6 106.6 L541.9 105.2 L543.2 103.7 L544.5 102.1 L545.8 100.5 L547.1 98.8 L548.4 97.0 L549.7 95.1 L551.0 93.1 L552.3 91.0 L553.6 88.8 L554.9 86.5 L556.2 84.0 L557.5 81.4 L558.8 78.6 L560.1 75.7 L561.4 72.5 L562.7 69.1 L564.0 65.4 L565.3 61.5 L566.6 57.2 L567.9 52.5 L569.2 47.4 L570.5 41.8 L571.8 35.6 L573.1 28.6 L574.4 20.8 L575.7 12.0" stroke-width="2.5"/><path class="l1" d="M70.0 191.0 L590.0 191.0" stroke-width="2" stroke-dasharray="5 4"/><circle class="f2" cx="330.0" cy="156.0" r="4"/><text class="muted" x="330.0" y="147.0" text-anchor="middle">2 at p = 0.5</text><circle class="f2" cx="96.0" cy="65.4" r="4"/><text class="muted" x="106.4" y="69.4">4.6 at p = 0.05</text><line class="l2" x1="380" y1="40" x2="402" y2="40" stroke-width="2.5"/><text x="408" y="44">divide by σ (GRPO)</text><line class="l1" x1="380" y1="58" x2="402" y2="58" stroke-width="2.5" stroke-dasharray="5 4"/><text x="408" y="62">no division (RLOO)</text></svg><!-- /figure:weight --></div>
+  <figcaption><b>Figure 10.8.</b> The weight that GRPO's division by the standard deviation puts on a prompt, as a function of the prompt's success rate, with the oracle \(\sigma_x\) of Equation \eqref{eq:arcsin}. RLOO weights every prompt by 1. Notice the shape: GRPO weights a prompt at 50% success by 2, one at 3% or 97% by 5.9, and the weight has no upper limit as \(p_x\) approaches 0 or 1.</figcaption>
+</figure>
+
+<p>Figure 10.8 shows the consequence. Prompts that the policy almost always solves, or almost never solves, get the largest weight. Liu et al. call this the <dfn>question-level difficulty bias</dfn> <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>. Equation \eqref{eq:arcsin} states it as a change of objective. Whether you want it is a design question. Upweighting rare successes on hard prompts can help a model learn them. Upweighting prompts it already solves 97% of the time spends gradient on little expected gain.</p>
+
+<p>The finite group adds two more effects. When every completion in a group gets the same reward, \(s_R = 0\) and the advantages are \(0/0\). Implementations add a small constant to the denominator, so the group contributes zero gradient. And at \(n = 2\), with the population standard deviation, GRPO is exactly RLOO. The only informative group is one correct and one wrong, where \(\bar R = 0.5\), \(s_R = 0.5\) and the advantages are \(\pm 1\). RLOO gives \(1 - 0 = 1\) and \(0 - 1 = -1\). The cited papers do not say whether \(s_R\) uses the population or the sample standard deviation, so this identity is unverified for any specific implementation. With the sample standard deviation the advantages at \(n = 2\) are \(\pm 0.71\) instead.</p>
+
+<div class="example"><span class="label">Worked example · the same groups under RLOO and GRPO</span>
+<p>Take a group of 16 with one correct completion. Then \(\bar R = \frac{1}{16}\) and \(s_R = \sqrt{15}/16 \approx 0.242\). GRPO gives the correct completion an advantage of \(0.9375 / 0.242 \approx +3.87\) and each wrong one \(-0.0625/0.242 \approx -0.258\). RLOO gave \(+1\) and \(-0.067\).</p>
+<p>Now take a group of 16 with eight correct. GRPO gives \(\pm 1\). RLOO gives \(1 - \frac{7}{15} \approx +0.53\) and \(0 - \frac{8}{15} \approx -0.53\).</p>
+<p>Relative to RLOO, GRPO multiplies the first group by 3.87 and the second by 1.88. The rare success weighs about twice as much under GRPO as it does under RLOO.</p>
+</div>
+
+<h3>Why the critic went away</h3>
+
+<p>DeepSeekMath gives two reasons for dropping the critic <span class="cite">[<a href="#ref-dsmath">1</a>]</span>. PPO's value model is usually another model of size comparable to the policy, which costs memory and compute. And the reward arrives only at the last token, which makes a value for every token hard to train. The DeepSeek-R1 paper repeats the second point. It says a value model is hard to train when only the outcome reward is available, especially for long chains of thought in which the model revises earlier steps <span class="cite">[<a href="#ref-r1">2</a>, App. A.3]</span>.</p>
+
+<p>The critic is not required by RLVR. Tülu 3 trained with PPO and a value model <span class="cite">[<a href="#ref-tulu">5</a>]</span>. What you give up without one is a baseline for each token. The group baseline is one number per prompt, and every token in a completion gets the same advantage. A token-level critic would estimate, for each prefix, the probability that the completion ends correct, and the advantage of a token would be the change in that estimate. Section 8 explains why Spire Mentor keeps its critic.</p>
+
+<h2 id="issues">6. Known problems and their fixes</h2>
+
+<p>After DeepSeek-R1, several groups took GRPO apart and found problems in its details. This section covers six of them.</p>
+
+<h3>Length bias from the per-completion average</h3>
+
+<p>Equation \eqref{eq:grpo} divides each completion's token sum by its own length \(\lvert y^{(i)}\rvert\). So a token's share of the gradient depends on the length of the completion it sits in. Libraries aggregate the per-token loss \(\ell_{i,t}\) in at least three ways:</p>
+
+<div class="eq">\begin{equation} \underbrace{\frac{1}{n}\sum_{i} \frac{1}{\lvert y^{(i)}\rvert} \sum_{t} \ell_{i,t}}_{\text{per completion (GRPO)}}, \qquad \underbrace{\frac{1}{\sum_i \lvert y^{(i)}\rvert} \sum_{i}\sum_{t} \ell_{i,t}}_{\text{per token (DAPO)}}, \qquad \underbrace{\frac{1}{n L} \sum_{i}\sum_{t} \ell_{i,t}}_{\text{constant (Dr. GRPO)}}. \label{eq:agg} \end{equation}</div>
+
+<p>In the third form, \(L\) is a constant that does not depend on the batch, such as the generation budget. Trace two wrong completions with the same advantage, \(-0.5\), one 100 tokens long and one 1,000 tokens long. Under the per-completion average, each token of the short one gets a weight of \(-0.005\) and each token of the long one \(-0.0005\). The long wrong answer is pushed down ten times more gently per token. For correct answers it goes the other way, and short ones get the larger push per token.</p>
+
+<p>Liu et al. call this the <dfn>response-level length bias</dfn> <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>. They report that under GRPO the length of incorrect responses keeps growing during training, and that their fix, Dr. GRPO, removes the growth. Dr. GRPO drops both the per-completion length and the standard deviation from Equation \eqref{eq:grpo} and divides by a constant instead. Their Table 2 lists open-source PPO implementations, including those in trl, OpenRLHF and verl, whose losses also carry the per-completion length normalisation. DAPO uses the per-token average, which gives every token in the batch the same weight <span class="cite">[<a href="#ref-dapo">7</a>]</span>. Lambert's RLHF book compares the aggregation choices in a section of its own <span class="cite">[<a href="#ref-lambert">10</a>]</span>.</p>
+
+<h3>Difficulty bias from the standard deviation</h3>
+
+<p>Section 5 derived it. Dr. GRPO removes the division by \(s_R\), which leaves the mean-centred estimator, unbiased in direction and short by \(\frac{n-1}{n}\) in scale. Liu et al. report that removing each of the two normalisations on its own already improves on GRPO in their experiments <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>.</p>
+
+<h3>Groups that carry no signal</h3>
+
+<p>If every completion in a group gets the same reward, all advantages are zero and the group adds nothing to the gradient. For a reward of 0 or 1, the probability of that event is</p>
+
+<div class="eq">\begin{equation} P(\text{all } n \text{ rewards equal}) = p_x^{\,n} + (1 - p_x)^{n}. \label{eq:allsame} \end{equation}</div>
+
+<p>A prompt at \(p_x = 0.9\) is wasted 82% of the time at \(n = 2\), 66% at \(n = 4\), 43% at \(n = 8\) and 19% at \(n = 16\). As training succeeds, more prompts move toward \(p_x = 1\), and more of each batch is wasted. DAPO's <dfn>dynamic sampling</dfn> keeps sampling and drops every group whose accuracy is 0 or 1 until the batch is full of groups with nonzero advantages <span class="cite">[<a href="#ref-dapo">7</a>]</span>. It pays for the dropped groups in generation compute.</p>
+
+<h3>Entropy collapse</h3>
+
+<p>Chapter 5 introduced the entropy of the policy as a measure of how much it still explores. Under GRPO on language models, entropy falls fast. Cui et al. measured it across many training runs <span class="cite">[<a href="#ref-cui">8</a>]</span>. In their runs, 73% of the entropy drop and 76% of the performance gain happened in the first 200 of 2,400 steps. They fit performance against entropy with \(\text{performance} = -a\, e^{H} + b\), which means that once entropy is used up, the fitted performance stops improving. They trace the mechanism to the update itself. A policy-gradient step lowers entropy when the tokens the policy already likes also get positive advantages, so the two are positively correlated.</p>
+
+<p>The usual fixes from chapter 5 did not work well there. An entropy bonus was sensitive to its weight, and at 0.01 entropy exploded. A KL penalty to the reference hurt performance. Cui et al. propose instead to clip or penalise the updates of the few tokens with the highest covariance between probability and advantage <span class="cite">[<a href="#ref-cui">8</a>]</span>.</p>
+
+<p>DAPO found the clip itself to be one cause <span class="cite">[<a href="#ref-dapo">7</a>]</span>. The upper clip limits how far a ratio can rise, which matters most for unlikely tokens. With \(\epsilon = 0.2\), a token at probability 0.01 can rise only to 0.012 within one update, while a token at 0.9 can rise to 1.08, which is no limit at all. Rare tokens with positive advantages cannot gain much. DAPO's <dfn>Clip-Higher</dfn> separates the two ends of the band:</p>
+
+<div class="eq">\begin{equation} \operatorname{clip}\big(\rho_{i,t},\; 1 - \epsilon_{\mathrm{low}},\; 1 + \epsilon_{\mathrm{high}}\big), \qquad \epsilon_{\mathrm{low}} = 0.2,\;\; \epsilon_{\mathrm{high}} = 0.28. \label{eq:cliphigher} \end{equation}</div>
+
+<h3>Stale samples</h3>
+
+<p>Generating long completions is slow, so practitioners take several gradient steps per batch of samples. DeepSeek-R1 generated 8,192 completions per rollout, split them into 16 minibatches and took one pass over them <span class="cite">[<a href="#ref-r1">2</a>]</span>. DAPO also took 16 gradient steps per rollout <span class="cite">[<a href="#ref-dapo">7</a>]</span>. After the first minibatch, \(\pi_\theta\) differs from \(\pi_{\mathrm{old}}\), the ratios move away from 1, and the clip in Equation \eqref{eq:grpo} starts to act. That is chapter 5's reason for the clip, back in a new setting.</p>
+
+<p>Asynchronous training goes further. One set of GPUs generates completions while another trains, so the samples come from a policy one or more updates old. <a href="../stop-6-off-policy/chapter.html">Chapter 6</a> covers the correction. Noukhovitch et al. measured how much staleness each method tolerates <span class="cite">[<a href="#ref-async">9</a>]</span>. Performance fell as the generating policy fell further behind. Online DPO held up best, and PPO and RLOO degraded more. Larger policies tolerated stale samples better. Generating one step behind matched synchronous training and was about 40% faster for an 8-billion-parameter model on an instruction-following task.</p>
+
+<h3>Group size trades compute for variance</h3>
+
+<p>Each extra completion per prompt costs one more generation. It buys three things: a lower-variance average, a better baseline for the other completions, and a lower chance of a group with no signal. Published choices vary. DeepSeekMath used 64 completions per question, and DeepSeek-R1 and DAPO used 16 <span class="cite">[<a href="#ref-dsmath">1</a>, <a href="#ref-r1">2</a>, <a href="#ref-dapo">7</a>]</span>. For a fixed number of generated completions, a larger group means fewer distinct prompts per batch. Section 9 measures the trade on a toy problem, and chapter 9 covers sample efficiency in general.</p>
+
+<h2 id="engineered">7. What real implementations add</h2>
+
+<p>The equations above are the textbook version. The papers that report training runs change several of their details. The table lists what the papers state.</p>
+
+<div class="table"><table>
+  <caption>Training details stated in the cited papers. A blank means the detail was not one of the points this chapter took from that paper.</caption>
+  <thead><tr><th>Detail</th><th>DeepSeekMath GRPO [1]</th><th>DeepSeek-R1 [2]</th><th>DAPO [7]</th></tr></thead>
+  <tbody>
+    <tr><td>Completions per prompt</td><td>64</td><td>16</td><td>16</td></tr>
+    <tr><td>Batch</td><td>1,024</td><td>32 prompts, 512 completions</td><td>512 prompts, 8,192 completions</td></tr>
+    <tr><td>Learning rate</td><td>\(10^{-6}\)</td><td>\(3 \times 10^{-6}\)</td><td>\(10^{-6}\)</td></tr>
+    <tr><td>KL weight \(\beta_{\mathrm{KL}}\)</td><td>0.04</td><td>0.001, reference replaced every 400 steps</td><td>removed</td></tr>
+    <tr><td>Gradient steps per rollout</td><td>1</td><td>16 minibatches, one pass</td><td>16</td></tr>
+    <tr><td>Maximum length</td><td>1,024</td><td>32,768, then 65,536 after step 8,200</td><td></td></tr>
+    <tr><td>Reward</td><td></td><td>Rule-based accuracy plus format</td><td>+1 correct, −1 wrong</td></tr>
+    <tr><td>Clip</td><td>\(\epsilon\)</td><td></td><td>\(\epsilon_{\mathrm{low}} = 0.2\), \(\epsilon_{\mathrm{high}} = 0.28\)</td></tr>
+    <tr><td>Loss average</td><td>Per completion</td><td></td><td>Per token</td></tr>
+  </tbody>
+</table></div>
+
+<p>The DeepSeek-R1 run lasted 10,400 steps <span class="cite">[<a href="#ref-r1">2</a>]</span>.</p>
+
+<p>The papers change the textbook version in four ways.</p>
+
+<ul>
+  <li><b>The KL penalty shrinks or disappears.</b> DAPO removes it, and Liu et al. set \(\beta_{\mathrm{KL}} = 0\) for rule-based verifiers <span class="cite">[<a href="#ref-dapo">7</a>, <a href="#ref-drgrpo">6</a>]</span>. DeepSeek-R1 keeps a small weight but moves the reference forward every 400 steps, so the penalty limits drift over 400 steps rather than over the whole run.</li>
+  <li><b>Truncated completions get special handling.</b> A completion cut off at the length budget has no final answer, so the verifier scores it wrong even if the reasoning was on track. Tülu 3 gives a reward of −10 to completions without EOS <span class="cite">[<a href="#ref-tulu">5</a>]</span>. DAPO masks truncated completions out of the loss and adds a length penalty that grows near the budget <span class="cite">[<a href="#ref-dapo">7</a>]</span>.</li>
+  <li><b>One pass over each rollout.</b> None of the three runs reuses a rollout for multiple epochs, unlike Spire Mentor's two epochs in chapter 5.</li>
+  <li><b>Loss aggregation varies by library.</b> The three forms of Equation \eqref{eq:agg} are all in use, and Dr. GRPO's Table 2 shows that a library's default may not match the paper you are reproducing <span class="cite">[<a href="#ref-drgrpo">6</a>]</span>.</li>
+</ul>
+
+<p>Tülu 3 also lists details of its PPO set-up that the textbook does not mention: dropout turned off during RL, and advantages whitened over the batch <span class="cite">[<a href="#ref-tulu">5</a>]</span>.</p>
+
+<h2 id="spire">8. In Spire Mentor</h2>
+
+<div class="example"><span class="label">In Spire Mentor · why the project keeps its critic</span>
+<p>Spire Mentor's learner is PPO with a critic (chapters 4 and 5). Its situation differs from a language model's in the ways that decided the question for the papers above.</p>
+<ul>
+  <li><b>Credit assignment over long episodes.</b> A run is about 667 decisions long. A group baseline gives one number per episode, so all 667 decisions would share it, as all tokens of a completion share \(\hat A_i\). The critic gives a separate baseline at every decision. Chapter 4's GAE then assigns credit with \(\lambda_c = 0.95\) within a combat and \(\lambda_r = 0.97\) over the run.</li>
+  <li><b>Rewards inside the episode.</b> Floors and bosses pay out during the run. A value function can learn from those intermediate rewards. A completion's reward arrives only at the end, which is DeepSeekMath's second reason for dropping the critic.</li>
+  <li><b>A cheap critic.</b> Spire Mentor's critic is one value block on top of the shared trunk, with two heads, \(V_{\mathrm{combat}}\) and \(V_{\mathrm{run}}\) (chapter 4). It is not a second network of the policy's size, which was DeepSeekMath's first reason.</li>
+</ul>
+<p>Two of this chapter's mechanisms have direct counterparts in the project. Spire Mentor normalises advantages separately for each decision type, which reweights the types against each other, as GRPO's per-prompt \(s_R\) reweights prompts (chapter 5, Section 11). And its rollouts run ahead of the learner, which makes samples stale. Chapter 6's decoupled PPO caps the importance weight at 2 for that reason. That is the same problem that asynchronous RL for language models has to solve.</p>
+</div>
+
+<p>The project's entropy bonus, with weights of 0.01 and 0.0125 (chapter 5), is the fix that Cui et al. found fragile for language models. The difference is not a contradiction. Spire Mentor's action sets have about seven options, while a vocabulary has far more, and an entropy bonus spreads probability over all of them.</p>
+
+<h2 id="measured">9. Measured: gradient noise against group size</h2>
+
+<p>Section 5 made three claims. RLOO is unbiased. The group-mean estimator is short in scale by \(\frac{n-1}{n}\). And GRPO's division by \(s_R\) turns the gradient away from \(\nabla J\). A toy problem can test all three, because its exact gradient is known.</p>
+
+<div class="measured"><span class="label">Measured · a toy problem, not a language model</span>
+<p><b>Set-up.</b> Eight prompts, with success rates \(p_x\) of 0.03, 0.10, 0.25, 0.40, 0.60, 0.75, 0.90 and 0.97. For each prompt the policy is a softmax over eight whole completions, three of them correct with reward 1 and five wrong with reward 0. The parameters are the 64 logits, and the objective is the mean success rate, \(J = \frac{1}{8}\sum_x p_x\). Each completion is one action, which is the bandit view from Section 2. For each group size \(n\) from 2 to 64, <code>figures.py</code> draws 20,000 batches of \(n\) completions per prompt with seed 0. For each batch it computes four estimates of \(\nabla J\) with respect to the logits.</p>
+<ul>
+  <li><b>No baseline.</b> \(\hat A_i = R_i\).</li>
+  <li><b>RLOO.</b> Equation \eqref{eq:rloo}.</li>
+  <li><b>Group mean.</b> \(\hat A_i = R_i - \bar R\), divided by \(n\).</li>
+  <li><b>GRPO.</b> Equation \eqref{eq:grpo-adv} with the population standard deviation, plus \(10^{-6}\) in the denominator.</li>
+</ul>
+<p>Every estimate is averaged over the \(n\) completions, as in Equation \eqref{eq:rloo}. The script compares the mean of each estimator with the exact gradient, whose norm is 0.042, and measures its noise as the <dfn>inverse signal-to-noise ratio</dfn>, which is the total variance divided by the squared norm of the estimator's own mean. That ratio ignores the scale of the estimator, so a smaller learning rate cannot make an estimator look less noisy.</p>
+</div>
+
+<figure id="fig-snr">
+  <div class="scroll"><!-- figure:snr --><svg viewBox="0 0 640 280" role="img" aria-label="Variance over squared mean of four gradient estimators against group size, toy problem"><line class="grid" x1="80.0" y1="236.0" x2="580.0" y2="236.0"/><text class="muted" x="74.0" y="240.0" text-anchor="end">0.1</text><line class="grid" x1="80.0" y1="140.4" x2="580.0" y2="140.4"/><text class="muted" x="74.0" y="144.4" text-anchor="end">1</text><line class="grid" x1="80.0" y1="44.8" x2="580.0" y2="44.8"/><text class="muted" x="74.0" y="48.8" text-anchor="end">10</text><line class="ink" x1="80.0" y1="236.0" x2="80.0" y2="240.0"/><text class="muted" x="80.0" y="253.0" text-anchor="middle">2</text><line class="ink" x1="180.0" y1="236.0" x2="180.0" y2="240.0"/><text class="muted" x="180.0" y="253.0" text-anchor="middle">4</text><line class="ink" x1="280.0" y1="236.0" x2="280.0" y2="240.0"/><text class="muted" x="280.0" y="253.0" text-anchor="middle">8</text><line class="ink" x1="380.0" y1="236.0" x2="380.0" y2="240.0"/><text class="muted" x="380.0" y="253.0" text-anchor="middle">16</text><line class="ink" x1="480.0" y1="236.0" x2="480.0" y2="240.0"/><text class="muted" x="480.0" y="253.0" text-anchor="middle">32</text><line class="ink" x1="580.0" y1="236.0" x2="580.0" y2="240.0"/><text class="muted" x="580.0" y="253.0" text-anchor="middle">64</text><line class="ink" x1="80.0" y1="236.0" x2="580.0" y2="236.0"/><line class="ink" x1="80.0" y1="16.0" x2="80.0" y2="236.0"/><text x="330.0" y="270.0" text-anchor="middle">group size n (completions per prompt)</text><text x="34.0" y="126.0" text-anchor="middle" transform="rotate(-90 34.0 126.0)">variance / squared mean (unitless)</text><path class="l4" d="M80.0 37.0 L180.0 65.4 L280.0 94.2 L380.0 122.8 L480.0 151.6 L580.0 180.4" stroke-width="2"/><circle class="f4" cx="80.0" cy="37.0" r="3"/><circle class="f4" cx="180.0" cy="65.4" r="3"/><circle class="f4" cx="280.0" cy="94.2" r="3"/><circle class="f4" cx="380.0" cy="122.8" r="3"/><circle class="f4" cx="480.0" cy="151.6" r="3"/><circle class="f4" cx="580.0" cy="180.4" r="3"/><path class="l1" d="M80.0 51.2 L180.0 97.7 L280.0 132.9 L380.0 164.9 L480.0 195.1 L580.0 224.5" stroke-width="2"/><circle class="f1" cx="80.0" cy="51.2" r="3"/><circle class="f1" cx="180.0" cy="97.7" r="3"/><circle class="f1" cx="280.0" cy="132.9" r="3"/><circle class="f1" cx="380.0" cy="164.9" r="3"/><circle class="f1" cx="480.0" cy="195.1" r="3"/><circle class="f1" cx="580.0" cy="224.5" r="3"/><path class="l3" d="M80.0 51.2 L180.0 97.7 L280.0 132.9 L380.0 164.9 L480.0 195.1 L580.0 224.5" stroke-width="2" stroke-dasharray="5 4"/><circle class="f3" cx="80.0" cy="51.2" r="3"/><circle class="f3" cx="180.0" cy="97.7" r="3"/><circle class="f3" cx="280.0" cy="132.9" r="3"/><circle class="f3" cx="380.0" cy="164.9" r="3"/><circle class="f3" cx="480.0" cy="195.1" r="3"/><circle class="f3" cx="580.0" cy="224.5" r="3"/><path class="l2" d="M80.0 51.2 L180.0 97.2 L280.0 130.2 L380.0 159.2 L480.0 187.3 L580.0 215.5" stroke-width="2"/><circle class="f2" cx="80.0" cy="51.2" r="3"/><circle class="f2" cx="180.0" cy="97.2" r="3"/><circle class="f2" cx="280.0" cy="130.2" r="3"/><circle class="f2" cx="380.0" cy="159.2" r="3"/><circle class="f2" cx="480.0" cy="187.3" r="3"/><circle class="f2" cx="580.0" cy="215.5" r="3"/><line class="l4" x1="420" y1="30" x2="442" y2="30" stroke-width="2.5"/><text x="448" y="34">no baseline</text><line class="l1" x1="420" y1="48" x2="442" y2="48" stroke-width="2.5"/><text x="448" y="52">RLOO</text><line class="l3" x1="420" y1="66" x2="442" y2="66" stroke-width="2.5" stroke-dasharray="5 4"/><text x="448" y="70">group mean</text><line class="l2" x1="420" y1="84" x2="442" y2="84" stroke-width="2.5"/><text x="448" y="88">GRPO</text></svg><!-- /figure:snr --></div>
+  <figcaption><b>Figure 10.9.</b> Inverse signal-to-noise ratio of the four estimators against group size, both on log scales, on the toy problem. Lower is better. Notice that RLOO and the group mean lie on the same line, because one is a fixed multiple of the other. GRPO starts on that line at \(n = 2\), where it equals RLOO, and pulls slightly above it as \(n\) grows.</figcaption>
+</figure>
+
+<figure id="fig-cos">
+  <div class="scroll"><!-- figure:cos --><svg viewBox="0 0 640 260" role="img" aria-label="Cosine between the mean of each estimator and the exact gradient, toy problem"><line class="grid" x1="80.0" y1="216.0" x2="580.0" y2="216.0"/><text class="muted" x="74.0" y="220.0" text-anchor="end">0.97</text><line class="grid" x1="80.0" y1="149.3" x2="580.0" y2="149.3"/><text class="muted" x="74.0" y="153.3" text-anchor="end">0.98</text><line class="grid" x1="80.0" y1="82.7" x2="580.0" y2="82.7"/><text class="muted" x="74.0" y="86.7" text-anchor="end">0.99</text><line class="grid" x1="80.0" y1="16.0" x2="580.0" y2="16.0"/><text class="muted" x="74.0" y="20.0" text-anchor="end">1.00</text><line class="ink" x1="80.0" y1="216.0" x2="80.0" y2="220.0"/><text class="muted" x="80.0" y="233.0" text-anchor="middle">2</text><line class="ink" x1="180.0" y1="216.0" x2="180.0" y2="220.0"/><text class="muted" x="180.0" y="233.0" text-anchor="middle">4</text><line class="ink" x1="280.0" y1="216.0" x2="280.0" y2="220.0"/><text class="muted" x="280.0" y="233.0" text-anchor="middle">8</text><line class="ink" x1="380.0" y1="216.0" x2="380.0" y2="220.0"/><text class="muted" x="380.0" y="233.0" text-anchor="middle">16</text><line class="ink" x1="480.0" y1="216.0" x2="480.0" y2="220.0"/><text class="muted" x="480.0" y="233.0" text-anchor="middle">32</text><line class="ink" x1="580.0" y1="216.0" x2="580.0" y2="220.0"/><text class="muted" x="580.0" y="233.0" text-anchor="middle">64</text><line class="ink" x1="80.0" y1="216.0" x2="580.0" y2="216.0"/><line class="ink" x1="80.0" y1="16.0" x2="80.0" y2="216.0"/><text x="330.0" y="250.0" text-anchor="middle">group size n (completions per prompt)</text><text x="34.0" y="116.0" text-anchor="middle" transform="rotate(-90 34.0 116.0)">cosine with ∇J (unitless)</text><path class="l1" d="M80.0 17.8 L180.0 16.4 L280.0 16.2 L380.0 16.1 L480.0 16.0 L580.0 16.0" stroke-width="2"/><circle class="f1" cx="80.0" cy="17.8" r="3"/><circle class="f1" cx="180.0" cy="16.4" r="3"/><circle class="f1" cx="280.0" cy="16.2" r="3"/><circle class="f1" cx="380.0" cy="16.1" r="3"/><circle class="f1" cx="480.0" cy="16.0" r="3"/><circle class="f1" cx="580.0" cy="16.0" r="3"/><path class="l2" d="M80.0 17.8 L180.0 16.7 L280.0 32.3 L380.0 69.4 L480.0 109.0 L580.0 137.4" stroke-width="2"/><circle class="f2" cx="80.0" cy="17.8" r="3"/><circle class="f2" cx="180.0" cy="16.7" r="3"/><circle class="f2" cx="280.0" cy="32.3" r="3"/><circle class="f2" cx="380.0" cy="69.4" r="3"/><circle class="f2" cx="480.0" cy="109.0" r="3"/><circle class="f2" cx="580.0" cy="137.4" r="3"/><line class="l1" x1="100" y1="150" x2="122" y2="150" stroke-width="2.5"/><text x="128" y="154">RLOO (the other two overlap it)</text><line class="l2" x1="100" y1="168" x2="122" y2="168" stroke-width="2.5"/><text x="128" y="172">GRPO</text></svg><!-- /figure:cos --></div>
+  <figcaption><b>Figure 10.10.</b> Cosine between each estimator's mean and the exact gradient \(\nabla J\), on the toy problem. RLOO, the group mean and no baseline stay at 1 within simulation error. GRPO's mean turns away from \(\nabla J\) as \(n\) grows, toward 0.978, the cosine of Equation \eqref{eq:arcsin}'s oracle gradient. Notice the vertical scale, which starts at 0.97.</figcaption>
+</figure>
+
+<div class="table"><table>
+  <caption>The toy problem's measurements. Inverse SNR is variance over squared mean, lower is better. Scale is the projection of the estimator's mean on the exact gradient, divided by the exact gradient's squared norm, so 1 means right on average. "No signal" is the share of groups whose rewards are all equal.</caption>
+  <thead><tr><th class="num">\(n\)</th><th class="num">Inverse SNR, no baseline</th><th class="num">Inverse SNR, RLOO</th><th class="num">Inverse SNR, GRPO</th><th class="num">Scale, group mean</th><th class="num">Scale, GRPO</th><th class="num">Cosine, GRPO</th><th class="num">No signal</th></tr></thead>
+  <tbody>
+    <tr><td class="num">2</td><td class="num">12.07</td><td class="num">8.56</td><td class="num">8.56</td><td class="num">0.50</td><td class="num">1.00</td><td class="num">1.000</td><td class="num">0.73</td></tr>
+    <tr><td class="num">4</td><td class="num">6.09</td><td class="num">2.80</td><td class="num">2.83</td><td class="num">0.75</td><td class="num">1.64</td><td class="num">1.000</td><td class="num">0.51</td></tr>
+    <tr><td class="num">8</td><td class="num">3.05</td><td class="num">1.20</td><td class="num">1.28</td><td class="num">0.87</td><td class="num">1.97</td><td class="num">0.998</td><td class="num">0.33</td></tr>
+    <tr><td class="num">16</td><td class="num">1.53</td><td class="num">0.55</td><td class="num">0.64</td><td class="num">0.94</td><td class="num">2.13</td><td class="num">0.992</td><td class="num">0.20</td></tr>
+    <tr><td class="num">32</td><td class="num">0.76</td><td class="num">0.27</td><td class="num">0.32</td><td class="num">0.97</td><td class="num">2.21</td><td class="num">0.986</td><td class="num">0.10</td></tr>
+    <tr><td class="num">64</td><td class="num">0.38</td><td class="num">0.13</td><td class="num">0.16</td><td class="num">0.99</td><td class="num">2.24</td><td class="num">0.982</td><td class="num">0.04</td></tr>
+  </tbody>
+</table></div>
+
+<p><b>The baseline cuts noise, and more so in larger groups.</b> At \(n = 2\), RLOO's inverse SNR is 1.4 times lower than no baseline. At \(n = 64\) it is 2.9 times lower. The leave-one-out baseline at \(n = 2\) is a single other sample, a noisy estimate of \(p_x\). At \(n = 64\) it is the mean of 63 samples.</p>
+
+<p><b>The group mean is RLOO scaled down.</b> Its inverse SNR matches RLOO's at every \(n\), and its measured scale is 0.50, 0.75, 0.87, 0.94, 0.97 and 0.99, which is \(\frac{n-1}{n}\) to two decimals. That confirms Equation \eqref{eq:rloo-mean}.</p>
+
+<p><b>GRPO changes direction and scale.</b> At \(n = 2\) its scale is 1.00 and its cosine 1.000, as the identity with RLOO predicts. As \(n\) grows, \(s_R\) approaches \(\sigma_x\) and the mean approaches the oracle gradient of Equation \eqref{eq:arcsin}. The cosine falls to 0.982 at \(n = 64\), on the way to the oracle value of 0.978, an angle of about 12°. The scale rises to 2.24 because the division by \(s_R\) multiplies every prompt's contribution by between 2 and 5.9 in this toy. GRPO is also slightly noisier than RLOO, because \(s_R\) is itself estimated from the group.</p>
+
+<p><b>Per completion, larger groups get more out of each sample.</b> Without a baseline, inverse SNR times \(n\) stays at about 24.4 for every \(n\). Doubling the completions halves the variance and nothing more. With RLOO the same product falls from 17.1 at \(n = 2\) to 11.2 at \(n = 4\), 9.6 at \(n = 8\) and 8.4 at \(n = 64\). Most of the gain comes by \(n = 8\). Beyond that, each extra completion is worth about as much as a completion of a new prompt would be. This toy cannot say how that trade-off looks on a real model, where new prompts also add diversity and each completion costs thousands of tokens.</p>
+
+<p>The 12° tilt is small on this toy because its success rates are spread evenly. A dataset in which most prompts sit near 0 or 1 would tilt the direction further, by Figure 10.8.</p>
+
+<div class="measured"><span class="label">Measured · from the cited paper</span>
+<p>DAPO's Table 1 adds its changes to GRPO one at a time and reports accuracy on AIME 2024, averaged over 32 samples, for a Qwen2.5-32B base model <span class="cite">[<a href="#ref-dapo">7</a>]</span>.</p>
+<div class="table"><table>
+  <thead><tr><th>Configuration</th><th class="num">AIME 2024 avg@32</th></tr></thead>
+  <tbody>
+    <tr><td>DeepSeek-R1-Zero-Qwen-32B, for reference</td><td class="num">47</td></tr>
+    <tr><td>Naive GRPO</td><td class="num">30</td></tr>
+    <tr><td>+ Overlong filtering</td><td class="num">36</td></tr>
+    <tr><td>+ Clip-Higher</td><td class="num">38</td></tr>
+    <tr><td>+ Soft overlong punishment</td><td class="num">41</td></tr>
+    <tr><td>+ Token-level loss</td><td class="num">42</td></tr>
+    <tr><td>+ Dynamic sampling (full DAPO)</td><td class="num">50</td></tr>
+  </tbody>
+</table></div>
+<p>Each row includes the changes above it. The changes are cumulative, so a row's gain is measured on top of the earlier changes, not alone. The largest single steps are the treatment of truncated completions (+6) and dynamic sampling (+8). The paper reports that DAPO reached 50 in half the training steps that DeepSeek-R1-Zero-Qwen-32B used.</p>
+</div>
+
+<p>The DeepSeek-R1 paper reports that GRPO with rule-based rewards raised its base model's AIME 2024 pass@1 from 15.6% to 77.9% <span class="cite">[<a href="#ref-r1">2</a>]</span>. That is the figure in the version this chapter opened, which revised an earlier version's 71.0%.</p>
+
+<h2 id="confusions">10. Common confusions</h2>
+
+<p><b>"GRPO is a new kind of algorithm."</b> GRPO is PPO's clipped surrogate from chapter 5, with the critic replaced by a group statistic and a KL penalty added to the loss. Everything chapter 5 says about the ratio and the clip carries over. With a single gradient step per rollout, as in DeepSeekMath, the clip does nothing and GRPO is REINFORCE with a normalised group baseline.</p>
+
+<p><b>"Subtracting the group mean biases the gradient."</b> It shrinks the scale by \(\frac{n-1}{n}\) and leaves the direction alone, and RLOO removes even that. The step that changes the direction is the division by the standard deviation, because it weights prompts differently.</p>
+
+<p><b>"Each token gets credit for its contribution to the answer."</b> Every token in a completion gets the completion's advantage, by Equation \eqref{eq:seqpg}. A token is credited only through averaging, when it shows up more often in correct completions than in wrong ones.</p>
+
+<p><b>"The KL penalty keeps the update close to the data."</b> Two different policies are involved. The clip keeps \(\pi_\theta\) close to \(\pi_{\mathrm{old}}\), the policy that generated this batch. The KL penalty keeps it close to \(\pi_{\mathrm{ref}}\), a frozen copy from before training. Removing the KL penalty, as DAPO does, leaves the clip in place.</p>
+
+<p><b>"A bigger group only reduces variance."</b> A bigger group also improves every completion's baseline and lowers the share of groups with no signal, by Equation \eqref{eq:allsame}. It also costs generation compute that could have gone to more prompts.</p>
+
+<h2 id="experiments">11. Suggested experiments</h2>
+
+<p>Run every command from the fork's root. The toy needs only NumPy, and each run takes a few seconds.</p>
+
+<ol>
+  <li><p><b>Reproduce the measurements.</b></p>
+<figure class="listing"><pre><code>uv run --no-project --with numpy python3 tour/stop-10-llm-policy-gradients/figures.py run
+uv run --no-project --with numpy python3 tour/stop-10-llm-policy-gradients/figures.py render</code></pre></figure>
+  <p>The first command prints one line per group size and rewrites <code>figures.json</code>. The second redraws Figures 10.8 to 10.10 in <code>chapter.html</code>. The numbers should match the table in Section 9.</p></li>
+  <li><p><b>Remove the difficulty bias.</b> In <code>figures.py</code>, set every entry of <code>P_TARGET</code> to <code>0.5</code>. Run both commands again. All prompts now have the same \(\sigma_x\), so GRPO's weights are all equal and its cosine in Figure 10.10 should stay at 1. Then set <code>P_TARGET</code> to values between 0.01 and 0.05 and between 0.95 and 0.99, and check that the cosine falls further than 0.978.</p></li>
+  <li><p><b>Try the sample standard deviation.</b> In <code>advantages()</code>, change <code>R.std(1, keepdims=True)</code> to <code>R.std(1, ddof=1, keepdims=True)</code>. Run the first command again. At \(n = 2\), GRPO's scale should fall from 1.00 to about 0.71, and it no longer equals RLOO.</p></li>
+  <li><p><b>Compare at equal compute.</b> Print inverse SNR times \(n\), which is the noise per completion generated:</p>
+<figure class="listing"><pre><code>python3 -c "import json; d = json.load(open('tour/stop-10-llm-policy-gradients/figures.json')); [print(r['n'], round(r['n'] * r['none']['inv_snr'], 1), round(r['n'] * r['loo']['inv_snr'], 1)) for r in d['rows']]"</code></pre></figure>
+  <p>The no-baseline column should stay near 24.4 and the RLOO column should fall from 17.1 to 8.4.</p></li>
+</ol>
+
+<h2 id="references">References</h2>
+<ol class="refs">
+  <li id="ref-dsmath">Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y. K., Wu, Y., and Guo, D. (2024). DeepSeekMath: Pushing the limits of mathematical reasoning in open language models. arXiv:2402.03300. §4.1.2 (GRPO with outcome supervision), the unified view of RFT and GRPO, Appendix A.1.5.</li>
+  <li id="ref-r1">DeepSeek-AI (2025). DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning. arXiv:2501.12948, version 2. GRPO training details and Appendix A.3.</li>
+  <li id="ref-kool">Kool, W., van Hoof, H., and Welling, M. (2019). Buy 4 REINFORCE samples, get a baseline for free! ICLR 2019 Workshop on Deep Reinforcement Learning Meets Structured Prediction. This chapter used the authors' poster, which states the estimator in both forms.</li>
+  <li id="ref-rloo">Ahmadian, A., Cremer, C., Gallé, M., Fadaee, M., Kreutzer, J., Pietquin, O., Üstün, A., and Hooker, S. (2024). Back to basics: Revisiting REINFORCE style optimization for learning from human feedback in LLMs. arXiv:2402.14740.</li>
+  <li id="ref-tulu">Lambert, N., Morrison, J., Pyatkin, V., Huang, S., Ivison, H., Brahman, F., et al. (2024). Tülu 3: Pushing frontiers in open language model post-training. arXiv:2411.15124. §6 (RLVR).</li>
+  <li id="ref-drgrpo">Liu, Z., Chen, C., Li, W., Qi, P., Pang, T., Du, C., Lee, W. S., and Lin, M. (2025). Understanding R1-Zero-like training: A critical perspective. arXiv:2503.20783.</li>
+  <li id="ref-dapo">Yu, Q., et al. (2025). DAPO: An open-source LLM reinforcement learning system at scale. arXiv:2503.14476.</li>
+  <li id="ref-cui">Cui, G., et al. (2025). The entropy mechanism of reinforcement learning for reasoning language models. arXiv:2505.22617.</li>
+  <li id="ref-async">Noukhovitch, M., Huang, S., Xhonneux, S., Hosseini, A., Agarwal, R., and Courville, A. (2025). Asynchronous RLHF: Faster and more efficient off-policy RL for language models. ICLR 2025. arXiv:2410.18252.</li>
+  <li id="ref-lambert">Lambert, N. <em>Reinforcement Learning from Human Feedback</em>. Online book, chapter "Reinforcement learning", rlhfbook.com/c/11-policy-gradients.html.</li>
+</ol>
+</main>
+
+<footer class="chapter"><span><a href="../stop-9-sample-efficiency/chapter.html">← Chapter 9: Sample efficiency</a></span><span><a href="../stop-11-llm-environments/chapter.html">Chapter 11: RL environments for language-model agents →</a></span></footer>
+
+<script>
+window.MathJax = { tex: { tags: 'ams', inlineMath: [['\\(', '\\)']] }, svg: { fontCache: 'global' } };
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme-toggle');
+  function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { btn.textContent = isDark() ? 'Light mode' : 'Dark mode'; }
+  try { var saved = localStorage.getItem('tour-theme'); if (saved) root.setAttribute('data-theme', saved); } catch (e) {}
+  btn.addEventListener('click', function () { var next = isDark() ? 'light' : 'dark'; root.setAttribute('data-theme', next); try { localStorage.setItem('tour-theme', next); } catch (e) {} label(); });
+  label();
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
+
