@@ -111,12 +111,10 @@ def run():
             "lr_a": LR_A,
             "lr_b": LR,
             "seeds": SEEDS,
-            "init_probs": None,
+            "init_probs": [round(float(x), 4) for x in np.exp(INIT_LOGITS) / np.exp(INIT_LOGITS).sum()],
             "p_range": [0.05, 0.95],
         }
     }
-    z0 = np.array(INIT_LOGITS)
-    out["config"]["init_probs"] = [round(float(x), 4) for x in np.exp(z0) / np.exp(z0).sum()]
 
     # Experiment A: the same false-pass rate on every failed attempt.
     steps_a = 1500
@@ -351,9 +349,8 @@ def fig_b_curve(d):
 
 
 def _box(x, y, w, h, lines, new):
-    cls = "box" if not new else "box"
     stroke = ' style="stroke: var(--s1); stroke-width: 2"' if new else ""
-    out = [f'<rect class="{cls}" x="{x}" y="{y}" width="{w}" height="{h}" rx="3"{stroke}/>']
+    out = [f'<rect class="box" x="{x}" y="{y}" width="{w}" height="{h}" rx="3"{stroke}/>']
     n = len(lines)
     for i, t in enumerate(lines):
         yy = y + h / 2 + (i - (n - 1) / 2) * 16 + 4
