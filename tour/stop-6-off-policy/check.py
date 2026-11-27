@@ -1,4 +1,4 @@
-"""Stop 6: where on-policy bends.
+"""Stop 6: how far importance weights can correct off-policy data.
 
 Network A (the published Ironclad net) plays whole runs, sampling each
 decision from its own probabilities: A is the behaviour policy. At every
@@ -105,7 +105,7 @@ def is_estimates(log_w: np.ndarray, won: np.ndarray) -> tuple[float, float]:
     win rate from per-run log-weights and outcomes.
 
     plain = mean(w·won); self-normalised = Σ w·won / Σ w. The plain estimate
-    can be astronomically large or tiny; it is returned as a float (maybe inf)."""
+    can overflow, so it is returned as a float that may be inf."""
     log_w = np.asarray(log_w, np.float64)
     won = np.asarray(won, bool)
     lw_won = logsumexp(log_w[won])
