@@ -388,7 +388,7 @@ figure mjx-container svg { display: inline; margin: 0; }
   <div class="eq">\begin{equation} b \mid m \;\sim\; \operatorname{Binomial}\!\left(m, \tfrac{1}{2}\right) \quad \text{under } H_0 : \pi_b = \pi_c. \label{eq:mcnull} \end{equation}</div>
   <p>The concordant counts \(a\) and \(d\) do not appear, which is Figure 8.4 written as a formula. Given \(m\) disagreements, the only evidence is how they split. The exact two-sided p-value doubles the smaller tail:</p>
   <div class="eq">\begin{equation} p_{\text{exact}} = \min\!\left(1,\; 2 \sum_{j=0}^{\min(b,c)} \binom{m}{j} 2^{-m}\right). \label{eq:mcexact} \end{equation}</div>
-  <p>McNemar (1947) derived the large-sample version for correlated proportions in psychology surveys <span class="cite">[<a href="#ref-mcnemar">6</a>]</span>. Under the null, his statistic is approximately \(\chi^2_1\):</p>
+  <p>McNemar (1947) derived the large-sample version for correlated proportions <span class="cite">[<a href="#ref-mcnemar">6</a>]</span>. Under the null, his statistic is approximately \(\chi^2_1\):</p>
   <div class="eq">\begin{equation} \chi^2 = \frac{(b - c)^2}{b + c}. \label{eq:mcchi} \end{equation}</div>
   <p>Take 44 discordant seeds that split 30 to 14. The chi-square statistic is \(16^2/44 = 5.8\), and the exact p-value, twice the probability that 44 fair coins show 14 or fewer heads, is about 0.023. If you had played 4,000 seeds and seen the same 30-to-14 split, the p-value would be the same. The 3,956 concordant seeds add nothing to the test. They do change the effect size, because \(\hat\Delta = 16/n\) is 36 points at \(n = 44\) and 0.4 points at \(n = 4{,}000\).</p>
 
